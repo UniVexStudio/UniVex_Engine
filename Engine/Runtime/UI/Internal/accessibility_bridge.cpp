@@ -6,11 +6,11 @@
 
 namespace UVE::UI {
 
-Math::Vector3UVE ApplyColorblindDaltonizationCpuUVE(const Math::Vector3UVE& rgb,
-                                                   const ColorblindModeUVE mode,
+Math::Vector3 ApplyColorblindDaltonizationCpu(const Math::Vector3& rgb,
+                                                   const ColorblindMode mode,
                                                    const float severity) noexcept {
     const float s = std::clamp(severity, 0.0F, 1.0F);
-    if (mode == ColorblindModeUVE::None || s <= 0.0F) {
+    if (mode == ColorblindMode::None || s <= 0.0F) {
         return rgb;
     }
     // RGB -> LMS (Hunt-Pointer-Estevez).
@@ -21,11 +21,11 @@ Math::Vector3UVE ApplyColorblindDaltonizationCpuUVE(const Math::Vector3UVE& rgb,
     float sl = l;
     float sm = m;
     float sk = k;
-    if (mode == ColorblindModeUVE::Protanopia) {
+    if (mode == ColorblindMode::Protanopia) {
         sl = 2.02344F * m - 2.52581F * k;
-    } else if (mode == ColorblindModeUVE::Deuteranopia) {
+    } else if (mode == ColorblindMode::Deuteranopia) {
         sm = 0.494207F * l + 1.24827F * k;
-    } else if (mode == ColorblindModeUVE::Tritanopia) {
+    } else if (mode == ColorblindMode::Tritanopia) {
         sk = -0.395913F * l + 0.801109F * m;
     }
 
@@ -43,7 +43,7 @@ Math::Vector3UVE ApplyColorblindDaltonizationCpuUVE(const Math::Vector3UVE& rgb,
     const float corrG = rgb.y + 0.7F * errR + errG;
     const float corrB = rgb.z + 0.7F * errR + errB;
 
-    return Math::Vector3UVE{
+    return Math::Vector3{
         std::clamp(rgb.x + (corrR - rgb.x) * s, 0.0F, 1.0F),
         std::clamp(rgb.y + (corrG - rgb.y) * s, 0.0F, 1.0F),
         std::clamp(rgb.z + (corrB - rgb.z) * s, 0.0F, 1.0F),

@@ -18,125 +18,125 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-std::filesystem::path TestPathUVE(const char* const name) {
-    return ::UVE::Tests::ScratchRootUVE() / name;
+std::filesystem::path TestPath(const char* const name) {
+    return ::UVE::Tests::ScratchRoot() / name;
 }
 
-AnimationLibraryAssetUVE MakeValidLibraryUVE() {
-    AnimationLibraryAssetUVE library;
+AnimationLibraryAsset MakeValidLibrary() {
+    AnimationLibraryAsset library;
     library.libraryId = "hero_moveset";
     library.entries = {
-        AnimationLibraryEntryUVE{AssetGuidUVE{7U}, "Idle"},
-        AnimationLibraryEntryUVE{AssetGuidUVE{42U}, "Walk"},
-        AnimationLibraryEntryUVE{AssetGuidUVE{9001U}, "Jump"},
+        AnimationLibraryEntry{AssetGuid{7U}, "Idle"},
+        AnimationLibraryEntry{AssetGuid{42U}, "Walk"},
+        AnimationLibraryEntry{AssetGuid{9001U}, "Jump"},
     };
     return library;
 }
 
 } // namespace
 
-TEST(AnimationLibraryAssetUVETest, ValidationAcceptsEmptyAndPopulated) {
-    AnimationLibraryAssetUVE empty;
+TEST(AnimationLibraryAssetTest, ValidationAcceptsEmptyAndPopulated) {
+    AnimationLibraryAsset empty;
     empty.libraryId = "fresh";
-    EXPECT_TRUE(IsAnimationLibraryAssetValidUVE(empty));
-    EXPECT_TRUE(IsAnimationLibraryAssetValidUVE(MakeValidLibraryUVE()));
+    EXPECT_TRUE(IsAnimationLibraryAssetValid(empty));
+    EXPECT_TRUE(IsAnimationLibraryAssetValid(MakeValidLibrary()));
 }
 
-TEST(AnimationLibraryAssetUVETest, SaveThenLoad_RoundTripsEntriesVerbatim) {
-    const std::filesystem::path path = TestPathUVE("uve_animation_library_round_trip.uvanimlib");
+TEST(AnimationLibraryAssetTest, SaveThenLoad_RoundTripsEntriesVerbatim) {
+    const std::filesystem::path path = TestPath("uve_animation_library_round_trip.uvanimlib");
     std::filesystem::remove(path);
-    const AnimationLibraryAssetUVE original = MakeValidLibraryUVE();
-    ASSERT_TRUE(SaveAnimationLibraryAssetUVE(original, path));
-    AnimationLibraryAssetUVE reloaded;
-    ASSERT_TRUE(LoadAnimationLibraryAssetUVE(path, reloaded));
+    const AnimationLibraryAsset original = MakeValidLibrary();
+    ASSERT_TRUE(SaveAnimationLibraryAsset(original, path));
+    AnimationLibraryAsset reloaded;
+    ASSERT_TRUE(LoadAnimationLibraryAsset(path, reloaded));
     EXPECT_EQ(reloaded, original);
     std::filesystem::remove(path);
 }
 
-TEST(AnimationLibraryAssetUVETest, SaveThenLoad_RoundTripsEmptyLibrary) {
-    const std::filesystem::path path = TestPathUVE("uve_animation_library_empty.uvanimlib");
+TEST(AnimationLibraryAssetTest, SaveThenLoad_RoundTripsEmptyLibrary) {
+    const std::filesystem::path path = TestPath("uve_animation_library_empty.uvanimlib");
     std::filesystem::remove(path);
-    AnimationLibraryAssetUVE empty;
+    AnimationLibraryAsset empty;
     empty.libraryId = "fresh";
-    ASSERT_TRUE(SaveAnimationLibraryAssetUVE(empty, path));
-    AnimationLibraryAssetUVE reloaded;
-    ASSERT_TRUE(LoadAnimationLibraryAssetUVE(path, reloaded));
+    ASSERT_TRUE(SaveAnimationLibraryAsset(empty, path));
+    AnimationLibraryAsset reloaded;
+    ASSERT_TRUE(LoadAnimationLibraryAsset(path, reloaded));
     EXPECT_EQ(reloaded, empty);
     std::filesystem::remove(path);
 }
 
-TEST(AnimationLibraryAssetUVETest, SaveRefuses_DuplicateClipGuid) {
-    AnimationLibraryAssetUVE library = MakeValidLibraryUVE();
-    library.entries.push_back(AnimationLibraryEntryUVE{AssetGuidUVE{42U}, "Walk Again"});
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(library));
-    EXPECT_FALSE(SaveAnimationLibraryAssetUVE(library, TestPathUVE("uve_animation_library_dup.uvanimlib")));
+TEST(AnimationLibraryAssetTest, SaveRefuses_DuplicateClipGuid) {
+    AnimationLibraryAsset library = MakeValidLibrary();
+    library.entries.push_back(AnimationLibraryEntry{AssetGuid{42U}, "Walk Again"});
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(library));
+    EXPECT_FALSE(SaveAnimationLibraryAsset(library, TestPath("uve_animation_library_dup.uvanimlib")));
 }
 
-TEST(AnimationLibraryAssetUVETest, SaveRefuses_InvalidClipGuidAndBadNames) {
-    AnimationLibraryAssetUVE zeroGuid = MakeValidLibraryUVE();
-    zeroGuid.entries[0].clip = kInvalidAssetGuidUVE;
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(zeroGuid));
+TEST(AnimationLibraryAssetTest, SaveRefuses_InvalidClipGuidAndBadNames) {
+    AnimationLibraryAsset zeroGuid = MakeValidLibrary();
+    zeroGuid.entries[0].clip = kInvalidAssetGuid;
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(zeroGuid));
 
-    AnimationLibraryAssetUVE emptyName = MakeValidLibraryUVE();
+    AnimationLibraryAsset emptyName = MakeValidLibrary();
     emptyName.entries[1].name.clear();
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(emptyName));
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(emptyName));
 
-    AnimationLibraryAssetUVE emptyId = MakeValidLibraryUVE();
+    AnimationLibraryAsset emptyId = MakeValidLibrary();
     emptyId.libraryId.clear();
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(emptyId));
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(emptyId));
 
-    AnimationLibraryAssetUVE longId = MakeValidLibraryUVE();
-    longId.libraryId = std::string(kMaximumAnimationLibraryIdentifierBytesUVE + 1U, 'x');
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(longId));
-    EXPECT_FALSE(SaveAnimationLibraryAssetUVE(longId, TestPathUVE("uve_animation_library_long.uvanimlib")));
+    AnimationLibraryAsset longId = MakeValidLibrary();
+    longId.libraryId = std::string(kMaximumAnimationLibraryIdentifierBytes + 1U, 'x');
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(longId));
+    EXPECT_FALSE(SaveAnimationLibraryAsset(longId, TestPath("uve_animation_library_long.uvanimlib")));
 }
 
-TEST(AnimationLibraryAssetUVETest, SaveRefuses_OverCapEntries) {
-    AnimationLibraryAssetUVE library;
+TEST(AnimationLibraryAssetTest, SaveRefuses_OverCapEntries) {
+    AnimationLibraryAsset library;
     library.libraryId = "too_many";
-    for (std::size_t i = 0U; i <= kMaximumAnimationLibraryEntriesUVE; ++i) {
+    for (std::size_t i = 0U; i <= kMaximumAnimationLibraryEntries; ++i) {
         library.entries.push_back(
-            AnimationLibraryEntryUVE{AssetGuidUVE{static_cast<std::uint64_t>(i + 1U)}, "Clip"});
+            AnimationLibraryEntry{AssetGuid{static_cast<std::uint64_t>(i + 1U)}, "Clip"});
     }
-    EXPECT_FALSE(IsAnimationLibraryAssetValidUVE(library));
-    EXPECT_FALSE(SaveAnimationLibraryAssetUVE(library, TestPathUVE("uve_animation_library_cap.uvanimlib")));
+    EXPECT_FALSE(IsAnimationLibraryAssetValid(library));
+    EXPECT_FALSE(SaveAnimationLibraryAsset(library, TestPath("uve_animation_library_cap.uvanimlib")));
 }
 
-TEST(AnimationLibraryAssetUVETest, LoadRejects_WrongKindEnvelope) {
+TEST(AnimationLibraryAssetTest, LoadRejects_WrongKindEnvelope) {
     // A clip envelope is structurally a valid .uve file but the wrong kind — and saving it
     // proves the Animation path is undisturbed by the new AnimationLibrary kind beside it.
-    const std::filesystem::path path = TestPathUVE("uve_animation_library_wrong_kind.uvanim");
+    const std::filesystem::path path = TestPath("uve_animation_library_wrong_kind.uvanim");
     std::filesystem::remove(path);
-    AnimationClipAssetUVE clip;
+    AnimationClipAsset clip;
     clip.clipId = "walk";
     clip.durationSeconds = 1.0;
-    clip.samples = {AnimationAssetSampleUVE{0.0, AnimationAssetPoseUVE{}}};
-    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    clip.samples = {AnimationAssetSample{0.0, AnimationAssetPose{}}};
+    ASSERT_TRUE(SaveAnimationClipAsset(clip, path));
 
-    AnimationLibraryAssetUVE library;
-    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(path, library));
+    AnimationLibraryAsset library;
+    EXPECT_FALSE(LoadAnimationLibraryAsset(path, library));
     std::filesystem::remove(path);
 }
 
-TEST(AnimationLibraryAssetUVETest, LoadRejects_MalformedPayload) {
-    const std::filesystem::path garbage = TestPathUVE("uve_animation_library_garbage.uvanimlib");
+TEST(AnimationLibraryAssetTest, LoadRejects_MalformedPayload) {
+    const std::filesystem::path garbage = TestPath("uve_animation_library_garbage.uvanimlib");
     std::filesystem::remove(garbage);
     {
         std::ofstream stream(garbage, std::ios::binary);
         stream << "not a uve file";
     }
-    AnimationLibraryAssetUVE library;
-    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(garbage, library));
+    AnimationLibraryAsset library;
+    EXPECT_FALSE(LoadAnimationLibraryAsset(garbage, library));
 
     // Right kind, wrong bytes: proves AnimationLibrary flows through the envelope bound (a stale
     // Skeleton-capped bound would reject the kind before the payload is even inspected).
-    const std::filesystem::path badJson = TestPathUVE("uve_animation_library_bad_json.uvanimlib");
+    const std::filesystem::path badJson = TestPath("uve_animation_library_bad_json.uvanimlib");
     std::filesystem::remove(badJson);
     const std::string payload = "{\"schema\":\"uve-animation-library-v1\"}"; // no libraryId/entries
     const auto* const bytes = reinterpret_cast<const std::byte*>(payload.data());
-    ASSERT_TRUE(WriteUveFileUVE(badJson, AssetKindUVE::AnimationLibrary,
+    ASSERT_TRUE(WriteUveFile(badJson, AssetKind::AnimationLibrary,
                                  std::vector<std::byte>(bytes, bytes + payload.size())));
-    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(badJson, library));
+    EXPECT_FALSE(LoadAnimationLibraryAsset(badJson, library));
 
     std::filesystem::remove(garbage);
     std::filesystem::remove(badJson);

@@ -24,21 +24,21 @@ namespace UVE::Navigation {
 
 namespace {
 
-constexpr std::uint32_t kUnassignedPolygonUVE = std::numeric_limits<std::uint32_t>::max();
+constexpr std::uint32_t kUnassignedPolygon = std::numeric_limits<std::uint32_t>::max();
 
 /// One rasterized column of the region: what the downward ray found there and what the rest of the
 /// bake decided about it.
-struct CellUVE final {
+struct Cell final {
     float groundHeight = 0.0F;
     /// Distance to the nearest non-walkable cell, in metres, filled in by the erosion pass.
     float clearanceMetres = 0.0F;
-    std::uint32_t polygon = kUnassignedPolygonUVE;
+    std::uint32_t polygon = kUnassignedPolygon;
     std::uint32_t layers = 0U;
     bool walkable = false;
 };
 
 /// One shared cell edge, before the per-pair merge that turns many of them into one portal.
-struct SharedEdgeUVE final {
+struct SharedEdge final {
     /// True when the edge runs along Z (its X is the fixed coordinate).
     bool alongZ = false;
     float fixed = 0.0F;
@@ -46,9 +46,9 @@ struct SharedEdgeUVE final {
     float to = 0.0F;
 };
 
-[[nodiscard]] bool IsFiniteBoundsUVE(const Math::AabbUVE& bounds) noexcept {
-    const Math::Vector3UVE extents = bounds.max - bounds.min;
-    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) &&
+[[nodiscard]] bool IsFiniteBounds(const Math::Aabb& bounds) noexcept {
+    const Math::Vector3 extents = bounds.max - bounds.min;
+    return Math::IsFinite(bounds.min) && Math::IsFinite(bounds.max) &&
            extents.x > 0.0F && extents.y > 0.0F && extents.z > 0.0F;
 }
 
@@ -57,10 +57,10 @@ struct SharedEdgeUVE final {
 /// Coarsening rather than truncating: a bake that covered only the first N columns of its region
 /// would leave a navmesh with a hole where the level has floor, and every path across that hole
 /// would look like a pathfinding failure instead of a bake that ran out of budget.
-[[nodiscard]] bool ResolveGridUVE(const Math::AabbUVE& bounds, const NavmeshBakeSettingsUVE& settings,
+[[nodiscard]] bool ResolveGrid(const Math::Aabb& bounds, const NavmeshBakeSettings& settings,
                                   std::size_t& outColumnsX, std::size_t& outColumnsZ, float& outCellSize,
                                   bool& outClamped) noexcept {
-    const Math::Vector3UVE extents = bounds.max - bounds.min;
+    const Math::Vector3 extents = bounds.max - bounds.min;
     float cellSize = settings.cellSize;
     if (!(cellSize > 0.0F) || settings.maximumCells == 0U) {
         return false;
@@ -89,13 +89,13 @@ struct SharedEdgeUVE final {
 
 } // namespace
 
-NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
-                                    const Physics::IRaycastSystemUVE& raycasts,
-                                    const NavmeshBakeSettingsUVE& settings, const Math::AabbUVE& bounds,
-                                    NavmeshUVE& outMesh) {
-    NavmeshBakeReportUVE report{};
-    outMesh.ClearUVE();
-    if (!IsFiniteBoundsUVE(bounds) || !(settings.agentRadius >= 0.0F) || !(settings.agentHeight > 0.0F) ||
+NavmeshBakeReport BakeNavmesh(Scene::IEntityManager& entityManager,
+                                    const Physics::IRaycastSystem& raycasts,
+                                    const NavmeshBakeSettings& settings, const Math::Aabb& bounds,
+                                    Navmesh& outMesh) {
+    NavmeshBakeReport report{};
+    outMesh.Clear();
+    if (!IsFiniteBounds(bounds) || !(settings.agentRadius >= 0.0F) || !(settings.agentHeight > 0.0F) ||
         !(settings.maximumStepHeight >= 0.0F) || !(settings.mergeHeightToleranceMetres >= 0.0F) ||
         !(settings.maximumSlopeDegrees >= 0.0F) || !(settings.maximumSlopeDegrees < 90.0F) ||
         settings.navigationLayers == 0U) {
@@ -106,7 +106,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     std::size_t columnsZ = 0U;
     float cellSize = 0.0F;
     bool resolutionClamped = false;
-    if (!ResolveGridUVE(bounds, settings, columnsX, columnsZ, cellSize, resolutionClamped)) {
+    if (!ResolveGrid(bounds, settings, columnsX, columnsZ, cellSize, resolutionClamped)) {
         return report;
     }
     report.bakePossible = true;
@@ -114,15 +114,15 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     report.effectiveCellSize = cellSize;
     report.resolutionClamped = resolutionClamped;
 
-    const Math::Vector3UVE extents = bounds.max - bounds.min;
-    const float slopeCosineLimit = std::cos(Math::DegToRadUVE(settings.maximumSlopeDegrees));
+    const Math::Vector3 extents = bounds.max - bounds.min;
+    const float slopeCosineLimit = std::cos(Math::DegToRad(settings.maximumSlopeDegrees));
 
-    std::vector<CellUVE> cells(columnsX * columnsZ);
-    const auto cellIndexUVE = [columnsX](const std::size_t column, const std::size_t row) { return row * columnsX + column; };
-    const auto cellCenterXUVE = [&bounds, cellSize](const std::size_t column) {
+    std::vector<Cell> cells(columnsX * columnsZ);
+    const auto cellIndex = [columnsX](const std::size_t column, const std::size_t row) { return row * columnsX + column; };
+    const auto cellCenterX = [&bounds, cellSize](const std::size_t column) {
         return bounds.min.x + (static_cast<float>(column) + 0.5F) * cellSize;
     };
-    const auto cellCenterZUVE = [&bounds, cellSize](const std::size_t row) {
+    const auto cellCenterZ = [&bounds, cellSize](const std::size_t row) {
         return bounds.min.z + (static_cast<float>(row) + 0.5F) * cellSize;
     };
 
@@ -130,27 +130,27 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     for (std::size_t row = 0U; row < columnsZ; ++row) {
         for (std::size_t column = 0U; column < columnsX; ++column) {
             ++report.columnsTested;
-            const float sampleX = cellCenterXUVE(column);
-            const float sampleZ = cellCenterZUVE(row);
+            const float sampleX = cellCenterX(column);
+            const float sampleZ = cellCenterZ(row);
 
-            Physics::RaycastQueryUVE groundQuery{};
-            groundQuery.ray = Math::RayUVE{Math::Vector3UVE{sampleX, bounds.max.y, sampleZ},
-                                           Math::Vector3UVE{0.0F, -1.0F, 0.0F}};
+            Physics::RaycastQuery groundQuery{};
+            groundQuery.ray = Math::Ray{Math::Vector3{sampleX, bounds.max.y, sampleZ},
+                                           Math::Vector3{0.0F, -1.0F, 0.0F}};
             groundQuery.maxDistance = extents.y;
             groundQuery.layerMask = settings.queryLayerMask;
-            const std::optional<Physics::RaycastHitUVE> ground =
-                raycasts.RaycastUVE(entityManager, groundQuery);
+            const std::optional<Physics::RaycastHit> ground =
+                raycasts.Raycast(entityManager, groundQuery);
             if (!ground.has_value()) {
                 ++report.noGroundCells;
                 continue;
             }
 
-            // NormalizeUVE() scales by the inverse length without guarding zero, so the zero-length
+            // Normalize() scales by the inverse length without guarding zero, so the zero-length
             // check comes first: a ray that began inside a collider reports exactly that.
-            const float normalLengthSquared = Math::LengthSquaredUVE(ground->normal);
-            const Math::Vector3UVE normalizedNormal =
+            const float normalLengthSquared = Math::LengthSquared(ground->normal);
+            const Math::Vector3 normalizedNormal =
                 normalLengthSquared > 0.0F ? ground->normal * (1.0F / std::sqrt(normalLengthSquared))
-                                           : Math::Vector3UVE{};
+                                           : Math::Vector3{};
             // A ray that began inside a collider reports no normal at all. There is no surface to
             // classify, so the column is refused: guessing "flat" there would bake ground where the
             // level has the inside of a wall.
@@ -158,7 +158,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
                 ++report.steepCells;
                 continue;
             }
-            if (!Math::IsFiniteUVE(ground->point)) {
+            if (!Math::IsFinite(ground->point)) {
                 ++report.noGroundCells;
                 continue;
             }
@@ -175,24 +175,24 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
 
             // The ray starts just above the surface so it cannot re-hit the ground it was cast from.
             const float surfaceLift = std::min(0.01F, std::max(settings.agentHeight * 0.01F, 0.0001F));
-            Physics::RaycastQueryUVE headroomQuery{};
-            headroomQuery.ray = Math::RayUVE{
-                Math::Vector3UVE{ground->point.x, ground->point.y + surfaceLift, ground->point.z},
-                Math::Vector3UVE{0.0F, 1.0F, 0.0F}};
+            Physics::RaycastQuery headroomQuery{};
+            headroomQuery.ray = Math::Ray{
+                Math::Vector3{ground->point.x, ground->point.y + surfaceLift, ground->point.z},
+                Math::Vector3{0.0F, 1.0F, 0.0F}};
             headroomQuery.maxDistance = settings.agentHeight;
             headroomQuery.layerMask = settings.queryLayerMask;
-            if (raycasts.RaycastUVE(entityManager, headroomQuery).has_value()) {
+            if (raycasts.Raycast(entityManager, headroomQuery).has_value()) {
                 ++report.blockedCells;
                 continue;
             }
 
-            CellUVE& cell = cells[cellIndexUVE(column, row)];
+            Cell& cell = cells[cellIndex(column, row)];
             cell.walkable = true;
             cell.groundHeight = ground->point.y;
             // The polygon inherits the surface's own layer, so a request for agents that may walk on
             // layer 8 is a question this navmesh can answer exactly.
-            const Scene::ColliderComponentUVE& collider =
-                entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(ground->entity);
+            const Scene::ColliderComponent& collider =
+                entityManager.GetComponent<Scene::ColliderComponent>(ground->entity);
             cell.layers = collider.collisionLayer;
             ++report.walkableCells;
         }
@@ -205,7 +205,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     // region's own edge than the agent's radius are then removed - which is what makes the mesh an
     // agent's mesh rather than a map of the floor.
     if (settings.agentRadius > 0.0F) {
-        constexpr float kStraightWeightUVE = 1.0F;
+        constexpr float kStraightWeight = 1.0F;
         const float diagonalWeight = 1.4142135F;
         // One cell of padding all round, seeded as obstacles and never relaxed away from zero. The
         // bake knows nothing about the level past the region's own bounds, so the region's edge has
@@ -220,15 +220,15 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
         // whole one. Seeding zero would let every mesh keep half a cell more ground than the agent
         // has room for, which is the difference between a path that fits and a path that clips a
         // wall.
-        constexpr float kOutsideOffsetCellsUVE = -0.5F;
-        std::vector<float> distance(paddedWidth * paddedHeight, kOutsideOffsetCellsUVE);
-        const auto paddedIndexUVE = [paddedWidth](const std::size_t column, const std::size_t row) {
+        constexpr float kOutsideOffsetCells = -0.5F;
+        std::vector<float> distance(paddedWidth * paddedHeight, kOutsideOffsetCells);
+        const auto paddedIndex = [paddedWidth](const std::size_t column, const std::size_t row) {
             return (row + 1U) * paddedWidth + (column + 1U);
         };
         for (std::size_t row = 0U; row < columnsZ; ++row) {
             for (std::size_t column = 0U; column < columnsX; ++column) {
-                if (cells[cellIndexUVE(column, row)].walkable) {
-                    distance[paddedIndexUVE(column, row)] = std::numeric_limits<float>::max();
+                if (cells[cellIndex(column, row)].walkable) {
+                    distance[paddedIndex(column, row)] = std::numeric_limits<float>::max();
                 }
             }
         }
@@ -237,8 +237,8 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
         // edge cell relaxes from: two sweeps, each cell taking the cheapest of the neighbours it has
         // already seen, the diagonal steps weighted by root two so the approximation stays within a
         // few per cent of the true distance. Everything here is in the padded grid's own coordinates
-        // - `paddedIndexUVE` is only for the rasterized cells themselves.
-        const auto relaxUVE = [&distance, paddedWidth](const std::size_t column, const std::size_t row,
+        // - `paddedIndex` is only for the rasterized cells themselves.
+        const auto relax = [&distance, paddedWidth](const std::size_t column, const std::size_t row,
                                                       const std::size_t fromColumn, const std::size_t fromRow,
                                                       const float weight) {
             const float candidate = distance[fromRow * paddedWidth + fromColumn] + weight;
@@ -248,15 +248,15 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
         for (std::size_t row = 0U; row < paddedHeight; ++row) {
             for (std::size_t column = 0U; column < paddedWidth; ++column) {
                 if (column > 0U) {
-                    relaxUVE(column, row, column - 1U, row, kStraightWeightUVE);
+                    relax(column, row, column - 1U, row, kStraightWeight);
                 }
                 if (row > 0U) {
-                    relaxUVE(column, row, column, row - 1U, kStraightWeightUVE);
+                    relax(column, row, column, row - 1U, kStraightWeight);
                     if (column > 0U) {
-                        relaxUVE(column, row, column - 1U, row - 1U, diagonalWeight);
+                        relax(column, row, column - 1U, row - 1U, diagonalWeight);
                     }
                     if (column + 1U < paddedWidth) {
-                        relaxUVE(column, row, column + 1U, row - 1U, diagonalWeight);
+                        relax(column, row, column + 1U, row - 1U, diagonalWeight);
                     }
                 }
             }
@@ -264,15 +264,15 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
         for (std::size_t row = paddedHeight; row-- > 0U;) {
             for (std::size_t column = paddedWidth; column-- > 0U;) {
                 if (column + 1U < paddedWidth) {
-                    relaxUVE(column, row, column + 1U, row, kStraightWeightUVE);
+                    relax(column, row, column + 1U, row, kStraightWeight);
                 }
                 if (row + 1U < paddedHeight) {
-                    relaxUVE(column, row, column, row + 1U, kStraightWeightUVE);
+                    relax(column, row, column, row + 1U, kStraightWeight);
                     if (column + 1U < paddedWidth) {
-                        relaxUVE(column, row, column + 1U, row + 1U, diagonalWeight);
+                        relax(column, row, column + 1U, row + 1U, diagonalWeight);
                     }
                     if (column > 0U) {
-                        relaxUVE(column, row, column - 1U, row + 1U, diagonalWeight);
+                        relax(column, row, column - 1U, row + 1U, diagonalWeight);
                     }
                 }
             }
@@ -280,11 +280,11 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
 
         for (std::size_t row = 0U; row < columnsZ; ++row) {
             for (std::size_t column = 0U; column < columnsX; ++column) {
-                CellUVE& cell = cells[cellIndexUVE(column, row)];
+                Cell& cell = cells[cellIndex(column, row)];
                 if (!cell.walkable) {
                     continue;
                 }
-                cell.clearanceMetres = distance[paddedIndexUVE(column, row)] * cellSize;
+                cell.clearanceMetres = distance[paddedIndex(column, row)] * cellSize;
                 if (cell.clearanceMetres < settings.agentRadius) {
                     cell.walkable = false;
                     ++report.erodedCells;
@@ -296,27 +296,27 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     // ------------------------------------------------------------------ merge into polygons
     for (std::size_t row = 0U; row < columnsZ; ++row) {
         for (std::size_t column = 0U; column < columnsX; ++column) {
-            const CellUVE& seed = cells[cellIndexUVE(column, row)];
-            if (!seed.walkable || seed.polygon != kUnassignedPolygonUVE) {
+            const Cell& seed = cells[cellIndex(column, row)];
+            if (!seed.walkable || seed.polygon != kUnassignedPolygon) {
                 continue;
             }
-            const auto mergeableUVE = [&cells, columnsX, &seed, &settings](const std::size_t candidateColumn,
+            const auto mergeable = [&cells, columnsX, &seed, &settings](const std::size_t candidateColumn,
                                                                            const std::size_t candidateRow) {
-                const CellUVE& candidate = cells[candidateRow * columnsX + candidateColumn];
-                return candidate.walkable && candidate.polygon == kUnassignedPolygonUVE &&
+                const Cell& candidate = cells[candidateRow * columnsX + candidateColumn];
+                return candidate.walkable && candidate.polygon == kUnassignedPolygon &&
                        candidate.layers == seed.layers &&
                        std::fabs(candidate.groundHeight - seed.groundHeight) <= settings.mergeHeightToleranceMetres;
             };
 
             std::size_t width = 1U;
-            while (column + width < columnsX && mergeableUVE(column + width, row)) {
+            while (column + width < columnsX && mergeable(column + width, row)) {
                 ++width;
             }
             std::size_t height = 1U;
             while (row + height < columnsZ) {
                 bool wholeRowMergeable = true;
                 for (std::size_t offset = 0U; offset < width; ++offset) {
-                    if (!mergeableUVE(column + offset, row + height)) {
+                    if (!mergeable(column + offset, row + height)) {
                         wholeRowMergeable = false;
                         break;
                     }
@@ -330,7 +330,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
             const std::uint32_t polygonIndex = static_cast<std::uint32_t>(outMesh.polygons.size());
             for (std::size_t rowOffset = 0U; rowOffset < height; ++rowOffset) {
                 for (std::size_t columnOffset = 0U; columnOffset < width; ++columnOffset) {
-                    cells[cellIndexUVE(column + columnOffset, row + rowOffset)].polygon = polygonIndex;
+                    cells[cellIndex(column + columnOffset, row + rowOffset)].polygon = polygonIndex;
                 }
             }
 
@@ -338,7 +338,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
             // corner on a polygon's border is shared with whatever is across that border, and taking
             // the same average on both sides is what keeps the two polygons meeting exactly instead
             // of a step apart.
-            const auto cornerHeightUVE = [&cells, columnsX, columnsZ, &seed](const std::size_t cornerColumn,
+            const auto cornerHeight = [&cells, columnsX, columnsZ, &seed](const std::size_t cornerColumn,
                                                                             const std::size_t cornerRow) {
                 float total = 0.0F;
                 std::size_t counted = 0U;
@@ -350,7 +350,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
                             sampleRow >= static_cast<int>(columnsZ)) {
                             continue;
                         }
-                        const CellUVE& sample =
+                        const Cell& sample =
                             cells[static_cast<std::size_t>(sampleRow) * columnsX + static_cast<std::size_t>(sampleColumn)];
                         if (!sample.walkable || sample.layers != seed.layers) {
                             continue;
@@ -379,16 +379,16 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
                 {minimumX, maximumZ},
             }};
 
-            NavmeshPolygonUVE polygon{};
+            NavmeshPolygon polygon{};
             polygon.vertexCount = 4U;
             polygon.navigationLayers = seed.layers;
             for (std::size_t corner = 0U; corner < 4U; ++corner) {
-                polygon.vertices[corner] = Math::Vector3UVE{cornerXZ[corner][0],
-                                                            cornerHeightUVE(corners[corner][0], corners[corner][1]),
+                polygon.vertices[corner] = Math::Vector3{cornerXZ[corner][0],
+                                                            cornerHeight(corners[corner][0], corners[corner][1]),
                                                             cornerXZ[corner][1]};
             }
-            polygon.areaSquareMetres = std::fabs(SignedAreaXZUVE(polygon.vertices.data(), polygon.vertexCount));
-            polygon.center = Math::Vector3UVE{
+            polygon.areaSquareMetres = std::fabs(SignedAreaXZ(polygon.vertices.data(), polygon.vertexCount));
+            polygon.center = Math::Vector3{
                 (minimumX + maximumX) * 0.5F,
                 (polygon.vertices[0].y + polygon.vertices[1].y + polygon.vertices[2].y + polygon.vertices[3].y) * 0.25F,
                 (minimumZ + maximumZ) * 0.5F};
@@ -401,19 +401,19 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     // border is one wide portal rather than one per cell. Coalescing matters for path quality: the
     // string-pulling step walks a portal's two endpoints, and a wall of 1-cell portals makes that
     // walk jitter between their midpoints instead of hugging the one corner that matters.
-    std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<SharedEdgeUVE>> sharedEdges;
+    std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<SharedEdge>> sharedEdges;
     for (std::size_t row = 0U; row < columnsZ; ++row) {
         for (std::size_t column = 0U; column < columnsX; ++column) {
-            const CellUVE& cell = cells[cellIndexUVE(column, row)];
-            if (!cell.walkable || cell.polygon == kUnassignedPolygonUVE) {
+            const Cell& cell = cells[cellIndex(column, row)];
+            if (!cell.walkable || cell.polygon == kUnassignedPolygon) {
                 continue;
             }
-            const auto addEdgeUVE = [&sharedEdges, &cells, &settings, columnsX, &cell](const std::size_t neighbourColumn,
+            const auto addEdge = [&sharedEdges, &cells, &settings, columnsX, &cell](const std::size_t neighbourColumn,
                                                                                        const std::size_t neighbourRow,
-                                                                                       const SharedEdgeUVE& edge) {
-                const CellUVE& neighbour = cells[neighbourRow * columnsX + neighbourColumn];
+                                                                                       const SharedEdge& edge) {
+                const Cell& neighbour = cells[neighbourRow * columnsX + neighbourColumn];
                 if (!neighbour.walkable || neighbour.polygon == cell.polygon ||
-                    neighbour.polygon == kUnassignedPolygonUVE) {
+                    neighbour.polygon == kUnassignedPolygon) {
                     return;
                 }
                 if (std::fabs(neighbour.groundHeight - cell.groundHeight) > settings.maximumStepHeight) {
@@ -425,20 +425,20 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
             };
 
             if (column + 1U < columnsX) {
-                SharedEdgeUVE edge{};
+                SharedEdge edge{};
                 edge.alongZ = true;
                 edge.fixed = bounds.min.x + static_cast<float>(column + 1U) * cellSize;
                 edge.from = bounds.min.z + static_cast<float>(row) * cellSize;
                 edge.to = bounds.min.z + static_cast<float>(row + 1U) * cellSize;
-                addEdgeUVE(column + 1U, row, edge);
+                addEdge(column + 1U, row, edge);
             }
             if (row + 1U < columnsZ) {
-                SharedEdgeUVE edge{};
+                SharedEdge edge{};
                 edge.alongZ = false;
                 edge.fixed = bounds.min.z + static_cast<float>(row + 1U) * cellSize;
                 edge.from = bounds.min.x + static_cast<float>(column) * cellSize;
                 edge.to = bounds.min.x + static_cast<float>(column + 1U) * cellSize;
-                addEdgeUVE(column, row + 1U, edge);
+                addEdge(column, row + 1U, edge);
             }
         }
     }
@@ -448,7 +448,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
     for (auto& [pair, edges] : sharedEdges) {
         const std::uint32_t lowPolygon = pair.first;
         const std::uint32_t highPolygon = pair.second;
-        std::sort(edges.begin(), edges.end(), [](const SharedEdgeUVE& left, const SharedEdgeUVE& right) {
+        std::sort(edges.begin(), edges.end(), [](const SharedEdge& left, const SharedEdge& right) {
             if (left.alongZ != right.alongZ) {
                 return left.alongZ < right.alongZ;
             }
@@ -460,7 +460,7 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
 
         std::size_t index = 0U;
         while (index < edges.size()) {
-            SharedEdgeUVE merged = edges[index];
+            SharedEdge merged = edges[index];
             std::size_t next = index + 1U;
             while (next < edges.size() && edges[next].alongZ == merged.alongZ &&
                    std::fabs(edges[next].fixed - merged.fixed) <= mergeEpsilon &&
@@ -470,34 +470,34 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
             }
             index = next;
 
-            const Math::Vector3UVE edgeStart = merged.alongZ
-                                                   ? Math::Vector3UVE{merged.fixed, 0.0F, merged.from}
-                                                   : Math::Vector3UVE{merged.from, 0.0F, merged.fixed};
-            const Math::Vector3UVE edgeEnd = merged.alongZ
-                                                 ? Math::Vector3UVE{merged.fixed, 0.0F, merged.to}
-                                                 : Math::Vector3UVE{merged.to, 0.0F, merged.fixed};
-            const std::optional<Math::Vector3UVE> lowStart = outMesh.ProjectPointUVE(edgeStart, lowPolygon);
-            const std::optional<Math::Vector3UVE> lowEnd = outMesh.ProjectPointUVE(edgeEnd, lowPolygon);
-            const std::optional<Math::Vector3UVE> highStart = outMesh.ProjectPointUVE(edgeStart, highPolygon);
-            const std::optional<Math::Vector3UVE> highEnd = outMesh.ProjectPointUVE(edgeEnd, highPolygon);
+            const Math::Vector3 edgeStart = merged.alongZ
+                                                   ? Math::Vector3{merged.fixed, 0.0F, merged.from}
+                                                   : Math::Vector3{merged.from, 0.0F, merged.fixed};
+            const Math::Vector3 edgeEnd = merged.alongZ
+                                                 ? Math::Vector3{merged.fixed, 0.0F, merged.to}
+                                                 : Math::Vector3{merged.to, 0.0F, merged.fixed};
+            const std::optional<Math::Vector3> lowStart = outMesh.ProjectPoint(edgeStart, lowPolygon);
+            const std::optional<Math::Vector3> lowEnd = outMesh.ProjectPoint(edgeEnd, lowPolygon);
+            const std::optional<Math::Vector3> highStart = outMesh.ProjectPoint(edgeStart, highPolygon);
+            const std::optional<Math::Vector3> highEnd = outMesh.ProjectPoint(edgeEnd, highPolygon);
             if (!lowStart.has_value() || !lowEnd.has_value() || !highStart.has_value() || !highEnd.has_value()) {
                 continue;
             }
             // The portal's height is the two surfaces' average: both polygons carry the same corner
             // heights by construction, so this is where they agree, and averaging means a rounding
             // difference becomes a half-millimetre of neither side rather than a step.
-            const Math::Vector3UVE start{(lowStart->x + highStart->x) * 0.5F, (lowStart->y + highStart->y) * 0.5F,
+            const Math::Vector3 start{(lowStart->x + highStart->x) * 0.5F, (lowStart->y + highStart->y) * 0.5F,
                                          (lowStart->z + highStart->z) * 0.5F};
-            const Math::Vector3UVE end{(lowEnd->x + highEnd->x) * 0.5F, (lowEnd->y + highEnd->y) * 0.5F,
+            const Math::Vector3 end{(lowEnd->x + highEnd->x) * 0.5F, (lowEnd->y + highEnd->y) * 0.5F,
                                        (lowEnd->z + highEnd->z) * 0.5F};
 
             // Both directions are stored, each with its own left/right: a portal walked the other way
             // round has its sides the other way round too, and making every reader re-derive that is
             // how a funnel ends up hugging the wrong corner.
-            const auto appendPortalUVE = [&outMesh, &portalsPerPolygon](const std::uint32_t from, const std::uint32_t to,
-                                                                        const Math::Vector3UVE& left,
-                                                                        const Math::Vector3UVE& right) {
-                NavmeshPortalUVE portal{};
+            const auto appendPortal = [&outMesh, &portalsPerPolygon](const std::uint32_t from, const std::uint32_t to,
+                                                                        const Math::Vector3& left,
+                                                                        const Math::Vector3& right) {
+                NavmeshPortal portal{};
                 portal.from = from;
                 portal.to = to;
                 portal.left = left;
@@ -511,11 +511,11 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
                 (outMesh.polygons[highPolygon].center.z - outMesh.polygons[lowPolygon].center.z) *
                     (start.x - outMesh.polygons[lowPolygon].center.x);
             if (lowToHighSide >= 0.0F) {
-                appendPortalUVE(lowPolygon, highPolygon, start, end);
-                appendPortalUVE(highPolygon, lowPolygon, end, start);
+                appendPortal(lowPolygon, highPolygon, start, end);
+                appendPortal(highPolygon, lowPolygon, end, start);
             } else {
-                appendPortalUVE(lowPolygon, highPolygon, end, start);
-                appendPortalUVE(highPolygon, lowPolygon, start, end);
+                appendPortal(lowPolygon, highPolygon, end, start);
+                appendPortal(highPolygon, lowPolygon, start, end);
             }
             ++report.portalCount;
         }
@@ -523,12 +523,12 @@ NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
 
     // A polygon's portals are flattened into one contiguous window, because that is what A* walks:
     // a search step enumerates `polygons[from].portals` without following indices anywhere else.
-    std::vector<NavmeshPortalUVE> ordered;
+    std::vector<NavmeshPortal> ordered;
     ordered.reserve(outMesh.portals.size());
     for (std::size_t polygonIndex = 0U; polygonIndex < outMesh.polygons.size(); ++polygonIndex) {
         std::vector<std::uint32_t>& indices = portalsPerPolygon[polygonIndex];
         std::sort(indices.begin(), indices.end());
-        NavmeshPolygonUVE& polygon = outMesh.polygons[polygonIndex];
+        NavmeshPolygon& polygon = outMesh.polygons[polygonIndex];
         polygon.firstPortal = static_cast<std::uint32_t>(ordered.size());
         polygon.portalCount = static_cast<std::uint32_t>(indices.size());
         for (const std::uint32_t portalIndex : indices) {

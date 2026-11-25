@@ -53,7 +53,7 @@ namespace {
     }
 }
 
-[[nodiscard]] bool UnfilterPngScanlineUVE(const PngFilterTypeUVE filter,
+[[nodiscard]] bool UnfilterPngScanline(const PngFilterType filter,
                                            const std::vector<std::byte>& filteredBytes,
                                            const std::vector<std::byte>& previousRow,
                                            const std::size_t bytesPerPixel,
@@ -61,7 +61,7 @@ namespace {
     // An empty previous row is the image's first scanline, which the PNG specification reconstructs
     // against a row of zeros - so Up, Average and Paeth are as valid there as anywhere, and encoders
     // do choose them (every browser-written PNG tried starts with one).
-    if (bytesPerPixel == 0U || filteredBytes.empty() || filteredBytes.size() > kMaximumPngRgba8ScanlineBytesUVE ||
+    if (bytesPerPixel == 0U || filteredBytes.empty() || filteredBytes.size() > kMaximumPngRgba8ScanlineBytes ||
         (!previousRow.empty() && previousRow.size() != filteredBytes.size())) {
         return false;
     }
@@ -87,19 +87,19 @@ namespace {
                 0U : byteAt(previousRow, index - bytesPerPixel);
             unsigned int predictor = 0U;
             switch (filter) {
-                case PngFilterTypeUVE::None:
+                case PngFilterType::None:
                     predictor = 0U;
                     break;
-                case PngFilterTypeUVE::Sub:
+                case PngFilterType::Sub:
                     predictor = left;
                     break;
-                case PngFilterTypeUVE::Up:
+                case PngFilterType::Up:
                     predictor = up;
                     break;
-                case PngFilterTypeUVE::Average:
+                case PngFilterType::Average:
                     predictor = (left + up) / 2U;
                     break;
-                case PngFilterTypeUVE::Paeth:
+                case PngFilterType::Paeth:
                     predictor = paeth(left, up, upperLeft);
                     break;
                 default:
@@ -117,7 +117,7 @@ namespace {
 
 } // namespace
 
-std::optional<PngMetadataUVE> ParsePngMetadataUVE(const std::vector<std::byte>& bytes) {
+std::optional<PngMetadata> ParsePngMetadata(const std::vector<std::byte>& bytes) {
     constexpr std::size_t kSignatureBytes = 8U;
     constexpr std::size_t kChunkHeaderBytes = 8U;
     constexpr std::size_t kIhdrPayloadBytes = 13U;
@@ -131,7 +131,7 @@ std::optional<PngMetadataUVE> ParsePngMetadataUVE(const std::vector<std::byte>& 
         return std::nullopt;
     }
     const std::size_t payloadOffset = chunkOffset + kChunkHeaderBytes;
-    PngMetadataUVE metadata;
+    PngMetadata metadata;
     metadata.width = ReadU32BE(bytes, payloadOffset);
     metadata.height = ReadU32BE(bytes, payloadOffset + 4U);
     metadata.bitDepth = std::to_integer<std::uint8_t>(bytes[payloadOffset + 8U]);
@@ -147,14 +147,14 @@ std::optional<PngMetadataUVE> ParsePngMetadataUVE(const std::vector<std::byte>& 
     return metadata;
 }
 
-bool UnfilterPngRgba8ScanlineUVE(const PngFilterTypeUVE filter,
+bool UnfilterPngRgba8Scanline(const PngFilterType filter,
                                     const std::vector<std::byte>& filteredBytes,
                                     const std::vector<std::byte>& previousRow,
                                     std::vector<std::byte>& outRow) {
-    return UnfilterPngScanlineUVE(filter, filteredBytes, previousRow, 4U, outRow);
+    return UnfilterPngScanline(filter, filteredBytes, previousRow, 4U, outRow);
 }
 
-bool ValidatePngRgba8PixelBudgetUVE(const PngMetadataUVE& metadata,
+bool ValidatePngRgba8PixelBudget(const PngMetadata& metadata,
                                     const std::uint64_t maximumBytes) noexcept {
     const bool supportedPackedGray = metadata.bitDepth >= 1U && metadata.bitDepth <= 4U && metadata.colorType == 0U;
     const bool supportedPackedIndexed = metadata.bitDepth >= 1U && metadata.bitDepth <= 4U && metadata.colorType == 3U;
@@ -178,9 +178,9 @@ bool ValidatePngRgba8PixelBudgetUVE(const PngMetadataUVE& metadata,
     return pixelCount * kBytesPerRgba8Pixel <= maximumBytes;
 }
 
-bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUVE& outImage) noexcept {
+bool DecodePngRgba8Image(const std::vector<std::byte>& bytes, PngRgba8Image& outImage) noexcept {
     try {
-        const auto metadata = ParsePngMetadataUVE(bytes);
+        const auto metadata = ParsePngMetadata(bytes);
         if (!metadata.has_value()) {
             return false;
         }
@@ -202,7 +202,7 @@ bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUV
                                       (metadata->colorType == 0U || metadata->colorType == 2U ||
                                        metadata->colorType == 4U || metadata->colorType == 6U)));
         if (!(supportedPackedGray || supportedPackedIndexed || supportedEightBit || supportedSixteenBit) ||
-            (metadata->interlaceMethod != 0U && !supportedAdam7) || !ValidatePngRgba8PixelBudgetUVE(*metadata)) {
+            (metadata->interlaceMethod != 0U && !supportedAdam7) || !ValidatePngRgba8PixelBudget(*metadata)) {
             return false;
         }
         constexpr std::size_t kSignatureBytes = 8U;
@@ -282,9 +282,9 @@ bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUV
                     return false;
                 }
             } else if (HasBytes(bytes, typeOffset, {'I', 'D', 'A', 'T'})) {
-                if (compressed.size() > kMaximumPngDecodedPixelBytesUVE -
-                                       std::min<std::size_t>(compressed.size(), kMaximumPngDecodedPixelBytesUVE) ||
-                    payloadLength > kMaximumPngDecodedPixelBytesUVE - compressed.size()) {
+                if (compressed.size() > kMaximumPngDecodedPixelBytes -
+                                       std::min<std::size_t>(compressed.size(), kMaximumPngDecodedPixelBytes) ||
+                    payloadLength > kMaximumPngDecodedPixelBytes - compressed.size()) {
                     return false;
                 }
                 compressed.insert(compressed.end(), bytes.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
@@ -361,11 +361,11 @@ bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUV
             if (width == 0U || height == 0U) continue;
             std::uint64_t rowBytes = static_cast<std::uint64_t>(sourceRowBytesForWidth(width));
             std::uint64_t passBytes = 0U;
-            if (rowBytes > kMaximumPngRgba8ScanlineBytesUVE ||
+            if (rowBytes > kMaximumPngRgba8ScanlineBytes ||
                 !checkedAdd(rowBytes, 1U, rowBytes) ||
                 !checkedMultiply(rowBytes, static_cast<std::uint64_t>(height), passBytes) ||
                 !checkedAdd(inflatedBytes64, passBytes, inflatedBytes64) ||
-                inflatedBytes64 > kMaximumPngDecodedPixelBytesUVE) {
+                inflatedBytes64 > kMaximumPngDecodedPixelBytes) {
                 return false;
             }
         }
@@ -387,11 +387,11 @@ bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUV
             std::vector<std::byte> previousRow;
             for (std::size_t row = 0U; row < passHeightValue; ++row) {
                 const std::size_t rowOffset = inflatedOffset + row * (sourceRowBytes + 1U);
-                const auto filter = static_cast<PngFilterTypeUVE>(std::to_integer<std::uint8_t>(inflated[rowOffset]));
+                const auto filter = static_cast<PngFilterType>(std::to_integer<std::uint8_t>(inflated[rowOffset]));
                 const std::vector<std::byte> filtered(inflated.begin() + static_cast<std::ptrdiff_t>(rowOffset + 1U),
                                                        inflated.begin() + static_cast<std::ptrdiff_t>(rowOffset + 1U + sourceRowBytes));
                 std::vector<std::byte> decodedRow;
-                if (!UnfilterPngScanlineUVE(filter, filtered, previousRow, sourceBytesPerPixel, decodedRow)) return false;
+                if (!UnfilterPngScanline(filter, filtered, previousRow, sourceBytesPerPixel, decodedRow)) return false;
                 for (std::size_t x = 0U; x < passWidthValue; ++x) {
                     const std::size_t sourceOffset = x * sourceBytesPerPixel;
                     const std::size_t outputX = startX + x * stepX;
@@ -568,7 +568,7 @@ bool DecodePngRgba8ImageUVE(const std::vector<std::byte>& bytes, PngRgba8ImageUV
             const std::size_t stepY = metadata->interlaceMethod == 1U ? kAdam7StepY[pass] : 1U;
             if (!decodePass(width, height, startX, startY, stepX, stepY)) return false;
         }
-        PngRgba8ImageUVE image;
+        PngRgba8Image image;
         image.width = metadata->width;
         image.height = metadata->height;
         image.pixels = std::move(pixels);

@@ -6,57 +6,57 @@
 
 namespace UVE::Scene::Tests {
 
-TEST(GameplayTagsUVETest, AddHasRemove_RoundTrips) {
-    GameplayTagComponentUVE tags;
-    EXPECT_FALSE(HasGameplayTagUVE(tags, "undead"));
-    EXPECT_TRUE(AddGameplayTagUVE(tags, "undead"));
-    EXPECT_TRUE(HasGameplayTagUVE(tags, "undead"));
-    EXPECT_FALSE(AddGameplayTagUVE(tags, "undead"));
-    EXPECT_TRUE(RemoveGameplayTagUVE(tags, "undead"));
-    EXPECT_FALSE(HasGameplayTagUVE(tags, "undead"));
-    EXPECT_FALSE(RemoveGameplayTagUVE(tags, "undead"));
+TEST(GameplayTagsTest, AddHasRemove_RoundTrips) {
+    GameplayTagComponent tags;
+    EXPECT_FALSE(HasGameplayTag(tags, "undead"));
+    EXPECT_TRUE(AddGameplayTag(tags, "undead"));
+    EXPECT_TRUE(HasGameplayTag(tags, "undead"));
+    EXPECT_FALSE(AddGameplayTag(tags, "undead"));
+    EXPECT_TRUE(RemoveGameplayTag(tags, "undead"));
+    EXPECT_FALSE(HasGameplayTag(tags, "undead"));
+    EXPECT_FALSE(RemoveGameplayTag(tags, "undead"));
 }
 
-TEST(GameplayTagsUVETest, Add_RejectsBadTagsAndOverflow) {
-    GameplayTagComponentUVE tags;
-    EXPECT_FALSE(AddGameplayTagUVE(tags, ""));
-    EXPECT_FALSE(AddGameplayTagUVE(tags, std::string(49U, 'x')));
-    for (std::size_t index = 0U; index < kMaximumGameplayTagsUVE; ++index) {
-        EXPECT_TRUE(AddGameplayTagUVE(tags, "tag" + std::to_string(index)));
+TEST(GameplayTagsTest, Add_RejectsBadTagsAndOverflow) {
+    GameplayTagComponent tags;
+    EXPECT_FALSE(AddGameplayTag(tags, ""));
+    EXPECT_FALSE(AddGameplayTag(tags, std::string(49U, 'x')));
+    for (std::size_t index = 0U; index < kMaximumGameplayTags; ++index) {
+        EXPECT_TRUE(AddGameplayTag(tags, "tag" + std::to_string(index)));
     }
-    EXPECT_FALSE(AddGameplayTagUVE(tags, "overflow"));
+    EXPECT_FALSE(AddGameplayTag(tags, "overflow"));
 }
 
-TEST(GameplayTagsUVETest, HasAllAndHasAny_MatchSetSemantics) {
-    GameplayTagComponentUVE tags;
-    ASSERT_TRUE(AddGameplayTagUVE(tags, "undead"));
-    ASSERT_TRUE(AddGameplayTagUVE(tags, "boss"));
-    EXPECT_TRUE(HasAllGameplayTagsUVE(tags, {"undead", "boss"}));
-    EXPECT_FALSE(HasAllGameplayTagsUVE(tags, {"undead", "flammable"}));
-    EXPECT_TRUE(HasAllGameplayTagsUVE(tags, {}));
-    EXPECT_TRUE(HasAnyGameplayTagUVE(tags, {"flammable", "boss"}));
-    EXPECT_FALSE(HasAnyGameplayTagUVE(tags, {"flammable", "flying"}));
-    EXPECT_FALSE(HasAnyGameplayTagUVE(tags, {}));
+TEST(GameplayTagsTest, HasAllAndHasAny_MatchSetSemantics) {
+    GameplayTagComponent tags;
+    ASSERT_TRUE(AddGameplayTag(tags, "undead"));
+    ASSERT_TRUE(AddGameplayTag(tags, "boss"));
+    EXPECT_TRUE(HasAllGameplayTags(tags, {"undead", "boss"}));
+    EXPECT_FALSE(HasAllGameplayTags(tags, {"undead", "flammable"}));
+    EXPECT_TRUE(HasAllGameplayTags(tags, {}));
+    EXPECT_TRUE(HasAnyGameplayTag(tags, {"flammable", "boss"}));
+    EXPECT_FALSE(HasAnyGameplayTag(tags, {"flammable", "flying"}));
+    EXPECT_FALSE(HasAnyGameplayTag(tags, {}));
 }
 
-TEST(GameplayTagsUVETest, Validity_RejectsDuplicatesBadTagsAndOverflow) {
-    GameplayTagComponentUVE good;
-    ASSERT_TRUE(AddGameplayTagUVE(good, "undead"));
-    EXPECT_TRUE(IsGameplayTagComponentValidUVE(good));
+TEST(GameplayTagsTest, Validity_RejectsDuplicatesBadTagsAndOverflow) {
+    GameplayTagComponent good;
+    ASSERT_TRUE(AddGameplayTag(good, "undead"));
+    EXPECT_TRUE(IsGameplayTagComponentValid(good));
 
-    GameplayTagComponentUVE duplicate = good;
+    GameplayTagComponent duplicate = good;
     duplicate.tags.push_back("undead");
-    EXPECT_FALSE(IsGameplayTagComponentValidUVE(duplicate));
+    EXPECT_FALSE(IsGameplayTagComponentValid(duplicate));
 
-    GameplayTagComponentUVE empty;
+    GameplayTagComponent empty;
     empty.tags.emplace_back("");
-    EXPECT_FALSE(IsGameplayTagComponentValidUVE(empty));
+    EXPECT_FALSE(IsGameplayTagComponentValid(empty));
 
-    GameplayTagComponentUVE overfull;
-    for (std::size_t index = 0U; index <= kMaximumGameplayTagsUVE; ++index) {
+    GameplayTagComponent overfull;
+    for (std::size_t index = 0U; index <= kMaximumGameplayTags; ++index) {
         overfull.tags.push_back("t" + std::to_string(index));
     }
-    EXPECT_FALSE(IsGameplayTagComponentValidUVE(overfull));
+    EXPECT_FALSE(IsGameplayTagComponentValid(overfull));
 }
 
 } // namespace UVE::Scene::Tests

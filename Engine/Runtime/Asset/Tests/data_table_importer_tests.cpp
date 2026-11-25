@@ -20,123 +20,123 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteTextUVE(const std::filesystem::path& path, const std::string& document) {
+void WriteText(const std::filesystem::path& path, const std::string& document) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(output.is_open());
     output << document;
 }
 
-class TemporaryImporterFilesUVE final {
+class TemporaryImporterFiles final {
 public:
-    TemporaryImporterFilesUVE() {
+    TemporaryImporterFiles() {
         m_paths = {
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.csv",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.tsv",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer.json",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_csv.uvtable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_tsv.uvtable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_json.uvtable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_bad.uvtable",
-            ::UVE::Tests::ScratchRootUVE() / "uve_data_table_importer_wrong.txt",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer.csv",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer.tsv",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer.json",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer_csv.uvtable",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer_tsv.uvtable",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer_json.uvtable",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer_bad.uvtable",
+            ::UVE::Tests::ScratchRoot() / "uve_data_table_importer_wrong.txt",
         };
         for (const std::filesystem::path& path : m_paths) {
             static_cast<void>(std::filesystem::remove(path));
         }
     }
-    TemporaryImporterFilesUVE(const TemporaryImporterFilesUVE&) = delete;
-    TemporaryImporterFilesUVE& operator=(const TemporaryImporterFilesUVE&) = delete;
-    ~TemporaryImporterFilesUVE() {
+    TemporaryImporterFiles(const TemporaryImporterFiles&) = delete;
+    TemporaryImporterFiles& operator=(const TemporaryImporterFiles&) = delete;
+    ~TemporaryImporterFiles() {
         for (const std::filesystem::path& path : m_paths) {
             static_cast<void>(std::filesystem::remove(path));
         }
     }
 
-    [[nodiscard]] const std::filesystem::path& CsvUVE() const noexcept { return m_paths[0]; }
-    [[nodiscard]] const std::filesystem::path& TsvUVE() const noexcept { return m_paths[1]; }
-    [[nodiscard]] const std::filesystem::path& JsonUVE() const noexcept { return m_paths[2]; }
-    [[nodiscard]] const std::filesystem::path& CsvDestinationUVE() const noexcept { return m_paths[3]; }
-    [[nodiscard]] const std::filesystem::path& TsvDestinationUVE() const noexcept { return m_paths[4]; }
-    [[nodiscard]] const std::filesystem::path& JsonDestinationUVE() const noexcept { return m_paths[5]; }
-    [[nodiscard]] const std::filesystem::path& BadDestinationUVE() const noexcept { return m_paths[6]; }
-    [[nodiscard]] const std::filesystem::path& WrongDestinationUVE() const noexcept { return m_paths[7]; }
+    [[nodiscard]] const std::filesystem::path& Csv() const noexcept { return m_paths[0]; }
+    [[nodiscard]] const std::filesystem::path& Tsv() const noexcept { return m_paths[1]; }
+    [[nodiscard]] const std::filesystem::path& Json() const noexcept { return m_paths[2]; }
+    [[nodiscard]] const std::filesystem::path& CsvDestination() const noexcept { return m_paths[3]; }
+    [[nodiscard]] const std::filesystem::path& TsvDestination() const noexcept { return m_paths[4]; }
+    [[nodiscard]] const std::filesystem::path& JsonDestination() const noexcept { return m_paths[5]; }
+    [[nodiscard]] const std::filesystem::path& BadDestination() const noexcept { return m_paths[6]; }
+    [[nodiscard]] const std::filesystem::path& WrongDestination() const noexcept { return m_paths[7]; }
 
 private:
     std::vector<std::filesystem::path> m_paths;
 };
 
-[[nodiscard]] DataTableImportSettingsUVE MakeSettingsUVE() {
-    DataTableImportSettingsUVE settings;
+[[nodiscard]] DataTableImportSettings MakeSettings() {
+    DataTableImportSettings settings;
     settings.tableName = "weapons";
     settings.columns = {
-        DataTableColumnUVE{"damage", DataTableColumnTypeUVE::Integer},
-        DataTableColumnUVE{"enabled", DataTableColumnTypeUVE::Boolean},
-        DataTableColumnUVE{"label", DataTableColumnTypeUVE::String},
+        DataTableColumn{"damage", DataTableColumnType::Integer},
+        DataTableColumn{"enabled", DataTableColumnType::Boolean},
+        DataTableColumn{"label", DataTableColumnType::String},
     };
     return settings;
 }
 
-TEST(DataTableImporterUVE, RegistersCsvTsvAndJsonImportersWithTypedDestinations) {
-    const TemporaryImporterFilesUVE files;
-    WriteTextUVE(files.CsvUVE(), "id,damage,enabled,label\npistol,25,true,Pistol\n");
-    WriteTextUVE(files.TsvUVE(), "id\tdamage\tenabled\tlabel\npistol\t25\ttrue\tPistol\n");
-    WriteTextUVE(files.JsonUVE(), R"([{"label":"Pistol","enabled":true,"damage":25,"id":"pistol"}])");
+TEST(DataTableImporter, RegistersCsvTsvAndJsonImportersWithTypedDestinations) {
+    const TemporaryImporterFiles files;
+    WriteText(files.Csv(), "id,damage,enabled,label\npistol,25,true,Pistol\n");
+    WriteText(files.Tsv(), "id\tdamage\tenabled\tlabel\npistol\t25\ttrue\tPistol\n");
+    WriteText(files.Json(), R"([{"label":"Pistol","enabled":true,"damage":25,"id":"pistol"}])");
 
-    AssetImporterUVE importer;
-    RegisterDataTableImportersUVE(importer);
-    AssetDatabaseUVE database;
-    const DataTableImportSettingsUVE settings = MakeSettingsUVE();
+    AssetImporter importer;
+    RegisterDataTableImporters(importer);
+    AssetDatabase database;
+    const DataTableImportSettings settings = MakeSettings();
 
-    const AssetGuidUVE csvGuid = importer.ImportUVE(files.CsvUVE(), files.CsvDestinationUVE(), database, settings);
-    const AssetGuidUVE tsvGuid = importer.ImportUVE(files.TsvUVE(), files.TsvDestinationUVE(), database, settings);
-    const AssetGuidUVE jsonGuid = importer.ImportUVE(files.JsonUVE(), files.JsonDestinationUVE(), database, settings);
-    ASSERT_NE(csvGuid, kInvalidAssetGuidUVE);
-    ASSERT_NE(tsvGuid, kInvalidAssetGuidUVE);
-    ASSERT_NE(jsonGuid, kInvalidAssetGuidUVE);
+    const AssetGuid csvGuid = importer.Import(files.Csv(), files.CsvDestination(), database, settings);
+    const AssetGuid tsvGuid = importer.Import(files.Tsv(), files.TsvDestination(), database, settings);
+    const AssetGuid jsonGuid = importer.Import(files.Json(), files.JsonDestination(), database, settings);
+    ASSERT_NE(csvGuid, kInvalidAssetGuid);
+    ASSERT_NE(tsvGuid, kInvalidAssetGuid);
+    ASSERT_NE(jsonGuid, kInvalidAssetGuid);
 
-    DataTableUVE csv;
-    DataTableUVE tsv;
-    DataTableUVE json;
-    ASSERT_TRUE(LoadDataTableAssetUVE(files.CsvDestinationUVE(), csv));
-    ASSERT_TRUE(LoadDataTableAssetUVE(files.TsvDestinationUVE(), tsv));
-    ASSERT_TRUE(LoadDataTableAssetUVE(files.JsonDestinationUVE(), json));
-    EXPECT_EQ(csv.GetSnapshotUVE().rows.front().values, tsv.GetSnapshotUVE().rows.front().values);
-    EXPECT_EQ(tsv.GetSnapshotUVE().rows.front().values, json.GetSnapshotUVE().rows.front().values);
-    EXPECT_EQ(database.ResolveUVE(csvGuid), files.CsvDestinationUVE().lexically_normal());
-    EXPECT_EQ(database.GetRegisteredAssetsUVE().size(), 3U);
+    DataTable csv;
+    DataTable tsv;
+    DataTable json;
+    ASSERT_TRUE(LoadDataTableAsset(files.CsvDestination(), csv));
+    ASSERT_TRUE(LoadDataTableAsset(files.TsvDestination(), tsv));
+    ASSERT_TRUE(LoadDataTableAsset(files.JsonDestination(), json));
+    EXPECT_EQ(csv.GetSnapshot().rows.front().values, tsv.GetSnapshot().rows.front().values);
+    EXPECT_EQ(tsv.GetSnapshot().rows.front().values, json.GetSnapshot().rows.front().values);
+    EXPECT_EQ(database.Resolve(csvGuid), files.CsvDestination().lexically_normal());
+    EXPECT_EQ(database.GetRegisteredAssets().size(), 3U);
 }
 
-TEST(DataTableImporterUVE, RejectsOverCapSourceBeforeTypedParseAndPublish) {
-    const TemporaryImporterFilesUVE files;
-    const std::string oversized(DataTableUVE::kMaximumDocumentBytesUVE + 1U, 'x');
-    WriteTextUVE(files.CsvUVE(), oversized);
+TEST(DataTableImporter, RejectsOverCapSourceBeforeTypedParseAndPublish) {
+    const TemporaryImporterFiles files;
+    const std::string oversized(DataTable::kMaximumDocumentBytes + 1U, 'x');
+    WriteText(files.Csv(), oversized);
 
-    AssetImporterUVE importer;
-    RegisterDataTableImportersUVE(importer);
-    AssetDatabaseUVE database;
+    AssetImporter importer;
+    RegisterDataTableImporters(importer);
+    AssetDatabase database;
 
-    EXPECT_EQ(importer.ImportUVE(files.CsvUVE(), files.CsvDestinationUVE(), database, MakeSettingsUVE()),
-              kInvalidAssetGuidUVE);
-    EXPECT_FALSE(std::filesystem::exists(files.CsvDestinationUVE()));
-    EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
+    EXPECT_EQ(importer.Import(files.Csv(), files.CsvDestination(), database, MakeSettings()),
+              kInvalidAssetGuid);
+    EXPECT_FALSE(std::filesystem::exists(files.CsvDestination()));
+    EXPECT_TRUE(database.GetRegisteredAssets().empty());
 }
 
-TEST(DataTableImporterUVE, RejectsMalformedSourceMissingSchemaAndWrongDestinationWithoutRegistration) {
-    const TemporaryImporterFilesUVE files;
-    WriteTextUVE(files.CsvUVE(), "id,damage,enabled,label\npistol,not-an-integer,true,Pistol\n");
-    AssetImporterUVE importer;
-    RegisterDataTableImportersUVE(importer);
-    AssetDatabaseUVE database;
-    const AssetImportSettingsUVE genericSettings;
-    const DataTableImportSettingsUVE settings = MakeSettingsUVE();
+TEST(DataTableImporter, RejectsMalformedSourceMissingSchemaAndWrongDestinationWithoutRegistration) {
+    const TemporaryImporterFiles files;
+    WriteText(files.Csv(), "id,damage,enabled,label\npistol,not-an-integer,true,Pistol\n");
+    AssetImporter importer;
+    RegisterDataTableImporters(importer);
+    AssetDatabase database;
+    const AssetImportSettings genericSettings;
+    const DataTableImportSettings settings = MakeSettings();
 
-    EXPECT_EQ(importer.ImportUVE(files.CsvUVE(), files.BadDestinationUVE(), database, settings), kInvalidAssetGuidUVE);
-    EXPECT_EQ(importer.ImportUVE(files.CsvUVE(), files.CsvDestinationUVE(), database, genericSettings),
-              kInvalidAssetGuidUVE);
-    EXPECT_EQ(importer.ImportUVE(files.CsvUVE(), files.WrongDestinationUVE(), database, settings),
-              kInvalidAssetGuidUVE);
-    EXPECT_FALSE(std::filesystem::exists(files.BadDestinationUVE()));
-    EXPECT_FALSE(std::filesystem::exists(files.CsvDestinationUVE()));
-    EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
+    EXPECT_EQ(importer.Import(files.Csv(), files.BadDestination(), database, settings), kInvalidAssetGuid);
+    EXPECT_EQ(importer.Import(files.Csv(), files.CsvDestination(), database, genericSettings),
+              kInvalidAssetGuid);
+    EXPECT_EQ(importer.Import(files.Csv(), files.WrongDestination(), database, settings),
+              kInvalidAssetGuid);
+    EXPECT_FALSE(std::filesystem::exists(files.BadDestination()));
+    EXPECT_FALSE(std::filesystem::exists(files.CsvDestination()));
+    EXPECT_TRUE(database.GetRegisteredAssets().empty());
 }
 
 } // namespace
@@ -145,26 +145,26 @@ TEST(DataTableImporterUVE, RejectsMalformedSourceMissingSchemaAndWrongDestinatio
 
 namespace UVE::Asset::Tests {
 
-TEST(DataTableImportSettingsUVE, CacheVersionIsDeterministicAndSchemaSensitive) {
-    DataTableImportSettingsUVE first;
+TEST(DataTableImportSettings, CacheVersionIsDeterministicAndSchemaSensitive) {
+    DataTableImportSettings first;
     first.tableName = "items";
     first.columns = {
-        DataTableColumnUVE{"label", DataTableColumnTypeUVE::String},
-        DataTableColumnUVE{"count", DataTableColumnTypeUVE::Integer},
+        DataTableColumn{"label", DataTableColumnType::String},
+        DataTableColumn{"count", DataTableColumnType::Integer},
     };
-    const DataTableImportSettingsUVE same = first;
-    DataTableImportSettingsUVE reordered = first;
+    const DataTableImportSettings same = first;
+    DataTableImportSettings reordered = first;
     std::swap(reordered.columns[0], reordered.columns[1]);
-    DataTableImportSettingsUVE renamed = first;
+    DataTableImportSettings renamed = first;
     renamed.tableName = "other_items";
-    DataTableImportSettingsUVE retyped = first;
-    retyped.columns[1].type = DataTableColumnTypeUVE::Number;
+    DataTableImportSettings retyped = first;
+    retyped.columns[1].type = DataTableColumnType::Number;
 
-    EXPECT_EQ(first.GetCacheVersionUVE(), same.GetCacheVersionUVE());
-    EXPECT_NE(first.GetCacheVersionUVE(), reordered.GetCacheVersionUVE());
-    EXPECT_NE(first.GetCacheVersionUVE(), renamed.GetCacheVersionUVE());
-    EXPECT_NE(first.GetCacheVersionUVE(), retyped.GetCacheVersionUVE());
-    EXPECT_EQ(first.GetCacheVersionUVE().size(), std::string{"data-table-import-v2-"}.size() + 16U);
+    EXPECT_EQ(first.GetCacheVersion(), same.GetCacheVersion());
+    EXPECT_NE(first.GetCacheVersion(), reordered.GetCacheVersion());
+    EXPECT_NE(first.GetCacheVersion(), renamed.GetCacheVersion());
+    EXPECT_NE(first.GetCacheVersion(), retyped.GetCacheVersion());
+    EXPECT_EQ(first.GetCacheVersion().size(), std::string{"data-table-import-v2-"}.size() + 16U);
 }
 
 } // namespace UVE::Asset::Tests

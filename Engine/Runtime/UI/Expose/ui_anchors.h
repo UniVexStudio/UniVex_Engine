@@ -3,11 +3,11 @@
 #pragma once
 
 namespace UVE::Math {
-struct Vector2UVE;
+struct Vector2;
 }
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::UI {
@@ -28,6 +28,6 @@ namespace UVE::UI {
 /// any positioned component are skipped, and an invalid anchor component is skipped fail-closed.
 /// Runs before the stack/grid pass, which then overwrites container children's positions - for
 /// those widgets anchors contribute size, the container contributes position.
-void ResolveUIAnchorsUVE(Scene::IEntityManagerUVE& entityManager, const Math::Vector2UVE& viewportSize);
+void ResolveUIAnchors(Scene::IEntityManager& entityManager, const Math::Vector2& viewportSize);
 
 } // namespace UVE::UI

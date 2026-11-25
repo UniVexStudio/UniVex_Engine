@@ -9,28 +9,28 @@
 
 namespace UVE::Asset {
 
-enum class DataTableColumnTypeUVE : std::uint8_t {
+enum class DataTableColumnType : std::uint8_t {
     Boolean = 0,
     Integer,
     Number,
     String,
 };
 
-using DataTableValueUVE = std::variant<bool, std::int64_t, double, std::string>;
+using DataTableValue = std::variant<bool, std::int64_t, double, std::string>;
 
-struct DataTableColumnUVE final {
+struct DataTableColumn final {
     std::string name;
-    DataTableColumnTypeUVE type = DataTableColumnTypeUVE::String;
-    [[nodiscard]] bool operator==(const DataTableColumnUVE&) const = default;
+    DataTableColumnType type = DataTableColumnType::String;
+    [[nodiscard]] bool operator==(const DataTableColumn&) const = default;
 };
 
-struct DataTableRowUVE final {
+struct DataTableRow final {
     std::string identifier;
-    std::vector<DataTableValueUVE> values;
-    [[nodiscard]] bool operator==(const DataTableRowUVE&) const = default;
+    std::vector<DataTableValue> values;
+    [[nodiscard]] bool operator==(const DataTableRow&) const = default;
 };
 
-enum class DataTableDiagnosticCodeUVE : std::uint8_t {
+enum class DataTableDiagnosticCode : std::uint8_t {
     InvalidDocument = 0,
     InvalidHeader,
     HeaderMismatch,
@@ -41,126 +41,126 @@ enum class DataTableDiagnosticCodeUVE : std::uint8_t {
     LimitExceeded,
 };
 
-struct DataTableDiagnosticUVE final {
-    DataTableDiagnosticCodeUVE code = DataTableDiagnosticCodeUVE::InvalidDocument;
+struct DataTableDiagnostic final {
+    DataTableDiagnosticCode code = DataTableDiagnosticCode::InvalidDocument;
     std::size_t line = 0U;
     std::size_t column = 0U;
     std::string message;
-    [[nodiscard]] bool operator==(const DataTableDiagnosticUVE&) const = default;
+    [[nodiscard]] bool operator==(const DataTableDiagnostic&) const = default;
 };
 
-struct DataTableSnapshotUVE final {
+struct DataTableSnapshot final {
     std::uint64_t generation = 0U;
     std::string name;
-    std::vector<DataTableColumnUVE> columns;
-    std::vector<DataTableRowUVE> rows;
-    std::vector<DataTableDiagnosticUVE> diagnostics;
+    std::vector<DataTableColumn> columns;
+    std::vector<DataTableRow> rows;
+    std::vector<DataTableDiagnostic> diagnostics;
     bool diagnosticsTruncated = false;
-    [[nodiscard]] bool operator==(const DataTableSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const DataTableSnapshot&) const = default;
 };
 
-class DataTableCsvImporterUVE;
-class DataTableTsvImporterUVE;
-class DataTableJsonImporterUVE;
+class DataTableCsvImporter;
+class DataTableTsvImporter;
+class DataTableJsonImporter;
 
-class DataTableUVE final {
+class DataTable final {
 public:
-    static constexpr std::size_t kMaximumColumnsUVE = 256U;
-    static constexpr std::size_t kMaximumRowsUVE = 65536U;
-    static constexpr std::size_t kMaximumIdentifierBytesUVE = 64U;
-    static constexpr std::size_t kMaximumStringBytesUVE = 1024U;
-    static constexpr std::size_t kMaximumDocumentBytesUVE = 4U * 1024U * 1024U;
-    static constexpr std::size_t kMaximumDiagnosticsUVE = 128U;
+    static constexpr std::size_t kMaximumColumns = 256U;
+    static constexpr std::size_t kMaximumRows = 65536U;
+    static constexpr std::size_t kMaximumIdentifierBytes = 64U;
+    static constexpr std::size_t kMaximumStringBytes = 1024U;
+    static constexpr std::size_t kMaximumDocumentBytes = 4U * 1024U * 1024U;
+    static constexpr std::size_t kMaximumDiagnostics = 128U;
 
-    explicit DataTableUVE(std::string name = {});
-    DataTableUVE(const DataTableUVE&) = default;
-    DataTableUVE& operator=(const DataTableUVE&) = default;
-    DataTableUVE(DataTableUVE&&) noexcept = default;
-    DataTableUVE& operator=(DataTableUVE&&) noexcept = default;
-    ~DataTableUVE() = default;
+    explicit DataTable(std::string name = {});
+    DataTable(const DataTable&) = default;
+    DataTable& operator=(const DataTable&) = default;
+    DataTable(DataTable&&) noexcept = default;
+    DataTable& operator=(DataTable&&) noexcept = default;
+    ~DataTable() = default;
 
-    [[nodiscard]] bool DefineColumnUVE(std::string name, DataTableColumnTypeUVE type);
-    [[nodiscard]] bool AddRowUVE(std::string identifier, std::vector<DataTableValueUVE> values);
-    [[nodiscard]] bool ClearRowsUVE() noexcept;
-    [[nodiscard]] bool ImportCsvUVE(std::string_view document);
-    [[nodiscard]] bool ImportTsvUVE(std::string_view document);
-    [[nodiscard]] bool ImportJsonUVE(std::string_view document);
-    [[nodiscard]] std::size_t GetResidentBytesUVE() const noexcept;
-    [[nodiscard]] DataTableSnapshotUVE GetSnapshotUVE() const;
-    [[nodiscard]] const DataTableRowUVE* FindRowUVE(std::string_view identifier) const noexcept;
+    [[nodiscard]] bool DefineColumn(std::string name, DataTableColumnType type);
+    [[nodiscard]] bool AddRow(std::string identifier, std::vector<DataTableValue> values);
+    [[nodiscard]] bool ClearRows() noexcept;
+    [[nodiscard]] bool ImportCsv(std::string_view document);
+    [[nodiscard]] bool ImportTsv(std::string_view document);
+    [[nodiscard]] bool ImportJson(std::string_view document);
+    [[nodiscard]] std::size_t GetResidentBytes() const noexcept;
+    [[nodiscard]] DataTableSnapshot GetSnapshot() const;
+    [[nodiscard]] const DataTableRow* FindRow(std::string_view identifier) const noexcept;
 
 private:
-    friend class DataTableCsvImporterUVE;
-    friend class DataTableTsvImporterUVE;
-    friend class DataTableJsonImporterUVE;
+    friend class DataTableCsvImporter;
+    friend class DataTableTsvImporter;
+    friend class DataTableJsonImporter;
 
-    [[nodiscard]] static bool IsBoundedIdentifierUVE(std::string_view value) noexcept;
-    [[nodiscard]] static bool IsValueCompatibleUVE(const DataTableValueUVE& value,
-                                                    DataTableColumnTypeUVE type) noexcept;
-    [[nodiscard]] bool ValidateRowUVE(std::string_view identifier,
-                                      const std::vector<DataTableValueUVE>& values) const noexcept;
-    void SetDiagnosticsUVE(std::vector<DataTableDiagnosticUVE> diagnostics, bool truncated) noexcept;
-    void IncrementGenerationUVE() noexcept;
+    [[nodiscard]] static bool IsBoundedIdentifier(std::string_view value) noexcept;
+    [[nodiscard]] static bool IsValueCompatible(const DataTableValue& value,
+                                                    DataTableColumnType type) noexcept;
+    [[nodiscard]] bool ValidateRow(std::string_view identifier,
+                                      const std::vector<DataTableValue>& values) const noexcept;
+    void SetDiagnostics(std::vector<DataTableDiagnostic> diagnostics, bool truncated) noexcept;
+    void IncrementGeneration() noexcept;
 
     std::string m_name;
-    std::vector<DataTableColumnUVE> m_columns;
-    std::vector<DataTableRowUVE> m_rows;
-    std::vector<DataTableDiagnosticUVE> m_diagnostics;
+    std::vector<DataTableColumn> m_columns;
+    std::vector<DataTableRow> m_rows;
+    std::vector<DataTableDiagnostic> m_diagnostics;
     bool m_diagnosticsTruncated = false;
     std::uint64_t m_generation = 1U;
 };
 
-class DataTableCsvImporterUVE final {
+class DataTableCsvImporter final {
 public:
-    [[nodiscard]] static bool ImportUVE(std::string_view document, DataTableUVE& table);
-    [[nodiscard]] static bool ImportDelimitedUVE(std::string_view document, char delimiter, DataTableUVE& table);
+    [[nodiscard]] static bool Import(std::string_view document, DataTable& table);
+    [[nodiscard]] static bool ImportDelimited(std::string_view document, char delimiter, DataTable& table);
 };
 
-class DataTableTsvImporterUVE final {
+class DataTableTsvImporter final {
 public:
-    [[nodiscard]] static bool ImportUVE(std::string_view document, DataTableUVE& table);
+    [[nodiscard]] static bool Import(std::string_view document, DataTable& table);
 };
 
-class DataTableJsonImporterUVE final {
+class DataTableJsonImporter final {
 public:
-    [[nodiscard]] static bool ImportUVE(std::string_view document, DataTableUVE& table);
+    [[nodiscard]] static bool Import(std::string_view document, DataTable& table);
 };
 
-class DataTableAssetSerializerUVE final {
+class DataTableAssetSerializer final {
 public:
-    [[nodiscard]] static bool SerializeUVE(const DataTableUVE& table, std::string& document);
-    [[nodiscard]] static bool DeserializeUVE(std::string_view document, DataTableUVE& table);
+    [[nodiscard]] static bool Serialize(const DataTable& table, std::string& document);
+    [[nodiscard]] static bool Deserialize(std::string_view document, DataTable& table);
 };
 
-struct DataTableCatalogEntryUVE final {
+struct DataTableCatalogEntry final {
     std::string name;
     std::uint64_t generation = 0U;
     std::size_t columnCount = 0U;
     std::size_t rowCount = 0U;
     bool valid = false;
-    [[nodiscard]] bool operator==(const DataTableCatalogEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const DataTableCatalogEntry&) const = default;
 };
 
-struct DataTableCatalogSnapshotUVE final {
+struct DataTableCatalogSnapshot final {
     std::uint64_t generation = 0U;
-    std::vector<DataTableCatalogEntryUVE> entries;
+    std::vector<DataTableCatalogEntry> entries;
     bool entriesTruncated = false;
-    [[nodiscard]] bool operator==(const DataTableCatalogSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const DataTableCatalogSnapshot&) const = default;
 };
 
-class DataTableCatalogUVE final {
+class DataTableCatalog final {
 public:
-    static constexpr std::size_t kMaximumEntriesUVE = 1024U;
+    static constexpr std::size_t kMaximumEntries = 1024U;
 
-    [[nodiscard]] bool UpsertUVE(const DataTableSnapshotUVE& table);
-    [[nodiscard]] bool RemoveUVE(std::string_view name);
-    [[nodiscard]] DataTableCatalogSnapshotUVE GetSnapshotUVE() const;
-    [[nodiscard]] bool ContainsUVE(std::string_view name) const noexcept;
+    [[nodiscard]] bool Upsert(const DataTableSnapshot& table);
+    [[nodiscard]] bool Remove(std::string_view name);
+    [[nodiscard]] DataTableCatalogSnapshot GetSnapshot() const;
+    [[nodiscard]] bool Contains(std::string_view name) const noexcept;
 
 private:
-    void IncrementGenerationUVE() noexcept;
+    void IncrementGeneration() noexcept;
 
-    std::vector<DataTableCatalogEntryUVE> m_entries;
+    std::vector<DataTableCatalogEntry> m_entries;
     std::uint64_t m_generation = 1U;
 };
 

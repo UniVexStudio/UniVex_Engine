@@ -8,7 +8,7 @@
 //     projection mapping to OpenGL clip space (z in [-w, w]). Used by the Viewport's camera,
 //     gizmo and grid renderers.
 //
-//   * UVE::Math (Engine/Runtime/Core/Math): the engine-wide kit - row-major Matrix4x4UVE,
+//   * UVE::Math (Engine/Runtime/Core/Math): the engine-wide kit - row-major Matrix4x4,
 //     perspective projection mapping to Vulkan-style depth range [0, 1]. Used by every
 //     engine-side system (Scene, Physics, RenderSystems, ...).
 //
@@ -39,32 +39,32 @@ namespace univex::integration {
 // unrelated math libraries. Plain field-by-field copies, not real conversions.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] inline UVE::Math::Vector2UVE ToUveVector2UVE(const univex::math::Vec2& value) noexcept {
-    return UVE::Math::Vector2UVE{value.x, value.y};
+[[nodiscard]] inline UVE::Math::Vector2 ToUveVector2(const univex::math::Vec2& value) noexcept {
+    return UVE::Math::Vector2{value.x, value.y};
 }
 
-[[nodiscard]] inline UVE::Math::Vector3UVE ToUveVector3UVE(const univex::math::Vec3& value) noexcept {
-    return UVE::Math::Vector3UVE{value.x, value.y, value.z};
+[[nodiscard]] inline UVE::Math::Vector3 ToUveVector3(const univex::math::Vec3& value) noexcept {
+    return UVE::Math::Vector3{value.x, value.y, value.z};
 }
 
-[[nodiscard]] inline univex::math::Vec3 FromUveVector3UVE(const UVE::Math::Vector3UVE& value) noexcept {
+[[nodiscard]] inline univex::math::Vec3 FromUveVector3(const UVE::Math::Vector3& value) noexcept {
     return univex::math::Vec3{value.x, value.y, value.z};
 }
 
 // ---------------------------------------------------------------------------
-// Mat4 -> Matrix4x4UVE: same linear map, different storage layout. Mat4 stores column-major
-// (element (r, c) at m[c * 4 + r]); Matrix4x4UVE stores row-major (m[r][c]). Both interpret
+// Mat4 -> Matrix4x4: same linear map, different storage layout. Mat4 stores column-major
+// (element (r, c) at m[c * 4 + r]); Matrix4x4 stores row-major (m[r][c]). Both interpret
 // the matrix with the same column-vector convention, so the element-wise copy below IS the
 // identity transformation - no transpose of meaning occurs.
 //
 // WARNING: valid for world and view transforms ONLY. Do NOT convert projection matrices
 // through here: univex::math::Mat4::Perspective targets OpenGL clip space while
-// Matrix4x4UVE::PerspectiveUVE targets a Vulkan-style [0, 1] depth range - a copied projection
+// Matrix4x4::Perspective targets a Vulkan-style [0, 1] depth range - a copied projection
 // would carry the wrong depth mapping into the other renderer.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] inline UVE::Math::Matrix4x4UVE ToUveMatrixUVE(const univex::math::Mat4& value) noexcept {
-    UVE::Math::Matrix4x4UVE result;
+[[nodiscard]] inline UVE::Math::Matrix4x4 ToUveMatrix(const univex::math::Mat4& value) noexcept {
+    UVE::Math::Matrix4x4 result;
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
             result.m[row][col] = value.At(row, col);

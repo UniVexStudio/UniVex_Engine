@@ -15,27 +15,27 @@ struct Rect;
 
 namespace UVE::Editor {
 
-class EditorUVE;
+class Editor;
 
 /// Sub row 2: a viewport's settings strip - gizmo mode, snapping, grid, projection and facing,
 /// shading, and the preview sun / sky with their settings. It edits the editor's viewport overlay
 /// state, which is the active document's: the level's, or the open entity's inside its scope, so
 /// the level editor and the Entity Editor each show one over their own viewport.
-class EditorViewToolbarUVE final {
+class EditorViewToolbar final {
 public:
-    explicit EditorViewToolbarUVE(EditorUVE& editor);
+    explicit EditorViewToolbar(Editor& editor);
     /// `gizmoOnly`: just the gizmo mode, snapping and grid (the Entity Editor's view).
     /// `extra`: a widget after the gizmo settings (the Entity Editor's Blueprint button).
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE(bool gizmoOnly = false, prism::Ref<prism::Widget> extra = {});
+    [[nodiscard]] prism::Ref<prism::Widget> Build(bool gizmoOnly = false, prism::Ref<prism::Widget> extra = {});
     /// Re-reads the overlay state (call with the strip's document active).
-    void RefreshUVE();
+    void Refresh();
 
 private:
-    void ShowSnapLevelsUVE();
-    void ShowPreviewSettingsUVE(prism::Rect anchor);
-    [[nodiscard]] prism::Ref<prism::Widget> FinishBarUVE(const prism::Ref<prism::Box>& settings);
+    void ShowSnapLevels();
+    void ShowPreviewSettings(prism::Rect anchor);
+    [[nodiscard]] prism::Ref<prism::Widget> FinishBar(const prism::Ref<prism::Box>& settings);
 
-    EditorUVE& m_editor;
+    Editor& m_editor;
     std::shared_ptr<prism::Segmented> m_gizmoModes;
     std::shared_ptr<prism::Button> m_snapButton;
     std::shared_ptr<prism::Button> m_snapLevelButton;

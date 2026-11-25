@@ -7,85 +7,85 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsAsciiLetterUVE(const char character) noexcept {
+[[nodiscard]] bool IsAsciiLetter(const char character) noexcept {
     return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
 }
 
-[[nodiscard]] bool IsAsciiDigitUVE(const char character) noexcept {
+[[nodiscard]] bool IsAsciiDigit(const char character) noexcept {
     return character >= '0' && character <= '9';
 }
 
 } // namespace
 
-ObjectMetadataKeyIssueUVE ValidateObjectMetadataKeyUVE(const std::string_view key,
-                                                   const ObjectMetadataComponentUVE& existing,
+ObjectMetadataKeyIssue ValidateObjectMetadataKey(const std::string_view key,
+                                                   const ObjectMetadataComponent& existing,
                                                    const std::string_view ignoredKey) noexcept {
     if (key.empty()) {
-        return ObjectMetadataKeyIssueUVE::Empty;
+        return ObjectMetadataKeyIssue::Empty;
     }
-    if (key.size() > kMaximumObjectMetadataKeyBytesUVE) {
-        return ObjectMetadataKeyIssueUVE::TooLong;
+    if (key.size() > kMaximumObjectMetadataKeyBytes) {
+        return ObjectMetadataKeyIssue::TooLong;
     }
-    if (IsAsciiDigitUVE(key.front())) {
-        return ObjectMetadataKeyIssueUVE::StartsWithDigit;
+    if (IsAsciiDigit(key.front())) {
+        return ObjectMetadataKeyIssue::StartsWithDigit;
     }
     const bool allIdentifierCharacters = std::all_of(key.cbegin(), key.cend(), [](const char character) {
-        return IsAsciiLetterUVE(character) || IsAsciiDigitUVE(character) || character == '_';
+        return IsAsciiLetter(character) || IsAsciiDigit(character) || character == '_';
     });
     if (!allIdentifierCharacters) {
-        return ObjectMetadataKeyIssueUVE::InvalidCharacter;
+        return ObjectMetadataKeyIssue::InvalidCharacter;
     }
     const bool duplicate = std::any_of(existing.entries.cbegin(), existing.entries.cend(),
-                                       [key, ignoredKey](const ObjectMetadataEntryUVE& entry) {
+                                       [key, ignoredKey](const ObjectMetadataEntry& entry) {
                                            return entry.key == key && entry.key != ignoredKey;
                                        });
-    return duplicate ? ObjectMetadataKeyIssueUVE::Duplicate : ObjectMetadataKeyIssueUVE::None;
+    return duplicate ? ObjectMetadataKeyIssue::Duplicate : ObjectMetadataKeyIssue::None;
 }
 
-std::string_view DescribeObjectMetadataKeyIssueUVE(const ObjectMetadataKeyIssueUVE issue) noexcept {
+std::string_view DescribeObjectMetadataKeyIssue(const ObjectMetadataKeyIssue issue) noexcept {
     switch (issue) {
-        case ObjectMetadataKeyIssueUVE::None:
+        case ObjectMetadataKeyIssue::None:
             return {};
-        case ObjectMetadataKeyIssueUVE::Empty:
+        case ObjectMetadataKeyIssue::Empty:
             return "Enter a name.";
-        case ObjectMetadataKeyIssueUVE::TooLong:
+        case ObjectMetadataKeyIssue::TooLong:
             return "Names are limited to 128 characters.";
-        case ObjectMetadataKeyIssueUVE::InvalidCharacter:
+        case ObjectMetadataKeyIssue::InvalidCharacter:
             return "Use only letters, digits and underscores.";
-        case ObjectMetadataKeyIssueUVE::StartsWithDigit:
+        case ObjectMetadataKeyIssue::StartsWithDigit:
             return "A name cannot start with a digit.";
-        case ObjectMetadataKeyIssueUVE::Duplicate:
+        case ObjectMetadataKeyIssue::Duplicate:
             return "This object already has metadata with that name.";
     }
     return {};
 }
 
-bool IsObjectMetadataComponentValidUVE(const ObjectMetadataComponentUVE& component) noexcept {
-    if (component.entries.size() > kMaximumObjectMetadataEntriesUVE) {
+bool IsObjectMetadataComponentValid(const ObjectMetadataComponent& component) noexcept {
+    if (component.entries.size() > kMaximumObjectMetadataEntries) {
         return false;
     }
-    for (const ObjectMetadataEntryUVE& entry : component.entries) {
+    for (const ObjectMetadataEntry& entry : component.entries) {
         // A key must occur exactly once across the whole list; counting occurrences catches every
         // duplicate, including one whose twin comes later in the list.
         const std::size_t occurrences = static_cast<std::size_t>(
             std::count_if(component.entries.cbegin(), component.entries.cend(),
-                          [&entry](const ObjectMetadataEntryUVE& other) { return other.key == entry.key; }));
+                          [&entry](const ObjectMetadataEntry& other) { return other.key == entry.key; }));
         // Structural rules only - non-empty, bounded, unique - not the identifier rule new keys are
         // authored under. Metadata saved before that rule existed may hold a key like "door north";
         // rejecting it here would fail the component, and a failed component rolls back the whole
         // scene load. Such keys stay loadable and editable; only new ones must be identifiers.
-        if (occurrences != 1U || entry.key.empty() || entry.key.size() > kMaximumObjectMetadataKeyBytesUVE ||
-            !Core::IsVariantWithinBoundsUVE(entry.value)) {
+        if (occurrences != 1U || entry.key.empty() || entry.key.size() > kMaximumObjectMetadataKeyBytes ||
+            !Core::IsVariantWithinBounds(entry.value)) {
             return false;
         }
     }
     return true;
 }
 
-const Core::VariantUVE* FindObjectMetadataUVE(const ObjectMetadataComponentUVE& component,
+const Core::Variant* FindObjectMetadata(const ObjectMetadataComponent& component,
                                             const std::string_view key) noexcept {
     const auto iterator = std::find_if(component.entries.cbegin(), component.entries.cend(),
-                                       [key](const ObjectMetadataEntryUVE& entry) { return entry.key == key; });
+                                       [key](const ObjectMetadataEntry& entry) { return entry.key == key; });
     return iterator == component.entries.cend() ? nullptr : &iterator->value;
 }
 

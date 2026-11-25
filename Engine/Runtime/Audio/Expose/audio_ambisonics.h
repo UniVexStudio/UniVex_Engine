@@ -23,20 +23,20 @@ namespace UVE::Audio {
 ///
 /// A FuMa file converted at import is a format conversion, not a runtime branch: nothing here
 /// accepts a second layout, so a mis-ordered file is refused rather than quietly mis-localised.
-inline constexpr std::size_t kFirstOrderAmbisonicChannelCountUVE = 4U;
-inline constexpr std::size_t kAmbisonicWChannelIndexUVE = 0U;
-inline constexpr std::size_t kAmbisonicYChannelIndexUVE = 1U;
-inline constexpr std::size_t kAmbisonicZChannelIndexUVE = 2U;
-inline constexpr std::size_t kAmbisonicXChannelIndexUVE = 3U;
+inline constexpr std::size_t kFirstOrderAmbisonicChannelCount = 4U;
+inline constexpr std::size_t kAmbisonicWChannelIndex = 0U;
+inline constexpr std::size_t kAmbisonicYChannelIndex = 1U;
+inline constexpr std::size_t kAmbisonicZChannelIndex = 2U;
+inline constexpr std::size_t kAmbisonicXChannelIndex = 3U;
 
-/// A basis shorter than this squared is not a direction any more; see ComputeAmbisonicRotationUVE.
-inline constexpr float kMinimumAmbisonicBasisLengthSquaredUVE = 1.0e-12F;
+/// A basis shorter than this squared is not a direction any more; see ComputeAmbisonicRotation.
+inline constexpr float kMinimumAmbisonicBasisLengthSquared = 1.0e-12F;
 
 /// Engine direction (+X right, +Y up, -Z forward) to AmbiX (+X front, +Y left, +Z up). This is a
 /// proper rotation - a signed axis permutation with determinant +1 - so it maps cross products
 /// correctly, which is why the listener basis can be converted one vector at a time.
-[[nodiscard]] inline Math::Vector3UVE ToAmbisonicDirectionUVE(const Math::Vector3UVE& engineDirection) noexcept {
-    return Math::Vector3UVE{-engineDirection.z, -engineDirection.x, engineDirection.y};
+[[nodiscard]] inline Math::Vector3 ToAmbisonicDirection(const Math::Vector3& engineDirection) noexcept {
+    return Math::Vector3{-engineDirection.z, -engineDirection.x, engineDirection.y};
 }
 
 /// The world-to-listener rotation of a first-order sound field.
@@ -51,61 +51,61 @@ inline constexpr float kMinimumAmbisonicBasisLengthSquaredUVE = 1.0e-12F;
 /// one property a reader will assume before reading any documentation. The rows themselves are the
 /// listener's LEFT, UP and FORWARD axes expressed in world AmbiX coordinates, permuted from
 /// (front, left, up) into (left, up, front) to match the column order.
-struct AmbisonicRotationUVE final {
+struct AmbisonicRotation final {
     std::array<float, 9U> matrix{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F};
 
-    [[nodiscard]] bool operator==(const AmbisonicRotationUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AmbisonicRotation&) const noexcept = default;
 };
 
 /// Whether a listener basis can define a unique rotation at all: both axes finite and non-zero, and
-/// forward not parallel to up. This is IsAudioListenerOrientationValidUVE()'s rule plus the one it
-/// deliberately leaves out - a parallel pair has no unique roll, and IsAudioListenerOrientationValidUVE()
+/// forward not parallel to up. This is IsAudioListenerOrientationValid()'s rule plus the one it
+/// deliberately leaves out - a parallel pair has no unique roll, and IsAudioListenerOrientationValid()
 /// only promises a usable basis, not a roll-free one.
-[[nodiscard]] inline bool IsAmbisonicListenerBasisValidUVE(const Math::Vector3UVE& listenerForward,
-                                                           const Math::Vector3UVE& listenerUp) noexcept {
+[[nodiscard]] inline bool IsAmbisonicListenerBasisValid(const Math::Vector3& listenerForward,
+                                                           const Math::Vector3& listenerUp) noexcept {
     const bool finite = std::isfinite(listenerForward.x) && std::isfinite(listenerForward.y) &&
                         std::isfinite(listenerForward.z) && std::isfinite(listenerUp.x) &&
                         std::isfinite(listenerUp.y) && std::isfinite(listenerUp.z);
     if (!finite) return false;
-    const float forwardLengthSquared = Math::LengthSquaredUVE(listenerForward);
-    const float upLengthSquared = Math::LengthSquaredUVE(listenerUp);
-    if (!(forwardLengthSquared > kMinimumAmbisonicBasisLengthSquaredUVE) ||
-        !(upLengthSquared > kMinimumAmbisonicBasisLengthSquaredUVE)) {
+    const float forwardLengthSquared = Math::LengthSquared(listenerForward);
+    const float upLengthSquared = Math::LengthSquared(listenerUp);
+    if (!(forwardLengthSquared > kMinimumAmbisonicBasisLengthSquared) ||
+        !(upLengthSquared > kMinimumAmbisonicBasisLengthSquared)) {
         return false;
     }
     const float crossLengthSquared =
-        Math::LengthSquaredUVE(Math::CrossUVE(listenerForward * (1.0F / std::sqrt(forwardLengthSquared)), listenerUp));
-    return crossLengthSquared > kMinimumAmbisonicBasisLengthSquaredUVE;
+        Math::LengthSquared(Math::Cross(listenerForward * (1.0F / std::sqrt(forwardLengthSquared)), listenerUp));
+    return crossLengthSquared > kMinimumAmbisonicBasisLengthSquared;
 }
 
 /// Rotation that renders a world-locked field on a listener whose head points along `forward` with
-/// `up` as its up axis - the same two vectors IAudioSystemUVE::SetListenerOrientationUVE() takes,
+/// `up` as its up axis - the same two vectors IAudioSystem::SetListenerOrientation() takes,
 /// so a camera or an HMD can drive it without an Euler-angle detour.
 ///
 /// Degenerate input is not a rotation at all. Rather than synthesize a random orientation, this
 /// returns the identity: the field plays unrotated, which is the one answer that is always safe.
-/// Callers that want to refuse the update outright ask IsAmbisonicListenerBasisValidUVE() first;
+/// Callers that want to refuse the update outright ask IsAmbisonicListenerBasisValid() first;
 /// the adapter in ambisonic_stream_source_uve.h does exactly that.
-[[nodiscard]] inline AmbisonicRotationUVE ComputeAmbisonicRotationUVE(const Math::Vector3UVE& listenerForward,
-                                                                     const Math::Vector3UVE& listenerUp) noexcept {
-    if (!IsAmbisonicListenerBasisValidUVE(listenerForward, listenerUp)) return AmbisonicRotationUVE{};
+[[nodiscard]] inline AmbisonicRotation ComputeAmbisonicRotation(const Math::Vector3& listenerForward,
+                                                                     const Math::Vector3& listenerUp) noexcept {
+    if (!IsAmbisonicListenerBasisValid(listenerForward, listenerUp)) return AmbisonicRotation{};
 
-    const float forwardLengthSquared = Math::LengthSquaredUVE(listenerForward);
-    const Math::Vector3UVE forward = listenerForward * (1.0F / std::sqrt(forwardLengthSquared));
-    const Math::Vector3UVE right = Math::CrossUVE(forward, listenerUp);
-    const Math::Vector3UVE rightNormalised = right * (1.0F / std::sqrt(Math::LengthSquaredUVE(right)));
+    const float forwardLengthSquared = Math::LengthSquared(listenerForward);
+    const Math::Vector3 forward = listenerForward * (1.0F / std::sqrt(forwardLengthSquared));
+    const Math::Vector3 right = Math::Cross(forward, listenerUp);
+    const Math::Vector3 rightNormalised = right * (1.0F / std::sqrt(Math::LengthSquared(right)));
     // Re-derived rather than reused: an up vector that is not perpendicular to forward must not
     // shear the matrix, or the "rotation" would stop preserving energy.
-    const Math::Vector3UVE up = Math::CrossUVE(rightNormalised, forward);
-    const Math::Vector3UVE left = rightNormalised * -1.0F;
+    const Math::Vector3 up = Math::Cross(rightNormalised, forward);
+    const Math::Vector3 left = rightNormalised * -1.0F;
 
-    const Math::Vector3UVE ambisonicLeft = ToAmbisonicDirectionUVE(left);
-    const Math::Vector3UVE ambisonicUp = ToAmbisonicDirectionUVE(up);
-    const Math::Vector3UVE ambisonicForward = ToAmbisonicDirectionUVE(forward);
+    const Math::Vector3 ambisonicLeft = ToAmbisonicDirection(left);
+    const Math::Vector3 ambisonicUp = ToAmbisonicDirection(up);
+    const Math::Vector3 ambisonicForward = ToAmbisonicDirection(forward);
 
     // (x, y, z) of an AmbiX axis is (front, left, up); the coefficients it multiplies are ordered
     // (Y, Z, X), so each row is written (y, z, x) - see the struct comment.
-    AmbisonicRotationUVE rotation;
+    AmbisonicRotation rotation;
     rotation.matrix = {ambisonicLeft.y,    ambisonicLeft.z,    ambisonicLeft.x,
                        ambisonicUp.y,      ambisonicUp.z,      ambisonicUp.x,
                        ambisonicForward.y, ambisonicForward.z, ambisonicForward.x};
@@ -114,24 +114,24 @@ struct AmbisonicRotationUVE final {
 
 /// Turns one world-space AmbiX frame into the listener's frame. In-place is safe: every input is
 /// read before anything is written.
-inline void RotateFirstOrderAmbisonicFrameUVE(const AmbisonicRotationUVE& rotation, const float* worldFrame,
+inline void RotateFirstOrderAmbisonicFrame(const AmbisonicRotation& rotation, const float* worldFrame,
                                               float* listenerFrame) noexcept {
     if (worldFrame == nullptr || listenerFrame == nullptr) return;
     // The directional coefficients are a vector in ACN order - (Y, Z, X) - and the matrix rows use
     // the same order, so this is a straight 3x3 multiply with no index shuffling.
-    const Math::Vector3UVE worldDirection{worldFrame[kAmbisonicYChannelIndexUVE],
-                                          worldFrame[kAmbisonicZChannelIndexUVE],
-                                          worldFrame[kAmbisonicXChannelIndexUVE]};
+    const Math::Vector3 worldDirection{worldFrame[kAmbisonicYChannelIndex],
+                                          worldFrame[kAmbisonicZChannelIndex],
+                                          worldFrame[kAmbisonicXChannelIndex]};
     const float* matrix = rotation.matrix.data();
-    const Math::Vector3UVE listenerDirection{
+    const Math::Vector3 listenerDirection{
         matrix[0] * worldDirection.x + matrix[1] * worldDirection.y + matrix[2] * worldDirection.z,
         matrix[3] * worldDirection.x + matrix[4] * worldDirection.y + matrix[5] * worldDirection.z,
         matrix[6] * worldDirection.x + matrix[7] * worldDirection.y + matrix[8] * worldDirection.z};
 
-    listenerFrame[kAmbisonicWChannelIndexUVE] = worldFrame[kAmbisonicWChannelIndexUVE];
-    listenerFrame[kAmbisonicYChannelIndexUVE] = listenerDirection.x;
-    listenerFrame[kAmbisonicZChannelIndexUVE] = listenerDirection.y;
-    listenerFrame[kAmbisonicXChannelIndexUVE] = listenerDirection.z;
+    listenerFrame[kAmbisonicWChannelIndex] = worldFrame[kAmbisonicWChannelIndex];
+    listenerFrame[kAmbisonicYChannelIndex] = listenerDirection.x;
+    listenerFrame[kAmbisonicZChannelIndex] = listenerDirection.y;
+    listenerFrame[kAmbisonicXChannelIndex] = listenerDirection.z;
 }
 
 /// Decodes one listener-space AmbiX frame to the two-channel output the device mixes.
@@ -140,7 +140,7 @@ inline void RotateFirstOrderAmbisonicFrameUVE(const AmbisonicRotationUVE& rotati
 /// and hard right, which is the stereo decode every first-order system has used since the 1970s
 /// (Malham & Myatt's stereo and binaural decodes both start from it). It is normalised so that a
 /// pure omnidirectional field (W = 1, everything else zero) is EXACTLY unity on both channels -
-/// the same "centre is unchanged" rule ComputeAudioPanGainsUVE() follows, so a bed crossfading
+/// the same "centre is unchanged" rule ComputeAudioPanGains() follows, so a bed crossfading
 /// against a mono voice does not jump in level.
 ///
 /// What that pair can and cannot say, stated plainly rather than discovered later:
@@ -155,15 +155,15 @@ inline void RotateFirstOrderAmbisonicFrameUVE(const AmbisonicRotationUVE& rotati
 ///
 /// `gain` is the caller's final bed gain, already folded in; non-finite input yields silence rather
 /// than a poison frame.
-[[nodiscard]] inline AudioPanGainsUVE DecodeFirstOrderAmbisonicFrameToStereoUVE(const float* listenerFrame,
+[[nodiscard]] inline AudioPanGains DecodeFirstOrderAmbisonicFrameToStereo(const float* listenerFrame,
                                                                                 const float gain = 1.0F) noexcept {
-    if (listenerFrame == nullptr) return AudioPanGainsUVE{0.0F, 0.0F};
-    const float w = listenerFrame[kAmbisonicWChannelIndexUVE];
-    const float y = listenerFrame[kAmbisonicYChannelIndexUVE];
+    if (listenerFrame == nullptr) return AudioPanGains{0.0F, 0.0F};
+    const float w = listenerFrame[kAmbisonicWChannelIndex];
+    const float y = listenerFrame[kAmbisonicYChannelIndex];
     if (!std::isfinite(w) || !std::isfinite(y) || !std::isfinite(gain) || gain <= 0.0F) {
-        return AudioPanGainsUVE{0.0F, 0.0F};
+        return AudioPanGains{0.0F, 0.0F};
     }
-    return AudioPanGainsUVE{gain * (w + y), gain * (w - y)};
+    return AudioPanGains{gain * (w + y), gain * (w - y)};
 }
 
 } // namespace UVE::Audio

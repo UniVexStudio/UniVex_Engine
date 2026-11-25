@@ -13,11 +13,11 @@
 namespace UVE::Scene {
 
 /// One authored, typed key/value pair on an entity.
-struct ObjectMetadataEntryUVE final {
+struct ObjectMetadataEntry final {
     std::string key;
-    Core::VariantUVE value;
+    Core::Variant value;
 
-    [[nodiscard]] bool operator==(const ObjectMetadataEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const ObjectMetadataEntry&) const = default;
 };
 
 /// Arbitrary authored key/value pairs attached to an entity, saved with the scene.
@@ -27,24 +27,24 @@ struct ObjectMetadataEntryUVE final {
 /// put it, every one of those becomes either a new component type that exists for one level, or a
 /// value smuggled into the entity's name. Both are worse than a property bag.
 ///
-/// WHY TYPED. Values are VariantUVE rather than strings, so "charges" is an int a script can do
+/// WHY TYPED. Values are Variant rather than strings, so "charges" is an int a script can do
 /// arithmetic on, "spawn_offset" is a Vector3 the inspector edits with three fields, and an object
 /// reference is a ObjectPath the editor can resolve - instead of text every reader has to parse and
 /// every writer can get wrong.
-struct ObjectMetadataComponentUVE final {
+struct ObjectMetadataComponent final {
     /// A vector rather than a map: entries keep the order they were authored in, which is what an
     /// inspector shows and what makes a saved scene diff cleanly. Lookup is linear over a handful
     /// of entries, which is the size this is for.
-    std::vector<ObjectMetadataEntryUVE> entries;
+    std::vector<ObjectMetadataEntry> entries;
 };
 
 /// Bounds, so a malformed or hostile scene file cannot make one entity carry unbounded data.
-inline constexpr std::size_t kMaximumObjectMetadataEntriesUVE = 256U;
-inline constexpr std::size_t kMaximumObjectMetadataKeyBytesUVE = 128U;
+inline constexpr std::size_t kMaximumObjectMetadataEntries = 256U;
+inline constexpr std::size_t kMaximumObjectMetadataKeyBytes = 128U;
 
 /// Why a metadata key is not usable, so the editor can say so while the author is still typing
 /// rather than refusing silently after they press Add.
-enum class ObjectMetadataKeyIssueUVE : std::uint8_t {
+enum class ObjectMetadataKeyIssue : std::uint8_t {
     None = 0,
     Empty,
     TooLong,
@@ -57,22 +57,22 @@ enum class ObjectMetadataKeyIssueUVE : std::uint8_t {
 
 /// Checks `key` against the identifier rules above and against `existing` entries (a key equal to
 /// `ignoredKey` is not counted as a duplicate - that is how renaming an entry to itself is allowed).
-[[nodiscard]] ObjectMetadataKeyIssueUVE ValidateObjectMetadataKeyUVE(std::string_view key,
-                                                                 const ObjectMetadataComponentUVE& existing,
+[[nodiscard]] ObjectMetadataKeyIssue ValidateObjectMetadataKey(std::string_view key,
+                                                                 const ObjectMetadataComponent& existing,
                                                                  std::string_view ignoredKey = {}) noexcept;
 
 /// A short human-readable reason for `issue`, for the editor to show next to the name field.
-[[nodiscard]] std::string_view DescribeObjectMetadataKeyIssueUVE(ObjectMetadataKeyIssueUVE issue) noexcept;
+[[nodiscard]] std::string_view DescribeObjectMetadataKeyIssue(ObjectMetadataKeyIssue issue) noexcept;
 
-/// Rejects an empty, oversized or duplicate key - a duplicate would make FindObjectMetadataUVE's answer
+/// Rejects an empty, oversized or duplicate key - a duplicate would make FindObjectMetadata's answer
 /// depend on iteration order - any value outside the Variant bounds, or more entries than the bound
 /// above. Deliberately does not apply the identifier rule: that governs keys authored from now on,
 /// and applying it to loaded data would make an older scene unloadable.
-[[nodiscard]] bool IsObjectMetadataComponentValidUVE(const ObjectMetadataComponentUVE& component) noexcept;
+[[nodiscard]] bool IsObjectMetadataComponentValid(const ObjectMetadataComponent& component) noexcept;
 
 /// Returns the value for `key`, or null when the entity has no such entry. Null is distinct from an
 /// entry whose value is empty, which is a legitimate authored value.
-[[nodiscard]] const Core::VariantUVE* FindObjectMetadataUVE(const ObjectMetadataComponentUVE& component,
+[[nodiscard]] const Core::Variant* FindObjectMetadata(const ObjectMetadataComponent& component,
                                                           std::string_view key) noexcept;
 
 } // namespace UVE::Scene

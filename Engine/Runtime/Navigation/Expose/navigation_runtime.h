@@ -14,11 +14,11 @@
 #include "navmesh.h"
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::Physics {
-class IRaycastSystemUVE;
+class IRaycastSystem;
 }
 
 namespace UVE::Navigation {
@@ -26,7 +26,7 @@ namespace UVE::Navigation {
 /// What one navigation step did, as counters. A caller that only wants the world driven ignores it;
 /// a test pins it, and the engine logs a bake when one happens so a level that re-rasterizes every
 /// frame is visible instead of merely expensive.
-struct NavigationSyncReportUVE final {
+struct NavigationSyncReport final {
     /// Live, enabled regions this step read.
     std::size_t regions = 0U;
     /// Regions rasterized this step: the first time each was seen, after it moved or was resized,
@@ -41,8 +41,8 @@ struct NavigationSyncReportUVE final {
     std::size_t agentsWithoutMesh = 0U;
 };
 
-/// Project-level navigation runtime defaults and gates consumed by NavigationRuntimeUVE.
-struct NavigationRuntimeConfigUVE final {
+/// Project-level navigation runtime defaults and gates consumed by NavigationRuntime.
+struct NavigationRuntimeConfig final {
     bool globalAvoidanceEnabled = true;
     std::size_t maxAvoidanceNeighbors = 16U;
     float maxNeighborDistanceMetres = 15.0F;
@@ -57,61 +57,61 @@ struct NavigationRuntimeConfigUVE final {
 /// decides what a step means: which region an agent is standing on, when a region is baked and
 /// re-baked, and what the agent publishes back into its component. That is the same split the
 /// hitbox, interaction-area and level-streamer seams use, and it is what makes all of this testable
-/// without standing up an EngineCoreUVE.
+/// without standing up an EngineCore.
 ///
 /// Region meshes are cached by entity rather than rebuilt per step or per query: a navmesh is a
 /// property of the level, and rasterizing one is hundreds of rays. A region is re-baked only when
 /// its volume, its bake settings or its layers change, or when it asks. Entities that no longer
 /// exist - or no longer hold the component - drop their cache on the next step.
-class NavigationRuntimeUVE final {
+class NavigationRuntime final {
 public:
-    void SetRuntimeConfigUVE(const NavigationRuntimeConfigUVE& config) noexcept { m_config = config; }
-    [[nodiscard]] NavigationRuntimeConfigUVE GetRuntimeConfigUVE() const noexcept { return m_config; }
+    void SetRuntimeConfig(const NavigationRuntimeConfig& config) noexcept { m_config = config; }
+    [[nodiscard]] NavigationRuntimeConfig GetRuntimeConfig() const noexcept { return m_config; }
 
     /// Bakes whatever needs baking, then steps `agentsInStepOrder` in the order given.
     ///
     /// `agentsInStepOrder` is handed in rather than collected here because the order is a frame
     /// decision, not a navigation one: the engine core already orders fixed-step work by
-    /// ProcessComponentUVE::physicsPriority and already knows which entities tick.
-    [[nodiscard]] NavigationSyncReportUVE SyncUVE(Scene::IEntityManagerUVE& entityManager,
-                                                  const Physics::IRaycastSystemUVE& raycasts,
-                                                  std::span<const Scene::EntityUVE> agentsInStepOrder,
+    /// ProcessComponent::physicsPriority and already knows which entities tick.
+    [[nodiscard]] NavigationSyncReport Sync(Scene::IEntityManager& entityManager,
+                                                  const Physics::IRaycastSystem& raycasts,
+                                                  std::span<const Scene::Entity> agentsInStepOrder,
                                                   float deltaTimeSeconds);
 
     /// The mesh a region baked, or nullptr while it has none: not seen yet, switched off, or pruned.
-    [[nodiscard]] const NavmeshUVE* FindRegionMeshUVE(Scene::EntityUVE region) const noexcept;
-    [[nodiscard]] const NavmeshBakeReportUVE* FindRegionBakeReportUVE(Scene::EntityUVE region) const noexcept;
+    [[nodiscard]] const Navmesh* FindRegionMesh(Scene::Entity region) const noexcept;
+    [[nodiscard]] const NavmeshBakeReport* FindRegionBakeReport(Scene::Entity region) const noexcept;
 
     /// The region a point should be navigated on: the first region whose volume contains it, or the
     /// nearest one within `maximumDistanceMetres`. Regions are considered in the order they were
     /// seen, which is the entity manager's own deterministic iteration order, so the answer does not
     /// depend on hash order.
-    [[nodiscard]] Scene::EntityUVE FindRegionForPositionUVE(const Math::Vector3UVE& position,
+    [[nodiscard]] Scene::Entity FindRegionForPosition(const Math::Vector3& position,
                                                             float maximumDistanceMetres) const noexcept;
 
-    [[nodiscard]] std::size_t GetRegionCountUVE() const noexcept { return m_regionOrder.size(); }
-    [[nodiscard]] std::size_t GetAgentCountUVE() const noexcept { return m_agents.size(); }
+    [[nodiscard]] std::size_t GetRegionCount() const noexcept { return m_regionOrder.size(); }
+    [[nodiscard]] std::size_t GetAgentCount() const noexcept { return m_agents.size(); }
 
     /// Drops every cached mesh and every agent, as a scene teardown needs.
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 
 private:
     /// One region's bake, and the inputs it was baked from - kept so the next step can tell "nothing
     /// changed" from "bake me again" without re-deriving the mesh.
-    struct RegionEntryUVE final {
-        NavmeshUVE mesh{};
-        NavmeshBakeReportUVE report{};
-        NavmeshBakeSettingsUVE bakedSettings{};
-        Math::AabbUVE bakedBounds{};
+    struct RegionEntry final {
+        Navmesh mesh{};
+        NavmeshBakeReport report{};
+        NavmeshBakeSettings bakedSettings{};
+        Math::Aabb bakedBounds{};
         bool baked = false;
     };
 
-    NavigationRuntimeConfigUVE m_config{};
-    std::unordered_map<Scene::EntityUVE, RegionEntryUVE> m_regions;
+    NavigationRuntimeConfig m_config{};
+    std::unordered_map<Scene::Entity, RegionEntry> m_regions;
     /// Region entities in the order they were first seen. Deterministic iteration for the queries
     /// above, which an unordered_map cannot promise.
-    std::vector<Scene::EntityUVE> m_regionOrder;
-    std::unordered_map<Scene::EntityUVE, NavAgentUVE> m_agents;
+    std::vector<Scene::Entity> m_regionOrder;
+    std::unordered_map<Scene::Entity, NavAgent> m_agents;
 };
 
 } // namespace UVE::Navigation

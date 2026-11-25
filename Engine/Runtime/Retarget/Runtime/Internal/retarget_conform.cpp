@@ -14,25 +14,25 @@
 namespace UVE::Retarget {
 namespace {
 
-void SetErrorUVE(std::string* error, std::string text) {
+void SetError(std::string* error, std::string text) {
     if (error != nullptr) {
         *error = std::move(text);
     }
 }
 
-[[nodiscard]] Math::QuaternionUVE InverseUVE(const Math::QuaternionUVE& value) noexcept {
-    Math::QuaternionUVE out{};
-    return Math::TryInverseUVE(value, out) ? out : Math::QuaternionUVE{};
+[[nodiscard]] Math::Quaternion Inverse(const Math::Quaternion& value) noexcept {
+    Math::Quaternion out{};
+    return Math::TryInverse(value, out) ? out : Math::Quaternion{};
 }
 
-[[nodiscard]] Math::QuaternionUVE NormalizedUVE(const Math::QuaternionUVE& value) noexcept {
-    Math::QuaternionUVE out{};
-    return Math::TryNormalizeUVE(value, out) ? out : Math::QuaternionUVE{};
+[[nodiscard]] Math::Quaternion Normalized(const Math::Quaternion& value) noexcept {
+    Math::Quaternion out{};
+    return Math::TryNormalize(value, out) ? out : Math::Quaternion{};
 }
 
 /// Bones that turn to the A-pose on a conformed rig: the limbs and fingers. Hips, spine, neck,
 /// head, clavicles, metacarpals, the thumb's base and the feet keep the rig's own shape.
-[[nodiscard]] bool TurnsToThePoseUVE(const BoneKeyPartsUVE& key) {
+[[nodiscard]] bool TurnsToThePose(const BoneKeyParts& key) {
     if (key.Is("upperarm") || key.Is("forearm") || key.Is("hand") || key.Is("thigh") || key.Is("shin")) {
         return true;
     }
@@ -40,7 +40,7 @@ void SetErrorUVE(std::string* error, std::string text) {
 }
 
 /// The rotation (column vectors) of a matrix whose 3x3 part is a rotation times a uniform scale.
-[[nodiscard]] bool DecomposeUVE(const Math::Matrix4x4UVE& matrix, WorldTransformUVE& out) {
+[[nodiscard]] bool Decompose(const Math::Matrix4x4& matrix, WorldTransform& out) {
     float r[3][3];
     float scales[3];
     for (int column = 0; column < 3; ++column) {
@@ -78,50 +78,50 @@ void SetErrorUVE(std::string* error, std::string text) {
     r[0][2] = r[1][0] * r[2][1] - r[2][0] * r[1][1];
     r[1][2] = r[2][0] * r[0][1] - r[0][0] * r[2][1];
     r[2][2] = r[0][0] * r[1][1] - r[1][0] * r[0][1];
-    Math::QuaternionUVE q{};
+    Math::Quaternion q{};
     const float trace = r[0][0] + r[1][1] + r[2][2];
     if (trace > 0.0F) {
         const float s = std::sqrt(trace + 1.0F) * 2.0F;
-        q = Math::QuaternionUVE{(r[2][1] - r[1][2]) / s, (r[0][2] - r[2][0]) / s, (r[1][0] - r[0][1]) / s, 0.25F * s};
+        q = Math::Quaternion{(r[2][1] - r[1][2]) / s, (r[0][2] - r[2][0]) / s, (r[1][0] - r[0][1]) / s, 0.25F * s};
     } else if (r[0][0] > r[1][1] && r[0][0] > r[2][2]) {
         const float s = std::sqrt(1.0F + r[0][0] - r[1][1] - r[2][2]) * 2.0F;
-        q = Math::QuaternionUVE{0.25F * s, (r[0][1] + r[1][0]) / s, (r[0][2] + r[2][0]) / s, (r[2][1] - r[1][2]) / s};
+        q = Math::Quaternion{0.25F * s, (r[0][1] + r[1][0]) / s, (r[0][2] + r[2][0]) / s, (r[2][1] - r[1][2]) / s};
     } else if (r[1][1] > r[2][2]) {
         const float s = std::sqrt(1.0F + r[1][1] - r[0][0] - r[2][2]) * 2.0F;
-        q = Math::QuaternionUVE{(r[0][1] + r[1][0]) / s, 0.25F * s, (r[1][2] + r[2][1]) / s, (r[0][2] - r[2][0]) / s};
+        q = Math::Quaternion{(r[0][1] + r[1][0]) / s, 0.25F * s, (r[1][2] + r[2][1]) / s, (r[0][2] - r[2][0]) / s};
     } else {
         const float s = std::sqrt(1.0F + r[2][2] - r[0][0] - r[1][1]) * 2.0F;
-        q = Math::QuaternionUVE{(r[0][2] + r[2][0]) / s, (r[1][2] + r[2][1]) / s, 0.25F * s, (r[1][0] - r[0][1]) / s};
+        q = Math::Quaternion{(r[0][2] + r[2][0]) / s, (r[1][2] + r[2][1]) / s, 0.25F * s, (r[1][0] - r[0][1]) / s};
     }
-    out.position = Math::Vector3UVE{matrix.m[0][3], matrix.m[1][3], matrix.m[2][3]};
-    out.rotation = NormalizedUVE(q);
+    out.position = Math::Vector3{matrix.m[0][3], matrix.m[1][3], matrix.m[2][3]};
+    out.rotation = Normalized(q);
     out.scale = scale;
     return true;
 }
 
-[[nodiscard]] Asset::AnimationAssetPoseUVE SampleTrackUVE(const Asset::AnimationAssetBoneTrackUVE& track, const double time) {
-    const std::vector<Asset::AnimationAssetSampleUVE>& samples = track.samples;
+[[nodiscard]] Asset::AnimationAssetPose SampleTrack(const Asset::AnimationAssetBoneTrack& track, const double time) {
+    const std::vector<Asset::AnimationAssetSample>& samples = track.samples;
     if (samples.size() == 1U || time <= samples.front().timeSeconds) {
         return samples.front().pose;
     }
     if (time >= samples.back().timeSeconds) {
         return samples.back().pose;
     }
-    const auto after = std::ranges::upper_bound(samples, time, {}, &Asset::AnimationAssetSampleUVE::timeSeconds);
-    const Asset::AnimationAssetSampleUVE& b = *after;
-    const Asset::AnimationAssetSampleUVE& a = *(after - 1);
+    const auto after = std::ranges::upper_bound(samples, time, {}, &Asset::AnimationAssetSample::timeSeconds);
+    const Asset::AnimationAssetSample& b = *after;
+    const Asset::AnimationAssetSample& a = *(after - 1);
     const double span = b.timeSeconds - a.timeSeconds;
     const float t = span > 0.0 ? static_cast<float>((time - a.timeSeconds) / span) : 0.0F;
-    Asset::AnimationAssetPoseUVE pose;
+    Asset::AnimationAssetPose pose;
     pose.position = a.pose.position + (b.pose.position - a.pose.position) * t;
     pose.scale = a.pose.scale + (b.pose.scale - a.pose.scale) * t;
-    if (!Math::TrySlerpUVE(a.pose.rotation, b.pose.rotation, t, pose.rotation)) {
+    if (!Math::TrySlerp(a.pose.rotation, b.pose.rotation, t, pose.rotation)) {
         pose.rotation = a.pose.rotation;
     }
     return pose;
 }
 
-[[nodiscard]] bool SamePoseUVE(const Asset::AnimationAssetPoseUVE& a, const Asset::AnimationAssetPoseUVE& b) {
+[[nodiscard]] bool SamePose(const Asset::AnimationAssetPose& a, const Asset::AnimationAssetPose& b) {
     constexpr float kTolerance = 1e-6F;
     const auto near = [](const float x, const float y) { return std::abs(x - y) <= kTolerance; };
     return near(a.position.x, b.position.x) && near(a.position.y, b.position.y) && near(a.position.z, b.position.z) &&
@@ -130,15 +130,15 @@ void SetErrorUVE(std::string* error, std::string text) {
 }
 
 /// A rotation and a translation as one dual quaternion, for blending moves without pinching.
-struct DualQuaternionUVE final {
-    Math::QuaternionUVE real{0.0F, 0.0F, 0.0F, 0.0F};
-    Math::QuaternionUVE dual{0.0F, 0.0F, 0.0F, 0.0F};
+struct DualQuaternion final {
+    Math::Quaternion real{0.0F, 0.0F, 0.0F, 0.0F};
+    Math::Quaternion dual{0.0F, 0.0F, 0.0F, 0.0F};
 };
 
-[[nodiscard]] DualQuaternionUVE ToDualUVE(const RigidMoveUVE& move) {
-    const Math::QuaternionUVE translation{move.translation.x, move.translation.y, move.translation.z, 0.0F};
-    const Math::QuaternionUVE product = Math::MultiplyUVE(translation, move.rotation);
-    return DualQuaternionUVE{move.rotation, Math::QuaternionUVE{0.5F * product.x, 0.5F * product.y, 0.5F * product.z, 0.5F * product.w}};
+[[nodiscard]] DualQuaternion ToDual(const RigidMove& move) {
+    const Math::Quaternion translation{move.translation.x, move.translation.y, move.translation.z, 0.0F};
+    const Math::Quaternion product = Math::Multiply(translation, move.rotation);
+    return DualQuaternion{move.rotation, Math::Quaternion{0.5F * product.x, 0.5F * product.y, 0.5F * product.z, 0.5F * product.w}};
 }
 
 } // namespace
@@ -147,7 +147,7 @@ namespace {
 
 /// Drops the optional bones conforming added (the correctives the rig lacked) together with every
 /// index that points at them, keeping any bone of the rig's own that sits under one.
-void PruneAddedBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& reference, const bool optional, const bool body) {
+void PruneAddedBones(ConformedRig& out, const HumanoidReference& reference, const bool optional, const bool body) {
     const std::size_t count = out.skeleton.bones.size();
     std::vector<bool> drop(count, false);
     for (std::size_t index = 0U; index < count; ++index) {
@@ -155,9 +155,9 @@ void PruneAddedBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& refere
         if (!out.added[index] || ref < 0) {
             continue;
         }
-        const HumanoidBoneInfoUVE& info = reference.info[static_cast<std::size_t>(ref)];
-        const bool isBody = info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger ||
-                            info.kind == HumanoidBoneKindUVE::Twist;
+        const HumanoidBoneInfo& info = reference.info[static_cast<std::size_t>(ref)];
+        const bool isBody = info.kind == HumanoidBoneKind::Body || info.kind == HumanoidBoneKind::Finger ||
+                            info.kind == HumanoidBoneKind::Twist;
         drop[index] = (optional && info.optional) || (body && !info.optional && isBody);
     }
     // A kept bone keeps every bone above it.
@@ -179,13 +179,13 @@ void PruneAddedBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& refere
     if (static_cast<std::size_t>(next) == count) {
         return;
     }
-    const auto prune = [&](RetargetSkeletonUVE& skeleton) {
-        RetargetSkeletonUVE kept;
+    const auto prune = [&](RetargetSkeleton& skeleton) {
+        RetargetSkeleton kept;
         for (std::size_t index = 0U; index < count; ++index) {
             if (drop[index]) {
                 continue;
             }
-            RetargetBoneUVE bone = skeleton.bones[index];
+            RetargetBone bone = skeleton.bones[index];
             bone.parent = bone.parent < 0 ? -1 : newIndex[static_cast<std::size_t>(bone.parent)];
             kept.bones.push_back(std::move(bone));
         }
@@ -212,13 +212,13 @@ void PruneAddedBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& refere
 
 } // namespace
 
-std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig, const HumanoidMatchUVE& match,
-                                                  const HumanoidReferenceUVE& reference, std::string* error,
-                                                  const ConformOptionsUVE& options) {
+std::optional<ConformedRig> ConformSkeleton(const RetargetSkeleton& rig, const HumanoidMatch& match,
+                                                  const HumanoidReference& reference, std::string* error,
+                                                  const ConformOptions& options) {
     const std::size_t referenceCount = reference.skeleton.bones.size();
-    if (!IsRetargetSkeletonValidUVE(rig) || match.referenceOfBone.size() != rig.bones.size() ||
+    if (!IsRetargetSkeletonValid(rig) || match.referenceOfBone.size() != rig.bones.size() ||
         match.joints.size() != referenceCount || reference.info.size() != referenceCount) {
-        SetErrorUVE(error, "the rig is malformed or was not matched against this reference");
+        SetError(error, "the rig is malformed or was not matched against this reference");
         return std::nullopt;
     }
     std::int32_t hips = -1;
@@ -228,19 +228,19 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         }
     }
     if (hips < 0 || match.joints[static_cast<std::size_t>(hips)].bone < 0) {
-        SetErrorUVE(error, "the rig has no hips");
+        SetError(error, "the rig has no hips");
         return std::nullopt;
     }
-    const RetargetSkeletonUVE folded = FoldScaleUVE(rig);
-    const std::vector<WorldTransformUVE> rigWorld = ComputeWorldTransformsUVE(folded);
-    const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
+    const RetargetSkeleton folded = FoldScale(rig);
+    const std::vector<WorldTransform> rigWorld = ComputeWorldTransforms(folded);
+    const std::vector<WorldTransform> referenceWorld = ComputeWorldTransforms(reference.skeleton);
 
     // ---- Layout: the humanoid's bones, then the rig's own ------------------------------------
-    ConformedRigUVE out;
+    ConformedRig out;
     out.heightScale = match.heightScale > 0.0F ? match.heightScale : 1.0F;
-    RetargetSkeletonUVE& layout = out.skeleton;
+    RetargetSkeleton& layout = out.skeleton;
     layout.bones = reference.skeleton.bones;
-    std::vector<WorldTransformUVE> world(referenceCount);
+    std::vector<WorldTransform> world(referenceCount);
     out.added.assign(referenceCount, true);
     out.referenceOfBone.resize(referenceCount);
     for (std::size_t index = 0U; index < referenceCount; ++index) {
@@ -255,14 +255,14 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         }
     }
     std::unordered_set<std::string> names;
-    for (const RetargetBoneUVE& bone : layout.bones) {
+    for (const RetargetBone& bone : layout.bones) {
         names.insert(bone.name);
     }
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
         if (out.boneOfRigBone[bone] >= 0) {
             continue;
         }
-        RetargetBoneUVE kept = folded.bones[bone];
+        RetargetBone kept = folded.bones[bone];
         std::string name = kept.name;
         for (int suffix = 1; names.contains(name); ++suffix) {
             name = kept.name + "_" + std::to_string(suffix);
@@ -279,74 +279,74 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
     const std::size_t count = layout.bones.size();
 
     // Stand the rig up +Y facing +Z first, so every direction below means what the reference's do.
-    out.orientation = OrientationOfRigUVE(rigWorld, match, reference);
-    for (WorldTransformUVE& transform : world) {
-        transform.position = Math::RotateVectorUVE(out.orientation, transform.position);
-        transform.rotation = NormalizedUVE(Math::MultiplyUVE(out.orientation, transform.rotation));
+    out.orientation = OrientationOfRig(rigWorld, match, reference);
+    for (WorldTransform& transform : world) {
+        transform.position = Math::RotateVector(out.orientation, transform.position);
+        transform.rotation = Normalized(Math::Multiply(out.orientation, transform.rotation));
     }
 
     // What each bone is, and what it points at, among the bones the rig has.
-    std::vector<BoneKeyPartsUVE> keys(count);
+    std::vector<BoneKeyParts> keys(count);
     std::vector<std::int32_t> aims(count, -1);
     std::unordered_map<std::string, std::int32_t> byKey;
     for (std::size_t index = 0U; index < referenceCount; ++index) {
         if (out.added[index]) {
             continue;
         }
-        keys[index] = SplitBoneKeyUVE(reference.info[index].key);
+        keys[index] = SplitBoneKey(reference.info[index].key);
         byKey.emplace(reference.info[index].key, static_cast<std::int32_t>(index));
         std::int32_t aim = reference.info[index].aim;
         while (aim >= 0 && out.added[static_cast<std::size_t>(aim)]) {
             aim = reference.info[static_cast<std::size_t>(aim)].aim;
         }
-        if (aim >= 0 && IsBelowUVE(layout, aim, static_cast<std::int32_t>(index))) {
+        if (aim >= 0 && IsBelow(layout, aim, static_cast<std::int32_t>(index))) {
             aims[index] = aim;
         }
     }
 
     // ---- The A-pose ---------------------------------------------------------------------------
     bool hadFeet = false;
-    const float groundBefore = LowestFootUVE(keys, world, hadFeet);
-    std::vector<Math::QuaternionUVE> rotationBefore(count);
+    const float groundBefore = LowestFoot(keys, world, hadFeet);
+    std::vector<Math::Quaternion> rotationBefore(count);
     for (std::size_t index = 0U; index < count; ++index) {
         rotationBefore[index] = world[index].rotation;
     }
-    const std::vector<std::optional<Math::Vector3UVE>> elbowAxes = ReadElbowAxesUVE(keys, aims, world);
+    const std::vector<std::optional<Math::Vector3>> elbowAxes = ReadElbowAxes(keys, aims, world);
     const auto aimAll = [&] {
         for (std::size_t index = 0U; index < referenceCount; ++index) {
             const std::int32_t aim = aims[index];
-            if (aim < 0 || !TurnsToThePoseUVE(keys[index])) {
+            if (aim < 0 || !TurnsToThePose(keys[index])) {
                 continue;
             }
             const auto target = static_cast<std::size_t>(aim);
-            const Math::Vector3UVE want = referenceWorld[target].position - referenceWorld[index].position;
-            const Math::Vector3UVE now = world[target].position - world[index].position;
-            RotateSubtreeUVE(layout, world, index, RotationBetweenUVE(now, want));
+            const Math::Vector3 want = referenceWorld[target].position - referenceWorld[index].position;
+            const Math::Vector3 now = world[target].position - world[index].position;
+            RotateSubtree(layout, world, index, RotationBetween(now, want));
         }
     };
     // The A-pose bends the elbows forward, so rolling an upper arm swings its forearm: aim, roll,
     // and aim again until the limbs lie the reference's way with the roll kept.
     aimAll();
     for (int pass = 0; pass < 3; ++pass) {
-        RollArmsUVE(layout, world, keys, aims, elbowAxes, byKey);
+        RollArms(layout, world, keys, aims, elbowAxes, byKey);
         aimAll();
     }
     for (std::size_t index = 0U; index < referenceCount; ++index) {
         if (keys[index].Is("foot") && keys[index].side != 'C') {
-            RestoreRotationUVE(layout, world, index, rotationBefore[index]);
+            RestoreRotation(layout, world, index, rotationBefore[index]);
         }
     }
     bool hasFeet = false;
-    const float groundAfter = LowestFootUVE(keys, world, hasFeet);
+    const float groundAfter = LowestFoot(keys, world, hasFeet);
     if (hadFeet && hasFeet) {
-        LiftUVE(layout, world, hips, groundBefore - groundAfter);
+        Lift(layout, world, hips, groundBefore - groundAfter);
     }
     out.moveOfRigBone.resize(rig.bones.size());
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
-        const WorldTransformUVE& posed = world[static_cast<std::size_t>(out.boneOfRigBone[bone])];
-        RigidMoveUVE& move = out.moveOfRigBone[bone];
-        move.rotation = NormalizedUVE(Math::MultiplyUVE(posed.rotation, InverseUVE(rigWorld[bone].rotation)));
-        move.translation = posed.position - Math::RotateVectorUVE(move.rotation, rigWorld[bone].position);
+        const WorldTransform& posed = world[static_cast<std::size_t>(out.boneOfRigBone[bone])];
+        RigidMove& move = out.moveOfRigBone[bone];
+        move.rotation = Normalized(Math::Multiply(posed.rotation, Inverse(rigWorld[bone].rotation)));
+        move.translation = posed.position - Math::RotateVector(move.rotation, rigWorld[bone].position);
     }
 
     // ---- Bones the rig lacks, fitted to its own limbs -------------------------------------------
@@ -367,8 +367,8 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         if (placed[index]) {
             continue;
         }
-        const Math::Vector3UVE& at = referenceWorld[index].position;
-        Math::Vector3UVE position{};
+        const Math::Vector3& at = referenceWorld[index].position;
+        Math::Vector3 position{};
         const std::int32_t follows = reference.info[index].follows;
         std::int32_t above = reference.skeleton.bones[index].parent;
         while (above >= 0 && !placed[static_cast<std::size_t>(above)]) {
@@ -390,15 +390,15 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
             if (down < 0) {
                 down = firstPlacedOnAim(above);
             }
-            const Math::Vector3UVE offset = at - referenceWorld[base].position;
+            const Math::Vector3 offset = at - referenceWorld[base].position;
             position = world[base].position + offset * out.heightScale;
             if (down >= 0) {
-                const Math::Vector3UVE referenceSegment = referenceWorld[static_cast<std::size_t>(down)].position - referenceWorld[base].position;
-                const Math::Vector3UVE rigSegment = world[static_cast<std::size_t>(down)].position - world[base].position;
-                const float referenceLength = Math::LengthUVE(referenceSegment);
-                const float rigLength = Math::LengthUVE(rigSegment);
+                const Math::Vector3 referenceSegment = referenceWorld[static_cast<std::size_t>(down)].position - referenceWorld[base].position;
+                const Math::Vector3 rigSegment = world[static_cast<std::size_t>(down)].position - world[base].position;
+                const float referenceLength = Math::Length(referenceSegment);
+                const float rigLength = Math::Length(rigSegment);
                 if (referenceLength > 1e-6F && rigLength > 1e-6F) {
-                    position = world[base].position + Math::RotateVectorUVE(RotationBetweenUVE(referenceSegment, rigSegment), offset) *
+                    position = world[base].position + Math::RotateVector(RotationBetween(referenceSegment, rigSegment), offset) *
                                                           (rigLength / referenceLength);
                 }
             }
@@ -412,7 +412,7 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         world[index].rotation = referenceWorld[index].rotation;
         world[index].scale = 1.0F;
     }
-    layout = SkeletonFromWorldUVE(layout, world);
+    layout = SkeletonFromWorld(layout, world);
 
     // ---- The same bones at the rig's own rest ------------------------------------------------------
     // Each bone taken back the way its rig bone came into the A-pose (an added bone rides the
@@ -427,8 +427,8 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
             }
         }
         const std::int32_t hipsRig = rigOfBone[static_cast<std::size_t>(hips)];
-        const std::vector<WorldTransformUVE> posed = ComputeWorldTransformsUVE(layout);
-        std::vector<WorldTransformUVE> rest(count);
+        const std::vector<WorldTransform> posed = ComputeWorldTransforms(layout);
+        std::vector<WorldTransform> rest(count);
         for (std::size_t index = 0U; index < count; ++index) {
             std::int32_t carrier = -1;
             for (std::int32_t above = static_cast<std::int32_t>(index); above >= 0 && carrier < 0;
@@ -438,12 +438,12 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
             if (carrier < 0) {
                 carrier = hipsRig;
             }
-            const RigidMoveUVE& move = out.moveOfRigBone[static_cast<std::size_t>(carrier)];
-            const Math::QuaternionUVE back = InverseUVE(move.rotation);
-            const Math::QuaternionUVE standUp = out.orientation;
-            const Math::Vector3UVE unposed = Math::RotateVectorUVE(back, posed[index].position - move.translation);
-            rest[index].position = Math::RotateVectorUVE(standUp, unposed);
-            rest[index].rotation = NormalizedUVE(Math::MultiplyUVE(standUp, Math::MultiplyUVE(back, posed[index].rotation)));
+            const RigidMove& move = out.moveOfRigBone[static_cast<std::size_t>(carrier)];
+            const Math::Quaternion back = Inverse(move.rotation);
+            const Math::Quaternion standUp = out.orientation;
+            const Math::Vector3 unposed = Math::RotateVector(back, posed[index].position - move.translation);
+            rest[index].position = Math::RotateVector(standUp, unposed);
+            rest[index].rotation = Normalized(Math::Multiply(standUp, Math::Multiply(back, posed[index].rotation)));
             rest[index].scale = 1.0F;
         }
         for (std::size_t index = 0U; index < count; ++index) {
@@ -452,30 +452,30 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
                 rest[index] = rest[static_cast<std::size_t>(reference.info[static_cast<std::size_t>(ref)].follows)];
             }
         }
-        out.restSkeleton = SkeletonFromWorldUVE(layout, rest);
+        out.restSkeleton = SkeletonFromWorld(layout, rest);
     }
 
     // ---- Only what was asked for -----------------------------------------------------------------
-    const bool pruneBody = options.addBodyBonesOnlyWhenLacking && !IsRigVeryLackingUVE(match, reference, options.lackingFraction);
+    const bool pruneBody = options.addBodyBonesOnlyWhenLacking && !IsRigVeryLacking(match, reference, options.lackingFraction);
     if (!options.includeOptional || pruneBody) {
-        PruneAddedBonesUVE(out, reference, !options.includeOptional, pruneBody);
+        PruneAddedBones(out, reference, !options.includeOptional, pruneBody);
     }
     return out;
 }
 
-BodyBoneCountUVE CountBodyBonesUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference) {
-    BodyBoneCountUVE count;
+BodyBoneCount CountBodyBones(const HumanoidMatch& match, const HumanoidReference& reference) {
+    BodyBoneCount count;
     for (std::size_t ref = 0U; ref < reference.info.size() && ref < match.joints.size(); ++ref) {
-        const HumanoidBoneInfoUVE& info = reference.info[ref];
+        const HumanoidBoneInfo& info = reference.info[ref];
         if (info.optional) {
             continue;
         }
-        const bool missing = match.joints[ref].status == JointStatusUVE::Missing;
-        if (info.kind == HumanoidBoneKindUVE::Root || info.kind == HumanoidBoneKindUVE::IK || info.kind == HumanoidBoneKindUVE::Socket) {
+        const bool missing = match.joints[ref].status == JointStatus::Missing;
+        if (info.kind == HumanoidBoneKind::Root || info.kind == HumanoidBoneKind::IK || info.kind == HumanoidBoneKind::Socket) {
             count.missingHelpers += missing ? 1U : 0U;
             continue;
         }
-        if (info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger || info.kind == HumanoidBoneKindUVE::Twist) {
+        if (info.kind == HumanoidBoneKind::Body || info.kind == HumanoidBoneKind::Finger || info.kind == HumanoidBoneKind::Twist) {
             ++count.total;
             count.missing += missing ? 1U : 0U;
         }
@@ -483,92 +483,92 @@ BodyBoneCountUVE CountBodyBonesUVE(const HumanoidMatchUVE& match, const Humanoid
     return count;
 }
 
-bool IsRigVeryLackingUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference, const float lackingFraction) {
-    const BodyBoneCountUVE count = CountBodyBonesUVE(match, reference);
+bool IsRigVeryLacking(const HumanoidMatch& match, const HumanoidReference& reference, const float lackingFraction) {
+    const BodyBoneCount count = CountBodyBones(match, reference);
     return count.total > 0U && static_cast<float>(count.missing) > lackingFraction * static_cast<float>(count.total);
 }
 
-std::optional<RetargetSkeletonUVE> RigFromMeshUVE(const Asset::MeshAssetUVE& mesh, std::string* error) {
+std::optional<RetargetSkeleton> RigFromMesh(const Asset::MeshAsset& mesh, std::string* error) {
     if (mesh.joints.empty()) {
-        SetErrorUVE(error, "the mesh has no skeleton");
+        SetError(error, "the mesh has no skeleton");
         return std::nullopt;
     }
-    RetargetSkeletonUVE rig;
-    std::vector<WorldTransformUVE> world;
+    RetargetSkeleton rig;
+    std::vector<WorldTransform> world;
     for (std::size_t index = 0U; index < mesh.joints.size(); ++index) {
-        const Asset::MeshJointUVE& joint = mesh.joints[index];
+        const Asset::MeshJoint& joint = mesh.joints[index];
         if (joint.name.empty()) {
-            SetErrorUVE(error, "joint " + std::to_string(index) + " has no name (import the model again)");
+            SetError(error, "joint " + std::to_string(index) + " has no name (import the model again)");
             return std::nullopt;
         }
-        Math::Matrix4x4UVE bind{};
-        WorldTransformUVE transform;
-        if (!Math::TryInverseUVE(joint.inverseBindMatrix, bind) || !DecomposeUVE(bind, transform)) {
-            SetErrorUVE(error, joint.name + "'s bind is not a rotation, translation and uniform scale");
+        Math::Matrix4x4 bind{};
+        WorldTransform transform;
+        if (!Math::TryInverse(joint.inverseBindMatrix, bind) || !Decompose(bind, transform)) {
+            SetError(error, joint.name + "'s bind is not a rotation, translation and uniform scale");
             return std::nullopt;
         }
         transform.scale = 1.0F;
-        RetargetBoneUVE bone;
+        RetargetBone bone;
         bone.name = joint.name;
-        bone.parent = joint.parentIndex == Asset::kInvalidJointParentUVE ? -1 : static_cast<std::int32_t>(joint.parentIndex);
+        bone.parent = joint.parentIndex == Asset::kInvalidJointParent ? -1 : static_cast<std::int32_t>(joint.parentIndex);
         rig.bones.push_back(std::move(bone));
         world.push_back(transform);
     }
-    rig = SkeletonFromWorldUVE(rig, world);
-    if (!IsRetargetSkeletonValidUVE(rig)) {
-        SetErrorUVE(error, "the mesh's joints do not form a skeleton (unique names, parents first)");
+    rig = SkeletonFromWorld(rig, world);
+    if (!IsRetargetSkeletonValid(rig)) {
+        SetError(error, "the mesh's joints do not form a skeleton (unique names, parents first)");
         return std::nullopt;
     }
     return rig;
 }
 
-bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error, const SkinBlendUVE blend,
-                    const ConformMeshModeUVE mode) {
-    if (!mesh.IsSkinnedUVE() || mesh.joints.size() != conformed.boneOfRigBone.size() ||
+bool ConformMesh(Asset::MeshAsset& mesh, const ConformedRig& conformed, std::string* error, const SkinBlend blend,
+                    const ConformMeshMode mode) {
+    if (!mesh.IsSkinned() || mesh.joints.size() != conformed.boneOfRigBone.size() ||
         mesh.joints.size() != conformed.moveOfRigBone.size() || mesh.skinningInfluences.size() != mesh.vertices.size()) {
-        SetErrorUVE(error, "the mesh and the conformed rig do not belong together");
+        SetError(error, "the mesh and the conformed rig do not belong together");
         return false;
     }
-    Asset::MeshAssetUVE result = mesh;
-    const bool keepRest = mode == ConformMeshModeUVE::KeepRestPose;
+    Asset::MeshAsset result = mesh;
+    const bool keepRest = mode == ConformMeshMode::KeepRestPose;
     if (keepRest && conformed.restSkeleton.bones.size() != conformed.skeleton.bones.size()) {
-        SetErrorUVE(error, "the conformed rig has no rest skeleton");
+        SetError(error, "the conformed rig has no rest skeleton");
         return false;
     }
-    const Math::QuaternionUVE standUp = conformed.orientation;
+    const Math::Quaternion standUp = conformed.orientation;
     const bool upright = standUp.x == 0.0F && standUp.y == 0.0F && standUp.z == 0.0F;
     for (std::size_t vertexIndex = 0U; vertexIndex < result.vertices.size(); ++vertexIndex) {
         if (keepRest) {
             // Only re-pointed at the conformed bones, and stood up when the rig lay another way.
-            Asset::MeshSkinningInfluenceUVE& influence = result.skinningInfluences[vertexIndex];
-            for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluencesUVE; ++slot) {
+            Asset::MeshSkinningInfluence& influence = result.skinningInfluences[vertexIndex];
+            for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluences; ++slot) {
                 const std::uint32_t joint = influence.joints[slot];
                 if (joint >= conformed.boneOfRigBone.size()) {
-                    SetErrorUVE(error, "a vertex names a joint the mesh does not have");
+                    SetError(error, "a vertex names a joint the mesh does not have");
                     return false;
                 }
                 influence.joints[slot] = static_cast<std::uint32_t>(conformed.boneOfRigBone[joint]);
             }
             if (!upright) {
-                Asset::MeshVertexUVE& vertex = result.vertices[vertexIndex];
-                vertex.position = Math::RotateVectorUVE(standUp, vertex.position);
-                vertex.normal = Math::RotateVectorUVE(standUp, vertex.normal);
-                vertex.tangent = Math::RotateVectorUVE(standUp, vertex.tangent);
+                Asset::MeshVertex& vertex = result.vertices[vertexIndex];
+                vertex.position = Math::RotateVector(standUp, vertex.position);
+                vertex.normal = Math::RotateVector(standUp, vertex.normal);
+                vertex.tangent = Math::RotateVector(standUp, vertex.tangent);
             }
             continue;
         }
-        Asset::MeshVertexUVE& vertex = result.vertices[vertexIndex];
-        Asset::MeshSkinningInfluenceUVE& influence = result.skinningInfluences[vertexIndex];
-        Math::Vector3UVE position{};
-        Math::Vector3UVE normal{};
-        Math::Vector3UVE tangent{};
+        Asset::MeshVertex& vertex = result.vertices[vertexIndex];
+        Asset::MeshSkinningInfluence& influence = result.skinningInfluences[vertexIndex];
+        Math::Vector3 position{};
+        Math::Vector3 normal{};
+        Math::Vector3 tangent{};
         float total = 0.0F;
-        DualQuaternionUVE blended;
-        const Math::QuaternionUVE* first = nullptr;
-        for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluencesUVE; ++slot) {
+        DualQuaternion blended;
+        const Math::Quaternion* first = nullptr;
+        for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluences; ++slot) {
             const std::uint32_t joint = influence.joints[slot];
             if (joint >= conformed.moveOfRigBone.size()) {
-                SetErrorUVE(error, "a vertex names a joint the mesh does not have");
+                SetError(error, "a vertex names a joint the mesh does not have");
                 return false;
             }
             const float weight = influence.weights[slot];
@@ -576,92 +576,92 @@ bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed,
             if (weight <= 0.0F) {
                 continue;
             }
-            const RigidMoveUVE& move = conformed.moveOfRigBone[joint];
+            const RigidMove& move = conformed.moveOfRigBone[joint];
             total += weight;
-            if (blend == SkinBlendUVE::Linear) {
-                position += move.ApplyUVE(vertex.position) * weight;
-                normal += Math::RotateVectorUVE(move.rotation, vertex.normal) * weight;
-                tangent += Math::RotateVectorUVE(move.rotation, vertex.tangent) * weight;
+            if (blend == SkinBlend::Linear) {
+                position += move.Apply(vertex.position) * weight;
+                normal += Math::RotateVector(move.rotation, vertex.normal) * weight;
+                tangent += Math::RotateVector(move.rotation, vertex.tangent) * weight;
                 continue;
             }
             // Dual quaternions: each move enters on the same side of the sphere as the first, so two
             // rotations that are the same turn do not cancel.
-            const DualQuaternionUVE dual = ToDualUVE(move);
+            const DualQuaternion dual = ToDual(move);
             if (first == nullptr) {
                 first = &move.rotation;
             }
             const float sign = (dual.real.x * first->x + dual.real.y * first->y + dual.real.z * first->z + dual.real.w * first->w) < 0.0F
                                    ? -weight
                                    : weight;
-            blended.real = Math::QuaternionUVE{blended.real.x + sign * dual.real.x, blended.real.y + sign * dual.real.y,
+            blended.real = Math::Quaternion{blended.real.x + sign * dual.real.x, blended.real.y + sign * dual.real.y,
                                                blended.real.z + sign * dual.real.z, blended.real.w + sign * dual.real.w};
-            blended.dual = Math::QuaternionUVE{blended.dual.x + sign * dual.dual.x, blended.dual.y + sign * dual.dual.y,
+            blended.dual = Math::Quaternion{blended.dual.x + sign * dual.dual.x, blended.dual.y + sign * dual.dual.y,
                                                blended.dual.z + sign * dual.dual.z, blended.dual.w + sign * dual.dual.w};
         }
         if (total <= 0.0F) {
             continue;
         }
-        if (blend == SkinBlendUVE::DualQuaternion) {
+        if (blend == SkinBlend::DualQuaternion) {
             const float length = std::sqrt(blended.real.x * blended.real.x + blended.real.y * blended.real.y +
                                            blended.real.z * blended.real.z + blended.real.w * blended.real.w);
             if (!(length > 1e-8F)) {
                 continue;
             }
             const float scale = 1.0F / length;
-            const Math::QuaternionUVE real{blended.real.x * scale, blended.real.y * scale, blended.real.z * scale, blended.real.w * scale};
-            const Math::QuaternionUVE dual{blended.dual.x * scale, blended.dual.y * scale, blended.dual.z * scale, blended.dual.w * scale};
-            const Math::QuaternionUVE conjugate{-real.x, -real.y, -real.z, real.w};
-            const Math::QuaternionUVE shift = Math::MultiplyUVE(dual, conjugate);
-            vertex.position = Math::RotateVectorUVE(real, vertex.position) + Math::Vector3UVE{2.0F * shift.x, 2.0F * shift.y, 2.0F * shift.z};
-            vertex.normal = Math::NormalizeUVE(Math::RotateVectorUVE(real, vertex.normal));
-            vertex.tangent = Math::NormalizeUVE(Math::RotateVectorUVE(real, vertex.tangent));
+            const Math::Quaternion real{blended.real.x * scale, blended.real.y * scale, blended.real.z * scale, blended.real.w * scale};
+            const Math::Quaternion dual{blended.dual.x * scale, blended.dual.y * scale, blended.dual.z * scale, blended.dual.w * scale};
+            const Math::Quaternion conjugate{-real.x, -real.y, -real.z, real.w};
+            const Math::Quaternion shift = Math::Multiply(dual, conjugate);
+            vertex.position = Math::RotateVector(real, vertex.position) + Math::Vector3{2.0F * shift.x, 2.0F * shift.y, 2.0F * shift.z};
+            vertex.normal = Math::Normalize(Math::RotateVector(real, vertex.normal));
+            vertex.tangent = Math::Normalize(Math::RotateVector(real, vertex.tangent));
             continue;
         }
         vertex.position = position * (1.0F / total);
-        if (Math::LengthSquaredUVE(normal) > 1e-12F) {
-            vertex.normal = Math::NormalizeUVE(normal);
+        if (Math::LengthSquared(normal) > 1e-12F) {
+            vertex.normal = Math::Normalize(normal);
         }
-        if (Math::LengthSquaredUVE(tangent) > 1e-12F) {
-            vertex.tangent = Math::NormalizeUVE(tangent);
+        if (Math::LengthSquared(tangent) > 1e-12F) {
+            vertex.tangent = Math::Normalize(tangent);
         }
     }
-    const std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(keepRest ? conformed.restSkeleton : conformed.skeleton);
+    const std::vector<WorldTransform> world = ComputeWorldTransforms(keepRest ? conformed.restSkeleton : conformed.skeleton);
     result.joints.clear();
     for (std::size_t index = 0U; index < conformed.skeleton.bones.size(); ++index) {
-        const RetargetBoneUVE& bone = conformed.skeleton.bones[index];
-        Asset::MeshJointUVE joint;
+        const RetargetBone& bone = conformed.skeleton.bones[index];
+        Asset::MeshJoint joint;
         joint.name = bone.name;
-        joint.parentIndex = bone.parent < 0 ? Asset::kInvalidJointParentUVE : static_cast<std::uint32_t>(bone.parent);
-        const Math::QuaternionUVE inverse = InverseUVE(world[index].rotation);
-        joint.inverseBindMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(-Math::RotateVectorUVE(inverse, world[index].position), inverse,
-                                                                    Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+        joint.parentIndex = bone.parent < 0 ? Asset::kInvalidJointParent : static_cast<std::uint32_t>(bone.parent);
+        const Math::Quaternion inverse = Inverse(world[index].rotation);
+        joint.inverseBindMatrix = Math::Matrix4x4::ComposeTrs(-Math::RotateVector(inverse, world[index].position), inverse,
+                                                                    Math::Vector3{1.0F, 1.0F, 1.0F});
         result.joints.push_back(std::move(joint));
     }
     if (!result.vertices.empty()) {
-        Math::Vector3UVE low = result.vertices.front().position;
-        Math::Vector3UVE high = low;
-        for (const Asset::MeshVertexUVE& vertex : result.vertices) {
-            low = Math::Vector3UVE{std::min(low.x, vertex.position.x), std::min(low.y, vertex.position.y),
+        Math::Vector3 low = result.vertices.front().position;
+        Math::Vector3 high = low;
+        for (const Asset::MeshVertex& vertex : result.vertices) {
+            low = Math::Vector3{std::min(low.x, vertex.position.x), std::min(low.y, vertex.position.y),
                                    std::min(low.z, vertex.position.z)};
-            high = Math::Vector3UVE{std::max(high.x, vertex.position.x), std::max(high.y, vertex.position.y),
+            high = Math::Vector3{std::max(high.x, vertex.position.x), std::max(high.y, vertex.position.y),
                                     std::max(high.z, vertex.position.z)};
         }
-        result.localBounds = Math::AabbUVE{low, high};
+        result.localBounds = Math::Aabb{low, high};
     }
     mesh = std::move(result);
     return true;
 }
 
-MeshDistortionUVE MeasureMeshDistortionUVE(const Asset::MeshAssetUVE& before, const Asset::MeshAssetUVE& after) {
-    MeshDistortionUVE result;
+MeshDistortion MeasureMeshDistortion(const Asset::MeshAsset& before, const Asset::MeshAsset& after) {
+    MeshDistortion result;
     if (before.vertices.size() != after.vertices.size() || before.indices != after.indices) {
         return result;
     }
     std::size_t edges = 0U;
     std::size_t changed = 0U;
     const auto measure = [&](const std::uint32_t a, const std::uint32_t b) {
-        const float was = Math::LengthUVE(before.vertices[a].position - before.vertices[b].position);
-        const float now = Math::LengthUVE(after.vertices[a].position - after.vertices[b].position);
+        const float was = Math::Length(before.vertices[a].position - before.vertices[b].position);
+        const float now = Math::Length(after.vertices[a].position - after.vertices[b].position);
         if (!(was > 1e-9F)) {
             return;
         }
@@ -679,24 +679,24 @@ MeshDistortionUVE MeasureMeshDistortionUVE(const Asset::MeshAssetUVE& before, co
     return result;
 }
 
-std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::AnimationClipAssetUVE& clip, const RetargetSkeletonUVE& rig,
-                                                          const ConformedRigUVE& conformed, const HumanoidReferenceUVE& reference,
+std::optional<Asset::AnimationClipAsset> ConformClip(const Asset::AnimationClipAsset& clip, const RetargetSkeleton& rig,
+                                                          const ConformedRig& conformed, const HumanoidReference& reference,
                                                           std::string* error) {
     if (rig.bones.size() != conformed.boneOfRigBone.size() || rig.bones.size() != conformed.moveOfRigBone.size() ||
-        !IsRetargetSkeletonValidUVE(rig)) {
-        SetErrorUVE(error, "the clip's rig does not belong to the conformed rig");
+        !IsRetargetSkeletonValid(rig)) {
+        SetError(error, "the clip's rig does not belong to the conformed rig");
         return std::nullopt;
     }
-    if (!clip.IsSkeletalUVE()) {
-        SetErrorUVE(error, "the clip moves no bones");
+    if (!clip.IsSkeletal()) {
+        SetError(error, "the clip moves no bones");
         return std::nullopt;
     }
     // Frames: every time any track has a key. Tracks with their own key times (a reduced clip) keep
     // every key: sampling only the densest track's times joined the hips' bob by straight lines
     // between another bone's keys and lowered it.
     std::vector<double> times;
-    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-        for (const Asset::AnimationAssetSampleUVE& sample : track.samples) {
+    for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
+        for (const Asset::AnimationAssetSample& sample : track.samples) {
             times.push_back(sample.timeSeconds);
         }
     }
@@ -709,29 +709,29 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
         }
     }
     times = std::move(unique);
-    std::vector<const Asset::AnimationAssetBoneTrackUVE*> trackOfRigBone(rig.bones.size(), nullptr);
-    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+    std::vector<const Asset::AnimationAssetBoneTrack*> trackOfRigBone(rig.bones.size(), nullptr);
+    for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
         if (track.samples.empty()) {
             continue;
         }
-        if (const std::int32_t bone = FindBoneUVE(rig, track.bone); bone >= 0) {
+        if (const std::int32_t bone = FindBone(rig, track.bone); bone >= 0) {
             trackOfRigBone[static_cast<std::size_t>(bone)] = &track;
         }
     }
 
-    const RetargetSkeletonUVE& skeleton = conformed.skeleton;
+    const RetargetSkeleton& skeleton = conformed.skeleton;
     const std::size_t count = skeleton.bones.size();
-    const std::vector<WorldTransformUVE> rigRest = ComputeWorldTransformsUVE(rig);
-    const std::vector<WorldTransformUVE> conformedRest = ComputeWorldTransformsUVE(skeleton);
+    const std::vector<WorldTransform> rigRest = ComputeWorldTransforms(rig);
+    const std::vector<WorldTransform> conformedRest = ComputeWorldTransforms(skeleton);
     // A rig bone's frame in the clip, turned into the conformed bone's: the clip's geometry stays
     // where it was, spoken of in the new frame.
     std::vector<std::int32_t> rigOfBone(count, -1);
-    std::vector<Math::QuaternionUVE> toNewFrame(count);
+    std::vector<Math::Quaternion> toNewFrame(count);
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
         const auto index = static_cast<std::size_t>(conformed.boneOfRigBone[bone]);
         rigOfBone[index] = static_cast<std::int32_t>(bone);
-        toNewFrame[index] = NormalizedUVE(Math::MultiplyUVE(
-            Math::MultiplyUVE(InverseUVE(rigRest[bone].rotation), InverseUVE(conformed.moveOfRigBone[bone].rotation)),
+        toNewFrame[index] = Normalized(Math::Multiply(
+            Math::Multiply(Inverse(rigRest[bone].rotation), Inverse(conformed.moveOfRigBone[bone].rotation)),
             conformedRest[index].rotation));
     }
     // Reference indices to this skeleton's (they differ once optional bones were left out).
@@ -749,24 +749,24 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
         }
     }
 
-    std::vector<Asset::AnimationAssetBoneTrackUVE> tracks(count);
+    std::vector<Asset::AnimationAssetBoneTrack> tracks(count);
     for (std::size_t index = 0U; index < count; ++index) {
         tracks[index].bone = skeleton.bones[index].name;
         tracks[index].samples.reserve(times.size());
     }
-    RetargetSkeletonUVE posed = rig;
-    std::vector<WorldTransformUVE> world(count);
+    RetargetSkeleton posed = rig;
+    std::vector<WorldTransform> world(count);
     std::vector<bool> done(count);
     for (const double time : times) {
         for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
-            if (const Asset::AnimationAssetBoneTrackUVE* const track = trackOfRigBone[bone]; track != nullptr) {
-                const Asset::AnimationAssetPoseUVE pose = SampleTrackUVE(*track, time);
+            if (const Asset::AnimationAssetBoneTrack* const track = trackOfRigBone[bone]; track != nullptr) {
+                const Asset::AnimationAssetPose pose = SampleTrack(*track, time);
                 posed.bones[bone].position = pose.position;
                 posed.bones[bone].rotation = pose.rotation;
                 posed.bones[bone].scale = pose.scale.x;
             }
         }
-        const std::vector<WorldTransformUVE> source = ComputeWorldTransformsUVE(posed);
+        const std::vector<WorldTransform> source = ComputeWorldTransforms(posed);
         std::fill(done.begin(), done.end(), false);
         // Bones the rig had follow the clip; added ones ride their parent; IK targets sit on what they
         // follow (which may come later in the order, hence the passes).
@@ -778,10 +778,10 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
                 }
                 const std::int32_t parent = skeleton.bones[index].parent;
                 if (const std::int32_t bone = rigOfBone[index]; bone >= 0) {
-                    const WorldTransformUVE& from = source[static_cast<std::size_t>(bone)];
-                    world[index].position = Math::RotateVectorUVE(conformed.orientation, from.position);
-                    world[index].rotation = NormalizedUVE(
-                        Math::MultiplyUVE(conformed.orientation, Math::MultiplyUVE(from.rotation, toNewFrame[index])));
+                    const WorldTransform& from = source[static_cast<std::size_t>(bone)];
+                    world[index].position = Math::RotateVector(conformed.orientation, from.position);
+                    world[index].rotation = Normalized(
+                        Math::Multiply(conformed.orientation, Math::Multiply(from.rotation, toNewFrame[index])));
                 } else if (follows[index] >= 0) {
                     if (!done[static_cast<std::size_t>(follows[index])]) {
                         continue;
@@ -792,9 +792,9 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
                     if (!done[static_cast<std::size_t>(parent)]) {
                         continue;
                     }
-                    const WorldTransformUVE& above = world[static_cast<std::size_t>(parent)];
-                    world[index].position = above.position + Math::RotateVectorUVE(above.rotation, skeleton.bones[index].position);
-                    world[index].rotation = NormalizedUVE(Math::MultiplyUVE(above.rotation, skeleton.bones[index].rotation));
+                    const WorldTransform& above = world[static_cast<std::size_t>(parent)];
+                    world[index].position = above.position + Math::RotateVector(above.rotation, skeleton.bones[index].position);
+                    world[index].rotation = Normalized(Math::Multiply(above.rotation, skeleton.bones[index].rotation));
                 } else {
                     world[index] = conformedRest[index];
                 }
@@ -803,31 +803,31 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
                 progress = true;
             }
         }
-        const RetargetSkeletonUVE local = SkeletonFromWorldUVE(skeleton, world);
+        const RetargetSkeleton local = SkeletonFromWorld(skeleton, world);
         for (std::size_t index = 0U; index < count; ++index) {
-            Asset::AnimationAssetSampleUVE sample;
+            Asset::AnimationAssetSample sample;
             sample.timeSeconds = time;
             sample.pose.position = local.bones[index].position;
             sample.pose.rotation = local.bones[index].rotation;
             tracks[index].samples.push_back(sample);
         }
     }
-    for (Asset::AnimationAssetBoneTrackUVE& track : tracks) {
-        const bool still = std::ranges::all_of(track.samples, [&track](const Asset::AnimationAssetSampleUVE& sample) {
-            return SamePoseUVE(sample.pose, track.samples.front().pose);
+    for (Asset::AnimationAssetBoneTrack& track : tracks) {
+        const bool still = std::ranges::all_of(track.samples, [&track](const Asset::AnimationAssetSample& sample) {
+            return SamePose(sample.pose, track.samples.front().pose);
         });
         if (still) {
             track.samples.resize(1U);
         }
     }
-    Asset::AnimationClipAssetUVE result;
+    Asset::AnimationClipAsset result;
     result.clipId = clip.clipId;
     result.durationSeconds = clip.durationSeconds;
     result.samples = clip.samples;
     result.events = clip.events;
     result.bones = std::move(tracks);
-    if (!Asset::IsAnimationClipAssetValidUVE(result)) {
-        SetErrorUVE(error, "the conformed clip is not valid (too many bones or a non-finite pose)");
+    if (!Asset::IsAnimationClipAssetValid(result)) {
+        SetError(error, "the conformed clip is not valid (too many bones or a non-finite pose)");
         return std::nullopt;
     }
     return result;

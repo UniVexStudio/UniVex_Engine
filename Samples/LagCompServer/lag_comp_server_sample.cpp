@@ -39,138 +39,138 @@ constexpr float kRayRange = 40.0F;
 constexpr float kRayDamage = 2.0F;
 constexpr std::uint64_t kBotPumpEvery = 10U;
 constexpr std::uint64_t kEstablishMs = 1000U;
-constexpr Network::NetworkChannelIdUVE kPredictionChannelUVE = 11U;
-constexpr Network::NetworkChannelIdUVE kShotChannelUVE = 12U;
-constexpr float kFireFractionUVE = 0.5F;
+constexpr Network::NetworkChannelId kPredictionChannel = 11U;
+constexpr Network::NetworkChannelId kShotChannel = 12U;
+constexpr float kFireFraction = 0.5F;
 
-[[nodiscard]] Network::PredictionStepperUVE CarryStepperUVE() {
-    return [](const Network::PredictedStateUVE& state, const Network::PredictedInputUVE& input,
+[[nodiscard]] Network::PredictionStepper CarryStepper() {
+    return [](const Network::PredictedState& state, const Network::PredictedInput& input,
               const float dt) {
-        Network::PredictedStateUVE next = state;
+        Network::PredictedState next = state;
         next.position += input.move * dt;
         return next;
     };
 }
 
-struct LagCompServerUVE final {
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    Physics::HitboxLagCompensatorUVE compensator;
-    Physics::Hitbox3DStrikeLifecycleTrackerUVE tracker;
-    Network::LoopbackTransportPairUVE link = Network::CreateLoopbackTransportPairUVE(256U);
+struct LagCompServer final {
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    Physics::HitboxLagCompensator compensator;
+    Physics::Hitbox3DStrikeLifecycleTracker tracker;
+    Network::LoopbackTransportPair link = Network::CreateLoopbackTransportPair(256U);
     // Built in the runner: multiplexed sessions first, then every feature shares them.
-    std::unique_ptr<Network::NetworkSessionUVE> clientSession;
-    std::unique_ptr<Network::NetworkSessionUVE> serverSession;
-    std::unique_ptr<Network::NetworkPredictionUVE> client;
-    std::unique_ptr<Network::NetworkPredictionUVE> server;
-    std::unique_ptr<Network::ShotSenderUVE> shots;
-    std::unique_ptr<Network::ShotReceiverUVE> shotInbox;
-    Scene::EntityUVE turret = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE victim = Scene::kInvalidEntityUVE;
+    std::unique_ptr<Network::NetworkSession> clientSession;
+    std::unique_ptr<Network::NetworkSession> serverSession;
+    std::unique_ptr<Network::NetworkPrediction> client;
+    std::unique_ptr<Network::NetworkPrediction> server;
+    std::unique_ptr<Network::ShotSender> shots;
+    std::unique_ptr<Network::ShotReceiver> shotInbox;
+    Scene::Entity turret = Scene::kInvalidEntity;
+    Scene::Entity victim = Scene::kInvalidEntity;
 
-    [[nodiscard]] Scene::EntityUVE MakeHitboxUVE(const Math::Vector3UVE& position) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform{};
+    [[nodiscard]] Scene::Entity MakeHitbox(const Math::Vector3& position) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform{};
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        Scene::Hitbox3DComponentUVE hitbox;
-        hitbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        Scene::Hitbox3DComponent hitbox;
+        hitbox.halfExtents = Math::Vector3{1.0F, 1.0F, 1.0F};
         hitbox.damageChannel = "bolt";
-        entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(entity, hitbox);
-        sceneGraph.UpdateUVE(entityManager);
+        entityManager.AddComponent<Scene::Hitbox3DComponent>(entity, hitbox);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    [[nodiscard]] Scene::EntityUVE MakeVictimUVE(const Math::Vector3UVE& position) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform{};
+    [[nodiscard]] Scene::Entity MakeVictim(const Math::Vector3& position) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform{};
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        Scene::Hurtbox3DComponentUVE hurtbox;
-        hurtbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        Scene::Hurtbox3DComponent hurtbox;
+        hurtbox.halfExtents = Math::Vector3{1.0F, 1.0F, 1.0F};
         hurtbox.damageChannel = "bolt";
-        entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(entity, hurtbox);
-        Scene::HealthComponentUVE body;
+        entityManager.AddComponent<Scene::Hurtbox3DComponent>(entity, hurtbox);
+        Scene::HealthComponent body;
         body.health = kVictimHealth;
         body.maxHealth = kVictimHealth;
-        entityManager.AddComponentUVE<Scene::HealthComponentUVE>(entity, body);
-        sceneGraph.UpdateUVE(entityManager);
+        entityManager.AddComponent<Scene::HealthComponent>(entity, body);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    void MoveVictimUVE(const float x) {
-        Scene::TransformComponentUVE transform =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
-        transform.localPosition = Math::Vector3UVE{x, 0.0F, 0.0F};
-        sceneGraph.SetLocalTransformUVE(entityManager, victim, transform);
-        sceneGraph.UpdateUVE(entityManager);
+    void MoveVictim(const float x) {
+        Scene::TransformComponent transform =
+            entityManager.GetComponent<Scene::TransformComponent>(victim);
+        transform.localPosition = Math::Vector3{x, 0.0F, 0.0F};
+        sceneGraph.SetLocalTransform(entityManager, victim, transform);
+        sceneGraph.Update(entityManager);
     }
 };
 
 // The live half of the ray story: the +x ray from the turret against the victim's live box
 // (a 2-wide box centred on the x axis). Origin-inside counts as a hit, like the
 // narrow-phase the rewound resolve runs.
-[[nodiscard]] bool LiveRayHitsUVE(const float victimX) {
+[[nodiscard]] bool LiveRayHits(const float victimX) {
     return victimX + 1.0F > 0.0F && victimX - 1.0F <= kRayRange;
 }
 
 } // namespace
 
-LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
-    const LagCompServerSampleConfigUVE& config) {
-    LagCompServerSampleResultUVE result;
+LagCompServerSampleResult RunLagCompServerSample(
+    const LagCompServerSampleConfig& config) {
+    LagCompServerSampleResult result;
     auto log = [&](const std::string& line) {
         if (config.log) {
             config.log(line);
         }
     };
 
-    LagCompServerUVE game;
-    game.clientSession = std::make_unique<Network::NetworkSessionUVE>(
-        Network::SessionRoleUVE::Client,
-        std::make_unique<Network::LoopbackEndpointUVE>(std::move(game.link.a)));
-    game.serverSession = std::make_unique<Network::NetworkSessionUVE>(
-        Network::SessionRoleUVE::Server,
-        std::make_unique<Network::LoopbackEndpointUVE>(std::move(game.link.b)));
-    if (!game.clientSession->EnableMultiplexingUVE() ||
-        !game.serverSession->EnableMultiplexingUVE()) {
+    LagCompServer game;
+    game.clientSession = std::make_unique<Network::NetworkSession>(
+        Network::SessionRole::Client,
+        std::make_unique<Network::LoopbackEndpoint>(std::move(game.link.a)));
+    game.serverSession = std::make_unique<Network::NetworkSession>(
+        Network::SessionRole::Server,
+        std::make_unique<Network::LoopbackEndpoint>(std::move(game.link.b)));
+    if (!game.clientSession->EnableMultiplexing() ||
+        !game.serverSession->EnableMultiplexing()) {
         result.failures.push_back("sessions refused multiplexing");
         result.success = false;
         return result;
     }
-    game.client = std::make_unique<Network::NetworkPredictionUVE>(
-        *game.clientSession, kPredictionChannelUVE, Network::SessionRoleUVE::Client,
-        CarryStepperUVE(), Network::PredictedStateUVE{});
-    game.server = std::make_unique<Network::NetworkPredictionUVE>(
-        *game.serverSession, kPredictionChannelUVE, Network::SessionRoleUVE::Server,
-        CarryStepperUVE(), Network::PredictedStateUVE{});
+    game.client = std::make_unique<Network::NetworkPrediction>(
+        *game.clientSession, kPredictionChannel, Network::SessionRole::Client,
+        CarryStepper(), Network::PredictedState{});
+    game.server = std::make_unique<Network::NetworkPrediction>(
+        *game.serverSession, kPredictionChannel, Network::SessionRole::Server,
+        CarryStepper(), Network::PredictedState{});
     game.shots =
-        std::make_unique<Network::ShotSenderUVE>(*game.clientSession, kShotChannelUVE);
+        std::make_unique<Network::ShotSender>(*game.clientSession, kShotChannel);
     game.shotInbox =
-        std::make_unique<Network::ShotReceiverUVE>(*game.serverSession, kShotChannelUVE);
-    game.turret = game.MakeHitboxUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    game.victim = game.MakeVictimUVE(Math::Vector3UVE{kVictimStartX, 0.0F, 0.0F});
+        std::make_unique<Network::ShotReceiver>(*game.serverSession, kShotChannel);
+    game.turret = game.MakeHitbox(Math::Vector3{0.0F, 0.0F, 0.0F});
+    game.victim = game.MakeVictim(Math::Vector3{kVictimStartX, 0.0F, 0.0F});
 
-    if (!game.client->SessionUVE().ConnectUVE(kEstablishMs, 7U)) {
+    if (!game.client->Session().Connect(kEstablishMs, 7U)) {
         result.failures.push_back("bot failed to connect");
         result.success = false;
         return result;
     }
     for (int i = 0; i < 6; ++i) {
-        game.client->UpdateUVE(kEstablishMs);
-        game.server->UpdateUVE(kEstablishMs);
+        game.client->Update(kEstablishMs);
+        game.server->Update(kEstablishMs);
     }
-    if (game.client->SessionUVE().StateUVE() != Network::SessionStateUVE::Established ||
-        game.server->SessionUVE().StateUVE() != Network::SessionStateUVE::Established) {
+    if (game.client->Session().State() != Network::SessionState::Established ||
+        game.server->Session().State() != Network::SessionState::Established) {
         result.failures.push_back("session never established");
         result.success = false;
         return result;
     }
 
-    LagCompServerSampleStatsUVE stats;
-    Physics::LagTickUVE lastRecorded = 0U;
+    LagCompServerSampleStats stats;
+    Physics::LagTick lastRecorded = 0U;
     std::uint64_t recordFailures = 0U;
     std::uint64_t fireFailures = 0U;
     std::uint64_t shotLiveAndRewound = 0U;
@@ -181,42 +181,42 @@ LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
 
     for (std::uint64_t i = 0U; i < config.ticks; ++i) {
         const std::uint64_t nowMs = kEstablishMs + 1U + i;
-        static_cast<void>(game.client->TickUVE(Network::PredictedInputUVE{}));
+        static_cast<void>(game.client->Tick(Network::PredictedInput{}));
         // The bot fires off its own stream (it knows its view); the server only ever sees
         // the intent. Firing before the pumps means same-tick delivery below.
-        const Physics::LagTickUVE preApplied = game.server->LastAppliedTickUVE();
+        const Physics::LagTick preApplied = game.server->LastAppliedTick();
         if (preApplied >= 1U) {
-            const Scene::FireLagShotReceiptUVE receipt = Scene::FireLagShotUVE(
-                *game.client, *game.shots, Network::kDefaultPredictionPawnUVE, kFireFractionUVE);
-            if (receipt.outcome == Scene::FireLagShotOutcomeUVE::Fired) {
+            const Scene::FireLagShotReceipt receipt = Scene::FireLagShot(
+                *game.client, *game.shots, Network::kDefaultPredictionPawn, kFireFraction);
+            if (receipt.outcome == Scene::FireLagShotOutcome::Fired) {
                 ++stats.shotsFired;
                 ++stats.raysFired;
-            } else if (receipt.outcome == Scene::FireLagShotOutcomeUVE::NoView) {
+            } else if (receipt.outcome == Scene::FireLagShotOutcome::NoView) {
                 ++stats.shotsNoView;
             } else {
                 ++fireFailures;
             }
         }
-        game.server->UpdateUVE(nowMs);
+        game.server->Update(nowMs);
         if (i % kBotPumpEvery == 0U) {
-            game.client->UpdateUVE(nowMs);
+            game.client->Update(nowMs);
         }
 
         // Record AFTER the scene update, numbered with the applied prediction ticks.
         const float victimX = kVictimStartX + kVictimSpeed * static_cast<float>(i + 1U);
-        game.MoveVictimUVE(victimX);
-        const Physics::LagTickUVE applied = game.server->LastAppliedTickUVE();
-        for (Physics::LagTickUVE t = lastRecorded + 1U; t <= applied; ++t) {
-            if (!game.compensator.RecordUVE(t, game.entityManager)) {
+        game.MoveVictim(victimX);
+        const Physics::LagTick applied = game.server->LastAppliedTick();
+        for (Physics::LagTick t = lastRecorded + 1U; t <= applied; ++t) {
+            if (!game.compensator.Record(t, game.entityManager)) {
                 ++recordFailures;
             }
         }
         lastRecorded = applied;
 
-        Physics::Hitbox3DSyncReportUVE live =
-            Physics::SyncHitboxes3DUVE(game.entityManager);
+        Physics::Hitbox3DSyncReport live =
+            Physics::SyncHitboxes3D(game.entityManager);
         bool liveHit = false;
-        for (const Physics::Hitbox3DStrikePairUVE& strike : live.strikes) {
+        for (const Physics::Hitbox3DStrikePair& strike : live.strikes) {
             if (strike.hitbox == game.turret && strike.hurtbox == game.victim) {
                 liveHit = true;
             }
@@ -224,28 +224,28 @@ LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
 
         // The server never reads the bot's stream: every resolve below runs on a polled
         // intent's transported view tick and fraction.
-        const std::vector<Network::ShotIntentUVE> intents = game.shotInbox->PollUVE();
+        const std::vector<Network::ShotIntent> intents = game.shotInbox->Poll();
         if (applied >= 1U) {
-            const Physics::LagTickUVE lagView = Scene::ShooterViewTickUVE(*game.client);
+            const Physics::LagTick lagView = Scene::ShooterViewTick(*game.client);
             if (lagView <= applied && applied - lagView > stats.maxViewLag) {
                 stats.maxViewLag = applied - lagView;
             }
         }
-        const bool liveRayHit = LiveRayHitsUVE(victimX);
-        Math::RayUVE ray;
-        ray.origin = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-        ray.direction = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-        for (const Network::ShotIntentUVE& intent : intents) {
+        const bool liveRayHit = LiveRayHits(victimX);
+        Math::Ray ray;
+        ray.origin = Math::Vector3{0.0F, 0.0F, 0.0F};
+        ray.direction = Math::Vector3{1.0F, 0.0F, 0.0F};
+        for (const Network::ShotIntent& intent : intents) {
             // The wire never carries a view-0 fire (the bot gates), but a forged one fails
             // closed here for both paths: the shot wiring would drop it, and the raw ray
             // resolve must never see a clamping tick.
-            if (intent.viewTick == Network::kInvalidPredictionTickUVE) {
+            if (intent.viewTick == Network::kInvalidPredictionTick) {
                 continue;
             }
             if (liveHit) {
                 ++stats.shotLiveHits;
             }
-            const Physics::LagShotReportUVE shot = Scene::ResolveLagShotAtUVE(
+            const Physics::LagShotReport shot = Scene::ResolveLagShotAt(
                 game.compensator, game.turret, intent.viewTick, intent.fraction,
                 game.entityManager);
         const bool rewoundHit = !shot.pairs.empty();
@@ -262,14 +262,14 @@ LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
             if (shot.interpolated) {
                 ++stats.fracInterpolated;
             }
-            Scene::MergeLagShotUVE(live, shot);
+            Scene::MergeLagShot(live, shot);
             if (liveRayHit) {
                 ++stats.rayLiveHits;
             }
-            const Physics::LagRayReportUVE rewoundRay = game.compensator.ResolveRayAtUVE(
+            const Physics::LagRayReport rewoundRay = game.compensator.ResolveRayAt(
                 game.turret, ray, kRayRange, intent.viewTick, intent.fraction,
                 game.entityManager);
-            const bool rayHit = rewoundRay.entity != Scene::kInvalidEntityUVE;
+            const bool rayHit = rewoundRay.entity != Scene::kInvalidEntity;
             if (rayHit) {
                 ++stats.rayRewoundHits;
             }
@@ -279,24 +279,24 @@ LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
             if (rayHit && !liveRayHit) {
                 ++stats.raySaves;
             }
-            const Scene::HealthDamageResultUVE rayDamage = Scene::ApplyLagRayHitUVE(
+            const Scene::HealthDamageResult rayDamage = Scene::ApplyLagRayHit(
                 game.entityManager, game.eventSystem, game.turret, rewoundRay, kRayDamage);
             if (rayDamage.applied) {
                 ++rayApplied;
             }
         }
-        const Physics::Hitbox3DStrikeLifecycleReportUVE lifecycle =
-            game.tracker.UpdateUVE(live);
+        const Physics::Hitbox3DStrikeLifecycleReport lifecycle =
+            game.tracker.Update(live);
         if (lifecycle.inputSnapshotTruncated || lifecycle.transitionsTruncated) {
             anyTruncation = true;
         }
-        for (const Physics::Hitbox3DStrikeTransitionUVE& transition : lifecycle.transitions) {
-            if (transition.kind != Physics::Hitbox3DStrikeTransitionKindUVE::Entered) {
+        for (const Physics::Hitbox3DStrikeTransition& transition : lifecycle.transitions) {
+            if (transition.kind != Physics::Hitbox3DStrikeTransitionKind::Entered) {
                 continue;
             }
             ++stats.enteredEvents;
-            const Scene::HealthDamageResultUVE strikeDamage =
-                Scene::ApplyHitboxStrikeToHealthUVE(game.entityManager,
+            const Scene::HealthDamageResult strikeDamage =
+                Scene::ApplyHitboxStrikeToHealth(game.entityManager,
                                                    transition.strike.hurtbox);
             if (strikeDamage.applied) {
                 ++shotStrikesApplied;
@@ -315,7 +315,7 @@ LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
 
     stats.ticks = config.ticks;
     stats.victimHealth =
-        game.entityManager.GetComponentUVE<Scene::HealthComponentUVE>(game.victim).health;
+        game.entityManager.GetComponent<Scene::HealthComponent>(game.victim).health;
     result.stats = stats;
 
     auto check = [&](const bool ok, const std::string& message) {

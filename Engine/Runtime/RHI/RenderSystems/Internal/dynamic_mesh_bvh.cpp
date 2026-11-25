@@ -14,13 +14,13 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] bool IsValidAabbUVE(const Math::AabbUVE& aabb) noexcept {
+[[nodiscard]] bool IsValidAabb(const Math::Aabb& aabb) noexcept {
     return std::isfinite(aabb.min.x) && std::isfinite(aabb.min.y) && std::isfinite(aabb.min.z) &&
            std::isfinite(aabb.max.x) && std::isfinite(aabb.max.y) && std::isfinite(aabb.max.z) &&
            aabb.min.x <= aabb.max.x && aabb.min.y <= aabb.max.y && aabb.min.z <= aabb.max.z;
 }
 
-[[nodiscard]] float ComputeSurfaceAreaUVE(const Math::AabbUVE& box) noexcept {
+[[nodiscard]] float ComputeSurfaceArea(const Math::Aabb& box) noexcept {
     const float dx = std::max(0.0F, box.max.x - box.min.x);
     const float dy = std::max(0.0F, box.max.y - box.min.y);
     const float dz = std::max(0.0F, box.max.z - box.min.z);
@@ -29,11 +29,11 @@ namespace {
 
 } // namespace
 
-DynamicMeshBvhUVE::DynamicMeshBvhUVE(std::vector<EntityEntry> entries) {
-    BuildUVE(std::move(entries));
+DynamicMeshBvh::DynamicMeshBvh(std::vector<EntityEntry> entries) {
+    Build(std::move(entries));
 }
 
-std::int32_t DynamicMeshBvhUVE::AllocateNode() {
+std::int32_t DynamicMeshBvh::AllocateNode() {
     if (!m_freeNodeIndices.empty()) {
         const std::int32_t index = m_freeNodeIndices.back();
         m_freeNodeIndices.pop_back();
@@ -45,14 +45,14 @@ std::int32_t DynamicMeshBvhUVE::AllocateNode() {
     return index;
 }
 
-void DynamicMeshBvhUVE::FreeNode(const std::int32_t index) noexcept {
+void DynamicMeshBvh::FreeNode(const std::int32_t index) noexcept {
     if (index >= 0 && static_cast<std::size_t>(index) < m_nodes.size()) {
         m_nodes[static_cast<std::size_t>(index)] = Node{};
         m_freeNodeIndices.push_back(index);
     }
 }
 
-void DynamicMeshBvhUVE::ClearUVE() noexcept {
+void DynamicMeshBvh::Clear() noexcept {
     m_nodes.clear();
     m_entityToLeafNode.clear();
     m_freeNodeIndices.clear();
@@ -60,11 +60,11 @@ void DynamicMeshBvhUVE::ClearUVE() noexcept {
     m_entityCount = 0U;
 }
 
-void DynamicMeshBvhUVE::BuildUVE(std::vector<EntityEntry> entries) {
-    ClearUVE();
+void DynamicMeshBvh::Build(std::vector<EntityEntry> entries) {
+    Clear();
 
     const auto validEnd = std::remove_if(entries.begin(), entries.end(), [](const EntityEntry& entry) {
-        return entry.entity == Scene::kInvalidEntityUVE || !IsValidAabbUVE(entry.bounds);
+        return entry.entity == Scene::kInvalidEntity || !IsValidAabb(entry.bounds);
     });
     entries.erase(validEnd, entries.end());
 
@@ -73,7 +73,7 @@ void DynamicMeshBvhUVE::BuildUVE(std::vector<EntityEntry> entries) {
     }
 
     // Deduplicate entities (keeping the last authored bounds per entity)
-    std::unordered_map<Scene::EntityUVE, std::size_t> uniqueEntities;
+    std::unordered_map<Scene::Entity, std::size_t> uniqueEntities;
     std::vector<EntityEntry> deduplicated;
     deduplicated.reserve(entries.size());
     for (const EntityEntry& entry : entries) {
@@ -98,7 +98,7 @@ void DynamicMeshBvhUVE::BuildUVE(std::vector<EntityEntry> entries) {
     m_entityCount = finalEntries.size();
 }
 
-std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries, const std::size_t begin,
+std::int32_t DynamicMeshBvh::BuildRecursive(std::vector<EntityEntry>& entries, const std::size_t begin,
                                               const std::size_t end, const std::int32_t parent) {
     const std::size_t count = end - begin;
 
@@ -111,12 +111,12 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
         leaf.rightChild = kInvalidNodeIndex;
         leaf.entryCount = static_cast<std::uint32_t>(count);
 
-        Math::AabbUVE bounds = entries[begin].bounds;
+        Math::Aabb bounds = entries[begin].bounds;
         for (std::size_t i = begin; i < end; ++i) {
             const std::size_t slot = i - begin;
             leaf.entries[slot] = entries[i];
             if (i > begin) {
-                bounds = bounds.UnionUVE(entries[i].bounds);
+                bounds = bounds.Union(entries[i].bounds);
             }
             m_entityToLeafNode[entries[i].entity] = leafIndex;
         }
@@ -125,13 +125,13 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
     }
 
     // Internal node creation: calculate bounding box of all entries
-    Math::AabbUVE bounds = entries[begin].bounds;
+    Math::Aabb bounds = entries[begin].bounds;
     for (std::size_t i = begin + 1U; i < end; ++i) {
-        bounds = bounds.UnionUVE(entries[i].bounds);
+        bounds = bounds.Union(entries[i].bounds);
     }
 
     // Split on axis with longest extent
-    const Math::Vector3UVE extents = bounds.GetExtentsUVE();
+    const Math::Vector3 extents = bounds.GetExtents();
     std::size_t splitAxis = 0U;
     if (extents.y > extents.x && extents.y >= extents.z) {
         splitAxis = 1U;
@@ -140,7 +140,7 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
     }
 
     const auto CenterOnAxis = [splitAxis](const EntityEntry& entry) noexcept {
-        const Math::Vector3UVE center = entry.bounds.GetCenterUVE();
+        const Math::Vector3 center = entry.bounds.GetCenter();
         return splitAxis == 0U ? center.x : (splitAxis == 1U ? center.y : center.z);
     };
 
@@ -166,7 +166,7 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
     internalNode.leftChild = leftChild;
     internalNode.rightChild = rightChild;
     internalNode.entryCount = 0U;
-    internalNode.bounds = m_nodes[static_cast<std::size_t>(leftChild)].bounds.UnionUVE(
+    internalNode.bounds = m_nodes[static_cast<std::size_t>(leftChild)].bounds.Union(
         m_nodes[static_cast<std::size_t>(rightChild)].bounds);
     const std::int32_t leftHeight = m_nodes[static_cast<std::size_t>(leftChild)].height;
     const std::int32_t rightHeight = m_nodes[static_cast<std::size_t>(rightChild)].height;
@@ -175,9 +175,9 @@ std::int32_t DynamicMeshBvhUVE::BuildRecursive(std::vector<EntityEntry>& entries
     return internalIndex;
 }
 
-void DynamicMeshBvhUVE::RebuildUVE() {
+void DynamicMeshBvh::Rebuild() {
     if (m_entityCount == 0U) {
-        ClearUVE();
+        Clear();
         return;
     }
     std::vector<EntityEntry> currentEntries;
@@ -193,10 +193,10 @@ void DynamicMeshBvhUVE::RebuildUVE() {
             }
         }
     }
-    BuildUVE(std::move(currentEntries));
+    Build(std::move(currentEntries));
 }
 
-void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
+void DynamicMeshBvh::RefitFromLeaf(const std::size_t leafIndex) noexcept {
     if (leafIndex >= m_nodes.size()) {
         return;
     }
@@ -207,9 +207,9 @@ void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
         if (node.IsLeaf()) {
             node.height = 0;
             if (node.entryCount > 0U) {
-                Math::AabbUVE bounds = node.entries[0].bounds;
+                Math::Aabb bounds = node.entries[0].bounds;
                 for (std::uint32_t i = 1U; i < node.entryCount; ++i) {
-                    bounds = bounds.UnionUVE(node.entries[i].bounds);
+                    bounds = bounds.Union(node.entries[i].bounds);
                 }
                 node.bounds = bounds;
             }
@@ -221,7 +221,7 @@ void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
             if (hasLeft && hasRight) {
                 const Node& leftNode = m_nodes[static_cast<std::size_t>(node.leftChild)];
                 const Node& rightNode = m_nodes[static_cast<std::size_t>(node.rightChild)];
-                node.bounds = leftNode.bounds.UnionUVE(rightNode.bounds);
+                node.bounds = leftNode.bounds.Union(rightNode.bounds);
                 node.height = 1 + (leftNode.height > rightNode.height ? leftNode.height : rightNode.height);
             } else if (hasLeft) {
                 const Node& leftNode = m_nodes[static_cast<std::size_t>(node.leftChild)];
@@ -237,7 +237,7 @@ void DynamicMeshBvhUVE::RefitFromLeafUVE(const std::size_t leafIndex) noexcept {
     }
 }
 
-std::int32_t DynamicMeshBvhUVE::FindBestLeafForInsertion(const Math::AabbUVE& bounds) const noexcept {
+std::int32_t DynamicMeshBvh::FindBestLeafForInsertion(const Math::Aabb& bounds) const noexcept {
     if (m_root == kInvalidNodeIndex) {
         return kInvalidNodeIndex;
     }
@@ -257,13 +257,13 @@ std::int32_t DynamicMeshBvhUVE::FindBestLeafForInsertion(const Math::AabbUVE& bo
             continue;
         }
 
-        const Math::AabbUVE leftUnion = m_nodes[static_cast<std::size_t>(left)].bounds.UnionUVE(bounds);
-        const float leftEnlargement = ComputeSurfaceAreaUVE(leftUnion) -
-                                      ComputeSurfaceAreaUVE(m_nodes[static_cast<std::size_t>(left)].bounds);
+        const Math::Aabb leftUnion = m_nodes[static_cast<std::size_t>(left)].bounds.Union(bounds);
+        const float leftEnlargement = ComputeSurfaceArea(leftUnion) -
+                                      ComputeSurfaceArea(m_nodes[static_cast<std::size_t>(left)].bounds);
 
-        const Math::AabbUVE rightUnion = m_nodes[static_cast<std::size_t>(right)].bounds.UnionUVE(bounds);
-        const float rightEnlargement = ComputeSurfaceAreaUVE(rightUnion) -
-                                       ComputeSurfaceAreaUVE(m_nodes[static_cast<std::size_t>(right)].bounds);
+        const Math::Aabb rightUnion = m_nodes[static_cast<std::size_t>(right)].bounds.Union(bounds);
+        const float rightEnlargement = ComputeSurfaceArea(rightUnion) -
+                                       ComputeSurfaceArea(m_nodes[static_cast<std::size_t>(right)].bounds);
 
         if (leftEnlargement < rightEnlargement) {
             current = left;
@@ -274,7 +274,7 @@ std::int32_t DynamicMeshBvhUVE::FindBestLeafForInsertion(const Math::AabbUVE& bo
     return current;
 }
 
-void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntry& newEntry) {
+void DynamicMeshBvh::SplitLeaf(const std::int32_t leafIndex, const EntityEntry& newEntry) {
     std::array<EntityEntry, kLeafCapacity + 1U> splitEntries{};
     const Node& oldLeaf = m_nodes[static_cast<std::size_t>(leafIndex)];
     for (std::size_t i = 0U; i < kLeafCapacity; ++i) {
@@ -282,12 +282,12 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
     }
     splitEntries[kLeafCapacity] = newEntry;
 
-    Math::AabbUVE unionBounds = splitEntries[0].bounds;
+    Math::Aabb unionBounds = splitEntries[0].bounds;
     for (std::size_t i = 1U; i <= kLeafCapacity; ++i) {
-        unionBounds = unionBounds.UnionUVE(splitEntries[i].bounds);
+        unionBounds = unionBounds.Union(splitEntries[i].bounds);
     }
 
-    const Math::Vector3UVE extents = unionBounds.GetExtentsUVE();
+    const Math::Vector3 extents = unionBounds.GetExtents();
     std::size_t splitAxis = 0U;
     if (extents.y > extents.x && extents.y >= extents.z) {
         splitAxis = 1U;
@@ -296,7 +296,7 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
     }
 
     const auto CenterOnAxis = [splitAxis](const EntityEntry& entry) noexcept {
-        const Math::Vector3UVE center = entry.bounds.GetCenterUVE();
+        const Math::Vector3 center = entry.bounds.GetCenter();
         return splitAxis == 0U ? center.x : (splitAxis == 1U ? center.y : center.z);
     };
 
@@ -323,11 +323,11 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
         leftChild.leftChild = kInvalidNodeIndex;
         leftChild.rightChild = kInvalidNodeIndex;
         leftChild.entryCount = static_cast<std::uint32_t>(leftCount);
-        Math::AabbUVE leftBounds = splitEntries[0].bounds;
+        Math::Aabb leftBounds = splitEntries[0].bounds;
         for (std::size_t i = 0U; i < leftCount; ++i) {
             leftChild.entries[i] = splitEntries[i];
             if (i > 0U) {
-                leftBounds = leftBounds.UnionUVE(splitEntries[i].bounds);
+                leftBounds = leftBounds.Union(splitEntries[i].bounds);
             }
             m_entityToLeafNode[splitEntries[i].entity] = leftChildIndex;
         }
@@ -341,11 +341,11 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
         rightChild.leftChild = kInvalidNodeIndex;
         rightChild.rightChild = kInvalidNodeIndex;
         rightChild.entryCount = static_cast<std::uint32_t>(rightCount);
-        Math::AabbUVE rightBounds = splitEntries[leftCount].bounds;
+        Math::Aabb rightBounds = splitEntries[leftCount].bounds;
         for (std::size_t i = 0U; i < rightCount; ++i) {
             rightChild.entries[i] = splitEntries[leftCount + i];
             if (i > 0U) {
-                rightBounds = rightBounds.UnionUVE(splitEntries[leftCount + i].bounds);
+                rightBounds = rightBounds.Union(splitEntries[leftCount + i].bounds);
             }
             m_entityToLeafNode[splitEntries[leftCount + i].entity] = rightChildIndex;
         }
@@ -361,16 +361,16 @@ void DynamicMeshBvhUVE::SplitLeaf(const std::int32_t leafIndex, const EntityEntr
         for (std::size_t i = 0U; i < kLeafCapacity; ++i) {
             internalNode.entries[i] = EntityEntry{};
         }
-        internalNode.bounds = m_nodes[static_cast<std::size_t>(leftChildIndex)].bounds.UnionUVE(
+        internalNode.bounds = m_nodes[static_cast<std::size_t>(leftChildIndex)].bounds.Union(
             m_nodes[static_cast<std::size_t>(rightChildIndex)].bounds);
     }
 
     ++m_entityCount;
-    RefitFromLeafUVE(static_cast<std::size_t>(leafIndex));
-    RebalanceTowardRootUVE(leafIndex);
+    RefitFromLeaf(static_cast<std::size_t>(leafIndex));
+    RebalanceTowardRoot(leafIndex);
 }
 
-void DynamicMeshBvhUVE::RebalanceTowardRootUVE(const std::int32_t nodeIndex) noexcept {
+void DynamicMeshBvh::RebalanceTowardRoot(const std::int32_t nodeIndex) noexcept {
     std::int32_t current = nodeIndex;
     while (current != kInvalidNodeIndex && static_cast<std::size_t>(current) < m_nodes.size()) {
         const std::int32_t parentIndex = m_nodes[static_cast<std::size_t>(current)].parentIndex;
@@ -385,15 +385,15 @@ void DynamicMeshBvhUVE::RebalanceTowardRootUVE(const std::int32_t nodeIndex) noe
                                              ? m_nodes[static_cast<std::size_t>(parent.rightChild)].height
                                              : -1;
         if (leftHeight >= rightHeight + 2) {
-            RotateHeavyChildUVE(parentIndex, true);
+            RotateHeavyChild(parentIndex, true);
         } else if (rightHeight >= leftHeight + 2) {
-            RotateHeavyChildUVE(parentIndex, false);
+            RotateHeavyChild(parentIndex, false);
         }
         current = parentIndex;
     }
 }
 
-void DynamicMeshBvhUVE::RotateHeavyChildUVE(const std::int32_t nodeIndex, const bool heavyIsLeft) noexcept {
+void DynamicMeshBvh::RotateHeavyChild(const std::int32_t nodeIndex, const bool heavyIsLeft) noexcept {
     if (nodeIndex < 0 || static_cast<std::size_t>(nodeIndex) >= m_nodes.size()) {
         return;
     }
@@ -454,11 +454,11 @@ void DynamicMeshBvhUVE::RotateHeavyChildUVE(const std::int32_t nodeIndex, const 
 
     // nodeIndex sits deeper now; the refit walks from it up to the root, repairing bounds and
     // heights across the rotated subtree and every ancestor above it.
-    RefitFromLeafUVE(static_cast<std::size_t>(nodeIndex));
+    RefitFromLeaf(static_cast<std::size_t>(nodeIndex));
 }
 
-void DynamicMeshBvhUVE::InsertOrUpdateUVE(const Scene::EntityUVE entity, const Math::AabbUVE& worldBounds) {
-    if (entity == Scene::kInvalidEntityUVE || !IsValidAabbUVE(worldBounds)) {
+void DynamicMeshBvh::InsertOrUpdate(const Scene::Entity entity, const Math::Aabb& worldBounds) {
+    if (entity == Scene::kInvalidEntity || !IsValidAabb(worldBounds)) {
         return;
     }
 
@@ -470,7 +470,7 @@ void DynamicMeshBvhUVE::InsertOrUpdateUVE(const Scene::EntityUVE entity, const M
             for (std::uint32_t i = 0U; i < leaf.entryCount; ++i) {
                 if (leaf.entries[i].entity == entity) {
                     leaf.entries[i].bounds = worldBounds;
-                    RefitFromLeafUVE(static_cast<std::size_t>(leafIndex));
+                    RefitFromLeaf(static_cast<std::size_t>(leafIndex));
                     return;
                 }
             }
@@ -501,22 +501,22 @@ void DynamicMeshBvhUVE::InsertOrUpdateUVE(const Scene::EntityUVE entity, const M
     if (targetLeaf.entryCount < kLeafCapacity) {
         targetLeaf.entries[targetLeaf.entryCount] = newEntry;
         ++targetLeaf.entryCount;
-        targetLeaf.bounds = targetLeaf.bounds.UnionUVE(worldBounds);
+        targetLeaf.bounds = targetLeaf.bounds.Union(worldBounds);
         m_entityToLeafNode[entity] = targetLeafIndex;
         ++m_entityCount;
-        RefitFromLeafUVE(static_cast<std::size_t>(targetLeafIndex));
-        RebalanceTowardRootUVE(targetLeafIndex);
+        RefitFromLeaf(static_cast<std::size_t>(targetLeafIndex));
+        RebalanceTowardRoot(targetLeafIndex);
     } else {
         SplitLeaf(targetLeafIndex, newEntry);
     }
 }
 
-void DynamicMeshBvhUVE::RemoveUVE(const Scene::EntityUVE entity) {
-    static_cast<void>(RemoveEntityUVE(entity));
+void DynamicMeshBvh::Remove(const Scene::Entity entity) {
+    static_cast<void>(RemoveEntity(entity));
 }
 
-bool DynamicMeshBvhUVE::RemoveEntityUVE(const Scene::EntityUVE entity) {
-    if (entity == Scene::kInvalidEntityUVE) {
+bool DynamicMeshBvh::RemoveEntity(const Scene::Entity entity) {
+    if (entity == Scene::kInvalidEntity) {
         return false;
     }
 
@@ -544,7 +544,7 @@ bool DynamicMeshBvhUVE::RemoveEntityUVE(const Scene::EntityUVE entity) {
     }
 
     if (leaf.entryCount > 0U) {
-        RefitFromLeafUVE(static_cast<std::size_t>(leafIndex));
+        RefitFromLeaf(static_cast<std::size_t>(leafIndex));
         return true;
     }
 
@@ -580,8 +580,8 @@ bool DynamicMeshBvhUVE::RemoveEntityUVE(const Scene::EntityUVE entity) {
             }
             m_nodes[static_cast<std::size_t>(siblingIndex)].parentIndex = grandParentIndex;
         }
-        RefitFromLeafUVE(static_cast<std::size_t>(siblingIndex));
-        RebalanceTowardRootUVE(siblingIndex);
+        RefitFromLeaf(static_cast<std::size_t>(siblingIndex));
+        RebalanceTowardRoot(siblingIndex);
     }
 
     FreeNode(leafIndex);
@@ -589,8 +589,8 @@ bool DynamicMeshBvhUVE::RemoveEntityUVE(const Scene::EntityUVE entity) {
     return true;
 }
 
-void DynamicMeshBvhUVE::QueryFrustumUVE(const Math::FrustumUVE& frustum,
-                                        std::vector<Scene::EntityUVE>& outVisibleEntities) const {
+void DynamicMeshBvh::QueryFrustum(const Math::Frustum& frustum,
+                                        std::vector<Scene::Entity>& outVisibleEntities) const {
     outVisibleEntities.clear();
     if (m_root == kInvalidNodeIndex || m_nodes.empty()) {
         return;
@@ -661,16 +661,16 @@ void DynamicMeshBvhUVE::QueryFrustumUVE(const Math::FrustumUVE& frustum,
             continue;
         }
 
-        const Math::Vector3UVE center = node.bounds.GetCenterUVE();
-        const Math::Vector3UVE extents = node.bounds.GetExtentsUVE();
+        const Math::Vector3 center = node.bounds.GetCenter();
+        const Math::Vector3 extents = node.bounds.GetExtents();
         bool nodeFullyInside = true;
         bool isOutside = false;
 
-        for (const Math::PlaneUVE& plane : frustum.planes) {
+        for (const Math::Plane& plane : frustum.planes) {
             const float radius = extents.x * std::abs(plane.normal.x) +
                                  extents.y * std::abs(plane.normal.y) +
                                  extents.z * std::abs(plane.normal.z);
-            const float signedDist = plane.GetSignedDistanceUVE(center);
+            const float signedDist = plane.GetSignedDistance(center);
             if (signedDist + radius < 0.0F) {
                 isOutside = true;
                 break;
@@ -705,7 +705,7 @@ void DynamicMeshBvhUVE::QueryFrustumUVE(const Math::FrustumUVE& frustum,
         // Partially inside
         if (node.IsLeaf()) {
             for (std::uint32_t i = 0U; i < node.entryCount; ++i) {
-                if (frustum.IntersectsUVE(node.entries[i].bounds)) {
+                if (frustum.Intersects(node.entries[i].bounds)) {
                     outVisibleEntities.push_back(node.entries[i].entity);
                 }
             }
@@ -720,10 +720,10 @@ void DynamicMeshBvhUVE::QueryFrustumUVE(const Math::FrustumUVE& frustum,
     }
 }
 
-void DynamicMeshBvhUVE::QueryAabbUVE(const Math::AabbUVE& queryBounds,
-                                     std::vector<Scene::EntityUVE>& outEntities) const {
+void DynamicMeshBvh::QueryAabb(const Math::Aabb& queryBounds,
+                                     std::vector<Scene::Entity>& outEntities) const {
     outEntities.clear();
-    if (m_root == kInvalidNodeIndex || m_nodes.empty() || !IsValidAabbUVE(queryBounds)) {
+    if (m_root == kInvalidNodeIndex || m_nodes.empty() || !IsValidAabb(queryBounds)) {
         return;
     }
 
@@ -769,13 +769,13 @@ void DynamicMeshBvhUVE::QueryAabbUVE(const Math::AabbUVE& queryBounds,
         }
 
         const Node& node = m_nodes[static_cast<std::size_t>(nodeIdx)];
-        if (!queryBounds.IntersectsUVE(node.bounds)) {
+        if (!queryBounds.Intersects(node.bounds)) {
             continue;
         }
 
         if (node.IsLeaf()) {
             for (std::uint32_t i = 0U; i < node.entryCount; ++i) {
-                if (queryBounds.IntersectsUVE(node.entries[i].bounds)) {
+                if (queryBounds.Intersects(node.entries[i].bounds)) {
                     outEntities.push_back(node.entries[i].entity);
                 }
             }
@@ -790,8 +790,8 @@ void DynamicMeshBvhUVE::QueryAabbUVE(const Math::AabbUVE& queryBounds,
     }
 }
 
-void DynamicMeshBvhUVE::QueryRayUVE(const Math::RayUVE& ray, const float maxDistance,
-                                    std::vector<Scene::EntityUVE>& outEntities) const {
+void DynamicMeshBvh::QueryRay(const Math::Ray& ray, const float maxDistance,
+                                    std::vector<Scene::Entity>& outEntities) const {
     outEntities.clear();
     if (m_root == kInvalidNodeIndex || m_nodes.empty() || maxDistance < 0.0F) {
         return;
@@ -839,13 +839,13 @@ void DynamicMeshBvhUVE::QueryRayUVE(const Math::RayUVE& ray, const float maxDist
         }
 
         const Node& node = m_nodes[static_cast<std::size_t>(nodeIdx)];
-        if (!Math::IntersectRayUVE(ray, node.bounds, maxDistance).has_value()) {
+        if (!Math::IntersectRay(ray, node.bounds, maxDistance).has_value()) {
             continue;
         }
 
         if (node.IsLeaf()) {
             for (std::uint32_t i = 0U; i < node.entryCount; ++i) {
-                if (Math::IntersectRayUVE(ray, node.entries[i].bounds, maxDistance).has_value()) {
+                if (Math::IntersectRay(ray, node.entries[i].bounds, maxDistance).has_value()) {
                     outEntities.push_back(node.entries[i].entity);
                 }
             }
@@ -860,32 +860,32 @@ void DynamicMeshBvhUVE::QueryRayUVE(const Math::RayUVE& ray, const float maxDist
     }
 }
 
-std::size_t DynamicMeshBvhUVE::GetEntityCountUVE() const noexcept {
+std::size_t DynamicMeshBvh::GetEntityCount() const noexcept {
     return m_entityCount;
 }
 
-std::size_t DynamicMeshBvhUVE::GetNodeCountUVE() const noexcept {
+std::size_t DynamicMeshBvh::GetNodeCount() const noexcept {
     return m_nodes.size() - m_freeNodeIndices.size();
 }
 
-std::int32_t DynamicMeshBvhUVE::GetRootIndexUVE() const noexcept {
+std::int32_t DynamicMeshBvh::GetRootIndex() const noexcept {
     return m_root;
 }
 
-bool DynamicMeshBvhUVE::IsEmptyUVE() const noexcept {
+bool DynamicMeshBvh::IsEmpty() const noexcept {
     return m_entityCount == 0U;
 }
 
-bool DynamicMeshBvhUVE::ContainsEntityUVE(const Scene::EntityUVE entity) const noexcept {
+bool DynamicMeshBvh::ContainsEntity(const Scene::Entity entity) const noexcept {
     return m_entityToLeafNode.contains(entity);
 }
 
-std::int32_t DynamicMeshBvhUVE::GetEntityLeafIndexUVE(const Scene::EntityUVE entity) const noexcept {
+std::int32_t DynamicMeshBvh::GetEntityLeafIndex(const Scene::Entity entity) const noexcept {
     const auto it = m_entityToLeafNode.find(entity);
     return it != m_entityToLeafNode.end() ? it->second : kInvalidNodeIndex;
 }
 
-std::optional<Math::AabbUVE> DynamicMeshBvhUVE::GetEntityBoundsUVE(const Scene::EntityUVE entity) const noexcept {
+std::optional<Math::Aabb> DynamicMeshBvh::GetEntityBounds(const Scene::Entity entity) const noexcept {
     const auto it = m_entityToLeafNode.find(entity);
     if (it != m_entityToLeafNode.end()) {
         const std::int32_t leafIdx = it->second;
@@ -901,21 +901,21 @@ std::optional<Math::AabbUVE> DynamicMeshBvhUVE::GetEntityBoundsUVE(const Scene::
     return std::nullopt;
 }
 
-const DynamicMeshBvhUVE::Node& DynamicMeshBvhUVE::GetNodeUVE(const std::size_t index) const {
+const DynamicMeshBvh::Node& DynamicMeshBvh::GetNode(const std::size_t index) const {
     if (index >= m_nodes.size()) {
-        throw std::out_of_range("DynamicMeshBvhUVE::GetNodeUVE: index out of range");
+        throw std::out_of_range("DynamicMeshBvh::GetNode: index out of range");
     }
     return m_nodes[index];
 }
 
-const std::vector<DynamicMeshBvhUVE::Node>& DynamicMeshBvhUVE::GetNodesUVE() const noexcept {
+const std::vector<DynamicMeshBvh::Node>& DynamicMeshBvh::GetNodes() const noexcept {
     return m_nodes;
 }
 
-DynamicMeshBvhUVE::TreeStatsUVE DynamicMeshBvhUVE::ComputeStatsUVE() const noexcept {
-    TreeStatsUVE stats{};
+DynamicMeshBvh::TreeStats DynamicMeshBvh::ComputeStats() const noexcept {
+    TreeStats stats{};
     stats.entityCount = m_entityCount;
-    stats.nodeCount = GetNodeCountUVE();
+    stats.nodeCount = GetNodeCount();
 
     if (m_root == kInvalidNodeIndex || m_nodes.empty()) {
         return stats;

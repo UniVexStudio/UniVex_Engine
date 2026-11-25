@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The part of the GLFW API the editor host and the launchers use, answered on Android by the one
-// activity surface. The EGL context and buffer swaps belong to AndroidWindowManagerUVE; this file
+// activity surface. The EGL context and buffer swaps belong to AndroidWindowManager; this file
 // only reports the surface, routes input to the registered callbacks, and refuses what a phone has
 // no equivalent for (more OS windows, moving or resizing the window).
 
@@ -24,7 +24,7 @@ struct GLFWwindow {
     float contentScale = 1.0F;
     bool focused = true;
     bool shouldClose = false;
-    bool pressed = false;   // the left button (DispatchAndroidGlfwPointerUVE)
+    bool pressed = false;   // the left button (DispatchAndroidGlfwPointer)
     bool textInput = false; // the interface wants the soft keyboard
     std::array<bool, GLFW_MOUSE_BUTTON_LAST + 1> buttons{};
     double cursorX = 0.0;
@@ -48,79 +48,79 @@ struct GLFWmonitor {};
 
 namespace {
 
-GLFWwindow g_windowUVE;
-GLFWmonitor g_monitorUVE;
-GLFWvidmode g_modeUVE{};
-ANativeActivity* g_activityUVE = nullptr;
-std::string g_clipboardUVE;
-bool g_hardwareInputActiveUVE = false;
-int g_heldModsUVE = 0;
-int g_stickyModsUVE = 0;
-std::vector<UVE::Window::AndroidTouchContactUVE> g_touchContactsUVE;
-std::function<bool(float, float)> g_touchClaimHookUVE;
-const auto g_startUVE = std::chrono::steady_clock::now();
+GLFWwindow g_window;
+GLFWmonitor g_monitor;
+GLFWvidmode g_mode{};
+ANativeActivity* g_activity = nullptr;
+std::string g_clipboard;
+bool g_hardwareInputActive = false;
+int g_heldMods = 0;
+int g_stickyMods = 0;
+std::vector<UVE::Window::AndroidTouchContact> g_touchContacts;
+std::function<bool(float, float)> g_touchClaimHook;
+const auto g_start = std::chrono::steady_clock::now();
 /// The GLES library, for entry points eglGetProcAddress does not return.
-inline constexpr const char* kGlesLibraryUVE = "libGLESv3.so";
+inline constexpr const char* kGlesLibrary = "libGLESv3.so";
 /// GLFW_HOVERED: a touch screen has no pointer outside the window.
-inline constexpr int kTrueUVE = GLFW_TRUE;
+inline constexpr int kTrue = GLFW_TRUE;
 
-[[nodiscard]] int SurfaceWidthUVE() {
-    return g_windowUVE.surface != nullptr ? ANativeWindow_getWidth(g_windowUVE.surface) : 0;
+[[nodiscard]] int SurfaceWidth() {
+    return g_window.surface != nullptr ? ANativeWindow_getWidth(g_window.surface) : 0;
 }
 
-[[nodiscard]] int SurfaceHeightUVE() {
-    return g_windowUVE.surface != nullptr ? ANativeWindow_getHeight(g_windowUVE.surface) : 0;
+[[nodiscard]] int SurfaceHeight() {
+    return g_window.surface != nullptr ? ANativeWindow_getHeight(g_window.surface) : 0;
 }
 
 } // namespace
 
 namespace UVE::Window {
 
-GLFWwindow* AndroidGlfwWindowUVE() {
-    return &g_windowUVE;
+GLFWwindow* AndroidGlfwWindow() {
+    return &g_window;
 }
 
-void SetAndroidGlfwActivityUVE(ANativeActivity* const activity) {
-    g_activityUVE = activity;
+void SetAndroidGlfwActivity(ANativeActivity* const activity) {
+    g_activity = activity;
 }
 
-void SetAndroidGlfwSurfaceUVE(ANativeWindow* const surface) {
-    g_windowUVE.surface = surface;
+void SetAndroidGlfwSurface(ANativeWindow* const surface) {
+    g_window.surface = surface;
 }
 
-void SetAndroidGlfwFocusUVE(const bool focused) {
-    if (g_windowUVE.focused == focused) {
+void SetAndroidGlfwFocus(const bool focused) {
+    if (g_window.focused == focused) {
         return;
     }
-    g_windowUVE.focused = focused;
-    if (g_windowUVE.focus != nullptr) {
-        g_windowUVE.focus(&g_windowUVE, focused ? GLFW_TRUE : GLFW_FALSE);
+    g_window.focused = focused;
+    if (g_window.focus != nullptr) {
+        g_window.focus(&g_window, focused ? GLFW_TRUE : GLFW_FALSE);
     }
 }
 
-void SetAndroidGlfwContentScaleUVE(const float scale) {
-    g_windowUVE.contentScale = scale;
+void SetAndroidGlfwContentScale(const float scale) {
+    g_window.contentScale = scale;
 }
 
-void DispatchAndroidGlfwPointerUVE(const AndroidPointerPhaseUVE phase, const float x, const float y) {
-    GLFWwindow& w = g_windowUVE;
+void DispatchAndroidGlfwPointer(const AndroidPointerPhase phase, const float x, const float y) {
+    GLFWwindow& w = g_window;
     w.cursorX = x;
     w.cursorY = y;
     if (w.cursorPos != nullptr) {
         w.cursorPos(&w, x, y);
     }
-    const bool down = phase == AndroidPointerPhaseUVE::Down || phase == AndroidPointerPhaseUVE::Move;
+    const bool down = phase == AndroidPointerPhase::Down || phase == AndroidPointerPhase::Move;
     if (down != w.pressed) {
         w.pressed = down;
         w.buttons[GLFW_MOUSE_BUTTON_LEFT] = down;
         if (w.mouseButton != nullptr) {
-            w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, g_heldModsUVE | g_stickyModsUVE);
+            w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, g_heldMods | g_stickyMods);
         }
     }
 }
 
-void DispatchAndroidGlfwCursorUVE(const float x, const float y) {
-    GLFWwindow& w = g_windowUVE;
+void DispatchAndroidGlfwCursor(const float x, const float y) {
+    GLFWwindow& w = g_window;
     w.cursorX = x;
     w.cursorY = y;
     if (w.cursorPos != nullptr) {
@@ -128,12 +128,12 @@ void DispatchAndroidGlfwCursorUVE(const float x, const float y) {
     }
 }
 
-void DispatchAndroidGlfwMouseButtonUVE(const int button, const bool down, const float x, const float y) {
+void DispatchAndroidGlfwMouseButton(const int button, const bool down, const float x, const float y) {
     if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) {
         return;
     }
-    DispatchAndroidGlfwCursorUVE(x, y);
-    GLFWwindow& w = g_windowUVE;
+    DispatchAndroidGlfwCursor(x, y);
+    GLFWwindow& w = g_window;
     auto& held = w.buttons[static_cast<std::size_t>(button)];
     if (held == down) {
         return;
@@ -143,100 +143,100 @@ void DispatchAndroidGlfwMouseButtonUVE(const int button, const bool down, const 
         w.pressed = down;
     }
     if (w.mouseButton != nullptr) {
-        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, g_heldModsUVE | g_stickyModsUVE);
+        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, g_heldMods | g_stickyMods);
     }
 }
 
-void DispatchAndroidGlfwScrollUVE(const float dy, const float dx) {
-    if (g_windowUVE.scroll != nullptr) {
-        g_windowUVE.scroll(&g_windowUVE, static_cast<double>(dx), static_cast<double>(dy));
+void DispatchAndroidGlfwScroll(const float dy, const float dx) {
+    if (g_window.scroll != nullptr) {
+        g_window.scroll(&g_window, static_cast<double>(dx), static_cast<double>(dy));
     }
 }
 
-void DispatchAndroidGlfwCharUVE(const unsigned int codepoint) {
-    if (g_windowUVE.character != nullptr) {
-        g_windowUVE.character(&g_windowUVE, codepoint);
+void DispatchAndroidGlfwChar(const unsigned int codepoint) {
+    if (g_window.character != nullptr) {
+        g_window.character(&g_window, codepoint);
     }
 }
 
-void DispatchAndroidGlfwKeyUVE(const int glfwKey, const int action, const int mods) {
-    if (g_windowUVE.key != nullptr) {
-        g_windowUVE.key(&g_windowUVE, glfwKey, 0, action, mods | g_stickyModsUVE);
+void DispatchAndroidGlfwKey(const int glfwKey, const int action, const int mods) {
+    if (g_window.key != nullptr) {
+        g_window.key(&g_window, glfwKey, 0, action, mods | g_stickyMods);
     }
 }
 
-void SetAndroidGlfwHardwareInputUVE(const bool active) {
-    g_hardwareInputActiveUVE = active;
+void SetAndroidGlfwHardwareInput(const bool active) {
+    g_hardwareInputActive = active;
 }
 
-bool AndroidGlfwHasHardwareInputUVE() {
-    return g_hardwareInputActiveUVE;
+bool AndroidGlfwHasHardwareInput() {
+    return g_hardwareInputActive;
 }
 
-void SetAndroidGlfwHeldModsUVE(const int glfwMods) {
-    g_heldModsUVE = glfwMods;
+void SetAndroidGlfwHeldMods(const int glfwMods) {
+    g_heldMods = glfwMods;
 }
 
-void SetAndroidGlfwStickyModsUVE(const int glfwMods) {
-    g_stickyModsUVE = glfwMods;
+void SetAndroidGlfwStickyMods(const int glfwMods) {
+    g_stickyMods = glfwMods;
 }
 
-int AndroidGlfwStickyModsUVE() {
-    return g_stickyModsUVE;
+int AndroidGlfwStickyMods() {
+    return g_stickyMods;
 }
 
-void SetAndroidGlfwTouchContactsUVE(std::vector<AndroidTouchContactUVE> contacts) {
-    g_touchContactsUVE = std::move(contacts);
+void SetAndroidGlfwTouchContacts(std::vector<AndroidTouchContact> contacts) {
+    g_touchContacts = std::move(contacts);
 }
 
-std::vector<AndroidTouchContactUVE> AndroidGlfwTouchContactsUVE() {
-    return g_touchContactsUVE;
+std::vector<AndroidTouchContact> AndroidGlfwTouchContacts() {
+    return g_touchContacts;
 }
 
-void SetAndroidGlfwTouchClaimHookUVE(std::function<bool(float x, float y)> hook) {
-    g_touchClaimHookUVE = std::move(hook);
+void SetAndroidGlfwTouchClaimHook(std::function<bool(float x, float y)> hook) {
+    g_touchClaimHook = std::move(hook);
 }
 
-bool AndroidGlfwClaimTouchAtUVE(const float x, const float y) {
-    return g_touchClaimHookUVE && g_touchClaimHookUVE(x, y);
+bool AndroidGlfwClaimTouchAt(const float x, const float y) {
+    return g_touchClaimHook && g_touchClaimHook(x, y);
 }
 
-bool AndroidGlfwHasAllFilesAccessUVE() {
-    return HasAndroidAllFilesAccessUVE(g_activityUVE);
+bool AndroidGlfwHasAllFilesAccess() {
+    return HasAndroidAllFilesAccess(g_activity);
 }
 
-void RequestAndroidGlfwAllFilesAccessUVE() {
-    RequestAndroidAllFilesAccessUVE(g_activityUVE);
+void RequestAndroidGlfwAllFilesAccess() {
+    RequestAndroidAllFilesAccess(g_activity);
 }
 
-AndroidStoragePathsUVE ReadAndroidGlfwStoragePathsUVE() {
-    return ReadAndroidStoragePathsUVE(g_activityUVE);
+AndroidStoragePaths ReadAndroidGlfwStoragePaths() {
+    return ReadAndroidStoragePaths(g_activity);
 }
 
-AndroidSafeAreaUVE ReadAndroidGlfwSafeAreaUVE() {
-    return ReadAndroidSafeAreaUVE(g_activityUVE);
+AndroidSafeArea ReadAndroidGlfwSafeArea() {
+    return ReadAndroidSafeArea(g_activity);
 }
 
-void SetAndroidGlfwTextInputUVE(const bool wanted) {
-    g_windowUVE.textInput = wanted;
+void SetAndroidGlfwTextInput(const bool wanted) {
+    g_window.textInput = wanted;
 }
 
-bool AndroidGlfwTextInputWantedUVE() {
-    return g_windowUVE.textInput;
+bool AndroidGlfwTextInputWanted() {
+    return g_window.textInput;
 }
 
-bool AndroidGlfwCloseRequestedUVE() {
-    return g_windowUVE.shouldClose;
+bool AndroidGlfwCloseRequested() {
+    return g_window.shouldClose;
 }
 
-void ResetAndroidGlfwWindowUVE() {
-    GLFWwindow& w = g_windowUVE;
+void ResetAndroidGlfwWindow() {
+    GLFWwindow& w = g_window;
     w.shouldClose = false;
     w.pressed = false;
     w.buttons.fill(false);
     w.textInput = false;
-    g_touchContactsUVE.clear();
-    g_touchClaimHookUVE = nullptr;
+    g_touchContacts.clear();
+    g_touchClaimHook = nullptr;
 }
 
 } // namespace UVE::Window
@@ -244,14 +244,14 @@ void ResetAndroidGlfwWindowUVE() {
 // --- The GLFW API -------------------------------------------------------------------------------
 
 double glfwGetTime(void) {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - g_startUVE).count();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - g_start).count();
 }
 
 GLFWglproc glfwGetProcAddress(const char* const name) {
     if (const __eglMustCastToProperFunctionPointerType proc = eglGetProcAddress(name)) {
         return reinterpret_cast<GLFWglproc>(proc);
     }
-    static void* const gles = dlopen(kGlesLibraryUVE, RTLD_NOW | RTLD_LOCAL);
+    static void* const gles = dlopen(kGlesLibrary, RTLD_NOW | RTLD_LOCAL);
     return gles != nullptr ? reinterpret_cast<GLFWglproc>(dlsym(gles, name)) : nullptr;
 }
 
@@ -264,14 +264,14 @@ void glfwDefaultWindowHints(void) {}
 void glfwWindowHint(int, int) {}
 void glfwMakeContextCurrent(GLFWwindow*) {}
 GLFWwindow* glfwGetCurrentContext(void) {
-    return &g_windowUVE;
+    return &g_window;
 }
 void glfwSwapBuffers(GLFWwindow*) {}
 void glfwSwapInterval(int) {}
 
 void glfwGetFramebufferSize(GLFWwindow*, int* const width, int* const height) {
-    if (width != nullptr) *width = SurfaceWidthUVE();
-    if (height != nullptr) *height = SurfaceHeightUVE();
+    if (width != nullptr) *width = SurfaceWidth();
+    if (height != nullptr) *height = SurfaceHeight();
 }
 void glfwGetWindowSize(GLFWwindow* const window, int* const width, int* const height) {
     glfwGetFramebufferSize(window, width, height);
@@ -301,7 +301,7 @@ int glfwGetWindowAttrib(GLFWwindow* const window, const int attribute) {
     case GLFW_HOVERED:
     case GLFW_MAXIMIZED:
     case GLFW_VISIBLE:
-        return kTrueUVE;
+        return kTrue;
     default:
         return 0;
     }
@@ -338,24 +338,24 @@ void glfwDestroyCursor(GLFWcursor* const cursor) {
 void glfwSetCursor(GLFWwindow*, GLFWcursor*) {}
 
 void glfwSetClipboardString(GLFWwindow*, const char* const text) {
-    g_clipboardUVE = text != nullptr ? text : "";
-    UVE::Window::WriteAndroidClipboardUVE(g_activityUVE, g_clipboardUVE.c_str());
+    g_clipboard = text != nullptr ? text : "";
+    UVE::Window::WriteAndroidClipboard(g_activity, g_clipboard.c_str());
 }
 const char* glfwGetClipboardString(GLFWwindow*) {
-    if (std::optional<std::string> systemText = UVE::Window::ReadAndroidClipboardUVE(g_activityUVE);
+    if (std::optional<std::string> systemText = UVE::Window::ReadAndroidClipboard(g_activity);
         systemText.has_value()) {
-        g_clipboardUVE = std::move(*systemText);
+        g_clipboard = std::move(*systemText);
     }
-    return g_clipboardUVE.c_str();
+    return g_clipboard.c_str();
 }
 
 GLFWmonitor* glfwGetPrimaryMonitor(void) {
-    return &g_monitorUVE;
+    return &g_monitor;
 }
 const GLFWvidmode* glfwGetVideoMode(GLFWmonitor*) {
-    g_modeUVE.width = SurfaceWidthUVE();
-    g_modeUVE.height = SurfaceHeightUVE();
-    return &g_modeUVE;
+    g_mode.width = SurfaceWidth();
+    g_mode.height = SurfaceHeight();
+    return &g_mode;
 }
 
 GLFWcursorposfun glfwSetCursorPosCallback(GLFWwindow* const w, const GLFWcursorposfun f) {

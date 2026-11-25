@@ -13,84 +13,84 @@
 
 namespace UVE::Scene {
 
-void ApplyBoneModifier3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyBoneModifier3DBase(IEntityManager& entityManager, const Entity entity,
                                 const std::string_view nameFallback) {
-    if (!entityManager.IsAliveUVE(entity)) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    ApplyObject3DRecipeUVE(entityManager, entity, nameFallback);
-    if (!entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<BoneModifierComponentUVE>(entity, BoneModifierComponentUVE{});
+    ApplyObject3DRecipe(entityManager, entity, nameFallback);
+    if (!entityManager.HasComponent<BoneModifierComponent>(entity)) {
+        entityManager.AddComponent<BoneModifierComponent>(entity, BoneModifierComponent{});
     }
 }
 
-void ApplyAnimationDriverBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyAnimationDriverBase(IEntityManager& entityManager, const Entity entity,
                                  const std::string_view nameFallback) {
-    EnsureObjectBaselineUVE(entityManager, entity, nameFallback);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationDriverComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationDriverComponentUVE>(entity, AnimationDriverComponentUVE{});
+    EnsureObjectBaseline(entityManager, entity, nameFallback);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<AnimationDriverComponent>(entity)) {
+        entityManager.AddComponent<AnimationDriverComponent>(entity, AnimationDriverComponent{});
     }
 }
 
-float ResolveBoneModifierInfluenceUVE(const IEntityManagerUVE& entityManager,
-                                      const EntityUVE entity) noexcept {
-    if (!entityManager.IsAliveUVE(entity)) {
+float ResolveBoneModifierInfluence(const IEntityManager& entityManager,
+                                      const Entity entity) noexcept {
+    if (!entityManager.IsAlive(entity)) {
         return 0.0F;
     }
-    if (!entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity)) {
+    if (!entityManager.HasComponent<BoneModifierComponent>(entity)) {
         return 1.0F;
     }
-    const BoneModifierComponentUVE& modifier =
-        entityManager.GetComponentUVE<BoneModifierComponentUVE>(entity);
-    if (!IsBoneModifierComponentValidUVE(modifier)) {
+    const BoneModifierComponent& modifier =
+        entityManager.GetComponent<BoneModifierComponent>(entity);
+    if (!IsBoneModifierComponentValid(modifier)) {
         return 0.0F;
     }
-    return ResolveEffectiveBoneModifierWeightUVE(&modifier);
+    return ResolveEffectiveBoneModifierWeight(&modifier);
 }
 
-bool IsBoneModifierActiveUVE(const IEntityManagerUVE& entityManager,
-                             const EntityUVE entity) noexcept {
-    if (!entityManager.IsAliveUVE(entity)) {
+bool IsBoneModifierActive(const IEntityManager& entityManager,
+                             const Entity entity) noexcept {
+    if (!entityManager.IsAlive(entity)) {
         return false;
     }
-    if (!entityManager.HasComponentUVE<BoneModifierComponentUVE>(entity)) {
+    if (!entityManager.HasComponent<BoneModifierComponent>(entity)) {
         return true;
     }
-    return IsBoneModifierEffectiveUVE(
-        entityManager.GetComponentUVE<BoneModifierComponentUVE>(entity));
+    return IsBoneModifierEffective(
+        entityManager.GetComponent<BoneModifierComponent>(entity));
 }
 
-AnimationDriverComponentUVE ResolveAnimationDriverUVE(const IEntityManagerUVE& entityManager,
-                                                      const EntityUVE entity) noexcept {
-    if (entityManager.IsAliveUVE(entity) &&
-        entityManager.HasComponentUVE<AnimationDriverComponentUVE>(entity)) {
-        return entityManager.GetComponentUVE<AnimationDriverComponentUVE>(entity);
+AnimationDriverComponent ResolveAnimationDriver(const IEntityManager& entityManager,
+                                                      const Entity entity) noexcept {
+    if (entityManager.IsAlive(entity) &&
+        entityManager.HasComponent<AnimationDriverComponent>(entity)) {
+        return entityManager.GetComponent<AnimationDriverComponent>(entity);
     }
-    return AnimationDriverComponentUVE{};
+    return AnimationDriverComponent{};
 }
 
-bool IsAnimationDriverRunningOnClockUVE(const AnimationDriverComponentUVE& driver,
-                                        const AnimationProcessCallbackUVE callback) noexcept {
-    return IsAnimationDriverComponentValidUVE(driver) &&
-           ShouldStepAnimationDriverOnClockUVE(driver, callback);
+bool IsAnimationDriverRunningOnClock(const AnimationDriverComponent& driver,
+                                        const AnimationProcessCallback callback) noexcept {
+    return IsAnimationDriverComponentValid(driver) &&
+           ShouldStepAnimationDriverOnClock(driver, callback);
 }
 
-EntityUVE ResolveAnimationDriverTargetEntityUVE(
-    const IEntityManagerUVE& entityManager, const EntityUVE driverEntity,
-    const AnimationDriverComponentUVE& driver) noexcept {
-    const EntityUVE parent =
-        (entityManager.IsAliveUVE(driverEntity) &&
-         entityManager.HasComponentUVE<HierarchyComponentUVE>(driverEntity))
-            ? entityManager.GetComponentUVE<HierarchyComponentUVE>(driverEntity).parent
-            : kInvalidEntityUVE;
-    const EntityUVE candidate = ResolveAnimationDriverTargetEntityUVE(driver, parent);
-    if (candidate != kInvalidEntityUVE && entityManager.IsAliveUVE(candidate)) {
+Entity ResolveAnimationDriverTargetEntity(
+    const IEntityManager& entityManager, const Entity driverEntity,
+    const AnimationDriverComponent& driver) noexcept {
+    const Entity parent =
+        (entityManager.IsAlive(driverEntity) &&
+         entityManager.HasComponent<HierarchyComponent>(driverEntity))
+            ? entityManager.GetComponent<HierarchyComponent>(driverEntity).parent
+            : kInvalidEntity;
+    const Entity candidate = ResolveAnimationDriverTargetEntity(driver, parent);
+    if (candidate != kInvalidEntity && entityManager.IsAlive(candidate)) {
         return candidate;
     }
-    if (parent != kInvalidEntityUVE && entityManager.IsAliveUVE(parent)) {
+    if (parent != kInvalidEntity && entityManager.IsAlive(parent)) {
         return parent;
     }
-    return kInvalidEntityUVE;
+    return kInvalidEntity;
 }
 
 } // namespace UVE::Scene

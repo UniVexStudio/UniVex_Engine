@@ -8,44 +8,44 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsProjectionModeUVE(const CameraProjectionModeUVE projection) noexcept {
+[[nodiscard]] bool IsProjectionMode(const CameraProjectionMode projection) noexcept {
     return static_cast<std::uint8_t>(projection) <=
-           static_cast<std::uint8_t>(CameraProjectionModeUVE::HumanEye);
+           static_cast<std::uint8_t>(CameraProjectionMode::HumanEye);
 }
 
 } // namespace
 
-bool IsCameraComponentValidUVE(const CameraComponentUVE& camera) noexcept {
-    return IsProjectionModeUVE(camera.projection) && std::isfinite(camera.fieldOfViewDegrees) &&
-           camera.fieldOfViewDegrees >= kMinimumCameraFieldOfViewDegreesUVE &&
+bool IsCameraComponentValid(const CameraComponent& camera) noexcept {
+    return IsProjectionMode(camera.projection) && std::isfinite(camera.fieldOfViewDegrees) &&
+           camera.fieldOfViewDegrees >= kMinimumCameraFieldOfViewDegrees &&
            camera.fieldOfViewDegrees < 180.0F && std::isfinite(camera.nearPlane) && camera.nearPlane > 0.0F &&
            std::isfinite(camera.farPlane) && camera.farPlane > camera.nearPlane &&
            std::isfinite(camera.orthographicSize) &&
-           camera.orthographicSize >= kMinimumCameraOrthographicSizeUVE;
+           camera.orthographicSize >= kMinimumCameraOrthographicSize;
 }
 
-float HumanEyeVerticalFieldOfViewDegreesUVE(const float aspectRatio) noexcept {
+float HumanEyeVerticalFieldOfViewDegrees(const float aspectRatio) noexcept {
     if (!(std::isfinite(aspectRatio) && aspectRatio > 0.0F)) {
-        return kHumanEyeCenterVerticalFieldOfViewDegreesUVE;
+        return kHumanEyeCenterVerticalFieldOfViewDegrees;
     }
     const float halfHorizontalRadians =
-        kHumanEyeHorizontalFieldOfViewDegreesUVE * (std::numbers::pi_v<float> / 360.0F);
+        kHumanEyeHorizontalFieldOfViewDegrees * (std::numbers::pi_v<float> / 360.0F);
     return 2.0F * std::atan(std::tan(halfHorizontalRadians) / aspectRatio) *
            (180.0F / std::numbers::pi_v<float>);
 }
 
-float VerticalFieldOfViewDegreesUVE(const CameraComponentUVE& camera, const float aspectRatio) noexcept {
-    if (camera.projection == CameraProjectionModeUVE::HumanEye) {
-        return HumanEyeVerticalFieldOfViewDegreesUVE(aspectRatio);
+float VerticalFieldOfViewDegrees(const CameraComponent& camera, const float aspectRatio) noexcept {
+    if (camera.projection == CameraProjectionMode::HumanEye) {
+        return HumanEyeVerticalFieldOfViewDegrees(aspectRatio);
     }
     return camera.fieldOfViewDegrees;
 }
 
-float HumanEyeCenterScaleUVE(const float aspectRatio) noexcept {
+float HumanEyeCenterScale(const float aspectRatio) noexcept {
     const float renderHalfRadians =
-        HumanEyeVerticalFieldOfViewDegreesUVE(aspectRatio) * (std::numbers::pi_v<float> / 360.0F);
+        HumanEyeVerticalFieldOfViewDegrees(aspectRatio) * (std::numbers::pi_v<float> / 360.0F);
     const float centerHalfRadians =
-        kHumanEyeCenterVerticalFieldOfViewDegreesUVE * (std::numbers::pi_v<float> / 360.0F);
+        kHumanEyeCenterVerticalFieldOfViewDegrees * (std::numbers::pi_v<float> / 360.0F);
     if (!(renderHalfRadians > centerHalfRadians)) {
         return 1.0F;
     }

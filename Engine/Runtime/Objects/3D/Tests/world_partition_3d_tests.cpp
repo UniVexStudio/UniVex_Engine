@@ -25,140 +25,140 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class WorldPartition3DUVETest : public ::testing::Test {
+class WorldPartition3DTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 
-    EntityUVE PlacePartitionUVE(WorldPartition3DComponentUVE config, const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<WorldPartition3DComponentUVE>(entity, config);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlacePartition(WorldPartition3DComponent config, const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<WorldPartition3DComponent>(entity, config);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    EntityUVE PlaceEmptyUVE(const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlaceEmpty(const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 };
 
-TEST(WorldPartition3DBudgetUVETest, NearestOccupiedCellWinsTheSingleSlot) {
+TEST(WorldPartition3DBudgetTest, NearestOccupiedCellWinsTheSingleSlot) {
     const std::array<std::uint32_t, 3U> counts{4U, 1U, 4U};
-    std::vector<WorldPartition3DOccupiedCellUVE> occupied{
-        WorldPartition3DOccupiedCellUVE{{1, 0, 0}, 16.0F},
-        WorldPartition3DOccupiedCellUVE{{0, 0, 0}, 4.0F},
+    std::vector<WorldPartition3DOccupiedCell> occupied{
+        WorldPartition3DOccupiedCell{{1, 0, 0}, 16.0F},
+        WorldPartition3DOccupiedCell{{0, 0, 0}, 4.0F},
     };
-    SortWorldPartition3DOccupiedCellsUVE(occupied, counts);
+    SortWorldPartition3DOccupiedCells(occupied, counts);
     ASSERT_EQ(occupied.size(), 2U);
-    EXPECT_EQ(occupied[0U].id, (WorldPartition3DCellIdUVE{0, 0, 0}));
-    EXPECT_EQ(occupied[1U].id, (WorldPartition3DCellIdUVE{1, 0, 0}));
-    EXPECT_EQ(CountWorldPartition3DAdmittedCellsUVE(occupied.size(), 1U), 1U);
-    EXPECT_TRUE(IsWorldPartition3DCellAdmittedUVE({0, 0, 0}, occupied, 1U));
-    EXPECT_FALSE(IsWorldPartition3DCellAdmittedUVE({1, 0, 0}, occupied, 1U));
-    EXPECT_TRUE(IsWorldPartition3DCellAdmittedUVE({1, 0, 0}, occupied, 2U));
+    EXPECT_EQ(occupied[0U].id, (WorldPartition3DCellId{0, 0, 0}));
+    EXPECT_EQ(occupied[1U].id, (WorldPartition3DCellId{1, 0, 0}));
+    EXPECT_EQ(CountWorldPartition3DAdmittedCells(occupied.size(), 1U), 1U);
+    EXPECT_TRUE(IsWorldPartition3DCellAdmitted({0, 0, 0}, occupied, 1U));
+    EXPECT_FALSE(IsWorldPartition3DCellAdmitted({1, 0, 0}, occupied, 1U));
+    EXPECT_TRUE(IsWorldPartition3DCellAdmitted({1, 0, 0}, occupied, 2U));
 }
 
-TEST(WorldPartition3DBudgetUVETest, EqualDistancePrefersTheLowerLinearIndex) {
+TEST(WorldPartition3DBudgetTest, EqualDistancePrefersTheLowerLinearIndex) {
     const std::array<std::uint32_t, 3U> counts{4U, 1U, 4U};
-    std::vector<WorldPartition3DOccupiedCellUVE> occupied{
-        WorldPartition3DOccupiedCellUVE{{1, 0, 0}, 9.0F},
-        WorldPartition3DOccupiedCellUVE{{0, 0, 0}, 9.0F},
+    std::vector<WorldPartition3DOccupiedCell> occupied{
+        WorldPartition3DOccupiedCell{{1, 0, 0}, 9.0F},
+        WorldPartition3DOccupiedCell{{0, 0, 0}, 9.0F},
     };
-    SortWorldPartition3DOccupiedCellsUVE(occupied, counts);
-    EXPECT_EQ(occupied[0U].id, (WorldPartition3DCellIdUVE{0, 0, 0}))
+    SortWorldPartition3DOccupiedCells(occupied, counts);
+    EXPECT_EQ(occupied[0U].id, (WorldPartition3DCellId{0, 0, 0}))
         << "x-major index 0 beats index 1 at the same distance";
-    EXPECT_TRUE(IsWorldPartition3DCellAdmittedUVE({0, 0, 0}, occupied, 1U));
-    EXPECT_FALSE(IsWorldPartition3DCellAdmittedUVE({1, 0, 0}, occupied, 1U));
+    EXPECT_TRUE(IsWorldPartition3DCellAdmitted({0, 0, 0}, occupied, 1U));
+    EXPECT_FALSE(IsWorldPartition3DCellAdmitted({1, 0, 0}, occupied, 1U));
 }
 
-TEST(WorldPartition3DBudgetUVETest, EmptyOccupiedAdmitsNothingAndUnknownCellsStayOut) {
-    std::vector<WorldPartition3DOccupiedCellUVE> occupied;
-    EXPECT_EQ(CountWorldPartition3DAdmittedCellsUVE(0U, 8U), 0U);
-    EXPECT_FALSE(IsWorldPartition3DCellAdmittedUVE({0, 0, 0}, occupied, 8U));
+TEST(WorldPartition3DBudgetTest, EmptyOccupiedAdmitsNothingAndUnknownCellsStayOut) {
+    std::vector<WorldPartition3DOccupiedCell> occupied;
+    EXPECT_EQ(CountWorldPartition3DAdmittedCells(0U, 8U), 0U);
+    EXPECT_FALSE(IsWorldPartition3DCellAdmitted({0, 0, 0}, occupied, 8U));
 }
 
-TEST(WorldPartition3DBudgetUVETest, VolumeSizeIsCellSizeTimesCounts) {
-    WorldPartition3DComponentUVE config;
+TEST(WorldPartition3DBudgetTest, VolumeSizeIsCellSizeTimesCounts) {
+    WorldPartition3DComponent config;
     config.cellSize = 10.0F;
     config.cellCounts = {2U, 1U, 3U};
-    const Math::Vector3UVE size = ResolveWorldPartition3DVolumeSizeUVE(config);
+    const Math::Vector3 size = ResolveWorldPartition3DVolumeSize(config);
     EXPECT_FLOAT_EQ(size.x, 20.0F);
     EXPECT_FLOAT_EQ(size.y, 10.0F);
     EXPECT_FLOAT_EQ(size.z, 30.0F);
 }
 
-TEST_F(WorldPartition3DUVETest, DrawableKindsCarryMembershipAndLightsDoNot) {
-    const EntityUVE mesh = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(mesh, MeshComponentUVE{});
-    const EntityUVE primitive = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(primitive);
-    const EntityUVE decal = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<Decal3DComponentUVE>(decal, Decal3DComponentUVE{});
-    const EntityUVE particles = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(particles);
-    const EntityUVE fog = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<FogVolume3DComponentUVE>(fog, FogVolume3DComponentUVE{});
-    const EntityUVE light = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<LightComponentUVE>(light);
-    const EntityUVE empty = PlaceEmptyUVE();
+TEST_F(WorldPartition3DTest, DrawableKindsCarryMembershipAndLightsDoNot) {
+    const Entity mesh = PlaceEmpty();
+    entityManager.AddComponent<MeshComponent>(mesh, MeshComponent{});
+    const Entity primitive = PlaceEmpty();
+    entityManager.AddComponent<PrimitiveMeshComponent>(primitive);
+    const Entity decal = PlaceEmpty();
+    entityManager.AddComponent<Decal3DComponent>(decal, Decal3DComponent{});
+    const Entity particles = PlaceEmpty();
+    entityManager.AddComponent<ParticleEmitterComponent>(particles);
+    const Entity fog = PlaceEmpty();
+    entityManager.AddComponent<FogVolume3DComponent>(fog, FogVolume3DComponent{});
+    const Entity light = PlaceEmpty();
+    entityManager.AddComponent<LightComponent>(light);
+    const Entity empty = PlaceEmpty();
 
-    EXPECT_TRUE(CarriesWorldPartition3DDrawableUVE(entityManager, mesh));
-    EXPECT_TRUE(CarriesWorldPartition3DDrawableUVE(entityManager, primitive));
-    EXPECT_TRUE(CarriesWorldPartition3DDrawableUVE(entityManager, decal));
-    EXPECT_TRUE(CarriesWorldPartition3DDrawableUVE(entityManager, particles));
-    EXPECT_TRUE(CarriesWorldPartition3DDrawableUVE(entityManager, fog));
-    EXPECT_FALSE(CarriesWorldPartition3DDrawableUVE(entityManager, light));
-    EXPECT_FALSE(CarriesWorldPartition3DDrawableUVE(entityManager, empty));
+    EXPECT_TRUE(CarriesWorldPartition3DDrawable(entityManager, mesh));
+    EXPECT_TRUE(CarriesWorldPartition3DDrawable(entityManager, primitive));
+    EXPECT_TRUE(CarriesWorldPartition3DDrawable(entityManager, decal));
+    EXPECT_TRUE(CarriesWorldPartition3DDrawable(entityManager, particles));
+    EXPECT_TRUE(CarriesWorldPartition3DDrawable(entityManager, fog));
+    EXPECT_FALSE(CarriesWorldPartition3DDrawable(entityManager, light));
+    EXPECT_FALSE(CarriesWorldPartition3DDrawable(entityManager, empty));
 }
 
-TEST_F(WorldPartition3DUVETest, DrawHiddenTrustsLiveFlagAndFailsOpenWhenTheOwnerDies) {
-    const EntityUVE partition = PlacePartitionUVE(WorldPartition3DComponentUVE{});
-    const EntityUVE faded = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<WorldPartition3DMembershipComponentUVE>(
-        faded, WorldPartition3DMembershipComponentUVE{partition, false});
-    EXPECT_TRUE(IsWorldPartition3DDrawHiddenUVE(entityManager, faded));
+TEST_F(WorldPartition3DTest, DrawHiddenTrustsLiveFlagAndFailsOpenWhenTheOwnerDies) {
+    const Entity partition = PlacePartition(WorldPartition3DComponent{});
+    const Entity faded = PlaceEmpty();
+    entityManager.AddComponent<WorldPartition3DMembershipComponent>(
+        faded, WorldPartition3DMembershipComponent{partition, false});
+    EXPECT_TRUE(IsWorldPartition3DDrawHidden(entityManager, faded));
 
-    const EntityUVE live = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<WorldPartition3DMembershipComponentUVE>(
-        live, WorldPartition3DMembershipComponentUVE{partition, true});
-    EXPECT_FALSE(IsWorldPartition3DDrawHiddenUVE(entityManager, live));
-    EXPECT_FALSE(IsWorldPartition3DDrawHiddenUVE(entityManager, PlaceEmptyUVE()))
+    const Entity live = PlaceEmpty();
+    entityManager.AddComponent<WorldPartition3DMembershipComponent>(
+        live, WorldPartition3DMembershipComponent{partition, true});
+    EXPECT_FALSE(IsWorldPartition3DDrawHidden(entityManager, live));
+    EXPECT_FALSE(IsWorldPartition3DDrawHidden(entityManager, PlaceEmpty()))
         << "no membership: unmanaged, always drawn";
 
-    entityManager.DestroyEntityUVE(partition);
-    EXPECT_FALSE(IsWorldPartition3DDrawHiddenUVE(entityManager, faded))
+    entityManager.DestroyEntity(partition);
+    EXPECT_FALSE(IsWorldPartition3DDrawHidden(entityManager, faded))
         << "dead owner fails open";
 }
 
-TEST_F(WorldPartition3DUVETest, CollectGizmosWritesTheAxisAlignedVolumeAndSkipsEditorInternal) {
-    WorldPartition3DComponentUVE config;
+TEST_F(WorldPartition3DTest, CollectGizmosWritesTheAxisAlignedVolumeAndSkipsEditorInternal) {
+    WorldPartition3DComponent config;
     config.cellSize = 8.0F;
     config.cellCounts = {2U, 1U, 4U};
-    TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    PlacePartitionUVE(config, transform);
+    TransformComponent transform{};
+    transform.localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    PlacePartition(config, transform);
 
-    WorldPartition3DComponentUVE disabled = config;
+    WorldPartition3DComponent disabled = config;
     disabled.enabled = false;
-    TransformComponentUVE disabledTransform{};
-    disabledTransform.localPosition = Math::Vector3UVE{40.0F, 0.0F, 0.0F};
-    PlacePartitionUVE(disabled, disabledTransform);
+    TransformComponent disabledTransform{};
+    disabledTransform.localPosition = Math::Vector3{40.0F, 0.0F, 0.0F};
+    PlacePartition(disabled, disabledTransform);
 
-    const EntityUVE hidden = PlacePartitionUVE(config);
-    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(hidden);
+    const Entity hidden = PlacePartition(config);
+    entityManager.AddComponent<EditorInternalEntityComponent>(hidden);
 
-    std::vector<WorldPartition3DGizmoUVE> gizmos;
-    CollectWorldPartition3DGizmosUVE(entityManager, gizmos);
+    std::vector<WorldPartition3DGizmo> gizmos;
+    CollectWorldPartition3DGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 2U);
-    const WorldPartition3DGizmoUVE* enabledGizmo = nullptr;
-    const WorldPartition3DGizmoUVE* disabledGizmo = nullptr;
-    for (const WorldPartition3DGizmoUVE& gizmo : gizmos) {
+    const WorldPartition3DGizmo* enabledGizmo = nullptr;
+    const WorldPartition3DGizmo* disabledGizmo = nullptr;
+    for (const WorldPartition3DGizmo& gizmo : gizmos) {
         if (gizmo.enabled) {
             enabledGizmo = &gizmo;
         } else {

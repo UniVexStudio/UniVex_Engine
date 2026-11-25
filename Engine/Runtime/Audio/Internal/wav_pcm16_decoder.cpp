@@ -26,11 +26,11 @@ namespace {
 }
 } // namespace
 
-bool ApplyPcmGainEffectChainUVE(const std::vector<float>& inputSamples,
+bool ApplyPcmGainEffectChain(const std::vector<float>& inputSamples,
                                   const std::vector<float>& gains,
                                   std::vector<float>& outputSamples) noexcept {
-    if (inputSamples.size() > kMaximumPcmGainSamplesUVE ||
-        gains.size() > kMaximumPcmGainChainEffectsUVE) {
+    if (inputSamples.size() > kMaximumPcmGainSamples ||
+        gains.size() > kMaximumPcmGainChainEffects) {
         return false;
     }
     for (const float sample : inputSamples) {
@@ -46,7 +46,7 @@ bool ApplyPcmGainEffectChainUVE(const std::vector<float>& inputSamples,
         std::vector<float> working = inputSamples;
         std::vector<float> next;
         for (const float gain : gains) {
-            if (!ApplyPcmGainEffectUVE(working, gain, next)) {
+            if (!ApplyPcmGainEffect(working, gain, next)) {
                 return false;
             }
             working.swap(next);
@@ -59,7 +59,7 @@ bool ApplyPcmGainEffectChainUVE(const std::vector<float>& inputSamples,
     }
 }
 
-bool Pcm16StreamCursorUVE::ResetUVE(const std::size_t totalSamples, const bool loop,
+bool Pcm16StreamCursor::Reset(const std::size_t totalSamples, const bool loop,
                                      const std::size_t cursorSample, const std::size_t maximumSamples) noexcept {
     if (totalSamples == 0U || maximumSamples == 0U || totalSamples > maximumSamples || cursorSample > totalSamples) {
         return false;
@@ -71,10 +71,10 @@ bool Pcm16StreamCursorUVE::ResetUVE(const std::size_t totalSamples, const bool l
     return true;
 }
 
-bool Pcm16StreamCursorUVE::ConsumeWindowUVE(const std::size_t requestedSamples,
-                                             Pcm16StreamWindowPlanUVE& outPlan) noexcept {
-    Pcm16StreamWindowPlanUVE candidatePlan;
-    if (!PlanPcm16StreamWindowUVE(m_totalSamples, m_cursorSample, requestedSamples, m_loop, candidatePlan,
+bool Pcm16StreamCursor::ConsumeWindow(const std::size_t requestedSamples,
+                                             Pcm16StreamWindowPlan& outPlan) noexcept {
+    Pcm16StreamWindowPlan candidatePlan;
+    if (!PlanPcm16StreamWindow(m_totalSamples, m_cursorSample, requestedSamples, m_loop, candidatePlan,
                                   m_maximumSamples)) {
         return false;
     }
@@ -83,12 +83,12 @@ bool Pcm16StreamCursorUVE::ConsumeWindowUVE(const std::size_t requestedSamples,
     return true;
 }
 
-bool Pcm16StreamCursorUVE::AdvanceUVE(const std::size_t advanceSamples, bool& outReachedEnd,
+bool Pcm16StreamCursor::Advance(const std::size_t advanceSamples, bool& outReachedEnd,
                                       bool& outWrapped) noexcept {
     std::size_t candidateCursor = m_cursorSample;
     bool candidateReachedEnd = outReachedEnd;
     bool candidateWrapped = outWrapped;
-    if (!AdvancePcm16StreamCursorUVE(m_totalSamples, m_cursorSample, advanceSamples, m_loop, candidateCursor,
+    if (!AdvancePcm16StreamCursor(m_totalSamples, m_cursorSample, advanceSamples, m_loop, candidateCursor,
                                       candidateReachedEnd, candidateWrapped, m_maximumSamples)) {
         return false;
     }
@@ -98,57 +98,57 @@ bool Pcm16StreamCursorUVE::AdvanceUVE(const std::size_t advanceSamples, bool& ou
     return true;
 }
 
-bool Pcm16StreamRefillSchedulerUVE::ResetUVE(const std::size_t totalSamples, const bool loop,
+bool Pcm16StreamRefillScheduler::Reset(const std::size_t totalSamples, const bool loop,
                                                const std::size_t cursorSample,
                                                const std::size_t maximumSamples) noexcept {
-    Pcm16StreamCursorUVE candidateCursor;
-    if (!candidateCursor.ResetUVE(totalSamples, loop, cursorSample, maximumSamples)) {
+    Pcm16StreamCursor candidateCursor;
+    if (!candidateCursor.Reset(totalSamples, loop, cursorSample, maximumSamples)) {
         return false;
     }
     m_cursor = candidateCursor;
-    m_pending.fill(Pcm16StreamWindowPlanUVE{});
+    m_pending.fill(Pcm16StreamWindowPlan{});
     m_head = 0U;
     m_count = 0U;
     return true;
 }
 
-bool Pcm16StreamRefillSchedulerUVE::ScheduleWindowUVE(const std::size_t requestedSamples) noexcept {
-    if (m_count >= kMaximumPcm16StreamRefillWindowsUVE) {
+bool Pcm16StreamRefillScheduler::ScheduleWindow(const std::size_t requestedSamples) noexcept {
+    if (m_count >= kMaximumPcm16StreamRefillWindows) {
         return false;
     }
-    Pcm16StreamWindowPlanUVE candidatePlan;
-    Pcm16StreamCursorUVE candidateCursor = m_cursor;
-    if (!candidateCursor.ConsumeWindowUVE(requestedSamples, candidatePlan) || candidatePlan.sampleCount == 0U) {
+    Pcm16StreamWindowPlan candidatePlan;
+    Pcm16StreamCursor candidateCursor = m_cursor;
+    if (!candidateCursor.ConsumeWindow(requestedSamples, candidatePlan) || candidatePlan.sampleCount == 0U) {
         return false;
     }
-    const std::size_t writeIndex = (m_head + m_count) % kMaximumPcm16StreamRefillWindowsUVE;
+    const std::size_t writeIndex = (m_head + m_count) % kMaximumPcm16StreamRefillWindows;
     m_pending[writeIndex] = candidatePlan;
     m_cursor = candidateCursor;
     ++m_count;
     return true;
 }
 
-bool Pcm16StreamRefillSchedulerUVE::PopNextWindowUVE(Pcm16StreamWindowPlanUVE& outPlan) noexcept {
+bool Pcm16StreamRefillScheduler::PopNextWindow(Pcm16StreamWindowPlan& outPlan) noexcept {
     if (m_count == 0U) {
         return false;
     }
-    const Pcm16StreamWindowPlanUVE candidatePlan = m_pending[m_head];
-    m_pending[m_head] = Pcm16StreamWindowPlanUVE{};
-    m_head = (m_head + 1U) % kMaximumPcm16StreamRefillWindowsUVE;
+    const Pcm16StreamWindowPlan candidatePlan = m_pending[m_head];
+    m_pending[m_head] = Pcm16StreamWindowPlan{};
+    m_head = (m_head + 1U) % kMaximumPcm16StreamRefillWindows;
     --m_count;
     outPlan = candidatePlan;
     return true;
 }
 
-bool PlanPcm16StreamWindowUVE(const std::size_t totalSamples, const std::size_t cursorSample,
+bool PlanPcm16StreamWindow(const std::size_t totalSamples, const std::size_t cursorSample,
                                const std::size_t requestedSamples, const bool loop,
-                               Pcm16StreamWindowPlanUVE& outPlan, const std::size_t maximumSamples) noexcept {
+                               Pcm16StreamWindowPlan& outPlan, const std::size_t maximumSamples) noexcept {
     if (totalSamples == 0U || maximumSamples == 0U || totalSamples > maximumSamples || requestedSamples == 0U ||
         requestedSamples > maximumSamples || cursorSample > totalSamples) {
         return false;
     }
     if (cursorSample == totalSamples && !loop) {
-        outPlan = Pcm16StreamWindowPlanUVE{totalSamples, 0U, totalSamples, true, false};
+        outPlan = Pcm16StreamWindowPlan{totalSamples, 0U, totalSamples, true, false};
         return true;
     }
     const bool wrappedBeforeWindow = cursorSample == totalSamples;
@@ -158,11 +158,11 @@ bool PlanPcm16StreamWindowUVE(const std::size_t totalSamples, const std::size_t 
     const bool reachedEnd = sampleCount == availableSamples;
     const bool wrapped = wrappedBeforeWindow || (loop && reachedEnd);
     const std::size_t nextCursorSample = reachedEnd ? (loop ? 0U : totalSamples) : startSample + sampleCount;
-    outPlan = Pcm16StreamWindowPlanUVE{startSample, sampleCount, nextCursorSample, reachedEnd, wrapped};
+    outPlan = Pcm16StreamWindowPlan{startSample, sampleCount, nextCursorSample, reachedEnd, wrapped};
     return true;
 }
 
-bool AdvancePcm16StreamCursorUVE(const std::size_t totalSamples, const std::size_t cursorSample,
+bool AdvancePcm16StreamCursor(const std::size_t totalSamples, const std::size_t cursorSample,
                                     const std::size_t advanceSamples, const bool loop,
                                     std::size_t& outCursorSample, bool& outReachedEnd,
                                     bool& outWrapped, const std::size_t maximumSamples) noexcept {
@@ -195,7 +195,7 @@ bool AdvancePcm16StreamCursorUVE(const std::size_t totalSamples, const std::size
     return true;
 }
 
-bool ValidateWavPcm16SampleWindowUVE(const std::size_t totalSamples,
+bool ValidateWavPcm16SampleWindow(const std::size_t totalSamples,
                                      const std::size_t startSample,
                                      const std::size_t requestedSamples,
                                      const std::size_t maximumSamples) noexcept {
@@ -207,16 +207,16 @@ bool ValidateWavPcm16SampleWindowUVE(const std::size_t totalSamples,
     return true;
 }
 
-bool DecodeWavPcm16SampleWindowUVE(const std::vector<std::byte>& wavBytes,
+bool DecodeWavPcm16SampleWindow(const std::vector<std::byte>& wavBytes,
                                       const std::size_t startSample, const std::size_t requestedSamples,
                                       std::vector<float>& outSamples, const std::size_t maximumSamples) {
-    const auto metadata = ParseWavMetadataUVE(wavBytes);
+    const auto metadata = ParseWavMetadata(wavBytes);
     if (!metadata || metadata->audioFormat != 1U || metadata->bitsPerSample != 16U ||
         metadata->blockAlign == 0U || metadata->dataBytes % metadata->blockAlign != 0U) {
         return false;
     }
     const std::size_t totalSamples = metadata->dataBytes / 2U;
-    if (!ValidateWavPcm16SampleWindowUVE(totalSamples, startSample, requestedSamples, maximumSamples)) {
+    if (!ValidateWavPcm16SampleWindow(totalSamples, startSample, requestedSamples, maximumSamples)) {
         return false;
     }
     std::size_t dataOffset = 12U;
@@ -253,15 +253,15 @@ bool DecodeWavPcm16SampleWindowUVE(const std::vector<std::byte>& wavBytes,
     return false;
 }
 
-bool DecodeWavPcm16SamplesUVE(const std::vector<std::byte>& wavBytes,
+bool DecodeWavPcm16Samples(const std::vector<std::byte>& wavBytes,
                               std::vector<float>& outSamples) noexcept {
-    const auto metadata = ParseWavMetadataUVE(wavBytes);
+    const auto metadata = ParseWavMetadata(wavBytes);
     if (!metadata || metadata->audioFormat != 1U || metadata->bitsPerSample != 16U ||
         metadata->blockAlign == 0U || metadata->dataBytes % metadata->blockAlign != 0U) {
         return false;
     }
     const std::size_t sampleCount = metadata->dataBytes / 2U;
-    if (sampleCount > kMaximumWavPcm16SamplesUVE) {
+    if (sampleCount > kMaximumWavPcm16Samples) {
         return false;
     }
     std::size_t dataOffset = 12U;

@@ -15,7 +15,7 @@
 namespace UVE::Asset {
 namespace {
 
-struct BasisDataDeleterUVE {
+struct BasisDataDeleter {
     void operator()(void* const data) const noexcept {
         if (data != nullptr) {
             basisu::basis_free_data(data);
@@ -25,17 +25,17 @@ struct BasisDataDeleterUVE {
 
 } // namespace
 
-bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCompressionModeUVE mode,
+bool CompressTextureAssetWithBasis(TextureAsset& texture, const TextureCompressionMode mode,
                                       const std::uint8_t quality, const std::uint8_t effort) {
-    if (mode == TextureCompressionModeUVE::None) {
-        return IsTextureAssetValidUVE(texture);
+    if (mode == TextureCompressionMode::None) {
+        return IsTextureAssetValid(texture);
     }
-    if ((mode != TextureCompressionModeUVE::BasisETC1S && mode != TextureCompressionModeUVE::BasisUASTC) ||
-        quality > 100U || effort > 10U || texture.payloadEncoding != TexturePayloadEncodingUVE::RawPixels ||
-        texture.format != TextureAssetFormatUVE::RGBA8Unorm || !IsTextureAssetValidUVE(texture) ||
+    if ((mode != TextureCompressionMode::BasisETC1S && mode != TextureCompressionMode::BasisUASTC) ||
+        quality > 100U || effort > 10U || texture.payloadEncoding != TexturePayloadEncoding::RawPixels ||
+        texture.format != TextureAssetFormat::RGBA8Unorm || !IsTextureAssetValid(texture) ||
         texture.width > basist::BASISU_MAX_SUPPORTED_TEXTURE_DIMENSION ||
         texture.height > basist::BASISU_MAX_SUPPORTED_TEXTURE_DIMENSION ||
-        !Detail::EnsureBasisUniversalInitializedUVE()) {
+        !Detail::EnsureBasisUniversalInitialized()) {
         return false;
     }
 
@@ -45,20 +45,20 @@ bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCom
         sourceImages[0].init(reinterpret_cast<const std::uint8_t*>(texture.pixels.data()), texture.width,
                              texture.height, 4U);
         for (std::size_t index = 0U; index < texture.mipLevels.size(); ++index) {
-            const TextureMipLevelUVE& mip = texture.mipLevels[index];
+            const TextureMipLevel& mip = texture.mipLevels[index];
             sourceImages[index + 1U].init(reinterpret_cast<const std::uint8_t*>(mip.pixels.data()), mip.width,
                                           mip.height, 4U);
         }
 
         const basist::basis_tex_format basisMode =
-            mode == TextureCompressionModeUVE::BasisETC1S ? basist::basis_tex_format::cETC1S
+            mode == TextureCompressionMode::BasisETC1S ? basist::basis_tex_format::cETC1S
                                                            : basist::basis_tex_format::cUASTC_LDR_4x4;
         std::uint32_t flags = basisu::cFlagKTX2;
-        if (texture.colorSpace == TextureAssetColorSpaceUVE::Srgb) {
+        if (texture.colorSpace == TextureAssetColorSpace::Srgb) {
             flags |= basisu::cFlagSRGB;
         }
         std::size_t compressedSize = 0U;
-        std::unique_ptr<void, BasisDataDeleterUVE> compressedData(
+        std::unique_ptr<void, BasisDataDeleter> compressedData(
             basisu::basis_compress2(basisMode, sourceImages, flags, static_cast<int>(quality),
                                    static_cast<int>(effort), &compressedSize));
         if (compressedData == nullptr || compressedSize == 0U ||
@@ -66,20 +66,20 @@ bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCom
             return false;
         }
 
-        TextureAssetUVE candidate;
+        TextureAsset candidate;
         candidate.width = texture.width;
         candidate.height = texture.height;
         candidate.format = texture.format;
         candidate.colorSpace = texture.colorSpace;
         candidate.usage = texture.usage;
-        candidate.payloadEncoding = TexturePayloadEncodingUVE::BasisUniversalKtx2;
+        candidate.payloadEncoding = TexturePayloadEncoding::BasisUniversalKtx2;
         const auto* const begin = static_cast<const std::byte*>(compressedData.get());
         candidate.basisKtx2Data.assign(begin, begin + compressedSize);
-        if (!IsTextureAssetValidUVE(candidate)) {
+        if (!IsTextureAssetValid(candidate)) {
             return false;
         }
-        TextureCompressionInfoUVE info;
-        if (!GetTextureCompressionInfoUVE(candidate, info) || info.mipLevels != levelCount) {
+        TextureCompressionInfo info;
+        if (!GetTextureCompressionInfo(candidate, info) || info.mipLevels != levelCount) {
             return false;
         }
         texture = std::move(candidate);

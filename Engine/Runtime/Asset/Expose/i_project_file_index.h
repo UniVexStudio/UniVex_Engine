@@ -11,12 +11,12 @@
 
 namespace UVE::Asset {
 
-class IAssetDatabaseUVE;
+class IAssetDatabase;
 
 /// Describes the physical kind of one project-content entry retained by a
-/// ProjectFileSnapshotUVE. Symlinks are deliberately absent: ProjectFileIndexUVE
+/// ProjectFileSnapshot. Symlinks are deliberately absent: ProjectFileIndex
 /// never follows or exposes them in order to preserve its configured root boundary.
-enum class ProjectFileEntryKindUVE : std::uint8_t {
+enum class ProjectFileEntryKind : std::uint8_t {
     Directory,
     File,
 };
@@ -25,19 +25,19 @@ enum class ProjectFileEntryKindUVE : std::uint8_t {
 /// enumerated beneath the configured project-content root. relativePath is
 /// normalized relative to that root; registeredAssetGuid is populated only when
 /// the existing AssetDatabase contains the same normalized in-root path.
-struct ProjectFileEntryUVE final {
+struct ProjectFileEntry final {
     std::filesystem::path relativePath;
-    ProjectFileEntryKindUVE kind = ProjectFileEntryKindUVE::File;
-    std::optional<AssetGuidUVE> registeredAssetGuid;
+    ProjectFileEntryKind kind = ProjectFileEntryKind::File;
+    std::optional<AssetGuid> registeredAssetGuid;
 };
 
 /// A copied, deterministic project-content tree snapshot. A missing content
 /// root is a valid successfully refreshed empty snapshot; inaccessible roots or
-/// iterator failures retain the prior snapshot and cause RefreshUVE() to return
+/// iterator failures retain the prior snapshot and cause Refresh() to return
 /// false. refreshGeneration increases only after a successful replacement.
-struct ProjectFileSnapshotUVE final {
+struct ProjectFileSnapshot final {
     std::filesystem::path contentRoot;
-    std::vector<ProjectFileEntryUVE> entries;
+    std::vector<ProjectFileEntry> entries;
     bool contentRootExists = false;
     std::uint64_t refreshGeneration = 0;
 };
@@ -47,9 +47,9 @@ struct ProjectFileSnapshotUVE final {
 /// and never enumerate the filesystem. Implementations must not create,
 /// import, rename, delete, write, or follow symlinks anywhere under the root.
 /// Thread-safety: callers may refresh and read concurrently.
-class IProjectFileIndexUVE {
+class IProjectFileIndex {
 public:
-    virtual ~IProjectFileIndexUVE() = default;
+    virtual ~IProjectFileIndex() = default;
 
     /// Re-enumerates ordinary files/directories directly under contentRoot and
     /// its ordinary subdirectories, correlating the result with a copied
@@ -57,14 +57,14 @@ public:
     /// snapshot was successfully replaced. A non-existent root is a successful
     /// empty snapshot; symlink roots, inaccessible roots, and traversal errors
     /// return false without replacing the previous successful snapshot.
-    virtual bool RefreshUVE(const IAssetDatabaseUVE& assetDatabase) = 0;
+    virtual bool Refresh(const IAssetDatabase& assetDatabase) = 0;
 
     /// Returns a copied cached snapshot without filesystem I/O. Thread-safe.
-    [[nodiscard]] virtual ProjectFileSnapshotUVE GetSnapshotUVE() const = 0;
+    [[nodiscard]] virtual ProjectFileSnapshot GetSnapshot() const = 0;
 
     /// The cached snapshot's refreshGeneration, without copying it: a caller that redraws only
     /// when the project changed asks this every frame and copies the snapshot only when it moved.
-    [[nodiscard]] virtual std::uint64_t GetRefreshGenerationUVE() const { return GetSnapshotUVE().refreshGeneration; }
+    [[nodiscard]] virtual std::uint64_t GetRefreshGeneration() const { return GetSnapshot().refreshGeneration; }
 };
 
 } // namespace UVE::Asset

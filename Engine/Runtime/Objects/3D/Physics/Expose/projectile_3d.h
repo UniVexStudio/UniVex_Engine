@@ -15,10 +15,10 @@ namespace UVE::Scene {
 /// This enum is the engine's half of the hit decision, and it is deliberately the *whole* of the
 /// engine's half: damage, score, impact effects and despawning are gameplay, and they stay with
 /// gameplay code that reads this component's result fields or the typed hit event the engine core
-/// queues (`Physics::Projectile3DHitEventUVE`). What no game should have to write for itself is
+/// queues (`Physics::Projectile3DHitEvent`). What no game should have to write for itself is
 /// the motion - a projectile that flies through a wall is an engine bug, not a design choice - so
-/// the motion consequence is authored here and executed by `Physics::StepProjectile3DUVE()`.
-enum class Projectile3DHitPolicyUVE : std::uint8_t {
+/// the motion consequence is authored here and executed by `Physics::StepProjectile3D()`.
+enum class Projectile3DHitPolicy : std::uint8_t {
     /// Halt at the contact point, clear the velocity and clear `active`. The default, because
     /// "it flew through the wall" is never the right answer to what a hit did.
     Stop = 0,
@@ -31,14 +31,14 @@ enum class Projectile3DHitPolicyUVE : std::uint8_t {
 
 /// True for a policy this engine knows how to execute. A value outside the enum is a malformed
 /// component (the Inspector and the scene loader both refuse it), not a policy to guess at.
-[[nodiscard]] bool IsKnownProjectile3DHitPolicyUVE(Projectile3DHitPolicyUVE policy) noexcept;
+[[nodiscard]] bool IsKnownProjectile3DHitPolicy(Projectile3DHitPolicy policy) noexcept;
 
-struct Projectile3DComponentUVE final {
+struct Projectile3DComponent final {
     /// Where the projectile is going, in metres per second, in its own local axes - the convention
     /// Kinematic3D's `targetVelocity` and RayCast3D's `direction` also use.
-    Math::Vector3UVE velocity{};
+    Math::Vector3 velocity{};
     /// Accumulated onto `velocity` every fixed step: gravity, drag, a wind volume.
-    Math::Vector3UVE acceleration{};
+    Math::Vector3 acceleration{};
     /// The sphere the projectile sweeps, in world metres. This is the size that decides whether it
     /// fits through a gap and how far its centre is held off a surface; a ray is infinitely thin
     /// and misses exactly the hits a fat projectile must not miss. Kept in world metres because
@@ -57,7 +57,7 @@ struct Projectile3DComponentUVE final {
     /// by expiry, which is why the Inspector shows it as authored state the engine writes.
     bool active = true;
     /// What this projectile's motion does on contact (see the enum).
-    Projectile3DHitPolicyUVE hitPolicy = Projectile3DHitPolicyUVE::Stop;
+    Projectile3DHitPolicy hitPolicy = Projectile3DHitPolicy::Stop;
     /// How much of the speed into a surface comes back out of it, 0..1 (1 = it leaves as fast as
     /// it arrived, 0 = it arrives and slides along). The projectile's own coefficient, not the
     /// surface's: this engine's colliders default to a restitution of 0, so combining the two
@@ -67,10 +67,10 @@ struct Projectile3DComponentUVE final {
     /// How much of the speed *along* a surface is lost on each bounce, 0..1 (0 = frictionless,
     /// 1 = it keeps none of its sideways motion). Only a bounce uses it.
     float friction = 0.2F;
-    EntityUVE ignoreEntity = kInvalidEntityUVE;
+    Entity ignoreEntity = kInvalidEntity;
 
     // ---------------------------------------------------------------------------------------------
-    // Runtime-only result state, written by Physics::StepProjectile3DUVE() - never serialized (the
+    // Runtime-only result state, written by Physics::StepProjectile3D() - never serialized (the
     // same authored/runtime split RayCast3D, Kinematic3D and CharacterController use).
     //
     // Unlike RayCast3D's per-frame result these are *sticky*. A ray answers "what is in front of
@@ -80,11 +80,11 @@ struct Projectile3DComponentUVE final {
     // expiry and every later step. `bounceCount` accumulates for the projectile's life.
     // ---------------------------------------------------------------------------------------------
     bool hit = false;
-    EntityUVE hitEntity = kInvalidEntityUVE;
+    Entity hitEntity = kInvalidEntity;
     /// World-space point on the obstacle's surface where the projectile's sphere first touched.
-    Math::Vector3UVE hitPosition{};
+    Math::Vector3 hitPosition{};
     /// World-space surface normal at that point.
-    Math::Vector3UVE hitNormal{};
+    Math::Vector3 hitNormal{};
     /// The speed *into* the surface at the moment of contact, in metres per second - the number a
     /// damage formula wants, not the speed the projectile happened to be travelling at.
     float impactSpeed = 0.0F;
@@ -96,8 +96,8 @@ struct Projectile3DComponentUVE final {
 /// Coefficients are clamped into 0..1, so no authored value can add energy. Returns `velocity`
 /// unchanged when there is no usable direction to reflect about (a zero or non-finite normal) or
 /// when an input is not finite - a malformed value never produces a NaN motion.
-[[nodiscard]] Math::Vector3UVE ResolveProjectile3DBounceVelocityUVE(const Math::Vector3UVE& velocity,
-                                                                    const Math::Vector3UVE& normal,
+[[nodiscard]] Math::Vector3 ResolveProjectile3DBounceVelocity(const Math::Vector3& velocity,
+                                                                    const Math::Vector3& normal,
                                                                     float restitution,
                                                                     float friction) noexcept;
 
@@ -105,45 +105,45 @@ struct Projectile3DComponentUVE final {
 /// with `remainingLifetime` inside it, a policy this engine executes and coefficients inside
 /// 0..1. A claimed runtime hit must also name an entity and be finite, so a consumer can never
 /// read a hit that points at nothing.
-[[nodiscard]] bool IsProjectile3DObjectComponentValidUVE(const Projectile3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsProjectile3DObjectComponentValid(const Projectile3DComponent& value) noexcept;
 
-class Projectile3DUVE final {
+class Projectile3D final {
 public:
-    struct ContactMotionUVE {
-        Math::Vector3UVE velocity{};
+    struct ContactMotion {
+        Math::Vector3 velocity{};
         bool bounced = false;
         bool stopped = false;
     };
 
-    [[nodiscard]] static bool IsFlyingUVE(const Projectile3DComponentUVE& projectile) noexcept;
+    [[nodiscard]] static bool IsFlying(const Projectile3DComponent& projectile) noexcept;
 
-    [[nodiscard]] static bool AcceptsObstacleUVE(EntityUVE projectileEntity,
-                                                 const Projectile3DComponentUVE& projectile,
-                                                 EntityUVE obstacle) noexcept;
+    [[nodiscard]] static bool AcceptsObstacle(Entity projectileEntity,
+                                                 const Projectile3DComponent& projectile,
+                                                 Entity obstacle) noexcept;
 
-    [[nodiscard]] static Math::Vector3UVE IntegrateVelocityUVE(const Math::Vector3UVE& velocity,
-                                                               const Math::Vector3UVE& acceleration,
+    [[nodiscard]] static Math::Vector3 IntegrateVelocity(const Math::Vector3& velocity,
+                                                               const Math::Vector3& acceleration,
                                                                float deltaTimeSeconds) noexcept;
 
-    [[nodiscard]] static Math::Vector3UVE ResolveWorldVelocityUVE(
-        const Math::Vector3UVE& localVelocity, const Math::QuaternionUVE& worldRotation) noexcept;
+    [[nodiscard]] static Math::Vector3 ResolveWorldVelocity(
+        const Math::Vector3& localVelocity, const Math::Quaternion& worldRotation) noexcept;
 
-    [[nodiscard]] static Math::Vector3UVE BounceVelocityUVE(const Math::Vector3UVE& velocity,
-                                                            const Math::Vector3UVE& normal,
+    [[nodiscard]] static Math::Vector3 BounceVelocity(const Math::Vector3& velocity,
+                                                            const Math::Vector3& normal,
                                                             float restitution, float friction) noexcept;
 
-    [[nodiscard]] static bool IsUsableMotionUVE(const Math::Vector3UVE& velocity) noexcept;
+    [[nodiscard]] static bool IsUsableMotion(const Math::Vector3& velocity) noexcept;
 
-    [[nodiscard]] static ContactMotionUVE ResolveContactUVE(const Projectile3DComponentUVE& projectile,
-                                                            const Math::Vector3UVE& localVelocity,
-                                                            const Math::Vector3UVE& localNormal) noexcept;
+    [[nodiscard]] static ContactMotion ResolveContact(const Projectile3DComponent& projectile,
+                                                            const Math::Vector3& localVelocity,
+                                                            const Math::Vector3& localNormal) noexcept;
 
-    [[nodiscard]] static float TickLifetimeUVE(float remainingLifetime, float deltaTimeSeconds) noexcept;
+    [[nodiscard]] static float TickLifetime(float remainingLifetime, float deltaTimeSeconds) noexcept;
 
-    [[nodiscard]] static bool HasExpiredUVE(float remainingLifetime) noexcept;
+    [[nodiscard]] static bool HasExpired(float remainingLifetime) noexcept;
 
-    static void RecordHitUVE(Projectile3DComponentUVE& projectile, EntityUVE hitEntity,
-                             const Math::Vector3UVE& hitPosition, const Math::Vector3UVE& hitNormal,
+    static void RecordHit(Projectile3DComponent& projectile, Entity hitEntity,
+                             const Math::Vector3& hitPosition, const Math::Vector3& hitNormal,
                              float impactSpeed) noexcept;
 };
 

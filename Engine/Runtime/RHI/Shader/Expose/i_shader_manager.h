@@ -13,45 +13,45 @@
 
 namespace UVE::Render::Shader {
 
-/// IShaderManagerUVE is the backend-agnostic interface for runtime shader loading, `#include`
+/// IShaderManager is the backend-agnostic interface for runtime shader loading, `#include`
 /// resolution, conditional-compilation preprocessing, hot-reload, uniform reflection, and
-/// on-disk program-binary caching (Increment 21). Built entirely on top of IRenderDeviceUVE — it
-/// never talks to any GL type directly, reusing IRenderDeviceUVE's own
-/// CreateShaderUVE/CreatePipelineUVE compile+link+error-capture logic instead of duplicating it —
-/// so it works identically against NullRenderDeviceUVE (headless) and GlRenderDeviceUVE (real
+/// on-disk program-binary caching (Increment 21). Built entirely on top of IRenderDevice — it
+/// never talks to any GL type directly, reusing IRenderDevice's own
+/// CreateShader/CreatePipeline compile+link+error-capture logic instead of duplicating it —
+/// so it works identically against NullRenderDevice (headless) and GlRenderDevice (real
 /// GL), with no separate Null/Gl ShaderManager implementation needed.
 /// Thread-safety: Call creation and update methods from the main/render thread. In asynchronous
-/// on-demand mode, source preprocessing runs on an IThreadPoolUVE worker and UpdateUVE() performs
+/// on-demand mode, source preprocessing runs on an IThreadPool worker and Update() performs
 /// RHI compile/link. In synchronous on-demand mode, each creation call preprocesses and performs
-/// RHI compile/link before returning (and may block); this still honors IRenderDeviceUVE's
-/// main-thread-only contract. UpdateUVE() must be called once per frame for asynchronous job
+/// RHI compile/link before returning (and may block); this still honors IRenderDevice's
+/// main-thread-only contract. Update() must be called once per frame for asynchronous job
 /// completion and hot-reload polling.
-class IShaderManagerUVE {
+class IShaderManager {
 public:
-    virtual ~IShaderManagerUVE() = default;
+    virtual ~IShaderManager() = default;
 
     /// Starts compiling one shader stage. In asynchronous on-demand mode, returns with a
-    /// not-yet-ready ShaderSourceUVE; poll IsReadyUVE()/IsValidUVE() or subscribe to hot-reload
+    /// not-yet-ready ShaderSource; poll IsReady()/IsValid() or subscribe to hot-reload
     /// events to observe completion. In synchronous on-demand mode, completes before returning.
-    [[nodiscard]] virtual std::shared_ptr<ShaderSourceUVE> CreateSourceUVE(
-        const ShaderSourceCompileDescUVE& desc) = 0;
+    [[nodiscard]] virtual std::shared_ptr<ShaderSource> CreateSource(
+        const ShaderSourceCompileDesc& desc) = 0;
 
     /// Compiles and links a vertex+fragment program from the same resolved source. Its readiness
     /// on return follows the configured asynchronous or synchronous on-demand mode.
-    [[nodiscard]] virtual std::shared_ptr<ShaderProgramUVE> CreateProgramUVE(const ShaderProgramDescUVE& desc) = 0;
+    [[nodiscard]] virtual std::shared_ptr<ShaderProgram> CreateProgram(const ShaderProgramDesc& desc) = 0;
 
     /// Begins compiling and linking a vertex+fragment program from two independent source
-    /// descriptors. This is the managed path for MaterialAssetUVE's separate vertexShader and
+    /// descriptors. This is the managed path for MaterialAsset's separate vertexShader and
     /// fragmentShader assets; it has the same configured readiness mode and program-level
-    /// hot-reload contract as CreateProgramUVE().
-    [[nodiscard]] virtual std::shared_ptr<ShaderProgramUVE> CreateProgramFromStagesUVE(
-        const ShaderProgramStagesDescUVE& desc) = 0;
+    /// hot-reload contract as CreateProgram().
+    [[nodiscard]] virtual std::shared_ptr<ShaderProgram> CreateProgramFromStages(
+        const ShaderProgramStagesDesc& desc) = 0;
 
     /// Drains completed background preprocessing in asynchronous mode, running RHI compile/link
     /// and cache lookup on the calling thread. If hot-reload is enabled, also polls every tracked
     /// program's dependency closure for on-disk changes and schedules a recompile when one is
     /// found. Call exactly once per frame from the main thread.
-    virtual void UpdateUVE(double deltaTimeSeconds) = 0;
+    virtual void Update(double deltaTimeSeconds) = 0;
 };
 
 } // namespace UVE::Render::Shader

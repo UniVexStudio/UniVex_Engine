@@ -14,123 +14,123 @@ namespace {
 
 constexpr float kEpsilon = 1e-5F;
 
-TEST(ColliderComponentUVETest, IsColliderComponentValidUVE_RejectsUnsafeValues) {
-    EXPECT_TRUE(Scene::IsColliderComponentValidUVE(Scene::ColliderComponentUVE{}));
+TEST(ColliderComponentTest, IsColliderComponentValid_RejectsUnsafeValues) {
+    EXPECT_TRUE(Scene::IsColliderComponentValid(Scene::ColliderComponent{}));
 
-    Scene::ColliderComponentUVE invalid = {};
+    Scene::ColliderComponent invalid = {};
     invalid.halfExtents.x = 0.0F;
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.halfExtents.y = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.collisionLayer = 0U;
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.friction = 1.1F;
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.restitution = -0.1F;
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.density = 0.0F;
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
     invalid = {};
     invalid.density = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(Scene::IsColliderComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsColliderComponentValid(invalid));
 }
 
-TEST(PhysicsMaterialUVETest, CombineMaterialsUVE_KnownValues_AverageCorrectly) {
-    constexpr PhysicsMaterialUVE a{0.2F, 0.4F, 1.0F};
-    constexpr PhysicsMaterialUVE b{0.6F, 0.8F, 3.0F};
+TEST(PhysicsMaterialTest, CombineMaterials_KnownValues_AverageCorrectly) {
+    constexpr PhysicsMaterial a{0.2F, 0.4F, 1.0F};
+    constexpr PhysicsMaterial b{0.6F, 0.8F, 3.0F};
 
-    constexpr PhysicsMaterialUVE combined = CombineMaterialsUVE(a, b);
+    constexpr PhysicsMaterial combined = CombineMaterials(a, b);
 
     EXPECT_NEAR(combined.friction, 0.4F, kEpsilon);
     EXPECT_NEAR(combined.restitution, 0.6F, kEpsilon);
     EXPECT_NEAR(combined.density, 2.0F, kEpsilon);
 }
 
-TEST(PhysicsMaterialUVETest, CombineMaterialsUVE_BothZero_StaysZero) {
-    constexpr PhysicsMaterialUVE a{0.0F, 0.0F, 0.0F};
-    constexpr PhysicsMaterialUVE b{0.0F, 0.0F, 0.0F};
+TEST(PhysicsMaterialTest, CombineMaterials_BothZero_StaysZero) {
+    constexpr PhysicsMaterial a{0.0F, 0.0F, 0.0F};
+    constexpr PhysicsMaterial b{0.0F, 0.0F, 0.0F};
 
-    constexpr PhysicsMaterialUVE combined = CombineMaterialsUVE(a, b);
+    constexpr PhysicsMaterial combined = CombineMaterials(a, b);
 
     EXPECT_NEAR(combined.friction, 0.0F, kEpsilon);
     EXPECT_NEAR(combined.restitution, 0.0F, kEpsilon);
     EXPECT_NEAR(combined.density, 0.0F, kEpsilon);
 }
 
-TEST(PhysicsMaterialUVETest, MaterialOfUVE_InRangeValues_PassThroughUnchanged) {
-    Scene::ColliderComponentUVE collider;
+TEST(PhysicsMaterialTest, MaterialOf_InRangeValues_PassThroughUnchanged) {
+    Scene::ColliderComponent collider;
     collider.friction = 0.3F;
     collider.restitution = 0.7F;
     collider.density = 2.5F;
 
-    const PhysicsMaterialUVE material = MaterialOfUVE(collider);
+    const PhysicsMaterial material = MaterialOf(collider);
 
     EXPECT_NEAR(material.friction, 0.3F, kEpsilon);
     EXPECT_NEAR(material.restitution, 0.7F, kEpsilon);
     EXPECT_NEAR(material.density, 2.5F, kEpsilon);
 }
 
-TEST(PhysicsMaterialUVETest, MaterialOfUVE_OutOfRangeRestitution_ClampsToOne) {
-    Scene::ColliderComponentUVE collider;
+TEST(PhysicsMaterialTest, MaterialOf_OutOfRangeRestitution_ClampsToOne) {
+    Scene::ColliderComponent collider;
     collider.restitution = 5.0F;
 
-    EXPECT_NEAR(MaterialOfUVE(collider).restitution, 1.0F, kEpsilon);
+    EXPECT_NEAR(MaterialOf(collider).restitution, 1.0F, kEpsilon);
 }
 
-TEST(PhysicsMaterialUVETest, MaterialOfUVE_NonFiniteFrictionAndRestitutionFailClosed) {
-    Scene::ColliderComponentUVE collider;
+TEST(PhysicsMaterialTest, MaterialOf_NonFiniteFrictionAndRestitutionFailClosed) {
+    Scene::ColliderComponent collider;
     collider.friction = std::numeric_limits<float>::quiet_NaN();
     collider.restitution = std::numeric_limits<float>::infinity();
-    const PhysicsMaterialUVE material = MaterialOfUVE(collider);
+    const PhysicsMaterial material = MaterialOf(collider);
     EXPECT_FLOAT_EQ(material.friction, 0.0F);
     EXPECT_FLOAT_EQ(material.restitution, 0.0F);
 }
 
-TEST(PhysicsMaterialUVETest, MaterialOfUVE_InvalidDensityFallsBackToUnitDensity) {
-    Scene::ColliderComponentUVE collider;
+TEST(PhysicsMaterialTest, MaterialOf_InvalidDensityFallsBackToUnitDensity) {
+    Scene::ColliderComponent collider;
     collider.density = -1.0F;
-    EXPECT_FLOAT_EQ(MaterialOfUVE(collider).density, 1.0F);
+    EXPECT_FLOAT_EQ(MaterialOf(collider).density, 1.0F);
     collider.density = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FLOAT_EQ(MaterialOfUVE(collider).density, 1.0F);
+    EXPECT_FLOAT_EQ(MaterialOf(collider).density, 1.0F);
 }
 
-TEST(PhysicsMaterialUVETest, MaterialOfUVE_NegativeFriction_ClampsToZero) {
-    Scene::ColliderComponentUVE collider;
+TEST(PhysicsMaterialTest, MaterialOf_NegativeFriction_ClampsToZero) {
+    Scene::ColliderComponent collider;
     collider.friction = -1.0F;
 
-    EXPECT_NEAR(MaterialOfUVE(collider).friction, 0.0F, kEpsilon);
+    EXPECT_NEAR(MaterialOf(collider).friction, 0.0F, kEpsilon);
 }
 
-TEST(PhysicsMaterialUVETest, CombineModesOverridePrecedenceAndSurfaceTagWorkDeterministically) {
-    EXPECT_NEAR(CombineScalarByModeUVE(0.2F, 0.8F, PhysicsCombineModeUVE::Average, PhysicsCombineModeUVE::Minimum),
+TEST(PhysicsMaterialTest, CombineModesOverridePrecedenceAndSurfaceTagWorkDeterministically) {
+    EXPECT_NEAR(CombineScalarByMode(0.2F, 0.8F, PhysicsCombineMode::Average, PhysicsCombineMode::Minimum),
                 0.2F, kEpsilon);
-    EXPECT_NEAR(CombineScalarByModeUVE(0.5F, 0.5F, PhysicsCombineModeUVE::Minimum, PhysicsCombineModeUVE::Multiply),
+    EXPECT_NEAR(CombineScalarByMode(0.5F, 0.5F, PhysicsCombineMode::Minimum, PhysicsCombineMode::Multiply),
                 0.25F, kEpsilon);
-    EXPECT_NEAR(CombineScalarByModeUVE(0.2F, 0.9F, PhysicsCombineModeUVE::Multiply, PhysicsCombineModeUVE::Maximum),
+    EXPECT_NEAR(CombineScalarByMode(0.2F, 0.9F, PhysicsCombineMode::Multiply, PhysicsCombineMode::Maximum),
                 0.9F, kEpsilon);
 
-    Scene::ColliderComponentUVE collider{};
+    Scene::ColliderComponent collider{};
     collider.friction = 0.35F;
-    PhysicsMaterialAssetUVE projectDefault{};
+    PhysicsMaterialAsset projectDefault{};
     projectDefault.friction = 0.6F;
     projectDefault.surfaceTypeTag = "concrete";
-    PhysicsMaterialAssetUVE perColliderOverride{};
+    PhysicsMaterialAsset perColliderOverride{};
     perColliderOverride.friction = 0.1F;
     perColliderOverride.rollingFriction = 0.002F;
     perColliderOverride.surfaceTypeTag = "ice";
 
-    const PhysicsMaterialAssetUVE resolvedOverride =
-        ResolveColliderPhysicsMaterialUVE(collider, &perColliderOverride, &projectDefault);
+    const PhysicsMaterialAsset resolvedOverride =
+        ResolveColliderPhysicsMaterial(collider, &perColliderOverride, &projectDefault);
     EXPECT_NEAR(resolvedOverride.friction, 0.1F, kEpsilon);
     EXPECT_EQ(resolvedOverride.surfaceTypeTag, "ice");
 
-    const PhysicsMaterialAssetUVE resolvedDefault =
-        ResolveColliderPhysicsMaterialUVE(collider, nullptr, &projectDefault);
+    const PhysicsMaterialAsset resolvedDefault =
+        ResolveColliderPhysicsMaterial(collider, nullptr, &projectDefault);
     EXPECT_NEAR(resolvedDefault.friction, 0.6F, kEpsilon);
     EXPECT_EQ(resolvedDefault.surfaceTypeTag, "concrete");
 }

@@ -8,10 +8,10 @@
 
 namespace UVE::Core {
 
-inline constexpr std::uint32_t kMaximumFrameRateCapUVE = 1000U;
+inline constexpr std::uint32_t kMaximumFrameRateCap = 1000U;
 
 /// Selects the configured foreground/background cap. Headless runtimes are deliberately uncapped.
-[[nodiscard]] inline std::uint32_t SelectFrameRateCapUVE(const bool windowedRenderingActive,
+[[nodiscard]] inline std::uint32_t SelectFrameRateCap(const bool windowedRenderingActive,
                                                         const bool focused,
                                                         const std::uint32_t focusedCap,
                                                         const std::uint32_t unfocusedCap) noexcept {
@@ -21,9 +21,9 @@ inline constexpr std::uint32_t kMaximumFrameRateCapUVE = 1000U;
     return focused ? focusedCap : unfocusedCap;
 }
 
-/// Pure decision used by EngineCoreUVE before sleeping. Keeping the clock sample and state as
+/// Pure decision used by EngineCore before sleeping. Keeping the clock sample and state as
 /// arguments makes cap changes, deadline boundaries, and missed deadlines deterministic to test.
-struct FramePacingDecisionUVE final {
+struct FramePacingDecision final {
     using Clock = std::chrono::steady_clock;
 
     std::uint32_t frameRateCap = 0U;
@@ -31,12 +31,12 @@ struct FramePacingDecisionUVE final {
     std::optional<Clock::time_point> sleepUntil;
 };
 
-[[nodiscard]] inline FramePacingDecisionUVE ComputeFramePacingDecisionUVE(
+[[nodiscard]] inline FramePacingDecision ComputeFramePacingDecision(
     const std::uint32_t frameRateCap, const std::uint32_t previousFrameRateCap,
-    const std::optional<FramePacingDecisionUVE::Clock::time_point>& nextFrameDeadline,
-    const FramePacingDecisionUVE::Clock::time_point now) noexcept {
-    using Clock = FramePacingDecisionUVE::Clock;
-    if (frameRateCap == 0U || frameRateCap > kMaximumFrameRateCapUVE) {
+    const std::optional<FramePacingDecision::Clock::time_point>& nextFrameDeadline,
+    const FramePacingDecision::Clock::time_point now) noexcept {
+    using Clock = FramePacingDecision::Clock;
+    if (frameRateCap == 0U || frameRateCap > kMaximumFrameRateCap) {
         return {};
     }
 
@@ -45,7 +45,7 @@ struct FramePacingDecisionUVE final {
     const bool sameCapHasFutureDeadline = nextFrameDeadline.has_value() &&
                                           previousFrameRateCap == frameRateCap &&
                                           now < *nextFrameDeadline;
-    return FramePacingDecisionUVE{frameRateCap, framePeriod,
+    return FramePacingDecision{frameRateCap, framePeriod,
                                   sameCapHasFutureDeadline ? nextFrameDeadline : std::nullopt};
 }
 

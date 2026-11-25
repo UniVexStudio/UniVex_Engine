@@ -11,14 +11,14 @@
 
 namespace UVE::Core {
 
-enum class AnimationInterruptionPolicyUVE : std::uint8_t {
+enum class AnimationInterruptionPolicy : std::uint8_t {
     None = 0,
     Source,
     Target,
     SourceOrTarget,
 };
 
-struct AnimationStateUVE final {
+struct AnimationState final {
     std::string stateId;
     std::string clipId;
     std::string syncGroupId;
@@ -29,27 +29,27 @@ struct AnimationStateUVE final {
 /// Controls whether a transition already in progress may be replaced by an eligible transition
 /// from its source state, target state, both, or neither. Replacement preserves deterministic
 /// priority/identifier selection and starts the replacement crossfade from zero alpha.
-struct AnimationTransitionUVE final {
+struct AnimationTransition final {
     std::string transitionId;
     std::string sourceStateId;
     std::string targetStateId;
     float durationSeconds = 0.0F;
     float exitTime = 0.0F;
     std::int32_t priority = 0;
-    AnimationInterruptionPolicyUVE interruption = AnimationInterruptionPolicyUVE::None;
+    AnimationInterruptionPolicy interruption = AnimationInterruptionPolicy::None;
 };
 
-struct AnimationStateMachineUVE final {
-    static constexpr std::size_t kMaximumStatesUVE = 256U;
-    static constexpr std::size_t kMaximumTransitionsUVE = 512U;
+struct AnimationStateMachine final {
+    static constexpr std::size_t kMaximumStates = 256U;
+    static constexpr std::size_t kMaximumTransitions = 512U;
 
-    std::vector<AnimationStateUVE> states;
-    std::vector<AnimationTransitionUVE> transitions;
-    std::vector<AnimationClipUVE> clips;
+    std::vector<AnimationState> states;
+    std::vector<AnimationTransition> transitions;
+    std::vector<AnimationClip> clips;
     std::string initialStateId;
 };
 
-enum class AnimationStateMachineValidationCodeUVE : std::uint8_t {
+enum class AnimationStateMachineValidationCode : std::uint8_t {
     Valid = 0,
     EmptyMachine,
     CapacityExceeded,
@@ -64,17 +64,17 @@ enum class AnimationStateMachineValidationCodeUVE : std::uint8_t {
     MissingInitialState,
 };
 
-struct AnimationStateMachineValidationResultUVE final {
-    AnimationStateMachineValidationCodeUVE code = AnimationStateMachineValidationCodeUVE::EmptyMachine;
+struct AnimationStateMachineValidationResult final {
+    AnimationStateMachineValidationCode code = AnimationStateMachineValidationCode::EmptyMachine;
     std::string identifier;
     std::string message;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == AnimationStateMachineValidationCodeUVE::Valid;
+    [[nodiscard]] bool IsValid() const noexcept {
+        return code == AnimationStateMachineValidationCode::Valid;
     }
 };
 
-struct AnimationStateMachineDebugSnapshotUVE final {
+struct AnimationStateMachineDebugSnapshot final {
     std::string currentStateId;
     std::string targetStateId;
     std::string activeTransitionId;
@@ -86,39 +86,39 @@ struct AnimationStateMachineDebugSnapshotUVE final {
     bool transitioning = false;
 };
 
-struct AnimationStateMachineEvaluationResultUVE final {
-    TransformPoseUVE pose;
-    AnimationStateMachineDebugSnapshotUVE debug;
+struct AnimationStateMachineEvaluationResult final {
+    TransformPose pose;
+    AnimationStateMachineDebugSnapshot debug;
     bool usedOutput = false;
     std::string message;
 
-    [[nodiscard]] bool IsSuccessUVE() const noexcept {
+    [[nodiscard]] bool IsSuccess() const noexcept {
         return usedOutput;
     }
 };
 
-[[nodiscard]] AnimationStateMachineValidationResultUVE ValidateAnimationStateMachineUVE(
-    const AnimationStateMachineUVE& machine) noexcept;
+[[nodiscard]] AnimationStateMachineValidationResult ValidateAnimationStateMachine(
+    const AnimationStateMachine& machine) noexcept;
 
-class AnimationStateMachineEvaluatorUVE final {
+class AnimationStateMachineEvaluator final {
 public:
-    explicit AnimationStateMachineEvaluatorUVE(const AnimationStateMachineUVE& machine);
-    AnimationStateMachineEvaluatorUVE(AnimationStateMachineUVE&&) = delete;
+    explicit AnimationStateMachineEvaluator(const AnimationStateMachine& machine);
+    AnimationStateMachineEvaluator(AnimationStateMachine&&) = delete;
 
-    [[nodiscard]] AnimationStateMachineEvaluationResultUVE EvaluateUVE(double deltaSeconds);
-    [[nodiscard]] const AnimationStateMachineDebugSnapshotUVE& GetDebugSnapshotUVE() const noexcept;
+    [[nodiscard]] AnimationStateMachineEvaluationResult Evaluate(double deltaSeconds);
+    [[nodiscard]] const AnimationStateMachineDebugSnapshot& GetDebugSnapshot() const noexcept;
 
 private:
-    [[nodiscard]] const AnimationStateUVE* FindStateUVE(const std::string& stateId) const noexcept;
-    [[nodiscard]] const AnimationTransitionUVE* SelectTransitionUVE(
-        const AnimationStateUVE& source) const noexcept;
-    [[nodiscard]] const AnimationTransitionUVE* SelectInterruptionTransitionUVE(
-        const AnimationTransitionUVE& activeTransition) const noexcept;
-    [[nodiscard]] bool SampleStateUVE(const AnimationStateUVE& state, double timeSeconds,
-                                      TransformPoseUVE& outPose) const noexcept;
+    [[nodiscard]] const AnimationState* FindState(const std::string& stateId) const noexcept;
+    [[nodiscard]] const AnimationTransition* SelectTransition(
+        const AnimationState& source) const noexcept;
+    [[nodiscard]] const AnimationTransition* SelectInterruptionTransition(
+        const AnimationTransition& activeTransition) const noexcept;
+    [[nodiscard]] bool SampleState(const AnimationState& state, double timeSeconds,
+                                      TransformPose& outPose) const noexcept;
 
-    const AnimationStateMachineUVE& m_machine;
-    AnimationStateMachineDebugSnapshotUVE m_debug;
+    const AnimationStateMachine& m_machine;
+    AnimationStateMachineDebugSnapshot m_debug;
 };
 
 } // namespace UVE::Core

@@ -2,38 +2,38 @@
 
 namespace UVE::Save {
 
-SaveSyncActionUVE EvaluateSaveSyncActionUVE(const SaveRevisionStatusUVE status) noexcept {
+SaveSyncAction EvaluateSaveSyncAction(const SaveRevisionStatus status) noexcept {
     switch (status) {
-        case SaveRevisionStatusUVE::Unchanged:
-            return SaveSyncActionUVE::NoOp;
-        case SaveRevisionStatusUVE::LocalAhead:
-            return SaveSyncActionUVE::Upload;
-        case SaveRevisionStatusUVE::RemoteAhead:
-            return SaveSyncActionUVE::Download;
-        case SaveRevisionStatusUVE::Conflict:
-            return SaveSyncActionUVE::Conflict;
-        case SaveRevisionStatusUVE::Invalid:
+        case SaveRevisionStatus::Unchanged:
+            return SaveSyncAction::NoOp;
+        case SaveRevisionStatus::LocalAhead:
+            return SaveSyncAction::Upload;
+        case SaveRevisionStatus::RemoteAhead:
+            return SaveSyncAction::Download;
+        case SaveRevisionStatus::Conflict:
+            return SaveSyncAction::Conflict;
+        case SaveRevisionStatus::Invalid:
         default:
-            return SaveSyncActionUVE::Invalid;
+            return SaveSyncAction::Invalid;
     }
 }
 
-SaveRevisionStatusUVE EvaluateSaveRevisionUVE(
+SaveRevisionStatus EvaluateSaveRevision(
     const std::uint64_t baseRevision, const std::uint64_t localRevision,
     const std::uint64_t remoteRevision) noexcept {
     if (baseRevision == 0U || localRevision == 0U || remoteRevision == 0U) {
-        return SaveRevisionStatusUVE::Invalid;
+        return SaveRevisionStatus::Invalid;
     }
     if (localRevision == remoteRevision) {
-        return SaveRevisionStatusUVE::Unchanged;
+        return SaveRevisionStatus::Unchanged;
     }
     if (localRevision != baseRevision && remoteRevision == baseRevision) {
-        return SaveRevisionStatusUVE::LocalAhead;
+        return SaveRevisionStatus::LocalAhead;
     }
     if (localRevision == baseRevision && remoteRevision != baseRevision) {
-        return SaveRevisionStatusUVE::RemoteAhead;
+        return SaveRevisionStatus::RemoteAhead;
     }
-    return SaveRevisionStatusUVE::Conflict;
+    return SaveRevisionStatus::Conflict;
 }
 
 } // namespace UVE::Save

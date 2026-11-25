@@ -92,21 +92,21 @@
 namespace UVE::Scene {
 namespace {
 
-using Core::MakeEnumPropertyUVE;
-using Core::MakePropertyUVE;
-using Core::TypeMetadataEnumEntryUVE;
-using Core::TypeMetadataEntryUVE;
-using Core::TypeMetadataKindUVE;
-using Core::TypeMetadataPropertyFlagsUVE;
-using Core::TypeMetadataPropertyUVE;
-using Core::TypeMetadataRegistryUVE;
+using Core::MakeEnumProperty;
+using Core::MakeProperty;
+using Core::TypeMetadataEnumEntry;
+using Core::TypeMetadataEntry;
+using Core::TypeMetadataKind;
+using Core::TypeMetadataPropertyFlags;
+using Core::TypeMetadataProperty;
+using Core::TypeMetadataRegistry;
 
 /// Declares one editable property. `typeId` is one of the kPropertyType*UVE constants; the caller
 /// adjusts flags/range on the returned value for the cases that need it.
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE DeclareUVE(std::string name, std::string displayName,
-                                                 const Strings::StringIdUVE typeId) {
-    return MakePropertyUVE<MemberPointer>(std::move(name), std::move(displayName), typeId, true);
+[[nodiscard]] TypeMetadataProperty Declare(std::string name, std::string displayName,
+                                                 const Strings::StringId typeId) {
+    return MakeProperty<MemberPointer>(std::move(name), std::move(displayName), typeId, true);
 }
 
 /// Declares a property that is read and written but never drawn.
@@ -115,8 +115,8 @@ template <auto MemberPointer>
 /// the file, the serializer and every accessor keep working, and the Inspector offers no row. That
 /// is what a control that has been replaced by a better one leaves behind - the data for scenes
 /// that already have it, and no new place to set it by accident.
-[[nodiscard]] TypeMetadataPropertyUVE HiddenUVE(TypeMetadataPropertyUVE property) {
-    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+[[nodiscard]] TypeMetadataProperty Hidden(TypeMetadataProperty property) {
+    property.flags = TypeMetadataPropertyFlags::Hidden;
     return property;
 }
 
@@ -124,19 +124,19 @@ template <auto MemberPointer>
 /// is doing, never written by authoring, and never persisted - saving it would restore a stale
 /// cache over whatever the system computed on load.
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE DeclareRuntimeStateUVE(std::string name, std::string displayName,
-                                                             const Strings::StringIdUVE typeId) {
-    TypeMetadataPropertyUVE property = DeclareUVE<MemberPointer>(std::move(name), std::move(displayName),
+[[nodiscard]] TypeMetadataProperty DeclareRuntimeState(std::string name, std::string displayName,
+                                                             const Strings::StringId typeId) {
+    TypeMetadataProperty property = Declare<MemberPointer>(std::move(name), std::move(displayName),
                                                                  typeId);
-    property.flags = TypeMetadataPropertyFlagsUVE::RuntimeState;
+    property.flags = TypeMetadataPropertyFlags::RuntimeState;
     return property;
 }
 
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE DeclareEnumUVE(std::string name, std::string displayName,
-                                                     std::vector<TypeMetadataEnumEntryUVE> options) {
-    return MakeEnumPropertyUVE<MemberPointer>(std::move(name), std::move(displayName),
-                                              kPropertyTypeEnumUVE, true,
+[[nodiscard]] TypeMetadataProperty DeclareEnum(std::string name, std::string displayName,
+                                                     std::vector<TypeMetadataEnumEntry> options) {
+    return MakeEnumProperty<MemberPointer>(std::move(name), std::move(displayName),
+                                              kPropertyTypeEnum, true,
                                               std::move(options));
 }
 
@@ -145,37 +145,37 @@ template <auto MemberPointer>
 /// property still has to be readable, or the inspector shows nothing where the resolved answer
 /// should be.
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE DeclareRuntimeStateEnumUVE(
-    std::string name, std::string displayName, std::vector<TypeMetadataEnumEntryUVE> options) {
-    TypeMetadataPropertyUVE property =
-        DeclareEnumUVE<MemberPointer>(std::move(name), std::move(displayName), std::move(options));
-    property.flags = TypeMetadataPropertyFlagsUVE::RuntimeState;
+[[nodiscard]] TypeMetadataProperty DeclareRuntimeStateEnum(
+    std::string name, std::string displayName, std::vector<TypeMetadataEnumEntry> options) {
+    TypeMetadataProperty property =
+        DeclareEnum<MemberPointer>(std::move(name), std::move(displayName), std::move(options));
+    property.flags = TypeMetadataPropertyFlags::RuntimeState;
     return property;
 }
 
 /// Adds an inclusive numeric range with the given editing step.
-[[nodiscard]] TypeMetadataPropertyUVE WithRangeUVE(TypeMetadataPropertyUVE property, const double minimum,
+[[nodiscard]] TypeMetadataProperty WithRange(TypeMetadataProperty property, const double minimum,
                                                    const double maximum, const double step) {
     property.range = {true, minimum, maximum, step};
     return property;
 }
 
-[[nodiscard]] TypeMetadataPropertyUVE WithTooltipUVE(TypeMetadataPropertyUVE property, std::string tooltip) {
+[[nodiscard]] TypeMetadataProperty WithTooltip(TypeMetadataProperty property, std::string tooltip) {
     property.tooltip = std::move(tooltip);
     return property;
 }
 
 /// Routes a property through a named custom drawer. Used only where a generic editor would be
 /// wrong rather than merely plain - see the rotation and entity-reference cases below.
-[[nodiscard]] TypeMetadataPropertyUVE WithCustomDrawerUVE(TypeMetadataPropertyUVE property,
+[[nodiscard]] TypeMetadataProperty WithCustomDrawer(TypeMetadataProperty property,
                                                           std::string drawerId) {
     property.customDrawerId = std::move(drawerId);
     return property;
 }
 
 /// States how many elements a fixed-capacity list value holds, for the type that has no other way
-/// to say it (see kPropertyTypeEntityListUVE).
-[[nodiscard]] TypeMetadataPropertyUVE WithElementCountUVE(TypeMetadataPropertyUVE property,
+/// to say it (see kPropertyTypeEntityList).
+[[nodiscard]] TypeMetadataProperty WithElementCount(TypeMetadataProperty property,
                                                           const std::size_t elementCount) {
     property.elementCount = elementCount;
     return property;
@@ -183,7 +183,7 @@ template <auto MemberPointer>
 
 /// Places a property in a named sub-group of its section. A group's properties are declared
 /// together, after the section's ungrouped ones.
-[[nodiscard]] TypeMetadataPropertyUVE InGroupUVE(TypeMetadataPropertyUVE property, std::string group) {
+[[nodiscard]] TypeMetadataProperty InGroup(TypeMetadataProperty property, std::string group) {
     property.section = std::move(group);
     return property;
 }
@@ -191,43 +191,43 @@ template <auto MemberPointer>
 /// Shows a property only while a bool switch on the same component is on - the field after a
 /// "Enabled" toggle means nothing while the toggle is off, so it is not shown then.
 template <auto SwitchPointer>
-[[nodiscard]] TypeMetadataPropertyUVE WhenOnUVE(TypeMetadataPropertyUVE property) {
+[[nodiscard]] TypeMetadataProperty WhenOn(TypeMetadataProperty property) {
     property.isVisible = +[](const void* instance) {
-        using OwnerT = typename Core::Detail::MemberPointerTraitsUVE<decltype(SwitchPointer)>::Owner;
+        using OwnerT = typename Core::Detail::MemberPointerTraits<decltype(SwitchPointer)>::Owner;
         return static_cast<const OwnerT*>(instance)->*SwitchPointer;
     };
     return property;
 }
 
-[[nodiscard]] TypeMetadataEntryUVE MakeEntryUVE(Strings::StringIdUVE typeId, std::string cppName,
+[[nodiscard]] TypeMetadataEntry MakeEntry(Strings::StringId typeId, std::string cppName,
                                                 std::string displayName, const std::int32_t order,
-                                                std::vector<TypeMetadataPropertyUVE> properties) {
-    TypeMetadataEntryUVE entry{TypeMetadataKindUVE::Component, std::move(typeId), std::move(displayName),
+                                                std::vector<TypeMetadataProperty> properties) {
+    TypeMetadataEntry entry{TypeMetadataKind::Component, std::move(typeId), std::move(displayName),
                                1U, std::move(properties), {}};
     entry.order = order;
     entry.cppName = std::move(cppName);
     return entry;
 }
 
-/// Binds an entry to its C++ type and appends it to `entries`. Separated from MakeEntryUVE so the
+/// Binds an entry to its C++ type and appends it to `entries`. Separated from MakeEntry so the
 /// native type appears once per component, right next to the properties that belong to it.
 template <typename ComponentT>
-void AddUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE entry) {
-    Core::BindTypeUVE<ComponentT>(entry);
+void Add(std::vector<TypeMetadataEntry>& entries, TypeMetadataEntry entry) {
+    Core::BindType<ComponentT>(entry);
     entries.push_back(std::move(entry));
 }
 
-/// AddUVE for a component with a whole-value rule, so a generic editor enforces it too - and so
+/// Add for a component with a whole-value rule, so a generic editor enforces it too - and so
 /// the generic serializer validates what it loads. `IsValid` is any callable taking
 /// `const ComponentT&` (a noexcept function pointer, a plain one, a derived-to-base reuse): the
 /// entry's isInstanceValid is a plain function pointer, so every spelling converts.
 template <typename ComponentT, auto IsValid>
-void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEntryUVE entry) {
+void AddValidated(std::vector<TypeMetadataEntry>& entries, TypeMetadataEntry entry) {
     entry.isInstanceValid = +[](const void* instance) { return IsValid(*static_cast<const ComponentT*>(instance)); };
-    AddUVE<ComponentT>(entries, std::move(entry));
+    Add<ComponentT>(entries, std::move(entry));
 }
 
-[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
+[[nodiscard]] bool IsMontageSequencerComponentValid(const MontageSequencerComponent&) noexcept {
     return true;
 }
 
@@ -236,30 +236,30 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
 // of being re-described by every consumer that needs to know.
 // ---------------------------------------------------------------------------------------------
 
-void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<NameComponentUVE, &IsNameComponentValidUVE>(
-        entries, MakeEntryUVE("component.name", "NameComponentUVE", "Name", kSectionOrderIdentityUVE,
-                              {DeclareUVE<&NameComponentUVE::name>("name", "Name", kPropertyTypeStringUVE)}));
+void DeclareIdentityAndTransform(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<NameComponent, &IsNameComponentValid>(
+        entries, MakeEntry("component.name", "NameComponent", "Name", kSectionOrderIdentity,
+                              {Declare<&NameComponent::name>("name", "Name", kPropertyTypeString)}));
 
     // Rotation is the one place a generic editor would be actively wrong. The quaternion, the
     // authored Euler angles and the edit mode are three views of one piece of state that must be
-    // written together (see TransformComponentUVE::localEulerRadians on why the angles are stored
+    // written together (see TransformComponent::localEulerRadians on why the angles are stored
     // rather than re-extracted). A custom drawer owns all three; the rest of the transform is
     // ordinary data and is declared ordinarily.
-    AddUVE<TransformComponentUVE>(
+    Add<TransformComponent>(
         entries,
-        MakeEntryUVE("component.transform", "TransformComponentUVE", "Transform", kSectionOrderTransformUVE,
+        MakeEntry("component.transform", "TransformComponent", "Transform", kSectionOrderTransform,
             {
-                DeclareUVE<&TransformComponentUVE::localPosition>("localPosition", "Position",
-                                                                 kPropertyTypeVector3UVE),
-                WithCustomDrawerUVE(DeclareUVE<&TransformComponentUVE::localRotation>(
-                                        "localRotation", "Rotation", kPropertyTypeQuaternionUVE),
+                Declare<&TransformComponent::localPosition>("localPosition", "Position",
+                                                                 kPropertyTypeVector3),
+                WithCustomDrawer(Declare<&TransformComponent::localRotation>(
+                                        "localRotation", "Rotation", kPropertyTypeQuaternion),
                                     "transform.rotation"),
-                DeclareUVE<&TransformComponentUVE::localScale>("localScale", "Scale",
-                                                               kPropertyTypeVector3UVE),
-                WithTooltipUVE(
-                    DeclareUVE<&TransformComponentUVE::topLevel>("topLevel", "Top Level",
-                                                                 kPropertyTypeBoolUVE),
+                Declare<&TransformComponent::localScale>("localScale", "Scale",
+                                                               kPropertyTypeVector3),
+                WithTooltip(
+                    Declare<&TransformComponent::topLevel>("topLevel", "Top Level",
+                                                                 kPropertyTypeBool),
                     "Ignore the parent's transform. The entity stays a child for every other "
                     "purpose - outliner, deletion, saving and visibility inheritance."),
             }));
@@ -267,179 +267,179 @@ void DeclareIdentityAndTransformUVE(std::vector<TypeMetadataEntryUVE>& entries) 
     // visibilityParent holds an entity reference, which a text field cannot author and which the
     // serializer has to remap through its file-local id table. Both facts are declared rather than
     // rediscovered: the flag tells the serializer, the custom drawer tells the inspector.
-    TypeMetadataPropertyUVE visibilityParent = WithCustomDrawerUVE(
-        DeclareUVE<&VisibilityComponentUVE::visibilityParent>("visibilityParent", "Visibility Parent",
-                                                              kPropertyTypeEntityUVE),
+    TypeMetadataProperty visibilityParent = WithCustomDrawer(
+        Declare<&VisibilityComponent::visibilityParent>("visibilityParent", "Visibility Parent",
+                                                              kPropertyTypeEntity),
         "visibility.parent");
-    visibilityParent.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+    visibilityParent.flags = TypeMetadataPropertyFlags::EntityReference;
     visibilityParent.tooltip =
         "Inherit visibility from this entity instead of from the transform parent. Empty means the "
         "transform parent.";
 
-    AddUVE<VisibilityComponentUVE>(
+    Add<VisibilityComponent>(
         entries,
-        MakeEntryUVE("component.visibility", "VisibilityComponentUVE", "Visibility", kSectionOrderVisibilityUVE,
+        MakeEntry("component.visibility", "VisibilityComponent", "Visibility", kSectionOrderVisibility,
                      {
-                         DeclareUVE<&VisibilityComponentUVE::visible>("visible", "Visible",
-                                                                      kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&VisibilityComponentUVE::visibleInHierarchy>(
-                             "visibleInHierarchy", "Visible In Hierarchy", kPropertyTypeBoolUVE),
+                         Declare<&VisibilityComponent::visible>("visible", "Visible",
+                                                                      kPropertyTypeBool),
+                         DeclareRuntimeState<&VisibilityComponent::visibleInHierarchy>(
+                             "visibleInHierarchy", "Visible In Hierarchy", kPropertyTypeBool),
                          std::move(visibilityParent),
                      }));
 
-    TypeMetadataPropertyUVE parent = WithCustomDrawerUVE(
-        DeclareUVE<&HierarchyComponentUVE::parent>("parent", "Parent", kPropertyTypeEntityUVE),
+    TypeMetadataProperty parent = WithCustomDrawer(
+        Declare<&HierarchyComponent::parent>("parent", "Parent", kPropertyTypeEntity),
         "hierarchy.parent");
-    parent.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddUVE<HierarchyComponentUVE>(entries, MakeEntryUVE("component.hierarchy", "HierarchyComponentUVE", "Hierarchy",
-                                                        kSectionOrderIdentityUVE, {std::move(parent)}));
-    // No entry for DisabledComponentUVE on purpose: the registry's contract (pinned by
+    parent.flags = TypeMetadataPropertyFlags::EntityReference;
+    Add<HierarchyComponent>(entries, MakeEntry("component.hierarchy", "HierarchyComponent", "Hierarchy",
+                                                        kSectionOrderIdentity, {std::move(parent)}));
+    // No entry for DisabledComponent on purpose: the registry's contract (pinned by
     // EveryDeclarationRegistersAndCarriesItsNativeType) is entries with at least one property for
     // the generic consumers, and a fieldless tag has nothing for them. Its seams are the
-    // Set/IsEntityEnabledUVE helpers and SceneSerializerUVE's hand-written branch, neither of
+    // Set/IsEntityEnabled helpers and SceneSerializer's hand-written branch, neither of
     // which needs the registry — the same "no metadata entry" corner Folder and Marker3D live in.
 }
 
-void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<CameraComponentUVE, &IsCameraComponentValidUVE>(
+void DeclareRendering(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<CameraComponent, &IsCameraComponentValid>(
         entries,
-        MakeEntryUVE("component.camera", "CameraComponentUVE", "Camera", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.camera", "CameraComponent", "Camera", kSectionOrderTypeSpecific,
             {
                 // Which camera the viewport looks through answers a different question from the
                 // lens so it sits above the group: one switch and then the numbers it describes.
-                DeclareUVE<&CameraComponentUVE::current>("current", "Current", kPropertyTypeBoolUVE),
-                InGroupUVE(DeclareEnumUVE<&CameraComponentUVE::projection>(
+                Declare<&CameraComponent::current>("current", "Current", kPropertyTypeBool),
+                InGroup(DeclareEnum<&CameraComponent::projection>(
                                "projection", "Mode",
                                {{0, "Perspective"}, {1, "Orthographic"}, {2, "Human Eye"}}),
                            "Lens"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&CameraComponentUVE::fieldOfViewDegrees>(
-                                       "fieldOfViewDegrees", "Field Of View", kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&CameraComponent::fieldOfViewDegrees>(
+                                       "fieldOfViewDegrees", "Field Of View", kPropertyTypeFloat),
                                    1.0, 179.0, 0.5);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const CameraComponentUVE*>(instance)->projection ==
-                                          CameraProjectionModeUVE::Perspective;
+                                   return static_cast<const CameraComponent*>(instance)->projection ==
+                                          CameraProjectionMode::Perspective;
                                };
                                return property;
                            }(),
                            "Lens"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&CameraComponentUVE::orthographicSize>("orthographicSize", "Size",
-                                                                                     kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&CameraComponent::orthographicSize>("orthographicSize", "Size",
+                                                                                     kPropertyTypeFloat),
                                    0.001, 10000.0, 0.1);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const CameraComponentUVE*>(instance)->projection ==
-                                          CameraProjectionModeUVE::Orthographic;
+                                   return static_cast<const CameraComponent*>(instance)->projection ==
+                                          CameraProjectionMode::Orthographic;
                                };
                                return property;
                            }(),
                            "Lens"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&CameraComponentUVE::nearPlane>("nearPlane", "Near Plane",
-                                                                                   kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&CameraComponent::nearPlane>("nearPlane", "Near Plane",
+                                                                                   kPropertyTypeFloat),
                                         0.001, 10000.0, 0.01),
                            "Lens"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&CameraComponentUVE::farPlane>("farPlane", "Far Plane",
-                                                                                  kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&CameraComponent::farPlane>("farPlane", "Far Plane",
+                                                                                  kPropertyTypeFloat),
                                         0.002, 100000.0, 1.0),
                            "Lens"),
             }));
 
-    AddValidatedUVE<LightComponentUVE, &IsLightComponentValidUVE>(
+    AddValidated<LightComponent, &IsLightComponentValid>(
         entries,
-        MakeEntryUVE("component.light", "LightComponentUVE", "Light", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.light", "LightComponent", "Light", kSectionOrderTypeSpecific,
             {
-                DeclareEnumUVE<&LightComponentUVE::type>("type", "Type",
+                DeclareEnum<&LightComponent::type>("type", "Type",
                                                          {{0, "Directional"}, {1, "Point"}, {2, "Spot"}}),
-                DeclareUVE<&LightComponentUVE::color>("color", "Color", kPropertyTypeLinearColorUVE),
-                WithRangeUVE(DeclareUVE<&LightComponentUVE::intensity>("intensity", "Intensity",
-                                                                       kPropertyTypeFloatUVE),
+                Declare<&LightComponent::color>("color", "Color", kPropertyTypeLinearColor),
+                WithRange(Declare<&LightComponent::intensity>("intensity", "Intensity",
+                                                                       kPropertyTypeFloat),
                              0.0, 1000.0, 0.05),
                 // Range and cone angle apply to some light types and not others. Declaring that
                 // as a predicate keeps the inspector from having to know what a spot light is.
                 [] {
-                    TypeMetadataPropertyUVE property = WithRangeUVE(
-                        DeclareUVE<&LightComponentUVE::range>("range", "Range", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property = WithRange(
+                        Declare<&LightComponent::range>("range", "Range", kPropertyTypeFloat),
                         0.0, 10000.0, 0.1);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const LightComponentUVE*>(instance)->type !=
-                               LightTypeUVE::Directional;
+                        return static_cast<const LightComponent*>(instance)->type !=
+                               LightType::Directional;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&LightComponentUVE::spotAngleDegrees>(
-                                         "spotAngleDegrees", "Spot Angle", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&LightComponent::spotAngleDegrees>(
+                                         "spotAngleDegrees", "Spot Angle", kPropertyTypeFloat),
                                      0.0, 89.0, 0.5);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const LightComponentUVE*>(instance)->type == LightTypeUVE::Spot;
+                        return static_cast<const LightComponent*>(instance)->type == LightType::Spot;
                     };
                     return property;
                 }(),
             }));
 
-    AddValidatedUVE<MeshComponentUVE, &IsMeshComponentValidUVE>(
+    AddValidated<MeshComponent, &IsMeshComponentValid>(
         entries,
-        MakeEntryUVE("component.mesh", "MeshComponentUVE", "MeshInstance3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.mesh", "MeshComponent", "MeshInstance3D", kSectionOrderTypeSpecific,
                      {
-                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::meshGuid>(
-                                                                "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
+                         WithTooltip(WithCustomDrawer(Declare<&MeshComponent::meshGuid>(
+                                                                "meshGuid", "Mesh", kPropertyTypeAssetGuid),
                                                             "asset:uvmodel"),
                                         "An imported model. Import a .glb or .gltf (Blender: File > Export > "
                                         "glTF 2.0) from the Asset Table."),
-                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::materialGuid>(
-                                                                "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
+                         WithTooltip(WithCustomDrawer(Declare<&MeshComponent::materialGuid>(
+                                                                "materialGuid", "Material", kPropertyTypeAssetGuid),
                                                             "asset:uvmat"),
                                         "The surface material. Without one the mesh is drawn in neutral grey."),
-                         WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::visibilityLayers>(
-                                                 "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32UVE),
-                                             std::string(kLayerMaskDrawerRenderUVE)),
+                         WithCustomDrawer(Declare<&MeshComponent::visibilityLayers>(
+                                                 "visibilityLayers", "Visibility Layers", kPropertyTypeBitMask32),
+                                             std::string(kLayerMaskDrawerRender)),
                      }));
 
-    TypeMetadataEntryUVE skinEntry =
-        MakeEntryUVE("component.skin", "SkinComponentUVE", "Skin", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntry skinEntry =
+        MakeEntry("component.skin", "SkinComponent", "Skin", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&SkinComponentUVE::bindCount>("bindCount", "Bind Count",
-                                                                  kPropertyTypeUInt32UVE),
+                         Declare<&SkinComponent::bindCount>("bindCount", "Bind Count",
+                                                                  kPropertyTypeUInt32),
                      });
     skinEntry.nestedUnderTypeIds = {"component.mesh"};
-    AddValidatedUVE<SkinComponentUVE, &IsSkinComponentValidUVE>(entries, std::move(skinEntry));
+    AddValidated<SkinComponent, &IsSkinComponentValid>(entries, std::move(skinEntry));
 
     // Blend shapes. Deliberately NOT nested under component.mesh: nestable types are drawn inside
     // their host's section, and a face rig's weights are the one thing on a mesh an animator edits
     // continuously - burying the list in the Mesh section makes it a scroll away every time. The
     // list itself is a custom drawer because rows carry a shape NAME (chosen from the mesh's own
     // targets, not typed) and a weight, which no generic scalar row can express.
-    TypeMetadataEntryUVE morphTargetEntry =
-        MakeEntryUVE("component.morph_target", "MorphTargetComponentUVE", "Morph Targets",
-                     kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntry morphTargetEntry =
+        MakeEntry("component.morph_target", "MorphTargetComponent", "Morph Targets",
+                     kSectionOrderTypeSpecific,
                      {
-                         WithTooltipUVE(
-                             WithCustomDrawerUVE(
-                                 DeclareUVE<&MorphTargetComponentUVE::weights>("weights", "Weights",
-                                                                               Strings::StringIdUVE{"MorphTargetWeights"}),
+                         WithTooltip(
+                             WithCustomDrawer(
+                                 Declare<&MorphTargetComponent::weights>("weights", "Weights",
+                                                                               Strings::StringId{"MorphTargetWeights"}),
                                  "morph-target-weights"),
                              "One row per blend shape this entity drives. A shape with no row stays at "
                              "the mesh's own default, so a 52-shape face rig stores only the few "
                              "shapes that are off zero."),
-                         WithTooltipUVE(
-                             DeclareUVE<&MorphTargetComponentUVE::enabled>("enabled", "Enabled",
-                                                                           kPropertyTypeBoolUVE),
+                         WithTooltip(
+                             Declare<&MorphTargetComponent::enabled>("enabled", "Enabled",
+                                                                           kPropertyTypeBool),
                              "Off leaves the weights authored but contributes nothing, so the mesh "
                              "sits at its default shape."),
                      });
-    AddValidatedUVE<MorphTargetComponentUVE, &IsMorphTargetComponentValidUVE>(entries, std::move(morphTargetEntry));
+    AddValidated<MorphTargetComponent, &IsMorphTargetComponentValid>(entries, std::move(morphTargetEntry));
 
     // One component behind BoxMesh3D, SphereMesh3D and PlaneMesh3D; its section carries the name
     // of the object it is on.
-    TypeMetadataEntryUVE primitive =
-        MakeEntryUVE("component.primitive_mesh", "PrimitiveMeshComponentUVE", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntry primitive =
+        MakeEntry("component.primitive_mesh", "PrimitiveMeshComponent", "PrimitiveMesh3D", kSectionOrderTypeSpecific,
                      {
                          // The object's kind is its shape (a BoxMesh3D is a box): kept in the
                          // file, never offered, so a box cannot be turned into a sphere here.
-                         HiddenUVE(DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
+                         Hidden(DeclareEnum<&PrimitiveMeshComponent::kind>(
                              "kind", "Shape",
                              {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}})),
                          // Kept in the file, never offered: scenes saved while a primitive had its
@@ -447,29 +447,29 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          // the Inspector no longer sets one. A surface has one colour - the
                          // material's albedo - and a second control beside an empty material slot
                          // meant two answers to the same question.
-                         HiddenUVE(DeclareUVE<&PrimitiveMeshComponentUVE::baseColor>(
-                             "baseColor", "Base Color", kPropertyTypeColorUVE)),
+                         Hidden(Declare<&PrimitiveMeshComponent::baseColor>(
+                             "baseColor", "Base Color", kPropertyTypeColor)),
                          // Same asset slot the mesh instance uses, so a primitive and an imported
                          // mesh are shaded through one material path.
-                         WithTooltipUVE(
-                             WithCustomDrawerUVE(
-                                 DeclareUVE<&PrimitiveMeshComponentUVE::materialGuid>(
-                                     "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
+                         WithTooltip(
+                             WithCustomDrawer(
+                                 Declare<&PrimitiveMeshComponent::materialGuid>(
+                                     "materialGuid", "Material", kPropertyTypeAssetGuid),
                                  "asset:uvmat"),
                              "The surface material: its albedo is this primitive's colour. Without "
                              "one the primitive is drawn with the engine's default lit material."),
                      });
     primitive.sectionTitle = +[](const void* instance) -> const char* {
-        switch (static_cast<const PrimitiveMeshComponentUVE*>(instance)->kind) {
-            case PrimitiveMeshKindUVE::UVSphere:
+        switch (static_cast<const PrimitiveMeshComponent*>(instance)->kind) {
+            case PrimitiveMeshKind::UVSphere:
                 return "SphereMesh3D";
-            case PrimitiveMeshKindUVE::Plane:
+            case PrimitiveMeshKind::Plane:
                 return "PlaneMesh3D";
-            case PrimitiveMeshKindUVE::Capsule:
+            case PrimitiveMeshKind::Capsule:
                 return "CapsuleMesh3D";
-            case PrimitiveMeshKindUVE::Cylinder:
+            case PrimitiveMeshKind::Cylinder:
                 return "CylinderMesh3D";
-            case PrimitiveMeshKindUVE::Cube:
+            case PrimitiveMeshKind::Cube:
                 break;
         }
         return "BoxMesh3D";
@@ -481,465 +481,465 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // section; on an object that has a primitive and no mesh component (BoxMesh3D and friends) it
     // still stands on its own, so nothing becomes unreachable.
     primitive.nestedUnderTypeIds = {"component.mesh"};
-    AddValidatedUVE<PrimitiveMeshComponentUVE, &IsPrimitiveMeshComponentValidUVE>(entries, std::move(primitive));
+    AddValidated<PrimitiveMeshComponent, &IsPrimitiveMeshComponentValid>(entries, std::move(primitive));
 
-    AddValidatedUVE<WorldEnvironment3DComponentUVE, &IsWorldEnvironment3DObjectComponentValidUVE>(
+    AddValidated<WorldEnvironment3DComponent, &IsWorldEnvironment3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.world_environment", "WorldEnvironment3DComponentUVE", "WorldEnvironment", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.world_environment", "WorldEnvironment3DComponent", "WorldEnvironment", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareEnumUVE<&WorldEnvironment3DComponentUVE::ambientSource>(
+                WithTooltip(
+                    DeclareEnum<&WorldEnvironment3DComponent::ambientSource>(
                         "ambientSource", "Ambient Light Source",
-                        {{static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::None), "None"},
-                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::FlatColor), "Flat Color"},
-                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::Sky), "Sky"},
-                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSourceUVE::EnvironmentMap),
+                        {{static_cast<std::int64_t>(WorldEnvironmentAmbientSource::None), "None"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSource::FlatColor), "Flat Color"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSource::Sky), "Sky"},
+                         {static_cast<std::int64_t>(WorldEnvironmentAmbientSource::EnvironmentMap),
                           "Environment Map"}}),
                     "None disables only ambient lighting; Flat Color uses Ambient Tint and Energy; Sky keeps "
                     "the existing hemispherical sky/ground fill; Environment Map samples the Sky Asset for "
                     "diffuse and specular ambient light."),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::skyColor>(
-                        "skyColor", "Sky Color", kPropertyTypeColorUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::skyColor>(
+                        "skyColor", "Sky Color", kPropertyTypeColor);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
-                               WorldEnvironmentAmbientSourceUVE::Sky;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSource::Sky;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::horizonColor>(
-                        "horizonColor", "Horizon Color", kPropertyTypeColorUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::horizonColor>(
+                        "horizonColor", "Horizon Color", kPropertyTypeColor);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
-                               WorldEnvironmentAmbientSourceUVE::Sky;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSource::Sky;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::groundColor>(
-                        "groundColor", "Ground Color", kPropertyTypeColorUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::groundColor>(
+                        "groundColor", "Ground Color", kPropertyTypeColor);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
-                               WorldEnvironmentAmbientSourceUVE::Sky;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSource::Sky;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyCurve>(
-                                         "skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::skyCurve>(
+                                         "skyCurve", "Sky Curve", kPropertyTypeFloat),
                                      0.001, 4.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
-                               WorldEnvironmentAmbientSourceUVE::Sky;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSource::Sky;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::groundCurve>(
-                                         "groundCurve", "Ground Curve", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::groundCurve>(
+                                         "groundCurve", "Ground Curve", kPropertyTypeFloat),
                                      0.001, 4.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource ==
-                               WorldEnvironmentAmbientSourceUVE::Sky;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource ==
+                               WorldEnvironmentAmbientSource::Sky;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ambientColor>(
-                        "ambientColor", "Ambient Tint", kPropertyTypeColorUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::ambientColor>(
+                        "ambientColor", "Ambient Tint", kPropertyTypeColor);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
-                               WorldEnvironmentAmbientSourceUVE::None;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSource::None;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ambientEnergy>(
-                                         "ambientEnergy", "Ambient Energy", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::ambientEnergy>(
+                                         "ambientEnergy", "Ambient Energy", kPropertyTypeFloat),
                                      0.0, 100.0, 0.05);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->ambientSource !=
-                               WorldEnvironmentAmbientSourceUVE::None;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->ambientSource !=
+                               WorldEnvironmentAmbientSource::None;
                     };
                     return property;
                 }(),
 
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::exposure>(
-                                 "exposure", "Exposure", kPropertyTypeFloatUVE),
+                WithRange(Declare<&WorldEnvironment3DComponent::exposure>(
+                                 "exposure", "Exposure", kPropertyTypeFloat),
                              0.0, 100.0, 0.05),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnabled>("fogEnabled", "Fog",
-                                                                            kPropertyTypeBoolUVE),
+                Declare<&WorldEnvironment3DComponent::fogEnabled>("fogEnabled", "Fog",
+                                                                            kPropertyTypeBool),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::fogMode>(
+                    TypeMetadataProperty property = DeclareEnum<&WorldEnvironment3DComponent::fogMode>(
                         "fogMode", "Fog Mode",
-                        {{static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Linear), "Linear"},
-                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Exponential), "Exponential"},
-                         {static_cast<std::int64_t>(WorldEnvironmentFogModeUVE::Height), "Height"}});
+                        {{static_cast<std::int64_t>(WorldEnvironmentFogMode::Linear), "Linear"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogMode::Exponential), "Exponential"},
+                         {static_cast<std::int64_t>(WorldEnvironmentFogMode::Height), "Height"}});
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::fogColor>(
-                        "fogColor", "Fog Color", kPropertyTypeColorUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::fogColor>(
+                        "fogColor", "Fog Color", kPropertyTypeColor);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogDensity>(
-                                         "fogDensity", "Fog Density", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogDensity>(
+                                         "fogDensity", "Fog Density", kPropertyTypeFloat),
                                      0.0, 1.0, 0.001);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
-                        return environment->fogEnabled && environment->fogMode != WorldEnvironmentFogModeUVE::Linear;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
+                        return environment->fogEnabled && environment->fogMode != WorldEnvironmentFogMode::Linear;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogStart>(
-                                         "fogStart", "Fog Start", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogStart>(
+                                         "fogStart", "Fog Start", kPropertyTypeFloat),
                                      0.0, 1000000.0, 0.1);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
-                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogMode::Linear;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogEnd>(
-                                         "fogEnd", "Fog End", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogEnd>(
+                                         "fogEnd", "Fog End", kPropertyTypeFloat),
                                      0.1, 1000000.0, 0.1);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
-                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Linear;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogMode::Linear;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSkyAffect>(
-                                         "fogSkyAffect", "Fog Sky", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogSkyAffect>(
+                                         "fogSkyAffect", "Fog Sky", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeight>(
-                                         "fogHeight", "Fog Height", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogHeight>(
+                                         "fogHeight", "Fog Height", kPropertyTypeFloat),
                                      -1000.0, 10000.0, 0.5);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
-                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogMode::Height;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogHeightFalloff>(
-                                         "fogHeightFalloff", "Fog Falloff", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogHeightFalloff>(
+                                         "fogHeightFalloff", "Fog Falloff", kPropertyTypeFloat),
                                      0.1, 10000.0, 1.0);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
-                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogModeUVE::Height;
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
+                        return environment->fogEnabled && environment->fogMode == WorldEnvironmentFogMode::Height;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::fogSunScatter>(
-                                         "fogSunScatter", "Fog Sun Scatter", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::fogSunScatter>(
+                                         "fogSunScatter", "Fog Sun Scatter", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->fogEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->fogEnabled;
                     };
                     return property;
                 }(),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::postProcessingEnabled>(
-                    "postProcessingEnabled", "Post Processing", kPropertyTypeBoolUVE),
+                Declare<&WorldEnvironment3DComponent::postProcessingEnabled>(
+                    "postProcessingEnabled", "Post Processing", kPropertyTypeBool),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::bloomEnabled>(
-                        "bloomEnabled", "Bloom", kPropertyTypeBoolUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::bloomEnabled>(
+                        "bloomEnabled", "Bloom", kPropertyTypeBool);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomIntensity>(
-                                         "bloomIntensity", "Bloom Intensity", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::bloomIntensity>(
+                                         "bloomIntensity", "Bloom Intensity", kPropertyTypeFloat),
                                      0.0, 8.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->bloomEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomThreshold>(
-                                         "bloomThreshold", "Bloom Threshold", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::bloomThreshold>(
+                                         "bloomThreshold", "Bloom Threshold", kPropertyTypeFloat),
                                      0.0, 8.0, 0.05);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->bloomEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomSoftKnee>(
-                                         "bloomSoftKnee", "Bloom Soft Knee", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::bloomSoftKnee>(
+                                         "bloomSoftKnee", "Bloom Soft Knee", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Width of the gradual bright-pass transition as a fraction of the threshold. "
                                        "0 preserves a hard threshold; larger values soften the transition.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->bloomEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::bloomMipCount>(
-                                         "bloomMipCount", "Bloom Mip Count", kPropertyTypeUInt32UVE),
-                                     1.0, static_cast<double>(kMaximumWorldEnvironmentBloomMipCountUVE), 1.0);
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::bloomMipCount>(
+                                         "bloomMipCount", "Bloom Mip Count", kPropertyTypeUInt32),
+                                     1.0, static_cast<double>(kMaximumWorldEnvironmentBloomMipCount), 1.0);
                     property.tooltip = "Number of progressively smaller half-resolution scales in the bloom blur. "
                                        "1 preserves the legacy single-scale bloom.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->bloomEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoEnabled>(
-                        "ssaoEnabled", "SSAO", kPropertyTypeBoolUVE);
+                    TypeMetadataProperty property = Declare<&WorldEnvironment3DComponent::ssaoEnabled>(
+                        "ssaoEnabled", "SSAO", kPropertyTypeBool);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoIntensity>(
-                                         "ssaoIntensity", "SSAO Intensity", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::ssaoIntensity>(
+                                         "ssaoIntensity", "SSAO Intensity", kPropertyTypeFloat),
                                      0.0, 4.0, 0.05);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->ssaoEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::ssaoRadius>(
-                                         "ssaoRadius", "SSAO Radius", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::ssaoRadius>(
+                                         "ssaoRadius", "SSAO Radius", kPropertyTypeFloat),
                                      0.05, 4.0, 0.05);
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->ssaoEnabled;
                     };
                     return property;
                 }(),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::brightness>(
-                                 "brightness", "Brightness", kPropertyTypeFloatUVE),
+                WithRange(Declare<&WorldEnvironment3DComponent::brightness>(
+                                 "brightness", "Brightness", kPropertyTypeFloat),
                              -1.0, 1.0, 0.01),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::contrast>(
-                                 "contrast", "Contrast", kPropertyTypeFloatUVE),
+                WithRange(Declare<&WorldEnvironment3DComponent::contrast>(
+                                 "contrast", "Contrast", kPropertyTypeFloat),
                              0.0, 2.0, 0.01),
-                WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::saturation>(
-                                 "saturation", "Saturation", kPropertyTypeFloatUVE),
+                WithRange(Declare<&WorldEnvironment3DComponent::saturation>(
+                                 "saturation", "Saturation", kPropertyTypeFloat),
                              0.0, 2.0, 0.01),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteIntensity>(
-                                         "vignetteIntensity", "Vignette Intensity", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::vignetteIntensity>(
+                                         "vignetteIntensity", "Vignette Intensity", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Darken the image toward its edges; 0 disables the vignette.";
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::vignetteRadius>(
-                                         "vignetteRadius", "Vignette Radius", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::vignetteRadius>(
+                                         "vignetteRadius", "Vignette Radius", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Normalized screen-space radius where edge darkening begins.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->vignetteIntensity > 0.0F;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::chromaticAberrationIntensity>(
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::chromaticAberrationIntensity>(
                                          "chromaticAberrationIntensity", "Chromatic Aberration",
-                                         kPropertyTypeFloatUVE),
+                                         kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Separate red and blue sampling toward screen edges by up to four target "
                                        "texels; 0 disables the effect.";
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::filmGrainIntensity>(
-                                         "filmGrainIntensity", "Film Grain", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::filmGrainIntensity>(
+                                         "filmGrainIntensity", "Film Grain", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Animated monochrome noise, up to +/-0.04 at full intensity; 0 disables it.";
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::lensDistortionIntensity>(
-                                         "lensDistortionIntensity", "Lens Distortion", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::lensDistortionIntensity>(
+                                         "lensDistortionIntensity", "Lens Distortion", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Radially expand scene features toward the edges; maximum 12% at full "
                                        "intensity, 0 disables it.";
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldEnabled>(
-                            "depthOfFieldEnabled", "Depth of Field", kPropertyTypeBoolUVE);
+                    TypeMetadataProperty property =
+                        Declare<&WorldEnvironment3DComponent::depthOfFieldEnabled>(
+                            "depthOfFieldEnabled", "Depth of Field", kPropertyTypeBool);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusMode>(
+                    TypeMetadataProperty property = DeclareEnum<&WorldEnvironment3DComponent::depthOfFieldFocusMode>(
                         "depthOfFieldFocusMode", "Focus Mode",
-                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::Manual), "Manual"},
-                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter),
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusMode::Manual), "Manual"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldFocusMode::ScreenCenter),
                           "Screen Center Autofocus"}});
                     property.tooltip = "Use the authored focus distance or focus on the closest visible surface at "
                                        "the center of the screen.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareEnumUVE<&WorldEnvironment3DComponentUVE::depthOfFieldBokehShape>(
+                    TypeMetadataProperty property = DeclareEnum<&WorldEnvironment3DComponent::depthOfFieldBokehShape>(
                         "depthOfFieldBokehShape", "Bokeh Shape",
-                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular), "Circular"},
-                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal), "Hexagonal"}});
+                        {{static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShape::Circular), "Circular"},
+                         {static_cast<std::int64_t>(WorldEnvironmentDepthOfFieldBokehShape::Hexagonal), "Hexagonal"}});
                     property.tooltip = "Shape the radial blur sample kernel as a circle or a six-sided aperture.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldFocusDistance>(
-                                         "depthOfFieldFocusDistance", "Focus Distance", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::depthOfFieldFocusDistance>(
+                                         "depthOfFieldFocusDistance", "Focus Distance", kPropertyTypeFloat),
                                      0.1, 1000.0, 0.1);
                     property.tooltip = "Manual focus distance along the camera ray, in world units.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->depthOfFieldEnabled &&
                                environment->depthOfFieldFocusMode ==
-                                   WorldEnvironmentDepthOfFieldFocusModeUVE::Manual;
+                                   WorldEnvironmentDepthOfFieldFocusMode::Manual;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldAperture>(
-                                         "depthOfFieldAperture", "Aperture", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::depthOfFieldAperture>(
+                                         "depthOfFieldAperture", "Aperture", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Normalized blur strength; full aperture permits up to an eight-pixel radius.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::depthOfFieldQuality>(
-                                         "depthOfFieldQuality", "Blur Quality", kPropertyTypeUInt32UVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::depthOfFieldQuality>(
+                                         "depthOfFieldQuality", "Blur Quality", kPropertyTypeUInt32),
                                      0.0, 2.0, 1.0);
                     property.tooltip = "Quality tier: 4, 8, or 12 taps arranged in the selected bokeh shape.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->depthOfFieldEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurEnabled>(
-                            "motionBlurEnabled", "Motion Blur", kPropertyTypeBoolUVE);
+                    TypeMetadataProperty property =
+                        Declare<&WorldEnvironment3DComponent::motionBlurEnabled>(
+                            "motionBlurEnabled", "Motion Blur", kPropertyTypeBool);
                     property.tooltip = "Blur camera-induced motion between consecutive frames; per-object blur is "
                                        "not yet supported.";
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const WorldEnvironment3DComponentUVE*>(instance)->postProcessingEnabled;
+                        return static_cast<const WorldEnvironment3DComponent*>(instance)->postProcessingEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurStrength>(
-                                         "motionBlurStrength", "Motion Blur Strength", kPropertyTypeFloatUVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::motionBlurStrength>(
+                                         "motionBlurStrength", "Motion Blur Strength", kPropertyTypeFloat),
                                      0.0, 1.0, 0.01);
                     property.tooltip = "Scale camera motion vectors; 0 is a strict passthrough.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->motionBlurEnabled;
                     };
                     return property;
                 }(),
                 [] {
-                    TypeMetadataPropertyUVE property =
-                        WithRangeUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::motionBlurSampleCount>(
-                                         "motionBlurSampleCount", "Motion Blur Samples", kPropertyTypeUInt32UVE),
+                    TypeMetadataProperty property =
+                        WithRange(Declare<&WorldEnvironment3DComponent::motionBlurSampleCount>(
+                                         "motionBlurSampleCount", "Motion Blur Samples", kPropertyTypeUInt32),
                                      4.0, 12.0, 4.0);
                     property.tooltip = "Camera-motion integration quality: 4, 8, or 12 samples.";
                     property.isVisible = +[](const void* instance) {
-                        const auto* environment = static_cast<const WorldEnvironment3DComponentUVE*>(instance);
+                        const auto* environment = static_cast<const WorldEnvironment3DComponent*>(instance);
                         return environment->postProcessingEnabled && environment->motionBlurEnabled;
                     };
                     return property;
                 }(),
-                DeclareUVE<&WorldEnvironment3DComponentUVE::colorFilter>(
-                    "colorFilter", "Color Filter", kPropertyTypeColorUVE),
+                Declare<&WorldEnvironment3DComponent::colorFilter>(
+                    "colorFilter", "Color Filter", kPropertyTypeColor),
                 // A slot, not a bare path field. It reads "Empty" until a sky is added, and the
                 // menu behind it is where a sky is created - the same shape as a material slot, so
                 // an author looks in one place for "what is on this surface" and for "what is over
                 // this level". The texture stays assignable from the same menu, because a
                 // panorama is one of the ways a sky can be made rather than a separate concept.
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&WorldEnvironment3DComponentUVE::skyAssetPath>(
-                                                       "skyAssetPath", "Sky", kPropertyTypeStringUVE),
+                WithTooltip(WithCustomDrawer(Declare<&WorldEnvironment3DComponent::skyAssetPath>(
+                                                       "skyAssetPath", "Sky", kPropertyTypeString),
                                                    "sky:asset"),
                                "The sky over this level. Empty keeps the procedural sky. New Sky adds a Sky "
                                "to this environment, where its bands, atmosphere, stars and clouds are "
@@ -947,29 +947,29 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                "instead of the bands."),
             }));
 
-    AddValidatedUVE<ParticleEmitterComponentUVE, &IsParticleEmitterComponentValidUVE>(
-        entries, MakeEntryUVE("component.particle_emitter", "ParticleEmitterComponentUVE", "ParticleEmitter3D",
-                              kSectionOrderTypeSpecificUVE,
-                              {WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::maxParticles>(
-                                                "maxParticles", "Max Particles", kPropertyTypeUInt32UVE),
+    AddValidated<ParticleEmitterComponent, &IsParticleEmitterComponentValid>(
+        entries, MakeEntry("component.particle_emitter", "ParticleEmitterComponent", "ParticleEmitter3D",
+                              kSectionOrderTypeSpecific,
+                              {WithRange(Declare<&ParticleEmitterComponent::maxParticles>(
+                                                "maxParticles", "Max Particles", kPropertyTypeUInt32),
                                             0.0, 1000000.0, 1.0),
-                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::emitting>(
-                                                  "emitting", "Emitting", kPropertyTypeBoolUVE),
+                               WithTooltip(Declare<&ParticleEmitterComponent::emitting>(
+                                                  "emitting", "Emitting", kPropertyTypeBool),
                                               "Off, live particles stay but none spawn."),
-                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::emissionRate>(
-                                                "emissionRate", "Emission Rate", kPropertyTypeFloatUVE),
+                               WithRange(Declare<&ParticleEmitterComponent::emissionRate>(
+                                                "emissionRate", "Emission Rate", kPropertyTypeFloat),
                                             0.0, 1000000.0, 0.1),
-                               WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::lifetimeSeconds>(
-                                                "lifetimeSeconds", "Lifetime", kPropertyTypeFloatUVE),
+                               WithRange(Declare<&ParticleEmitterComponent::lifetimeSeconds>(
+                                                "lifetimeSeconds", "Lifetime", kPropertyTypeFloat),
                                             0.01, 3600.0, 0.01),
-                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::systemAssetPath>(
-                                                  "systemAssetPath", "Particle System", kPropertyTypeStringUVE),
+                               WithTooltip(Declare<&ParticleEmitterComponent::systemAssetPath>(
+                                                  "systemAssetPath", "Particle System", kPropertyTypeString),
                                               "Optional .uvfx particle system asset. Empty keeps the simple built-in emitter."),
-                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::autoPlay>(
-                                                  "autoPlay", "Auto Play", kPropertyTypeBoolUVE),
+                               WithTooltip(Declare<&ParticleEmitterComponent::autoPlay>(
+                                                  "autoPlay", "Auto Play", kPropertyTypeBool),
                                               "Start playing the Particle System automatically when the scene starts."),
-                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::seed>(
-                                                  "seed", "Seed", kPropertyTypeUInt32UVE),
+                               WithTooltip(Declare<&ParticleEmitterComponent::seed>(
+                                                  "seed", "Seed", kPropertyTypeUInt32),
                                               "Random seed for deterministic playback (0 derives a per-entity seed).")}));
 
     // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
@@ -977,148 +977,148 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // those - a threshold past the last level is a number that does nothing, and an array of eight
     // rows where three matter reads as eight settings. The resolved level and the cull verdict are
     // runtime state: they describe the frame the renderer last ran, not the scene.
-    AddValidatedUVE<LodGroup3DComponentUVE, &IsLodGroup3DObjectComponentValidUVE>(
+    AddValidated<LodGroup3DComponent, &IsLodGroup3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.lod_group_3d", "LodGroup3DComponentUVE", "LODGroup3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.lod_group_3d", "LodGroup3DComponent", "LODGroup3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::enabled>("enabled", "Enabled",
-                                                                            kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&LodGroup3DComponent::enabled>("enabled", "Enabled",
+                                                                            kPropertyTypeBool),
                                "Off, the object draws at level 0 and is never distance-culled - what "
                                "an author wants while placing it."),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::levelCount>("levelCount", "Levels",
-                                                                                   kPropertyTypeUInt8UVE),
+                WithRange(
+                    WithTooltip(Declare<&LodGroup3DComponent::levelCount>("levelCount", "Levels",
+                                                                                   kPropertyTypeUInt8),
                                    "How many levels of the chain are in use. Thresholds and level "
                                    "meshes past this are ignored, so a chain can be shortened "
                                    "without rewriting the numbers."),
                     1.0, 8.0, 1.0),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&LodGroup3DComponentUVE::hysteresis>("hysteresis", "Hysteresis",
-                                                                                  kPropertyTypeFloatUVE),
+                WithRange(
+                    WithTooltip(Declare<&LodGroup3DComponent::hysteresis>("hysteresis", "Hysteresis",
+                                                                                  kPropertyTypeFloat),
                                    "How far past a threshold the object must go before it swaps, as a "
                                    "fraction of that threshold; it comes back at the same fraction "
                                    "under. Zero is the plain threshold rule."),
                     0.0, 0.5, 0.01),
-                WithTooltipUVE(
-                    WithCustomDrawerUVE(
-                        WithElementCountUVE(
-                            DeclareUVE<&LodGroup3DComponentUVE::distanceThresholds>(
-                                "distanceThresholds", "Thresholds", kPropertyTypeFloatListUVE),
-                            kMaximumLodLevelsUVE),
+                WithTooltip(
+                    WithCustomDrawer(
+                        WithElementCount(
+                            Declare<&LodGroup3DComponent::distanceThresholds>(
+                                "distanceThresholds", "Thresholds", kPropertyTypeFloatList),
+                            kMaximumLodLevels),
                         "lod-group-thresholds"),
                     "The distance each level takes over at, nearest first. Past the last one the "
                     "object is not drawn at all."),
-                WithTooltipUVE(
-                    WithCustomDrawerUVE(
-                        WithElementCountUVE(
-                            DeclareUVE<&LodGroup3DComponentUVE::lodMeshGuids>("lodMeshGuids", "Level Meshes",
-                                                                              kPropertyTypeAssetGuidListUVE),
-                            kMaximumLodLevelsUVE),
+                WithTooltip(
+                    WithCustomDrawer(
+                        WithElementCount(
+                            Declare<&LodGroup3DComponent::lodMeshGuids>("lodMeshGuids", "Level Meshes",
+                                                                              kPropertyTypeAssetGuidList),
+                            kMaximumLodLevels),
                         "lod-group-meshes"),
                     "The mesh drawn at each level. A level with no mesh draws the object's own Mesh "
                     "component mesh."),
-                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::currentLevel>(
-                               "currentLevel", "Current Level", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&LodGroup3DComponent::currentLevel>(
+                               "currentLevel", "Current Level", kPropertyTypeUInt8),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&LodGroup3DComponentUVE::culledByDistance>(
-                               "culledByDistance", "Distance Culled", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&LodGroup3DComponent::culledByDistance>(
+                               "culledByDistance", "Distance Culled", kPropertyTypeBool),
                            "Result"),
             }));
 }
 
-void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using S = Sky3DComponentUVE;
+void DeclareSky(std::vector<TypeMetadataEntry>& entries) {
+    using S = Sky3DComponent;
     // Three groups, in the order an author settles them: what the sky is made of, the bands that
     // only exist for one of those answers, and the image that only exists for the other. Visibility
     // follows the source rather than every row being always-on, so the Inspector never offers a
     // panorama path to a gradient sky - a value that is stored but cannot affect the picture is
     // worse than a value that is not shown.
     const auto sourceIsPanorama = [](const void* instance) {
-        return static_cast<const Sky3DComponentUVE*>(instance)->source == SkySourceUVE::Panorama;
+        return static_cast<const Sky3DComponent*>(instance)->source == SkySource::Panorama;
     };
     const auto sourceIsNotPanorama = [](const void* instance) {
-        return static_cast<const Sky3DComponentUVE*>(instance)->source != SkySourceUVE::Panorama;
+        return static_cast<const Sky3DComponent*>(instance)->source != SkySource::Panorama;
     };
     const auto sourceIsAtmosphere = [](const void* instance) {
-        return static_cast<const Sky3DComponentUVE*>(instance)->source == SkySourceUVE::Atmosphere;
+        return static_cast<const Sky3DComponent*>(instance)->source == SkySource::Atmosphere;
     };
-    const auto scattered = [sourceIsAtmosphere](TypeMetadataPropertyUVE property) {
+    const auto scattered = [sourceIsAtmosphere](TypeMetadataProperty property) {
         property.isVisible = sourceIsAtmosphere;
         return property;
     };
-    const auto coloredByCurve = [sourceIsNotPanorama](TypeMetadataPropertyUVE property) {
+    const auto coloredByCurve = [sourceIsNotPanorama](TypeMetadataProperty property) {
         property.isVisible = sourceIsNotPanorama;
         return property;
     };
-    const auto coloredWithPanorama = [sourceIsPanorama](TypeMetadataPropertyUVE property) {
+    const auto coloredWithPanorama = [sourceIsPanorama](TypeMetadataProperty property) {
         property.isVisible = sourceIsPanorama;
         return property;
     };
 
-    TypeMetadataEntryUVE sky = MakeEntryUVE("component.sky_3d", "Sky3DComponentUVE", "Sky", kSectionOrderTypeSpecificUVE,
+    TypeMetadataEntry sky = MakeEntry("component.sky_3d", "Sky3DComponent", "Sky", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&S::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, the sky is not drawn and the scene falls back to its WorldEnvironment. "
                                "The object stays in the scene so its settings survive a toggle."),
-                WithTooltipUVE(
-                    DeclareEnumUVE<&S::source>(
+                WithTooltip(
+                    DeclareEnum<&S::source>(
                         "source", "Source",
-                        {{static_cast<std::int64_t>(SkySourceUVE::Gradient), "Gradient"},
-                         {static_cast<std::int64_t>(SkySourceUVE::Panorama), "Panorama"},
-                         {static_cast<std::int64_t>(SkySourceUVE::Atmosphere), "Atmosphere"}}),
+                        {{static_cast<std::int64_t>(SkySource::Gradient), "Gradient"},
+                         {static_cast<std::int64_t>(SkySource::Panorama), "Panorama"},
+                         {static_cast<std::int64_t>(SkySource::Atmosphere), "Atmosphere"}}),
                     "Gradient blends three authored bands. Panorama samples an equirectangular image. "
                     "Atmosphere scatters sunlight through a model of the air, which is what makes the "
                     "zenith blue and a setting sun red."),
 
-                InGroupUVE(coloredByCurve(WithTooltipUVE(
-                               DeclareUVE<&S::skyColor>("skyColor", "Sky Color", kPropertyTypeColorUVE),
+                InGroup(coloredByCurve(WithTooltip(
+                               Declare<&S::skyColor>("skyColor", "Sky Color", kPropertyTypeColor),
                                "The colour overhead. Small refinements here change the light more than the "
                                "colour: this is also the ambient that reaches upward faces.")),
                            "Gradient"),
-                InGroupUVE(coloredByCurve(WithTooltipUVE(
-                               DeclareUVE<&S::horizonColor>("horizonColor", "Horizon Color", kPropertyTypeColorUVE),
+                InGroup(coloredByCurve(WithTooltip(
+                               Declare<&S::horizonColor>("horizonColor", "Horizon Color", kPropertyTypeColor),
                                "The colour at eye level. It meets the ground band here, so this is the row "
                                "that sets how far away the horizon reads.")),
                            "Gradient"),
-                InGroupUVE(coloredByCurve(WithTooltipUVE(
-                               DeclareUVE<&S::groundColor>("groundColor", "Ground Color", kPropertyTypeColorUVE),
+                InGroup(coloredByCurve(WithTooltip(
+                               Declare<&S::groundColor>("groundColor", "Ground Color", kPropertyTypeColor),
                                "The colour below the horizon, seen where no geometry covers it. Match it to "
                                "the level's floor or the seam becomes visible at the edges.")),
                            "Gradient"),
-                InGroupUVE(coloredByCurve(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::skyCurve>("skyCurve", "Sky Curve", kPropertyTypeFloatUVE),
+                InGroup(coloredByCurve(WithTooltip(
+                               WithRange(Declare<&S::skyCurve>("skyCurve", "Sky Curve", kPropertyTypeFloat),
                                             0.001, 4.0, 0.01),
                                "How fast the zenit takes over from the horizon: small keeps a wide band of "
                                "horizon colour, large compresses it into a line.")),
                            "Gradient"),
-                InGroupUVE(coloredByCurve(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::groundCurve>("groundCurve", "Ground Curve",
-                                                                        kPropertyTypeFloatUVE),
+                InGroup(coloredByCurve(WithTooltip(
+                               WithRange(Declare<&S::groundCurve>("groundCurve", "Ground Curve",
+                                                                        kPropertyTypeFloat),
                                             0.001, 4.0, 0.01),
                                "How fast the ground band takes over below the horizon. Large makes the "
                                "transition abrupt, which suits a hard sea line.")),
                            "Gradient"),
 
-                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
-                               WithCustomDrawerUVE(
-                                   DeclareUVE<&S::panoramaPath>("panoramaPath", "Panorama",
-                                                               kPropertyTypeStringUVE),
+                InGroup(coloredWithPanorama(WithTooltip(
+                               WithCustomDrawer(
+                                   Declare<&S::panoramaPath>("panoramaPath", "Panorama",
+                                                               kPropertyTypeString),
                                    // A published texture or the source image it would be imported
                                    // from: the runtime loader reads both, so the row offers both.
                                    "file:uvtex,png,jpg,jpeg,bmp,tga"),
                                "An equirectangular image: width twice its height, the horizon across the "
                                "middle. Empty leaves the gradient showing.")),
                            "Panorama"),
-                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::panoramaRotationDegrees>(
-                                                "panoramaRotationDegrees", "Rotation", kPropertyTypeFloatUVE),
+                InGroup(coloredWithPanorama(WithTooltip(
+                               WithRange(Declare<&S::panoramaRotationDegrees>(
+                                                "panoramaRotationDegrees", "Rotation", kPropertyTypeFloat),
                                             -180.0, 180.0, 0.5),
                                "Spins the image about the world's up axis, in degrees, so the part worth "
                                "looking at can be pointed at the scene.")),
                            "Panorama"),
-                InGroupUVE(coloredWithPanorama(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::panoramaExposure>("panoramaExposure", "Exposure",
-                                                                             kPropertyTypeFloatUVE),
+                InGroup(coloredWithPanorama(WithTooltip(
+                               WithRange(Declare<&S::panoramaExposure>("panoramaExposure", "Exposure",
+                                                                             kPropertyTypeFloat),
                                             -10.0, 10.0, 0.05),
                                "Brightness of the panorama in stops, so an image authored for one exposure "
                                "can be matched to this scene without editing the file.")),
@@ -1127,59 +1127,59 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 // Each of these scales one physical term, so 1.0 is Earth and 0 removes the term.
                 // A row with a tooltip that says what the term DOES is worth more here than a
                 // range: nobody tunes ozone by feel, they tune it to get the twilight they want.
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereRayleigh>("atmosphereRayleigh",
-                                                                               "Rayleigh", kPropertyTypeFloatUVE),
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereRayleigh>("atmosphereRayleigh",
+                                                                               "Rayleigh", kPropertyTypeFloat),
                                             0.0, 10.0, 0.01),
                                "Density of the gas itself. This is the blue: it scatters short wavelengths "
                                "far more than long ones, so raising it deepens the zenith and reddens the "
                                "sunset. 0 leaves a colourless sky.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereMie>("atmosphereMie", "Mie",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereMie>("atmosphereMie", "Mie",
+                                                                          kPropertyTypeFloat),
                                             0.0, 10.0, 0.01),
                                "Density of haze and dust. It scatters almost evenly across colours, so "
                                "raising it greys the sky out and thickens the glow around the sun - a "
                                "humid day, or a sandstorm at the far end.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereOzone>("atmosphereOzone", "Ozone",
-                                                                            kPropertyTypeFloatUVE),
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereOzone>("atmosphereOzone", "Ozone",
+                                                                            kPropertyTypeFloat),
                                             0.0, 10.0, 0.01),
                                "Ozone absorbs mostly green, high in the stratosphere. It is what keeps the "
                                "twilight sky violet instead of brown-grey; removing it is the fastest way "
                                "to see what it was doing.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereMieAnisotropy>("atmosphereMieAnisotropy",
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereMieAnisotropy>("atmosphereMieAnisotropy",
                                                                                     "Haze Anisotropy",
-                                                                                    kPropertyTypeFloatUVE),
+                                                                                    kPropertyTypeFloat),
                                             -0.95, 0.95, 0.01),
                                "How tightly the haze throws light forward. Near 0 it scatters evenly; near "
                                "1 the bright halo around the sun becomes a narrow beam and the rest of the "
                                "sky darkens.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereMultiScatter>("atmosphereMultiScatter",
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereMultiScatter>("atmosphereMultiScatter",
                                                                                    "Multiple Scatter",
-                                                                                   kPropertyTypeFloatUVE),
+                                                                                   kPropertyTypeFloat),
                                             0.0, 4.0, 0.01),
                                "Light that bounced before reaching the eye. This is why the horizon is bright "
                                "and shadows are not black; 0 gives a hard single-scatter sky that goes dark "
                                "away from the sun.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereIntensity>("atmosphereIntensity",
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereIntensity>("atmosphereIntensity",
                                                                                 "Sky Intensity",
-                                                                                kPropertyTypeFloatUVE),
+                                                                                kPropertyTypeFloat),
                                             0.0, 100.0, 0.05),
                                "Brightness of the scattered sky as a whole, for matching a scene whose "
                                "exposure is not the default. It scales the sky and not the sunlight.")),
                            "Atmosphere"),
-                InGroupUVE(scattered(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::atmosphereSamples>("atmosphereSamples", "Quality",
-                                                                              kPropertyTypeUInt32UVE),
+                InGroup(scattered(WithTooltip(
+                               WithRange(Declare<&S::atmosphereSamples>("atmosphereSamples", "Quality",
+                                                                              kPropertyTypeUInt32),
                                             4.0, 64.0, 1.0),
                                "Samples along each view ray. More resolves the horizon band and the twilight "
                                "gradient more finely; the cost is linear and this is the most expensive part "
@@ -1190,84 +1190,84 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 // they are not gated on `source` - a gradient sky gets the same stars and the same
                 // weather. Both start off, because a scene that had no stars before this object
                 // existed must not quietly gain some.
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starBrightness>("starBrightness",
+                InGroup(WithTooltip(WithRange(Declare<&S::starBrightness>("starBrightness",
                                                                                      "Star Brightness",
-                                                                                     kPropertyTypeFloatUVE),
+                                                                                     kPropertyTypeFloat),
                                                        0.0, 100.0, 0.01),
                                           "How bright the stars are. 0 draws none, which is the default; raise "
                                           "it to open the sky at night. They fade out on their own as the sun "
                                           "rises, so this is safe to leave set."),
                            "Night"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starDensity>("starDensity", "Star Density",
-                                                                                  kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::starDensity>("starDensity", "Star Density",
+                                                                                  kPropertyTypeFloat),
                                                        10.0, 1200.0, 1.0),
                                           "How finely the sky is divided into cells that may hold a star. Higher "
                                           "means more and smaller stars; low values give a handful of large "
                                           "ones."),
                            "Night"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::starSeed>("starSeed", "Star Seed",
-                                                                               kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::starSeed>("starSeed", "Star Seed",
+                                                                               kPropertyTypeFloat),
                                                        0.0, 1000.0, 1.0),
                                           "Which stars are where. Changing it reshuffles the whole field, so two "
                                           "levels can share a brightness and not the same constellations."),
                            "Night"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::milkyWayStrength>("milkyWayStrength",
+                InGroup(WithTooltip(WithRange(Declare<&S::milkyWayStrength>("milkyWayStrength",
                                                                                         "Milky Way",
-                                                                                        kPropertyTypeFloatUVE),
+                                                                                        kPropertyTypeFloat),
                                                        0.0, 10.0, 0.01),
                                           "Strength of the band of starlight across the sky. 0 hides it. It is "
                                           "dusty rather than smooth on purpose: a clean band reads as a bright "
                                           "smudge."),
                            "Night"),
 
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::cloudsEnabled>("cloudsEnabled", "Clouds",
-                                                                       kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&S::cloudsEnabled>("cloudsEnabled", "Clouds",
+                                                                       kPropertyTypeBool),
                                           "Off by default. A flat deck at Cloud Height, sampled from noise and "
                                           "moved by the wind."),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudCoverage>("cloudCoverage", "Coverage",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudCoverage>("cloudCoverage", "Coverage",
+                                                                          kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "How much of the sky is covered: 0 bare, 1 overcast.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudDensity>("cloudDensity", "Density",
-                                                                         kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudDensity>("cloudDensity", "Density",
+                                                                         kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "How opaque the covered part is. Below 1 the sky shows through the cloud, "
                                "which is how a thin high deck looks.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudAltitude>("cloudAltitude", "Height (m)",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudAltitude>("cloudAltitude", "Height (m)",
+                                                                          kPropertyTypeFloat),
                                             10.0, 20000.0, 10.0),
                                "Height of the deck above the eye, in metres. It sets how fast the cloud slides "
                                "past as the camera moves, which is most of what makes a low deck feel close.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudWindSpeed>("cloudWindSpeed", "Wind Speed",
-                                                                           kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudWindSpeed>("cloudWindSpeed", "Wind Speed",
+                                                                           kPropertyTypeFloat),
                                             -200.0, 200.0, 0.5),
                                "How fast the deck drifts, in metres per second. Negative blows the other way.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudWindDirectionDegrees>("cloudWindDirectionDegrees",
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudWindDirectionDegrees>("cloudWindDirectionDegrees",
                                                                                       "Wind Direction",
-                                                                                      kPropertyTypeFloatUVE),
+                                                                                      kPropertyTypeFloat),
                                             -180.0, 180.0, 1.0),
                                "Compass bearing the wind blows toward, in degrees. 0 is +X, 90 is +Z.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudSoftness>("cloudSoftness", "Softness",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudSoftness>("cloudSoftness", "Softness",
+                                                                          kPropertyTypeFloat),
                                             0.01, 1.0, 0.01),
                                "Width of the fade at each cloud's edge. Small reads as hard-edged cumulus, "
                                "large as haze.")),
                            "Clouds"),
-                InGroupUVE(WhenOnUVE<&S::cloudsEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::cloudSilverLining>("cloudSilverLining", "Silver Lining",
-                                                                              kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::cloudsEnabled>(WithTooltip(
+                               WithRange(Declare<&S::cloudSilverLining>("cloudSilverLining", "Silver Lining",
+                                                                              kPropertyTypeFloat),
                                             0.0, 20.0, 0.05),
                                "How strongly thin cloud brightens toward the sun - the rim that appears when a "
                                "cloud crosses it. 0 keeps the edge flat.")),
@@ -1277,33 +1277,33 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 // purpose: a sky that relights a level the moment it is added would break the rule
                 // that adding an object changes nothing until it is authored. Each strength is
                 // hidden behind its own switch - a dial that does nothing is worse than no dial.
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::ambientFromSky>("ambientFromSky", "Ambient From Sky",
-                                                                       kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&S::ambientFromSky>("ambientFromSky", "Ambient From Sky",
+                                                                       kPropertyTypeBool),
                                           "Take the scene's fill light from this sky instead of the World "
                                           "Environment. Shadows go the colour of the sky rather than black, and "
                                           "the fill rises and sets with the sun."),
                            "Lighting Link"),
-                InGroupUVE(WhenOnUVE<&S::ambientFromSky>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::ambientStrength>("ambientStrength", "Ambient Strength",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::ambientFromSky>(WithTooltip(
+                               WithRange(Declare<&S::ambientStrength>("ambientStrength", "Ambient Strength",
+                                                                          kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "Scales the fill the sky throws. A brightness dial, not a physical term.")),
                            "Lighting Link"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::fogFromSky>("fogFromSky", "Fog From Sky",
-                                                                   kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&S::fogFromSky>("fogFromSky", "Fog From Sky",
+                                                                   kPropertyTypeBool),
                                           "Tint the distance with this sky's horizon, so far geometry dissolves "
                                           "into the sky it stands against - what aerial perspective actually is."),
                            "Lighting Link"),
-                InGroupUVE(WhenOnUVE<&S::fogFromSky>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::fogStrength>("fogStrength", "Fog Strength",
-                                                                      kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&S::fogFromSky>(WithTooltip(
+                               WithRange(Declare<&S::fogStrength>("fogStrength", "Fog Strength",
+                                                                      kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "How far the fog moves toward the sky's own colour. 0 leaves the environment's "
                                "fog exactly as authored, 1 makes it the horizon.")),
                            "Lighting Link"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::reflectionsFromSky>("reflectionsFromSky",
+                InGroup(WithTooltip(Declare<&S::reflectionsFromSky>("reflectionsFromSky",
                                                                            "Reflections From Sky",
-                                                                           kPropertyTypeBoolUVE),
+                                                                           kPropertyTypeBool),
                                           "Reflect this sky in metallic surfaces, so a mirror outdoors shows a "
                                           "horizon instead of one flat colour. No capture pass: the sky's three "
                                           "bands are the reflection. A captured environment map or reflection "
@@ -1312,16 +1312,16 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
                 // Output and behaviour of the sky as a whole, after the Lighting Link because they
                 // are about the picture rather than about the scene it lights.
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::luminance>("luminance", "Luminance",
-                                                                    kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::luminance>("luminance", "Luminance",
+                                                                    kPropertyTypeFloat),
                                             0.0, 8.0, 0.01),
                                "How bright this sky is, whichever source is drawing it. 1 is as authored, 2 "
                                "is one stop brighter, 0 is black. It does not change the light the sky throws "
                                "on the scene - that is Ambient Strength, under Lighting Link."),
                            "Output"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::animate>("animate", "Animate",
-                                                                 kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&S::animate>("animate", "Animate",
+                                                                 kPropertyTypeBool),
                                           "Whether the sky's own clock runs. Off freezes the cloud drift where "
                                           "it is, so two frames can be compared without the sky moving "
                                           "underneath the difference."),
@@ -1333,75 +1333,75 @@ void DeclareSkyUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // has no environment on its entity - it still draws as its own section, so neither way of
     // making a sky is a dead end.
     sky.nestedUnderTypeIds = {"component.world_environment"};
-    AddValidatedUVE<S, &IsSky3DObjectComponentValidUVE>(entries, std::move(sky));
+    AddValidated<S, &IsSky3DObjectComponentValid>(entries, std::move(sky));
 }
 
-void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    TypeMetadataEntryUVE collider = MakeEntryUVE("component.collider", "ColliderComponentUVE", "Collider", kSectionOrderTypeSpecificUVE,
+void DeclarePhysics(std::vector<TypeMetadataEntry>& entries) {
+    TypeMetadataEntry collider = MakeEntry("component.collider", "ColliderComponent", "Collider", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::disabled>("disabled", "Disabled",
-                                                                          kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&ColliderComponent::disabled>("disabled", "Disabled",
+                                                                          kPropertyTypeBool),
                                "Off this shape is ignored by collision, rays, and areas."),
-                InGroupUVE(DeclareEnumUVE<&ColliderComponentUVE::shapeType>(
+                InGroup(DeclareEnum<&ColliderComponent::shapeType>(
                                "shapeType", "Shape",
                                {{0, "BoxShape3D"}, {1, "SphereShape3D"}, {2, "CapsuleShape3D"}, {3, "CylinderShape3D"}}),
                            "Shape"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = DeclareUVE<&ColliderComponentUVE::halfExtents>(
-                                   "halfExtents", "Half Extents", kPropertyTypeVector3UVE);
+                InGroup([] {
+                               TypeMetadataProperty property = Declare<&ColliderComponent::halfExtents>(
+                                   "halfExtents", "Half Extents", kPropertyTypeVector3);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const ColliderComponentUVE*>(instance)->shapeType ==
-                                          ColliderShapeTypeUVE::Box;
+                                   return static_cast<const ColliderComponent*>(instance)->shapeType ==
+                                          ColliderShapeType::Box;
                                };
                                return property;
                            }(),
                            "Shape"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&ColliderComponentUVE::radius>("radius", "Radius",
-                                                                              kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&ColliderComponent::radius>("radius", "Radius",
+                                                                              kPropertyTypeFloat),
                                    0.0, 10000.0, 0.01);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const ColliderComponentUVE*>(instance)->shapeType !=
-                                          ColliderShapeTypeUVE::Box;
+                                   return static_cast<const ColliderComponent*>(instance)->shapeType !=
+                                          ColliderShapeType::Box;
                                };
                                return property;
                            }(),
                            "Shape"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&ColliderComponentUVE::height>("height", "Height",
-                                                                              kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&ColliderComponent::height>("height", "Height",
+                                                                              kPropertyTypeFloat),
                                    0.0, 10000.0, 0.01);
                                property.isVisible = +[](const void* instance) {
-                                   const auto shape = static_cast<const ColliderComponentUVE*>(instance)->shapeType;
-                                   return shape == ColliderShapeTypeUVE::Capsule || shape == ColliderShapeTypeUVE::Cylinder;
+                                   const auto shape = static_cast<const ColliderComponent*>(instance)->shapeType;
+                                   return shape == ColliderShapeType::Capsule || shape == ColliderShapeType::Cylinder;
                                };
                                return property;
                            }(),
                            "Shape"),
-                InGroupUVE(WithCustomDrawerUVE(
-                               WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::collisionLayer>("collisionLayer", "Layer",
-                                                                                                kPropertyTypeBitMask32UVE),
+                InGroup(WithCustomDrawer(
+                               WithTooltip(Declare<&ColliderComponent::collisionLayer>("collisionLayer", "Layer",
+                                                                                                kPropertyTypeBitMask32),
                                               "The layers this object is on - what others can find it on."),
-                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                               std::string(kLayerMaskDrawerPhysics)),
                            "Filter"),
-                InGroupUVE(WithCustomDrawerUVE(
-                               WithTooltipUVE(DeclareUVE<&ColliderComponentUVE::collisionMask>("collisionMask", "Mask",
-                                                                                               kPropertyTypeBitMask32UVE),
+                InGroup(WithCustomDrawer(
+                               WithTooltip(Declare<&ColliderComponent::collisionMask>("collisionMask", "Mask",
+                                                                                               kPropertyTypeBitMask32),
                                               "The layers this object looks for - what it collides with or detects."),
-                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                               std::string(kLayerMaskDrawerPhysics)),
                            "Filter"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&ColliderComponentUVE::friction>("friction", "Friction",
-                                                                                    kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&ColliderComponent::friction>("friction", "Friction",
+                                                                                    kPropertyTypeFloat),
                                         0.0, 1.0, 0.01),
                            "Surface"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&ColliderComponentUVE::restitution>("restitution", "Restitution",
-                                                                                       kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&ColliderComponent::restitution>("restitution", "Restitution",
+                                                                                       kPropertyTypeFloat),
                                         0.0, 1.0, 0.01),
                            "Surface"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&ColliderComponentUVE::density>("density", "Density",
-                                                                                   kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&ColliderComponent::density>("density", "Density",
+                                                                                   kPropertyTypeFloat),
                                         0.0, 10000.0, 0.01),
                            "Surface"),
             });
@@ -1412,180 +1412,180 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // and Mask) from the collider's own declarations, and does not repeat the shape under it.
     collider.nestedUnderTypeIds = {"component.character_controller", "component.primitive_mesh",
                                    "component.physics_object"};
-    AddValidatedUVE<ColliderComponentUVE, &IsColliderComponentValidUVE>(entries, std::move(collider));
+    AddValidated<ColliderComponent, &IsColliderComponentValid>(entries, std::move(collider));
 
-    AddValidatedUVE<Rigid3DComponentUVE, &IsRigid3DComponentValidUVE>(
+    AddValidated<Rigid3DComponent, &IsRigid3DComponentValid>(
         entries,
-        MakeEntryUVE("component.rigid_body", "Rigid3DComponentUVE", "Rigid Body", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.rigid_body", "Rigid3DComponent", "Rigid Body", kSectionOrderTypeSpecific,
             {
-                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::mass>("mass", "Mass",
-                                                                       kPropertyTypeFloatUVE),
+                WithRange(Declare<&Rigid3DComponent::mass>("mass", "Mass",
+                                                                       kPropertyTypeFloat),
                              0.0, 100000.0, 0.01),
-                DeclareUVE<&Rigid3DComponentUVE::isKinematic>("isKinematic", "Kinematic",
-                                                                kPropertyTypeBoolUVE),
-                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::drag>("drag", "Drag",
-                                                                       kPropertyTypeFloatUVE),
+                Declare<&Rigid3DComponent::isKinematic>("isKinematic", "Kinematic",
+                                                                kPropertyTypeBool),
+                WithRange(Declare<&Rigid3DComponent::drag>("drag", "Drag",
+                                                                       kPropertyTypeFloat),
                              0.0, 100.0, 0.01),
-                WithRangeUVE(DeclareUVE<&Rigid3DComponentUVE::gravityScale>(
-                                 "gravityScale", "Gravity Scale", kPropertyTypeFloatUVE),
+                WithRange(Declare<&Rigid3DComponent::gravityScale>(
+                                 "gravityScale", "Gravity Scale", kPropertyTypeFloat),
                              -100.0, 100.0, 0.05),
-                DeclareUVE<&Rigid3DComponentUVE::velocity>("velocity", "Velocity",
-                                                             kPropertyTypeVector3UVE),
-                DeclareUVE<&Rigid3DComponentUVE::force>("force", "Force", kPropertyTypeVector3UVE),
-                DeclareUVE<&Rigid3DComponentUVE::angularVelocity>("angularVelocity", "Angular Velocity",
-                                                                    kPropertyTypeVector3UVE),
-                DeclareUVE<&Rigid3DComponentUVE::torque>("torque", "Torque", kPropertyTypeVector3UVE),
-                DeclareUVE<&Rigid3DComponentUVE::inverseInertia>("inverseInertia", "Inverse Inertia",
-                                                                   kPropertyTypeVector3UVE),
+                Declare<&Rigid3DComponent::velocity>("velocity", "Velocity",
+                                                             kPropertyTypeVector3),
+                Declare<&Rigid3DComponent::force>("force", "Force", kPropertyTypeVector3),
+                Declare<&Rigid3DComponent::angularVelocity>("angularVelocity", "Angular Velocity",
+                                                                    kPropertyTypeVector3),
+                Declare<&Rigid3DComponent::torque>("torque", "Torque", kPropertyTypeVector3),
+                Declare<&Rigid3DComponent::inverseInertia>("inverseInertia", "Inverse Inertia",
+                                                                   kPropertyTypeVector3),
             }));
 
-    using A = AreaComponentUVE;
-    const auto whenGravity = [](TypeMetadataPropertyUVE property) {
+    using A = AreaComponent;
+    const auto whenGravity = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
-            return static_cast<const A*>(instance)->gravityOverride != AreaSpaceOverrideModeUVE::Disabled;
+            return static_cast<const A*>(instance)->gravityOverride != AreaSpaceOverrideMode::Disabled;
         };
         return property;
     };
-    const auto whenGravityPoint = [](TypeMetadataPropertyUVE property) {
-        property.isVisible = +[](const void* instance) {
-            const A& area = *static_cast<const A*>(instance);
-            return area.gravityOverride != AreaSpaceOverrideModeUVE::Disabled && area.gravityPoint;
-        };
-        return property;
-    };
-    const auto whenGravityVector = [](TypeMetadataPropertyUVE property) {
+    const auto whenGravityPoint = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
             const A& area = *static_cast<const A*>(instance);
-            return area.gravityOverride != AreaSpaceOverrideModeUVE::Disabled && !area.gravityPoint;
+            return area.gravityOverride != AreaSpaceOverrideMode::Disabled && area.gravityPoint;
         };
         return property;
     };
-    const auto whenLinearDamp = [](TypeMetadataPropertyUVE property) {
+    const auto whenGravityVector = [](TypeMetadataProperty property) {
+        property.isVisible = +[](const void* instance) {
+            const A& area = *static_cast<const A*>(instance);
+            return area.gravityOverride != AreaSpaceOverrideMode::Disabled && !area.gravityPoint;
+        };
+        return property;
+    };
+    const auto whenLinearDamp = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
             return static_cast<const A*>(instance)->linearDampOverride !=
-                   AreaSpaceOverrideModeUVE::Disabled;
+                   AreaSpaceOverrideMode::Disabled;
         };
         return property;
     };
-    const auto whenAngularDamp = [](TypeMetadataPropertyUVE property) {
+    const auto whenAngularDamp = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
             return static_cast<const A*>(instance)->angularDampOverride !=
-                   AreaSpaceOverrideModeUVE::Disabled;
+                   AreaSpaceOverrideMode::Disabled;
         };
         return property;
     };
-    const std::vector<TypeMetadataEnumEntryUVE> spaceOverrideOptions{
+    const std::vector<TypeMetadataEnumEntry> spaceOverrideOptions{
         {0, "Disabled"},
         {1, "Combine"},
         {2, "Combine Replace"},
         {3, "Replace"},
         {4, "Replace Combine"},
     };
-    AddValidatedUVE<AreaComponentUVE, &IsAreaComponentValidUVE>(
+    AddValidated<AreaComponent, &IsAreaComponentValid>(
         entries,
-        MakeEntryUVE("component.area", "AreaComponentUVE", "Area3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.area", "AreaComponent", "Area3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&A::halfExtents>("halfExtents", "Half Extents", kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&A::halfExtents>("halfExtents", "Half Extents", kPropertyTypeVector3),
                     "The axis-aligned box this area occupies, in metres, around the object's origin. "
                     "World scale is deliberately not applied - a scaled art pivot never re-sizes a "
                     "trigger."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&A::collisionLayer>("collisionLayer", "Layer",
-                                                                 kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&A::collisionLayer>("collisionLayer", "Layer",
+                                                                 kPropertyTypeBitMask32),
                                    "The layers this area is on - what others have to be looking for."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&A::collisionMask>("collisionMask", "Mask",
-                                                                kPropertyTypeBitMask32UVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&A::collisionMask>("collisionMask", "Mask",
+                                                                kPropertyTypeBitMask32),
                                    "The layers this area looks for. Detection needs BOTH sides to "
                                    "accept the other."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithTooltipUVE(DeclareUVE<&A::monitoring>("monitoring", "Monitoring",
-                                                          kPropertyTypeBoolUVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithTooltip(Declare<&A::monitoring>("monitoring", "Monitoring",
+                                                          kPropertyTypeBool),
                                "On, this area lists who is inside it and fires enter/exit. Off, the "
                                "lists stay empty. Space override still applies either way."),
-                WithTooltipUVE(DeclareUVE<&A::monitorable>("monitorable", "Monitorable",
-                                                           kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&A::monitorable>("monitorable", "Monitorable",
+                                                           kPropertyTypeBool),
                                "On, other monitoring areas can detect this one."),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::priority>("priority", "Priority",
-                                                                  kPropertyTypeInt32UVE),
+                InGroup(WithTooltip(Declare<&A::priority>("priority", "Priority",
+                                                                  kPropertyTypeInt32),
                                           "When several areas overlap one body, higher priority is "
                                           "applied first. Equal priorities resolve by entity id."),
                            "Space"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::gravityOverride>(
+                InGroup(WithTooltip(DeclareEnum<&A::gravityOverride>(
                                               "gravityOverride", "Gravity Override", spaceOverrideOptions),
                                           "How this area's gravity mixes with the world and with lower "
                                           "priority areas. Disabled leaves gravity alone."),
                            "Gravity"),
-                InGroupUVE(whenGravity(WithTooltipUVE(
-                               DeclareUVE<&A::gravityPoint>("gravityPoint", "Point Gravity",
-                                                            kPropertyTypeBoolUVE),
+                InGroup(whenGravity(WithTooltip(
+                               Declare<&A::gravityPoint>("gravityPoint", "Point Gravity",
+                                                            kPropertyTypeBool),
                                "On, gravity pulls toward a point instead of along Gravity Direction.")),
                            "Gravity"),
-                InGroupUVE(whenGravityVector(WithTooltipUVE(
-                               DeclareUVE<&A::gravityDirection>("gravityDirection", "Gravity Direction",
-                                                                kPropertyTypeVector3UVE),
+                InGroup(whenGravityVector(WithTooltip(
+                               Declare<&A::gravityDirection>("gravityDirection", "Gravity Direction",
+                                                                kPropertyTypeVector3),
                                "The direction of gravity inside this area. It is normalized before "
                                "use; a zero vector is no gravity.")),
                            "Gravity"),
-                InGroupUVE(whenGravity(WithRangeUVE(
-                               WithTooltipUVE(DeclareUVE<&A::gravityMagnitude>(
-                                                  "gravityMagnitude", "Gravity", kPropertyTypeFloatUVE),
+                InGroup(whenGravity(WithRange(
+                               WithTooltip(Declare<&A::gravityMagnitude>(
+                                                  "gravityMagnitude", "Gravity", kPropertyTypeFloat),
                                               "Gravity strength in metres per second squared. Negative "
                                               "repels when Point Gravity is on."),
                                -10000.0, 10000.0, 0.01)),
                            "Gravity"),
-                InGroupUVE(whenGravityPoint(WithTooltipUVE(
-                               DeclareUVE<&A::gravityPointOffset>("gravityPointOffset", "Point Offset",
-                                                                  kPropertyTypeVector3UVE),
+                InGroup(whenGravityPoint(WithTooltip(
+                               Declare<&A::gravityPointOffset>("gravityPointOffset", "Point Offset",
+                                                                  kPropertyTypeVector3),
                                "Where the point sits relative to this area's origin, in metres.")),
                            "Gravity"),
-                InGroupUVE(whenGravityPoint(WithRangeUVE(
-                               WithTooltipUVE(DeclareUVE<&A::gravityPointUnitDistance>(
+                InGroup(whenGravityPoint(WithRange(
+                               WithTooltip(Declare<&A::gravityPointUnitDistance>(
                                                   "gravityPointUnitDistance", "Unit Distance",
-                                                  kPropertyTypeFloatUVE),
+                                                  kPropertyTypeFloat),
                                               "Distance at which point gravity equals Gravity. 0 is "
                                               "constant magnitude; greater than 0 is inverse square."),
                                0.0, 100000.0, 0.01)),
                            "Gravity"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::linearDampOverride>(
+                InGroup(WithTooltip(DeclareEnum<&A::linearDampOverride>(
                                               "linearDampOverride", "Linear Damp Override",
                                               spaceOverrideOptions),
                                           "How this area's linear damping mixes with the body's drag "
                                           "and with lower priority areas."),
                            "Damping"),
-                InGroupUVE(whenLinearDamp(WithRangeUVE(
-                               WithTooltipUVE(DeclareUVE<&A::linearDamp>("linearDamp", "Linear Damp",
-                                                                        kPropertyTypeFloatUVE),
+                InGroup(whenLinearDamp(WithRange(
+                               WithTooltip(Declare<&A::linearDamp>("linearDamp", "Linear Damp",
+                                                                        kPropertyTypeFloat),
                                               "Linear damping this area contributes. Velocity is scaled "
                                               "by (1 - damp * dt) each physics step."),
                                0.0, 100.0, 0.01)),
                            "Damping"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&A::angularDampOverride>(
+                InGroup(WithTooltip(DeclareEnum<&A::angularDampOverride>(
                                               "angularDampOverride", "Angular Damp Override",
                                               spaceOverrideOptions),
                                           "How this area's angular damping mixes with lower priority "
                                           "areas. Bodies have no angular drag of their own."),
                            "Damping"),
-                InGroupUVE(whenAngularDamp(WithRangeUVE(
-                               WithTooltipUVE(DeclareUVE<&A::angularDamp>("angularDamp", "Angular Damp",
-                                                                         kPropertyTypeFloatUVE),
+                InGroup(whenAngularDamp(WithRange(
+                               WithTooltip(Declare<&A::angularDamp>("angularDamp", "Angular Damp",
+                                                                         kPropertyTypeFloat),
                                               "Angular damping this area contributes, applied after "
                                               "torque integration."),
                                0.0, 100.0, 0.01)),
                            "Damping"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingBodyCount>(
-                               "overlappingBodyCount", "Bodies", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&A::overlappingBodyCount>(
+                               "overlappingBodyCount", "Bodies", kPropertyTypeUInt8),
                            "Occupancy"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingBodiesTruncated>(
-                               "overlappingBodiesTruncated", "Bodies Truncated", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&A::overlappingBodiesTruncated>(
+                               "overlappingBodiesTruncated", "Bodies Truncated", kPropertyTypeBool),
                            "Occupancy"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingAreaCount>(
-                               "overlappingAreaCount", "Areas", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&A::overlappingAreaCount>(
+                               "overlappingAreaCount", "Areas", kPropertyTypeUInt8),
                            "Occupancy"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::overlappingAreasTruncated>(
-                               "overlappingAreasTruncated", "Areas Truncated", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&A::overlappingAreasTruncated>(
+                               "overlappingAreasTruncated", "Areas Truncated", kPropertyTypeBool),
                            "Occupancy"),
             }));
 
@@ -1595,23 +1595,23 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // Declared with its own rule: the Inspector refuses an edit that would leave the component past
     // its contract (a non-finite target, an interpolation outside 0..1) and keeps the last accepted
     // value, so the mover never has to guess at a value nobody could have meant.
-    AddValidatedUVE<Kinematic3DComponentUVE, &IsKinematic3DObjectComponentValidUVE>(
+    AddValidated<Kinematic3DComponent, &IsKinematic3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.kinematic_3d", "Kinematic3DComponentUVE", "Kinematic Body", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.kinematic_3d", "Kinematic3DComponent", "Kinematic Body", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::targetVelocity>(
-                                   "targetVelocity", "Target Velocity", kPropertyTypeVector3UVE),
+                WithTooltip(Declare<&Kinematic3DComponent::targetVelocity>(
+                                   "targetVelocity", "Target Velocity", kPropertyTypeVector3),
                                "Where the body is going, metres per second, in its own local axes. "
                                "Rotated into the world each step. Geometry stops it; bodies it meets "
                                "get pushed."),
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::interpolation>(
-                                                "interpolation", "Interpolation", kPropertyTypeFloatUVE),
+                WithRange(WithTooltip(Declare<&Kinematic3DComponent::interpolation>(
+                                                "interpolation", "Interpolation", kPropertyTypeFloat),
                                             "How quickly the body gets up to speed: 1 is at speed on "
                                             "the first step, lower values ease in over about a second, "
                                             "0 never eases on its own (a script drives the body)."),
                              0.0, 1.0, 0.01),
-                WithTooltipUVE(DeclareUVE<&Kinematic3DComponentUVE::active>("active", "Active",
-                                                                           kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&Kinematic3DComponent::active>("active", "Active",
+                                                                           kPropertyTypeBool),
                                "Off leaves the body where it is and stops it dead, including for "
                                "anything standing on it."),
             }));
@@ -1619,221 +1619,221 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // SpringArm3D's own section: the third-person camera boom. The authored half is what the arm
     // reaches and what it collides with, and it is grouped behind the switch the rest of it depends
     // on; the runtime half is the one number the arm derives every step.
-    AddValidatedUVE<SpringArm3DComponentUVE, &IsSpringArm3DObjectComponentValidUVE>(
+    AddValidated<SpringArm3DComponent, &IsSpringArm3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.spring_arm", "SpringArm3DComponentUVE", "SpringArm3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.spring_arm", "SpringArm3DComponent", "SpringArm3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::enabled>("enabled", "Enabled",
-                                                                             kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&SpringArm3DComponent::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBool),
                                "Off, the arm casts nothing and hands its length back, so whatever it "
                                "carries returns to the pose it was authored with."),
-                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::armLength>(
-                                       "armLength", "Arm Length", kPropertyTypeFloatUVE),
+                WhenOn<&SpringArm3DComponent::enabled>(WithRange(
+                    WithTooltip(Declare<&SpringArm3DComponent::armLength>(
+                                       "armLength", "Arm Length", kPropertyTypeFloat),
                                    "How far the arm reaches along its own local +Z, in metres. The "
                                    "arm casts this far every fixed step and shortens to whatever it "
                                    "finds, minus the margin."),
                     0.0, 10000.0, 0.01)),
-                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::margin>("margin", "Margin",
-                                                                                kPropertyTypeFloatUVE),
+                WhenOn<&SpringArm3DComponent::enabled>(WithRange(
+                    WithTooltip(Declare<&SpringArm3DComponent::margin>("margin", "Margin",
+                                                                                kPropertyTypeFloat),
                                    "How far the arm keeps the thing it carries off the surface it "
                                    "hit, in metres. This is the camera's skin."),
                     0.0, 10000.0, 0.01)),
-                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::smoothing>("smoothing",
+                WhenOn<&SpringArm3DComponent::enabled>(WithRange(
+                    WithTooltip(Declare<&SpringArm3DComponent::smoothing>("smoothing",
                                                                                    "Smoothing",
-                                                                                   kPropertyTypeFloatUVE),
+                                                                                   kPropertyTypeFloat),
                                    "How fast the arm springs back out once the way is clear, per "
                                    "second: 0 pops out exactly like Godot's SpringArm3D, higher "
                                    "values rise sooner. Shortening always snaps - a camera is never "
                                    "allowed to clip through a wall."),
                     0.0, 1000.0, 0.1)),
-                WhenOnUVE<&SpringArm3DComponentUVE::enabled>(WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&SpringArm3DComponentUVE::collisionMask>(
-                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                WhenOn<&SpringArm3DComponent::enabled>(WithCustomDrawer(
+                    WithTooltip(Declare<&SpringArm3DComponent::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32),
                                    "What the arm collides with. Leave the layer the rig is on out of "
                                    "it, or the camera will sit on the character it belongs to."),
-                    std::string(kLayerMaskDrawerPhysicsUVE))),
-                InGroupUVE(DeclareRuntimeStateUVE<&SpringArm3DComponentUVE::currentLength>(
-                               "currentLength", "Current Length", kPropertyTypeFloatUVE),
+                    std::string(kLayerMaskDrawerPhysics))),
+                InGroup(DeclareRuntimeState<&SpringArm3DComponent::currentLength>(
+                               "currentLength", "Current Length", kPropertyTypeFloat),
                            "State"),
             }));
 
     // Character3D's own section. Grouped by what an author is thinking about - how it moves,
     // what it stands on, what it hits - with the state the controller writes each step last, shown
     // only while playing because that is when it describes something real.
-    using C = CharacterControllerComponentUVE;
-    const auto whenGrounded = [](TypeMetadataPropertyUVE property) {
+    using C = CharacterControllerComponent;
+    const auto whenGrounded = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
-            return static_cast<const C*>(instance)->motionMode == CharacterMotionModeUVE::Grounded;
+            return static_cast<const C*>(instance)->motionMode == CharacterMotionMode::Grounded;
         };
         return property;
     };
-    const auto whenBuiltIn = [](TypeMetadataPropertyUVE property) {
+    const auto whenBuiltIn = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) { return static_cast<const C*>(instance)->builtInMovement; };
         return property;
     };
-    const auto whenBuiltInGrounded = [](TypeMetadataPropertyUVE property) {
+    const auto whenBuiltInGrounded = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
             const C& c = *static_cast<const C*>(instance);
-            return c.builtInMovement && c.motionMode == CharacterMotionModeUVE::Grounded;
+            return c.builtInMovement && c.motionMode == CharacterMotionMode::Grounded;
         };
         return property;
     };
-    const auto whenPushing = [](TypeMetadataPropertyUVE property) {
+    const auto whenPushing = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) { return static_cast<const C*>(instance)->pushRigidBodies; };
         return property;
     };
-    TypeMetadataPropertyUVE maxSlides = WithTooltipUVE(
-        DeclareUVE<&C::maxSlides>("maxSlides", "Max Slides", kPropertyTypeUInt32UVE),
+    TypeMetadataProperty maxSlides = WithTooltip(
+        Declare<&C::maxSlides>("maxSlides", "Max Slides", kPropertyTypeUInt32),
         "How many pieces a move is cut into to follow walls and corners. More is smoother and costs more.");
     maxSlides.range = {true, 1.0, 32.0, 1.0};
-    TypeMetadataPropertyUVE maximumContacts = WithTooltipUVE(
-        DeclareUVE<&C::maximumContacts>("maximumContacts", "Max Contacts", kPropertyTypeUInt32UVE),
+    TypeMetadataProperty maximumContacts = WithTooltip(
+        Declare<&C::maximumContacts>("maximumContacts", "Max Contacts", kPropertyTypeUInt32),
         "The most contacts one move reports, deepest first. Extras are dropped, and the step says so.");
     maximumContacts.range = {true, 1.0, 64.0, 1.0};
-    AddValidatedUVE<CharacterControllerComponentUVE, &IsCharacterControllerComponentValidUVE>(
+    AddValidated<CharacterControllerComponent, &IsCharacterControllerComponentValid>(
         entries,
-        MakeEntryUVE("component.character_controller", "CharacterControllerComponentUVE", "Character3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.character_controller", "CharacterControllerComponent", "Character3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareEnumUVE<&C::motionMode>("motionMode", "Motion Mode",
+                WithTooltip(DeclareEnum<&C::motionMode>("motionMode", "Motion Mode",
                                                               {{0, "Grounded"}, {1, "Floating"}}),
                                "Grounded walks on floors under gravity. Floating flies or swims: no gravity, no "
                                "floor, every surface a wall."),
-                WithTooltipUVE(DeclareUVE<&C::upDirection>("upDirection", "Up Direction", kPropertyTypeVector3UVE),
+                WithTooltip(Declare<&C::upDirection>("upDirection", "Up Direction", kPropertyTypeVector3),
                                "The body's own up. Floors, jumps, gravity and ceilings are measured from this. "
                                "World +Y is the default, because the engine's gravity is along -Y."),
-                whenGrounded(WithTooltipUVE(WithRangeUVE(DeclareUVE<&C::gravityScale>("gravityScale", "Gravity Scale",
-                                                                                      kPropertyTypeFloatUVE),
+                whenGrounded(WithTooltip(WithRange(Declare<&C::gravityScale>("gravityScale", "Gravity Scale",
+                                                                                      kPropertyTypeFloat),
                                                          0.0, 100.0, 0.05),
                                             "Multiplies the world's gravity. 1 is normal, 0 is none.")),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::builtInMovement>("builtInMovement", "Built-in",
-                                                                          kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&C::builtInMovement>("builtInMovement", "Built-in",
+                                                                          kPropertyTypeBool),
                                           "Moves and jumps from the keyboard with no script. Off, it moves by its "
                                           "Velocity alone - how a script or an AI drives it."),
                            "Movement"),
-                InGroupUVE(whenBuiltIn(WithTooltipUVE(WithRangeUVE(DeclareUVE<&C::moveSpeed>("moveSpeed", "Speed",
-                                                                                             kPropertyTypeFloatUVE),
+                InGroup(whenBuiltIn(WithTooltip(WithRange(Declare<&C::moveSpeed>("moveSpeed", "Speed",
+                                                                                             kPropertyTypeFloat),
                                                                    0.0, 1000.0, 0.1),
                                                       "Top speed, in metres per second.")),
                            "Movement"),
-                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::jumpHeight>("jumpHeight", "Jump Height", kPropertyTypeFloatUVE),
+                InGroup(whenBuiltInGrounded(WithTooltip(
+                               WithRange(Declare<&C::jumpHeight>("jumpHeight", "Jump Height", kPropertyTypeFloat),
                                             0.0, 1000.0, 0.05),
                                "How high a jump reaches, in metres, whatever the gravity.")),
                            "Movement"),
-                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::airControl>("airControl", "Air Control", kPropertyTypeFloatUVE),
+                InGroup(whenBuiltInGrounded(WithTooltip(
+                               WithRange(Declare<&C::airControl>("airControl", "Air Control", kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "How much steering works in the air. 1 is full control, 0 keeps the jump's direction.")),
                            "Movement"),
-                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::coyoteTimeSeconds>("coyoteTimeSeconds", "Coyote Time",
-                                                                            kPropertyTypeFloatUVE),
+                InGroup(whenBuiltInGrounded(WithTooltip(
+                               WithRange(Declare<&C::coyoteTimeSeconds>("coyoteTimeSeconds", "Coyote Time",
+                                                                            kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "A jump still works this many seconds after walking off a ledge.")),
                            "Movement"),
-                InGroupUVE(whenBuiltInGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::jumpBufferSeconds>("jumpBufferSeconds", "Jump Buffer",
-                                                                            kPropertyTypeFloatUVE),
+                InGroup(whenBuiltInGrounded(WithTooltip(
+                               WithRange(Declare<&C::jumpBufferSeconds>("jumpBufferSeconds", "Jump Buffer",
+                                                                            kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "A jump pressed this many seconds before landing happens on landing.")),
                            "Movement"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::floorMaxAngleDegrees>("floorMaxAngleDegrees", "Floor Angle",
-                                                                                kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::floorMaxAngleDegrees>("floorMaxAngleDegrees", "Floor Angle",
+                                                                                kPropertyTypeFloat),
                                             0.0, 90.0, 1.0),
                                "The steepest slope still walked as a floor. Steeper surfaces are walls it slides "
                                "along.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::wallMinSlideAngleDegrees>(
-                                                "wallMinSlideAngleDegrees", "Wall Slide Angle", kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::wallMinSlideAngleDegrees>(
+                                                "wallMinSlideAngleDegrees", "Wall Slide Angle", kPropertyTypeFloat),
                                             0.0, 90.0, 1.0),
                                "How far past the floor angle a wall has to lean before the body slides down it "
                                "instead of being stopped by it.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::floorSnapLength>("floorSnapLength", "Snap Length",
-                                                                          kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::floorSnapLength>("floorSnapLength", "Snap Length",
+                                                                          kPropertyTypeFloat),
                                             0.0, 10.0, 0.01),
                                "Stays on the floor walking down steps and ledges up to this far below. 0 lets it "
                                "drop off every edge.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::minStepWidth>("minStepWidth", "Min Step Width",
-                                                                       kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::minStepWidth>("minStepWidth", "Min Step Width",
+                                                                       kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "How much room a step needs on top to be worth climbing. Narrower than this is a "
                                "wall with a decoration.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               DeclareUVE<&C::floorStopOnSlope>("floorStopOnSlope", "Stop On Slope",
-                                                                kPropertyTypeBoolUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               Declare<&C::floorStopOnSlope>("floorStopOnSlope", "Stop On Slope",
+                                                                kPropertyTypeBool),
                                "Standing still on a slope stays still instead of creeping downhill.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               DeclareUVE<&C::floorConstantSpeed>("floorConstantSpeed", "Constant Speed",
-                                                                  kPropertyTypeBoolUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               Declare<&C::floorConstantSpeed>("floorConstantSpeed", "Constant Speed",
+                                                                  kPropertyTypeBool),
                                "Walking up or down a slope keeps the horizontal speed the walk started with.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::safeMargin>("safeMargin", "Safe Margin",
-                                                                      kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::safeMargin>("safeMargin", "Safe Margin",
+                                                                      kPropertyTypeFloat),
                                             0.0, 0.25, 0.001),
                                "How far short of a surface the body stops, so it does not jitter against it.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               DeclareUVE<&C::floorBlockOnWall>("floorBlockOnWall", "Block On Wall",
-                                                                kPropertyTypeBoolUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               Declare<&C::floorBlockOnWall>("floorBlockOnWall", "Block On Wall",
+                                                                kPropertyTypeBool),
                                "On the floor, stop at a wall instead of sliding along it - no corner slipping.")),
                            "Floor"),
-                InGroupUVE(whenGrounded(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::maxStepHeight>("maxStepHeight", "Step Height",
-                                                                        kPropertyTypeFloatUVE),
+                InGroup(whenGrounded(WithTooltip(
+                               WithRange(Declare<&C::maxStepHeight>("maxStepHeight", "Step Height",
+                                                                        kPropertyTypeFloat),
                                             0.0, 10.0, 0.01),
                                "Walks up steps and kerbs up to this high without jumping. 0 turns it off.")),
                            "Floor"),
-                InGroupUVE(WithTooltipUVE(
-                               DeclareEnumUVE<&C::platformOnLeave>(
+                InGroup(WithTooltip(
+                               DeclareEnum<&C::platformOnLeave>(
                                    "platformOnLeave", "On Leave Platform",
                                    {{0, "Keep Velocity"}, {1, "Add Velocity"}, {2, "Add Upward Velocity"}}),
                                "What a platform gives a body that walks off it: its whole velocity, only the "
                                "upward part, or nothing."),
                            "Platforms"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::maximumPlatformSpeed>(
-                                                "maximumPlatformSpeed", "Max Platform Speed", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&C::maximumPlatformSpeed>(
+                                                "maximumPlatformSpeed", "Max Platform Speed", kPropertyTypeFloat),
                                             0.0, 10000.0, 1.0),
                                "The fastest platform motion that may carry this body. Past it the platform is "
                                "treated as standing still, so a teleported platform cannot fling anyone."),
                            "Platforms"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::slideOnCeiling>("slideOnCeiling", "Slide On Ceiling",
-                                                                         kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&C::slideOnCeiling>("slideOnCeiling", "Slide On Ceiling",
+                                                                         kPropertyTypeBool),
                                           "On hitting a ceiling, keep sliding along it. Off, the move stops there."),
                            "Ceiling"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&C::pushRigidBodies>("pushRigidBodies", "Push Bodies",
-                                                                          kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&C::pushRigidBodies>("pushRigidBodies", "Push Bodies",
+                                                                          kPropertyTypeBool),
                                           "Walking into a rigid body pushes it."),
                            "Pushing"),
-                InGroupUVE(whenPushing(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::pushStrength>("pushStrength", "Strength", kPropertyTypeFloatUVE),
+                InGroup(whenPushing(WithTooltip(
+                               WithRange(Declare<&C::pushStrength>("pushStrength", "Strength", kPropertyTypeFloat),
                                             0.0, 100.0, 0.05),
                                "How hard it pushes, relative to its own speed.")),
                            "Pushing"),
-                InGroupUVE(whenPushing(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&C::maxPushSpeed>("maxPushSpeed", "Max Speed", kPropertyTypeFloatUVE),
+                InGroup(whenPushing(WithTooltip(
+                               WithRange(Declare<&C::maxPushSpeed>("maxPushSpeed", "Max Speed", kPropertyTypeFloat),
                                             0.0, 1000.0, 0.1),
                                "The fastest a push may send a body, in metres per second.")),
                            "Pushing"),
-                InGroupUVE(std::move(maxSlides), "Collision"),
-                InGroupUVE(std::move(maximumContacts), "Collision"),
-                InGroupUVE(DeclareRuntimeStateUVE<&C::velocity>("velocity", "Velocity", kPropertyTypeVector3UVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&C::grounded>("grounded", "Grounded", kPropertyTypeBoolUVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&C::isOnCeiling>("isOnCeiling", "On Ceiling", kPropertyTypeBoolUVE),
+                InGroup(std::move(maxSlides), "Collision"),
+                InGroup(std::move(maximumContacts), "Collision"),
+                InGroup(DeclareRuntimeState<&C::velocity>("velocity", "Velocity", kPropertyTypeVector3), "State"),
+                InGroup(DeclareRuntimeState<&C::grounded>("grounded", "Grounded", kPropertyTypeBool), "State"),
+                InGroup(DeclareRuntimeState<&C::isOnCeiling>("isOnCeiling", "On Ceiling", kPropertyTypeBool),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&C::floorNormal>("floorNormal", "Floor Normal", kPropertyTypeVector3UVE),
+                InGroup(DeclareRuntimeState<&C::floorNormal>("floorNormal", "Floor Normal", kPropertyTypeVector3),
                            "State"),
             }));
 }
@@ -1842,62 +1842,62 @@ void DeclarePhysicsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// exclusions are entity references, so they are drawn by the reference-list drawer and remapped by
 /// the scene serializer like every other reference an author can pick; the result rows are runtime
 /// state, shown so an author can see the answer the engine computed rather than guessing at it.
-void DeclareRayCastUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<RayCast3DComponentUVE, &IsRayCast3DObjectComponentValidUVE>(
+void DeclareRayCast(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<RayCast3DComponent, &IsRayCast3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.ray_cast_3d", "RayCast3DComponentUVE", "RayCast3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ray_cast_3d", "RayCast3DComponent", "RayCast3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&RayCast3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&RayCast3DComponent::enabled>("enabled", "Enabled", kPropertyTypeBool),
                     "Off, the ray casts nothing and clears its result - no hit, no point, no "
                     "normal, no entity."),
-                WithTooltipUVE(
-                    DeclareUVE<&RayCast3DComponentUVE::direction>("direction", "Direction",
-                                                                  kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&RayCast3DComponent::direction>("direction", "Direction",
+                                                                  kPropertyTypeVector3),
                     "Which way the ray points in this object's own space, rotated by its world "
                     "rotation every step. Any non-zero length is fine; it is a direction, not a "
                     "distance - the Length below is the distance."),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&RayCast3DComponentUVE::length>("length", "Length",
-                                                                             kPropertyTypeFloatUVE),
+                WithRange(
+                    WithTooltip(Declare<&RayCast3DComponent::length>("length", "Length",
+                                                                             kPropertyTypeFloat),
                                    "How far the ray reaches along its direction, in metres. It "
                                    "reports the closest collider it meets inside that distance and "
                                    "nothing past it."),
                     0.0, 100000.0, 0.1),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(
-                        DeclareUVE<&RayCast3DComponentUVE::collisionMask>("collisionMask", "Mask",
-                                                                          kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(
+                        Declare<&RayCast3DComponent::collisionMask>("collisionMask", "Mask",
+                                                                          kPropertyTypeBitMask32),
                         "Which collision layers the ray is allowed to hit, on the same layer drawer "
                         "every other physics object uses."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithTooltipUVE(
-                    WithCustomDrawerUVE(
-                        WithElementCountUVE(
-                            DeclareUVE<&RayCast3DComponentUVE::exclusions>("exclusions", "Exclusions",
-                                                                           kPropertyTypeEntityListUVE),
-                            kMaximumRayCastExclusionsUVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithTooltip(
+                    WithCustomDrawer(
+                        WithElementCount(
+                            Declare<&RayCast3DComponent::exclusions>("exclusions", "Exclusions",
+                                                                           kPropertyTypeEntityList),
+                            kMaximumRayCastExclusions),
                         "entity-reference-list"),
                     "Objects this ray refuses to hit, on top of its own object - a ray never hits "
                     "the collider it starts inside. An exclusion is not a mask: no layer can bring "
                     "one back. The ray's own object is always excluded, so listing it changes "
                     "nothing."),
-                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hit>("hit", "Hit",
-                                                                               kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&RayCast3DComponent::hit>("hit", "Hit",
+                                                                               kPropertyTypeBool),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitEntity>(
-                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                InGroup(DeclareRuntimeState<&RayCast3DComponent::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntity),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitPosition>(
-                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                InGroup(DeclareRuntimeState<&RayCast3DComponent::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&RayCast3DComponentUVE::hitNormal>(
-                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                InGroup(DeclareRuntimeState<&RayCast3DComponent::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3),
                            "Result"),
             }));
 }
 
-void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareProjectile(std::vector<TypeMetadataEntry>& entries) {
     // Projectile3D's own section. The authored half is the whole flight - where it goes, how fat
     // it is, how long it lives, what it may hit and what its motion does when it does. The two
     // bounce coefficients appear only once the policy actually uses them, and the runtime half is
@@ -1906,471 +1906,471 @@ void DeclareProjectileUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     // edit that would leave the component past its contract (a policy this engine cannot execute,
     // a coefficient outside 0..1) and keeps the last accepted value, so the step never has to
     // guess at a value nobody could have meant.
-    const auto whenBouncing = [](TypeMetadataPropertyUVE property) {
+    const auto whenBouncing = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
-            return static_cast<const Projectile3DComponentUVE*>(instance)->hitPolicy ==
-                   Projectile3DHitPolicyUVE::Bounce;
+            return static_cast<const Projectile3DComponent*>(instance)->hitPolicy ==
+                   Projectile3DHitPolicy::Bounce;
         };
         return property;
     };
-    TypeMetadataPropertyUVE projectileIgnore = WithTooltipUVE(
-        DeclareUVE<&Projectile3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+    TypeMetadataProperty projectileIgnore = WithTooltip(
+        Declare<&Projectile3DComponent::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntity),
         "Never hit this entity. Set the owner so a shot does not collide with the body that fired it.");
-    projectileIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<Projectile3DComponentUVE, &IsProjectile3DObjectComponentValidUVE>(
+    projectileIgnore.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<Projectile3DComponent, &IsProjectile3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.projectile_3d", "Projectile3DComponentUVE", "Projectile3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.projectile_3d", "Projectile3DComponent", "Projectile3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&Projectile3DComponentUVE::active>("active", "Active", kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&Projectile3DComponent::active>("active", "Active", kPropertyTypeBool),
                     "Off stops everything: no motion, no sweep, no countdown. The engine also "
                     "clears it when the projectile stops on a hit or runs out of lifetime."),
-                WithTooltipUVE(
-                    DeclareUVE<&Projectile3DComponentUVE::velocity>("velocity", "Velocity",
-                                                                    kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&Projectile3DComponent::velocity>("velocity", "Velocity",
+                                                                    kPropertyTypeVector3),
                     "Where the projectile is going, in metres per second, in its own axes. It "
                     "is the state that accumulates Acceleration, so this is the launch velocity "
                     "and the fixed step keeps it honest."),
-                WithTooltipUVE(
-                    DeclareUVE<&Projectile3DComponentUVE::acceleration>("acceleration", "Acceleration",
-                                                                        kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&Projectile3DComponent::acceleration>("acceleration", "Acceleration",
+                                                                        kPropertyTypeVector3),
                     "Added to Velocity every step, in metres per second squared: gravity, drag, a "
                     "wind volume. Gravity is not implied - a projectile only falls if something "
                     "here says so."),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::radius>("radius", "Radius",
-                                                                                 kPropertyTypeFloatUVE),
+                WithRange(
+                    WithTooltip(Declare<&Projectile3DComponent::radius>("radius", "Radius",
+                                                                                 kPropertyTypeFloat),
                                    "The sphere the projectile sweeps, in world metres. It is the "
                                    "size that decides whether it fits through a gap and how far "
                                    "its centre is held off a surface - a ray is infinitely thin "
                                    "and misses the hits a fat projectile must not miss."),
                     0.001, 1000.0, 0.01),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::maxLifetime>(
-                                       "maxLifetime", "Max Lifetime", kPropertyTypeFloatUVE),
+                WithRange(
+                    WithTooltip(Declare<&Projectile3DComponent::maxLifetime>(
+                                       "maxLifetime", "Max Lifetime", kPropertyTypeFloat),
                                    "Seconds of flight before the engine clears Active. A bouncing "
                                    "projectile has no other end, so this is the clock that always "
                                    "ends one."),
                     0.01, 3600.0, 0.1),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::collisionMask>(
-                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&Projectile3DComponent::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32),
                                    "Which collision layers this projectile may hit, on the same "
                                    "layer drawer every other physics object uses."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                    std::string(kLayerMaskDrawerPhysics)),
                 projectileIgnore,
-                WithTooltipUVE(
-                    DeclareEnumUVE<&Projectile3DComponentUVE::hitPolicy>("hitPolicy", "On Hit",
+                WithTooltip(
+                    DeclareEnum<&Projectile3DComponent::hitPolicy>("hitPolicy", "On Hit",
                                                                          {{0, "Stop"}, {1, "Bounce"}}),
                     "What this projectile's own motion does when it hits something. The engine "
                     "owns the motion - Stop halts it at the contact, Bounce reflects it - and "
                     "gameplay owns the consequences: damage, effects and despawning read the hit "
                     "event or these result fields."),
-                whenBouncing(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::restitution>(
-                                       "restitution", "Restitution", kPropertyTypeFloatUVE),
+                whenBouncing(WithRange(
+                    WithTooltip(Declare<&Projectile3DComponent::restitution>(
+                                       "restitution", "Restitution", kPropertyTypeFloat),
                                    "How much of the speed into a surface comes back out of it: 1 "
                                    "leaves as fast as it arrived, 0 arrives and slides. This is "
                                    "the projectile's own coefficient - the surface's is reported "
                                    "with the contact for gameplay to react to."),
                     0.0, 1.0, 0.01)),
-                whenBouncing(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&Projectile3DComponentUVE::friction>("friction",
+                whenBouncing(WithRange(
+                    WithTooltip(Declare<&Projectile3DComponent::friction>("friction",
                                                                                    "Bounce Friction",
-                                                                                   kPropertyTypeFloatUVE),
+                                                                                   kPropertyTypeFloat),
                                    "How much of the speed along the surface is lost on each "
                                    "bounce: 0 keeps all of its sideways motion, 1 keeps none. A "
                                    "bounce that leaves no motion at all is a stop."),
                     0.0, 1.0, 0.01)),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::remainingLifetime>(
-                               "remainingLifetime", "Remaining Lifetime", kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::remainingLifetime>(
+                               "remainingLifetime", "Remaining Lifetime", kPropertyTypeFloat),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hit>("hit", "Hit",
-                                                                                  kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::hit>("hit", "Hit",
+                                                                                  kPropertyTypeBool),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitEntity>(
-                               "hitEntity", "Hit Entity", kPropertyTypeEntityUVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::hitEntity>(
+                               "hitEntity", "Hit Entity", kPropertyTypeEntity),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitPosition>(
-                               "hitPosition", "Hit Position", kPropertyTypeVector3UVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::hitPosition>(
+                               "hitPosition", "Hit Position", kPropertyTypeVector3),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::hitNormal>(
-                               "hitNormal", "Hit Normal", kPropertyTypeVector3UVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::hitNormal>(
+                               "hitNormal", "Hit Normal", kPropertyTypeVector3),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::impactSpeed>(
-                               "impactSpeed", "Impact Speed", kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::impactSpeed>(
+                               "impactSpeed", "Impact Speed", kPropertyTypeFloat),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Projectile3DComponentUVE::bounceCount>(
-                               "bounceCount", "Bounces", kPropertyTypeUInt32UVE),
+                InGroup(DeclareRuntimeState<&Projectile3DComponent::bounceCount>(
+                               "bounceCount", "Bounces", kPropertyTypeUInt32),
                            "Result"),
             }));
 }
 
-void DeclareCombatUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    TypeMetadataPropertyUVE hitboxIgnore = WithTooltipUVE(
-        DeclareUVE<&Hitbox3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+void DeclareCombat(std::vector<TypeMetadataEntry>& entries) {
+    TypeMetadataProperty hitboxIgnore = WithTooltip(
+        Declare<&Hitbox3DComponent::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntity),
         "Never strike this entity. Set the owner so a weapon does not hit the character holding it.");
-    hitboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<Hitbox3DComponentUVE, &IsHitbox3DObjectComponentValidUVE>(
+    hitboxIgnore.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<Hitbox3DComponent, &IsHitbox3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.hitbox_3d", "Hitbox3DComponentUVE", "Hitbox3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.hitbox_3d", "Hitbox3DComponent", "Hitbox3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&Hitbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&Hitbox3DComponent::enabled>("enabled", "Enabled", kPropertyTypeBool),
                     "Off, the hitbox strikes nothing and ends every strike it was in: the engine "
                     "reports the exit, it does not wait for the boxes to separate."),
-                WithTooltipUVE(
-                    DeclareUVE<&Hitbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
-                                                                   kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&Hitbox3DComponent::halfExtents>("halfExtents", "Half Extents",
+                                                                   kPropertyTypeVector3),
                     "The exact oriented box this hitbox strikes with: world position and "
                     "rotation plus these half-extents, with the object's world SCALE deliberately "
                     "not applied - the collider/area convention, so a scaled art pivot never "
                     "re-sizes a hurt volume."),
-                WithTooltipUVE(
-                    DeclareUVE<&Hitbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
-                                                                     kPropertyTypeStringUVE),
+                WithTooltip(
+                    Declare<&Hitbox3DComponent::damageChannel>("damageChannel", "Channel",
+                                                                     kPropertyTypeString),
                     "What this hitbox is. It only ever strikes a hurtbox authored with the same "
                     "channel, which is how one character carries a sword hitbox and a punch hitbox "
                     "without either firing the other's reactions. Up to 256 bytes."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionLayer>(
-                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&Hitbox3DComponent::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32),
                                    "The layers this hitbox is on - what a hurtbox has to be "
                                    "looking for."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&Hitbox3DComponentUVE::collisionMask>(
-                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&Hitbox3DComponent::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32),
                                    "The layers this hitbox strikes. A strike needs BOTH sides to "
                                    "accept the other, so a hurtbox can refuse a whole class of "
                                    "attackers on its own."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                    std::string(kLayerMaskDrawerPhysics)),
                 std::move(hitboxIgnore),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikeCount>(
-                               "strikeCount", "Strikes", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&Hitbox3DComponent::strikeCount>(
+                               "strikeCount", "Strikes", kPropertyTypeUInt8),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::strikesTruncated>(
-                               "strikesTruncated", "Truncated", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&Hitbox3DComponent::strikesTruncated>(
+                               "strikesTruncated", "Truncated", kPropertyTypeBool),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hitbox3DComponentUVE::struckCount>(
-                               "struckCount", "Landed", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&Hitbox3DComponent::struckCount>(
+                               "struckCount", "Landed", kPropertyTypeUInt8),
                            "Result"),
             }));
 
-    TypeMetadataPropertyUVE hurtboxIgnore = WithTooltipUVE(
-        DeclareUVE<&Hurtbox3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntityUVE),
+    TypeMetadataProperty hurtboxIgnore = WithTooltip(
+        Declare<&Hurtbox3DComponent::ignoreEntity>("ignoreEntity", "Ignore Entity", kPropertyTypeEntity),
         "Never accept a strike from this entity. Set the owner so a character is not hit by its own weapon.");
-    hurtboxIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<Hurtbox3DComponentUVE, &IsHurtbox3DObjectComponentValidUVE>(
+    hurtboxIgnore.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<Hurtbox3DComponent, &IsHurtbox3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.hurtbox_3d", "Hurtbox3DComponentUVE", "Hurtbox3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.hurtbox_3d", "Hurtbox3DComponent", "Hurtbox3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&Hurtbox3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&Hurtbox3DComponent::enabled>("enabled", "Enabled", kPropertyTypeBool),
                     "Off, nothing can strike this hurtbox: it is not even a candidate, so every "
                     "strike it was in ends on this tick's report."),
-                WithTooltipUVE(
-                    DeclareUVE<&Hurtbox3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
-                                                                    kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&Hurtbox3DComponent::halfExtents>("halfExtents", "Half Extents",
+                                                                    kPropertyTypeVector3),
                     "The exact oriented box this hurtbox is struck on, in world metres: world "
                     "position and rotation plus these half-extents, with the object's world SCALE "
                     "deliberately not applied - the collider/area convention."),
-                WithTooltipUVE(
-                    DeclareUVE<&Hurtbox3DComponentUVE::damageChannel>("damageChannel", "Channel",
-                                                                      kPropertyTypeStringUVE),
+                WithTooltip(
+                    Declare<&Hurtbox3DComponent::damageChannel>("damageChannel", "Channel",
+                                                                      kPropertyTypeString),
                     "What this hurtbox receives. Only a hitbox authored with the same channel can "
                     "strike it. Up to 256 bytes."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionLayer>(
-                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&Hurtbox3DComponent::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32),
                                    "The layers this hurtbox is on - what a hitbox has to be looking "
                                    "for."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&Hurtbox3DComponentUVE::collisionMask>(
-                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&Hurtbox3DComponent::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32),
                                    "The layers this hurtbox accepts strikes from. A strike needs "
                                    "BOTH sides to accept the other, which is how a hurtbox refuses "
                                    "a whole class of attackers without touching any of them."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                    std::string(kLayerMaskDrawerPhysics)),
                 std::move(hurtboxIgnore),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::hitCount>(
-                               "hitCount", "Hits", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&Hurtbox3DComponent::hitCount>(
+                               "hitCount", "Hits", kPropertyTypeUInt8),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::hitsTruncated>(
-                               "hitsTruncated", "Truncated", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&Hurtbox3DComponent::hitsTruncated>(
+                               "hitsTruncated", "Truncated", kPropertyTypeBool),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&Hurtbox3DComponentUVE::receivedCount>(
-                               "receivedCount", "Received", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&Hurtbox3DComponent::receivedCount>(
+                               "receivedCount", "Received", kPropertyTypeUInt8),
                            "Result"),
             }));
 }
 
-void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareAnimation(std::vector<TypeMetadataEntry>& entries) {
     // AnimationSequencer's own section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as an object picker. Empty means the player's parent, which is the common
     // case and needs no picking at all.
     // AnimationDriver: the base AnimationSequencer and AnimationGraph share, shown between their own
     // section and the Object section. Its target is an entity reference: flagged so the serializer
     // remaps it, and drawn as an object picker. Empty means the parent, the common case.
-    using M = AnimationDriverComponentUVE;
-    TypeMetadataPropertyUVE mixerTarget = WithTooltipUVE(
-        DeclareUVE<&M::target>("target", "Target", kPropertyTypeEntityUVE),
+    using M = AnimationDriverComponent;
+    TypeMetadataProperty mixerTarget = WithTooltip(
+        Declare<&M::target>("target", "Target", kPropertyTypeEntity),
         "The object that is moved. Empty means this object's parent.");
-    mixerTarget.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<AnimationDriverComponentUVE, &IsAnimationDriverComponentValidUVE>(
+    mixerTarget.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<AnimationDriverComponent, &IsAnimationDriverComponentValid>(
         entries,
-        MakeEntryUVE("component.animation_mixer", "AnimationDriverComponentUVE", std::string{AnimationDriverObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 20,
+        MakeEntry("component.animation_mixer", "AnimationDriverComponent", std::string{AnimationDriverObjectDefinition::typeName}, kSectionOrderObjectBase + 20,
             {
-                WithTooltipUVE(DeclareUVE<&M::active>("active", "Active", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&M::active>("active", "Active", kPropertyTypeBool),
                                "Off, nothing is evaluated and the target is left alone."),
                 std::move(mixerTarget),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&M::speedScale>("speedScale", "Speed Scale",
-                                                                       kPropertyTypeFloatUVE),
+                WithTooltip(WithRange(Declare<&M::speedScale>("speedScale", "Speed Scale",
+                                                                       kPropertyTypeFloat),
                                             0.0, 100.0, 0.01),
                                "Multiplies every clock under this object: 0.5 is slow motion, 0 freezes."),
-                WithTooltipUVE(DeclareEnumUVE<&M::processCallback>("processCallback", "Update",
+                WithTooltip(DeclareEnum<&M::processCallback>("processCallback", "Update",
                                                                    {{0, "Every Frame"}, {1, "Physics Step"}}),
                                "Every Frame is smoothest on screen. Physics Step keeps the target in step "
                                "with the bodies it pushes."),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animatePosition>("animatePosition", "Position",
-                                                                          kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&M::animatePosition>("animatePosition", "Position",
+                                                                          kPropertyTypeBool),
                                           "Off, the target's position is left alone."),
                            "Channels"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateRotation>("animateRotation", "Rotation",
-                                                                          kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&M::animateRotation>("animateRotation", "Rotation",
+                                                                          kPropertyTypeBool),
                                           "Off, the target's rotation is left alone."),
                            "Channels"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::animateScale>("animateScale", "Scale", kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&M::animateScale>("animateScale", "Scale", kPropertyTypeBool),
                                           "Off, the target's scale is left alone."),
                            "Channels"),
-                WithTooltipUVE(DeclareEnumUVE<&M::transition>("transition", "Transition",
+                WithTooltip(DeclareEnum<&M::transition>("transition", "Transition",
                                                               {{0, "Inertialize"}, {1, "Crossfade"}}),
                                "How a clip that starts takes over, over the player's Blend In. Inertialize "
                                "plays the new clip at once and fades out the old pose's difference smoothly: "
                                "cheaper, and no sliding. Crossfade mixes the two."),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&M::rootMotion>("rootMotion", "Mode",
+                InGroup(WithTooltip(DeclareEnum<&M::rootMotion>("rootMotion", "Mode",
                                                                          {{0, "Off"}, {1, "In Place"},
                                                                           {2, "Apply To Target"}}),
                                           "Skeletal clips only. In Place takes the root bone's ground travel "
                                           "out of the pose. Apply To Target also moves the target by it; a "
                                           "Character3D gets it as velocity, so walls still stop it."),
                            "Root Motion"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&M::rootMotionBone>("rootMotionBone", "Bone",
-                                                                         kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&M::rootMotionBone>("rootMotionBone", "Bone",
+                                                                         kPropertyTypeString),
                                           "The bone whose travel is root motion. Empty picks the first bone "
                                           "whose track moves across the ground (the root or the hips)."),
                            "Root Motion"),
             }));
 
     // AnimationSequencer's own section.
-    using P = AnimationSequencerComponentUVE;
-    const auto whenOnce = [](TypeMetadataPropertyUVE property) {
+    using P = AnimationSequencerComponent;
+    const auto whenOnce = [](TypeMetadataProperty property) {
         property.isVisible = +[](const void* instance) {
-            return static_cast<const P*>(instance)->loopMode == AnimationLoopModeUVE::Once;
+            return static_cast<const P*>(instance)->loopMode == AnimationLoopMode::Once;
         };
         return property;
     };
-    AddValidatedUVE<AnimationSequencerComponentUVE, &IsAnimationSequencerComponentValidUVE>(
+    AddValidated<AnimationSequencerComponent, &IsAnimationSequencerComponentValid>(
         entries,
-        MakeEntryUVE("component.animation_player", "AnimationSequencerComponentUVE", "AnimationSequencer", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.animation_player", "AnimationSequencerComponent", "AnimationSequencer", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::clip>("clip", "Clip", kPropertyTypeAssetGuidUVE),
+                WithTooltip(WithCustomDrawer(Declare<&P::clip>("clip", "Clip", kPropertyTypeAssetGuid),
                                                    "asset:uvanim"),
                                "The .uvanim clip to play."),
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&P::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuidUVE),
+                WithTooltip(WithCustomDrawer(Declare<&P::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuid),
                                                    "asset:uvanimlib"),
                                "A .uvanimlib whose clips this player also offers, live: editing the file changes what the Timeline offers."),
-                WithTooltipUVE(DeclareUVE<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&P::autoplay>("autoplay", "Autoplay", kPropertyTypeBool),
                                "Starts playing as soon as the scene runs."),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::speed>("speed", "Speed", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&P::speed>("speed", "Speed", kPropertyTypeFloat),
                                                        -100.0, 100.0, 0.05),
                                           "1 is normal, 2 twice as fast, negative plays backwards, 0 holds."),
                            "Playback"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&P::loopMode>("loopMode", "Loop Mode",
+                InGroup(WithTooltip(DeclareEnum<&P::loopMode>("loopMode", "Loop Mode",
                                                                        {{0, "Once"}, {1, "Loop"}, {2, "Ping-Pong"}}),
                                           "Once stops at the end. Loop starts again. Ping-Pong turns round and plays "
                                           "back."),
                            "Playback"),
-                InGroupUVE(whenOnce(WithTooltipUVE(DeclareEnumUVE<&P::onFinish>(
+                InGroup(whenOnce(WithTooltip(DeclareEnum<&P::onFinish>(
                                                        "onFinish", "On Finish",
                                                        {{0, "Hold Last Pose"}, {1, "Return To Start"}}),
                                                    "Where the target is left when the clip ends.")),
                            "Playback"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::startOffsetSeconds>(
-                                                           "startOffsetSeconds", "Start Offset", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&P::startOffsetSeconds>(
+                                                           "startOffsetSeconds", "Start Offset", kPropertyTypeFloat),
                                                        0.0, 3600.0, 0.01),
                                           "Seconds into the clip where playback starts. Offsetting copies of one "
                                           "clip keeps a crowd from moving in lockstep."),
                            "Playback"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&P::blendInSeconds>(
-                                                           "blendInSeconds", "Blend In", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&P::blendInSeconds>(
+                                                           "blendInSeconds", "Blend In", kPropertyTypeFloat),
                                                        0.0, 60.0, 0.01),
                                           "Eases from where the target is into the clip over this many seconds, "
                                           "instead of snapping. 0 snaps."),
                            "Blending"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&P::relative>("relative", "Relative", kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&P::relative>("relative", "Relative", kPropertyTypeBool),
                                           "Plays the clip's motion on top of where the target already is, so one "
                                           "clip works on any object wherever it was placed."),
                            "Blending"),
-                InGroupUVE(DeclareRuntimeStateUVE<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBoolUVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&P::currentTimeSeconds>("currentTimeSeconds", "Time",
-                                                                         kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&P::isPlaying>("isPlaying", "Playing", kPropertyTypeBool), "State"),
+                InGroup(DeclareRuntimeState<&P::currentTimeSeconds>("currentTimeSeconds", "Time",
+                                                                         kPropertyTypeFloat),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
+                InGroup(DeclareRuntimeState<&P::finished>("finished", "Finished", kPropertyTypeBool), "State"),
             }));
 
     // MontageSequencer: the montages its script can play, by file name.
-    using MP = MontageSequencerComponentUVE;
+    using MP = MontageSequencerComponent;
     const auto montageSlot = [](auto property, const char* tip) {
-        return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
+        return WithTooltip(WithCustomDrawer(std::move(property), "asset:uvmontage"), tip);
     };
-    constexpr const char* kMontageTipUVE =
+    constexpr const char* kMontageTip =
         "An Motion Montage this object can play. Its script plays it by the file's name: "
         "montage.play(\"Attack\") plays Attack.uvmontage.";
-    AddValidatedUVE<MontageSequencerComponentUVE, &IsMontageSequencerComponentValidUVE>(
+    AddValidated<MontageSequencerComponent, &IsMontageSequencerComponentValid>(
         entries,
-        MakeEntryUVE("component.montage_sequencer", "MontageSequencerComponentUVE", "MontageSequencer", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.montage_sequencer", "MontageSequencerComponent", "MontageSequencer", kSectionOrderTypeSpecific,
             {
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage3>("montage3", "Montage 3", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage4>("montage4", "Montage 4", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage5>("montage5", "Montage 5", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage6>("montage6", "Montage 6", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage7>("montage7", "Montage 7", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                InGroupUVE(montageSlot(DeclareUVE<&MP::montage8>("montage8", "Montage 8", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MP::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuidUVE),
+                InGroup(montageSlot(Declare<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage3>("montage3", "Montage 3", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage4>("montage4", "Montage 4", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage5>("montage5", "Montage 5", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage6>("montage6", "Montage 6", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage7>("montage7", "Montage 7", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                InGroup(montageSlot(Declare<&MP::montage8>("montage8", "Montage 8", kPropertyTypeAssetGuid), kMontageTip), "Montages"),
+                WithTooltip(WithCustomDrawer(Declare<&MP::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuid),
                                                    "asset:uvmontagelib"),
                                "A .uvmontagelib whose montages this player also plays by name, live: editing the file changes "
                                "what it offers."),
-                InGroupUVE(DeclareRuntimeStateUVE<&MP::playingName>("playingName", "Playing", kPropertyTypeStringUVE), "State"),
+                InGroup(DeclareRuntimeState<&MP::playingName>("playingName", "Playing", kPropertyTypeString), "State"),
             }));
 
-    using T = AnimationGraphComponentUVE;
+    using T = AnimationGraphComponent;
     // The parameters and the graph are lists with their own add, remove and wiring, which a
     // property row cannot express, so each is one custom-drawn block.
-    AddValidatedUVE<AnimationGraphComponentUVE, &IsAnimationGraphComponentValidUVE>(
+    AddValidated<AnimationGraphComponent, &IsAnimationGraphComponentValid>(
         entries,
-        MakeEntryUVE("component.animation_tree", "AnimationGraphComponentUVE", "AnimationGraph", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.animation_tree", "AnimationGraphComponent", "AnimationGraph", kSectionOrderTypeSpecific,
             {
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::parameters>("parameters", "Parameters",
+                InGroup(WithCustomDrawer(Declare<&T::parameters>("parameters", "Parameters",
                                                                          "AnimationParameterList"),
                                                "animation-parameters"),
                            "Parameters"),
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&T::nodes>("objects", "Graph", "AnimationGraphObjectList"),
+                InGroup(WithCustomDrawer(Declare<&T::nodes>("objects", "Graph", "AnimationGraphObjectList"),
                                                "animation-graph"),
                            "Graph"),
-                InGroupUVE(DeclareRuntimeStateUVE<&T::activeStates>("activeStates", "Active States",
-                                                                    kPropertyTypeStringUVE),
+                InGroup(DeclareRuntimeState<&T::activeStates>("activeStates", "Active States",
+                                                                    kPropertyTypeString),
                            "State"),
             }));
 }
 
-void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<AudioSourceComponentUVE, &IsAudioSourceComponentValidUVE>(
+void DeclareMediaAndUI(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<AudioSourceComponent, &IsAudioSourceComponentValid>(
         entries,
-        MakeEntryUVE("component.audio_source", "AudioSourceComponentUVE", "Audio Source", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.audio_source", "AudioSourceComponent", "Audio Source", kSectionOrderTypeSpecific,
             {
-                InGroupUVE(WithCustomDrawerUVE(DeclareUVE<&AudioSourceComponentUVE::audioAssetPath>("audioAssetPath", "Clip",
-                                                                                                      kPropertyTypeStringUVE),
+                InGroup(WithCustomDrawer(Declare<&AudioSourceComponent::audioAssetPath>("audioAssetPath", "Clip",
+                                                                                                      kPropertyTypeString),
                                                  "file:uvaudio,wav"),
                            "Clip"),
-                InGroupUVE(DeclareUVE<&AudioSourceComponentUVE::mixerGroup>("mixerGroup", "Mixer Group",
-                                                                            kPropertyTypeStringUVE),
+                InGroup(Declare<&AudioSourceComponent::mixerGroup>("mixerGroup", "Mixer Group",
+                                                                            kPropertyTypeString),
                            "Clip"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::volume>("volume", "Volume",
-                                                                                      kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&AudioSourceComponent::volume>("volume", "Volume",
+                                                                                      kPropertyTypeFloat),
                                         0.0, 1.0, 0.01),
                            "Playback"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::pitch>("pitch", "Pitch",
-                                                                                     kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&AudioSourceComponent::pitch>("pitch", "Pitch",
+                                                                                     kPropertyTypeFloat),
                                         0.01, 4.0, 0.01),
                            "Playback"),
-                InGroupUVE(DeclareUVE<&AudioSourceComponentUVE::looping>("looping", "Looping", kPropertyTypeBoolUVE),
+                InGroup(Declare<&AudioSourceComponent::looping>("looping", "Looping", kPropertyTypeBool),
                            "Playback"),
-                InGroupUVE(DeclareUVE<&AudioSourceComponentUVE::playOnAwake>("playOnAwake", "Play On Awake",
-                                                                             kPropertyTypeBoolUVE),
+                InGroup(Declare<&AudioSourceComponent::playOnAwake>("playOnAwake", "Play On Awake",
+                                                                             kPropertyTypeBool),
                            "Playback"),
-                InGroupUVE(DeclareUVE<&AudioSourceComponentUVE::spatial>("spatial", "Spatial",
-                                                                         kPropertyTypeBoolUVE),
+                InGroup(Declare<&AudioSourceComponent::spatial>("spatial", "Spatial",
+                                                                         kPropertyTypeBool),
                            "3D"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&AudioSourceComponentUVE::minDistance>("minDistance", "Min Distance",
-                                                                                     kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&AudioSourceComponent::minDistance>("minDistance", "Min Distance",
+                                                                                     kPropertyTypeFloat),
                                    0.0, 10000.0, 0.1);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const AudioSourceComponentUVE*>(instance)->spatial;
+                                   return static_cast<const AudioSourceComponent*>(instance)->spatial;
                                };
                                return property;
                            }(),
                            "3D"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithRangeUVE(
-                                   DeclareUVE<&AudioSourceComponentUVE::maxDistance>("maxDistance", "Max Distance",
-                                                                                     kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithRange(
+                                   Declare<&AudioSourceComponent::maxDistance>("maxDistance", "Max Distance",
+                                                                                     kPropertyTypeFloat),
                                    0.0, 10000.0, 0.1);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const AudioSourceComponentUVE*>(instance)->spatial;
+                                   return static_cast<const AudioSourceComponent*>(instance)->spatial;
                                };
                                return property;
                            }(),
                            "3D"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property =
-                                   DeclareEnumUVE<&AudioSourceComponentUVE::attenuationCurve>(
+                InGroup([] {
+                               TypeMetadataProperty property =
+                                   DeclareEnum<&AudioSourceComponent::attenuationCurve>(
                                        "attenuationCurve", "Attenuation", {{0, "Linear"}, {1, "Inverse Square"}});
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const AudioSourceComponentUVE*>(instance)->spatial;
+                                   return static_cast<const AudioSourceComponent*>(instance)->spatial;
                                };
                                return property;
                            }(),
                            "3D"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = DeclareUVE<&AudioSourceComponentUVE::occlusionEnabled>(
-                                   "occlusionEnabled", "Occlusion", kPropertyTypeBoolUVE);
+                InGroup([] {
+                               TypeMetadataProperty property = Declare<&AudioSourceComponent::occlusionEnabled>(
+                                   "occlusionEnabled", "Occlusion", kPropertyTypeBool);
                                property.isVisible = +[](const void* instance) {
-                                   return static_cast<const AudioSourceComponentUVE*>(instance)->spatial;
+                                   return static_cast<const AudioSourceComponent*>(instance)->spatial;
                                };
                                return property;
                            }(),
                            "Occlusion"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithTooltipUVE(
-                                   WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionGain>(
-                                                    "occlusionGain", "Occluded Gain", kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithTooltip(
+                                   WithRange(Declare<&AudioSourceComponent::occlusionGain>(
+                                                    "occlusionGain", "Occluded Gain", kPropertyTypeFloat),
                                                 0.0, 1.0, 0.01),
                                    "Gain the source falls to when fully blocked.");
                                property.isVisible = +[](const void* instance) {
-                                   const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                                   const auto* source = static_cast<const AudioSourceComponent*>(instance);
                                    return source->spatial && source->occlusionEnabled;
                                };
                                return property;
                            }(),
                            "Occlusion"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithTooltipUVE(
-                                   WithRangeUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionLowPassHz>(
-                                                    "occlusionLowPassHz", "Occluded Low-Pass", kPropertyTypeFloatUVE),
+                InGroup([] {
+                               TypeMetadataProperty property = WithTooltip(
+                                   WithRange(Declare<&AudioSourceComponent::occlusionLowPassHz>(
+                                                    "occlusionLowPassHz", "Occluded Low-Pass", kPropertyTypeFloat),
                                                 20.0, 20000.0, 10.0),
                                    "Low-pass corner the source falls to when fully blocked.");
                                property.isVisible = +[](const void* instance) {
-                                   const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                                   const auto* source = static_cast<const AudioSourceComponent*>(instance);
                                    return source->spatial && source->occlusionEnabled;
                                };
                                return property;
                            }(),
                            "Occlusion"),
-                InGroupUVE([] {
-                               TypeMetadataPropertyUVE property = WithTooltipUVE(
-                                   WithCustomDrawerUVE(DeclareUVE<&AudioSourceComponentUVE::occlusionLayerMask>(
+                InGroup([] {
+                               TypeMetadataProperty property = WithTooltip(
+                                   WithCustomDrawer(Declare<&AudioSourceComponent::occlusionLayerMask>(
                                                            "occlusionLayerMask", "Occlusion Layers",
-                                                           kPropertyTypeBitMask32UVE),
-                                                       std::string(kLayerMaskDrawerPhysicsUVE)),
+                                                           kPropertyTypeBitMask32),
+                                                       std::string(kLayerMaskDrawerPhysics)),
                                    "Which collision layers can block this source.");
                                property.isVisible = +[](const void* instance) {
-                                   const auto* source = static_cast<const AudioSourceComponentUVE*>(instance);
+                                   const auto* source = static_cast<const AudioSourceComponent*>(instance);
                                    return source->spatial && source->occlusionEnabled;
                                };
                                return property;
@@ -2378,293 +2378,293 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Occlusion"),
             }));
 
-    DeclareAnimationUVE(entries);
+    DeclareAnimation(entries);
 
-    AddUVE<CanvasComponentUVE>(
+    Add<CanvasComponent>(
         entries,
-        MakeEntryUVE("component.canvas", "CanvasComponentUVE", "Canvas", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.canvas", "CanvasComponent", "Canvas", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&CanvasComponentUVE::visible>("visible", "Visible",
-                                                                  kPropertyTypeBoolUVE),
-                         DeclareUVE<&CanvasComponentUVE::sortOrder>("sortOrder", "Sort Order",
-                                                                    kPropertyTypeInt32UVE),
-                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::scaleWithScreen>("scaleWithScreen", "Scale With Screen",
-                                                                                        kPropertyTypeBoolUVE),
+                         Declare<&CanvasComponent::visible>("visible", "Visible",
+                                                                  kPropertyTypeBool),
+                         Declare<&CanvasComponent::sortOrder>("sortOrder", "Sort Order",
+                                                                    kPropertyTypeInt32),
+                         WithTooltip(Declare<&CanvasComponent::scaleWithScreen>("scaleWithScreen", "Scale With Screen",
+                                                                                        kPropertyTypeBool),
                                         "Fit the canvas, laid out for its Reference Resolution, to any screen"),
-                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::referenceResolution>(
-                                            "referenceResolution", "Reference Resolution", kPropertyTypeVector2UVE),
+                         WithTooltip(Declare<&CanvasComponent::referenceResolution>(
+                                            "referenceResolution", "Reference Resolution", kPropertyTypeVector2),
                                         "The screen size the widgets were placed for (0 = this device's screen)"),
                      }));
 
-    AddValidatedUVE<UITextComponentUVE, &IsUITextComponentValidUVE>(
+    AddValidated<UITextComponent, &IsUITextComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_text", "UITextComponentUVE", "UI Text", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_text", "UITextComponent", "UI Text", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UITextComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
-                         DeclareUVE<&UITextComponentUVE::positionPixels>("positionPixels", "Position",
-                                                                         kPropertyTypeVector2UVE),
-                         WithRangeUVE(DeclareUVE<&UITextComponentUVE::fontSize>("fontSize", "Font Size",
-                                                                                kPropertyTypeFloatUVE),
+                         Declare<&UITextComponent::text>("text", "Text", kPropertyTypeString),
+                         Declare<&UITextComponent::positionPixels>("positionPixels", "Position",
+                                                                         kPropertyTypeVector2),
+                         WithRange(Declare<&UITextComponent::fontSize>("fontSize", "Font Size",
+                                                                                kPropertyTypeFloat),
                                       1.0, 512.0, 1.0),
-                         DeclareUVE<&UITextComponentUVE::color>("color", "Color", kPropertyTypeColorUVE),
-                         WithRangeUVE(DeclareUVE<&UITextComponentUVE::alpha>("alpha", "Alpha",
-                                                                             kPropertyTypeFloatUVE),
+                         Declare<&UITextComponent::color>("color", "Color", kPropertyTypeColor),
+                         WithRange(Declare<&UITextComponent::alpha>("alpha", "Alpha",
+                                                                             kPropertyTypeFloat),
                                       0.0, 1.0, 0.01),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UITextComponentUVE::fillParent>("fillParent", "Fill Parent",
-                                                                                              kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&UITextComponent::fillParent>("fillParent", "Fill Parent",
+                                                                                              kPropertyTypeBool),
                                                    "Lay the text out in the parent widget's box (a button's label)"),
                                     "Layout"),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UITextComponentUVE::boxSize>("boxSize", "Box Size",
-                                                                                           kPropertyTypeVector2UVE),
+                         InGroup(WithTooltip(Declare<&UITextComponent::boxSize>("boxSize", "Box Size",
+                                                                                           kPropertyTypeVector2),
                                                    "The box the text is aligned in, from Position (0 = none)"),
                                     "Layout"),
-                         InGroupUVE(DeclareEnumUVE<&UITextComponentUVE::horizontalAlign>(
+                         InGroup(DeclareEnum<&UITextComponent::horizontalAlign>(
                                         "horizontalAlign", "Horizontal Align", {{0, "Left"}, {1, "Center"}, {2, "Right"}}),
                                     "Layout"),
-                         InGroupUVE(DeclareEnumUVE<&UITextComponentUVE::verticalAlign>(
+                         InGroup(DeclareEnum<&UITextComponent::verticalAlign>(
                                         "verticalAlign", "Vertical Align", {{0, "Top"}, {1, "Middle"}, {2, "Bottom"}}),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UITextComponentUVE::wrap>("wrap", "Wrap", kPropertyTypeBoolUVE), "Layout"),
-                         InGroupUVE(WithRangeUVE(DeclareUVE<&UITextComponentUVE::lineHeight>("lineHeight", "Line Height",
-                                                                                            kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITextComponent::wrap>("wrap", "Wrap", kPropertyTypeBool), "Layout"),
+                         InGroup(WithRange(Declare<&UITextComponent::lineHeight>("lineHeight", "Line Height",
+                                                                                            kPropertyTypeFloat),
                                                  0.5, 4.0, 0.05),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UITextComponentUVE::shadowColor>("shadowColor", "Shadow Color",
-                                                                                kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextComponent::shadowColor>("shadowColor", "Shadow Color",
+                                                                                kPropertyTypeColor),
                                     "Effects"),
-                         InGroupUVE(WithRangeUVE(DeclareUVE<&UITextComponentUVE::shadowAlpha>("shadowAlpha", "Shadow Alpha",
-                                                                                             kPropertyTypeFloatUVE),
+                         InGroup(WithRange(Declare<&UITextComponent::shadowAlpha>("shadowAlpha", "Shadow Alpha",
+                                                                                             kPropertyTypeFloat),
                                                  0.0, 1.0, 0.01),
                                     "Effects"),
-                         InGroupUVE(DeclareUVE<&UITextComponentUVE::shadowOffset>("shadowOffset", "Shadow Offset",
-                                                                                 kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UITextComponent::shadowOffset>("shadowOffset", "Shadow Offset",
+                                                                                 kPropertyTypeVector2),
                                     "Effects"),
-                         InGroupUVE(DeclareUVE<&UITextComponentUVE::outlineColor>("outlineColor", "Outline Color",
-                                                                                 kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextComponent::outlineColor>("outlineColor", "Outline Color",
+                                                                                 kPropertyTypeColor),
                                     "Effects"),
-                         InGroupUVE(WithRangeUVE(DeclareUVE<&UITextComponentUVE::outlineWidth>("outlineWidth", "Outline Width",
-                                                                                              kPropertyTypeFloatUVE),
+                         InGroup(WithRange(Declare<&UITextComponent::outlineWidth>("outlineWidth", "Outline Width",
+                                                                                              kPropertyTypeFloat),
                                                  0.0, 8.0, 0.5),
                                     "Effects"),
                      }));
 
-    AddValidatedUVE<UIImageComponentUVE, &IsUIImageComponentValidUVE>(
+    AddValidated<UIImageComponent, &IsUIImageComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_image", "UIImageComponentUVE", "UI Image", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_image", "UIImageComponent", "UI Image", kSectionOrderTypeSpecific,
                      {
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::textureAssetGuid>("textureAssetGuid", "Texture",
-                                                                                       kPropertyTypeAssetGuidUVE),
+                         InGroup(Declare<&UIImageComponent::textureAssetGuid>("textureAssetGuid", "Texture",
+                                                                                       kPropertyTypeAssetGuid),
                                     "Image"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         InGroup(Declare<&UIImageComponent::rect>("rect", "Rect", kPropertyTypeRect),
                                     "Image"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::tintColor>("tintColor", "Tint",
-                                                                                kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIImageComponent::tintColor>("tintColor", "Tint",
+                                                                                kPropertyTypeColor),
                                     "Image"),
-                         InGroupUVE(WithRangeUVE(DeclareUVE<&UIImageComponentUVE::alpha>("alpha", "Alpha",
-                                                                                         kPropertyTypeFloatUVE),
+                         InGroup(WithRange(Declare<&UIImageComponent::alpha>("alpha", "Alpha",
+                                                                                         kPropertyTypeFloat),
                                                  0.0, 1.0, 0.01),
                                     "Image"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::nineSliceEnabled>("nineSliceEnabled", "Nine Slice",
-                                                                                       kPropertyTypeBoolUVE),
+                         InGroup(Declare<&UIImageComponent::nineSliceEnabled>("nineSliceEnabled", "Nine Slice",
+                                                                                       kPropertyTypeBool),
                                     "Nine Slice"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceFillCenter>("sliceFillCenter", "Slice Fill Center",
-                                                                                     kPropertyTypeBoolUVE),
+                         InGroup(Declare<&UIImageComponent::sliceFillCenter>("sliceFillCenter", "Slice Fill Center",
+                                                                                     kPropertyTypeBool),
                                     "Nine Slice"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceMarginMin>("sliceMarginMin", "Slice Margin Min",
-                                                                                    kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UIImageComponent::sliceMarginMin>("sliceMarginMin", "Slice Margin Min",
+                                                                                    kPropertyTypeVector2),
                                     "Nine Slice"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceMarginMax>("sliceMarginMax", "Slice Margin Max",
-                                                                                    kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UIImageComponent::sliceMarginMax>("sliceMarginMax", "Slice Margin Max",
+                                                                                    kPropertyTypeVector2),
                                     "Nine Slice"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceUVMin>("sliceUVMin", "Slice UV Min",
-                                                                                kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UIImageComponent::sliceUVMin>("sliceUVMin", "Slice UV Min",
+                                                                                kPropertyTypeVector2),
                                     "Nine Slice"),
-                         InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceUVMax>("sliceUVMax", "Slice UV Max",
-                                                                                kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UIImageComponent::sliceUVMax>("sliceUVMax", "Slice UV Max",
+                                                                                kPropertyTypeVector2),
                                     "Nine Slice"),
                      }));
 
-    AddUVE<UIButtonComponentUVE>(
+    Add<UIButtonComponent>(
         entries,
-        MakeEntryUVE("component.ui_button", "UIButtonComponentUVE", "UI Button", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_button", "UIButtonComponent", "UI Button", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIButtonComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         DeclareUVE<&UIButtonComponentUVE::normalColor>("normalColor", "Normal",
-                                                                        kPropertyTypeColorUVE),
-                         DeclareUVE<&UIButtonComponentUVE::hoverColor>("hoverColor", "Hover",
-                                                                       kPropertyTypeColorUVE),
-                         DeclareUVE<&UIButtonComponentUVE::pressedColor>("pressedColor", "Pressed",
-                                                                         kPropertyTypeColorUVE),
-                         DeclareRuntimeStateUVE<&UIButtonComponentUVE::isHovered>(
-                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&UIButtonComponentUVE::wasClickedThisFrame>(
-                             "wasClickedThisFrame", "Clicked This Frame", kPropertyTypeBoolUVE),
+                         Declare<&UIButtonComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         Declare<&UIButtonComponent::normalColor>("normalColor", "Normal",
+                                                                        kPropertyTypeColor),
+                         Declare<&UIButtonComponent::hoverColor>("hoverColor", "Hover",
+                                                                       kPropertyTypeColor),
+                         Declare<&UIButtonComponent::pressedColor>("pressedColor", "Pressed",
+                                                                         kPropertyTypeColor),
+                         DeclareRuntimeState<&UIButtonComponent::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBool),
+                         DeclareRuntimeState<&UIButtonComponent::wasClickedThisFrame>(
+                             "wasClickedThisFrame", "Clicked This Frame", kPropertyTypeBool),
                      }));
-    AddValidatedUVE<UILayoutContainerComponentUVE, &IsUILayoutContainerComponentValidUVE>(
+    AddValidated<UILayoutContainerComponent, &IsUILayoutContainerComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_layout_container", "UILayoutContainerComponentUVE", "UI Layout Container",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_layout_container", "UILayoutContainerComponent", "UI Layout Container",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UILayoutContainerComponentUVE::rect>("rect", "Rect",
-                                                                         kPropertyTypeRectUVE),
-                         InGroupUVE(DeclareEnumUVE<&UILayoutContainerComponentUVE::direction>(
+                         Declare<&UILayoutContainerComponent::rect>("rect", "Rect",
+                                                                         kPropertyTypeRect),
+                         InGroup(DeclareEnum<&UILayoutContainerComponent::direction>(
                                         "direction", "Direction", {{0, "Vertical"}, {1, "Horizontal"}}),
                                     "Layout"),
-                         InGroupUVE(DeclareEnumUVE<&UILayoutContainerComponentUVE::alignment>(
+                         InGroup(DeclareEnum<&UILayoutContainerComponent::alignment>(
                                         "alignment", "Alignment", {{0, "Start"}, {1, "Center"}, {2, "End"}}),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UILayoutContainerComponentUVE::padding>("padding", "Padding",
-                                                                                       kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UILayoutContainerComponent::padding>("padding", "Padding",
+                                                                                       kPropertyTypeFloat),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UILayoutContainerComponentUVE::spacing>("spacing", "Spacing",
-                                                                                       kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UILayoutContainerComponent::spacing>("spacing", "Spacing",
+                                                                                       kPropertyTypeFloat),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UILayoutContainerComponentUVE::wrapAfter>("wrapAfter", "Wrap After",
-                                                                                         kPropertyTypeUInt32UVE),
+                         InGroup(Declare<&UILayoutContainerComponent::wrapAfter>("wrapAfter", "Wrap After",
+                                                                                         kPropertyTypeUInt32),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UILayoutContainerComponentUVE::autoSizeWidth>("autoSizeWidth", "Auto Size Width",
-                                                                                             kPropertyTypeBoolUVE),
+                         InGroup(Declare<&UILayoutContainerComponent::autoSizeWidth>("autoSizeWidth", "Auto Size Width",
+                                                                                             kPropertyTypeBool),
                                     "Size"),
-                         InGroupUVE(DeclareUVE<&UILayoutContainerComponentUVE::autoSizeHeight>(
-                                        "autoSizeHeight", "Auto Size Height", kPropertyTypeBoolUVE),
+                         InGroup(Declare<&UILayoutContainerComponent::autoSizeHeight>(
+                                        "autoSizeHeight", "Auto Size Height", kPropertyTypeBool),
                                     "Size"),
                      }));
-    AddValidatedUVE<UIAnchorComponentUVE, &IsUIAnchorComponentValidUVE>(
+    AddValidated<UIAnchorComponent, &IsUIAnchorComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_anchor", "UIAnchorComponentUVE", "UI Anchor", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_anchor", "UIAnchorComponent", "UI Anchor", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIAnchorComponentUVE::anchorMin>("anchorMin", "Anchor Min",
-                                                                     kPropertyTypeVector2UVE),
-                         DeclareUVE<&UIAnchorComponentUVE::anchorMax>("anchorMax", "Anchor Max",
-                                                                     kPropertyTypeVector2UVE),
-                         DeclareUVE<&UIAnchorComponentUVE::offsetMin>("offsetMin", "Offset Min",
-                                                                     kPropertyTypeVector2UVE),
-                         DeclareUVE<&UIAnchorComponentUVE::offsetMax>("offsetMax", "Offset Max",
-                                                                     kPropertyTypeVector2UVE),
+                         Declare<&UIAnchorComponent::anchorMin>("anchorMin", "Anchor Min",
+                                                                     kPropertyTypeVector2),
+                         Declare<&UIAnchorComponent::anchorMax>("anchorMax", "Anchor Max",
+                                                                     kPropertyTypeVector2),
+                         Declare<&UIAnchorComponent::offsetMin>("offsetMin", "Offset Min",
+                                                                     kPropertyTypeVector2),
+                         Declare<&UIAnchorComponent::offsetMax>("offsetMax", "Offset Max",
+                                                                     kPropertyTypeVector2),
                      }));
-    AddUVE<UISliderComponentUVE>(
+    Add<UISliderComponent>(
         entries,
-        MakeEntryUVE("component.ui_slider", "UISliderComponentUVE", "UI Slider", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_slider", "UISliderComponent", "UI Slider", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UISliderComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::value>("value", "Value", kPropertyTypeFloatUVE),
+                         Declare<&UISliderComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         InGroup(Declare<&UISliderComponent::value>("value", "Value", kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::minValue>("minValue", "Min Value",
-                                                                               kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UISliderComponent::minValue>("minValue", "Min Value",
+                                                                               kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::maxValue>("maxValue", "Max Value",
-                                                                               kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UISliderComponent::maxValue>("maxValue", "Max Value",
+                                                                               kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::step>("step", "Step", kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UISliderComponent::step>("step", "Step", kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::trackColor>("trackColor", "Track",
-                                                                                 kPropertyTypeColorUVE),
+                         InGroup(Declare<&UISliderComponent::trackColor>("trackColor", "Track",
+                                                                                 kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::fillColor>("fillColor", "Fill",
-                                                                                kPropertyTypeColorUVE),
+                         InGroup(Declare<&UISliderComponent::fillColor>("fillColor", "Fill",
+                                                                                kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::thumbColor>("thumbColor", "Thumb",
-                                                                                 kPropertyTypeColorUVE),
+                         InGroup(Declare<&UISliderComponent::thumbColor>("thumbColor", "Thumb",
+                                                                                 kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UISliderComponentUVE::thumbWidth>("thumbWidth", "Thumb Width",
-                                                                                 kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UISliderComponent::thumbWidth>("thumbWidth", "Thumb Width",
+                                                                                 kPropertyTypeFloat),
                                     "Appearance"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UISliderComponentUVE::isHovered>(
-                                        "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UISliderComponent::isHovered>(
+                                        "isHovered", "Hovered", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UISliderComponentUVE::isDragging>(
-                                        "isDragging", "Dragging", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UISliderComponent::isDragging>(
+                                        "isDragging", "Dragging", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UISliderComponentUVE::wasChangedThisFrame>(
-                                        "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UISliderComponent::wasChangedThisFrame>(
+                                        "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBool),
                                     "State"),
                      }));
-    AddValidatedUVE<UIProgressBarComponentUVE, &IsUIProgressBarComponentValidUVE>(
+    AddValidated<UIProgressBarComponent, &IsUIProgressBarComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_progress_bar", "UIProgressBarComponentUVE", "UI Progress Bar",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_progress_bar", "UIProgressBarComponent", "UI Progress Bar",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIProgressBarComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::value>("value", "Value", kPropertyTypeFloatUVE),
+                         Declare<&UIProgressBarComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         InGroup(Declare<&UIProgressBarComponent::value>("value", "Value", kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::minValue>("minValue", "Min Value",
-                                                                                    kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIProgressBarComponent::minValue>("minValue", "Min Value",
+                                                                                    kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::maxValue>("maxValue", "Max Value",
-                                                                                    kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIProgressBarComponent::maxValue>("maxValue", "Max Value",
+                                                                                    kPropertyTypeFloat),
                                     "Value"),
-                         InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::backgroundColor>("backgroundColor", "Background",
-                                                                                           kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIProgressBarComponent::backgroundColor>("backgroundColor", "Background",
+                                                                                           kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::fillColor>("fillColor", "Fill",
-                                                                                     kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIProgressBarComponent::fillColor>("fillColor", "Fill",
+                                                                                     kPropertyTypeColor),
                                     "Appearance"),
                      }));
-    AddValidatedUVE<UIView3DComponentUVE, &IsUIView3DComponentValidUVE>(
+    AddValidated<UIView3DComponent, &IsUIView3DComponentValid>(
         entries,
-        MakeEntryUVE("component.ui_view_3d", "UIView3DComponentUVE", "UI 3D View", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_view_3d", "UIView3DComponent", "UI 3D View", kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIView3DComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&UIView3DComponentUVE::assetPath>(
-                                                                "assetPath", "Shows", kPropertyTypeStringUVE),
+                         Declare<&UIView3DComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         WithTooltip(WithCustomDrawer(Declare<&UIView3DComponent::assetPath>(
+                                                                "assetPath", "Shows", kPropertyTypeString),
                                                             "file:uventity,uvprefab"),
                                         "The entity asset shown in 3D: a character, a weapon, a car ..."),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::cameraDistance>("cameraDistance", "Distance",
-                                                                                     kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::cameraDistance>("cameraDistance", "Distance",
+                                                                                     kPropertyTypeFloat),
                                     "Camera"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::lookAtHeight>("lookAtHeight", "Look At Height",
-                                                                                   kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::lookAtHeight>("lookAtHeight", "Look At Height",
+                                                                                   kPropertyTypeFloat),
                                     "Camera"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::pitchDegrees>("pitchDegrees", "Pitch",
-                                                                                   kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::pitchDegrees>("pitchDegrees", "Pitch",
+                                                                                   kPropertyTypeFloat),
                                     "Camera"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::fieldOfViewDegrees>("fieldOfViewDegrees",
-                                                                                         "Field of View", kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::fieldOfViewDegrees>("fieldOfViewDegrees",
+                                                                                         "Field of View", kPropertyTypeFloat),
                                     "Camera"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::yawDegrees>("yawDegrees", "Turn", kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::yawDegrees>("yawDegrees", "Turn", kPropertyTypeFloat),
                                     "Motion"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::spinDegreesPerSecond>("spinDegreesPerSecond",
-                                                                                           "Spin (deg/s)", kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::spinDegreesPerSecond>("spinDegreesPerSecond",
+                                                                                           "Spin (deg/s)", kPropertyTypeFloat),
                                     "Motion"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundColor>("backgroundColor", "Background",
-                                                                                      kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIView3DComponent::backgroundColor>("backgroundColor", "Background",
+                                                                                      kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundAlpha>("backgroundAlpha", "Background Alpha",
-                                                                                      kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIView3DComponent::backgroundAlpha>("backgroundAlpha", "Background Alpha",
+                                                                                      kPropertyTypeFloat),
                                     "Appearance"),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::useWidgetStage>(
-                                                       "useWidgetStage", "Use Widget Stage", kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&UIView3DComponent::useWidgetStage>(
+                                                       "useWidgetStage", "Use Widget Stage", kPropertyTypeBool),
                                                    "Stand the asset on the widget's Stage (the Stage tab) and look through its StageCamera"),
                                     "Stage"),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::transparentBackground>(
-                                                       "transparentBackground", "Transparent Background", kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&UIView3DComponent::transparentBackground>(
+                                                       "transparentBackground", "Transparent Background", kPropertyTypeBool),
                                                    "No sky behind the stage: the UI and the game show through"),
                                     "Stage"),
                      }));
-    AddUVE<UITweenComponentUVE>(
+    Add<UITweenComponent>(
         entries,
-        MakeEntryUVE("component.ui_tween", "UITweenComponentUVE", "UI Tween", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_tween", "UITweenComponent", "UI Tween", kSectionOrderTypeSpecific,
                      {
-                         InGroupUVE(DeclareEnumUVE<&UITweenComponentUVE::target>("target", "Target",
+                         InGroup(DeclareEnum<&UITweenComponent::target>("target", "Target",
                                                                                 {{0, "Rect"}, {1, "Alpha"}}),
                                     "Target"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::fromRect>("fromRect", "From Rect",
-                                                                              kPropertyTypeRectUVE),
+                         InGroup(Declare<&UITweenComponent::fromRect>("fromRect", "From Rect",
+                                                                              kPropertyTypeRect),
                                     "Target"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::toRect>("toRect", "To Rect", kPropertyTypeRectUVE),
+                         InGroup(Declare<&UITweenComponent::toRect>("toRect", "To Rect", kPropertyTypeRect),
                                     "Target"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::fromAlpha>("fromAlpha", "From Alpha",
-                                                                               kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITweenComponent::fromAlpha>("fromAlpha", "From Alpha",
+                                                                               kPropertyTypeFloat),
                                     "Target"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::toAlpha>("toAlpha", "To Alpha",
-                                                                             kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITweenComponent::toAlpha>("toAlpha", "To Alpha",
+                                                                             kPropertyTypeFloat),
                                     "Target"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::duration>("duration", "Duration",
-                                                                              kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITweenComponent::duration>("duration", "Duration",
+                                                                              kPropertyTypeFloat),
                                     "Timing"),
-                         InGroupUVE(DeclareUVE<&UITweenComponentUVE::delay>("delay", "Delay", kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITweenComponent::delay>("delay", "Delay", kPropertyTypeFloat),
                                     "Timing"),
-                         InGroupUVE(DeclareEnumUVE<&UITweenComponentUVE::ease>("ease", "Ease",
+                         InGroup(DeclareEnum<&UITweenComponent::ease>("ease", "Ease",
                                                                               {{0, "Linear"},
                                                                                {1, "SineInOut"},
                                                                                {2, "QuadIn"},
@@ -2675,222 +2675,222 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                                {7, "CubicInOut"},
                                                                                {8, "OutBack"}}),
                                     "Timing"),
-                         InGroupUVE(DeclareEnumUVE<&UITweenComponentUVE::loop>(
+                         InGroup(DeclareEnum<&UITweenComponent::loop>(
                                         "loop", "Loop", {{0, "Once"}, {1, "Loop"}, {2, "PingPong"}}),
                                     "Timing"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITweenComponentUVE::elapsed>(
-                                        "elapsed", "Elapsed", kPropertyTypeFloatUVE),
+                         InGroup(DeclareRuntimeState<&UITweenComponent::elapsed>(
+                                        "elapsed", "Elapsed", kPropertyTypeFloat),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITweenComponentUVE::playing>(
-                                        "playing", "Playing", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UITweenComponent::playing>(
+                                        "playing", "Playing", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITweenComponentUVE::completedThisFrame>(
-                                        "completedThisFrame", "Completed This Frame", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UITweenComponent::completedThisFrame>(
+                                        "completedThisFrame", "Completed This Frame", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITweenComponentUVE::currentAlpha>(
-                                        "currentAlpha", "Current Alpha", kPropertyTypeFloatUVE),
+                         InGroup(DeclareRuntimeState<&UITweenComponent::currentAlpha>(
+                                        "currentAlpha", "Current Alpha", kPropertyTypeFloat),
                                     "State"),
                      }));
-    AddUVE<UICheckboxComponentUVE>(
+    Add<UICheckboxComponent>(
         entries,
-        MakeEntryUVE("component.ui_checkbox", "UICheckboxComponentUVE", "UI Checkbox",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_checkbox", "UICheckboxComponent", "UI Checkbox",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UICheckboxComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         DeclareUVE<&UICheckboxComponentUVE::boxColor>("boxColor", "Box",
-                                                                      kPropertyTypeColorUVE),
-                         DeclareUVE<&UICheckboxComponentUVE::hoverColor>("hoverColor", "Hover",
-                                                                        kPropertyTypeColorUVE),
-                         DeclareUVE<&UICheckboxComponentUVE::checkColor>("checkColor", "Check",
-                                                                        kPropertyTypeColorUVE),
-                         DeclareUVE<&UICheckboxComponentUVE::checked>("checked", "Checked",
-                                                                     kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&UICheckboxComponentUVE::isHovered>(
-                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&UICheckboxComponentUVE::wasToggledThisFrame>(
-                             "wasToggledThisFrame", "Toggled This Frame", kPropertyTypeBoolUVE),
+                         Declare<&UICheckboxComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         Declare<&UICheckboxComponent::boxColor>("boxColor", "Box",
+                                                                      kPropertyTypeColor),
+                         Declare<&UICheckboxComponent::hoverColor>("hoverColor", "Hover",
+                                                                        kPropertyTypeColor),
+                         Declare<&UICheckboxComponent::checkColor>("checkColor", "Check",
+                                                                        kPropertyTypeColor),
+                         Declare<&UICheckboxComponent::checked>("checked", "Checked",
+                                                                     kPropertyTypeBool),
+                         DeclareRuntimeState<&UICheckboxComponent::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBool),
+                         DeclareRuntimeState<&UICheckboxComponent::wasToggledThisFrame>(
+                             "wasToggledThisFrame", "Toggled This Frame", kPropertyTypeBool),
                      }));
-    AddUVE<UITooltipComponentUVE>(
+    Add<UITooltipComponent>(
         entries,
-        MakeEntryUVE("component.ui_tooltip", "UITooltipComponentUVE", "UI Tooltip",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_tooltip", "UITooltipComponent", "UI Tooltip",
+                     kSectionOrderTypeSpecific,
                      {
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
+                         InGroup(Declare<&UITooltipComponent::text>("text", "Text", kPropertyTypeString),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::delay>("delay", "Delay",
-                                                                             kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITooltipComponent::delay>("delay", "Delay",
+                                                                             kPropertyTypeFloat),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::offset>("offset", "Offset",
-                                                                              kPropertyTypeVector2UVE),
+                         InGroup(Declare<&UITooltipComponent::offset>("offset", "Offset",
+                                                                              kPropertyTypeVector2),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::padding>("padding", "Padding",
-                                                                               kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITooltipComponent::padding>("padding", "Padding",
+                                                                               kPropertyTypeFloat),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::fontSize>("fontSize", "Font Size",
-                                                                                kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITooltipComponent::fontSize>("fontSize", "Font Size",
+                                                                                kPropertyTypeFloat),
                                     "Layout"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::backgroundColor>("backgroundColor", "Background",
-                                                                                       kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITooltipComponent::backgroundColor>("backgroundColor", "Background",
+                                                                                       kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareUVE<&UITooltipComponentUVE::textColor>("textColor", "Text",
-                                                                                 kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITooltipComponent::textColor>("textColor", "Text",
+                                                                                 kPropertyTypeColor),
                                     "Appearance"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITooltipComponentUVE::hoverTime>(
-                                        "hoverTime", "Hover Time", kPropertyTypeFloatUVE),
+                         InGroup(DeclareRuntimeState<&UITooltipComponent::hoverTime>(
+                                        "hoverTime", "Hover Time", kPropertyTypeFloat),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITooltipComponentUVE::visibleThisFrame>(
-                                        "visibleThisFrame", "Visible This Frame", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UITooltipComponent::visibleThisFrame>(
+                                        "visibleThisFrame", "Visible This Frame", kPropertyTypeBool),
                                     "State"),
                      }));
-    AddUVE<UIDropdownComponentUVE>(
+    Add<UIDropdownComponent>(
         entries,
-        MakeEntryUVE("component.ui_dropdown", "UIDropdownComponentUVE", "UI Dropdown",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_dropdown", "UIDropdownComponent", "UI Dropdown",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIDropdownComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::options>("options", "Options",
-                                                                                kPropertyTypeStringUVE),
+                         Declare<&UIDropdownComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         InGroup(Declare<&UIDropdownComponent::options>("options", "Options",
+                                                                                kPropertyTypeString),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::selectedIndex>("selectedIndex", "Selected",
-                                                                                      kPropertyTypeInt32UVE),
+                         InGroup(Declare<&UIDropdownComponent::selectedIndex>("selectedIndex", "Selected",
+                                                                                      kPropertyTypeInt32),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::placeholder>("placeholder", "Placeholder",
-                                                                                    kPropertyTypeStringUVE),
+                         InGroup(Declare<&UIDropdownComponent::placeholder>("placeholder", "Placeholder",
+                                                                                    kPropertyTypeString),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::fontSize>("fontSize", "Font Size",
-                                                                                 kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIDropdownComponent::fontSize>("fontSize", "Font Size",
+                                                                                 kPropertyTypeFloat),
                                     "Metrics"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::optionHeight>("optionHeight", "Option Height",
-                                                                                     kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIDropdownComponent::optionHeight>("optionHeight", "Option Height",
+                                                                                     kPropertyTypeFloat),
                                     "Metrics"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::textPadding>("textPadding", "Text Padding",
-                                                                                    kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UIDropdownComponent::textPadding>("textPadding", "Text Padding",
+                                                                                    kPropertyTypeFloat),
                                     "Metrics"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::boxColor>("boxColor", "Box",
-                                                                                 kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIDropdownComponent::boxColor>("boxColor", "Box",
+                                                                                 kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::boxHoverColor>("boxHoverColor", "Box Hover",
-                                                                                      kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIDropdownComponent::boxHoverColor>("boxHoverColor", "Box Hover",
+                                                                                      kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::popupColor>("popupColor", "Popup",
-                                                                                   kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIDropdownComponent::popupColor>("popupColor", "Popup",
+                                                                                   kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::optionHoverColor>("optionHoverColor",
+                         InGroup(Declare<&UIDropdownComponent::optionHoverColor>("optionHoverColor",
                                                                                          "Option Hover",
-                                                                                         kPropertyTypeColorUVE),
+                                                                                         kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::selectedColor>("selectedColor", "Selected",
-                                                                                      kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIDropdownComponent::selectedColor>("selectedColor", "Selected",
+                                                                                      kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UIDropdownComponentUVE::textColor>("textColor", "Text",
-                                                                                  kPropertyTypeColorUVE),
+                         InGroup(Declare<&UIDropdownComponent::textColor>("textColor", "Text",
+                                                                                  kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UIDropdownComponentUVE::open>(
-                                        "open", "Open", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UIDropdownComponent::open>(
+                                        "open", "Open", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UIDropdownComponentUVE::isHovered>(
-                                        "isHovered", "Hovered", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UIDropdownComponent::isHovered>(
+                                        "isHovered", "Hovered", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UIDropdownComponentUVE::hoveredIndex>(
-                                        "hoveredIndex", "Hovered Option", kPropertyTypeInt32UVE),
+                         InGroup(DeclareRuntimeState<&UIDropdownComponent::hoveredIndex>(
+                                        "hoveredIndex", "Hovered Option", kPropertyTypeInt32),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UIDropdownComponentUVE::wasSelectionChangedThisFrame>(
+                         InGroup(DeclareRuntimeState<&UIDropdownComponent::wasSelectionChangedThisFrame>(
                                         "wasSelectionChangedThisFrame", "Selection Changed This Frame",
-                                        kPropertyTypeBoolUVE),
+                                        kPropertyTypeBool),
                                     "State"),
                      }));
-    AddUVE<UITextInputComponentUVE>(
+    Add<UITextInputComponent>(
         entries,
-        MakeEntryUVE("component.ui_text_input", "UITextInputComponentUVE", "UI Text Input",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_text_input", "UITextInputComponent", "UI Text Input",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UITextInputComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::text>("text", "Text", kPropertyTypeStringUVE),
+                         Declare<&UITextInputComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         InGroup(Declare<&UITextInputComponent::text>("text", "Text", kPropertyTypeString),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::maxLength>("maxLength", "Max Length",
-                                                                                   kPropertyTypeInt32UVE),
+                         InGroup(Declare<&UITextInputComponent::maxLength>("maxLength", "Max Length",
+                                                                                   kPropertyTypeInt32),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::placeholder>("placeholder", "Placeholder",
-                                                                                     kPropertyTypeStringUVE),
+                         InGroup(Declare<&UITextInputComponent::placeholder>("placeholder", "Placeholder",
+                                                                                     kPropertyTypeString),
                                     "Content"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::fontSize>("fontSize", "Font Size",
-                                                                                  kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITextInputComponent::fontSize>("fontSize", "Font Size",
+                                                                                  kPropertyTypeFloat),
                                     "Metrics"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::textPadding>("textPadding", "Text Padding",
-                                                                                     kPropertyTypeFloatUVE),
+                         InGroup(Declare<&UITextInputComponent::textPadding>("textPadding", "Text Padding",
+                                                                                     kPropertyTypeFloat),
                                     "Metrics"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::boxColor>("boxColor", "Box",
-                                                                                  kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextInputComponent::boxColor>("boxColor", "Box",
+                                                                                  kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::focusColor>("focusColor", "Focus",
-                                                                                    kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextInputComponent::focusColor>("focusColor", "Focus",
+                                                                                    kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::textColor>("textColor", "Text",
-                                                                                   kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextInputComponent::textColor>("textColor", "Text",
+                                                                                   kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::caretColor>("caretColor", "Caret",
-                                                                                    kPropertyTypeColorUVE),
+                         InGroup(Declare<&UITextInputComponent::caretColor>("caretColor", "Caret",
+                                                                                    kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareUVE<&UITextInputComponentUVE::placeholderColor>("placeholderColor",
+                         InGroup(Declare<&UITextInputComponent::placeholderColor>("placeholderColor",
                                                                                           "Placeholder",
-                                                                                          kPropertyTypeColorUVE),
+                                                                                          kPropertyTypeColor),
                                     "Colors"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITextInputComponentUVE::focused>(
-                                        "focused", "Focused", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UITextInputComponent::focused>(
+                                        "focused", "Focused", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITextInputComponentUVE::caretIndex>(
-                                        "caretIndex", "Caret", kPropertyTypeInt32UVE),
+                         InGroup(DeclareRuntimeState<&UITextInputComponent::caretIndex>(
+                                        "caretIndex", "Caret", kPropertyTypeInt32),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITextInputComponentUVE::wasSubmittedThisFrame>(
-                                        "wasSubmittedThisFrame", "Submitted This Frame", kPropertyTypeBoolUVE),
+                         InGroup(DeclareRuntimeState<&UITextInputComponent::wasSubmittedThisFrame>(
+                                        "wasSubmittedThisFrame", "Submitted This Frame", kPropertyTypeBool),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITextInputComponentUVE::blinkTime>(
-                                        "blinkTime", "Blink Time", kPropertyTypeFloatUVE),
+                         InGroup(DeclareRuntimeState<&UITextInputComponent::blinkTime>(
+                                        "blinkTime", "Blink Time", kPropertyTypeFloat),
                                     "State"),
-                         InGroupUVE(DeclareRuntimeStateUVE<&UITextInputComponentUVE::scrollOffset>(
-                                        "scrollOffset", "Scroll", kPropertyTypeFloatUVE),
+                         InGroup(DeclareRuntimeState<&UITextInputComponent::scrollOffset>(
+                                        "scrollOffset", "Scroll", kPropertyTypeFloat),
                                     "State"),
                      }));
-    AddUVE<UIScrollContainerComponentUVE>(
+    Add<UIScrollContainerComponent>(
         entries,
-        MakeEntryUVE("component.ui_scroll_container", "UIScrollContainerComponentUVE", "UI Scroll Container",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_scroll_container", "UIScrollContainerComponent", "UI Scroll Container",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIScrollContainerComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         DeclareUVE<&UIScrollContainerComponentUVE::padding>("padding", "Padding",
-                                                                            kPropertyTypeFloatUVE),
-                         DeclareUVE<&UIScrollContainerComponentUVE::gap>("gap", "Gap", kPropertyTypeFloatUVE),
-                         DeclareUVE<&UIScrollContainerComponentUVE::wheelStep>("wheelStep", "Wheel Step",
-                                                                              kPropertyTypeFloatUVE),
-                         DeclareUVE<&UIScrollContainerComponentUVE::scrollOffset>("scrollOffset", "Scroll",
-                                                                                 kPropertyTypeVector2UVE),
-                         DeclareRuntimeStateUVE<&UIScrollContainerComponentUVE::contentSize>(
-                             "contentSize", "Content Size", kPropertyTypeVector2UVE),
+                         Declare<&UIScrollContainerComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         Declare<&UIScrollContainerComponent::padding>("padding", "Padding",
+                                                                            kPropertyTypeFloat),
+                         Declare<&UIScrollContainerComponent::gap>("gap", "Gap", kPropertyTypeFloat),
+                         Declare<&UIScrollContainerComponent::wheelStep>("wheelStep", "Wheel Step",
+                                                                              kPropertyTypeFloat),
+                         Declare<&UIScrollContainerComponent::scrollOffset>("scrollOffset", "Scroll",
+                                                                                 kPropertyTypeVector2),
+                         DeclareRuntimeState<&UIScrollContainerComponent::contentSize>(
+                             "contentSize", "Content Size", kPropertyTypeVector2),
                      }));
-    AddUVE<UIScrollbarComponentUVE>(
+    Add<UIScrollbarComponent>(
         entries,
-        MakeEntryUVE("component.ui_scrollbar", "UIScrollbarComponentUVE", "UI Scrollbar",
-                     kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ui_scrollbar", "UIScrollbarComponent", "UI Scrollbar",
+                     kSectionOrderTypeSpecific,
                      {
-                         DeclareUVE<&UIScrollbarComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
-                         DeclareUVE<&UIScrollbarComponentUVE::trackColor>("trackColor", "Track",
-                                                                          kPropertyTypeColorUVE),
-                         DeclareUVE<&UIScrollbarComponentUVE::thumbColor>("thumbColor", "Thumb",
-                                                                          kPropertyTypeColorUVE),
-                         DeclareUVE<&UIScrollbarComponentUVE::minThumbHeight>("minThumbHeight", "Min Thumb",
-                                                                              kPropertyTypeFloatUVE),
-                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::isHovered>(
-                             "isHovered", "Hovered", kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::isDragging>(
-                             "isDragging", "Dragging", kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&UIScrollbarComponentUVE::wasChangedThisFrame>(
-                             "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBoolUVE),
+                         Declare<&UIScrollbarComponent::rect>("rect", "Rect", kPropertyTypeRect),
+                         Declare<&UIScrollbarComponent::trackColor>("trackColor", "Track",
+                                                                          kPropertyTypeColor),
+                         Declare<&UIScrollbarComponent::thumbColor>("thumbColor", "Thumb",
+                                                                          kPropertyTypeColor),
+                         Declare<&UIScrollbarComponent::minThumbHeight>("minThumbHeight", "Min Thumb",
+                                                                              kPropertyTypeFloat),
+                         DeclareRuntimeState<&UIScrollbarComponent::isHovered>(
+                             "isHovered", "Hovered", kPropertyTypeBool),
+                         DeclareRuntimeState<&UIScrollbarComponent::isDragging>(
+                             "isDragging", "Dragging", kPropertyTypeBool),
+                         DeclareRuntimeState<&UIScrollbarComponent::wasChangedThisFrame>(
+                             "wasChangedThisFrame", "Changed This Frame", kPropertyTypeBool),
                      }));
 }
 
 /// Links an authored Inherit-style choice to the runtime property holding what it resolved to, so
 /// the Inspector can show the answer beside the choice rather than as a row of its own.
-[[nodiscard]] TypeMetadataPropertyUVE ResolvedByUVE(TypeMetadataPropertyUVE property, std::string resolvedProperty) {
+[[nodiscard]] TypeMetadataProperty ResolvedBy(TypeMetadataProperty property, std::string resolvedProperty) {
     property.resolvedByProperty = std::move(resolvedProperty);
     return property;
 }
@@ -2904,135 +2904,135 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 // the solver. SpawnPoint3D is the first citizen here (the standard PlayerStart role - Godot ships no
 // built-in counterpart), and the section is deliberately declarative: the query that consumes it
 // lives in uve_scene, and nothing in this file decides when a point fires.
-void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<PlayerComponentUVE, &IsPlayer3DObjectComponentValidUVE>(
+void DeclareGameplay(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<PlayerComponent, &IsPlayer3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.player", "PlayerComponentUVE", "Player3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.player", "PlayerComponent", "Player3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::possessOnPlay>(
-                                   "possessOnPlay", "Possess On Play", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&PlayerComponent::possessOnPlay>(
+                                   "possessOnPlay", "Possess On Play", kPropertyTypeBool),
                                "This body receives move, look, jump and interact. Off, it is an NPC."),
-                WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookEnabled>("lookEnabled", "Look",
-                                                                            kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&PlayerComponent::lookEnabled>("lookEnabled", "Look",
+                                                                            kPropertyTypeBool),
                                "Mouse and look-stick rotate this body (yaw) and its camera or spring arm (pitch)."),
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookSensitivity>(
-                                                "lookSensitivity", "Look Sensitivity", kPropertyTypeFloatUVE),
+                WithRange(WithTooltip(Declare<&PlayerComponent::lookSensitivity>(
+                                                "lookSensitivity", "Look Sensitivity", kPropertyTypeFloat),
                                             "Degrees per mouse pixel."),
                              0.0, 10.0, 0.01),
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::lookStickSpeedDegrees>(
+                WithRange(WithTooltip(Declare<&PlayerComponent::lookStickSpeedDegrees>(
                                                 "lookStickSpeedDegrees", "Stick Look Speed",
-                                                kPropertyTypeFloatUVE),
+                                                kPropertyTypeFloat),
                                             "Degrees per second at full stick."),
                              0.0, 720.0, 1.0),
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::minPitchDegrees>(
-                                                "minPitchDegrees", "Min Pitch", kPropertyTypeFloatUVE),
+                WithRange(WithTooltip(Declare<&PlayerComponent::minPitchDegrees>(
+                                                "minPitchDegrees", "Min Pitch", kPropertyTypeFloat),
                                             "Lowest look pitch, in degrees."),
                              -89.0, 89.0, 1.0),
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&PlayerComponentUVE::maxPitchDegrees>(
-                                                "maxPitchDegrees", "Max Pitch", kPropertyTypeFloatUVE),
+                WithRange(WithTooltip(Declare<&PlayerComponent::maxPitchDegrees>(
+                                                "maxPitchDegrees", "Max Pitch", kPropertyTypeFloat),
                                             "Highest look pitch, in degrees."),
                              -89.0, 89.0, 1.0),
-                InGroupUVE(DeclareRuntimeStateUVE<&PlayerComponentUVE::pitchDegrees>(
-                               "pitchDegrees", "Pitch", kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&PlayerComponent::pitchDegrees>(
+                               "pitchDegrees", "Pitch", kPropertyTypeFloat),
                            "State"),
             }));
 
-    AddValidatedUVE<HealthComponentUVE, &IsHealthComponentValidUVE>(
+    AddValidated<HealthComponent, &IsHealthComponentValid>(
         entries,
-        MakeEntryUVE("component.health", "HealthComponentUVE", "Health", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.health", "HealthComponent", "Health", kSectionOrderTypeSpecific,
             {
-                WithRangeUVE(WithTooltipUVE(DeclareUVE<&HealthComponentUVE::maxHealth>(
-                                                "maxHealth", "Max Health", kPropertyTypeFloatUVE),
+                WithRange(WithTooltip(Declare<&HealthComponent::maxHealth>(
+                                                "maxHealth", "Max Health", kPropertyTypeFloat),
                                             "Hit points at spawn."),
                              1.0, 10000.0, 1.0),
-                WithTooltipUVE(DeclareUVE<&HealthComponentUVE::invulnerable>("invulnerable", "Invulnerable",
-                                                                            kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&HealthComponent::invulnerable>("invulnerable", "Invulnerable",
+                                                                            kPropertyTypeBool),
                                "Strikes do not reduce health."),
-                InGroupUVE(DeclareRuntimeStateUVE<&HealthComponentUVE::health>("health", "Health",
-                                                                              kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&HealthComponent::health>("health", "Health",
+                                                                              kPropertyTypeFloat),
                            "State"),
             }));
 
-    AddValidatedUVE<SpawnPoint3DComponentUVE, &IsSpawnPoint3DObjectComponentValidUVE>(
+    AddValidated<SpawnPoint3DComponent, &IsSpawnPoint3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.spawn_point", "SpawnPoint3DComponentUVE", "SpawnPoint3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.spawn_point", "SpawnPoint3DComponent", "SpawnPoint3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&SpawnPoint3DComponentUVE::spawnTag>("spawnTag", "Tag",
-                                                                    kPropertyTypeStringUVE),
+                WithTooltip(
+                    Declare<&SpawnPoint3DComponent::spawnTag>("spawnTag", "Tag",
+                                                                    kPropertyTypeString),
                     "What this point is for. An empty-tag query takes the first live point whatever "
                     "it is called; a respawn screen asks for \"checkpoint\" and a second level "
                     "entry asks for \"level start\"."),
-                WithTooltipUVE(
-                    DeclareUVE<&SpawnPoint3DComponentUVE::localPosition>(
-                        "localPosition", "Offset Position", kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&SpawnPoint3DComponent::localPosition>(
+                        "localPosition", "Offset Position", kPropertyTypeVector3),
                     "Where the actor appears relative to this point's own pose, in metres: rotated "
                     "by the point's rotation, deliberately NOT scaled by its scale - an offset is a "
                     "distance, not a volume. A point can sit on a floor seam with its actor a step "
                     "above."),
-                WithTooltipUVE(
-                    DeclareUVE<&SpawnPoint3DComponentUVE::localRotation>(
-                        "localRotation", "Offset Rotation", kPropertyTypeQuaternionUVE),
+                WithTooltip(
+                    Declare<&SpawnPoint3DComponent::localRotation>(
+                        "localRotation", "Offset Rotation", kPropertyTypeQuaternion),
                     "Which way the actor faces when it appears, composed onto this point's own "
                     "rotation."),
-                WithTooltipUVE(DeclareUVE<&SpawnPoint3DComponentUVE::enabled>("enabled", "Enabled",
-                                                                             kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&SpawnPoint3DComponent::enabled>("enabled", "Enabled",
+                                                                             kPropertyTypeBool),
                                "Off, the point is invisible to every spawn query - which is also "
                                "the state a spent one-shot point is left in."),
-                WithTooltipUVE(
-                    DeclareUVE<&SpawnPoint3DComponentUVE::oneShot>("oneShot", "One Shot",
-                                                                   kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&SpawnPoint3DComponent::oneShot>("oneShot", "One Shot",
+                                                                   kPropertyTypeBool),
                     "A checkpoint: the first caller that actually spawns from this point spends "
                     "it, and no later query can use it again this session. The authored value "
                     "comes back when Play is left, like every other sandboxed edit."),
             }));
 
-    TypeMetadataPropertyUVE areaIgnore = WithTooltipUVE(
-        DeclareUVE<&InteractionArea3DComponentUVE::ignoreEntity>("ignoreEntity", "Ignore Entity",
-                                                                 kPropertyTypeEntityUVE),
+    TypeMetadataProperty areaIgnore = WithTooltip(
+        Declare<&InteractionArea3DComponent::ignoreEntity>("ignoreEntity", "Ignore Entity",
+                                                                 kPropertyTypeEntity),
         "Never list this interactor. Set the owner so a character does not interact with a volume it carries.");
-    areaIgnore.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<InteractionArea3DComponentUVE, &IsInteractionArea3DObjectComponentValidUVE>(
+    areaIgnore.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<InteractionArea3DComponent, &IsInteractionArea3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.interaction_area_3d", "InteractionArea3DComponentUVE", "InteractionArea3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.interaction_area_3d", "InteractionArea3DComponent", "InteractionArea3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(
-                    DeclareUVE<&InteractionArea3DComponentUVE::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&InteractionArea3DComponent::enabled>("enabled", "Enabled", kPropertyTypeBool),
                     "Off, the area tracks nobody and drops focus this tick."),
-                WithTooltipUVE(
-                    DeclareUVE<&InteractionArea3DComponentUVE::halfExtents>("halfExtents", "Half Extents",
-                                                                           kPropertyTypeVector3UVE),
+                WithTooltip(
+                    Declare<&InteractionArea3DComponent::halfExtents>("halfExtents", "Half Extents",
+                                                                           kPropertyTypeVector3),
                     "The exact oriented box, world position and rotation plus these half-extents. "
                     "World SCALE is not applied."),
-                WithTooltipUVE(
-                    DeclareUVE<&InteractionArea3DComponentUVE::interactionTag>("interactionTag", "Tag",
-                                                                              kPropertyTypeStringUVE),
+                WithTooltip(
+                    Declare<&InteractionArea3DComponent::interactionTag>("interactionTag", "Tag",
+                                                                              kPropertyTypeString),
                     "Carried for gameplay. The scan does not filter on it."),
-                WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::maximumCandidates>(
-                                       "maximumCandidates", "Max Interactors", kPropertyTypeUInt32UVE),
+                WithRange(
+                    WithTooltip(Declare<&InteractionArea3DComponent::maximumCandidates>(
+                                       "maximumCandidates", "Max Interactors", kPropertyTypeUInt32),
                                    "How many overlapping interactors this area stores. Overflow is flagged, "
                                    "not dropped silently. 1 to 4096; storage itself caps at 16."),
                     1.0, 4096.0, 1.0),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::collisionLayer>(
-                                       "collisionLayer", "Layer", kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&InteractionArea3DComponent::collisionLayer>(
+                                       "collisionLayer", "Layer", kPropertyTypeBitMask32),
                                    "The layers this area is on."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&InteractionArea3DComponentUVE::collisionMask>(
-                                       "collisionMask", "Mask", kPropertyTypeBitMask32UVE),
+                    std::string(kLayerMaskDrawerPhysics)),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&InteractionArea3DComponent::collisionMask>(
+                                       "collisionMask", "Mask", kPropertyTypeBitMask32),
                                    "The layers this area accepts interactors from. Both sides must agree."),
-                    std::string(kLayerMaskDrawerPhysicsUVE)),
+                    std::string(kLayerMaskDrawerPhysics)),
                 std::move(areaIgnore),
-                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::interactorCount>(
-                               "interactorCount", "Interactors", kPropertyTypeUInt8UVE),
+                InGroup(DeclareRuntimeState<&InteractionArea3DComponent::interactorCount>(
+                               "interactorCount", "Interactors", kPropertyTypeUInt8),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::interactorsTruncated>(
-                               "interactorsTruncated", "Truncated", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&InteractionArea3DComponent::interactorsTruncated>(
+                               "interactorsTruncated", "Truncated", kPropertyTypeBool),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&InteractionArea3DComponentUVE::focusedByPrimaryInteractor>(
-                               "focusedByPrimaryInteractor", "Focused", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&InteractionArea3DComponent::focusedByPrimaryInteractor>(
+                               "focusedByPrimaryInteractor", "Focused", kPropertyTypeBool),
                            "Result"),
             }));
 }
@@ -3044,157 +3044,157 @@ void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// needs. An agent's are its own measurements plus the route it last published, and the route is
 /// declared as runtime state: written by the navigation step, never authored, never saved, and shown
 /// while the game runs because that is the only time it describes something real.
-void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using R = NavMeshVolume3DComponentUVE;
-    AddValidatedUVE<NavMeshVolume3DComponentUVE, &IsNavMeshVolume3DObjectComponentValidUVE>(
+void DeclareNavigation(std::vector<TypeMetadataEntry>& entries) {
+    using R = NavMeshVolume3DComponent;
+    AddValidated<NavMeshVolume3DComponent, &IsNavMeshVolume3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.nav_mesh_volume_3d", "NavMeshVolume3DComponentUVE", "NavMeshVolume3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.nav_mesh_volume_3d", "NavMeshVolume3DComponent", "NavMeshVolume3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&R::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, the region has no mesh at all: an agent standing on it fails "
                                "rather than walks ground the author just took away."),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::boundsHalfExtents>("boundsHalfExtents", "Size",
-                                                                              kPropertyTypeVector3UVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::boundsHalfExtents>("boundsHalfExtents", "Size",
+                                                                              kPropertyTypeVector3),
                                             0.001, 100000.0, 0.01),
                                "The volume baked into a navmesh, centred on the object and aligned to the world "
                                "axes - the bake's grid is built on the world axes, so where the object is "
                                "rotated, its unrotated volume is what gets rasterized."),
                            "Bounds"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::cellSize>("cellSize", "Cell Size", kPropertyTypeFloat),
                                             0.05, 10.0, 0.05),
                                "The rasterization grid, in metres. Finer follows geometry more closely and costs "
                                "more rays; a grid too large for the bake's cell budget is made coarser and says "
                                "so in the bake's report."),
                            "Bounds"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::agentRadius>("agentRadius", "Agent Radius",
-                                                                        kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::agentRadius>("agentRadius", "Agent Radius",
+                                                                        kPropertyTypeFloat),
                                             0.0, 100.0, 0.01),
                                "Ground closer than this to a wall, a ledge or the region's edge is eroded away: "
                                "an agent of this width cannot stand there with its body on the mesh."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::agentHeight>("agentHeight", "Agent Height",
-                                                                        kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::agentHeight>("agentHeight", "Agent Height",
+                                                                        kPropertyTypeFloat),
                                             0.01, 1000.0, 0.01),
                                "How much headroom the ground needs to be walkable. A region shorter than this "
                                "bakes nothing, which is the honest answer for a crawlspace no agent fits in."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::maximumSlopeDegrees>("maximumSlopeDegrees", "Max Slope",
-                                                                                kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::maximumSlopeDegrees>("maximumSlopeDegrees", "Max Slope",
+                                                                                kPropertyTypeFloat),
                                             0.1, 89.9, 0.1),
                                "The steepest surface that still counts as ground, in degrees from up. Anything "
                                "steeper is a wall as far as this navmesh is concerned."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&R::maximumStepHeight>("maximumStepHeight", "Max Step",
-                                                                              kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&R::maximumStepHeight>("maximumStepHeight", "Max Step",
+                                                                              kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "The tallest rise between neighbouring cells that may still be walked, in "
                                "metres. Taller than this and they are two floors rather than one step."),
                            "Agent"),
-                InGroupUVE(WithCustomDrawerUVE(
-                               WithTooltipUVE(DeclareUVE<&R::navigationLayers>("navigationLayers", "Layers",
-                                                                               kPropertyTypeBitMask32UVE),
+                InGroup(WithCustomDrawer(
+                               WithTooltip(Declare<&R::navigationLayers>("navigationLayers", "Layers",
+                                                                               kPropertyTypeBitMask32),
                                               "The layers written into the baked polygons, matched against an "
                                               "agent's own mask: a path may only use polygons whose layers "
                                               "intersect it."),
-                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                               std::string(kLayerMaskDrawerPhysics)),
                            "Build"),
-                InGroupUVE(WithTooltipUVE(
-                               DeclareUVE<&R::rebuildRequested>("rebuildRequested", "Rebuild", kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(
+                               Declare<&R::rebuildRequested>("rebuildRequested", "Rebuild", kPropertyTypeBool),
                                "Raise it to re-rasterize a region whose volume did not move but whose "
                                "surroundings did. The navigation step bakes and then clears it."),
                            "Build"),
             }));
 
-    using S = NavSeeker3DComponentUVE;
-    AddValidatedUVE<NavSeeker3DComponentUVE, &IsNavSeeker3DObjectComponentValidUVE>(
+    using S = NavSeeker3DComponent;
+    AddValidated<NavSeeker3DComponent, &IsNavSeeker3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.nav_seeker_3d", "NavSeeker3DComponentUVE", "NavSeeker3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.nav_seeker_3d", "NavSeeker3DComponent", "NavSeeker3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&S::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&S::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, the agent publishes nothing - no velocity, no route - and "
                                "forgets the route it had."),
-                WithTooltipUVE(DeclareUVE<&S::targetPosition>("targetPosition", "Target",
-                                                              kPropertyTypeVector3UVE),
+                WithTooltip(Declare<&S::targetPosition>("targetPosition", "Target",
+                                                              kPropertyTypeVector3),
                                "Where the agent is walking to, in world space. Changing it drops "
                                "the current route and searches on the next step, whatever the "
                                "update interval says."),
-                WithTooltipUVE(
-                    DeclareUVE<&S::avoidanceEnabled>("avoidanceEnabled", "Avoidance",
-                                                     kPropertyTypeBoolUVE),
+                WithTooltip(
+                    Declare<&S::avoidanceEnabled>("avoidanceEnabled", "Avoidance",
+                                                     kPropertyTypeBool),
                     "On, other agents inside the avoidance radius push this one aside so two "
                     "agents on one route end up beside each other rather than inside each other."),
-                WhenOnUVE<&S::avoidanceEnabled>(WithRangeUVE(
-                    WithTooltipUVE(DeclareUVE<&S::avoidanceRadius>("avoidanceRadius", "Avoid Radius",
-                                                                   kPropertyTypeFloatUVE),
+                WhenOn<&S::avoidanceEnabled>(WithRange(
+                    WithTooltip(Declare<&S::avoidanceRadius>("avoidanceRadius", "Avoid Radius",
+                                                                   kPropertyTypeFloat),
                                    "How close another agent's centre may come before it pushes, in "
                                    "metres. 0 is the same as switching avoidance off."),
                     0.0, 1000.0, 0.01)),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&S::radius>("radius", "Radius", kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&S::radius>("radius", "Radius", kPropertyTypeFloat),
                                         0.01, 1000.0, 0.01),
                            "Agent"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&S::height>("height", "Height", kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&S::height>("height", "Height", kPropertyTypeFloat),
                                         0.02, 1000.0, 0.01),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::maxSpeed>("maxSpeed", "Max Speed",
-                                                                     kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::maxSpeed>("maxSpeed", "Max Speed",
+                                                                     kPropertyTypeFloat),
                                             0.0, 10000.0, 0.1),
                                "Top speed on a straight leg, in metres per second. What actually "
                                "moves the body is the mover or script reading this agent's "
                                "desiredVelocity."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::acceleration>("acceleration", "Acceleration",
-                                                                         kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::acceleration>("acceleration", "Acceleration",
+                                                                         kPropertyTypeFloat),
                                             0.0, 10000.0, 0.1),
                                "How hard desiredVelocity may change per second. The velocity is what "
                                "a mover is handed, and an unbounded step change is a jolt; 0 "
                                "publishes the wanted velocity immediately."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::targetTolerance>("targetTolerance", "Target "
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::targetTolerance>("targetTolerance", "Target "
                                                                                            "Tolerance",
-                                                                            kPropertyTypeFloatUVE),
+                                                                            kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "How close to the target counts as arrived. Larger than the waypoint "
                                "radius on purpose: an agent that had to stop within a metre of a "
                                "moving target would hunt for it."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::waypointRadius>("waypointRadius", "Waypoint "
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::waypointRadius>("waypointRadius", "Waypoint "
                                                                                            "Radius",
-                                                                           kPropertyTypeFloatUVE),
+                                                                           kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "How close to a waypoint counts as reached, so the agent turns to the "
                                "next one instead of walking back for it."),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::slowDownRadius>("slowDownRadius", "Slow Down "
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::slowDownRadius>("slowDownRadius", "Slow Down "
                                                                                            "Radius",
-                                                                           kPropertyTypeFloatUVE),
+                                                                           kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "Inside this distance from the target the speed is scaled down, so the "
                                "agent arrives rather than overshoots. 0 keeps full speed until the "
                                "tolerance stops it."),
                            "Agent"),
-                InGroupUVE(WithCustomDrawerUVE(
-                               WithTooltipUVE(DeclareUVE<&S::navigationLayers>("navigationLayers",
+                InGroup(WithCustomDrawer(
+                               WithTooltip(Declare<&S::navigationLayers>("navigationLayers",
                                                                                "Layers",
-                                                                               kPropertyTypeBitMask32UVE),
+                                                                               kPropertyTypeBitMask32),
                                               "Which polygons this agent may walk: a path may only "
                                               "cross ground whose layers intersect this mask."),
-                               std::string(kLayerMaskDrawerPhysicsUVE)),
+                               std::string(kLayerMaskDrawerPhysics)),
                            "Agent"),
-                InGroupUVE(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&S::pathUpdateInterval>("pathUpdateInterval",
+                InGroup(WithTooltip(
+                               WithRange(Declare<&S::pathUpdateInterval>("pathUpdateInterval",
                                                                                "Update Interval",
-                                                                               kPropertyTypeFloatUVE),
+                                                                               kPropertyTypeFloat),
                                             0.01, 10.0, 0.01),
                                "How often the route is reconsidered, in seconds. Replanning every "
                                "frame would be correct and wasteful; replanning rarely leaves an "
@@ -3202,109 +3202,109 @@ void DeclareNavigationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Route"),
                 // The route the last step produced. Runtime state: written by the navigation step,
                 // never authored, never saved - a loaded agent finds its own way from its target.
-                InGroupUVE(DeclareRuntimeStateUVE<&S::nextPathPosition>("nextPathPosition",
+                InGroup(DeclareRuntimeState<&S::nextPathPosition>("nextPathPosition",
                                                                         "Next Waypoint",
-                                                                        kPropertyTypeVector3UVE),
+                                                                        kPropertyTypeVector3),
                            "Route"),
-                InGroupUVE(DeclareRuntimeStateUVE<&S::desiredVelocity>("desiredVelocity",
+                InGroup(DeclareRuntimeState<&S::desiredVelocity>("desiredVelocity",
                                                                        "Desired Velocity",
-                                                                       kPropertyTypeVector3UVE),
+                                                                       kPropertyTypeVector3),
                            "Route"),
-                InGroupUVE(DeclareRuntimeStateEnumUVE<&S::pathStatus>(
+                InGroup(DeclareRuntimeStateEnum<&S::pathStatus>(
                                "pathStatus", "Status",
                                {{0, "Idle"}, {1, "Following"}, {2, "Finished"}, {3, "Failed"}}),
                            "Route"),
-                InGroupUVE(DeclareRuntimeStateUVE<&S::pathChanged>("pathChanged", "Path Changed",
-                                                                   kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&S::pathChanged>("pathChanged", "Path Changed",
+                                                                   kPropertyTypeBool),
                            "Route"),
-                InGroupUVE(DeclareRuntimeStateUVE<&S::targetReached>("targetReached", "Target Reached",
-                                                                     kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&S::targetReached>("targetReached", "Target Reached",
+                                                                     kPropertyTypeBool),
                            "Route"),
             }));
 }
 
-void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    AddValidatedUVE<BoneModifierComponentUVE, &IsBoneModifierComponentValidUVE>(
+void DeclareObjectBases(std::vector<TypeMetadataEntry>& entries) {
+    AddValidated<BoneModifierComponent, &IsBoneModifierComponentValid>(
         entries,
-        MakeEntryUVE("component.bone_modifier", "BoneModifierComponentUVE", std::string{BoneModifier3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
+        MakeEntry("component.bone_modifier", "BoneModifierComponent", std::string{BoneModifier3DObjectDefinition::typeName}, kSectionOrderObjectBase,
                      {
-                         WithTooltipUVE(DeclareUVE<&BoneModifierComponentUVE::active>("active", "Active",
-                                                                                        kPropertyTypeBoolUVE),
+                         WithTooltip(Declare<&BoneModifierComponent::active>("active", "Active",
+                                                                                        kPropertyTypeBool),
                                         "Off skips this modifier, as if it were not there."),
-                         WithTooltipUVE(WithRangeUVE(DeclareUVE<&BoneModifierComponentUVE::influence>(
-                                                         "influence", "Influence", kPropertyTypeFloatUVE),
+                         WithTooltip(WithRange(Declare<&BoneModifierComponent::influence>(
+                                                         "influence", "Influence", kPropertyTypeFloat),
                                                      0.0, 1.0, 0.01),
                                         "How much of the modifier's result is blended over the pose."),
                      }));
 
-    TypeMetadataPropertyUVE priority = WithTooltipUVE(
-        DeclareUVE<&PhysicsObjectComponentUVE::collisionPriority>("collisionPriority", "Priority",
-                                                                  kPropertyTypeFloatUVE),
+    TypeMetadataProperty priority = WithTooltip(
+        Declare<&PhysicsObjectComponent::collisionPriority>("collisionPriority", "Priority",
+                                                                  kPropertyTypeFloat),
         "How strongly this object is pushed out of an overlap; higher yields less.");
     priority.range = {true, 0.0, 1000000.0, 0.1};
-    AddValidatedUVE<PhysicsObjectComponentUVE, &IsPhysicsObjectComponentValidUVE>(
+    AddValidated<PhysicsObjectComponent, &IsPhysicsObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.physics_object", "PhysicsObjectComponentUVE", std::string{PhysicsObject3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 1,
+        MakeEntry("component.physics_object", "PhysicsObjectComponent", std::string{PhysicsObject3DObjectDefinition::typeName}, kSectionOrderObjectBase + 1,
             {
-                WithTooltipUVE(DeclareEnumUVE<&PhysicsObjectComponentUVE::disableMode>(
+                WithTooltip(DeclareEnum<&PhysicsObjectComponent::disableMode>(
                                    "disableMode", "Disable Mode",
                                    {{0, "Remove"}, {1, "Make Static"}, {2, "Keep Active"}}),
                                "What happens to this object while its Process mode stops it."),
                 std::move(priority),
-                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputRayPickable>(
-                                   "inputRayPickable", "Ray Pickable", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&PhysicsObjectComponent::inputRayPickable>(
+                                   "inputRayPickable", "Ray Pickable", kPropertyTypeBool),
                                "Whether a mouse or touch pick can hit this object."),
-                WithTooltipUVE(DeclareUVE<&PhysicsObjectComponentUVE::inputCaptureOnDrag>(
-                                   "inputCaptureOnDrag", "Capture On Drag", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&PhysicsObjectComponent::inputCaptureOnDrag>(
+                                   "inputCaptureOnDrag", "Capture On Drag", kPropertyTypeBool),
                                "Whether a drag that started here keeps reporting here after leaving."),
             }));
 
     // Sorts before PhysicsObject3D: a base that derives from another is drawn above it.
-    AddUVE<SolidBodyComponentUVE>(
+    Add<SolidBodyComponent>(
         entries,
-        MakeEntryUVE("component.solid_body", "SolidBodyComponentUVE", std::string{SolidBody3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE,
+        MakeEntry("component.solid_body", "SolidBodyComponent", std::string{SolidBody3DObjectDefinition::typeName}, kSectionOrderObjectBase,
                      {
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionX>(
-                                                       "lockMotionX", "X", kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&SolidBodyComponent::lockMotionX>(
+                                                       "lockMotionX", "X", kPropertyTypeBool),
                                                    "Never moves along the world X axis."),
                                     "Lock Motion"),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionY>(
-                                                       "lockMotionY", "Y", kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&SolidBodyComponent::lockMotionY>(
+                                                       "lockMotionY", "Y", kPropertyTypeBool),
                                                    "Never moves along the world Y axis."),
                                     "Lock Motion"),
-                         InGroupUVE(WithTooltipUVE(DeclareUVE<&SolidBodyComponentUVE::lockMotionZ>(
-                                                       "lockMotionZ", "Z", kPropertyTypeBoolUVE),
+                         InGroup(WithTooltip(Declare<&SolidBodyComponent::lockMotionZ>(
+                                                       "lockMotionZ", "Z", kPropertyTypeBool),
                                                    "Never moves along the world Z axis - a side view locks this one."),
                                     "Lock Motion"),
                      }));
 
-    AddValidatedUVE<RenderInstanceComponentUVE, &IsRenderInstanceComponentValidUVE>(
+    AddValidated<RenderInstanceComponent, &IsRenderInstanceComponentValid>(
         entries,
-        MakeEntryUVE("component.render_instance", "RenderInstanceComponentUVE", std::string{RenderInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 10,
+        MakeEntry("component.render_instance", "RenderInstanceComponent", std::string{RenderInstance3DObjectDefinition::typeName}, kSectionOrderObjectBase + 10,
                      {
-                         WithCustomDrawerUVE(
-                             WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::renderLayers>(
-                                                "renderLayers", "Layers", kPropertyTypeBitMask32UVE),
+                         WithCustomDrawer(
+                             WithTooltip(Declare<&RenderInstanceComponent::renderLayers>(
+                                                "renderLayers", "Layers", kPropertyTypeBitMask32),
                                             "The render layers this is on. A camera draws it only when their layers overlap."),
-                             std::string(kLayerMaskDrawerRenderUVE)),
-                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::sortingOffset>(
-                                            "sortingOffset", "Sorting Offset", kPropertyTypeFloatUVE),
+                             std::string(kLayerMaskDrawerRender)),
+                         WithTooltip(Declare<&RenderInstanceComponent::sortingOffset>(
+                                            "sortingOffset", "Sorting Offset", kPropertyTypeFloat),
                                         "Moves this forward (negative) or back in transparent sorting, without moving it."),
-                         WithTooltipUVE(DeclareUVE<&RenderInstanceComponentUVE::sortingUseAabbCenter>(
-                                            "sortingUseAabbCenter", "Sort By Bounds Center", kPropertyTypeBoolUVE),
+                         WithTooltip(Declare<&RenderInstanceComponent::sortingUseAabbCenter>(
+                                            "sortingUseAabbCenter", "Sort By Bounds Center", kPropertyTypeBool),
                                         "Sort by the centre of the bounds rather than the origin."),
                      }));
 
-    using S = SurfaceInstanceComponentUVE;
-    TypeMetadataEntryUVE surfaceEntry =
-        MakeEntryUVE("component.surface_instance", "SurfaceInstanceComponentUVE", std::string{SurfaceInstance3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 3,
+    using S = SurfaceInstanceComponent;
+    TypeMetadataEntry surfaceEntry =
+        MakeEntry("component.surface_instance", "SurfaceInstanceComponent", std::string{SurfaceInstance3DObjectDefinition::typeName}, kSectionOrderObjectBase + 3,
             {
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&S::materialOverridePath>("materialOverridePath", "Override",
-                                                                                          kPropertyTypeStringUVE),
+                WithTooltip(WithCustomDrawer(Declare<&S::materialOverridePath>("materialOverridePath", "Override",
+                                                                                          kPropertyTypeString),
                                                      "file:uvmat"),
                                "Material override: used on every surface in place of the mesh's own. Empty keeps them."),
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&S::materialOverlayPath>("materialOverlayPath", "Overlay",
-                                                                                         kPropertyTypeStringUVE),
+                WithTooltip(WithCustomDrawer(Declare<&S::materialOverlayPath>("materialOverlayPath", "Overlay",
+                                                                                         kPropertyTypeString),
                                                      "file:uvmat"),
                                "Material overlay: drawn over every surface, on top of whatever it already shows."),
                 // Per-surface overrides, index for index with the mesh's surfaces. Declared so the
@@ -3312,129 +3312,129 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 // the MeshInstance3D inspector draws one picker per surface, and a generic text row
                 // per entry would be a list of paths with nothing saying which surface each is.
                 [] {
-                    TypeMetadataPropertyUVE property = DeclareUVE<&S::surfaceMaterialOverridePaths>(
-                        "surfaceMaterialOverridePaths", "Surface Overrides", kPropertyTypeStringListUVE);
-                    property.flags = TypeMetadataPropertyFlagsUVE::Hidden;
+                    TypeMetadataProperty property = Declare<&S::surfaceMaterialOverridePaths>(
+                        "surfaceMaterialOverridePaths", "Surface Overrides", kPropertyTypeStringList);
+                    property.flags = TypeMetadataPropertyFlags::Hidden;
                     return property;
                 }(),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::transparency>("transparency", "Transparency",
-                                                                         kPropertyTypeFloatUVE),
+                WithTooltip(WithRange(Declare<&S::transparency>("transparency", "Transparency",
+                                                                         kPropertyTypeFloat),
                                             0.0, 1.0, 0.01),
                                "Fades the whole instance out: 0 as authored, 1 invisible."),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::castShadow>(
+                InGroup(WithTooltip(DeclareEnum<&S::castShadow>(
                                               "castShadow", "Cast Shadow",
                                               {{0, "Off"}, {1, "On"}, {2, "Double Sided"}, {3, "Shadows Only"}}),
                                           "Whether it casts a shadow, and Shadows Only for an invisible caster."),
                            "Shadow"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::lightingMode>(
+                InGroup(WithTooltip(DeclareEnum<&S::lightingMode>(
                                               "lightingMode", "Lighting",
                                               {{0, "Disabled"}, {1, "Static (Baked)"}, {2, "Dynamic"}}),
                                           "How baked lighting treats it: ignored, baked into, or lit at runtime."),
                            "Global Illumination"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeBegin>(
-                                                           "visibilityRangeBegin", "Begin", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::visibilityRangeBegin>(
+                                                           "visibilityRangeBegin", "Begin", kPropertyTypeFloat),
                                                        0.0, 1000000.0, 0.1),
                                           "Hidden closer to the camera than this. 0 never hides it up close."),
                            "Visibility Range"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeBeginMargin>(
-                                            "visibilityRangeBeginMargin", "Begin Margin", kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&S::visibilityRangeBeginMargin>(
+                                            "visibilityRangeBeginMargin", "Begin Margin", kPropertyTypeFloat),
                                         0.0, 1000000.0, 0.1),
                            "Visibility Range"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeEnd>(
-                                                           "visibilityRangeEnd", "End", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::visibilityRangeEnd>(
+                                                           "visibilityRangeEnd", "End", kPropertyTypeFloat),
                                                        0.0, 1000000.0, 0.1),
                                           "Hidden farther from the camera than this. 0 never hides it far away."),
                            "Visibility Range"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&S::visibilityRangeEndMargin>(
-                                            "visibilityRangeEndMargin", "End Margin", kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&S::visibilityRangeEndMargin>(
+                                            "visibilityRangeEndMargin", "End Margin", kPropertyTypeFloat),
                                         0.0, 1000000.0, 0.1),
                            "Visibility Range"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&S::visibilityRangeFadeMode>(
+                InGroup(WithTooltip(DeclareEnum<&S::visibilityRangeFadeMode>(
                                               "visibilityRangeFadeMode", "Fade",
                                               {{0, "Disabled"}, {1, "Self"}, {2, "Dependencies"}}),
                                           "Fade across the margins instead of popping."),
                            "Visibility Range"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::extraCullMargin>(
-                                                           "extraCullMargin", "Extra Cull Margin", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::extraCullMargin>(
+                                                           "extraCullMargin", "Extra Cull Margin", kPropertyTypeFloat),
                                                        0.0, 100000.0, 0.01),
                                           "Grows the bounds used for culling, for shaders that move vertices outward."),
                            "Culling"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&S::lodBias>("lodBias", "LOD Bias",
-                                                                               kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&S::lodBias>("lodBias", "LOD Bias",
+                                                                               kPropertyTypeFloat),
                                                        0.001, 128.0, 0.01),
                                           "Above 1 keeps detailed levels longer; below 1 drops them sooner."),
                            "Culling"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&S::ignoreOcclusionCulling>(
-                                              "ignoreOcclusionCulling", "Ignore Occlusion", kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&S::ignoreOcclusionCulling>(
+                                              "ignoreOcclusionCulling", "Ignore Occlusion", kPropertyTypeBool),
                                           "Never hidden because something else covers it."),
                            "Culling"),
             });
-    AddValidatedUVE<SurfaceInstanceComponentUVE, &IsSurfaceInstanceComponentValidUVE>(
+    AddValidated<SurfaceInstanceComponent, &IsSurfaceInstanceComponentValid>(
         entries, std::move(surfaceEntry));
 
-    using L = LightEmitterComponentUVE;
-    AddValidatedUVE<LightEmitterComponentUVE, &IsLightEmitterComponentValidUVE>(
+    using L = LightEmitterComponent;
+    AddValidated<LightEmitterComponent, &IsLightEmitterComponentValid>(
         entries,
-        MakeEntryUVE("component.light_emitter", "LightEmitterComponentUVE", std::string{LightEmitter3DObjectDefinitionUVE::typeName}, kSectionOrderObjectBaseUVE + 4,
+        MakeEntry("component.light_emitter", "LightEmitterComponent", std::string{LightEmitter3DObjectDefinition::typeName}, kSectionOrderObjectBase + 4,
             {
-                DeclareUVE<&L::color>("color", "Color", kPropertyTypeLinearColorUVE),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::energy>("energy", "Energy", kPropertyTypeFloatUVE), 0.0,
+                Declare<&L::color>("color", "Color", kPropertyTypeLinearColor),
+                WithTooltip(WithRange(Declare<&L::energy>("energy", "Energy", kPropertyTypeFloat), 0.0,
                                             1000.0, 0.01),
                                "How bright the light is."),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::indirectEnergy>("indirectEnergy", "Indirect Energy",
-                                                                           kPropertyTypeFloatUVE),
+                WithTooltip(WithRange(Declare<&L::indirectEnergy>("indirectEnergy", "Indirect Energy",
+                                                                           kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "Multiplies the light's bounced (indirect) contribution only."),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::volumetricFogEnergy>(
-                                                "volumetricFogEnergy", "Fog Energy", kPropertyTypeFloatUVE),
+                WithTooltip(WithRange(Declare<&L::volumetricFogEnergy>(
+                                                "volumetricFogEnergy", "Fog Energy", kPropertyTypeFloat),
                                             0.0, 1000.0, 0.01),
                                "How strongly it lights volumetric fog and fog volumes."),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&L::specular>("specular", "Specular", kPropertyTypeFloatUVE),
+                WithTooltip(WithRange(Declare<&L::specular>("specular", "Specular", kPropertyTypeFloat),
                                             0.0, 16.0, 0.01),
                                "Strength of the light's highlights on shiny surfaces."),
-                WithTooltipUVE(DeclareEnumUVE<&L::bakeMode>("bakeMode", "Bake Mode",
+                WithTooltip(DeclareEnum<&L::bakeMode>("bakeMode", "Bake Mode",
                                                             {{0, "Disabled"}, {1, "Static"}, {2, "Dynamic"}}),
                                "How baked lighting uses it: not at all, fully baked, or indirect only."),
-                WithCustomDrawerUVE(WithTooltipUVE(DeclareUVE<&L::cullMask>("cullMask", "Cull Mask",
-                                                                            kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(WithTooltip(Declare<&L::cullMask>("cullMask", "Cull Mask",
+                                                                            kPropertyTypeBitMask32),
                                                    "The render layers this light affects."),
-                                    std::string(kLayerMaskDrawerRenderUVE)),
-                InGroupUVE(DeclareUVE<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBoolUVE), "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloatUVE),
+                                    std::string(kLayerMaskDrawerRender)),
+                InGroup(Declare<&L::shadowEnabled>("shadowEnabled", "Enabled", kPropertyTypeBool), "Shadow"),
+                InGroup(WhenOn<&L::shadowEnabled>(WithTooltip(
+                               WithRange(Declare<&L::shadowBias>("shadowBias", "Bias", kPropertyTypeFloat),
                                            -1.0, 10.0, 0.001),
                                "Negative inherits the project's default shadow depth bias; non-negative values "
                                "override it for this light.")),
                            "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithTooltipUVE(
-                               WithRangeUVE(DeclareUVE<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
-                                                                             kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&L::shadowEnabled>(WithTooltip(
+                               WithRange(Declare<&L::shadowNormalBias>("shadowNormalBias", "Normal Bias",
+                                                                             kPropertyTypeFloat),
                                            -1.0, 10.0, 0.001),
                                "Negative inherits the project's default normal-bias multiplier; non-negative "
                                "values override it for this light.")),
                            "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowOpacity>("shadowOpacity", "Opacity", kPropertyTypeFloatUVE), 0.0,
+                InGroup(WhenOn<&L::shadowEnabled>(WithRange(
+                               Declare<&L::shadowOpacity>("shadowOpacity", "Opacity", kPropertyTypeFloat), 0.0,
                                1.0, 0.01)),
                            "Shadow"),
-                InGroupUVE(WhenOnUVE<&L::shadowEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::shadowBlur>("shadowBlur", "Blur", kPropertyTypeFloatUVE), 0.0, 64.0,
+                InGroup(WhenOn<&L::shadowEnabled>(WithRange(
+                               Declare<&L::shadowBlur>("shadowBlur", "Blur", kPropertyTypeFloat), 0.0, 64.0,
                                0.01)),
                            "Shadow"),
-                InGroupUVE(DeclareUVE<&L::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBoolUVE),
+                InGroup(Declare<&L::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBool),
                            "Distance Fade"),
-                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&L::distanceFadeEnabled>(WithRange(
+                               Declare<&L::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloat),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
-                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::distanceFadeShadow>("distanceFadeShadow", "Shadow",
-                                                                  kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&L::distanceFadeEnabled>(WithRange(
+                               Declare<&L::distanceFadeShadow>("distanceFadeShadow", "Shadow",
+                                                                  kPropertyTypeFloat),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
-                InGroupUVE(WhenOnUVE<&L::distanceFadeEnabled>(WithRangeUVE(
-                               DeclareUVE<&L::distanceFadeLength>("distanceFadeLength", "Length",
-                                                                  kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&L::distanceFadeEnabled>(WithRange(
+                               Declare<&L::distanceFadeLength>("distanceFadeLength", "Length",
+                                                                  kPropertyTypeFloat),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
             }));
@@ -3443,21 +3443,21 @@ void DeclareObjectBasesUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// Skeleton3D: a Object3D child. Its bones are read-only here - they come from the rigged model the
 /// Source names and change only by re-exporting it - so they are declared for display and saving,
 /// with a drawer that shows the hierarchy instead of a generic editor.
-void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using K = Skeleton3DComponentUVE;
-    TypeMetadataPropertyUVE bones = WithCustomDrawerUVE(DeclareUVE<&K::bones>("bones", "Bones", "SkeletonBones"),
+void DeclareSkeleton(std::vector<TypeMetadataEntry>& entries) {
+    using K = Skeleton3DComponent;
+    TypeMetadataProperty bones = WithCustomDrawer(Declare<&K::bones>("bones", "Bones", "SkeletonBones"),
                                                         "skeleton-bones");
-    bones.flags = TypeMetadataPropertyFlagsUVE::ReadOnly;
-    AddValidatedUVE<Skeleton3DComponentUVE, &IsSkeleton3DObjectComponentValidUVE>(
+    bones.flags = TypeMetadataPropertyFlags::ReadOnly;
+    AddValidated<Skeleton3DComponent, &IsSkeleton3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.skeleton_3d", "Skeleton3DComponentUVE", "Skeleton3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.skeleton_3d", "Skeleton3DComponent", "Skeleton3D", kSectionOrderTypeSpecific,
                      {
-                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&K::skeletonAssetPath>(
-                                                                "skeletonAssetPath", "Source", kPropertyTypeStringUVE),
+                         WithTooltip(WithCustomDrawer(Declare<&K::skeletonAssetPath>(
+                                                                "skeletonAssetPath", "Source", kPropertyTypeString),
                                                             "skeleton-source"),
                                         "The rigged model (a glTF exported from Blender, say) whose armature this "
                                         "skeleton uses. Its bones are read from it."),
-                         WithTooltipUVE(DeclareUVE<&K::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                         WithTooltip(Declare<&K::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                         "Off: attached meshes and bone attachments stop following this skeleton."),
                          std::move(bones),
                      }));
@@ -3468,44 +3468,44 @@ void DeclareSkeletonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// file-local id table, exactly like the mixer's target and the visibility parent - and the two
 /// runtime answers the engine writes back each frame are declared as runtime state, so an author
 /// can see whether the attachment is on its bone without a debugger.
-void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using A = BoneAttachment3DComponentUVE;
-    TypeMetadataPropertyUVE skeleton =
-        WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton", kPropertyTypeEntityUVE),
+void DeclareBoneAttachment(std::vector<TypeMetadataEntry>& entries) {
+    using A = BoneAttachment3DComponent;
+    TypeMetadataProperty skeleton =
+        WithTooltip(Declare<&A::skeleton>("skeleton", "Skeleton", kPropertyTypeEntity),
                        "The object whose skeleton this attachment rides. Empty leaves the object where it "
                        "was authored.");
-    skeleton.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
-    AddValidatedUVE<BoneAttachment3DComponentUVE, &IsBoneAttachment3DObjectComponentValidUVE>(
+    skeleton.flags = TypeMetadataPropertyFlags::EntityReference;
+    AddValidated<BoneAttachment3DComponent, &IsBoneAttachment3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.bone_attachment_3d", "BoneAttachment3DComponentUVE", "BoneAttachment3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.bone_attachment_3d", "BoneAttachment3DComponent", "BoneAttachment3D", kSectionOrderTypeSpecific,
             {
                 std::move(skeleton),
-                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&A::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off stops following the bone without removing the object - it keeps the "
                                "transform it has."),
-                WithTooltipUVE(DeclareUVE<&A::boneName>("boneName", "Bone", kPropertyTypeStringUVE),
+                WithTooltip(Declare<&A::boneName>("boneName", "Bone", kPropertyTypeString),
                                "The bone to ride, by the name the skeleton asset gives it. Exact and "
                                "case-sensitive: renaming a bone in the source loses this attachment "
                                "instead of binding it to whichever bone took the name."),
-                WithTooltipUVE(DeclareUVE<&A::boneIndex>("boneIndex", "Bone Index",
-                                                         kPropertyTypeUInt32UVE),
+                WithTooltip(Declare<&A::boneIndex>("boneIndex", "Bone Index",
+                                                         kPropertyTypeUInt32),
                                "The bone's index in the skeleton. 4294967295 means \"bind by the name "
                                "above\"; any other value wins over the name when it names a real bone."),
-                WithTooltipUVE(DeclareUVE<&A::localPosition>("localPosition", "Position",
-                                                             kPropertyTypeVector3UVE),
+                WithTooltip(Declare<&A::localPosition>("localPosition", "Position",
+                                                             kPropertyTypeVector3),
                                "Where the object sits on the bone, in the BONE's own space: 0.1 on Y is "
                                "10 cm along the bone's up axis, not the world's."),
-                WithTooltipUVE(DeclareUVE<&A::localRotation>("localRotation", "Rotation",
-                                                             kPropertyTypeQuaternionUVE),
+                WithTooltip(Declare<&A::localRotation>("localRotation", "Rotation",
+                                                             kPropertyTypeQuaternion),
                                "How the object is turned on the bone, applied after the bone's own "
                                "rotation - so it stays gripped when the arm swings."),
-                WithTooltipUVE(DeclareUVE<&A::localScale>("localScale", "Scale", kPropertyTypeVector3UVE),
+                WithTooltip(Declare<&A::localScale>("localScale", "Scale", kPropertyTypeVector3),
                                "The object's scale on top of the bone chain's, so a scaled rig scales "
                                "what it carries."),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::bound>("bound", "Bound", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&A::bound>("bound", "Bound", kPropertyTypeBool),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedBoneIndex>("resolvedBoneIndex", "Resolved Bone",
-                                                                         kPropertyTypeUInt32UVE),
+                InGroup(DeclareRuntimeState<&A::resolvedBoneIndex>("resolvedBoneIndex", "Resolved Bone",
+                                                                         kPropertyTypeUInt32),
                            "State"),
             }));
 }
@@ -3516,92 +3516,92 @@ void DeclareBoneAttachmentUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// references, flagged so the serializer remaps them through its file-local id table. The answers
 /// the solver writes back each pass are declared as runtime state, so an author can see whether a
 /// hand actually reached what it was aimed at without a debugger.
-void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using A = TwoBoneIK3DComponentUVE;
-    const auto entityReference = [](TypeMetadataPropertyUVE property) {
-        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+void DeclareTwoBoneIK(std::vector<TypeMetadataEntry>& entries) {
+    using A = TwoBoneIK3DComponent;
+    const auto entityReference = [](TypeMetadataProperty property) {
+        property.flags = TypeMetadataPropertyFlags::EntityReference;
         return property;
     };
-    AddValidatedUVE<TwoBoneIK3DComponentUVE, &IsTwoBoneIK3DObjectComponentValidUVE>(
+    AddValidated<TwoBoneIK3DComponent, &IsTwoBoneIK3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.two_bone_ik_3d", "TwoBoneIK3DComponentUVE", "TwoBoneIK3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.two_bone_ik_3d", "TwoBoneIK3DComponent", "TwoBoneIK3D", kSectionOrderTypeSpecific,
             {
-                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
-                                                                         kPropertyTypeEntityUVE),
+                entityReference(WithTooltip(Declare<&A::skeleton>("skeleton", "Skeleton",
+                                                                         kPropertyTypeEntity),
                                                "The object whose skeleton this chain solves. Empty leaves "
                                                "the pose exactly as the animation wrote it.")),
-                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&A::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off stops solving without removing the object."),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
-                                                                        kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&A::rootBoneName>("rootBoneName", "Root Bone",
+                                                                        kPropertyTypeString),
                                           "The chain's first bone - the shoulder, the hip. Exact and "
                                           "case-sensitive; renaming a bone in the source loses the chain "
                                           "instead of driving a different limb."),
                            "Chain"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
-                                                                        kPropertyTypeUInt32UVE),
+                InGroup(WithTooltip(Declare<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
+                                                                        kPropertyTypeUInt32),
                                           "The bone's index in the skeleton. 4294967295 means \"ask the name\"; "
                                           "any other value wins over it when it names a real bone."),
                            "Chain"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneName>("middleBoneName", "Middle Bone",
-                                                                          kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&A::middleBoneName>("middleBoneName", "Middle Bone",
+                                                                          kPropertyTypeString),
                                           "The bone the chain bends at - the elbow, the knee. Must be a child "
                                           "of the root bone."),
                            "Chain"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::middleBoneIndex>("middleBoneIndex", "Middle Index",
-                                                                          kPropertyTypeUInt32UVE),
+                InGroup(WithTooltip(Declare<&A::middleBoneIndex>("middleBoneIndex", "Middle Index",
+                                                                          kPropertyTypeUInt32),
                                           "The bend bone by index; the name above is the fallback."),
                            "Chain"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneName>("endBoneName", "End Bone",
-                                                                       kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&A::endBoneName>("endBoneName", "End Bone",
+                                                                       kPropertyTypeString),
                                           "The bone whose origin reaches the target - the wrist, the ankle. "
                                           "Must be a child of the middle bone; its own rotation is left alone."),
                            "Chain"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::endBoneIndex>("endBoneIndex", "End Index",
-                                                                       kPropertyTypeUInt32UVE),
+                InGroup(WithTooltip(Declare<&A::endBoneIndex>("endBoneIndex", "End Index",
+                                                                       kPropertyTypeUInt32),
                                           "The effector bone by index; the name above is the fallback."),
                            "Chain"),
-                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::target>("target", "Target",
-                                                                                 kPropertyTypeEntityUVE),
+                InGroup(entityReference(WithTooltip(Declare<&A::target>("target", "Target",
+                                                                                 kPropertyTypeEntity),
                                                           "The object whose world position the limb "
                                                           "reaches for. Empty uses the point below.")),
                            "Target"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::targetPosition>("targetPosition", "Target Point",
-                                                                         kPropertyTypeVector3UVE),
+                InGroup(WithTooltip(Declare<&A::targetPosition>("targetPosition", "Target Point",
+                                                                         kPropertyTypeVector3),
                                           "Where the limb should end, in the SKELETON's own space - "
                                           "scaled and rotated with it. Ignored while a target object "
                                           "above is set."),
                            "Target"),
-                InGroupUVE(entityReference(WithTooltipUVE(DeclareUVE<&A::poleTarget>("poleTarget", "Pole",
-                                                                                     kPropertyTypeEntityUVE),
+                InGroup(entityReference(WithTooltip(Declare<&A::poleTarget>("poleTarget", "Pole",
+                                                                                     kPropertyTypeEntity),
                                                           "A point the joint bends toward. An elbow has a "
                                                           "circle of positions that all reach the target; "
                                                           "this picks one.")),
                            "Target"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::poleDirection>("poleDirection", "Pole Direction",
-                                                                        kPropertyTypeVector3UVE),
+                InGroup(WithTooltip(Declare<&A::poleDirection>("poleDirection", "Pole Direction",
+                                                                        kPropertyTypeVector3),
                                           "The bend direction when no pole object is set, in the "
                                           "skeleton's own space. Zero keeps the plane the pose is "
                                           "already in."),
                            "Target"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::solved>("solved", "Solved", kPropertyTypeBoolUVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::reached>("reached", "Reached", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&A::solved>("solved", "Solved", kPropertyTypeBool), "State"),
+                InGroup(DeclareRuntimeState<&A::reached>("reached", "Reached", kPropertyTypeBool),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::endToTargetDistanceMetres>("endToTargetDistanceMetres",
+                InGroup(DeclareRuntimeState<&A::endToTargetDistanceMetres>("endToTargetDistanceMetres",
                                                                                  "Distance To Target",
-                                                                                 kPropertyTypeFloatUVE),
+                                                                                 kPropertyTypeFloat),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedRootBoneIndex>("resolvedRootBoneIndex",
+                InGroup(DeclareRuntimeState<&A::resolvedRootBoneIndex>("resolvedRootBoneIndex",
                                                                              "Resolved Root",
-                                                                             kPropertyTypeUInt32UVE),
+                                                                             kPropertyTypeUInt32),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedMiddleBoneIndex>("resolvedMiddleBoneIndex",
+                InGroup(DeclareRuntimeState<&A::resolvedMiddleBoneIndex>("resolvedMiddleBoneIndex",
                                                                                "Resolved Middle",
-                                                                               kPropertyTypeUInt32UVE),
+                                                                               kPropertyTypeUInt32),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::resolvedEndBoneIndex>("resolvedEndBoneIndex",
+                InGroup(DeclareRuntimeState<&A::resolvedEndBoneIndex>("resolvedEndBoneIndex",
                                                                             "Resolved End",
-                                                                            kPropertyTypeUInt32UVE),
+                                                                            kPropertyTypeUInt32),
                            "State"),
             }));
 }
@@ -3612,251 +3612,251 @@ void DeclareTwoBoneIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// three numbers rather than discovered by a profiler. The answers the solve writes back each
 /// pass - did it run, did it converge, what the budget cost - are runtime state, so an author can
 /// see what a solve did without a debugger.
-void DeclareFullBodyIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using A = FullBodyIK3DComponentUVE;
-    const auto entityReference = [](TypeMetadataPropertyUVE property) {
-        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+void DeclareFullBodyIK(std::vector<TypeMetadataEntry>& entries) {
+    using A = FullBodyIK3DComponent;
+    const auto entityReference = [](TypeMetadataProperty property) {
+        property.flags = TypeMetadataPropertyFlags::EntityReference;
         return property;
     };
-    AddValidatedUVE<FullBodyIK3DComponentUVE, &IsFullBodyIK3DObjectComponentValidUVE>(
+    AddValidated<FullBodyIK3DComponent, &IsFullBodyIK3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.full_body_ik_3d", "FullBodyIK3DComponentUVE", "FullBodyIK3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.full_body_ik_3d", "FullBodyIK3DComponent", "FullBodyIK3D", kSectionOrderTypeSpecific,
             {
-                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
-                                                                       kPropertyTypeEntityUVE),
+                entityReference(WithTooltip(Declare<&A::skeleton>("skeleton", "Skeleton",
+                                                                       kPropertyTypeEntity),
                                                "The object whose skeleton this solve poses. Empty leaves "
                                                "the pose exactly as the animation wrote it.")),
-                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&A::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off stops solving without removing the object."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&A::effectors>("effectors", "Effectors", "FullBodyIKEffectors"),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&A::effectors>("effectors", "Effectors", "FullBodyIKEffectors"),
                                    "Where each limb should end up, and how hard it pulls. Sweeps run in "
                                    "list order, so an earlier effector is answered first."),
                     "full-body-effectors"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneName>("rootBoneName", "Root Bone",
-                                                                      kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&A::rootBoneName>("rootBoneName", "Root Bone",
+                                                                      kPropertyTypeString),
                                           "The joint the solve pivots around and may translate - the "
                                           "hips. Every effector must sit in this bone's subtree."),
                            "Root"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
-                                                                        kPropertyTypeUInt32UVE),
+                InGroup(WithTooltip(Declare<&A::rootBoneIndex>("rootBoneIndex", "Root Index",
+                                                                        kPropertyTypeUInt32),
                                           "The root bone's index in the skeleton. 4294967295 means \"ask "
                                           "the name\"; any other value wins over it when it names a real bone."),
                            "Root"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::maxIterations>("maxIterations",
+                InGroup(WithTooltip(WithRange(Declare<&A::maxIterations>("maxIterations",
                                                                                      "Max Iterations",
-                                                                                     kPropertyTypeUInt32UVE),
+                                                                                     kPropertyTypeUInt32),
                                                        1.0, 64.0, 1.0),
                                           "How many full sweeps over every effector the solve may run. "
                                           "The cap is what makes the frame's cost bounded."),
                            "Solver"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::toleranceMetres>("toleranceMetres",
+                InGroup(WithTooltip(WithRange(Declare<&A::toleranceMetres>("toleranceMetres",
                                                                                        "Tolerance (m)",
-                                                                                       kPropertyTypeFloatUVE),
+                                                                                       kPropertyTypeFloat),
                                                        0.000001, 1.0, 0.0001),
                                           "How close an effector has to land before it counts as placed."),
                            "Solver"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::rootTranslationWeight>(
+                InGroup(WithTooltip(WithRange(Declare<&A::rootTranslationWeight>(
                                                            "rootTranslationWeight", "Root Translation",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 1.0, 0.05),
                                           "How much of the average pull each iteration may spend moving "
                                           "the root instead of bending joints. 0 pins the character in "
                                           "place; 1 lets it step toward its targets."),
                            "Solver"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&A::maxJointStepRadians>(
+                InGroup(WithTooltip(WithRange(Declare<&A::maxJointStepRadians>(
                                                            "maxJointStepRadians", "Max Joint Step (rad)",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.017453292519943295, 3.14159265358979323846, 0.017453292519943295),
                                           "The most any one joint may rotate in a single sweep. A hard "
                                           "pull arrives over a few frames instead of snapping through "
                                           "a fold in one."),
                            "Solver"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::solved>("solved", "Solved", kPropertyTypeBoolUVE), "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::converged>("converged", "Converged", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&A::solved>("solved", "Solved", kPropertyTypeBool), "State"),
+                InGroup(DeclareRuntimeState<&A::converged>("converged", "Converged", kPropertyTypeBool),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&A::iterationsUsed>("iterationsUsed", "Iterations Used",
-                                                                      kPropertyTypeUInt32UVE),
+                InGroup(DeclareRuntimeState<&A::iterationsUsed>("iterationsUsed", "Iterations Used",
+                                                                      kPropertyTypeUInt32),
                            "State"),
             }));
 }
 
 /// Ragdoll3D: articulated passive, active-motor, and partial-subtree ragdoll driving a Skeleton3D.
-void DeclareRagdoll3DUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using R = Ragdoll3DComponentUVE;
-    const auto entityReference = [](TypeMetadataPropertyUVE property) {
-        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+void DeclareRagdoll3D(std::vector<TypeMetadataEntry>& entries) {
+    using R = Ragdoll3DComponent;
+    const auto entityReference = [](TypeMetadataProperty property) {
+        property.flags = TypeMetadataPropertyFlags::EntityReference;
         return property;
     };
-    AddValidatedUVE<Ragdoll3DComponentUVE, &IsRagdoll3DComponentAuthoredValidUVE>(
+    AddValidated<Ragdoll3DComponent, &IsRagdoll3DComponentAuthoredValid>(
         entries,
-        MakeEntryUVE("component.ragdoll_3d", "Ragdoll3DComponentUVE", "Ragdoll3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.ragdoll_3d", "Ragdoll3DComponent", "Ragdoll3D", kSectionOrderTypeSpecific,
             {
-                entityReference(WithTooltipUVE(DeclareUVE<&R::skeleton>("skeleton", "Skeleton",
-                                                                        kPropertyTypeEntityUVE),
+                entityReference(WithTooltip(Declare<&R::skeleton>("skeleton", "Skeleton",
+                                                                        kPropertyTypeEntity),
                                                "Skeleton3D posed by this ragdoll.")),
-                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&R::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Enable or pause ragdoll simulation."),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&R::mode>(
+                InGroup(WithTooltip(DeclareEnum<&R::mode>(
                                               "mode", "Mode",
                                               {
-                                                  {static_cast<std::int64_t>(RagdollModeUVE::Kinematic), "Kinematic"},
-                                                  {static_cast<std::int64_t>(RagdollModeUVE::Active), "Active"},
-                                                  {static_cast<std::int64_t>(RagdollModeUVE::Simulating), "Simulating"},
-                                                  {static_cast<std::int64_t>(RagdollModeUVE::BlendingOut), "BlendingOut"},
+                                                  {static_cast<std::int64_t>(RagdollMode::Kinematic), "Kinematic"},
+                                                  {static_cast<std::int64_t>(RagdollMode::Active), "Active"},
+                                                  {static_cast<std::int64_t>(RagdollMode::Simulating), "Simulating"},
+                                                  {static_cast<std::int64_t>(RagdollMode::BlendingOut), "BlendingOut"},
                                               }),
                                           "Kinematic tracks animation; Active uses PD motors; Simulating is full ragdoll."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&R::qualityPreset>(
+                InGroup(WithTooltip(DeclareEnum<&R::qualityPreset>(
                                               "qualityPreset", "Quality Preset",
                                               {
-                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::DesktopAAA), "DesktopAAA"},
-                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::MobileBalanced), "MobileBalanced"},
-                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::MobileFast), "MobileFast"},
-                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::Custom), "Custom"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::DesktopAAA), "DesktopAAA"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::MobileBalanced), "MobileBalanced"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::MobileFast), "MobileFast"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::Custom), "Custom"},
                                               }),
                                           "Balances solver substeps and self-collision for desktop vs low-end mobile."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::physicsBlendWeight>(
+                InGroup(WithTooltip(WithRange(Declare<&R::physicsBlendWeight>(
                                                            "physicsBlendWeight", "Physics Blend",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 1.0, 0.05),
                                           "Blend between animated pose (0) and physics ragdoll (1)."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::gravity>("gravity", "Gravity", kPropertyTypeVector3UVE),
+                InGroup(WithTooltip(Declare<&R::gravity>("gravity", "Gravity", kPropertyTypeVector3),
                                           "World gravity acceleration applied to dynamic limbs."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::initialVelocity>("initialVelocity", "Initial Velocity",
-                                                                          kPropertyTypeVector3UVE),
+                InGroup(WithTooltip(Declare<&R::initialVelocity>("initialVelocity", "Initial Velocity",
+                                                                          kPropertyTypeVector3),
                                           "Extra linear velocity added when simulation starts."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::partialRootBoneName>("partialRootBoneName", "Partial Root Bone",
-                                                                              kPropertyTypeStringUVE),
+                InGroup(WithTooltip(Declare<&R::partialRootBoneName>("partialRootBoneName", "Partial Root Bone",
+                                                                              kPropertyTypeString),
                                           "Empty simulates full body; naming a bone simulates only its subtree."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::enableSelfCollision>("enableSelfCollision", "Self-Collision",
-                                                                              kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&R::enableSelfCollision>("enableSelfCollision", "Self-Collision",
+                                                                              kPropertyTypeBool),
                                           "Prevent non-adjacent limbs from clipping through the torso."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::enableDynamicPushback>("enableDynamicPushback", "Dynamic Pushback",
-                                                                                kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&R::enableDynamicPushback>("enableDynamicPushback", "Dynamic Pushback",
+                                                                                kPropertyTypeBool),
                                           "Transfer ragdoll contact impulses back to dynamic Rigid3D props."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::driveEntityTransform>("driveEntityTransform", "Drive Entity Transform",
-                                                                               kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&R::driveEntityTransform>("driveEntityTransform", "Drive Entity Transform",
+                                                                               kPropertyTypeBool),
                                           "Move the skeleton entity transform to follow the fallen pelvis."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::inheritAnimatedVelocity>("inheritAnimatedVelocity", "Inherit Velocity",
-                                                                                  kPropertyTypeBoolUVE),
+                InGroup(WithTooltip(Declare<&R::inheritAnimatedVelocity>("inheritAnimatedVelocity", "Inherit Velocity",
+                                                                                  kPropertyTypeBool),
                                           "Carry animated limb velocities into ragdoll upon activation."),
                            "Simulation"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::motorStiffness>("motorStiffness", "Motor Stiffness",
-                                                                                      kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&R::motorStiffness>("motorStiffness", "Motor Stiffness",
+                                                                                      kPropertyTypeFloat),
                                                        0.0, 2000.0, 10.0),
                                           "Joint PD spring stiffness in Active Ragdoll mode."),
                            "Active Motors"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::motorDamping>("motorDamping", "Motor Damping",
-                                                                                    kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&R::motorDamping>("motorDamping", "Motor Damping",
+                                                                                    kPropertyTypeFloat),
                                                        0.0, 200.0, 2.0),
                                           "Joint PD angular damping in Active Ragdoll mode."),
                            "Active Motors"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::maxMotorTorque>("maxMotorTorque", "Max Motor Torque",
-                                                                                      kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&R::maxMotorTorque>("maxMotorTorque", "Max Motor Torque",
+                                                                                      kPropertyTypeFloat),
                                                        0.0, 2000.0, 10.0),
                                           "Torque cap (N.m) allowing heavy impacts to overpower motors."),
                            "Active Motors"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveLinearStiffness>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveLinearStiffness>(
                                                            "rootDriveLinearStiffness", "Root Linear Stiffness",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 2000.0, 10.0),
                                           "Optional world-space linear spring holding pelvis in Active mode."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveLinearDamping>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveLinearDamping>(
                                                            "rootDriveLinearDamping", "Root Linear Damping",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 200.0, 2.0),
                                           "Damping for Active mode world-space root linear drive."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveMaxLinearForce>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveMaxLinearForce>(
                                                            "rootDriveMaxLinearForce", "Root Max Linear Force",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 5000.0, 25.0),
                                           "Maximum force (N) for Active mode root linear drive."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveAngularStiffness>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveAngularStiffness>(
                                                            "rootDriveAngularStiffness", "Root Angular Stiffness",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 2000.0, 10.0),
                                           "World-space upright balance stiffness for pelvis in Active mode."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveAngularDamping>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveAngularDamping>(
                                                            "rootDriveAngularDamping", "Root Angular Damping",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 200.0, 2.0),
                                           "Angular damping for Active mode root upright drive."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveMaxAngularTorque>(
+                InGroup(WithTooltip(WithRange(Declare<&R::rootDriveMaxAngularTorque>(
                                                            "rootDriveMaxAngularTorque", "Root Max Angular Torque",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 2000.0, 10.0),
                                           "Maximum torque (N.m) for Active mode root upright drive."),
                            "Root Drive"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::maxSubstepsPerFrame>(
+                InGroup(WithTooltip(WithRange(Declare<&R::maxSubstepsPerFrame>(
                                                            "maxSubstepsPerFrame", "Max Substeps",
-                                                           kPropertyTypeUInt32UVE),
-                                                       1.0, static_cast<double>(Physics::kMaximumRagdollSubstepsUVE), 1.0),
+                                                           kPropertyTypeUInt32),
+                                                       1.0, static_cast<double>(Physics::kMaximumRagdollSubsteps), 1.0),
                                           "Maximum fixed physics substeps per frame."),
                            "Solver"),
-                InGroupUVE(DeclareRuntimeStateUVE<&R::initialized>("initialized", "Initialized", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&R::initialized>("initialized", "Initialized", kPropertyTypeBool),
                            "State"),
-                InGroupUVE(DeclareRuntimeStateUVE<&R::editorPreviewSimulating>("editorPreviewSimulating", "Preview Active",
-                                                                               kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&R::editorPreviewSimulating>("editorPreviewSimulating", "Preview Active",
+                                                                               kPropertyTypeBool),
                            "State"),
             }));
 }
 
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
-void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
-    using R = ReflectionProbe3DComponentUVE;
-    AddValidatedUVE<R, &IsReflectionProbe3DObjectComponentValidUVE>(
+void DeclareRenderInstanceObjects(std::vector<TypeMetadataEntry>& entries) {
+    using R = ReflectionProbe3DComponent;
+    AddValidated<R, &IsReflectionProbe3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.reflection_probe_3d", "ReflectionProbe3DComponentUVE", "ReflectionProbe3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.reflection_probe_3d", "ReflectionProbe3DComponent", "ReflectionProbe3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&R::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, the probe contributes no local reflection and captures are skipped."),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::size>("size", "Influence Size", kPropertyTypeVector3UVE),
+                WithTooltip(WithRange(Declare<&R::size>("size", "Influence Size", kPropertyTypeVector3),
                                             0.001, 100000.0, 0.01),
                                "Full box extents in metres. Reflection influence fades to zero at each face."),
-                WithTooltipUVE(
-                    DeclareEnumUVE<&R::resolution>(
+                WithTooltip(
+                    DeclareEnum<&R::resolution>(
                         "resolution", "Capture Resolution",
                         {{0, "64 (Low)"}, {1, "128 (Medium)"}, {2, "256 (High)"}, {3, "512 (Ultra)"}}),
                     "Texels per cubemap face. Higher resolution sharpens the captured reflection at the cost of "
                     "six larger textures; changing it reallocates the probe and triggers a fresh capture."),
-                DeclareEnumUVE<&R::updateMode>("updateMode", "Update Mode",
+                DeclareEnum<&R::updateMode>("updateMode", "Update Mode",
                                                {{0, "Once"}, {1, "Every Frame"}, {2, "On Demand"}}),
             }));
 
-    AddValidatedUVE<DirectionalLight3DComponentUVE, &IsDirectionalLight3DComponentValidUVE>(
+    AddValidated<DirectionalLight3DComponent, &IsDirectionalLight3DComponentValid>(
         entries,
-        MakeEntryUVE("component.directional_light_3d", "DirectionalLight3DComponentUVE", "DirectionalLight3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.directional_light_3d", "DirectionalLight3DComponent", "DirectionalLight3D", kSectionOrderTypeSpecific,
             {
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowMaxDistance>(
-                                                           "shadowMaxDistance", "Max Distance", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::shadowMaxDistance>(
+                                                           "shadowMaxDistance", "Max Distance", kPropertyTypeFloat),
                                                        0.0, 10000.0, 1.0),
                                           "How far from the camera shadows are drawn, in metres. 0 follows the "
                                           "camera's far plane. Shorter is sharper."),
                            "Shadow"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowSplitBlend>(
-                                                           "shadowSplitBlend", "Split Blend", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::shadowSplitBlend>(
+                                                           "shadowSplitBlend", "Split Blend", kPropertyTypeFloat),
                                                        -1.0, 1.0, 0.01),
                                           "How the shadow cascades share that distance: 0 evenly, 1 packed near the "
                                           "camera (sharper up close); a negative value inherits the project's default."),
                            "Shadow"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::shadowDistanceFadeRange>(
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::shadowDistanceFadeRange>(
                                                            "shadowDistanceFadeRange", "Distance Fade Range",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 10000.0, 1.0),
                                           "Fade shadows smoothly to fully lit over this many metres at the end of "
                                           "the final cascade. 0 disables the fade."),
@@ -3865,221 +3865,221 @@ void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries)
                 // The disc is this light's visible body in the sky, so its rows belong here rather
                 // than on the Sky object: two directional lights are two bodies, each of which
                 // sits where its own light points and is as bright as its own emitter says.
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discAngularDiameterDegrees>(
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::discAngularDiameterDegrees>(
                                                            "discAngularDiameterDegrees", "Angular Diameter",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 90.0, 0.05),
                                           "How wide the disc appears, in degrees. 0 hides it. 3.8 is what the "
                                           "viewport's sun has always looked like; the real sun is 0.53, which "
                                           "is accurate and small."),
                            "Sun Disc"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discIntensity>(
-                                                           "discIntensity", "Disc Intensity", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::discIntensity>(
+                                                           "discIntensity", "Disc Intensity", kPropertyTypeFloat),
                                                        0.0, 64.0, 0.05),
                                           "Peak brightness of the disc, on top of the colour and energy the light "
                                           "already gives the scene. Bright enough and it blooms."),
                            "Sun Disc"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&DirectionalLight3DComponentUVE::discLimbDarkening>(
+                InGroup(WithTooltip(WithRange(Declare<&DirectionalLight3DComponent::discLimbDarkening>(
                                                            "discLimbDarkening", "Limb Darkening",
-                                                           kPropertyTypeFloatUVE),
+                                                           kPropertyTypeFloat),
                                                        0.0, 1.0, 0.01),
                                           "How much dimmer the disc's rim is than its centre. 0 is a flat disc; the "
                                           "real sun is about 0.6, a moon about 0.85."),
                            "Sun Disc"),
             }));
 
-    using D = Decal3DComponentUVE;
-    AddValidatedUVE<Decal3DComponentUVE, &IsDecal3DObjectComponentValidUVE>(
+    using D = Decal3DComponent;
+    AddValidated<Decal3DComponent, &IsDecal3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.decal_3d", "Decal3DComponentUVE", "Decal3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.decal_3d", "Decal3DComponent", "Decal3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&D::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&D::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off stops projecting without removing the object."),
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&D::materialAssetPath>("materialAssetPath", "Material",
-                                                                                       kPropertyTypeStringUVE),
+                WithTooltip(WithCustomDrawer(Declare<&D::materialAssetPath>("materialAssetPath", "Material",
+                                                                                       kPropertyTypeString),
                                                      "file:uvmat"),
                                "The decal material to project."),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::size>("size", "Size", kPropertyTypeVector3UVE), 0.001,
+                WithTooltip(WithRange(Declare<&D::size>("size", "Size", kPropertyTypeVector3), 0.001,
                                             100000.0, 0.01),
                                "The projection volume, centred on the object; it projects along -Y."),
-                DeclareEnumUVE<&D::projection>("projection", "Projection", {{0, "Box"}, {1, "Cylinder"}}),
-                WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloatUVE),
+                DeclareEnum<&D::projection>("projection", "Projection", {{0, "Box"}, {1, "Cylinder"}}),
+                WithTooltip(WithRange(Declare<&D::lifetime>("lifetime", "Lifetime", kPropertyTypeFloat),
                                             0.0, 100000.0, 0.1),
                                "Seconds until the decal removes itself. 0 keeps it forever."),
-                WithCustomDrawerUVE(WithTooltipUVE(DeclareUVE<&D::cullMask>("cullMask", "Projects On",
-                                                                            kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(WithTooltip(Declare<&D::cullMask>("cullMask", "Projects On",
+                                                                            kPropertyTypeBitMask32),
                                                    "The render layers it projects onto."),
-                                    std::string(kLayerMaskDrawerRenderUVE)),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&D::modulate>("modulate", "Modulate", kPropertyTypeColorUVE),
+                                    std::string(kLayerMaskDrawerRender)),
+                InGroup(WithTooltip(Declare<&D::modulate>("modulate", "Modulate", kPropertyTypeColor),
                                           "Tints the projected colour."),
                            "Parameters"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&D::emissionEnergy>("emissionEnergy", "Emission",
-                                                                       kPropertyTypeFloatUVE),
+                InGroup(WithRange(Declare<&D::emissionEnergy>("emissionEnergy", "Emission",
+                                                                       kPropertyTypeFloat),
                                         0.0, 128.0, 0.01),
                            "Parameters"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::albedoMix>("albedoMix", "Albedo Mix",
-                                                                                 kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&D::albedoMix>("albedoMix", "Albedo Mix",
+                                                                                 kPropertyTypeFloat),
                                                        0.0, 1.0, 0.01),
                                           "How much of the surface colour it replaces. 0 keeps the paint, for dents."),
                            "Parameters"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&D::normalFade>("normalFade", "Normal Fade",
-                                                                                  kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&D::normalFade>("normalFade", "Normal Fade",
+                                                                                  kPropertyTypeFloat),
                                                        0.0, 1.0, 0.01),
                                           "Fades it on surfaces turned away from the projection."),
                            "Parameters"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&D::upperFade>("upperFade", "Upper", kPropertyTypeFloatUVE), 0.0,
+                InGroup(WithRange(Declare<&D::upperFade>("upperFade", "Upper", kPropertyTypeFloat), 0.0,
                                         1.0, 0.01),
                            "Vertical Fade"),
-                InGroupUVE(WithRangeUVE(DeclareUVE<&D::lowerFade>("lowerFade", "Lower", kPropertyTypeFloatUVE), 0.0,
+                InGroup(WithRange(Declare<&D::lowerFade>("lowerFade", "Lower", kPropertyTypeFloat), 0.0,
                                         1.0, 0.01),
                            "Vertical Fade"),
-                InGroupUVE(DeclareUVE<&D::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBoolUVE),
+                InGroup(Declare<&D::distanceFadeEnabled>("distanceFadeEnabled", "Enabled", kPropertyTypeBool),
                            "Distance Fade"),
-                InGroupUVE(WhenOnUVE<&D::distanceFadeEnabled>(WithRangeUVE(
-                               DeclareUVE<&D::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&D::distanceFadeEnabled>(WithRange(
+                               Declare<&D::distanceFadeBegin>("distanceFadeBegin", "Begin", kPropertyTypeFloat),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
-                InGroupUVE(WhenOnUVE<&D::distanceFadeEnabled>(WithRangeUVE(
-                               DeclareUVE<&D::distanceFadeLength>("distanceFadeLength", "Length",
-                                                                  kPropertyTypeFloatUVE),
+                InGroup(WhenOn<&D::distanceFadeEnabled>(WithRange(
+                               Declare<&D::distanceFadeLength>("distanceFadeLength", "Length",
+                                                                  kPropertyTypeFloat),
                                0.0, 1000000.0, 0.1)),
                            "Distance Fade"),
                 // The runtime half: how much of the lifetime is left, and whether it has run out.
                 // Shown during Play so an author can watch a decal age, never written by authoring
                 // and never saved - the same treatment Projectile3D's countdown gets, because it is
                 // the same kind of fact.
-                InGroupUVE(DeclareRuntimeStateUVE<&D::remainingLifetime>("remainingLifetime", "Remaining",
-                                                                         kPropertyTypeFloatUVE),
+                InGroup(DeclareRuntimeState<&D::remainingLifetime>("remainingLifetime", "Remaining",
+                                                                         kPropertyTypeFloat),
                            "Result"),
-                InGroupUVE(DeclareRuntimeStateUVE<&D::expired>("expired", "Expired", kPropertyTypeBoolUVE),
+                InGroup(DeclareRuntimeState<&D::expired>("expired", "Expired", kPropertyTypeBool),
                            "Result"),
             }));
 
-    using F = FogVolume3DComponentUVE;
-    AddValidatedUVE<FogVolume3DComponentUVE, &IsFogVolume3DObjectComponentValidUVE>(
+    using F = FogVolume3DComponent;
+    AddValidated<FogVolume3DComponent, &IsFogVolume3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.fog_volume_3d", "FogVolume3DComponentUVE", "FogVolume3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.fog_volume_3d", "FogVolume3DComponent", "FogVolume3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareEnumUVE<&F::shape>(
+                WithTooltip(DeclareEnum<&F::shape>(
                                    "shape", "Shape",
                                    {{0, "Ellipsoid"}, {1, "Cone"}, {2, "Cylinder"}, {3, "Box"}, {4, "World"}}),
                                "The volume's shape. World fills the whole scene and ignores Size."),
                 [] {
-                    TypeMetadataPropertyUVE property = WithRangeUVE(
-                        DeclareUVE<&F::size>("size", "Size", kPropertyTypeVector3UVE), 0.001, 100000.0, 0.01);
+                    TypeMetadataProperty property = WithRange(
+                        Declare<&F::size>("size", "Size", kPropertyTypeVector3), 0.001, 100000.0, 0.01);
                     property.isVisible = +[](const void* instance) {
-                        return static_cast<const F*>(instance)->shape != FogVolumeShapeUVE::World;
+                        return static_cast<const F*>(instance)->shape != FogVolumeShape::World;
                     };
                     return property;
                 }(),
-                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&F::materialAssetPath>("materialAssetPath", "Material",
-                                                                                       kPropertyTypeStringUVE),
+                WithTooltip(WithCustomDrawer(Declare<&F::materialAssetPath>("materialAssetPath", "Material",
+                                                                                       kPropertyTypeString),
                                                      "file:uvmat"),
                                "Reserved for a custom fog material. Until one is assigned, Density, Albedo and Emission drive the volume."),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::density>("density", "Density",
-                                                                               kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&F::density>("density", "Density",
+                                                                               kPropertyTypeFloat),
                                                        -1024.0, 1024.0, 0.01),
                                           "How thick the fog is. Negative clears fog from inside the volume."),
                            "Fog"),
-                InGroupUVE(DeclareUVE<&F::albedo>("albedo", "Albedo", kPropertyTypeColorUVE), "Fog"),
-                InGroupUVE(WithTooltipUVE(DeclareUVE<&F::emission>("emission", "Emission", kPropertyTypeColorUVE),
+                InGroup(Declare<&F::albedo>("albedo", "Albedo", kPropertyTypeColor), "Fog"),
+                InGroup(WithTooltip(Declare<&F::emission>("emission", "Emission", kPropertyTypeColor),
                                           "Light the fog gives off by itself, with no light shining on it."),
                            "Fog"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::heightFalloff>(
-                                                           "heightFalloff", "Height Falloff", kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&F::heightFalloff>(
+                                                           "heightFalloff", "Height Falloff", kPropertyTypeFloat),
                                                        0.0, 1024.0, 0.01),
                                           "Thins the fog with height inside the volume. 0 keeps it even."),
                            "Fog"),
-                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&F::edgeFade>("edgeFade", "Edge Fade",
-                                                                                kPropertyTypeFloatUVE),
+                InGroup(WithTooltip(WithRange(Declare<&F::edgeFade>("edgeFade", "Edge Fade",
+                                                                                kPropertyTypeFloat),
                                                        0.0, 1.0, 0.01),
                                           "Softens the volume's boundary. 0 is a hard edge."),
                            "Fog"),
             }));
 
-    using P = WorldPartition3DComponentUVE;
-    AddValidatedUVE<WorldPartition3DComponentUVE, &IsWorldPartition3DObjectComponentValidUVE>(
+    using P = WorldPartition3DComponent;
+    AddValidated<WorldPartition3DComponent, &IsWorldPartition3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.world_partition_3d", "WorldPartition3DComponentUVE", "WorldPartition3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.world_partition_3d", "WorldPartition3DComponent", "WorldPartition3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&P::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&P::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, every member draws. On, only the nearest occupied cells up to the "
                                "budget draw. This does not load files."),
-                WithTooltipUVE(
-                    WithRangeUVE(DeclareUVE<&P::cellSize>("cellSize", "Cell Size", kPropertyTypeFloatUVE),
+                WithTooltip(
+                    WithRange(Declare<&P::cellSize>("cellSize", "Cell Size", kPropertyTypeFloat),
                                  0.001, 100000.0, 0.01),
                     "Metres along one cell edge. The volume starts at this object's position and "
                     "covers Cell Size times the saved cell counts along X, Y and Z."),
-                WithTooltipUVE(
-                    WithRangeUVE(DeclareUVE<&P::maximumLoadedCells>("maximumLoadedCells", "Loaded Cells",
-                                                                    kPropertyTypeUInt32UVE),
-                                 1.0, static_cast<double>(kMaximumStreamedCellsUVE), 1.0),
+                WithTooltip(
+                    WithRange(Declare<&P::maximumLoadedCells>("maximumLoadedCells", "Loaded Cells",
+                                                                    kPropertyTypeUInt32),
+                                 1.0, static_cast<double>(kMaximumStreamedCells), 1.0),
                     "How many occupied cells stay drawn. Farther cells skip their draws."),
-                InGroupUVE(DeclareRuntimeStateUVE<&P::loadedCellCount>("loadedCellCount", "Live Cells",
-                                                                       kPropertyTypeUInt32UVE),
+                InGroup(DeclareRuntimeState<&P::loadedCellCount>("loadedCellCount", "Live Cells",
+                                                                       kPropertyTypeUInt32),
                            "Result"),
             }));
 
-    using V = VisibilityRegion3DComponentUVE;
-    AddValidatedUVE<VisibilityRegion3DComponentUVE, &IsVisibilityRegion3DObjectComponentValidUVE>(
+    using V = VisibilityRegion3DComponent;
+    AddValidated<VisibilityRegion3DComponent, &IsVisibilityRegion3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.visibility_region_3d", "VisibilityRegion3DComponentUVE", "VisibilityRegion3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.visibility_region_3d", "VisibilityRegion3DComponent", "VisibilityRegion3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&V::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&V::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, every member draws. On, interior drawables skip while no viewer "
                                "stands inside the box."),
-                WithTooltipUVE(
-                    WithRangeUVE(DeclareUVE<&V::halfExtents>("halfExtents", "Half Extents",
-                                                             kPropertyTypeVector3UVE),
+                WithTooltip(
+                    WithRange(Declare<&V::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3),
                                  0.001, 100000.0, 0.01),
                     "The room box, centred on this object and aligned to the world axes."),
-                WithCustomDrawerUVE(
-                    WithTooltipUVE(DeclareUVE<&V::visibilityLayers>("visibilityLayers", "Visibility Layers",
-                                                                    kPropertyTypeBitMask32UVE),
+                WithCustomDrawer(
+                    WithTooltip(Declare<&V::visibilityLayers>("visibilityLayers", "Visibility Layers",
+                                                                    kPropertyTypeBitMask32),
                                    "Which mesh layers this room manages. A zero mask manages nothing. "
                                    "Primitives, decals, particles and fog use layer 0."),
-                    std::string(kLayerMaskDrawerRenderUVE)),
-                InGroupUVE(DeclareRuntimeStateUVE<&V::active>("active", "Active", kPropertyTypeBoolUVE),
+                    std::string(kLayerMaskDrawerRender)),
+                InGroup(DeclareRuntimeState<&V::active>("active", "Active", kPropertyTypeBool),
                            "Result"),
             }));
 
-    using O = Occluder3DComponentUVE;
-    AddValidatedUVE<Occluder3DComponentUVE, &IsOccluder3DObjectComponentValidUVE>(
+    using O = Occluder3DComponent;
+    AddValidated<Occluder3DComponent, &IsOccluder3DObjectComponentValid>(
         entries,
-        MakeEntryUVE("component.occluder_3d", "Occluder3DComponentUVE", "Occluder3D", kSectionOrderTypeSpecificUVE,
+        MakeEntry("component.occluder_3d", "Occluder3DComponent", "Occluder3D", kSectionOrderTypeSpecific,
             {
-                WithTooltipUVE(DeclareUVE<&O::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                WithTooltip(Declare<&O::enabled>("enabled", "Enabled", kPropertyTypeBool),
                                "Off, the box covers nothing. On, drawables whose whole bounds sit "
                                "behind it skip."),
-                WithTooltipUVE(
-                    WithRangeUVE(DeclareUVE<&O::halfExtents>("halfExtents", "Half Extents",
-                                                             kPropertyTypeVector3UVE),
+                WithTooltip(
+                    WithRange(Declare<&O::halfExtents>("halfExtents", "Half Extents",
+                                                             kPropertyTypeVector3),
                                  0.001, 100000.0, 0.01),
                     "The cover box, centred on this object and aligned to the world axes."),
-                WithTooltipUVE(DeclareEnumUVE<&O::mode>("mode", "Mode", {{0, "Conservative Box"}}),
+                WithTooltip(DeclareEnum<&O::mode>("mode", "Mode", {{0, "Conservative Box"}}),
                                "Hides a drawable only when every corner of its bounds is behind the box."),
             }));
 }
 
-void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+void DeclareObjectCommon(std::vector<TypeMetadataEntry>& entries) {
     // Each of these is declared here and nowhere else, and each appears in the Inspector - with
     // its dropdown, its resolved answer and its place in the section - without a line of Inspector
     // code being written for it. That is the whole point of the declaration being the single
     // source of property truth.
-    constexpr std::int32_t kProcessOrder = kSectionOrderObjectCommonUVE;
-    constexpr std::int32_t kThreadGroupOrder = kSectionOrderObjectCommonUVE + 10;
-    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderObjectCommonUVE + 20;
-    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderObjectCommonUVE + 30;
-    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderObjectCommonUVE + 40;
-    constexpr std::int32_t kScriptOrder = kSectionOrderObjectCommonUVE + 50;
-    constexpr std::int32_t kMetadataOrder = kSectionOrderObjectCommonUVE + 60;
+    constexpr std::int32_t kProcessOrder = kSectionOrderObjectCommon;
+    constexpr std::int32_t kThreadGroupOrder = kSectionOrderObjectCommon + 10;
+    constexpr std::int32_t kPhysicsInterpolationOrder = kSectionOrderObjectCommon + 20;
+    constexpr std::int32_t kAutoTranslateOrder = kSectionOrderObjectCommon + 30;
+    constexpr std::int32_t kEditorDescriptionOrder = kSectionOrderObjectCommon + 40;
+    constexpr std::int32_t kScriptOrder = kSectionOrderObjectCommon + 50;
+    constexpr std::int32_t kMetadataOrder = kSectionOrderObjectCommon + 60;
 
-    AddValidatedUVE<ProcessComponentUVE, &IsProcessComponentValidUVE>(
+    AddValidated<ProcessComponent, &IsProcessComponentValid>(
         entries,
-        MakeEntryUVE("component.process", "ProcessComponentUVE", "Process", kProcessOrder,
+        MakeEntry("component.process", "ProcessComponent", "Process", kProcessOrder,
             {
-                WithTooltipUVE(
-                    ResolvedByUVE(DeclareEnumUVE<&ProcessComponentUVE::mode>("mode", "Mode",
+                WithTooltip(
+                    ResolvedBy(DeclareEnum<&ProcessComponent::mode>("mode", "Mode",
                                                                              {{0, "Inherit"},
                                                                               {1, "Running"},
                                                                               {2, "Paused Only"},
@@ -4089,24 +4089,24 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                     "Whether this entity's work runs while paused. Drives scripts and particle "
                     "emitters; controllers, projectiles and spring arms skip Never and Paused "
                     "Only. Inherit takes the parent's answer (Running at the top)."),
-                WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::priority>("priority", "Priority",
-                                                                           kPropertyTypeInt32UVE),
+                WithTooltip(Declare<&ProcessComponent::priority>("priority", "Priority",
+                                                                           kPropertyTypeInt32),
                                "Script tick order. Lower runs first; equal priorities keep entity "
                                "order. Not inherited."),
-                WithTooltipUVE(DeclareUVE<&ProcessComponentUVE::physicsPriority>(
-                                   "physicsPriority", "Physics Priority", kPropertyTypeInt32UVE),
+                WithTooltip(Declare<&ProcessComponent::physicsPriority>(
+                                   "physicsPriority", "Physics Priority", kPropertyTypeInt32),
                                "Fixed-step order for character controllers, projectiles and spring "
                                "arms. Lower runs first. Not inherited."),
-                DeclareRuntimeStateEnumUVE<&ProcessComponentUVE::resolvedModeInHierarchy>(
+                DeclareRuntimeStateEnum<&ProcessComponent::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
                     {{0, "Inherit"}, {1, "Running"}, {2, "Paused Only"}, {3, "Always"}, {4, "Never"}}),
             }));
 
     // A sub-group of Process: which thread the work runs on is a refinement of when it runs.
-    TypeMetadataEntryUVE threadGroup = MakeEntryUVE("component.thread_group", "ThreadGroupComponentUVE", "Thread Group", kThreadGroupOrder,
+    TypeMetadataEntry threadGroup = MakeEntry("component.thread_group", "ThreadGroupComponent", "Thread Group", kThreadGroupOrder,
         {
-            WithTooltipUVE(
-                ResolvedByUVE(DeclareEnumUVE<&ThreadGroupComponentUVE::mode>(
+            WithTooltip(
+                ResolvedBy(DeclareEnum<&ThreadGroupComponent::mode>(
                                   "mode", "Group", {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
                               "resolvedModeInHierarchy"),
                 "Which thread this entity's work may run on. Today this moves particle emitter "
@@ -4114,118 +4114,118 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 "Thread ancestor is a constraint a child cannot override."),
             // Kept declared so code can still read it, but not offered: particle emitters are
             // simulated independently, so an order within a group has nothing to order yet.
-            HiddenUVE(DeclareUVE<&ThreadGroupComponentUVE::order>("order", "Order", kPropertyTypeInt32UVE)),
-            DeclareRuntimeStateEnumUVE<&ThreadGroupComponentUVE::resolvedModeInHierarchy>(
+            Hidden(Declare<&ThreadGroupComponent::order>("order", "Order", kPropertyTypeInt32)),
+            DeclareRuntimeStateEnum<&ThreadGroupComponent::resolvedModeInHierarchy>(
                 "resolvedModeInHierarchy", "Resolved Group",
                 {{0, "Inherit"}, {1, "Main Thread"}, {2, "Sub Thread"}}),
         });
     threadGroup.nestedUnderTypeIds = {"component.process"};
-    AddValidatedUVE<ThreadGroupComponentUVE, &IsThreadGroupComponentValidUVE>(entries, std::move(threadGroup));
+    AddValidated<ThreadGroupComponent, &IsThreadGroupComponentValid>(entries, std::move(threadGroup));
 
     // Only `mode` is authored. Everything else on this component is the interpolation system's
     // working state: the resolved answer plus the two poses it blends between. Marking them
     // RuntimeState is what keeps a generic editor from writing a pose and a generic serializer
     // from persisting one - either would corrupt the next frame's interpolation.
-    AddValidatedUVE<PhysicsInterpolationComponentUVE, &IsPhysicsInterpolationComponentValidUVE>(
+    AddValidated<PhysicsInterpolationComponent, &IsPhysicsInterpolationComponentValid>(
         entries,
-        MakeEntryUVE("component.physics_interpolation", "PhysicsInterpolationComponentUVE", "Physics Interpolation", kPhysicsInterpolationOrder,
+        MakeEntry("component.physics_interpolation", "PhysicsInterpolationComponent", "Physics Interpolation", kPhysicsInterpolationOrder,
                      {
-                         ResolvedByUVE(DeclareEnumUVE<&PhysicsInterpolationComponentUVE::mode>(
+                         ResolvedBy(DeclareEnum<&PhysicsInterpolationComponent::mode>(
                                            "mode", "Mode", {{0, "Inherit"}, {1, "Blended"}, {2, "Exact"}}),
                                        "interpolatedInHierarchy"),
-                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::interpolatedInHierarchy>(
+                         DeclareRuntimeState<&PhysicsInterpolationComponent::interpolatedInHierarchy>(
                              "interpolatedInHierarchy", "Interpolated In Hierarchy",
-                             kPropertyTypeBoolUVE),
-                         DeclareRuntimeStateUVE<&PhysicsInterpolationComponentUVE::hasPreviousPose>(
-                             "hasPreviousPose", "Has Previous Pose", kPropertyTypeBoolUVE),
+                             kPropertyTypeBool),
+                         DeclareRuntimeState<&PhysicsInterpolationComponent::hasPreviousPose>(
+                             "hasPreviousPose", "Has Previous Pose", kPropertyTypeBool),
                      }));
 
-    AddValidatedUVE<AutoTranslateComponentUVE, &IsAutoTranslateComponentValidUVE>(
+    AddValidated<AutoTranslateComponent, &IsAutoTranslateComponentValid>(
         entries,
-        MakeEntryUVE("component.auto_translate", "AutoTranslateComponentUVE", "Auto Translate", kAutoTranslateOrder,
+        MakeEntry("component.auto_translate", "AutoTranslateComponent", "Auto Translate", kAutoTranslateOrder,
             {
-                WithTooltipUVE(
-                    ResolvedByUVE(DeclareEnumUVE<&AutoTranslateComponentUVE::mode>(
+                WithTooltip(
+                    ResolvedBy(DeclareEnum<&AutoTranslateComponent::mode>(
                                       "mode", "Mode", {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
                                   "resolvedModeInHierarchy"),
                     "Whether this entity's UI Text is looked up in the active locale before it is "
                     "drawn. The authored text is its own key. Disable it for debug labels, "
                     "identifiers and player names; a label with no component follows its parent."),
-                DeclareRuntimeStateEnumUVE<&AutoTranslateComponentUVE::resolvedModeInHierarchy>(
+                DeclareRuntimeStateEnum<&AutoTranslateComponent::resolvedModeInHierarchy>(
                     "resolvedModeInHierarchy", "Resolved Mode",
                     {{0, "Inherit"}, {1, "Localized"}, {2, "Literal"}}),
             }));
 
     // A note to the next person, so it gets a box that fits a paragraph rather than one line.
-    TypeMetadataPropertyUVE description = WithCustomDrawerUVE(
-        DeclareUVE<&EditorDescriptionComponentUVE::description>("description", "Description",
-                                                                kPropertyTypeStringUVE),
+    TypeMetadataProperty description = WithCustomDrawer(
+        Declare<&EditorDescriptionComponent::description>("description", "Description",
+                                                                kPropertyTypeString),
         "multiline-text");
-    description.flags = TypeMetadataPropertyFlagsUVE::EditorOnly;
-    AddUVE<EditorDescriptionComponentUVE>(entries,
-                                          MakeEntryUVE("component.editor_description", "EditorDescriptionComponentUVE", "Editor Description",
+    description.flags = TypeMetadataPropertyFlags::EditorOnly;
+    Add<EditorDescriptionComponent>(entries,
+                                          MakeEntry("component.editor_description", "EditorDescriptionComponent", "Editor Description",
                                                        kEditorDescriptionOrder, {std::move(description)}));
 
     // The script slot: empty offers to create, pick or load a script; filled names it. The path
     // is still the stored truth - the drawer only decides how it is chosen.
-    TypeMetadataEntryUVE script =
-        MakeEntryUVE("component.script", "ScriptComponentUVE", "Script", kScriptOrder,
-                     {WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::scriptAssetPath>(
-                                              "scriptAssetPath", "Scripting", kPropertyTypeStringUVE),
+    TypeMetadataEntry script =
+        MakeEntry("component.script", "ScriptComponent", "Script", kScriptOrder,
+                     {WithCustomDrawer(Declare<&ScriptComponent::scriptAssetPath>(
+                                              "scriptAssetPath", "Scripting", kPropertyTypeString),
                                           "script-slot"),
                       // A `.uvs` script's `export` fields, drawn from the script itself; this
                       // object's values are stored here, so each edit is one undo step.
-                      WithCustomDrawerUVE(DeclareUVE<&ScriptComponentUVE::exportValues>(
+                      WithCustomDrawer(Declare<&ScriptComponent::exportValues>(
                                               "exportValues", "Exports", "ScriptExportValues"),
                                           "script-exports")});
     script.presentedInline = true;
-    AddUVE<ScriptComponentUVE>(entries, std::move(script));
+    Add<ScriptComponent>(entries, std::move(script));
 
     // Typed key/value pairs. A list needs add, rename, retype and remove, which a single property
     // row cannot express, so the whole list is one custom-drawn property.
-    TypeMetadataEntryUVE metadata = MakeEntryUVE("component.object_metadata", "ObjectMetadataComponentUVE", "Metadata", kMetadataOrder,
-        {WithCustomDrawerUVE(DeclareUVE<&ObjectMetadataComponentUVE::entries>("entries", "Metadata",
+    TypeMetadataEntry metadata = MakeEntry("component.object_metadata", "ObjectMetadataComponent", "Metadata", kMetadataOrder,
+        {WithCustomDrawer(Declare<&ObjectMetadataComponent::entries>("entries", "Metadata",
                                                                             "ObjectMetadataEntryList"),
                              "object-metadata")});
     metadata.presentedInline = true;
-    AddUVE<ObjectMetadataComponentUVE>(entries, std::move(metadata));
+    Add<ObjectMetadataComponent>(entries, std::move(metadata));
 }
 
-[[nodiscard]] TypeMetadataRegistryUVE BuildRegistryUVE() {
-    std::vector<TypeMetadataEntryUVE> entries;
-    DeclareIdentityAndTransformUVE(entries);
-    DeclareRenderingUVE(entries);
-    DeclarePhysicsUVE(entries);
-    DeclareRayCastUVE(entries);
-    DeclareProjectileUVE(entries);
-    DeclareCombatUVE(entries);
-    DeclareMediaAndUIUVE(entries);
-    DeclareGameplayUVE(entries);
-    DeclareNavigationUVE(entries);
-    DeclareObjectBasesUVE(entries);
-    DeclareSkyUVE(entries);
-    DeclareRenderInstanceObjectsUVE(entries);
-    DeclareSkeletonUVE(entries);
-    DeclareBoneAttachmentUVE(entries);
-    DeclareTwoBoneIKUVE(entries);
-    DeclareFullBodyIKUVE(entries);
-    DeclareRagdoll3DUVE(entries);
-    DeclareObjectCommonUVE(entries);
+[[nodiscard]] TypeMetadataRegistry BuildRegistry() {
+    std::vector<TypeMetadataEntry> entries;
+    DeclareIdentityAndTransform(entries);
+    DeclareRendering(entries);
+    DeclarePhysics(entries);
+    DeclareRayCast(entries);
+    DeclareProjectile(entries);
+    DeclareCombat(entries);
+    DeclareMediaAndUI(entries);
+    DeclareGameplay(entries);
+    DeclareNavigation(entries);
+    DeclareObjectBases(entries);
+    DeclareSky(entries);
+    DeclareRenderInstanceObjects(entries);
+    DeclareSkeleton(entries);
+    DeclareBoneAttachment(entries);
+    DeclareTwoBoneIK(entries);
+    DeclareFullBodyIK(entries);
+    DeclareRagdoll3D(entries);
+    DeclareObjectCommon(entries);
 
-    TypeMetadataRegistryUVE registry;
-    for (TypeMetadataEntryUVE& entry : entries) {
-        const Strings::StringIdUVE typeId = entry.typeId;
-        const Core::TypeMetadataRegistrationResultUVE result = registry.RegisterTypeUVE(std::move(entry));
-        if (!result.IsRegisteredUVE()) {
+    TypeMetadataRegistry registry;
+    for (TypeMetadataEntry& entry : entries) {
+        const Strings::StringId typeId = entry.typeId;
+        const Core::TypeMetadataRegistrationResult result = registry.RegisterType(std::move(entry));
+        if (!result.IsRegistered()) {
             // A rejected declaration is a mistake in this file, not a runtime condition: the entry
             // is a compile-time literal, so it either always registers or never does. Log loudly
             // and carry on - the affected component simply falls back to having no metadata.
-            UVE_ERROR("SceneComponentMetadataUVE: \"{}\" was rejected: {}", typeId.ToStringUVE(), result.message);
+            UVE_ERROR("SceneComponentMetadata: \"{}\" was rejected: {}", typeId.ToString(), result.message);
             // Loud in debug builds. A rejected declaration otherwise costs only a log line while its
             // whole component silently vanishes from the Inspector - which is exactly how an
             // over-long tooltip once removed the Process section without failing anything but a
             // drawer count.
-            UVE_ASSERT(result.IsRegisteredUVE());
+            UVE_ASSERT(result.IsRegistered());
         }
     }
     return registry;
@@ -4233,15 +4233,15 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 
 } // namespace
 
-const Core::TypeMetadataRegistryUVE& GetSceneComponentMetadataRegistryUVE() {
+const Core::TypeMetadataRegistry& GetSceneComponentMetadataRegistry() {
     // Built on first use rather than at static-initialization time, so the order in which
     // translation units initialize can never decide whether the registry is populated.
-    static const TypeMetadataRegistryUVE registry = BuildRegistryUVE();
+    static const TypeMetadataRegistry registry = BuildRegistry();
     return registry;
 }
 
-const Core::TypeMetadataEntryUVE* FindSceneComponentMetadataUVE(const std::type_index typeIndex) noexcept {
-    return GetSceneComponentMetadataRegistryUVE().FindTypeByIndexUVE(typeIndex);
+const Core::TypeMetadataEntry* FindSceneComponentMetadata(const std::type_index typeIndex) noexcept {
+    return GetSceneComponentMetadataRegistry().FindTypeByIndex(typeIndex);
 }
 
 } // namespace UVE::Scene

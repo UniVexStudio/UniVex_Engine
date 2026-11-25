@@ -10,19 +10,19 @@
 
 namespace UVE::Input {
 
-enum class MobileGestureTypeUVE : std::uint8_t {
+enum class MobileGestureType : std::uint8_t {
     Tap,
     Swipe,
 };
 
-enum class MobileSwipeDirectionUVE : std::uint8_t {
+enum class MobileSwipeDirection : std::uint8_t {
     PositiveX,
     NegativeX,
     PositiveY,
     NegativeY,
 };
 
-enum class TouchChordLifecycleTransitionUVE : std::uint8_t {
+enum class TouchChordLifecycleTransition : std::uint8_t {
     None = 0,
     Began,
     Moved,
@@ -32,38 +32,38 @@ enum class TouchChordLifecycleTransitionUVE : std::uint8_t {
 
 /// Classifies an exact-count multi-touch chord across copied previous/current snapshots.
 /// The policy owns no gesture lifecycle, platform framework, touch polling, or ECS state.
-[[nodiscard]] bool EvaluateTouchChordLifecycleTransitionUVE(
-    const MobileInputSnapshotUVE& previous, const MobileInputSnapshotUVE& current,
-    std::size_t requiredTouchCount, TouchChordLifecycleTransitionUVE& outTransition) noexcept;
+[[nodiscard]] bool EvaluateTouchChordLifecycleTransition(
+    const MobileInputSnapshot& previous, const MobileInputSnapshot& current,
+    std::size_t requiredTouchCount, TouchChordLifecycleTransition& outTransition) noexcept;
 
 /// Evaluates an exact-count multi-touch chord over one copied snapshot and publishes its centroid.
 /// Non-finite running sums fail closed without changing the caller's prior centroid. The policy owns
 /// no gesture lifecycle, platform framework, touch polling, or ECS state.
-[[nodiscard]] bool EvaluateTouchChordUVE(const MobileInputSnapshotUVE& snapshot,
+[[nodiscard]] bool EvaluateTouchChord(const MobileInputSnapshot& snapshot,
                                           std::size_t requiredTouchCount,
-                                          Math::Vector2UVE& outCentroid) noexcept;
+                                          Math::Vector2& outCentroid) noexcept;
 
-struct MobileGestureEventUVE final {
-    MobileGestureTypeUVE type = MobileGestureTypeUVE::Tap;
-    MobileSwipeDirectionUVE direction = MobileSwipeDirectionUVE::PositiveX;
+struct MobileGestureEvent final {
+    MobileGestureType type = MobileGestureType::Tap;
+    MobileSwipeDirection direction = MobileSwipeDirection::PositiveX;
     std::uint64_t touchIdentifier = 0U;
-    Math::Vector2UVE startPosition{};
-    Math::Vector2UVE endPosition{};
-    Math::Vector2UVE delta{};
+    Math::Vector2 startPosition{};
+    Math::Vector2 endPosition{};
+    Math::Vector2 delta{};
     float durationSeconds = 0.0F;
 
-    [[nodiscard]] bool operator==(const MobileGestureEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const MobileGestureEvent&) const noexcept = default;
 };
 
-struct MobileGestureReportUVE final {
-    std::array<MobileGestureEventUVE, kMaximumTouchCountUVE> events{};
+struct MobileGestureReport final {
+    std::array<MobileGestureEvent, kMaximumTouchCount> events{};
     std::size_t count = 0U;
     bool truncated = false;
 
-    [[nodiscard]] bool operator==(const MobileGestureReportUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const MobileGestureReport&) const noexcept = default;
 };
 
-struct MobileGestureRecognizerConfigUVE final {
+struct MobileGestureRecognizerConfig final {
     float maximumTapDurationSeconds = 0.25F;
     float maximumTapDistance = 24.0F;
     float minimumSwipeDistance = 48.0F;
@@ -74,34 +74,34 @@ struct MobileGestureRecognizerConfigUVE final {
 /// platform coordinate mapping and supplies one finite frame delta per new snapshot. The recognizer
 /// retains only capped per-touch tracking state and emits gestures when a tracked touch is released
 /// or its identifier changes; it does not own device polling, application lifecycle, or ECS state.
-class MobileGestureRecognizerUVE final {
+class MobileGestureRecognizer final {
 public:
-    explicit MobileGestureRecognizerUVE(MobileGestureRecognizerConfigUVE config = {}) noexcept;
+    explicit MobileGestureRecognizer(MobileGestureRecognizerConfig config = {}) noexcept;
 
-    [[nodiscard]] MobileGestureReportUVE ConsumeSnapshotUVE(const MobileInputSnapshotUVE& snapshot,
+    [[nodiscard]] MobileGestureReport ConsumeSnapshot(const MobileInputSnapshot& snapshot,
                                                              float frameDeltaSeconds) noexcept;
-    void ResetUVE() noexcept;
+    void Reset() noexcept;
 
 private:
-    struct TouchTrackUVE final {
+    struct TouchTrack final {
         bool active = false;
         std::uint64_t identifier = 0U;
-        Math::Vector2UVE startPosition{};
-        Math::Vector2UVE lastPosition{};
+        Math::Vector2 startPosition{};
+        Math::Vector2 lastPosition{};
         float durationSeconds = 0.0F;
     };
 
-    [[nodiscard]] static MobileGestureRecognizerConfigUVE SanitizeConfigUVE(
-        MobileGestureRecognizerConfigUVE config) noexcept;
-    [[nodiscard]] static bool IsFiniteVectorUVE(Math::Vector2UVE value) noexcept;
-    [[nodiscard]] static MobileSwipeDirectionUVE GetSwipeDirectionUVE(Math::Vector2UVE delta) noexcept;
-    [[nodiscard]] static MobileGestureEventUVE BuildGestureEventUVE(
-        const TouchTrackUVE& track, MobileGestureTypeUVE type,
-        MobileSwipeDirectionUVE direction) noexcept;
-    void AppendReleaseGestureUVE(const TouchTrackUVE& track, MobileGestureReportUVE& report) const noexcept;
+    [[nodiscard]] static MobileGestureRecognizerConfig SanitizeConfig(
+        MobileGestureRecognizerConfig config) noexcept;
+    [[nodiscard]] static bool IsFiniteVector(Math::Vector2 value) noexcept;
+    [[nodiscard]] static MobileSwipeDirection GetSwipeDirection(Math::Vector2 delta) noexcept;
+    [[nodiscard]] static MobileGestureEvent BuildGestureEvent(
+        const TouchTrack& track, MobileGestureType type,
+        MobileSwipeDirection direction) noexcept;
+    void AppendReleaseGesture(const TouchTrack& track, MobileGestureReport& report) const noexcept;
 
-    MobileGestureRecognizerConfigUVE m_config;
-    std::array<TouchTrackUVE, kMaximumTouchCountUVE> m_tracks{};
+    MobileGestureRecognizerConfig m_config;
+    std::array<TouchTrack, kMaximumTouchCount> m_tracks{};
     std::uint64_t m_lastFrameNumber = 0U;
 };
 

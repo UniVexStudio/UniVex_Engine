@@ -11,20 +11,20 @@
 
 namespace UVE::Editor {
 
-class EditorUVE;
+class Editor;
 
 /// Formats the live preview statistics overlay text: per-emitter live particle count,
 /// CPU simulation milliseconds per emitter, and total instances drawn.
-[[nodiscard]] std::string FormatVfxPreviewStatsTextUVE(const EditorUVE& editor);
+[[nodiscard]] std::string FormatVfxPreviewStatsText(const Editor& editor);
 
 /// Studio-grade timeline widget for the VFX Editor, positioned directly below the 3D preview:
 /// - Full-width ruler across `[0, max(0.1, duration, warmUpSeconds)]` with adaptive major/minor ticks
 /// - Shaded warm-up region `[0, warmUpSeconds]`
 /// - Elapsed playback progress rail + burst diamond keyframe lane
 /// - Hover scrub guide + high-contrast draggable playhead with clamped time pill
-class VfxTimelineWidgetUVE final : public prism::Widget {
+class VfxTimelineWidget final : public prism::Widget {
 public:
-    explicit VfxTimelineWidgetUVE(EditorUVE& editor);
+    explicit VfxTimelineWidget(Editor& editor);
 
     std::function<void(double)> onScrub;
 
@@ -39,13 +39,13 @@ public:
     bool focusable() const override { return true; }
 
 private:
-    [[nodiscard]] double EffectiveDurationUVE() const noexcept;
-    [[nodiscard]] float TimeToScreenXUVE(double seconds) const noexcept;
-    [[nodiscard]] double ScreenXToTimeUVE(float x) const noexcept;
-    void ScrubAtScreenXUVE(float x);
-    void UpdateHoverTooltipUVE(float x);
+    [[nodiscard]] double EffectiveDuration() const noexcept;
+    [[nodiscard]] float TimeToScreenX(double seconds) const noexcept;
+    [[nodiscard]] double ScreenXToTime(float x) const noexcept;
+    void ScrubAtScreenX(float x);
+    void UpdateHoverTooltip(float x);
 
-    EditorUVE& m_editor;
+    Editor& m_editor;
     bool m_scrubbing = false;
     bool m_hoverValid = false;
     double m_hoverTime = 0.0;

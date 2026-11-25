@@ -37,40 +37,40 @@
 namespace UVE::Render::Tests {
 namespace {
 
-constexpr std::uint32_t kTargetWidthUVE = 64;
-constexpr std::uint32_t kTargetHeightUVE = 64;
-constexpr Math::Vector3UVE kTestAmbientColorUVE{0.1F, 0.2F, 0.3F};
-constexpr std::uint32_t kTestShadowMapResolutionUVE = 64;
-constexpr float kTestShadowMapHalfExtentUVE = 20.0F;
-constexpr float kTestShadowMapNearPlaneUVE = 0.1F;
-constexpr float kTestShadowMapFarPlaneUVE = 100.0F;
-constexpr float kTestShadowFrustumPaddingUVE = 1.0F;
-constexpr float kTestShadowCascadeSplitLambdaUVE = 0.5F;
-constexpr float kTestShadowCascadeBlendRatioUVE = 0.1F;
-constexpr std::uint32_t kTestShadowPcfKernelRadiusUVE = 1;
-constexpr int kMaxPollIterationsUVE = 200000;
+constexpr std::uint32_t kTargetWidth = 64;
+constexpr std::uint32_t kTargetHeight = 64;
+constexpr Math::Vector3 kTestAmbientColor{0.1F, 0.2F, 0.3F};
+constexpr std::uint32_t kTestShadowMapResolution = 64;
+constexpr float kTestShadowMapHalfExtent = 20.0F;
+constexpr float kTestShadowMapNearPlane = 0.1F;
+constexpr float kTestShadowMapFarPlane = 100.0F;
+constexpr float kTestShadowFrustumPadding = 1.0F;
+constexpr float kTestShadowCascadeSplitLambda = 0.5F;
+constexpr float kTestShadowCascadeBlendRatio = 0.1F;
+constexpr std::uint32_t kTestShadowPcfKernelRadius = 1;
+constexpr int kMaxPollIterations = 200000;
 
 // Pure pane-management/hit-testing tests: no renderer/ECS involvement needed.
-class ViewportManagerPaneUVETest : public ::testing::Test {
+class ViewportManagerPaneTest : public ::testing::Test {
 protected:
-    ViewportManagerUVE manager;
+    ViewportManager manager;
 };
 
-TEST_F(ViewportManagerPaneUVETest, StartsEmpty) {
-    EXPECT_EQ(manager.GetPaneCountUVE(), 0U);
-    EXPECT_EQ(manager.GetPaneUVE(0), nullptr);
+TEST_F(ViewportManagerPaneTest, StartsEmpty) {
+    EXPECT_EQ(manager.GetPaneCount(), 0U);
+    EXPECT_EQ(manager.GetPane(0), nullptr);
 }
 
-TEST_F(ViewportManagerPaneUVETest, AddPaneUVE_AppendsAndIsRetrievable) {
-    ViewportPaneUVE pane;
+TEST_F(ViewportManagerPaneTest, AddPane_AppendsAndIsRetrievable) {
+    ViewportPane pane;
     pane.originX01 = 0.25F;
     pane.originY01 = 0.5F;
     pane.sizeX01 = 0.5F;
     pane.sizeY01 = 0.5F;
-    manager.AddPaneUVE(pane);
+    manager.AddPane(pane);
 
-    ASSERT_EQ(manager.GetPaneCountUVE(), 1U);
-    const ViewportPaneUVE* stored = manager.GetPaneUVE(0);
+    ASSERT_EQ(manager.GetPaneCount(), 1U);
+    const ViewportPane* stored = manager.GetPane(0);
     ASSERT_NE(stored, nullptr);
     EXPECT_FLOAT_EQ(stored->originX01, 0.25F);
     EXPECT_FLOAT_EQ(stored->originY01, 0.5F);
@@ -78,139 +78,139 @@ TEST_F(ViewportManagerPaneUVETest, AddPaneUVE_AppendsAndIsRetrievable) {
     EXPECT_FLOAT_EQ(stored->sizeY01, 0.5F);
 }
 
-TEST_F(ViewportManagerPaneUVETest, GetPaneUVE_OutOfRangeReturnsNullptr) {
-    manager.AddPaneUVE(ViewportPaneUVE{});
-    EXPECT_EQ(manager.GetPaneUVE(1), nullptr);
-    EXPECT_EQ(manager.GetPaneUVE(1000), nullptr);
+TEST_F(ViewportManagerPaneTest, GetPane_OutOfRangeReturnsNullptr) {
+    manager.AddPane(ViewportPane{});
+    EXPECT_EQ(manager.GetPane(1), nullptr);
+    EXPECT_EQ(manager.GetPane(1000), nullptr);
 }
 
-TEST_F(ViewportManagerPaneUVETest, RemovePaneUVE_RemovesTheCorrectPane) {
-    ViewportPaneUVE first;
+TEST_F(ViewportManagerPaneTest, RemovePane_RemovesTheCorrectPane) {
+    ViewportPane first;
     first.originX01 = 0.0F;
-    ViewportPaneUVE second;
+    ViewportPane second;
     second.originX01 = 0.5F;
-    manager.AddPaneUVE(first);
-    manager.AddPaneUVE(second);
+    manager.AddPane(first);
+    manager.AddPane(second);
 
-    manager.RemovePaneUVE(0);
+    manager.RemovePane(0);
 
-    ASSERT_EQ(manager.GetPaneCountUVE(), 1U);
-    EXPECT_FLOAT_EQ(manager.GetPaneUVE(0)->originX01, 0.5F);
+    ASSERT_EQ(manager.GetPaneCount(), 1U);
+    EXPECT_FLOAT_EQ(manager.GetPane(0)->originX01, 0.5F);
 }
 
-TEST_F(ViewportManagerPaneUVETest, RemovePaneUVE_OutOfRangeIsANoOp) {
-    manager.AddPaneUVE(ViewportPaneUVE{});
-    manager.RemovePaneUVE(5);
-    EXPECT_EQ(manager.GetPaneCountUVE(), 1U);
+TEST_F(ViewportManagerPaneTest, RemovePane_OutOfRangeIsANoOp) {
+    manager.AddPane(ViewportPane{});
+    manager.RemovePane(5);
+    EXPECT_EQ(manager.GetPaneCount(), 1U);
 }
 
-TEST_F(ViewportManagerPaneUVETest, FindPaneAtNormalizedPositionUVE_NoPanesReturnsNullopt) {
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(0.5F, 0.5F), std::nullopt);
+TEST_F(ViewportManagerPaneTest, FindPaneAtNormalizedPosition_NoPanesReturnsNullopt) {
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(0.5F, 0.5F), std::nullopt);
 }
 
-TEST_F(ViewportManagerPaneUVETest, FindPaneAtNormalizedPositionUVE_HitsContainingPane) {
-    ViewportPaneUVE left;
+TEST_F(ViewportManagerPaneTest, FindPaneAtNormalizedPosition_HitsContainingPane) {
+    ViewportPane left;
     left.originX01 = 0.0F;
     left.sizeX01 = 0.5F;
     left.sizeY01 = 1.0F;
-    ViewportPaneUVE right;
+    ViewportPane right;
     right.originX01 = 0.5F;
     right.sizeX01 = 0.5F;
     right.sizeY01 = 1.0F;
-    manager.AddPaneUVE(left);
-    manager.AddPaneUVE(right);
+    manager.AddPane(left);
+    manager.AddPane(right);
 
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(0.1F, 0.5F), 0U);
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(0.9F, 0.5F), 1U);
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(0.1F, 0.5F), 0U);
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(0.9F, 0.5F), 1U);
 }
 
-TEST_F(ViewportManagerPaneUVETest, FindPaneAtNormalizedPositionUVE_MissReturnsNullopt) {
-    ViewportPaneUVE pane;
+TEST_F(ViewportManagerPaneTest, FindPaneAtNormalizedPosition_MissReturnsNullopt) {
+    ViewportPane pane;
     pane.originX01 = 0.0F;
     pane.sizeX01 = 0.25F;
     pane.sizeY01 = 0.25F;
-    manager.AddPaneUVE(pane);
+    manager.AddPane(pane);
 
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(0.9F, 0.9F), std::nullopt);
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(0.9F, 0.9F), std::nullopt);
 }
 
-TEST_F(ViewportManagerPaneUVETest, FindPaneAtNormalizedPositionUVE_OverlapPrefersMostRecentlyAdded) {
-    ViewportPaneUVE bottom;
+TEST_F(ViewportManagerPaneTest, FindPaneAtNormalizedPosition_OverlapPrefersMostRecentlyAdded) {
+    ViewportPane bottom;
     bottom.originX01 = 0.0F;
     bottom.originY01 = 0.0F;
     bottom.sizeX01 = 1.0F;
     bottom.sizeY01 = 1.0F;
-    ViewportPaneUVE top;
+    ViewportPane top;
     top.originX01 = 0.25F;
     top.originY01 = 0.25F;
     top.sizeX01 = 0.5F;
     top.sizeY01 = 0.5F;
-    manager.AddPaneUVE(bottom);
-    manager.AddPaneUVE(top);
+    manager.AddPane(bottom);
+    manager.AddPane(top);
 
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(0.5F, 0.5F), 1U);
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(0.5F, 0.5F), 1U);
 }
 
-TEST_F(ViewportManagerPaneUVETest, FindPaneAtNormalizedPositionUVE_NonFiniteInputReturnsNullopt) {
-    manager.AddPaneUVE(ViewportPaneUVE{});
-    EXPECT_EQ(manager.FindPaneAtNormalizedPositionUVE(std::numeric_limits<float>::quiet_NaN(), 0.5F), std::nullopt);
+TEST_F(ViewportManagerPaneTest, FindPaneAtNormalizedPosition_NonFiniteInputReturnsNullopt) {
+    manager.AddPane(ViewportPane{});
+    EXPECT_EQ(manager.FindPaneAtNormalizedPosition(std::numeric_limits<float>::quiet_NaN(), 0.5F), std::nullopt);
 }
 
-// Integration tests: RenderAllPanesUVE composing with a real Renderer3DUVE + NullRenderDeviceUVE,
+// Integration tests: RenderAllPanes composing with a real Renderer3D + NullRenderDevice,
 // following the exact fixture shape tests/render/renderer_3d_uve_tests.cpp already establishes.
-class ViewportManagerRenderUVETest : public ::testing::Test {
+class ViewportManagerRenderTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    Threading::ThreadPoolUVE threadPool{2};
-    Asset::AssetDatabaseUVE assetDatabase;
-    Asset::AssetManagerUVE assetManager{threadPool, eventSystem};
-    NullRenderDeviceUVE renderDevice;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    Threading::ThreadPool threadPool{2};
+    Asset::AssetDatabase assetDatabase;
+    Asset::AssetManager assetManager{threadPool, eventSystem};
+    NullRenderDevice renderDevice;
 
-    Asset::AssetBundleUVE assetBundle;
-    Asset::FileSystemUVE fileSystem{assetBundle};
-    Shader::ShaderManagerUVE shaderManager{threadPool, eventSystem, renderDevice, fileSystem,
-                                             Shader::ShaderManagerConfigUVE{}};
+    Asset::AssetBundle assetBundle;
+    Asset::FileSystem fileSystem{assetBundle};
+    Shader::ShaderManager shaderManager{threadPool, eventSystem, renderDevice, fileSystem,
+                                             Shader::ShaderManagerConfig{}};
 
-    RenderSystemUVE renderSystem{renderDevice};
-    CameraSystemUVE cameraSystem;
-    MeshRendererUVE meshRenderer;
-    LightSystemUVE lightSystem;
+    RenderSystem renderSystem{renderDevice};
+    CameraSystem cameraSystem;
+    MeshRenderer meshRenderer;
+    LightSystem lightSystem;
 
-    std::unique_ptr<Renderer3DUVE> renderer3D;
-    ViewportManagerUVE viewportManager;
+    std::unique_ptr<Renderer3D> renderer3D;
+    ViewportManager viewportManager;
 
-    ViewportManagerRenderUVETest() {
-        renderer3D = std::make_unique<Renderer3DUVE>(
+    ViewportManagerRenderTest() {
+        renderer3D = std::make_unique<Renderer3D>(
             renderDevice, renderSystem, meshRenderer, cameraSystem, lightSystem, shaderManager, assetManager,
-            assetDatabase, eventSystem, kTargetWidthUVE, kTargetHeightUVE, kTestAmbientColorUVE,
-            kTestShadowMapResolutionUVE, kTestShadowMapHalfExtentUVE, kTestShadowMapNearPlaneUVE,
-            kTestShadowMapFarPlaneUVE, kTestShadowFrustumPaddingUVE, kTestShadowCascadeSplitLambdaUVE,
-            kTestShadowCascadeBlendRatioUVE, kTestShadowPcfKernelRadiusUVE);
+            assetDatabase, eventSystem, kTargetWidth, kTargetHeight, kTestAmbientColor,
+            kTestShadowMapResolution, kTestShadowMapHalfExtent, kTestShadowMapNearPlane,
+            kTestShadowMapFarPlane, kTestShadowFrustumPadding, kTestShadowCascadeSplitLambda,
+            kTestShadowCascadeBlendRatio, kTestShadowPcfKernelRadius);
     }
 
-    Scene::EntityUVE MakeCameraEntityUVE() {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE local;
-        sceneGraph.AttachTransformUVE(entityManager, entity, local);
-        sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::CameraComponentUVE>(entity);
+    Scene::Entity MakeCameraEntity() {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent local;
+        sceneGraph.AttachTransform(entityManager, entity, local);
+        sceneGraph.Update(entityManager);
+        entityManager.AddComponent<Scene::CameraComponent>(entity);
         return entity;
     }
 
-    // The built-in ToneMapping program compiles asynchronously (ShaderManagerUVE) - the
+    // The built-in ToneMapping program compiles asynchronously (ShaderManager) - the
     // constructor only requests it. Matching renderer_3d_uve_tests.cpp's own established pattern:
-    // a first RenderFrameUVE call kicks off the request, then draining ShaderManagerUVE's job
-    // queue makes it ready for every subsequent frame (including the ones RenderAllPanesUVE
+    // a first RenderFrame call kicks off the request, then draining ShaderManager's job
+    // queue makes it ready for every subsequent frame (including the ones RenderAllPanes
     // drives), so the ToneMapping pass actually gets recorded instead of silently short-circuiting
-    // on !toneMappingProgram->IsValidUVE().
-    void PrimeToneMappingProgramUVE() {
-        renderer3D->RenderFrameUVE(entityManager, MakeCameraEntityUVE());
-        for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
-            shaderManager.UpdateUVE(0.0);
-            if (shaderManager.GetPendingJobCountUVE() == 0U) {
+    // on !toneMappingProgram->IsValid().
+    void PrimeToneMappingProgram() {
+        renderer3D->RenderFrame(entityManager, MakeCameraEntity());
+        for (int iteration = 0; iteration < kMaxPollIterations; ++iteration) {
+            shaderManager.Update(0.0);
+            if (shaderManager.GetPendingJobCount() == 0U) {
                 return;
             }
             std::this_thread::yield();
@@ -219,15 +219,15 @@ protected:
     }
 
     // Finds the ToneMapping pass among the last submitted commands: it is the only
-    // BeginRenderPassCommandUVE whose desc targets the default framebuffer (both attachments
+    // BeginRenderPassCommand whose desc targets the default framebuffer (both attachments
     // invalid), matching the signature the production code uses at
     // engine/render/src/renderer_3d_uve.cpp's ToneMapping pass lambda.
-    [[nodiscard]] static std::optional<RenderPassDescUVE>
-    FindToneMappingPassDescUVE(const std::vector<RecordedCommandUVE>& commands) {
-        for (const RecordedCommandUVE& command : commands) {
-            if (const auto* beginPass = std::get_if<BeginRenderPassCommandUVE>(&command)) {
-                if (beginPass->desc.colorAttachment == kInvalidTextureHandleUVE &&
-                    beginPass->desc.depthAttachment == kInvalidTextureHandleUVE) {
+    [[nodiscard]] static std::optional<RenderPassDesc>
+    FindToneMappingPassDesc(const std::vector<RecordedCommand>& commands) {
+        for (const RecordedCommand& command : commands) {
+            if (const auto* beginPass = std::get_if<BeginRenderPassCommand>(&command)) {
+                if (beginPass->desc.colorAttachment == kInvalidTextureHandle &&
+                    beginPass->desc.depthAttachment == kInvalidTextureHandle) {
                     return beginPass->desc;
                 }
             }
@@ -236,69 +236,69 @@ protected:
     }
 };
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ZeroWindowSizeIsANoOp) {
-    ViewportPaneUVE pane;
-    pane.cameraEntity = MakeCameraEntityUVE();
-    viewportManager.AddPaneUVE(pane);
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_ZeroWindowSizeIsANoOp) {
+    ViewportPane pane;
+    pane.cameraEntity = MakeCameraEntity();
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 0U, 128U);
-    EXPECT_TRUE(renderDevice.GetLastSubmittedCommandsUVE().empty());
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 0U, 128U);
+    EXPECT_TRUE(renderDevice.GetLastSubmittedCommands().empty());
 }
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_SkipsUiOnlyPane) {
-    ViewportPaneUVE pane;
-    pane.cameraEntity = MakeCameraEntityUVE();
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_SkipsUiOnlyPane) {
+    ViewportPane pane;
+    pane.cameraEntity = MakeCameraEntity();
     pane.uiOnly = true;
-    viewportManager.AddPaneUVE(pane);
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 128U, 128U);
-    EXPECT_TRUE(renderDevice.GetLastSubmittedCommandsUVE().empty());
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 128U, 128U);
+    EXPECT_TRUE(renderDevice.GetLastSubmittedCommands().empty());
 }
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_SkipsPaneWithInvalidRect) {
-    ViewportPaneUVE pane;
-    pane.cameraEntity = MakeCameraEntityUVE();
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_SkipsPaneWithInvalidRect) {
+    ViewportPane pane;
+    pane.cameraEntity = MakeCameraEntity();
     pane.originX01 = 0.9F;
     pane.sizeX01 = 0.5F; // origin + size > 1.0 -> invalid.
-    viewportManager.AddPaneUVE(pane);
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 128U, 128U);
-    EXPECT_TRUE(renderDevice.GetLastSubmittedCommandsUVE().empty());
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 128U, 128U);
+    EXPECT_TRUE(renderDevice.GetLastSubmittedCommands().empty());
 }
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_SkipsPaneWithInvalidCameraEntity) {
-    ViewportPaneUVE pane;
-    pane.cameraEntity = Scene::kInvalidEntityUVE;
-    viewportManager.AddPaneUVE(pane);
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_SkipsPaneWithInvalidCameraEntity) {
+    ViewportPane pane;
+    pane.cameraEntity = Scene::kInvalidEntity;
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 128U, 128U);
-    EXPECT_TRUE(renderDevice.GetLastSubmittedCommandsUVE().empty());
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 128U, 128U);
+    EXPECT_TRUE(renderDevice.GetLastSubmittedCommands().empty());
 }
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_SkipsPaneWithNonCameraEntity) {
-    ViewportPaneUVE pane;
-    pane.cameraEntity = entityManager.CreateEntityUVE(); // No CameraComponentUVE attached.
-    viewportManager.AddPaneUVE(pane);
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_SkipsPaneWithNonCameraEntity) {
+    ViewportPane pane;
+    pane.cameraEntity = entityManager.CreateEntity(); // No CameraComponent attached.
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 128U, 128U);
-    EXPECT_TRUE(renderDevice.GetLastSubmittedCommandsUVE().empty());
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 128U, 128U);
+    EXPECT_TRUE(renderDevice.GetLastSubmittedCommands().empty());
 }
 
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ValidPaneRendersWithCorrectPixelRegion) {
-    PrimeToneMappingProgramUVE();
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_ValidPaneRendersWithCorrectPixelRegion) {
+    PrimeToneMappingProgram();
 
-    ViewportPaneUVE pane;
-    pane.cameraEntity = MakeCameraEntityUVE();
+    ViewportPane pane;
+    pane.cameraEntity = MakeCameraEntity();
     pane.originX01 = 0.5F;
     pane.originY01 = 0.0F;
     pane.sizeX01 = 0.5F;
     pane.sizeY01 = 0.5F;
-    viewportManager.AddPaneUVE(pane);
+    viewportManager.AddPane(pane);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 200U, 100U);
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 200U, 100U);
 
-    const std::optional<RenderPassDescUVE> toneMappingDesc =
-        FindToneMappingPassDescUVE(renderDevice.GetLastSubmittedCommandsUVE());
+    const std::optional<RenderPassDesc> toneMappingDesc =
+        FindToneMappingPassDesc(renderDevice.GetLastSubmittedCommands());
     ASSERT_TRUE(toneMappingDesc.has_value());
     ASSERT_TRUE(toneMappingDesc->viewportOverride.has_value());
     // originX01=0.5, sizeX01=0.5 over a 200-wide window -> pixelX=100, width=100.
@@ -310,29 +310,29 @@ TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ValidPaneRendersWithCorre
     EXPECT_EQ(toneMappingDesc->viewportOverride->size.y, 50U);
 }
 
-// NullRenderDeviceUVE::GetLastSubmittedCommandsUVE() reflects only the most recently submitted
-// frame (each RenderFrameToRegionUVE call is its own Begin/EndFrameUVE), so a multi-pane call
+// NullRenderDevice::GetLastSubmittedCommands() reflects only the most recently submitted
+// frame (each RenderFrameToRegion call is its own Begin/EndFrame), so a multi-pane call
 // can't be asserted by counting passes across the whole call. Instead this confirms
-// RenderAllPanesUVE actually reaches and renders the second (last) pane with its own distinct
+// RenderAllPanes actually reaches and renders the second (last) pane with its own distinct
 // region, rather than stopping after the first - the single-pane test above already covers the
 // per-pane pixel-rect math itself.
-TEST_F(ViewportManagerRenderUVETest, RenderAllPanesUVE_ProcessesEveryValidPaneInOrder) {
-    PrimeToneMappingProgramUVE();
+TEST_F(ViewportManagerRenderTest, RenderAllPanes_ProcessesEveryValidPaneInOrder) {
+    PrimeToneMappingProgram();
 
-    ViewportPaneUVE first;
-    first.cameraEntity = MakeCameraEntityUVE();
+    ViewportPane first;
+    first.cameraEntity = MakeCameraEntity();
     first.sizeX01 = 0.5F;
-    ViewportPaneUVE second;
-    second.cameraEntity = MakeCameraEntityUVE();
+    ViewportPane second;
+    second.cameraEntity = MakeCameraEntity();
     second.originX01 = 0.5F;
     second.sizeX01 = 0.5F;
-    viewportManager.AddPaneUVE(first);
-    viewportManager.AddPaneUVE(second);
+    viewportManager.AddPane(first);
+    viewportManager.AddPane(second);
 
-    viewportManager.RenderAllPanesUVE(*renderer3D, entityManager, 128U, 128U);
+    viewportManager.RenderAllPanes(*renderer3D, entityManager, 128U, 128U);
 
-    const std::optional<RenderPassDescUVE> toneMappingDesc =
-        FindToneMappingPassDescUVE(renderDevice.GetLastSubmittedCommandsUVE());
+    const std::optional<RenderPassDesc> toneMappingDesc =
+        FindToneMappingPassDesc(renderDevice.GetLastSubmittedCommands());
     ASSERT_TRUE(toneMappingDesc.has_value());
     ASSERT_TRUE(toneMappingDesc->viewportOverride.has_value());
     EXPECT_EQ(toneMappingDesc->viewportOverride->position.x, 64U);

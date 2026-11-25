@@ -16,25 +16,25 @@
 namespace UVE::Blueprint::Core {
 
 // ---------------------------------------------------------------------------
-// BlueprintIdGeneratorUVE
+// BlueprintIdGenerator
 // ---------------------------------------------------------------------------
 
-BlueprintIdGeneratorUVE::BlueprintIdGeneratorUVE(const std::uint32_t nextId) noexcept
+BlueprintIdGenerator::BlueprintIdGenerator(const std::uint32_t nextId) noexcept
     : m_nextId(nextId == 0U ? 1U : nextId) {}
 
-void BlueprintIdGeneratorUVE::SeedFromAssetUVE(const Asset::BlueprintAssetUVE& asset) noexcept {
-    for (const Asset::BlueprintNodeUVE& node : asset.nodes) {
-        ReserveUVE(node.id);
+void BlueprintIdGenerator::SeedFromAsset(const Asset::BlueprintAsset& asset) noexcept {
+    for (const Asset::BlueprintNode& node : asset.nodes) {
+        Reserve(node.id);
     }
 }
 
-void BlueprintIdGeneratorUVE::ReserveUVE(const std::uint32_t existingId) noexcept {
+void BlueprintIdGenerator::Reserve(const std::uint32_t existingId) noexcept {
     if (existingId >= m_nextId) {
         m_nextId = existingId + 1U;
     }
 }
 
-std::uint32_t BlueprintIdGeneratorUVE::AllocateUVE() noexcept {
+std::uint32_t BlueprintIdGenerator::Allocate() noexcept {
     if (m_nextId == 0U) {
         m_nextId = 1U;
     }
@@ -45,9 +45,9 @@ std::uint32_t BlueprintIdGeneratorUVE::AllocateUVE() noexcept {
 // TypeSystem
 // ---------------------------------------------------------------------------
 
-BlueprintTypeDescriptorUVE GetBlueprintPinTypeDescriptorUVE(const Asset::BlueprintPinTypeUVE type) noexcept {
-    using T = Asset::BlueprintPinTypeUVE;
-    using C = BlueprintTypeCategoryUVE;
+BlueprintTypeDescriptor GetBlueprintPinTypeDescriptor(const Asset::BlueprintPinType type) noexcept {
+    using T = Asset::BlueprintPinType;
+    using C = BlueprintTypeCategory;
     switch (type) {
         case T::Exec: return {T::Exec, C::Execution, "Exec", "exec", "", false, T::Exec};
         case T::Bool: return {T::Bool, C::Scalar, "Boolean", "bool", "false", false, T::Bool};
@@ -64,48 +64,48 @@ BlueprintTypeDescriptorUVE GetBlueprintPinTypeDescriptorUVE(const Asset::Bluepri
     return {T::Float, C::Scalar, "Float", "float", "0.0", false, T::Float};
 }
 
-std::string_view BlueprintPinTypeDisplayNameUVE(const Asset::BlueprintPinTypeUVE type) noexcept {
-    return GetBlueprintPinTypeDescriptorUVE(type).displayName;
+std::string_view BlueprintPinTypeDisplayName(const Asset::BlueprintPinType type) noexcept {
+    return GetBlueprintPinTypeDescriptor(type).displayName;
 }
 
-std::string_view BlueprintPinTypeDefaultLiteralUVE(const Asset::BlueprintPinTypeUVE type) noexcept {
-    return GetBlueprintPinTypeDescriptorUVE(type).defaultLiteral;
+std::string_view BlueprintPinTypeDefaultLiteral(const Asset::BlueprintPinType type) noexcept {
+    return GetBlueprintPinTypeDescriptor(type).defaultLiteral;
 }
 
-bool CanConnectBlueprintPinTypesUVE(const Asset::BlueprintPinTypeUVE from,
-                                    const Asset::BlueprintPinTypeUVE to) noexcept {
+bool CanConnectBlueprintPinTypes(const Asset::BlueprintPinType from,
+                                    const Asset::BlueprintPinType to) noexcept {
     if (from == to) {
         return true;
     }
-    if (from == Asset::BlueprintPinTypeUVE::Exec || to == Asset::BlueprintPinTypeUVE::Exec) {
+    if (from == Asset::BlueprintPinType::Exec || to == Asset::BlueprintPinType::Exec) {
         return false;
     }
-    return from == Asset::BlueprintPinTypeUVE::Int && to == Asset::BlueprintPinTypeUVE::Float;
+    return from == Asset::BlueprintPinType::Int && to == Asset::BlueprintPinType::Float;
 }
 
 // ---------------------------------------------------------------------------
 // Metadata
 // ---------------------------------------------------------------------------
 
-bool BlueprintMetadataUVE::HasTagUVE(const std::string_view key) const noexcept {
+bool BlueprintMetadata::HasTag(const std::string_view key) const noexcept {
     return tags.find(key) != tags.end();
 }
 
-std::string BlueprintMetadataUVE::GetTagUVE(const std::string_view key, const std::string_view fallback) const {
+std::string BlueprintMetadata::GetTag(const std::string_view key, const std::string_view fallback) const {
     const auto it = tags.find(key);
     return it != tags.end() ? it->second : std::string(fallback);
 }
 
-void BlueprintMetadataUVE::SetTagUVE(std::string key, std::string value) {
+void BlueprintMetadata::SetTag(std::string key, std::string value) {
     tags[std::move(key)] = std::move(value);
 }
 
 // ---------------------------------------------------------------------------
-// BlueprintCoreNodeUVE
+// BlueprintCoreNode
 // ---------------------------------------------------------------------------
 
-const BlueprintCorePinUVE* BlueprintCoreNodeUVE::FindInputPinUVE(const BlueprintPinIdUVE index) const noexcept {
-    for (const BlueprintCorePinUVE& pin : inputs) {
+const BlueprintCorePin* BlueprintCoreNode::FindInputPin(const BlueprintPinId index) const noexcept {
+    for (const BlueprintCorePin& pin : inputs) {
         if (pin.index == index) {
             return &pin;
         }
@@ -113,8 +113,8 @@ const BlueprintCorePinUVE* BlueprintCoreNodeUVE::FindInputPinUVE(const Blueprint
     return nullptr;
 }
 
-const BlueprintCorePinUVE* BlueprintCoreNodeUVE::FindOutputPinUVE(const BlueprintPinIdUVE index) const noexcept {
-    for (const BlueprintCorePinUVE& pin : outputs) {
+const BlueprintCorePin* BlueprintCoreNode::FindOutputPin(const BlueprintPinId index) const noexcept {
+    for (const BlueprintCorePin& pin : outputs) {
         if (pin.index == index) {
             return &pin;
         }
@@ -123,54 +123,54 @@ const BlueprintCorePinUVE* BlueprintCoreNodeUVE::FindOutputPinUVE(const Blueprin
 }
 
 // ---------------------------------------------------------------------------
-// BlueprintDiagnosticSinkUVE
+// BlueprintDiagnosticSink
 // ---------------------------------------------------------------------------
 
-void BlueprintDiagnosticSinkUVE::EmitUVE(const BlueprintCoreDiagnosticSeverityUVE severity,
-                                         const BlueprintNodeIdUVE nodeId, std::string code, std::string message,
-                                         const std::optional<BlueprintPinIdUVE> pinIndex) {
-    m_entries.push_back(BlueprintCoreDiagnosticUVE{severity, nodeId, pinIndex, std::move(code), std::move(message)});
+void BlueprintDiagnosticSink::Emit(const BlueprintCoreDiagnosticSeverity severity,
+                                         const BlueprintNodeId nodeId, std::string code, std::string message,
+                                         const std::optional<BlueprintPinId> pinIndex) {
+    m_entries.push_back(BlueprintCoreDiagnostic{severity, nodeId, pinIndex, std::move(code), std::move(message)});
 }
 
-void BlueprintDiagnosticSinkUVE::ClearUVE() noexcept { m_entries.clear(); }
+void BlueprintDiagnosticSink::Clear() noexcept { m_entries.clear(); }
 
-bool BlueprintDiagnosticSinkUVE::HasErrorsUVE() const noexcept { return ErrorCountUVE() > 0U; }
+bool BlueprintDiagnosticSink::HasErrors() const noexcept { return ErrorCount() > 0U; }
 
-std::size_t BlueprintDiagnosticSinkUVE::ErrorCountUVE() const noexcept {
-    return static_cast<std::size_t>(std::count_if(m_entries.begin(), m_entries.end(), [](const BlueprintCoreDiagnosticUVE& d) {
-        return d.severity == BlueprintCoreDiagnosticSeverityUVE::Error;
+std::size_t BlueprintDiagnosticSink::ErrorCount() const noexcept {
+    return static_cast<std::size_t>(std::count_if(m_entries.begin(), m_entries.end(), [](const BlueprintCoreDiagnostic& d) {
+        return d.severity == BlueprintCoreDiagnosticSeverity::Error;
     }));
 }
 
-std::size_t BlueprintDiagnosticSinkUVE::WarningCountUVE() const noexcept {
-    return static_cast<std::size_t>(std::count_if(m_entries.begin(), m_entries.end(), [](const BlueprintCoreDiagnosticUVE& d) {
-        return d.severity == BlueprintCoreDiagnosticSeverityUVE::Warning;
+std::size_t BlueprintDiagnosticSink::WarningCount() const noexcept {
+    return static_cast<std::size_t>(std::count_if(m_entries.begin(), m_entries.end(), [](const BlueprintCoreDiagnostic& d) {
+        return d.severity == BlueprintCoreDiagnosticSeverity::Warning;
     }));
 }
 
 // ---------------------------------------------------------------------------
-// BlueprintCoreGraphUVE
+// BlueprintCoreGraph
 // ---------------------------------------------------------------------------
 
-BlueprintCoreGraphUVE::BlueprintCoreGraphUVE(std::string name, std::string parentKind)
+BlueprintCoreGraph::BlueprintCoreGraph(std::string name, std::string parentKind)
     : m_name(std::move(name)), m_parentKind(std::move(parentKind)) {}
 
-void BlueprintCoreGraphUVE::SetNameUVE(std::string name) {
+void BlueprintCoreGraph::SetName(std::string name) {
     m_name = std::move(name);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::MetadataChanged, 0U, 0U, "name"});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::MetadataChanged, 0U, 0U, "name"});
 }
 
-void BlueprintCoreGraphUVE::SetParentKindUVE(std::string parentKind) {
+void BlueprintCoreGraph::SetParentKind(std::string parentKind) {
     m_parentKind = std::move(parentKind);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::MetadataChanged, 0U, 0U, "parentKind"});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::MetadataChanged, 0U, 0U, "parentKind"});
 }
 
-void BlueprintCoreGraphUVE::SetMetadataUVE(BlueprintMetadataUVE metadata) {
+void BlueprintCoreGraph::SetMetadata(BlueprintMetadata metadata) {
     m_metadata = std::move(metadata);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::MetadataChanged, 0U, 0U, "metadata"});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::MetadataChanged, 0U, 0U, "metadata"});
 }
 
-void BlueprintCoreGraphUVE::AddListenerUVE(IBlueprintGraphListenerUVE* const listener) {
+void BlueprintCoreGraph::AddListener(IBlueprintGraphListener* const listener) {
     if (listener == nullptr) {
         return;
     }
@@ -179,50 +179,50 @@ void BlueprintCoreGraphUVE::AddListenerUVE(IBlueprintGraphListenerUVE* const lis
     }
 }
 
-void BlueprintCoreGraphUVE::RemoveListenerUVE(IBlueprintGraphListenerUVE* const listener) {
+void BlueprintCoreGraph::RemoveListener(IBlueprintGraphListener* const listener) {
     m_listeners.erase(std::remove(m_listeners.begin(), m_listeners.end(), listener), m_listeners.end());
 }
 
-void BlueprintCoreGraphUVE::NotifyUVE(const BlueprintGraphEventUVE& event) {
-    for (IBlueprintGraphListenerUVE* const listener : m_listeners) {
+void BlueprintCoreGraph::Notify(const BlueprintGraphEvent& event) {
+    for (IBlueprintGraphListener* const listener : m_listeners) {
         if (listener != nullptr) {
-            listener->OnBlueprintGraphChangedUVE(event);
+            listener->OnBlueprintGraphChanged(event);
         }
     }
 }
 
-BlueprintNodeIdUVE BlueprintCoreGraphUVE::AddNodeUVE(BlueprintCoreNodeUVE node) {
-    if (node.id == kInvalidBlueprintNodeIdUVE || FindNodeUVE(node.id) != nullptr) {
-        node.id = m_nodeIds.AllocateUVE();
+BlueprintNodeId BlueprintCoreGraph::AddNode(BlueprintCoreNode node) {
+    if (node.id == kInvalidBlueprintNodeId || FindNode(node.id) != nullptr) {
+        node.id = m_nodeIds.Allocate();
     } else {
-        m_nodeIds.ReserveUVE(node.id);
+        m_nodeIds.Reserve(node.id);
     }
     for (std::size_t i = 0U; i < node.inputs.size(); ++i) {
-        node.inputs[i].index = static_cast<BlueprintPinIdUVE>(i);
-        node.inputs[i].direction = BlueprintPinDirectionUVE::Input;
+        node.inputs[i].index = static_cast<BlueprintPinId>(i);
+        node.inputs[i].direction = BlueprintPinDirection::Input;
     }
     for (std::size_t i = 0U; i < node.outputs.size(); ++i) {
-        node.outputs[i].index = static_cast<BlueprintPinIdUVE>(i);
-        node.outputs[i].direction = BlueprintPinDirectionUVE::Output;
+        node.outputs[i].index = static_cast<BlueprintPinId>(i);
+        node.outputs[i].direction = BlueprintPinDirection::Output;
     }
-    const BlueprintNodeIdUVE addedId = node.id;
+    const BlueprintNodeId addedId = node.id;
     std::string typeKey = node.typeKey;
     m_nodes.push_back(std::move(node));
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::NodeAdded, addedId, 0U, std::move(typeKey)});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::NodeAdded, addedId, 0U, std::move(typeKey)});
     return addedId;
 }
 
-bool BlueprintCoreGraphUVE::RemoveNodeUVE(const BlueprintNodeIdUVE nodeId) {
+bool BlueprintCoreGraph::RemoveNode(const BlueprintNodeId nodeId) {
     const auto it = std::find_if(m_nodes.begin(), m_nodes.end(),
-                                 [nodeId](const BlueprintCoreNodeUVE& n) { return n.id == nodeId; });
+                                 [nodeId](const BlueprintCoreNode& n) { return n.id == nodeId; });
     if (it == m_nodes.end()) {
         return false;
     }
 
-    std::vector<BlueprintConnectionIdUVE> removedConns;
+    std::vector<BlueprintConnectionId> removedConns;
     m_connections.erase(
         std::remove_if(m_connections.begin(), m_connections.end(),
-                       [nodeId, &removedConns](const BlueprintCoreConnectionUVE& c) {
+                       [nodeId, &removedConns](const BlueprintCoreConnection& c) {
                            if (c.fromNode == nodeId || c.toNode == nodeId) {
                                removedConns.push_back(c.id);
                                return true;
@@ -232,29 +232,29 @@ bool BlueprintCoreGraphUVE::RemoveNodeUVE(const BlueprintNodeIdUVE nodeId) {
         m_connections.end());
 
     m_nodes.erase(it);
-    for (const BlueprintConnectionIdUVE cid : removedConns) {
-        NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::ConnectionRemoved, nodeId, cid, "node_removed"});
+    for (const BlueprintConnectionId cid : removedConns) {
+        Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::ConnectionRemoved, nodeId, cid, "node_removed"});
     }
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::NodeRemoved, nodeId, 0U, {}});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::NodeRemoved, nodeId, 0U, {}});
     return true;
 }
 
-bool BlueprintCoreGraphUVE::MoveNodeUVE(const BlueprintNodeIdUVE nodeId, const float x, const float y) {
+bool BlueprintCoreGraph::MoveNode(const BlueprintNodeId nodeId, const float x, const float y) {
     if (!std::isfinite(x) || !std::isfinite(y)) {
         return false;
     }
-    BlueprintCoreNodeUVE* const node = FindNodeUVE(nodeId);
+    BlueprintCoreNode* const node = FindNode(nodeId);
     if (node == nullptr) {
         return false;
     }
     node->x = x;
     node->y = y;
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::NodeMoved, nodeId, 0U, {}});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::NodeMoved, nodeId, 0U, {}});
     return true;
 }
 
-BlueprintCoreNodeUVE* BlueprintCoreGraphUVE::FindNodeUVE(const BlueprintNodeIdUVE nodeId) noexcept {
-    for (BlueprintCoreNodeUVE& n : m_nodes) {
+BlueprintCoreNode* BlueprintCoreGraph::FindNode(const BlueprintNodeId nodeId) noexcept {
+    for (BlueprintCoreNode& n : m_nodes) {
         if (n.id == nodeId) {
             return &n;
         }
@@ -262,8 +262,8 @@ BlueprintCoreNodeUVE* BlueprintCoreGraphUVE::FindNodeUVE(const BlueprintNodeIdUV
     return nullptr;
 }
 
-const BlueprintCoreNodeUVE* BlueprintCoreGraphUVE::FindNodeUVE(const BlueprintNodeIdUVE nodeId) const noexcept {
-    for (const BlueprintCoreNodeUVE& n : m_nodes) {
+const BlueprintCoreNode* BlueprintCoreGraph::FindNode(const BlueprintNodeId nodeId) const noexcept {
+    for (const BlueprintCoreNode& n : m_nodes) {
         if (n.id == nodeId) {
             return &n;
         }
@@ -271,27 +271,27 @@ const BlueprintCoreNodeUVE* BlueprintCoreGraphUVE::FindNodeUVE(const BlueprintNo
     return nullptr;
 }
 
-BlueprintConnectionResultUVE BlueprintCoreGraphUVE::ConnectUVE(const BlueprintNodeIdUVE fromNode,
-                                                               const BlueprintPinIdUVE fromPin,
-                                                               const BlueprintNodeIdUVE toNode,
-                                                               const BlueprintPinIdUVE toPin) {
+BlueprintConnectionResult BlueprintCoreGraph::Connect(const BlueprintNodeId fromNode,
+                                                               const BlueprintPinId fromPin,
+                                                               const BlueprintNodeId toNode,
+                                                               const BlueprintPinId toPin) {
     if (fromNode == toNode) {
-        return {false, kInvalidBlueprintConnectionIdUVE, "Cannot connect a node to itself"};
+        return {false, kInvalidBlueprintConnectionId, "Cannot connect a node to itself"};
     }
-    const BlueprintCoreNodeUVE* const src = FindNodeUVE(fromNode);
-    const BlueprintCoreNodeUVE* const dst = FindNodeUVE(toNode);
+    const BlueprintCoreNode* const src = FindNode(fromNode);
+    const BlueprintCoreNode* const dst = FindNode(toNode);
     if (src == nullptr || dst == nullptr) {
-        return {false, kInvalidBlueprintConnectionIdUVE, "Endpoint node does not exist"};
+        return {false, kInvalidBlueprintConnectionId, "Endpoint node does not exist"};
     }
-    const BlueprintCorePinUVE* const outPin = src->FindOutputPinUVE(fromPin);
-    const BlueprintCorePinUVE* const inPin = dst->FindInputPinUVE(toPin);
+    const BlueprintCorePin* const outPin = src->FindOutputPin(fromPin);
+    const BlueprintCorePin* const inPin = dst->FindInputPin(toPin);
     if (outPin == nullptr || inPin == nullptr) {
-        return {false, kInvalidBlueprintConnectionIdUVE, "Pin index out of range"};
+        return {false, kInvalidBlueprintConnectionId, "Pin index out of range"};
     }
-    if (!CanConnectBlueprintPinTypesUVE(outPin->type, inPin->type)) {
-        return {false, kInvalidBlueprintConnectionIdUVE, "Incompatible pin types"};
+    if (!CanConnectBlueprintPinTypes(outPin->type, inPin->type)) {
+        return {false, kInvalidBlueprintConnectionId, "Incompatible pin types"};
     }
-    for (const BlueprintCoreConnectionUVE& existing : m_connections) {
+    for (const BlueprintCoreConnection& existing : m_connections) {
         if (existing.fromNode == fromNode && existing.fromPin == fromPin && existing.toNode == toNode &&
             existing.toPin == toPin) {
             return {false, existing.id, "Connection already exists"};
@@ -299,55 +299,55 @@ BlueprintConnectionResultUVE BlueprintCoreGraphUVE::ConnectUVE(const BlueprintNo
     }
 
     // Single-wire constraints: non-exec input pins take one driver; exec output pins take one target.
-    if (inPin->type != Asset::BlueprintPinTypeUVE::Exec) {
+    if (inPin->type != Asset::BlueprintPinType::Exec) {
         m_connections.erase(
             std::remove_if(m_connections.begin(), m_connections.end(),
-                           [toNode, toPin](const BlueprintCoreConnectionUVE& c) {
+                           [toNode, toPin](const BlueprintCoreConnection& c) {
                                return c.toNode == toNode && c.toPin == toPin;
                            }),
             m_connections.end());
     } else {
         m_connections.erase(
             std::remove_if(m_connections.begin(), m_connections.end(),
-                           [fromNode, fromPin](const BlueprintCoreConnectionUVE& c) {
+                           [fromNode, fromPin](const BlueprintCoreConnection& c) {
                                return c.fromNode == fromNode && c.fromPin == fromPin;
                            }),
             m_connections.end());
     }
 
-    const BlueprintConnectionIdUVE cid = m_connectionIds.AllocateUVE();
-    m_connections.push_back(BlueprintCoreConnectionUVE{cid, fromNode, fromPin, toNode, toPin});
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::ConnectionAdded, fromNode, cid, {}});
+    const BlueprintConnectionId cid = m_connectionIds.Allocate();
+    m_connections.push_back(BlueprintCoreConnection{cid, fromNode, fromPin, toNode, toPin});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::ConnectionAdded, fromNode, cid, {}});
     return {true, cid, {}};
 }
 
-bool BlueprintCoreGraphUVE::DisconnectUVE(const BlueprintConnectionIdUVE connectionId) {
+bool BlueprintCoreGraph::Disconnect(const BlueprintConnectionId connectionId) {
     const auto it = std::find_if(m_connections.begin(), m_connections.end(),
-                                 [connectionId](const BlueprintCoreConnectionUVE& c) { return c.id == connectionId; });
+                                 [connectionId](const BlueprintCoreConnection& c) { return c.id == connectionId; });
     if (it == m_connections.end()) {
         return false;
     }
-    const BlueprintNodeIdUVE fromNode = it->fromNode;
+    const BlueprintNodeId fromNode = it->fromNode;
     m_connections.erase(it);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::ConnectionRemoved, fromNode, connectionId, {}});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::ConnectionRemoved, fromNode, connectionId, {}});
     return true;
 }
 
-bool BlueprintCoreGraphUVE::DisconnectPinsUVE(const BlueprintNodeIdUVE fromNode, const BlueprintPinIdUVE fromPin,
-                                              const BlueprintNodeIdUVE toNode, const BlueprintPinIdUVE toPin) {
-    const auto it = std::find_if(m_connections.begin(), m_connections.end(), [&](const BlueprintCoreConnectionUVE& c) {
+bool BlueprintCoreGraph::DisconnectPins(const BlueprintNodeId fromNode, const BlueprintPinId fromPin,
+                                              const BlueprintNodeId toNode, const BlueprintPinId toPin) {
+    const auto it = std::find_if(m_connections.begin(), m_connections.end(), [&](const BlueprintCoreConnection& c) {
         return c.fromNode == fromNode && c.fromPin == fromPin && c.toNode == toNode && c.toPin == toPin;
     });
     if (it == m_connections.end()) {
         return false;
     }
-    return DisconnectUVE(it->id);
+    return Disconnect(it->id);
 }
 
-std::vector<BlueprintCoreConnectionUVE> BlueprintCoreGraphUVE::GetIncomingConnectionsUVE(
-    const BlueprintNodeIdUVE nodeId) const {
-    std::vector<BlueprintCoreConnectionUVE> out;
-    for (const BlueprintCoreConnectionUVE& c : m_connections) {
+std::vector<BlueprintCoreConnection> BlueprintCoreGraph::GetIncomingConnections(
+    const BlueprintNodeId nodeId) const {
+    std::vector<BlueprintCoreConnection> out;
+    for (const BlueprintCoreConnection& c : m_connections) {
         if (c.toNode == nodeId) {
             out.push_back(c);
         }
@@ -355,10 +355,10 @@ std::vector<BlueprintCoreConnectionUVE> BlueprintCoreGraphUVE::GetIncomingConnec
     return out;
 }
 
-std::vector<BlueprintCoreConnectionUVE> BlueprintCoreGraphUVE::GetOutgoingConnectionsUVE(
-    const BlueprintNodeIdUVE nodeId) const {
-    std::vector<BlueprintCoreConnectionUVE> out;
-    for (const BlueprintCoreConnectionUVE& c : m_connections) {
+std::vector<BlueprintCoreConnection> BlueprintCoreGraph::GetOutgoingConnections(
+    const BlueprintNodeId nodeId) const {
+    std::vector<BlueprintCoreConnection> out;
+    for (const BlueprintCoreConnection& c : m_connections) {
         if (c.fromNode == nodeId) {
             out.push_back(c);
         }
@@ -366,44 +366,44 @@ std::vector<BlueprintCoreConnectionUVE> BlueprintCoreGraphUVE::GetOutgoingConnec
     return out;
 }
 
-void BlueprintCoreGraphUVE::SetVariablesUVE(std::vector<Asset::BlueprintVariableUVE> variables) {
+void BlueprintCoreGraph::SetVariables(std::vector<Asset::BlueprintVariable> variables) {
     m_variables = std::move(variables);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::VariableChanged, 0U, 0U, {}});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::VariableChanged, 0U, 0U, {}});
 }
 
-void BlueprintCoreGraphUVE::SetCommentsUVE(std::vector<Asset::BlueprintCommentUVE> comments) {
+void BlueprintCoreGraph::SetComments(std::vector<Asset::BlueprintComment> comments) {
     m_comments = std::move(comments);
-    NotifyUVE(BlueprintGraphEventUVE{BlueprintGraphChangeKindUVE::MetadataChanged, 0U, 0U, "comments"});
+    Notify(BlueprintGraphEvent{BlueprintGraphChangeKind::MetadataChanged, 0U, 0U, "comments"});
 }
 
-std::vector<BlueprintNodeIdUVE> BlueprintCoreGraphUVE::TopologicalSortNodesUVE() const {
-    std::unordered_map<BlueprintNodeIdUVE, std::size_t> indegree;
-    std::unordered_map<BlueprintNodeIdUVE, std::vector<BlueprintNodeIdUVE>> adj;
-    for (const BlueprintCoreNodeUVE& n : m_nodes) {
+std::vector<BlueprintNodeId> BlueprintCoreGraph::TopologicalSortNodes() const {
+    std::unordered_map<BlueprintNodeId, std::size_t> indegree;
+    std::unordered_map<BlueprintNodeId, std::vector<BlueprintNodeId>> adj;
+    for (const BlueprintCoreNode& n : m_nodes) {
         indegree[n.id] = 0U;
     }
-    for (const BlueprintCoreConnectionUVE& c : m_connections) {
+    for (const BlueprintCoreConnection& c : m_connections) {
         if (indegree.contains(c.fromNode) && indegree.contains(c.toNode)) {
             adj[c.fromNode].push_back(c.toNode);
             ++indegree[c.toNode];
         }
     }
 
-    std::queue<BlueprintNodeIdUVE> ready;
-    for (const BlueprintCoreNodeUVE& n : m_nodes) {
+    std::queue<BlueprintNodeId> ready;
+    for (const BlueprintCoreNode& n : m_nodes) {
         if (indegree[n.id] == 0U) {
             ready.push(n.id);
         }
     }
 
-    std::vector<BlueprintNodeIdUVE> order;
+    std::vector<BlueprintNodeId> order;
     order.reserve(m_nodes.size());
     while (!ready.empty()) {
-        const BlueprintNodeIdUVE cur = ready.front();
+        const BlueprintNodeId cur = ready.front();
         ready.pop();
         order.push_back(cur);
         if (const auto it = adj.find(cur); it != adj.end()) {
-            for (const BlueprintNodeIdUVE nxt : it->second) {
+            for (const BlueprintNodeId nxt : it->second) {
                 if (--indegree[nxt] == 0U) {
                     ready.push(nxt);
                 }
@@ -417,103 +417,103 @@ std::vector<BlueprintNodeIdUVE> BlueprintCoreGraphUVE::TopologicalSortNodesUVE()
     return order;
 }
 
-bool BlueprintCoreGraphUVE::HasCycleUVE() const {
-    return !m_nodes.empty() && TopologicalSortNodesUVE().empty();
+bool BlueprintCoreGraph::HasCycle() const {
+    return !m_nodes.empty() && TopologicalSortNodes().empty();
 }
 
-void BlueprintCoreGraphUVE::ValidateWithUVE(const IBlueprintNodeValidatorUVE& validator,
-                                            BlueprintDiagnosticSinkUVE& sink) const {
-    for (const BlueprintCoreNodeUVE& node : m_nodes) {
-        validator.ValidateNodeUVE(*this, node, sink);
+void BlueprintCoreGraph::ValidateWith(const IBlueprintNodeValidator& validator,
+                                            BlueprintDiagnosticSink& sink) const {
+    for (const BlueprintCoreNode& node : m_nodes) {
+        validator.ValidateNode(*this, node, sink);
     }
 }
 
-BlueprintCoreGraphUVE BlueprintCoreGraphFromAssetUVE(const Asset::BlueprintAssetUVE& asset, std::string name) {
-    BlueprintCoreGraphUVE graph(std::move(name), asset.parentKind);
-    graph.SetVariablesUVE(asset.variables);
-    graph.SetCommentsUVE(asset.comments);
+BlueprintCoreGraph BlueprintCoreGraphFromAsset(const Asset::BlueprintAsset& asset, std::string name) {
+    BlueprintCoreGraph graph(std::move(name), asset.parentKind);
+    graph.SetVariables(asset.variables);
+    graph.SetComments(asset.comments);
 
-    for (const Asset::BlueprintNodeUVE& src : asset.nodes) {
-        BlueprintCoreNodeUVE node;
+    for (const Asset::BlueprintNode& src : asset.nodes) {
+        BlueprintCoreNode node;
         node.id = src.id;
         node.typeKey = src.type;
         node.variableName = src.variable;
         node.x = src.x;
         node.y = src.y;
 
-        const Asset::BlueprintNodeTypeUVE* const spec = Asset::FindBlueprintNodeTypeUVE(src.type);
-        node.title = spec != nullptr ? spec->title : FormatBlueprintNodeTitleUVE(src.type);
+        const Asset::BlueprintNodeType* const spec = Asset::FindBlueprintNodeType(src.type);
+        node.title = spec != nullptr ? spec->title : FormatBlueprintNodeTitle(src.type);
         if (spec != nullptr) {
             node.metadata.category = spec->category;
             node.metadata.tooltip = spec->tooltip;
         }
 
-        const Asset::BlueprintNodePinsUVE pins = Asset::ResolveBlueprintNodePinsUVE(asset, src);
+        const Asset::BlueprintNodePins pins = Asset::ResolveBlueprintNodePins(asset, src);
         for (std::size_t i = 0U; i < pins.inputs.size(); ++i) {
-            BlueprintCorePinUVE pin;
-            pin.index = static_cast<BlueprintPinIdUVE>(i);
+            BlueprintCorePin pin;
+            pin.index = static_cast<BlueprintPinId>(i);
             pin.name = pins.inputs[i].name;
             pin.type = pins.inputs[i].type;
-            pin.direction = BlueprintPinDirectionUVE::Input;
+            pin.direction = BlueprintPinDirection::Input;
             pin.defaultValue = i < src.inputValues.size() ? src.inputValues[i] : pins.inputs[i].defaultText;
             node.inputs.push_back(std::move(pin));
         }
         // Preserve extra serialized input values for unknown node types so round-tripping stays lossless.
         if (pins.inputs.empty() && !src.inputValues.empty()) {
             for (std::size_t i = 0U; i < src.inputValues.size(); ++i) {
-                BlueprintCorePinUVE pin;
-                pin.index = static_cast<BlueprintPinIdUVE>(i);
+                BlueprintCorePin pin;
+                pin.index = static_cast<BlueprintPinId>(i);
                 pin.name = "In" + std::to_string(i);
-                pin.type = Asset::BlueprintPinTypeUVE::String;
-                pin.direction = BlueprintPinDirectionUVE::Input;
+                pin.type = Asset::BlueprintPinType::String;
+                pin.direction = BlueprintPinDirection::Input;
                 pin.defaultValue = src.inputValues[i];
                 node.inputs.push_back(std::move(pin));
             }
         }
         for (std::size_t i = 0U; i < pins.outputs.size(); ++i) {
-            BlueprintCorePinUVE pin;
-            pin.index = static_cast<BlueprintPinIdUVE>(i);
+            BlueprintCorePin pin;
+            pin.index = static_cast<BlueprintPinId>(i);
             pin.name = pins.outputs[i].name;
             pin.type = pins.outputs[i].type;
-            pin.direction = BlueprintPinDirectionUVE::Output;
+            pin.direction = BlueprintPinDirection::Output;
             pin.defaultValue = pins.outputs[i].defaultText;
             node.outputs.push_back(std::move(pin));
         }
 
-        graph.AddNodeUVE(std::move(node));
+        graph.AddNode(std::move(node));
     }
 
-    for (const Asset::BlueprintWireUVE& wire : asset.wires) {
-        (void)graph.ConnectUVE(wire.fromNode, wire.fromPin, wire.toNode, wire.toPin);
+    for (const Asset::BlueprintWire& wire : asset.wires) {
+        (void)graph.Connect(wire.fromNode, wire.fromPin, wire.toNode, wire.toPin);
     }
 
     return graph;
 }
 
-Asset::BlueprintAssetUVE BlueprintCoreGraphToAssetUVE(const BlueprintCoreGraphUVE& graph) {
-    Asset::BlueprintAssetUVE asset;
-    asset.parentKind = graph.ParentKindUVE();
-    asset.variables = graph.VariablesUVE();
-    asset.comments = graph.CommentsUVE();
+Asset::BlueprintAsset BlueprintCoreGraphToAsset(const BlueprintCoreGraph& graph) {
+    Asset::BlueprintAsset asset;
+    asset.parentKind = graph.ParentKind();
+    asset.variables = graph.Variables();
+    asset.comments = graph.Comments();
 
-    asset.nodes.reserve(graph.NodesUVE().size());
-    for (const BlueprintCoreNodeUVE& src : graph.NodesUVE()) {
-        Asset::BlueprintNodeUVE node;
+    asset.nodes.reserve(graph.Nodes().size());
+    for (const BlueprintCoreNode& src : graph.Nodes()) {
+        Asset::BlueprintNode node;
         node.id = src.id;
         node.type = src.typeKey;
         node.variable = src.variableName;
         node.x = src.x;
         node.y = src.y;
         node.inputValues.reserve(src.inputs.size());
-        for (const BlueprintCorePinUVE& pin : src.inputs) {
+        for (const BlueprintCorePin& pin : src.inputs) {
             node.inputValues.push_back(pin.defaultValue);
         }
         asset.nodes.push_back(std::move(node));
     }
 
-    asset.wires.reserve(graph.ConnectionsUVE().size());
-    for (const BlueprintCoreConnectionUVE& conn : graph.ConnectionsUVE()) {
-        asset.wires.push_back(Asset::BlueprintWireUVE{conn.fromNode, conn.fromPin, conn.toNode, conn.toPin});
+    asset.wires.reserve(graph.Connections().size());
+    for (const BlueprintCoreConnection& conn : graph.Connections()) {
+        asset.wires.push_back(Asset::BlueprintWire{conn.fromNode, conn.fromPin, conn.toNode, conn.toPin});
     }
 
     return asset;
@@ -523,7 +523,7 @@ Asset::BlueprintAssetUVE BlueprintCoreGraphToAssetUVE(const BlueprintCoreGraphUV
 // Reflection
 // ---------------------------------------------------------------------------
 
-bool BlueprintReflectionRegistryUVE::RegisterClassUVE(BlueprintClassReflectionUVE descriptor) {
+bool BlueprintReflectionRegistry::RegisterClass(BlueprintClassReflection descriptor) {
     if (descriptor.className.empty()) {
         return false;
     }
@@ -532,7 +532,7 @@ bool BlueprintReflectionRegistryUVE::RegisterClassUVE(BlueprintClassReflectionUV
     return true;
 }
 
-bool BlueprintReflectionRegistryUVE::UnregisterClassUVE(const std::string_view className) {
+bool BlueprintReflectionRegistry::UnregisterClass(const std::string_view className) {
     const auto it = m_classes.find(className);
     if (it == m_classes.end()) {
         return false;
@@ -541,13 +541,13 @@ bool BlueprintReflectionRegistryUVE::UnregisterClassUVE(const std::string_view c
     return true;
 }
 
-const BlueprintClassReflectionUVE* BlueprintReflectionRegistryUVE::FindClassUVE(
+const BlueprintClassReflection* BlueprintReflectionRegistry::FindClass(
     const std::string_view className) const noexcept {
     const auto it = m_classes.find(className);
     return it != m_classes.end() ? &it->second : nullptr;
 }
 
-bool BlueprintReflectionRegistryUVE::IsSubclassOfUVE(const std::string_view childClass,
+bool BlueprintReflectionRegistry::IsSubclassOf(const std::string_view childClass,
                                                      const std::string_view baseClass) const noexcept {
     if (childClass.empty() || baseClass.empty()) {
         return false;
@@ -558,7 +558,7 @@ bool BlueprintReflectionRegistryUVE::IsSubclassOfUVE(const std::string_view chil
     std::set<std::string_view> visited;
     std::string_view current = childClass;
     while (!current.empty() && visited.insert(current).second) {
-        const BlueprintClassReflectionUVE* const desc = FindClassUVE(current);
+        const BlueprintClassReflection* const desc = FindClass(current);
         if (desc == nullptr) {
             return false;
         }
@@ -570,7 +570,7 @@ bool BlueprintReflectionRegistryUVE::IsSubclassOfUVE(const std::string_view chil
     return false;
 }
 
-std::vector<std::string> BlueprintReflectionRegistryUVE::GetRegisteredClassNamesUVE() const {
+std::vector<std::string> BlueprintReflectionRegistry::GetRegisteredClassNames() const {
     std::vector<std::string> names;
     names.reserve(m_classes.size());
     for (const auto& entry : m_classes) {
@@ -579,13 +579,13 @@ std::vector<std::string> BlueprintReflectionRegistryUVE::GetRegisteredClassNames
     return names;
 }
 
-void BlueprintReflectionRegistryUVE::ClearUVE() noexcept { m_classes.clear(); }
+void BlueprintReflectionRegistry::Clear() noexcept { m_classes.clear(); }
 
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
-std::string SanitizeBlueprintIdentifierUVE(const std::string_view text) {
+std::string SanitizeBlueprintIdentifier(const std::string_view text) {
     std::string out;
     out.reserve(text.size() + 1U);
     for (const char c : text) {
@@ -601,7 +601,7 @@ std::string SanitizeBlueprintIdentifierUVE(const std::string_view text) {
     return out;
 }
 
-std::string FormatBlueprintNodeTitleUVE(const std::string_view rawKey) {
+std::string FormatBlueprintNodeTitle(const std::string_view rawKey) {
     std::string out;
     out.reserve(rawKey.size());
     bool capitalizeNext = true;
@@ -623,9 +623,9 @@ std::string FormatBlueprintNodeTitleUVE(const std::string_view rawKey) {
     return out;
 }
 
-BlueprintGraphBoundsUVE ComputeBlueprintGraphBoundsUVE(const BlueprintCoreGraphUVE& graph) noexcept {
-    BlueprintGraphBoundsUVE bounds;
-    if (graph.NodesUVE().empty()) {
+BlueprintGraphBounds ComputeBlueprintGraphBounds(const BlueprintCoreGraph& graph) noexcept {
+    BlueprintGraphBounds bounds;
+    if (graph.Nodes().empty()) {
         return bounds;
     }
     bounds.valid = true;
@@ -633,7 +633,7 @@ BlueprintGraphBoundsUVE ComputeBlueprintGraphBoundsUVE(const BlueprintCoreGraphU
     bounds.minY = std::numeric_limits<float>::max();
     bounds.maxX = std::numeric_limits<float>::lowest();
     bounds.maxY = std::numeric_limits<float>::lowest();
-    for (const BlueprintCoreNodeUVE& node : graph.NodesUVE()) {
+    for (const BlueprintCoreNode& node : graph.Nodes()) {
         bounds.minX = std::min(bounds.minX, node.x);
         bounds.minY = std::min(bounds.minY, node.y);
         bounds.maxX = std::max(bounds.maxX, node.x);
@@ -642,20 +642,20 @@ BlueprintGraphBoundsUVE ComputeBlueprintGraphBoundsUVE(const BlueprintCoreGraphU
     return bounds;
 }
 
-void AutoLayoutBlueprintGraphUVE(BlueprintCoreGraphUVE& graph, const float horizontalSpacing,
+void AutoLayoutBlueprintGraph(BlueprintCoreGraph& graph, const float horizontalSpacing,
                                  const float verticalSpacing) {
-    std::vector<BlueprintNodeIdUVE> order = graph.TopologicalSortNodesUVE();
+    std::vector<BlueprintNodeId> order = graph.TopologicalSortNodes();
     if (order.empty()) {
-        order.reserve(graph.NodesUVE().size());
-        for (const BlueprintCoreNodeUVE& n : graph.NodesUVE()) {
+        order.reserve(graph.Nodes().size());
+        for (const BlueprintCoreNode& n : graph.Nodes()) {
             order.push_back(n.id);
         }
     }
 
-    std::unordered_map<BlueprintNodeIdUVE, std::size_t> layer;
-    for (const BlueprintNodeIdUVE id : order) {
+    std::unordered_map<BlueprintNodeId, std::size_t> layer;
+    for (const BlueprintNodeId id : order) {
         std::size_t nodeLayer = 0U;
-        for (const BlueprintCoreConnectionUVE& conn : graph.GetIncomingConnectionsUVE(id)) {
+        for (const BlueprintCoreConnection& conn : graph.GetIncomingConnections(id)) {
             if (const auto it = layer.find(conn.fromNode); it != layer.end()) {
                 nodeLayer = std::max(nodeLayer, it->second + 1U);
             }
@@ -664,10 +664,10 @@ void AutoLayoutBlueprintGraphUVE(BlueprintCoreGraphUVE& graph, const float horiz
     }
 
     std::unordered_map<std::size_t, std::size_t> rowPerLayer;
-    for (const BlueprintNodeIdUVE id : order) {
+    for (const BlueprintNodeId id : order) {
         const std::size_t col = layer[id];
         const std::size_t row = rowPerLayer[col]++;
-        (void)graph.MoveNodeUVE(id, static_cast<float>(col) * horizontalSpacing,
+        (void)graph.MoveNode(id, static_cast<float>(col) * horizontalSpacing,
                                 static_cast<float>(row) * verticalSpacing);
     }
 }

@@ -19,7 +19,7 @@ namespace UVE::Physics {
 /// WHERE THE MOTION COMES FROM. The authored `targetVelocity` says where the body is going, and
 /// `interpolation` says how quickly it gets up to that speed: 1 is the body moving at its target
 /// the very first step, lower values ease into it. The eased result is the body's actual velocity,
-/// and it is written to the body's Rigid3DComponentUVE::velocity - so a character standing on the
+/// and it is written to the body's Rigid3DComponent::velocity - so a character standing on the
 /// platform reads how fast it is really moving when it steps off, and a script reading the body's
 /// velocity sees what happened rather than what was asked for.
 ///
@@ -29,14 +29,14 @@ namespace UVE::Physics {
 /// and the rigid bodies it walks into are pushed the way a moving platform pushes them. A body that
 /// must follow its authored path exactly, through anything, is a *teleport*, and an author does that
 /// by writing the transform; this mover's job is to be honest about the world it moves in.
-enum class KinematicBodyStepCodeUVE : std::uint8_t {
+enum class KinematicBodyStepCode : std::uint8_t {
     /// The body was moved this step.
     Moved = 0,
     /// The step's duration was zero, negative or not finite.
     InvalidDeltaTime,
     /// No such entity.
     UnknownEntity,
-    /// The entity is not a kinematic body: no Kinematic3DComponentUVE.
+    /// The entity is not a kinematic body: no Kinematic3DComponent.
     NotAKinematicBody,
     /// A kinematic body needs a collider to collide with, and a transform to be somewhere.
     MissingCollider,
@@ -51,39 +51,39 @@ enum class KinematicBodyStepCodeUVE : std::uint8_t {
     Idle,
 };
 
-struct KinematicBodyStepResultUVE final {
-    KinematicBodyStepCodeUVE code = KinematicBodyStepCodeUVE::UnknownEntity;
+struct KinematicBodyStepResult final {
+    KinematicBodyStepCode code = KinematicBodyStepCode::UnknownEntity;
     /// What the author asked the body to do this step.
-    Math::Vector3UVE targetVelocity{};
+    Math::Vector3 targetVelocity{};
     /// The velocity the body ended the step with: the eased target on a clear path, and what the
     /// body actually managed when the world got in the way - a body stopped by a wall has no
     /// velocity to hand a rider stepping off it.
-    Math::Vector3UVE velocity{};
+    Math::Vector3 velocity{};
     /// Where the body actually went - the swept, collision-aware result, which is shorter than
     /// `velocity * deltaTimeSeconds` when something was in the way.
-    Math::Vector3UVE appliedMotion{};
+    Math::Vector3 appliedMotion{};
     /// The part of this step's requested motion the world did not let the body make - the request
     /// minus what was applied. The whole request for a body stopped by a wall, nothing for a body
     /// that had a clear path, and zero for a body refused before the move (its code says why).
-    Math::Vector3UVE remainingMotion{};
+    Math::Vector3 remainingMotion{};
     /// True when geometry stopped the move short.
     bool blocked = false;
     /// True when the body was standing on something at the end of the move.
     bool grounded = false;
-    Math::Vector3UVE groundNormal{};
+    Math::Vector3 groundNormal{};
     /// How many contacts the move resolved.
     std::size_t contactCount = 0U;
     /// How many rigid bodies the body pushed on its way.
     std::size_t pushedBodyCount = 0U;
 
-    [[nodiscard]] bool IsSteppedUVE() const noexcept {
-        return code == KinematicBodyStepCodeUVE::Moved;
+    [[nodiscard]] bool IsStepped() const noexcept {
+        return code == KinematicBodyStepCode::Moved;
     }
     /// True when the body did not move because it was switched off, as opposed to refused.
-    [[nodiscard]] bool IsIdleUVE() const noexcept {
-        return code == KinematicBodyStepCodeUVE::Idle;
+    [[nodiscard]] bool IsIdle() const noexcept {
+        return code == KinematicBodyStepCode::Idle;
     }
-    [[nodiscard]] bool PushedAnythingUVE() const noexcept {
+    [[nodiscard]] bool PushedAnything() const noexcept {
         return pushedBodyCount > 0U;
     }
 };
@@ -91,7 +91,7 @@ struct KinematicBodyStepResultUVE final {
 /// The push policy a kinematic body applies to the rigid bodies it walks into: the same shape the
 /// character's own push uses, with the same defaults, so a platform and a character shoving the
 /// same crate agree about what "shoving" means.
-struct KinematicBodyPushPolicyUVE final {
+struct KinematicBodyPushPolicy final {
     bool enabled = true;
     /// How hard the body pushes, relative to how fast it was going into the surface.
     float strength = 1.0F;
@@ -102,7 +102,7 @@ struct KinematicBodyPushPolicyUVE final {
 /// The engine's push rule, named so a caller can start from it and change the one number it has an
 /// opinion about instead of spelling all three out - and so this stays the single place the rule is
 /// written.
-[[nodiscard]] KinematicBodyPushPolicyUVE DefaultKinematicBodyPushPolicyUVE() noexcept;
+[[nodiscard]] KinematicBodyPushPolicy DefaultKinematicBodyPushPolicy() noexcept;
 
 /// How much of the remaining velocity gap the body closes in one second, from the authored
 /// `interpolation`. 1 is the whole gap - the body is at its target speed immediately, which is
@@ -112,7 +112,7 @@ struct KinematicBodyPushPolicyUVE final {
 ///
 /// A value the mover cannot honour - negative, or not a number at all - blends nothing, so the body
 /// does not move on the strength of an authored value nobody meant.
-[[nodiscard]] float KinematicEaseBlendUVE(float interpolation, float deltaTimeSeconds) noexcept;
+[[nodiscard]] float KinematicEaseBlend(float interpolation, float deltaTimeSeconds) noexcept;
 
 /// Runs one fixed-step move for `entity`:
 ///
@@ -128,9 +128,9 @@ struct KinematicBodyPushPolicyUVE final {
 /// `pushPolicy` is how hard the body shoves what it walks into. It defaults to the engine's own
 /// policy - the same one a character's push uses - so a caller that does not care gets the house
 /// rule, and a caller with a reason gets the last word.
-[[nodiscard]] KinematicBodyStepResultUVE StepKinematicBodyUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, Scene::EntityUVE entity, float deltaTimeSeconds,
-    const KinematicBodyPushPolicyUVE& pushPolicy = {});
+[[nodiscard]] KinematicBodyStepResult StepKinematicBody(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, Scene::Entity entity, float deltaTimeSeconds,
+    const KinematicBodyPushPolicy& pushPolicy = {});
 
 } // namespace UVE::Physics

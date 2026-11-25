@@ -15,17 +15,17 @@
 namespace UVE::Editor {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
 /// One object of a payload: its tree path and its components by display type name.
-struct ObjectUVE final {
+struct Object final {
     std::string path;
-    std::map<std::string, JsonUVE> components;
+    std::map<std::string, Json> components;
 };
 
-/// "ColliderComponentUVE" -> "Collider"; other names as they are.
-[[nodiscard]] std::string DisplayTypeUVE(const std::string& type) {
-    static constexpr std::string_view kSuffix = "ComponentUVE";
+/// "ColliderComponent" -> "Collider"; other names as they are.
+[[nodiscard]] std::string DisplayType(const std::string& type) {
+    static constexpr std::string_view kSuffix = "Component";
     if (type.size() > kSuffix.size() && type.compare(type.size() - kSuffix.size(), kSuffix.size(), kSuffix) == 0) {
         return type.substr(0, type.size() - kSuffix.size());
     }
@@ -34,12 +34,12 @@ struct ObjectUVE final {
 
 /// Components that describe the tree or the editor, not the object: the tree is compared
 /// through the paths; an instance tag is stripped when the entity is opened.
-[[nodiscard]] bool IsStructuralUVE(const std::string& type) {
-    return type == "HierarchyComponentUVE" || type == "PrefabInstanceComponentUVE" ||
-           type == "EditorInternalEntityComponentUVE";
+[[nodiscard]] bool IsStructural(const std::string& type) {
+    return type == "HierarchyComponent" || type == "PrefabInstanceComponent" ||
+           type == "EditorInternalEntityComponent";
 }
 
-[[nodiscard]] std::string ValueTextUVE(const JsonUVE& value) {
+[[nodiscard]] std::string ValueText(const Json& value) {
     if (value.is_string()) {
         return value.get<std::string>();
     }
@@ -52,33 +52,33 @@ struct ObjectUVE final {
 }
 
 /// The payload's objects in tree order (parents before children, siblings in file order).
-[[nodiscard]] std::vector<ObjectUVE> ObjectsUVE(std::string_view text) {
-    std::vector<ObjectUVE> out;
-    const JsonUVE doc = JsonUVE::parse(text, nullptr, false);
+[[nodiscard]] std::vector<Object> Objects(std::string_view text) {
+    std::vector<Object> out;
+    const Json doc = Json::parse(text, nullptr, false);
     if (doc.is_discarded() || !doc.is_object() || !doc.contains("entities") || !doc["entities"].is_array()) {
         return out;
     }
-    struct NodeUVE final {
+    struct Node final {
         std::int64_t localId = -1;
         std::int64_t parent = -1;
         std::string name;
-        const JsonUVE* components = nullptr;
+        const Json* components = nullptr;
     };
-    std::vector<NodeUVE> nodes;
-    for (const JsonUVE& entity : doc["entities"]) {
+    std::vector<Node> nodes;
+    for (const Json& entity : doc["entities"]) {
         if (!entity.is_object()) {
             continue;
         }
-        NodeUVE node;
+        Node node;
         node.localId = entity.value("localId", static_cast<std::int64_t>(-1));
         if (entity.contains("components") && entity["components"].is_object()) {
             node.components = &entity["components"];
-            const JsonUVE& c = *node.components;
-            if (c.contains("HierarchyComponentUVE") && c["HierarchyComponentUVE"].is_object()) {
-                node.parent = c["HierarchyComponentUVE"].value("parentLocalId", static_cast<std::int64_t>(-1));
+            const Json& c = *node.components;
+            if (c.contains("HierarchyComponent") && c["HierarchyComponent"].is_object()) {
+                node.parent = c["HierarchyComponent"].value("parentLocalId", static_cast<std::int64_t>(-1));
             }
-            if (c.contains("NameComponentUVE") && c["NameComponentUVE"].is_object()) {
-                node.name = c["NameComponentUVE"].value("name", std::string());
+            if (c.contains("NameComponent") && c["NameComponent"].is_object()) {
+                node.name = c["NameComponent"].value("name", std::string());
             }
         }
         if (node.name.empty()) {
@@ -90,7 +90,7 @@ struct ObjectUVE final {
     std::map<std::int64_t, std::vector<std::size_t>> children;
     std::vector<std::size_t> roots;
     std::set<std::int64_t> ids;
-    for (const NodeUVE& node : nodes) {
+    for (const Node& node : nodes) {
         ids.insert(node.localId);
     }
     for (std::size_t i = 0; i < nodes.size(); ++i) {
@@ -108,14 +108,14 @@ struct ObjectUVE final {
             if (!visited.insert(index).second) {
                 continue;
             }
-            const NodeUVE& node = nodes[index];
+            const Node& node = nodes[index];
             // The root is the entity itself: its name follows the file, so it is matched as the root.
             std::string name = isRootLevel ? std::string() : node.name;
             const int count = ++seen[name];
             if (count > 1) {
                 name += " #" + std::to_string(count);
             }
-            ObjectUVE object;
+            Object object;
             object.path = prefix.empty() ? (name.empty() ? std::string("(root)") : name)
                                          : prefix + "/" + name;
             if (isRootLevel && count > 1) {
@@ -123,8 +123,8 @@ struct ObjectUVE final {
             }
             if (node.components != nullptr) {
                 for (auto it = node.components->begin(); it != node.components->end(); ++it) {
-                    if (!IsStructuralUVE(it.key())) {
-                        object.components.emplace(DisplayTypeUVE(it.key()), it.value());
+                    if (!IsStructural(it.key())) {
+                        object.components.emplace(DisplayType(it.key()), it.value());
                     }
                 }
             }
@@ -140,12 +140,12 @@ struct ObjectUVE final {
     return out;
 }
 
-void DiffComponentUVE(const std::string& object, const std::string& type, const JsonUVE& before, const JsonUVE& after,
-                      std::vector<EntityDiffRowUVE>& rows, const bool isRoot) {
+void DiffComponent(const std::string& object, const std::string& type, const Json& before, const Json& after,
+                      std::vector<EntityDiffRow>& rows, const bool isRoot) {
     if (!before.is_object() || !after.is_object()) {
         if (before != after) {
-            rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Changed, object, type, ValueTextUVE(before),
-                                            ValueTextUVE(after)});
+            rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Changed, object, type, ValueText(before),
+                                            ValueText(after)});
         }
         return;
     }
@@ -165,52 +165,52 @@ void DiffComponentUVE(const std::string& object, const std::string& type, const 
         if (inBefore && inAfter && before[key] == after[key]) {
             continue;
         }
-        rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Changed, object, type + "." + key,
-                                        inBefore ? ValueTextUVE(before[key]) : std::string("(none)"),
-                                        inAfter ? ValueTextUVE(after[key]) : std::string("(none)")});
+        rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Changed, object, type + "." + key,
+                                        inBefore ? ValueText(before[key]) : std::string("(none)"),
+                                        inAfter ? ValueText(after[key]) : std::string("(none)")});
     }
 }
 
 } // namespace
 
-std::vector<EntityDiffRowUVE> DiffEntityPayloadsUVE(const std::string_view savedJson, const std::string_view currentJson) {
-    std::vector<EntityDiffRowUVE> rows;
-    const std::vector<ObjectUVE> saved = ObjectsUVE(savedJson);
-    const std::vector<ObjectUVE> current = ObjectsUVE(currentJson);
+std::vector<EntityDiffRow> DiffEntityPayloads(const std::string_view savedJson, const std::string_view currentJson) {
+    std::vector<EntityDiffRow> rows;
+    const std::vector<Object> saved = Objects(savedJson);
+    const std::vector<Object> current = Objects(currentJson);
     if (saved.empty() && current.empty()) {
         return rows;
     }
-    std::map<std::string, const ObjectUVE*> savedByPath;
-    for (const ObjectUVE& object : saved) {
+    std::map<std::string, const Object*> savedByPath;
+    for (const Object& object : saved) {
         savedByPath.emplace(object.path, &object);
     }
     std::set<std::string> matched;
-    for (const ObjectUVE& object : current) {
+    for (const Object& object : current) {
         const auto found = savedByPath.find(object.path);
         if (found == savedByPath.end()) {
-            rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Added, object.path, {}, {}, {}});
+            rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Added, object.path, {}, {}, {}});
             continue;
         }
         matched.insert(object.path);
-        const ObjectUVE& before = *found->second;
+        const Object& before = *found->second;
         const bool isRoot = object.path == "(root)";
         for (const auto& [type, value] : object.components) {
             const auto was = before.components.find(type);
             if (was == before.components.end()) {
-                rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Added, object.path, type, {}, {}});
+                rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Added, object.path, type, {}, {}});
             } else {
-                DiffComponentUVE(object.path, type, was->second, value, rows, isRoot);
+                DiffComponent(object.path, type, was->second, value, rows, isRoot);
             }
         }
         for (const auto& [type, value] : before.components) {
             if (object.components.count(type) == 0) {
-                rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Removed, object.path, type, {}, {}});
+                rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Removed, object.path, type, {}, {}});
             }
         }
     }
-    for (const ObjectUVE& object : saved) {
+    for (const Object& object : saved) {
         if (matched.count(object.path) == 0) {
-            rows.push_back(EntityDiffRowUVE{EntityDiffRowUVE::KindUVE::Removed, object.path, {}, {}, {}});
+            rows.push_back(EntityDiffRow{EntityDiffRow::Kind::Removed, object.path, {}, {}, {}});
         }
     }
     return rows;

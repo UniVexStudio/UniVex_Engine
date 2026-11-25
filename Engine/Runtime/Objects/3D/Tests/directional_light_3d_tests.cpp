@@ -19,89 +19,89 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class DirectionalLight3DUVETest : public ::testing::Test {
+class DirectionalLight3DTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 };
 
-TEST(DirectionalLight3DComponentUVETest, ShadowDefaultsAreValidAndRejectOutOfRangeValues) {
-    const DirectionalLight3DComponentUVE defaults;
+TEST(DirectionalLight3DComponentTest, ShadowDefaultsAreValidAndRejectOutOfRangeValues) {
+    const DirectionalLight3DComponent defaults;
     EXPECT_FLOAT_EQ(defaults.shadowSplitBlend, -1.0F);
     EXPECT_FLOAT_EQ(defaults.shadowDistanceFadeRange, 10.0F);
-    EXPECT_TRUE(IsDirectionalLight3DComponentValidUVE(defaults));
+    EXPECT_TRUE(IsDirectionalLight3DComponentValid(defaults));
 
-    DirectionalLight3DComponentUVE invalid = defaults;
+    DirectionalLight3DComponent invalid = defaults;
     invalid.shadowSplitBlend = -1.01F;
-    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    EXPECT_FALSE(IsDirectionalLight3DComponentValid(invalid));
     invalid = defaults;
     invalid.shadowSplitBlend = 1.01F;
-    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    EXPECT_FALSE(IsDirectionalLight3DComponentValid(invalid));
     invalid = defaults;
     invalid.shadowDistanceFadeRange = -0.1F;
-    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    EXPECT_FALSE(IsDirectionalLight3DComponentValid(invalid));
     invalid.shadowDistanceFadeRange = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsDirectionalLight3DComponentValidUVE(invalid));
+    EXPECT_FALSE(IsDirectionalLight3DComponentValid(invalid));
 }
 
-TEST_F(DirectionalLight3DUVETest, IdentityRotationPointsAlongNegativeZ) {
-    const EntityUVE sun = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, sun, TransformComponentUVE{});
-    ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, DirectionalLight3DObjectDefinitionUVE{});
-    sceneGraph.UpdateUVE(entityManager);
+TEST_F(DirectionalLight3DTest, IdentityRotationPointsAlongNegativeZ) {
+    const Entity sun = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, sun, TransformComponent{});
+    ApplyDirectionalLight3DObjectDefinition(entityManager, sun, DirectionalLight3DObjectDefinition{});
+    sceneGraph.Update(entityManager);
 
-    std::vector<LightDirectionGizmoUVE> gizmos;
-    CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    std::vector<LightDirectionGizmo> gizmos;
+    CollectLightDirectionGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 1U);
     EXPECT_NEAR(gizmos[0].direction.x, 0.0F, 1.0e-5F);
     EXPECT_NEAR(gizmos[0].direction.y, 0.0F, 1.0e-5F);
     EXPECT_NEAR(gizmos[0].direction.z, -1.0F, 1.0e-5F);
 }
 
-TEST_F(DirectionalLight3DUVETest, YawTurnsTheGizmoDirection) {
-    const EntityUVE sun = entityManager.CreateEntityUVE();
-    TransformComponentUVE transform{};
-    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.57079632679F, transform.localRotation));
-    sceneGraph.AttachTransformUVE(entityManager, sun, transform);
-    ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, DirectionalLight3DObjectDefinitionUVE{});
-    sceneGraph.UpdateUVE(entityManager);
+TEST_F(DirectionalLight3DTest, YawTurnsTheGizmoDirection) {
+    const Entity sun = entityManager.CreateEntity();
+    TransformComponent transform{};
+    ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.57079632679F, transform.localRotation));
+    sceneGraph.AttachTransform(entityManager, sun, transform);
+    ApplyDirectionalLight3DObjectDefinition(entityManager, sun, DirectionalLight3DObjectDefinition{});
+    sceneGraph.Update(entityManager);
 
-    std::vector<LightDirectionGizmoUVE> gizmos;
-    CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    std::vector<LightDirectionGizmo> gizmos;
+    CollectLightDirectionGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 1U);
     EXPECT_NEAR(gizmos[0].direction.x, -1.0F, 1.0e-4F);
     EXPECT_NEAR(gizmos[0].direction.y, 0.0F, 1.0e-4F);
     EXPECT_NEAR(gizmos[0].direction.z, 0.0F, 1.0e-4F);
 }
 
-TEST_F(DirectionalLight3DUVETest, ZeroEnergyStillDrawsAGizmo) {
-    const EntityUVE sun = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, sun, TransformComponentUVE{});
-    ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, DirectionalLight3DObjectDefinitionUVE{});
-    entityManager.GetComponentUVE<LightEmitterComponentUVE>(sun).energy = 0.0F;
-    sceneGraph.UpdateUVE(entityManager);
+TEST_F(DirectionalLight3DTest, ZeroEnergyStillDrawsAGizmo) {
+    const Entity sun = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, sun, TransformComponent{});
+    ApplyDirectionalLight3DObjectDefinition(entityManager, sun, DirectionalLight3DObjectDefinition{});
+    entityManager.GetComponent<LightEmitterComponent>(sun).energy = 0.0F;
+    sceneGraph.Update(entityManager);
 
-    std::vector<LightDirectionGizmoUVE> gizmos;
-    CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    std::vector<LightDirectionGizmo> gizmos;
+    CollectLightDirectionGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 1U);
     EXPECT_GT(gizmos[0].color.x, 0.0F);
 }
 
-TEST_F(DirectionalLight3DUVETest, EditorInternalLightsAreHiddenAndLight3DDirectionalIsCollected) {
-    const EntityUVE hidden = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, hidden, TransformComponentUVE{});
-    ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, hidden, DirectionalLight3DObjectDefinitionUVE{});
-    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(hidden);
+TEST_F(DirectionalLight3DTest, EditorInternalLightsAreHiddenAndLight3DDirectionalIsCollected) {
+    const Entity hidden = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, hidden, TransformComponent{});
+    ApplyDirectionalLight3DObjectDefinition(entityManager, hidden, DirectionalLight3DObjectDefinition{});
+    entityManager.AddComponent<EditorInternalEntityComponent>(hidden);
 
-    const EntityUVE lamp = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, lamp, TransformComponentUVE{});
-    ApplyLight3DObjectDefinitionUVE(entityManager, lamp, Light3DObjectDefinitionUVE{});
-    sceneGraph.UpdateUVE(entityManager);
+    const Entity lamp = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, lamp, TransformComponent{});
+    ApplyLight3DObjectDefinition(entityManager, lamp, Light3DObjectDefinition{});
+    sceneGraph.Update(entityManager);
 
-    std::vector<LightDirectionGizmoUVE> gizmos;
-    CollectLightDirectionGizmosUVE(entityManager, gizmos);
+    std::vector<LightDirectionGizmo> gizmos;
+    CollectLightDirectionGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 1U);
     EXPECT_NEAR(gizmos[0].direction.z, -1.0F, 1.0e-5F);
 }

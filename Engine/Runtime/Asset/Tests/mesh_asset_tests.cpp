@@ -28,65 +28,65 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] MeshAssetUVE MakeTestMeshUVE() {
-    MeshAssetUVE mesh;
+[[nodiscard]] MeshAsset MakeTestMesh() {
+    MeshAsset mesh;
     mesh.vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F, 1.0F},
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 1.0F, 0.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 0.0F, 1.0F},
     };
     mesh.indices = {0, 1, 2};
-    mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
+    mesh.localBounds = Math::Aabb{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 0.0F}};
     return mesh;
 }
 
-TEST(MeshAssetUVETest, GenerateMeshTangentsUVE_StandardUvTriangle_ProducesOrthonormalPositiveBasis) {
-    std::vector<MeshVertexUVE> vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+TEST(MeshAssetTest, GenerateMeshTangents_StandardUvTriangle_ProducesOrthonormalPositiveBasis) {
+    std::vector<MeshVertex> vertices = {
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
     };
     const std::vector<std::uint32_t> indices{0, 1, 2};
 
-    GenerateMeshTangentsUVE(vertices, indices);
+    GenerateMeshTangents(vertices, indices);
 
-    for (const MeshVertexUVE& vertex : vertices) {
+    for (const MeshVertex& vertex : vertices) {
         EXPECT_NEAR(vertex.tangent.x, 1.0F, 0.0001F);
         EXPECT_NEAR(vertex.tangent.y, 0.0F, 0.0001F);
         EXPECT_NEAR(vertex.tangent.z, 0.0F, 0.0001F);
-        EXPECT_NEAR(Math::DotUVE(vertex.normal, vertex.tangent), 0.0F, 0.0001F);
+        EXPECT_NEAR(Math::Dot(vertex.normal, vertex.tangent), 0.0F, 0.0001F);
         EXPECT_FLOAT_EQ(vertex.tangentHandedness, 1.0F);
     }
 }
 
-TEST(MeshAssetUVETest, GenerateMeshTangentsUVE_MirroredUvTriangle_ProducesNegativeHandedness) {
-    std::vector<MeshVertexUVE> vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+TEST(MeshAssetTest, GenerateMeshTangents_MirroredUvTriangle_ProducesNegativeHandedness) {
+    std::vector<MeshVertex> vertices = {
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
     };
     const std::vector<std::uint32_t> indices{0, 1, 2};
 
-    GenerateMeshTangentsUVE(vertices, indices);
+    GenerateMeshTangents(vertices, indices);
 
-    for (const MeshVertexUVE& vertex : vertices) {
-        EXPECT_NEAR(Math::LengthUVE(vertex.tangent), 1.0F, 0.0001F);
-        EXPECT_NEAR(Math::DotUVE(vertex.normal, vertex.tangent), 0.0F, 0.0001F);
+    for (const MeshVertex& vertex : vertices) {
+        EXPECT_NEAR(Math::Length(vertex.tangent), 1.0F, 0.0001F);
+        EXPECT_NEAR(Math::Dot(vertex.normal, vertex.tangent), 0.0F, 0.0001F);
         EXPECT_FLOAT_EQ(vertex.tangentHandedness, -1.0F);
     }
 }
 
-TEST(MeshAssetUVETest, GenerateMeshTangentsUVE_DegenerateUvs_UsesDeterministicFallback) {
-    std::vector<MeshVertexUVE> vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+TEST(MeshAssetTest, GenerateMeshTangents_DegenerateUvs_UsesDeterministicFallback) {
+    std::vector<MeshVertex> vertices = {
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
     };
     const std::vector<std::uint32_t> indices{0, 1, 2};
 
-    GenerateMeshTangentsUVE(vertices, indices);
+    GenerateMeshTangents(vertices, indices);
 
-    for (const MeshVertexUVE& vertex : vertices) {
+    for (const MeshVertex& vertex : vertices) {
         EXPECT_NEAR(vertex.tangent.x, 1.0F, 0.0001F);
         EXPECT_NEAR(vertex.tangent.y, 0.0F, 0.0001F);
         EXPECT_NEAR(vertex.tangent.z, 0.0F, 0.0001F);
@@ -94,23 +94,23 @@ TEST(MeshAssetUVETest, GenerateMeshTangentsUVE_DegenerateUvs_UsesDeterministicFa
     }
 }
 
-TEST(MeshAssetUVETest, TryGenerateMeshTangentsUVE_OverflowedSharedAccumulatorPreservesOutput) {
-    std::vector<MeshVertexUVE> vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F,
-                      Math::Vector3UVE{0.0F, 0.0F, 1.0F}, -1.0F},
-        MeshVertexUVE{Math::Vector3UVE{3.0e38F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F,
-                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, -1.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F,
-                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, -1.0F},
-        MeshVertexUVE{Math::Vector3UVE{3.0e38F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F,
-                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, -1.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F,
-                      Math::Vector3UVE{0.0F, 1.0F, 0.0F}, -1.0F},
+TEST(MeshAssetTest, TryGenerateMeshTangents_OverflowedSharedAccumulatorPreservesOutput) {
+    std::vector<MeshVertex> vertices = {
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F,
+                      Math::Vector3{0.0F, 0.0F, 1.0F}, -1.0F},
+        MeshVertex{Math::Vector3{3.0e38F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F,
+                      Math::Vector3{0.0F, 1.0F, 0.0F}, -1.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F,
+                      Math::Vector3{0.0F, 1.0F, 0.0F}, -1.0F},
+        MeshVertex{Math::Vector3{3.0e38F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F,
+                      Math::Vector3{0.0F, 1.0F, 0.0F}, -1.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F,
+                      Math::Vector3{0.0F, 1.0F, 0.0F}, -1.0F},
     };
-    const std::vector<MeshVertexUVE> original = vertices;
+    const std::vector<MeshVertex> original = vertices;
     const std::vector<std::uint32_t> indices{0U, 1U, 2U, 0U, 3U, 4U};
 
-    EXPECT_FALSE(TryGenerateMeshTangentsUVE(vertices, indices));
+    EXPECT_FALSE(TryGenerateMeshTangents(vertices, indices));
     ASSERT_EQ(vertices.size(), original.size());
     for (std::size_t index = 0U; index < vertices.size(); ++index) {
         EXPECT_EQ(vertices[index].position, original[index].position);
@@ -122,14 +122,14 @@ TEST(MeshAssetUVETest, TryGenerateMeshTangentsUVE_OverflowedSharedAccumulatorPre
     }
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
+TEST(MeshAssetTest, SaveThenLoad_RoundTripsByteExact) {
     const std::filesystem::path path = "uve_mesh_asset_tests_round_trip.uvmodel";
     std::filesystem::remove(path);
-    const MeshAssetUVE original = MakeTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+    const MeshAsset original = MakeTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(original, path));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
 
     ASSERT_EQ(loaded.vertices.size(), original.vertices.size());
     for (std::size_t index = 0; index < original.vertices.size(); ++index) {
@@ -137,8 +137,8 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
         EXPECT_EQ(loaded.vertices[index].normal, original.vertices[index].normal);
         EXPECT_EQ(loaded.vertices[index].u, original.vertices[index].u);
         EXPECT_EQ(loaded.vertices[index].v, original.vertices[index].v);
-        EXPECT_NEAR(Math::LengthUVE(loaded.vertices[index].tangent), 1.0F, 0.0001F);
-        EXPECT_NEAR(Math::DotUVE(loaded.vertices[index].normal, loaded.vertices[index].tangent), 0.0F, 0.0001F);
+        EXPECT_NEAR(Math::Length(loaded.vertices[index].tangent), 1.0F, 0.0001F);
+        EXPECT_NEAR(Math::Dot(loaded.vertices[index].normal, loaded.vertices[index].tangent), 0.0F, 0.0001F);
         EXPECT_TRUE(loaded.vertices[index].tangentHandedness == -1.0F ||
                     loaded.vertices[index].tangentHandedness == 1.0F);
     }
@@ -148,7 +148,7 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsByteExact) {
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, MeshAssetRoundTripsMaterialGuids) {
+TEST(MeshAssetTest, MeshAssetRoundTripsMaterialGuids) {
     // Foundation WP7: material references are a tagged trailing section - present only when the
     // mesh has any, read back verbatim, and absent from a mesh without materials so that file's
     // bytes stay exactly what they were before the field existed.
@@ -159,44 +159,44 @@ TEST(MeshAssetUVETest, MeshAssetRoundTripsMaterialGuids) {
     std::filesystem::remove(withoutPath);
     std::filesystem::remove(legacyPath);
 
-    MeshAssetUVE original = MakeTestMeshUVE();
-    original.materialGuids = {AssetGuidUVE{0x1122334455667788ULL}, kInvalidAssetGuidUVE, AssetGuidUVE{7U}};
-    ASSERT_TRUE(SaveMeshAssetUVE(original, withPath));
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(withPath, loaded));
+    MeshAsset original = MakeTestMesh();
+    original.materialGuids = {AssetGuid{0x1122334455667788ULL}, kInvalidAssetGuid, AssetGuid{7U}};
+    ASSERT_TRUE(SaveMeshAsset(original, withPath));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(withPath, loaded));
     ASSERT_EQ(loaded.materialGuids.size(), 3U);
-    EXPECT_EQ(loaded.materialGuids[0], AssetGuidUVE{0x1122334455667788ULL});
-    EXPECT_EQ(loaded.materialGuids[1], kInvalidAssetGuidUVE) << "an unpublished slot survives as the invalid GUID";
-    EXPECT_EQ(loaded.materialGuids[2], AssetGuidUVE{7U});
+    EXPECT_EQ(loaded.materialGuids[0], AssetGuid{0x1122334455667788ULL});
+    EXPECT_EQ(loaded.materialGuids[1], kInvalidAssetGuid) << "an unpublished slot survives as the invalid GUID";
+    EXPECT_EQ(loaded.materialGuids[2], AssetGuid{7U});
     EXPECT_EQ(loaded.indices, original.indices);
-    EXPECT_FALSE(loaded.IsSkinnedUVE()) << "the material tag must not be mistaken for a joint count";
+    EXPECT_FALSE(loaded.IsSkinned()) << "the material tag must not be mistaken for a joint count";
 
-    const MeshAssetUVE plain = MakeTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(plain, withoutPath));
-    MeshAssetUVE loadedPlain;
-    ASSERT_TRUE(LoadMeshAssetUVE(withoutPath, loadedPlain));
+    const MeshAsset plain = MakeTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(plain, withoutPath));
+    MeshAsset loadedPlain;
+    ASSERT_TRUE(LoadMeshAsset(withoutPath, loadedPlain));
     EXPECT_TRUE(loadedPlain.materialGuids.empty());
     EXPECT_LT(std::filesystem::file_size(withoutPath), std::filesystem::file_size(withPath))
         << "a mesh without materials writes no material section";
 
     // A mesh that carries materials AND skinning keeps both.
-    MeshAssetUVE skinned = MakeTestMeshUVE();
-    skinned.joints.push_back(MeshJointUVE{});
-    skinned.joints.back().parentIndex = kInvalidJointParentUVE;
+    MeshAsset skinned = MakeTestMesh();
+    skinned.joints.push_back(MeshJoint{});
+    skinned.joints.back().parentIndex = kInvalidJointParent;
     skinned.joints.back().name = "root";
-    skinned.skinningInfluences.assign(skinned.vertices.size(), MeshSkinningInfluenceUVE{});
-    for (MeshSkinningInfluenceUVE& influence : skinned.skinningInfluences) {
+    skinned.skinningInfluences.assign(skinned.vertices.size(), MeshSkinningInfluence{});
+    for (MeshSkinningInfluence& influence : skinned.skinningInfluences) {
         influence.weights[0] = 1.0F;
     }
-    skinned.materialGuids = {AssetGuidUVE{42U}};
-    ASSERT_TRUE(SaveMeshAssetUVE(skinned, legacyPath));
-    MeshAssetUVE loadedSkinned;
-    ASSERT_TRUE(LoadMeshAssetUVE(legacyPath, loadedSkinned));
-    EXPECT_TRUE(loadedSkinned.IsSkinnedUVE());
+    skinned.materialGuids = {AssetGuid{42U}};
+    ASSERT_TRUE(SaveMeshAsset(skinned, legacyPath));
+    MeshAsset loadedSkinned;
+    ASSERT_TRUE(LoadMeshAsset(legacyPath, loadedSkinned));
+    EXPECT_TRUE(loadedSkinned.IsSkinned());
     ASSERT_EQ(loadedSkinned.joints.size(), 1U);
     EXPECT_EQ(loadedSkinned.joints[0].name, "root");
     ASSERT_EQ(loadedSkinned.materialGuids.size(), 1U);
-    EXPECT_EQ(loadedSkinned.materialGuids[0], AssetGuidUVE{42U});
+    EXPECT_EQ(loadedSkinned.materialGuids[0], AssetGuid{42U});
 
     std::filesystem::remove(withPath);
     std::filesystem::remove(withoutPath);
@@ -206,98 +206,98 @@ TEST(MeshAssetUVETest, MeshAssetRoundTripsMaterialGuids) {
 /// A two-shape face-ish mesh: three vertices, "jawOpen" moving only vertex 2 downward and
 /// "smile" moving vertices 0 and 1 outward, plus a default weight that is deliberately off zero so
 /// the round trip has to preserve it rather than re-deriving zeroes.
-[[nodiscard]] MeshAssetUVE MakeMorphTestMeshUVE() {
-    MeshAssetUVE mesh = MakeTestMeshUVE();
-    MeshMorphTargetUVE jaw;
+[[nodiscard]] MeshAsset MakeMorphTestMesh() {
+    MeshAsset mesh = MakeTestMesh();
+    MeshMorphTarget jaw;
     jaw.name = "jawOpen";
-    jaw.deltas.push_back(MeshMorphTargetDeltaUVE{2U, Math::Vector3UVE{0.0F, -0.25F, 0.1F},
-                                                 Math::Vector3UVE{0.0F, -1.0F, 0.0F},
-                                                 Math::Vector3UVE{}});
-    MeshMorphTargetUVE smile;
+    jaw.deltas.push_back(MeshMorphTargetDelta{2U, Math::Vector3{0.0F, -0.25F, 0.1F},
+                                                 Math::Vector3{0.0F, -1.0F, 0.0F},
+                                                 Math::Vector3{}});
+    MeshMorphTarget smile;
     smile.name = "smile";
-    smile.deltas.push_back(MeshMorphTargetDeltaUVE{0U, Math::Vector3UVE{-0.1F, 0.0F, 0.0F},
-                                                   Math::Vector3UVE{}, Math::Vector3UVE{}});
-    smile.deltas.push_back(MeshMorphTargetDeltaUVE{1U, Math::Vector3UVE{0.1F, 0.0F, 0.0F},
-                                                   Math::Vector3UVE{}, Math::Vector3UVE{}});
+    smile.deltas.push_back(MeshMorphTargetDelta{0U, Math::Vector3{-0.1F, 0.0F, 0.0F},
+                                                   Math::Vector3{}, Math::Vector3{}});
+    smile.deltas.push_back(MeshMorphTargetDelta{1U, Math::Vector3{0.1F, 0.0F, 0.0F},
+                                                   Math::Vector3{}, Math::Vector3{}});
     mesh.morphTargets = {std::move(jaw), std::move(smile)};
     mesh.defaultMorphWeights = {0.25F, 0.0F};
     return mesh;
 }
 
-TEST(MeshAssetUVETest, StaticMesh_IsValidMorphTargetData) {
+TEST(MeshAssetTest, StaticMesh_IsValidMorphTargetData) {
     // Every mesh that existed before blend shapes must keep validating unchanged.
-    const MeshAssetUVE mesh = MakeTestMeshUVE();
-    EXPECT_FALSE(mesh.HasMorphTargetsUVE());
-    EXPECT_TRUE(IsMeshMorphTargetDataValidUVE(mesh));
+    const MeshAsset mesh = MakeTestMesh();
+    EXPECT_FALSE(mesh.HasMorphTargets());
+    EXPECT_TRUE(IsMeshMorphTargetDataValid(mesh));
 }
 
-TEST(MeshAssetUVETest, MorphTargetData_RejectsOutOfRangeVertex) {
-    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, MorphTargetData_RejectsOutOfRangeVertex) {
+    MeshAsset mesh = MakeMorphTestMesh();
     mesh.morphTargets[0].deltas[0].vertexIndex = 3U; // three vertices, index 3 is past the end
-    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(mesh));
+    EXPECT_FALSE(IsMeshMorphTargetDataValid(mesh));
 }
 
-TEST(MeshAssetUVETest, MorphTargetData_RejectsOutOfOrderAndDuplicateDeltas) {
-    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, MorphTargetData_RejectsOutOfOrderAndDuplicateDeltas) {
+    MeshAsset mesh = MakeMorphTestMesh();
     // "smile" lists vertices 0 then 1; swapping them makes the array descending, and repeating a
     // vertex would double-displace it. Both are the same defect: the ascending invariant is broken.
     std::swap(mesh.morphTargets[1].deltas[0], mesh.morphTargets[1].deltas[1]);
-    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(mesh));
+    EXPECT_FALSE(IsMeshMorphTargetDataValid(mesh));
 
-    MeshAssetUVE duplicated = MakeMorphTestMeshUVE();
+    MeshAsset duplicated = MakeMorphTestMesh();
     duplicated.morphTargets[1].deltas[1].vertexIndex = 0U;
-    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(duplicated));
+    EXPECT_FALSE(IsMeshMorphTargetDataValid(duplicated));
 }
 
-TEST(MeshAssetUVETest, MorphTargetData_RejectsNonFiniteDeltaAndPartiallyDefaultedWeights) {
-    MeshAssetUVE nonFinite = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, MorphTargetData_RejectsNonFiniteDeltaAndPartiallyDefaultedWeights) {
+    MeshAsset nonFinite = MakeMorphTestMesh();
     nonFinite.morphTargets[0].deltas[0].positionDelta.y = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(nonFinite));
+    EXPECT_FALSE(IsMeshMorphTargetDataValid(nonFinite));
 
     // Two shapes, one weight: the missing weight has no meaning, so it is a defect rather than a
     // zero by omission.
-    MeshAssetUVE shortWeights = MakeMorphTestMeshUVE();
+    MeshAsset shortWeights = MakeMorphTestMesh();
     shortWeights.defaultMorphWeights = {0.5F};
-    EXPECT_FALSE(IsMeshMorphTargetDataValidUVE(shortWeights));
+    EXPECT_FALSE(IsMeshMorphTargetDataValid(shortWeights));
 }
 
-TEST(MeshAssetUVETest, MorphTargetData_EmptyDefaultWeightsMeansRestShapeAndIsValid) {
-    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, MorphTargetData_EmptyDefaultWeightsMeansRestShapeAndIsValid) {
+    MeshAsset mesh = MakeMorphTestMesh();
     mesh.defaultMorphWeights.clear();
-    EXPECT_TRUE(mesh.HasMorphTargetsUVE());
-    EXPECT_TRUE(IsMeshMorphTargetDataValidUVE(mesh));
+    EXPECT_TRUE(mesh.HasMorphTargets());
+    EXPECT_TRUE(IsMeshMorphTargetDataValid(mesh));
 }
 
-TEST(MeshAssetUVETest, AccumulateMorphTargets_UsesSparseDeltasAndSkipsZeroWeights) {
-    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, AccumulateMorphTargets_UsesSparseDeltasAndSkipsZeroWeights) {
+    const MeshAsset mesh = MakeMorphTestMesh();
     // A zero weight on "smile" must leave its vertices exactly where they were - not merely close.
     const std::array<float, 2U> weights{1.0F, 0.0F};
-    std::vector<MeshVertexUVE> morphed;
-    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, weights, morphed));
+    std::vector<MeshVertex> morphed;
+    ASSERT_TRUE(AccumulateMorphTargets(mesh.vertices, mesh.morphTargets, weights, morphed));
     ASSERT_EQ(morphed.size(), mesh.vertices.size());
 
-    EXPECT_EQ(morphed[2].position, (Math::Vector3UVE{0.0F, 0.75F, 0.1F}));
-    EXPECT_EQ(morphed[2].normal, (Math::Vector3UVE{0.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(morphed[2].position, (Math::Vector3{0.0F, 0.75F, 0.1F}));
+    EXPECT_EQ(morphed[2].normal, (Math::Vector3{0.0F, 0.0F, 0.0F}));
     EXPECT_EQ(morphed[0].position, mesh.vertices[0].position);
     EXPECT_EQ(morphed[1].position, mesh.vertices[1].position);
 }
 
-TEST(MeshAssetUVETest, AccumulateMorphTargets_ScalesByWeightAndIsOrderIndependent) {
-    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+TEST(MeshAssetTest, AccumulateMorphTargets_ScalesByWeightAndIsOrderIndependent) {
+    const MeshAsset mesh = MakeMorphTestMesh();
     const std::array<float, 2U> weights{0.5F, 1.0F};
-    std::vector<MeshVertexUVE> morphed;
-    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, weights, morphed));
+    std::vector<MeshVertex> morphed;
+    ASSERT_TRUE(AccumulateMorphTargets(mesh.vertices, mesh.morphTargets, weights, morphed));
     EXPECT_FLOAT_EQ(morphed[0].position.x, -0.1F);
     EXPECT_FLOAT_EQ(morphed[1].position.x, 1.1F);
     EXPECT_FLOAT_EQ(morphed[2].position.y, 0.875F);
 
     // Reordering the TARGETS (and their weights) must move the same vertices the same distance.
     // This is the property that makes two assets describing one face comparable at all.
-    MeshAssetUVE reordered = mesh;
+    MeshAsset reordered = mesh;
     std::swap(reordered.morphTargets[0], reordered.morphTargets[1]);
-    std::vector<MeshVertexUVE> reorderedVertices;
+    std::vector<MeshVertex> reorderedVertices;
     const std::array<float, 2U> reorderedWeights{1.0F, 0.5F};
-    ASSERT_TRUE(AccumulateMorphTargetsUVE(mesh.vertices, reordered.morphTargets, reorderedWeights,
+    ASSERT_TRUE(AccumulateMorphTargets(mesh.vertices, reordered.morphTargets, reorderedWeights,
                                           reorderedVertices));
     for (std::size_t index = 0U; index < morphed.size(); ++index) {
         EXPECT_NEAR(reorderedVertices[index].position.x, morphed[index].position.x, 1.0e-6F);
@@ -306,25 +306,25 @@ TEST(MeshAssetUVETest, AccumulateMorphTargets_ScalesByWeightAndIsOrderIndependen
     }
 }
 
-TEST(MeshAssetUVETest, AccumulateMorphTargets_FailsAtomicallyOnWeightMismatch) {
-    const MeshAssetUVE mesh = MakeMorphTestMeshUVE();
-    std::vector<MeshVertexUVE> untouched(1U);
-    untouched[0].position = Math::Vector3UVE{7.0F, 7.0F, 7.0F};
-    const std::vector<MeshVertexUVE> sentinel = untouched;
+TEST(MeshAssetTest, AccumulateMorphTargets_FailsAtomicallyOnWeightMismatch) {
+    const MeshAsset mesh = MakeMorphTestMesh();
+    std::vector<MeshVertex> untouched(1U);
+    untouched[0].position = Math::Vector3{7.0F, 7.0F, 7.0F};
+    const std::vector<MeshVertex> sentinel = untouched;
     const std::array<float, 1U> tooFewWeights{1.0F};
-    EXPECT_FALSE(AccumulateMorphTargetsUVE(mesh.vertices, mesh.morphTargets, tooFewWeights, untouched));
+    EXPECT_FALSE(AccumulateMorphTargets(mesh.vertices, mesh.morphTargets, tooFewWeights, untouched));
     ASSERT_EQ(untouched.size(), sentinel.size());
     EXPECT_EQ(untouched[0].position, sentinel[0].position);
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsMorphTargetsAndDefaultWeights) {
+TEST(MeshAssetTest, SaveThenLoad_RoundTripsMorphTargetsAndDefaultWeights) {
     const std::filesystem::path path = "uve_mesh_asset_tests_morph_round_trip.uvmodel";
     std::filesystem::remove(path);
-    const MeshAssetUVE original = MakeMorphTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+    const MeshAsset original = MakeMorphTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(original, path));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
     ASSERT_EQ(loaded.morphTargets.size(), 2U);
     EXPECT_EQ(loaded.morphTargets[0].name, "jawOpen");
     EXPECT_EQ(loaded.morphTargets[1].name, "smile");
@@ -334,42 +334,42 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsMorphTargetsAndDefaultWeights) {
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_MeshWithoutShapesKeepsItsOldBytes) {
+TEST(MeshAssetTest, SaveThenLoad_MeshWithoutShapesKeepsItsOldBytes) {
     // A static mesh must not grow a section just because the format learned about blend shapes:
     // that is what lets an older engine build read a newer file's geometry.
     const std::filesystem::path path = "uve_mesh_asset_tests_static_bytes.uvmodel";
     std::filesystem::remove(path);
-    const MeshAssetUVE mesh = MakeTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
+    const MeshAsset mesh = MakeTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(mesh, path));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
     EXPECT_TRUE(loaded.morphTargets.empty());
     EXPECT_TRUE(loaded.defaultMorphWeights.empty());
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsShapesOnASkinnedMesh) {
+TEST(MeshAssetTest, SaveThenLoad_RoundTripsShapesOnASkinnedMesh) {
     // Blend shapes and skinning are independent sections and must not disturb each other; a face
     // mesh is normally BOTH, so this is the combination that ships.
-    MeshAssetUVE mesh = MakeMorphTestMeshUVE();
+    MeshAsset mesh = MakeMorphTestMesh();
     mesh.joints.resize(1U);
     mesh.joints[0].name = "Root";
-    mesh.joints[0].inverseBindMatrix = Math::Matrix4x4UVE::IdentityUVE();
-    mesh.skinningInfluences.assign(mesh.vertices.size(), MeshSkinningInfluenceUVE{});
-    for (MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+    mesh.joints[0].inverseBindMatrix = Math::Matrix4x4::Identity();
+    mesh.skinningInfluences.assign(mesh.vertices.size(), MeshSkinningInfluence{});
+    for (MeshSkinningInfluence& influence : mesh.skinningInfluences) {
         influence.joints[0] = 0U;
         influence.weights[0] = 1.0F;
     }
-    mesh.materialGuids = {AssetGuidUVE{0x1234U}};
+    mesh.materialGuids = {AssetGuid{0x1234U}};
 
     const std::filesystem::path path = "uve_mesh_asset_tests_skinned_morph.uvmodel";
     std::filesystem::remove(path);
-    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
+    ASSERT_TRUE(SaveMeshAsset(mesh, path));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
-    EXPECT_TRUE(loaded.IsSkinnedUVE());
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
+    EXPECT_TRUE(loaded.IsSkinned());
     ASSERT_EQ(loaded.morphTargets.size(), 2U);
     EXPECT_EQ(loaded.morphTargets[0].name, "jawOpen");
     ASSERT_EQ(loaded.materialGuids.size(), 1U);
@@ -377,24 +377,24 @@ TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsShapesOnASkinnedMesh) {
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
+TEST(MeshAssetTest, LoadMeshAsset_WrongAssetKind_FailsCleanlyAndLogsError) {
     const std::filesystem::path path = "uve_mesh_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, {}));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    MeshAssetUVE mesh;
-    EXPECT_FALSE(LoadMeshAssetUVE(path, mesh));
+    MeshAsset mesh;
+    EXPECT_FALSE(LoadMeshAsset(path, mesh));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error && message.message.contains("not a mesh file");
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error && message.message.contains("not a mesh file");
         });
     EXPECT_TRUE(foundError);
 
@@ -402,52 +402,52 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError)
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, LoadMeshAssetUVE_ImpossibleVertexCountFailsBeforeReserve) {
+TEST(MeshAssetTest, LoadMeshAsset_ImpossibleVertexCountFailsBeforeReserve) {
     const std::filesystem::path path = "uve_mesh_asset_tests_impossible_vertex_count.uvmodel";
     std::filesystem::remove(path);
     const std::uint32_t impossibleVertexCount = std::numeric_limits<std::uint32_t>::max();
     std::vector<std::byte> payload(sizeof(impossibleVertexCount));
     std::memcpy(payload.data(), &impossibleVertexCount, sizeof(impossibleVertexCount));
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Mesh, payload));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Mesh, payload));
 
-    MeshAssetUVE loaded = MakeTestMeshUVE();
-    const MeshAssetUVE original = loaded;
-    EXPECT_FALSE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded = MakeTestMesh();
+    const MeshAsset original = loaded;
+    EXPECT_FALSE(LoadMeshAsset(path, loaded));
     EXPECT_EQ(loaded.vertices.size(), original.vertices.size());
     EXPECT_EQ(loaded.indices, original.indices);
     EXPECT_EQ(loaded.localBounds, original.localBounds);
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, LoadMeshAssetUVE_MissingFile_ReturnsFalse) {
+TEST(MeshAssetTest, LoadMeshAsset_MissingFile_ReturnsFalse) {
     const std::filesystem::path path = "uve_mesh_asset_tests_nonexistent.uvmodel";
     std::filesystem::remove(path);
 
-    MeshAssetUVE mesh;
-    EXPECT_FALSE(LoadMeshAssetUVE(path, mesh));
+    MeshAsset mesh;
+    EXPECT_FALSE(LoadMeshAsset(path, mesh));
 }
 
-TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
+TEST(MeshAssetTest, LoadMeshAsset_OutOfBoundsIndex_FailsAndLogsError) {
     const std::filesystem::path path = "uve_mesh_asset_tests_bad_index.uvmodel";
     std::filesystem::remove(path);
 
-    MeshAssetUVE invalidMesh = MakeTestMeshUVE();
+    MeshAsset invalidMesh = MakeTestMesh();
     invalidMesh.indices = {0, 1, 5}; // 5 is out of bounds - only 3 vertices exist
-    ASSERT_TRUE(SaveMeshAssetUVE(invalidMesh, path));
+    ASSERT_TRUE(SaveMeshAsset(invalidMesh, path));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    MeshAssetUVE loaded;
-    EXPECT_FALSE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded;
+    EXPECT_FALSE(LoadMeshAsset(path, loaded));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("out-of-bounds index");
         });
     EXPECT_TRUE(foundError);
@@ -458,74 +458,74 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_OutOfBoundsIndex_FailsAndLogsError) {
 
 /// A quad split into two triangles with one material per triangle: the smallest mesh that can
 /// carry a real surface split.
-[[nodiscard]] MeshAssetUVE MakeSurfaceTestMeshUVE() {
-    MeshAssetUVE mesh;
+[[nodiscard]] MeshAsset MakeSurfaceTestMesh() {
+    MeshAsset mesh;
     mesh.vertices = {
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
-        MeshVertexUVE{Math::Vector3UVE{1.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 1.0F, 1.0F},
-        MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
+        MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 0.0F},
+        MeshVertex{Math::Vector3{1.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 1.0F, 1.0F},
+        MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 0.0F, 1.0F}, 0.0F, 1.0F},
     };
     mesh.indices = {0U, 1U, 2U, 0U, 2U, 3U};
-    mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
-    mesh.materialGuids = {AssetGuidUVE{11U}, AssetGuidUVE{12U}};
-    mesh.surfaces = {MeshSurfaceUVE{0U, 3U, 0U}, MeshSurfaceUVE{3U, 3U, 1U}};
+    mesh.localBounds = Math::Aabb{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 0.0F}};
+    mesh.materialGuids = {AssetGuid{11U}, AssetGuid{12U}};
+    mesh.surfaces = {MeshSurface{0U, 3U, 0U}, MeshSurface{3U, 3U, 1U}};
     return mesh;
 }
 
-TEST(MeshAssetUVETest, Surfaces_MeshWithoutExplicitSplitIsOneImplicitWholeBufferSurface) {
-    MeshAssetUVE mesh = MakeTestMeshUVE();
-    mesh.materialGuids = {AssetGuidUVE{7U}};
+TEST(MeshAssetTest, Surfaces_MeshWithoutExplicitSplitIsOneImplicitWholeBufferSurface) {
+    MeshAsset mesh = MakeTestMesh();
+    mesh.materialGuids = {AssetGuid{7U}};
 
-    EXPECT_FALSE(mesh.HasExplicitSurfacesUVE());
-    ASSERT_EQ(mesh.SurfaceCountUVE(), 1U);
-    const MeshSurfaceUVE surface = mesh.GetSurfaceUVE(0U);
+    EXPECT_FALSE(mesh.HasExplicitSurfaces());
+    ASSERT_EQ(mesh.SurfaceCount(), 1U);
+    const MeshSurface surface = mesh.GetSurface(0U);
     EXPECT_EQ(surface.firstIndex, 0U);
     EXPECT_EQ(surface.indexCount, 3U);
     EXPECT_EQ(surface.materialSlot, 0U);
-    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), AssetGuidUVE{7U});
+    EXPECT_EQ(mesh.SurfaceMaterialGuid(0U), AssetGuid{7U});
 
     // A mesh with no materials still has its one surface - it is simply shaded by the object.
     mesh.materialGuids.clear();
-    EXPECT_EQ(mesh.GetSurfaceUVE(0U).materialSlot, kInvalidMeshSurfaceMaterialSlotUVE);
-    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), kInvalidAssetGuidUVE);
+    EXPECT_EQ(mesh.GetSurface(0U).materialSlot, kInvalidMeshSurfaceMaterialSlot);
+    EXPECT_EQ(mesh.SurfaceMaterialGuid(0U), kInvalidAssetGuid);
 
     // An empty mesh has nothing to draw, and an out-of-range index answers an empty range rather
     // than reading past the end.
-    MeshAssetUVE empty;
-    EXPECT_EQ(empty.SurfaceCountUVE(), 0U);
-    EXPECT_EQ(mesh.GetSurfaceUVE(1U), (MeshSurfaceUVE{}));
+    MeshAsset empty;
+    EXPECT_EQ(empty.SurfaceCount(), 0U);
+    EXPECT_EQ(mesh.GetSurface(1U), (MeshSurface{}));
 }
 
-TEST(MeshAssetUVETest, Surfaces_ExplicitSplitAnswersPerSurfaceMaterial) {
-    const MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
+TEST(MeshAssetTest, Surfaces_ExplicitSplitAnswersPerSurfaceMaterial) {
+    const MeshAsset mesh = MakeSurfaceTestMesh();
 
-    EXPECT_TRUE(mesh.HasExplicitSurfacesUVE());
-    ASSERT_EQ(mesh.SurfaceCountUVE(), 2U);
-    EXPECT_EQ(mesh.GetSurfaceUVE(1U), (MeshSurfaceUVE{3U, 3U, 1U}));
-    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(0U), AssetGuidUVE{11U});
-    EXPECT_EQ(mesh.SurfaceMaterialGuidUVE(1U), AssetGuidUVE{12U});
-    // FirstSurfaceMaterialGuidUVE keeps meaning "the material an object with none of its own gets".
-    EXPECT_EQ(mesh.FirstSurfaceMaterialGuidUVE(), AssetGuidUVE{11U});
+    EXPECT_TRUE(mesh.HasExplicitSurfaces());
+    ASSERT_EQ(mesh.SurfaceCount(), 2U);
+    EXPECT_EQ(mesh.GetSurface(1U), (MeshSurface{3U, 3U, 1U}));
+    EXPECT_EQ(mesh.SurfaceMaterialGuid(0U), AssetGuid{11U});
+    EXPECT_EQ(mesh.SurfaceMaterialGuid(1U), AssetGuid{12U});
+    // FirstSurfaceMaterialGuid keeps meaning "the material an object with none of its own gets".
+    EXPECT_EQ(mesh.FirstSurfaceMaterialGuid(), AssetGuid{11U});
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_RoundTripsSurfacesAndTheirMaterialSlots) {
+TEST(MeshAssetTest, SaveThenLoad_RoundTripsSurfacesAndTheirMaterialSlots) {
     const std::filesystem::path path = "uve_mesh_asset_tests_surface_round_trip.uvmodel";
     std::filesystem::remove(path);
-    const MeshAssetUVE original = MakeSurfaceTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+    const MeshAsset original = MakeSurfaceTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(original, path));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
     EXPECT_EQ(loaded.surfaces, original.surfaces);
     EXPECT_EQ(loaded.materialGuids, original.materialGuids);
     EXPECT_EQ(loaded.indices, original.indices);
-    ASSERT_EQ(loaded.SurfaceCountUVE(), 2U);
-    EXPECT_EQ(loaded.SurfaceMaterialGuidUVE(1U), AssetGuidUVE{12U});
+    ASSERT_EQ(loaded.SurfaceCount(), 2U);
+    EXPECT_EQ(loaded.SurfaceMaterialGuid(1U), AssetGuid{12U});
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, SaveThenLoad_MeshWithoutSurfacesKeepsItsOldBytes) {
+TEST(MeshAssetTest, SaveThenLoad_MeshWithoutSurfacesKeepsItsOldBytes) {
     // Surfaces are an optional trailing section: a single-material mesh must keep producing the
     // exact bytes it always did, so an older build can still read the file and this one does not
     // grow every asset in the project.
@@ -533,60 +533,60 @@ TEST(MeshAssetUVETest, SaveThenLoad_MeshWithoutSurfacesKeepsItsOldBytes) {
     const std::filesystem::path againPath = "uve_mesh_asset_tests_no_surfaces_b.uvmodel";
     std::filesystem::remove(plainPath);
     std::filesystem::remove(againPath);
-    const MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
-    MeshAssetUVE plain = mesh;
+    const MeshAsset mesh = MakeSurfaceTestMesh();
+    MeshAsset plain = mesh;
     plain.surfaces.clear();
-    ASSERT_TRUE(SaveMeshAssetUVE(plain, plainPath));
-    ASSERT_TRUE(SaveMeshAssetUVE(plain, againPath));
+    ASSERT_TRUE(SaveMeshAsset(plain, plainPath));
+    ASSERT_TRUE(SaveMeshAsset(plain, againPath));
 
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(plainPath, loaded));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(plainPath, loaded));
     EXPECT_TRUE(loaded.surfaces.empty());
-    EXPECT_EQ(loaded.SurfaceCountUVE(), 1U);
+    EXPECT_EQ(loaded.SurfaceCount(), 1U);
     EXPECT_EQ(std::filesystem::file_size(plainPath), std::filesystem::file_size(againPath));
     std::filesystem::remove(plainPath);
     std::filesystem::remove(againPath);
 }
 
-TEST(MeshAssetUVETest, IsMeshSurfaceDataValidUVE_EnforcesTilingAndSlotBounds) {
-    MeshAssetUVE mesh = MakeSurfaceTestMeshUVE();
-    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(mesh));
+TEST(MeshAssetTest, IsMeshSurfaceDataValid_EnforcesTilingAndSlotBounds) {
+    MeshAsset mesh = MakeSurfaceTestMesh();
+    EXPECT_TRUE(IsMeshSurfaceDataValid(mesh));
 
     // A mesh with no explicit surfaces is valid by definition: one implicit whole-buffer surface.
-    MeshAssetUVE implicit = mesh;
+    MeshAsset implicit = mesh;
     implicit.surfaces.clear();
-    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(implicit));
+    EXPECT_TRUE(IsMeshSurfaceDataValid(implicit));
 
-    MeshAssetUVE gap = mesh;
+    MeshAsset gap = mesh;
     gap.surfaces[1].firstIndex = 4U;
-    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(gap));
+    EXPECT_FALSE(IsMeshSurfaceDataValid(gap));
 
-    MeshAssetUVE overlap = mesh;
+    MeshAsset overlap = mesh;
     overlap.surfaces[1].firstIndex = 2U;
-    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(overlap));
+    EXPECT_FALSE(IsMeshSurfaceDataValid(overlap));
 
-    MeshAssetUVE shortCoverage = mesh;
+    MeshAsset shortCoverage = mesh;
     shortCoverage.surfaces.pop_back();
-    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(shortCoverage));
+    EXPECT_FALSE(IsMeshSurfaceDataValid(shortCoverage));
 
-    MeshAssetUVE partialTriangle = mesh;
+    MeshAsset partialTriangle = mesh;
     partialTriangle.surfaces[1].indexCount = 4U;
-    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(partialTriangle));
+    EXPECT_FALSE(IsMeshSurfaceDataValid(partialTriangle));
 
-    MeshAssetUVE outOfRangeSlot = mesh;
+    MeshAsset outOfRangeSlot = mesh;
     outOfRangeSlot.surfaces[1].materialSlot = 2U;
-    EXPECT_FALSE(IsMeshSurfaceDataValidUVE(outOfRangeSlot));
+    EXPECT_FALSE(IsMeshSurfaceDataValid(outOfRangeSlot));
 
     // A surface that names no material is not a defect: it means "the object's material".
-    MeshAssetUVE noSlot = mesh;
-    noSlot.surfaces[1].materialSlot = kInvalidMeshSurfaceMaterialSlotUVE;
-    EXPECT_TRUE(IsMeshSurfaceDataValidUVE(noSlot));
+    MeshAsset noSlot = mesh;
+    noSlot.surfaces[1].materialSlot = kInvalidMeshSurfaceMaterialSlot;
+    EXPECT_TRUE(IsMeshSurfaceDataValid(noSlot));
 }
 
-TEST(MeshAssetUVETest, LoadMeshAssetUVE_OverlappingSurfaces_FailsAndLeavesMeshUntouched) {
+TEST(MeshAssetTest, LoadMeshAsset_OverlappingSurfaces_FailsAndLeavesMeshUntouched) {
     const std::filesystem::path path = "uve_mesh_asset_tests_bad_surfaces.uvmodel";
     std::filesystem::remove(path);
-    ASSERT_TRUE(SaveMeshAssetUVE(MakeSurfaceTestMeshUVE(), path));
+    ASSERT_TRUE(SaveMeshAsset(MakeSurfaceTestMesh(), path));
 
     // The surface section is last, so the second surface's index count is the uint32 at end - 8.
     // Widening it to the whole buffer makes the second range both overlap the first and run past
@@ -601,39 +601,39 @@ TEST(MeshAssetUVETest, LoadMeshAssetUVE_OverlappingSurfaces_FailsAndLeavesMeshUn
         ASSERT_TRUE(file.good());
     }
 
-    MeshAssetUVE loaded = MakeTestMeshUVE();
-    const MeshAssetUVE before = loaded;
-    EXPECT_FALSE(LoadMeshAssetUVE(path, loaded));
+    MeshAsset loaded = MakeTestMesh();
+    const MeshAsset before = loaded;
+    EXPECT_FALSE(LoadMeshAsset(path, loaded));
     EXPECT_EQ(loaded.indices, before.indices);
     EXPECT_EQ(loaded.surfaces, before.surfaces);
     std::filesystem::remove(path);
 }
 
-TEST(MeshAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
+TEST(MeshAssetTest, EndToEnd_RegisterLoaderThenLoad_ReachesLoadedWithMatchingData) {
     const std::filesystem::path path = "uve_mesh_asset_tests_end_to_end.uvmodel";
     std::filesystem::remove(path);
-    const MeshAssetUVE original = MakeTestMeshUVE();
-    ASSERT_TRUE(SaveMeshAssetUVE(original, path));
+    const MeshAsset original = MakeTestMesh();
+    ASSERT_TRUE(SaveMeshAsset(original, path));
 
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE assetDatabase;
-    AssetManagerUVE assetManager(threadPool, eventSystem);
-    assetManager.RegisterLoaderUVE<MeshAssetUVE>(&LoadMeshAssetUVE);
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetDatabase assetDatabase;
+    AssetManager assetManager(threadPool, eventSystem);
+    assetManager.RegisterLoader<MeshAsset>(&LoadMeshAsset);
 
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
-    const AssetHandleUVE<MeshAssetUVE> handle = assetManager.LoadUVE<MeshAssetUVE>(guid, assetDatabase);
+    const AssetGuid guid = assetDatabase.Register(path);
+    const AssetHandle<MeshAsset> handle = assetManager.Load<MeshAsset>(guid, assetDatabase);
 
     bool ready = false;
     for (int iteration = 0; iteration < 200000 && !ready; ++iteration) {
-        ready = handle.IsReadyUVE() || handle.HasFailedUVE();
+        ready = handle.IsReady() || handle.HasFailed();
         if (!ready) {
             std::this_thread::yield();
         }
     }
     ASSERT_TRUE(ready);
-    ASSERT_TRUE(handle.IsReadyUVE());
-    const MeshAssetUVE* const loaded = handle.TryGetUVE();
+    ASSERT_TRUE(handle.IsReady());
+    const MeshAsset* const loaded = handle.TryGet();
     ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->indices, original.indices);
     ASSERT_EQ(loaded->vertices.size(), original.vertices.size());

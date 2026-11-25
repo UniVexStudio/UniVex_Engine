@@ -10,10 +10,10 @@ namespace UVE::Render {
 
 /// Engine-native description of a reflected shader uniform's data type — never a raw GL enum, so
 /// this stays meaningful across any future non-GL backend. Covers the uniform shapes
-/// ShaderProgramUVE's SetFloatUVE/SetIntUVE/SetBoolUVE/SetVector3UVE/SetMatrix4x4UVE API sets and
+/// ShaderProgram's SetFloat/SetInt/SetBool/SetVector3/SetMatrix4x4 API sets and
 /// keeps an explicit marker for reflected shapes that have no setter yet. Unsupported shapes must
 /// not be silently collapsed into Int, because that would issue an invalid GL uniform call.
-enum class ShaderDataTypeUVE : std::uint8_t {
+enum class ShaderDataType : std::uint8_t {
     Float,
     Vec2,
     Vec3,
@@ -27,7 +27,7 @@ enum class ShaderDataTypeUVE : std::uint8_t {
 
 /// Size, in bytes, of one value of `type` (array stride for a reflected uniform array). Every
 /// enumerator is handled explicitly — no default case — so a future addition to
-/// ShaderDataTypeUVE fails to compile here until this function is updated too.
-[[nodiscard]] std::size_t GetShaderDataTypeSizeBytesUVE(ShaderDataTypeUVE type) noexcept;
+/// ShaderDataType fails to compile here until this function is updated too.
+[[nodiscard]] std::size_t GetShaderDataTypeSizeBytes(ShaderDataType type) noexcept;
 
 } // namespace UVE::Render

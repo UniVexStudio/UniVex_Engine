@@ -7,18 +7,18 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUIDropdownComponentValidUVE(const UIDropdownComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUIDropdownSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUIDropdownSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUIDropdownSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUIDropdownSizePixelsUVE &&
-           component.options.size() <= kMaximumUIDropdownOptionsBytesUVE && component.selectedIndex >= 0 &&
-           component.placeholder.size() <= kMaximumUITextBytesUVE &&
-           component.fontSize >= kMinimumUIFontSizeUVE && component.fontSize <= kMaximumUIFontSizeUVE &&
+[[nodiscard]] bool IsUIDropdownComponentValid(const UIDropdownComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUIDropdownSizePixels &&
+           component.rect.size.x <= kMaximumUIDropdownSizePixels &&
+           component.rect.size.y >= kMinimumUIDropdownSizePixels &&
+           component.rect.size.y <= kMaximumUIDropdownSizePixels &&
+           component.options.size() <= kMaximumUIDropdownOptionsBytes && component.selectedIndex >= 0 &&
+           component.placeholder.size() <= kMaximumUITextBytes &&
+           component.fontSize >= kMinimumUIFontSize && component.fontSize <= kMaximumUIFontSize &&
            std::isfinite(component.optionHeight) &&
-           component.optionHeight >= kMinimumUIDropdownOptionHeightUVE &&
-           component.optionHeight <= kMaximumUIDropdownOptionHeightUVE &&
+           component.optionHeight >= kMinimumUIDropdownOptionHeight &&
+           component.optionHeight <= kMaximumUIDropdownOptionHeight &&
            std::isfinite(component.textPadding) && component.textPadding >= 0.0F &&
            std::isfinite(component.boxColor.x) && std::isfinite(component.boxColor.y) &&
            std::isfinite(component.boxColor.z) && std::isfinite(component.boxHoverColor.x) &&
@@ -32,7 +32,7 @@ namespace UVE::Scene {
            component.hoveredIndex >= -1;
 }
 
-std::vector<std::string> SplitUIDropdownOptionsUVE(const UIDropdownComponentUVE& component) {
+std::vector<std::string> SplitUIDropdownOptions(const UIDropdownComponent& component) {
     std::vector<std::string> out;
     std::size_t start = 0U;
     while (start <= component.options.size()) {
@@ -50,8 +50,8 @@ std::vector<std::string> SplitUIDropdownOptionsUVE(const UIDropdownComponentUVE&
     return out;
 }
 
-std::string ResolveUIDropdownDisplayLabelUVE(const UIDropdownComponentUVE& component) {
-    const std::vector<std::string> parsed = SplitUIDropdownOptionsUVE(component);
+std::string ResolveUIDropdownDisplayLabel(const UIDropdownComponent& component) {
+    const std::vector<std::string> parsed = SplitUIDropdownOptions(component);
     if (parsed.empty()) {
         return component.placeholder;
     }
@@ -61,9 +61,9 @@ std::string ResolveUIDropdownDisplayLabelUVE(const UIDropdownComponentUVE& compo
     return parsed[static_cast<std::size_t>(clampedIdx)];
 }
 
-bool SelectUIDropdownOptionUVE(UIDropdownComponentUVE& component,
+bool SelectUIDropdownOption(UIDropdownComponent& component,
                                const std::int32_t optionIndex) noexcept {
-    const std::vector<std::string> parsed = SplitUIDropdownOptionsUVE(component);
+    const std::vector<std::string> parsed = SplitUIDropdownOptions(component);
     if (parsed.empty() || optionIndex < 0 ||
         static_cast<std::size_t>(optionIndex) >= parsed.size()) {
         component.open = false;
@@ -76,7 +76,7 @@ bool SelectUIDropdownOptionUVE(UIDropdownComponentUVE& component,
     return changed;
 }
 
-void ResetUIDropdownRuntimeStateUVE(UIDropdownComponentUVE& component) noexcept {
+void ResetUIDropdownRuntimeState(UIDropdownComponent& component) noexcept {
     component.open = false;
     component.isHovered = false;
     component.hoveredIndex = -1;

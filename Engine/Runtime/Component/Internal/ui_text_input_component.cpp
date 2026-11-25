@@ -7,17 +7,17 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUITextInputComponentValidUVE(const UITextInputComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUITextInputSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUITextInputSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUITextInputSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUITextInputSizePixelsUVE &&
-           component.text.size() <= kMaximumUITextBytesUVE &&
-           component.maxLength >= kMinimumUITextInputLengthUVE &&
-           static_cast<std::size_t>(component.maxLength) <= kMaximumUITextBytesUVE &&
-           component.placeholder.size() <= kMaximumUITextBytesUVE &&
-           component.fontSize >= kMinimumUIFontSizeUVE && component.fontSize <= kMaximumUIFontSizeUVE &&
+[[nodiscard]] bool IsUITextInputComponentValid(const UITextInputComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUITextInputSizePixels &&
+           component.rect.size.x <= kMaximumUITextInputSizePixels &&
+           component.rect.size.y >= kMinimumUITextInputSizePixels &&
+           component.rect.size.y <= kMaximumUITextInputSizePixels &&
+           component.text.size() <= kMaximumUITextBytes &&
+           component.maxLength >= kMinimumUITextInputLength &&
+           static_cast<std::size_t>(component.maxLength) <= kMaximumUITextBytes &&
+           component.placeholder.size() <= kMaximumUITextBytes &&
+           component.fontSize >= kMinimumUIFontSize && component.fontSize <= kMaximumUIFontSize &&
            std::isfinite(component.textPadding) && component.textPadding >= 0.0F &&
            std::isfinite(component.boxColor.x) && std::isfinite(component.boxColor.y) &&
            std::isfinite(component.boxColor.z) && std::isfinite(component.focusColor.x) &&
@@ -31,21 +31,21 @@ namespace UVE::Scene {
            std::isfinite(component.scrollOffset) && component.scrollOffset >= 0.0F;
 }
 
-std::int32_t ClampUITextInputCaretIndexUVE(const UITextInputComponentUVE& component) noexcept {
+std::int32_t ClampUITextInputCaretIndex(const UITextInputComponent& component) noexcept {
     const auto textLen = static_cast<std::int32_t>(component.text.size());
     return std::clamp<std::int32_t>(component.caretIndex, 0, textLen);
 }
 
-bool ShouldDisplayUITextInputPlaceholderUVE(const UITextInputComponentUVE& component) noexcept {
+bool ShouldDisplayUITextInputPlaceholder(const UITextInputComponent& component) noexcept {
     return component.text.empty() && !component.placeholder.empty();
 }
 
-bool InsertUITextInputCharactersUVE(UITextInputComponentUVE& component,
+bool InsertUITextInputCharacters(UITextInputComponent& component,
                                     const std::string& typedAscii) {
-    component.caretIndex = ClampUITextInputCaretIndexUVE(component);
+    component.caretIndex = ClampUITextInputCaretIndex(component);
     const std::size_t effectiveCap =
         component.maxLength > 0
-            ? std::min(static_cast<std::size_t>(component.maxLength), kMaximumUITextBytesUVE)
+            ? std::min(static_cast<std::size_t>(component.maxLength), kMaximumUITextBytes)
             : 0U;
     bool mutated = false;
     for (const char ch : typedAscii) {
@@ -66,8 +66,8 @@ bool InsertUITextInputCharactersUVE(UITextInputComponentUVE& component,
     return mutated;
 }
 
-bool ApplyUITextInputBackspaceUVE(UITextInputComponentUVE& component) noexcept {
-    component.caretIndex = ClampUITextInputCaretIndexUVE(component);
+bool ApplyUITextInputBackspace(UITextInputComponent& component) noexcept {
+    component.caretIndex = ClampUITextInputCaretIndex(component);
     if (component.caretIndex <= 0 || component.text.empty()) {
         return false;
     }
@@ -77,9 +77,9 @@ bool ApplyUITextInputBackspaceUVE(UITextInputComponentUVE& component) noexcept {
     return true;
 }
 
-void ResetUITextInputRuntimeStateUVE(UITextInputComponentUVE& component) noexcept {
+void ResetUITextInputRuntimeState(UITextInputComponent& component) noexcept {
     component.focused = false;
-    component.caretIndex = ClampUITextInputCaretIndexUVE(component);
+    component.caretIndex = ClampUITextInputCaretIndex(component);
     component.wasSubmittedThisFrame = false;
     component.blinkTime = 0.0F;
     component.scrollOffset = 0.0F;

@@ -10,72 +10,72 @@
 
 namespace UVE::Scene {
 
-bool IsMeshInstance3DObjectDefinitionValidUVE(const MeshInstance3DObjectDefinitionUVE& value) noexcept {
-    return IsMeshComponentValidUVE(value.mesh);
+bool IsMeshInstance3DObjectDefinitionValid(const MeshInstance3DObjectDefinition& value) noexcept {
+    return IsMeshComponentValid(value.mesh);
 }
 
-void ApplyMeshInstance3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                            const MeshInstance3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, MeshInstance3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<MeshComponentUVE>(entity, value.mesh);
+void ApplyMeshInstance3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                            const MeshInstance3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, MeshInstance3DObjectDefinition::defaultName);
+    entityManager.AddComponent<MeshComponent>(entity, value.mesh);
 }
 
-bool MeshInstance3DUVE::HasAssignedMeshUVE(const MeshComponentUVE& mesh) noexcept {
-    return IsMeshComponentValidUVE(mesh) && HasAssignedMeshAssetUVE(mesh);
+bool MeshInstance3D::HasAssignedMesh(const MeshComponent& mesh) noexcept {
+    return IsMeshComponentValid(mesh) && HasAssignedMeshAsset(mesh);
 }
 
-bool MeshInstance3DUVE::HasAssignedMaterialUVE(const MeshComponentUVE& mesh) noexcept {
-    return IsMeshComponentValidUVE(mesh) && HasAssignedMaterialAssetUVE(mesh);
+bool MeshInstance3D::HasAssignedMaterial(const MeshComponent& mesh) noexcept {
+    return IsMeshComponentValid(mesh) && HasAssignedMaterialAsset(mesh);
 }
 
-bool MeshInstance3DUVE::HasSurfaceMaterialOverrideUVE(
-    const SurfaceInstanceComponentUVE* const surface) noexcept {
-    return surface != nullptr && IsSurfaceInstanceComponentValidUVE(*surface) &&
+bool MeshInstance3D::HasSurfaceMaterialOverride(
+    const SurfaceInstanceComponent* const surface) noexcept {
+    return surface != nullptr && IsSurfaceInstanceComponentValid(*surface) &&
            !surface->materialOverridePath.empty();
 }
 
-std::string_view MeshInstance3DUVE::SurfaceMaterialOverridePathUVE(
-    const SurfaceInstanceComponentUVE& surface, const std::size_t surfaceIndex) noexcept {
+std::string_view MeshInstance3D::SurfaceMaterialOverridePath(
+    const SurfaceInstanceComponent& surface, const std::size_t surfaceIndex) noexcept {
     if (!surface.materialOverridePath.empty() || surfaceIndex >= surface.surfaceMaterialOverridePaths.size()) {
         return {};
     }
     return surface.surfaceMaterialOverridePaths[surfaceIndex];
 }
 
-bool MeshInstance3DUVE::HasPerSurfaceMaterialOverrideUVE(
-    const SurfaceInstanceComponentUVE* const surface) noexcept {
-    return surface != nullptr && IsSurfaceInstanceComponentValidUVE(*surface) &&
+bool MeshInstance3D::HasPerSurfaceMaterialOverride(
+    const SurfaceInstanceComponent* const surface) noexcept {
+    return surface != nullptr && IsSurfaceInstanceComponentValid(*surface) &&
            surface->materialOverridePath.empty() &&
            std::any_of(surface->surfaceMaterialOverridePaths.cbegin(),
                        surface->surfaceMaterialOverridePaths.cend(),
                        [](const std::string& path) { return !path.empty(); });
 }
 
-Asset::AssetGuidUVE MeshInstance3DUVE::ResolveEffectiveMaterialGuidUVE(
-    const MeshComponentUVE& mesh, const Asset::AssetGuidUVE surfaceOverrideGuid) noexcept {
-    if (surfaceOverrideGuid != Asset::kInvalidAssetGuidUVE) {
+Asset::AssetGuid MeshInstance3D::ResolveEffectiveMaterialGuid(
+    const MeshComponent& mesh, const Asset::AssetGuid surfaceOverrideGuid) noexcept {
+    if (surfaceOverrideGuid != Asset::kInvalidAssetGuid) {
         return surfaceOverrideGuid;
     }
     return mesh.materialGuid;
 }
 
-bool MeshInstance3DUVE::HasRenderableAssetPairUVE(
-    const Asset::AssetGuidUVE effectiveMeshGuid,
-    const Asset::AssetGuidUVE effectiveMaterialGuid) noexcept {
-    return effectiveMeshGuid != Asset::kInvalidAssetGuidUVE &&
-           effectiveMaterialGuid != Asset::kInvalidAssetGuidUVE;
+bool MeshInstance3D::HasRenderableAssetPair(
+    const Asset::AssetGuid effectiveMeshGuid,
+    const Asset::AssetGuid effectiveMaterialGuid) noexcept {
+    return effectiveMeshGuid != Asset::kInvalidAssetGuid &&
+           effectiveMaterialGuid != Asset::kInvalidAssetGuid;
 }
 
-bool MeshInstance3DUVE::ParticipatesInPassUVE(
-    const SurfaceInstanceComponentUVE* const surface, const bool shadowPass) noexcept {
+bool MeshInstance3D::ParticipatesInPass(
+    const SurfaceInstanceComponent* const surface, const bool shadowPass) noexcept {
     if (surface == nullptr) {
         return true;
     }
-    if (!IsSurfaceInstanceComponentValidUVE(*surface)) {
+    if (!IsSurfaceInstanceComponentValid(*surface)) {
         return false;
     }
-    return shadowPass ? SurfaceInstance3DCastsShadowUVE(*surface)
-                      : SurfaceInstance3DDrawsInViewUVE(*surface);
+    return shadowPass ? SurfaceInstance3DCastsShadow(*surface)
+                      : SurfaceInstance3DDrawsInView(*surface);
 }
 
 } // namespace UVE::Scene

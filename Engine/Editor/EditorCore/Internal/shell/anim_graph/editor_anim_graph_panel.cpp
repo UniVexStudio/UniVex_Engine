@@ -38,28 +38,28 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::AnimationGraphNodeKindUVE;
+using Kind = Scene::AnimationGraphNodeKind;
 
-constexpr std::array<Kind, 16> kAddableKindsUVE{Kind::Clip,       Kind::Blend2,      Kind::BlendSpace1D, Kind::BlendSpace2D,
+constexpr std::array<Kind, 16> kAddableKinds{Kind::Clip,       Kind::Blend2,      Kind::BlendSpace1D, Kind::BlendSpace2D,
                                                 Kind::Select,     Kind::BlendByBool, Kind::Additive,     Kind::LayeredBlend,
                                                 Kind::OneShot,    Kind::TimeScale,   Kind::TimeSeek,     Kind::StateMachine,
                                                 Kind::Slot,       Kind::TwoBoneIK,   Kind::ModifyBone,   Kind::LookAt};
 
-[[nodiscard]] prism::Slot CentreSlotUVE() {
+[[nodiscard]] prism::Slot CentreSlot() {
     return prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
 }
 
-[[nodiscard]] std::string NameOfUVE(const Scene::IEntityManagerUVE& em, const Scene::EntityUVE entity, const char* fallback) {
-    return em.HasComponentUVE<Scene::NameComponentUVE>(entity) ? em.GetComponentUVE<Scene::NameComponentUVE>(entity).name
+[[nodiscard]] std::string NameOf(const Scene::IEntityManager& em, const Scene::Entity entity, const char* fallback) {
+    return em.HasComponent<Scene::NameComponent>(entity) ? em.GetComponent<Scene::NameComponent>(entity).name
                                                                : std::string{fallback};
 }
 
 
 /// A small sparkline of a Float parameter's recent values.
-class SparklineUVE final : public prism::Widget {
+class Sparkline final : public prism::Widget {
 public:
-    explicit SparklineUVE(const std::vector<float>* samples) : m_samples(samples) {}
-    void SetSamplesUVE(const std::vector<float>* samples) { m_samples = samples; invalidate(); }
+    explicit Sparkline(const std::vector<float>* samples) : m_samples(samples) {}
+    void SetSamples(const std::vector<float>* samples) { m_samples = samples; invalidate(); }
     prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain({36.0F, 18.0F}); }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
@@ -84,25 +84,25 @@ private:
 
 } // namespace
 
-EditorAnimGraphPanelUVE::EditorAnimGraphPanelUVE(EditorUVE& editor) : m_editor(editor) {}
-EditorAnimGraphPanelUVE::~EditorAnimGraphPanelUVE() = default;
+EditorAnimGraphPanel::EditorAnimGraphPanel(Editor& editor) : m_editor(editor) {}
+EditorAnimGraphPanel::~EditorAnimGraphPanel() = default;
 
-const Scene::AnimationGraphComponentUVE* EditorAnimGraphPanelUVE::GraphPtrUVE() const {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    if (m_view.tree == Scene::kInvalidEntityUVE || !em.IsAliveUVE(m_view.tree) ||
-        !em.HasComponentUVE<Scene::AnimationGraphComponentUVE>(m_view.tree)) {
+const Scene::AnimationGraphComponent* EditorAnimGraphPanel::GraphPtr() const {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    if (m_view.tree == Scene::kInvalidEntity || !em.IsAlive(m_view.tree) ||
+        !em.HasComponent<Scene::AnimationGraphComponent>(m_view.tree)) {
         return nullptr;
     }
-    return &em.GetComponentUVE<Scene::AnimationGraphComponentUVE>(m_view.tree);
+    return &em.GetComponent<Scene::AnimationGraphComponent>(m_view.tree);
 }
 
-Scene::AnimationGraphComponentUVE* EditorAnimGraphPanelUVE::LiveGraphUVE() {
-    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    if (m_view.tree == Scene::kInvalidEntityUVE || !em.IsAliveUVE(m_view.tree) ||
-        !em.HasComponentUVE<Scene::AnimationGraphComponentUVE>(m_view.tree)) {
+Scene::AnimationGraphComponent* EditorAnimGraphPanel::LiveGraph() {
+    Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    if (m_view.tree == Scene::kInvalidEntity || !em.IsAlive(m_view.tree) ||
+        !em.HasComponent<Scene::AnimationGraphComponent>(m_view.tree)) {
         return nullptr;
     }
-    return &em.GetComponentUVE<Scene::AnimationGraphComponentUVE>(m_view.tree);
+    return &em.GetComponent<Scene::AnimationGraphComponent>(m_view.tree);
 }
 
 namespace {
@@ -112,7 +112,7 @@ namespace {
 
 // ---------------------------------------------------------------------------------------- build
 
-prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorAnimGraphPanel::Build() {
     m_graph = prism::make<prism::BlueprintGraph>();
     prism::BlueprintGraph::Features features;
     features.toolbar = false;
@@ -126,9 +126,9 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
     features.comments = true;            // C: a comment box around the selection
     m_graph->setFeatures(features);
     m_graph->clear();
-    m_graph->setNodeLibrary(NodeLibraryUVE());
-    m_graph->onSpawn = [this](const prism::BlueprintNodeSpec& spec, const prism::Vec2 world) { return SpawnUVE(spec, world); };
-    m_graph->onCommit = [this](const std::string&) { ApplyGraphEditUVE(); };
+    m_graph->setNodeLibrary(NodeLibrary());
+    m_graph->onSpawn = [this](const prism::BlueprintNodeSpec& spec, const prism::Vec2 world) { return Spawn(spec, world); };
+    m_graph->onCommit = [this](const std::string&) { ApplyGraphEdit(); };
     m_graph->onSelectionChanged = [this](const std::vector<int>& ids) {
         if (m_rebuilding) {
             return;
@@ -137,47 +137,47 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
         m_sideDirty = true;
     };
     m_graph->onNodeDoubleClicked = [this](const int id) {
-        const GraphUVE* graph = GraphPtrUVE();
+        const Graph* graph = GraphPtr();
         if (graph == nullptr) {
             return;
         }
-        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &Node::id);
         if (node != graph->nodes.end() &&
             (node->kind == Kind::StateMachine || node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D)) {
-            OpenFocusUVE(node->id);
+            OpenFocus(node->id);
         }
     };
-    m_graph->onNodeRenamed = [this](const int id, const std::string& to) { RenameNodeUVE(static_cast<std::uint32_t>(id), to); };
-    m_graph->onNodeAction = [this](const std::string& action, const std::vector<int>& ids) { return NodeActionUVE(action, ids); };
+    m_graph->onNodeRenamed = [this](const int id, const std::string& to) { RenameNode(static_cast<std::uint32_t>(id), to); };
+    m_graph->onNodeAction = [this](const std::string& action, const std::vector<int>& ids) { return NodeAction(action, ids); };
     m_graph->extendNodeMenu = [this](const int id, std::vector<prism::MenuItem>& items) {
-        const GraphUVE* graph = GraphPtrUVE();
+        const Graph* graph = GraphPtr();
         if (graph == nullptr) {
             return;
         }
-        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &Node::id);
         if (node == graph->nodes.end()) {
             return;
         }
         const std::uint32_t nodeId = node->id;
         if (node->kind == Kind::StateMachine) {
-            items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::StateMachine));
+            items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocus(nodeId); }, "", prism::Icon::StateMachine));
         } else if (node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D) {
-            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
+            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocus(nodeId); }, "", prism::Icon::NodeBlendSpace));
         }
     };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
-        const GraphUVE* graph = GraphPtrUVE();
+        const Graph* graph = GraphPtr();
         if (graph == nullptr) {
             return false;
         }
-        const bool ok = CanConnectAnimationGraphNodesUVE(graph->nodes, static_cast<std::uint32_t>(toNode), static_cast<std::size_t>(toPin),
+        const bool ok = CanConnectAnimationGraphNodes(graph->nodes, static_cast<std::uint32_t>(toNode), static_cast<std::size_t>(toPin),
                                                          static_cast<std::uint32_t>(fromNode));
         if (!ok && why != nullptr) {
             *why = "That wire would make a loop or does not fit this input";
         }
         return ok;
     };
-    // The side panel lives in the Entity Editor's Details column (SideUVE), not beside the graph.
+    // The side panel lives in the Entity Editor's Details column (Side), not beside the graph.
     m_side = prism::make<prism::ScrollBox>();
     auto sideBox = prism::make<prism::SizeBox>();
     auto sideFrame = prism::make<prism::Border>();
@@ -188,8 +188,8 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
     m_sidePanel = sideBox;
 
     // The tree, or the State Machine / Blend Space opened from it.
-    m_stateView = prism::make<StateMachineViewUVE>(*this);
-    m_spaceView = prism::make<BlendSpaceViewUVE>(*this);
+    m_stateView = prism::make<StateMachineView>(*this);
+    m_spaceView = prism::make<BlendSpaceView>(*this);
     m_canvas = prism::make<prism::StackSwitcher>();
     m_canvas->addPage(m_graph);
     m_canvas->addPage(m_stateView);
@@ -213,49 +213,49 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
     auto body = prism::hbox();
     body->add(left, prism::Slot{1.0F});
     auto page = prism::vbox();
-    page->add(BuildToolbarUVE());
+    page->add(BuildToolbar());
     page->add(body, prism::Slot{1.0F});
     m_shownFocus = ~0U;
     m_shown.reset();
-    m_shownTree = Scene::kInvalidEntityUVE;
+    m_shownTree = Scene::kInvalidEntity;
     m_sideDirty = true;
     return page;
 }
 
-prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildToolbarUVE() {
+prism::Ref<prism::Widget> EditorAnimGraphPanel::BuildToolbar() {
     auto row = prism::hbox(3.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
-    m_graphButton = ToolButtonUVE(prism::Icon::AnimGraph, "The AnimationGraph shown (selecting one in Components picks it too)", "Graph");
-    m_graphButton->onClick = [this] { ShowGraphMenuUVE(); };
-    row->add(m_graphButton, CentreSlotUVE());
-    auto fit = ToolButtonUVE(prism::Icon::Frame, "Frame the whole graph (F)");
+    m_graphButton = ToolButton(prism::Icon::AnimGraph, "The AnimationGraph shown (selecting one in Components picks it too)", "Graph");
+    m_graphButton->onClick = [this] { ShowGraphMenu(); };
+    row->add(m_graphButton, CentreSlot());
+    auto fit = ToolButton(prism::Icon::Frame, "Frame the whole graph (F)");
     fit->onClick = [this] {
         if (m_graph) {
             m_graph->frameAll();
         }
     };
-    row->add(fit, CentreSlotUVE());
-    row->add(HSeparatorUVE(), CentreSlotUVE());
-    m_previewButton = ToolButtonUVE(prism::Icon::PreviewPose, "Run the graph on the entity's skeleton (runtime pose only, never saved)", "Preview");
+    row->add(fit, CentreSlot());
+    row->add(HSeparator(), CentreSlot());
+    m_previewButton = ToolButton(prism::Icon::PreviewPose, "Run the graph on the entity's skeleton (runtime pose only, never saved)", "Preview");
     m_previewButton->setCheckable(true);
     m_previewButton->onClick = [this] {
         m_editor.m_animGraph.previewing = !m_editor.m_animGraph.previewing;
         if (!m_editor.m_animGraph.previewing) {
-            m_editor.StopAnimationGraphPreviewUVE();
+            m_editor.StopAnimationGraphPreview();
         }
     };
-    row->add(m_previewButton, CentreSlotUVE());
-    m_playButton = ToolButtonUVE(prism::Icon::Pause, "Pause / play the preview");
+    row->add(m_previewButton, CentreSlot());
+    m_playButton = ToolButton(prism::Icon::Pause, "Pause / play the preview");
     m_playButton->onClick = [this] { m_editor.m_animGraph.previewPaused = !m_editor.m_animGraph.previewPaused; };
-    row->add(m_playButton, CentreSlotUVE());
-    auto step = ToolButtonUVE(prism::Icon::StepForward, "One frame (while paused)");
+    row->add(m_playButton, CentreSlot());
+    auto step = ToolButton(prism::Icon::StepForward, "One frame (while paused)");
     step->onClick = [this] {
         m_editor.m_animGraph.previewPaused = true;
         m_editor.m_animGraph.previewStepOnce = true;
     };
-    row->add(step, CentreSlotUVE());
-    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens: Undo, Ctrl, ...
-        row->add(controls, CentreSlotUVE());
+    row->add(step, CentreSlot());
+    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButton()) {   // touch screens: Undo, Ctrl, ...
+        row->add(controls, CentreSlot());
     }
     auto rate =prism::make<prism::ComboBox>(std::vector<std::string>{"0.25x", "0.5x", "1x", "2x"}, 2);
     rate->onChange = [this](const int i) {
@@ -267,7 +267,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildToolbarUVE() {
     auto rateBox = prism::make<prism::SizeBox>();
     rateBox->setWidthOverride(70.0F);
     rateBox->setContent(rate);
-    row->add(rateBox, CentreSlotUVE());
+    row->add(rateBox, CentreSlot());
     // The graph's problem, as a warning badge; what is wrong is its tooltip.
     m_problem = prism::make<prism::Button>("", prism::Icon::Warning, prism::ButtonStyle::Toolbar);
     m_problem->setIconColor(prism::ThemeColor(&prism::Theme::warning));
@@ -282,15 +282,15 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildToolbarUVE() {
 
 // ------------------------------------------------------------------------------- blueprint view
 
-prism::BlueprintNode EditorAnimGraphPanelUVE::MakeNodeUVE(const NodeUVE& node) const {
+prism::BlueprintNode EditorAnimGraphPanel::MakeNode(const Node& node) const {
     prism::BlueprintNode n;
     n.id = static_cast<int>(node.id);
-    const std::string label = AnimationGraphKindLabelUVE(node.kind);
+    const std::string label = AnimationGraphKindLabel(node.kind);
     n.title = node.name.empty() ? label : node.name;
     n.subtitle = node.name.empty() || node.name == label ? std::string{} : label;
     n.category = prism::BlueprintNodeCategory::Animation;
     n.pos = prism::Vec2{node.position.x, node.position.y};
-    n.tooltip = AnimationGraphKindHelpUVE(node.kind);
+    n.tooltip = AnimationGraphKindHelp(node.kind);
     switch (node.kind) {
         case Kind::Output: n.icon = prism::Icon::NodeOutput; n.category = prism::BlueprintNodeCategory::Event; break;
         case Kind::Clip: n.icon = prism::Icon::AnimClipNode; break;
@@ -313,7 +313,7 @@ prism::BlueprintNode EditorAnimGraphPanelUVE::MakeNodeUVE(const NodeUVE& node) c
     // A State Machine's inputs are its states: they are opened, not wired, so it shows none.
     for (std::size_t slot = 0U; slot < node.inputs.size() && node.kind != Kind::StateMachine; ++slot) {
         prism::BlueprintPin pin;
-        pin.name = AnimationGraphSlotLabelUVE(node.kind, slot);
+        pin.name = AnimationGraphSlotLabel(node.kind, slot);
         pin.type = prism::BlueprintPinType::Pose;
         pin.kind = prism::BlueprintPinKind::Input;
         n.inputs.push_back(std::move(pin));
@@ -325,64 +325,64 @@ prism::BlueprintNode EditorAnimGraphPanelUVE::MakeNodeUVE(const NodeUVE& node) c
         out.kind = prism::BlueprintPinKind::Output;
         n.outputs.push_back(std::move(out));
     }
-    n.bodyH = BodyHeightUVE(node);
+    n.bodyH = BodyHeight(node);
     n.bodyW = n.bodyH > 0.0F ? 232.0F : 0.0F;
-    n.bodySummary = SummaryUVE(node);
+    n.bodySummary = Summary(node);
     return n;
 }
 
-std::vector<prism::BlueprintNodeSpec> EditorAnimGraphPanelUVE::NodeLibraryUVE() const {
+std::vector<prism::BlueprintNodeSpec> EditorAnimGraphPanel::NodeLibrary() const {
     std::vector<prism::BlueprintNodeSpec> library;
-    for (const Kind kind : kAddableKindsUVE) {
+    for (const Kind kind : kAddableKinds) {
         prism::BlueprintNodeSpec spec;
         spec.category = kind == Kind::StateMachine                                                ? "State Machines"
                         : kind == Kind::Clip || kind == Kind::Slot                                   ? "Sources"
                         : kind == Kind::TwoBoneIK || kind == Kind::ModifyBone || kind == Kind::LookAt ? "Bones"
                                                                                                       : "Blends";
-        spec.name = AnimationGraphKindLabelUVE(kind);
-        spec.keywords = AnimationGraphKindHelpUVE(kind);
+        spec.name = AnimationGraphKindLabel(kind);
+        spec.keywords = AnimationGraphKindHelp(kind);
         spec.make = [this, kind] {
             // Made as the graph would make it, so the palette sees its real input pins (a wire
             // dragged off an output offers the nodes that take a pose).
-            std::vector<NodeUVE> scratch;
-            const std::uint32_t id = AddAnimationGraphNodeUVE(scratch, kind, Math::Vector2UVE{});
-            const auto made = std::ranges::find(scratch, id, &NodeUVE::id);
-            NodeUVE node = made != scratch.end() ? *made : NodeUVE{};
+            std::vector<Node> scratch;
+            const std::uint32_t id = AddAnimationGraphNode(scratch, kind, Math::Vector2{});
+            const auto made = std::ranges::find(scratch, id, &Node::id);
+            Node node = made != scratch.end() ? *made : Node{};
             node.kind = kind;
-            node.name = AnimationGraphKindLabelUVE(kind);
-            return MakeNodeUVE(node);
+            node.name = AnimationGraphKindLabel(kind);
+            return MakeNode(node);
         };
         library.push_back(std::move(spec));
     }
     return library;
 }
 
-void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
+void EditorAnimGraphPanel::RebuildGraph(const Graph& graph) {
     if (!m_graph) {
         return;
     }
     m_rebuilding = true;
-    const AnimationGraphScopeUVE scope = ScopeUVE();
+    const AnimationGraphScope scope = Scope();
     const bool first = m_shownTree != m_view.tree || !(m_shownScope == scope);
-    const std::vector<std::uint32_t> shown = AnimationGraphScopeNodesUVE(graph.nodes, scope);
+    const std::vector<std::uint32_t> shown = AnimationGraphScopeNodes(graph.nodes, scope);
     const auto inScope = [&shown](const std::uint32_t id) { return std::ranges::find(shown, id) != shown.end(); };
     m_graph->clear();
-    for (const NodeUVE& node : graph.nodes) {
+    for (const Node& node : graph.nodes) {
         if (inScope(node.id)) {
-            m_graph->addNode(MakeNodeUVE(node));
+            m_graph->addNode(MakeNode(node));
         }
     }
     // A state's graph ends in its result: the pose the state plays.
-    const NodeUVE* machine = nullptr;
+    const Node* machine = nullptr;
     if (scope.machine != 0U) {
-        const auto found = std::ranges::find(graph.nodes, scope.machine, &NodeUVE::id);
+        const auto found = std::ranges::find(graph.nodes, scope.machine, &Node::id);
         machine = found != graph.nodes.end() ? &*found : nullptr;
     }
     if (machine != nullptr) {
         prism::BlueprintNode result;
-        result.id = kStateResultUVE;
+        result.id = kStateResult;
         result.title = "Output Pose";
-        result.subtitle = AnimationStateNameUVE(graph.nodes, *machine, scope.state);
+        result.subtitle = AnimationStateName(graph.nodes, *machine, scope.state);
         result.category = prism::BlueprintNodeCategory::Event;
         result.icon = prism::Icon::NodeOutput;
         result.pos = prism::Vec2{0.0F, 0.0F};
@@ -397,8 +397,8 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
     // Each comment keeps the same id across rebuilds (its place among this graph's comments, far
     // above any node id), so a rename or a drag that outlives a rebuild still finds its box.
     int commentOrdinal = 0;
-    for (const Scene::AnimationGraphCommentUVE& comment : graph.comments) {
-        if (!(AnimationGraphScopeUVE{comment.owner, comment.ownerState} == scope)) {
+    for (const Scene::AnimationGraphComment& comment : graph.comments) {
+        if (!(AnimationGraphScope{comment.owner, comment.ownerState} == scope)) {
             continue;
         }
         prism::BlueprintComment box;
@@ -409,7 +409,7 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
                                  static_cast<std::uint8_t>(comment.color >> 8U), static_cast<std::uint8_t>(comment.color));
         m_graph->addComment(box);
     }
-    for (const NodeUVE& node : graph.nodes) {
+    for (const Node& node : graph.nodes) {
         if (!inScope(node.id) || node.kind == Kind::StateMachine) {
             continue;
         }
@@ -422,14 +422,14 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
     }
     if (machine != nullptr && scope.state < machine->inputs.size() && machine->inputs[scope.state] != 0U &&
         inScope(machine->inputs[scope.state])) {
-        m_graph->connectPins(static_cast<int>(machine->inputs[scope.state]), 0, kStateResultUVE, 0, prism::BlueprintPinType::Pose);
+        m_graph->connectPins(static_cast<int>(machine->inputs[scope.state]), 0, kStateResult, 0, prism::BlueprintPinType::Pose);
     }
-    for (const NodeUVE& node : graph.nodes) {
-        if (inScope(node.id) && BodyHeightUVE(node) > 0.0F) {
-            m_graph->setNodeBody(static_cast<int>(node.id), BuildBodyUVE(node));
+    for (const Node& node : graph.nodes) {
+        if (inScope(node.id) && BodyHeight(node) > 0.0F) {
+            m_graph->setNodeBody(static_cast<int>(node.id), BuildBody(node));
         }
     }
-    std::erase_if(m_selected, [&graph](const std::uint32_t id) { return std::ranges::none_of(graph.nodes, [id](const NodeUVE& n) { return n.id == id; }); });
+    std::erase_if(m_selected, [&graph](const std::uint32_t id) { return std::ranges::none_of(graph.nodes, [id](const Node& n) { return n.id == id; }); });
     for (const std::uint32_t id : m_selected) {
         m_graph->select(static_cast<int>(id), true);
     }
@@ -444,19 +444,19 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
     m_shownScope = scope;
 }
 
-void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
+void EditorAnimGraphPanel::ApplyGraphEdit() {
     if (m_rebuilding || !m_graph) {
         return;
     }
-    const GraphUVE* graph = GraphPtrUVE();
+    const Graph* graph = GraphPtr();
     if (graph == nullptr) {
         return;
     }
     const prism::BlueprintGraph& view = *m_graph;
-    const AnimationGraphScopeUVE scope = m_shownScope;
-    static_cast<void>(EditUVE([&view, scope](GraphUVE& g) {
+    const AnimationGraphScope scope = m_shownScope;
+    static_cast<void>(Edit([&view, scope](Graph& g) {
         // What the view shows is this scope's nodes: the ones missing were deleted there.
-        const std::vector<std::uint32_t> shown = AnimationGraphScopeNodesUVE(g.nodes, scope);
+        const std::vector<std::uint32_t> shown = AnimationGraphScopeNodes(g.nodes, scope);
         std::vector<std::uint32_t> gone;
         for (const std::uint32_t id : shown) {
             if (view.findNode(static_cast<int>(id)) == nullptr) {
@@ -464,36 +464,36 @@ void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
             }
         }
         if (!gone.empty()) {
-            static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, gone));
+            static_cast<void>(DeleteAnimationGraphNodes(g.nodes, gone));
         }
         // Everything shown here stays here, wired or not (a wire taken off keeps it in this graph).
-        for (NodeUVE& node : g.nodes) {
+        for (Node& node : g.nodes) {
             const prism::BlueprintNode* drawn = view.findNode(static_cast<int>(node.id));
-            if (drawn == nullptr || static_cast<int>(node.id) == kStateResultUVE) {
+            if (drawn == nullptr || static_cast<int>(node.id) == kStateResult) {
                 continue;
             }
-            node.position = Math::Vector2UVE{drawn->pos.x, drawn->pos.y};
+            node.position = Math::Vector2{drawn->pos.x, drawn->pos.y};
             node.owner = scope.machine;
             node.ownerState = scope.state;
             if (node.kind != Kind::StateMachine) {
                 std::fill(node.inputs.begin(), node.inputs.end(), 0U);
             }
         }
-        NodeUVE* machine = nullptr;
+        Node* machine = nullptr;
         if (scope.machine != 0U) {
-            const auto found = std::ranges::find(g.nodes, scope.machine, &NodeUVE::id);
+            const auto found = std::ranges::find(g.nodes, scope.machine, &Node::id);
             machine = found != g.nodes.end() && scope.state < found->inputs.size() ? &*found : nullptr;
             if (machine != nullptr) {
                 machine->inputs[scope.state] = 0U;
             }
         }
         // This graph's comment boxes as the view has them (made, moved, resized, renamed or deleted).
-        std::erase_if(g.comments, [scope](const Scene::AnimationGraphCommentUVE& c) { return AnimationGraphScopeUVE{c.owner, c.ownerState} == scope; });
+        std::erase_if(g.comments, [scope](const Scene::AnimationGraphComment& c) { return AnimationGraphScope{c.owner, c.ownerState} == scope; });
         for (const prism::BlueprintComment& box : view.comments()) {
-            Scene::AnimationGraphCommentUVE comment;
+            Scene::AnimationGraphComment comment;
             comment.title = box.title;
-            comment.position = Math::Vector2UVE{box.bounds.x, box.bounds.y};
-            comment.size = Math::Vector2UVE{box.bounds.w, box.bounds.h};
+            comment.position = Math::Vector2{box.bounds.x, box.bounds.y};
+            comment.size = Math::Vector2{box.bounds.w, box.bounds.h};
             comment.color = (static_cast<std::uint32_t>(box.color.r) << 24U) | (static_cast<std::uint32_t>(box.color.g) << 16U) |
                             (static_cast<std::uint32_t>(box.color.b) << 8U) | static_cast<std::uint32_t>(box.color.a);
             comment.owner = scope.machine;
@@ -501,13 +501,13 @@ void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
             g.comments.push_back(std::move(comment));
         }
         for (const prism::BlueprintWire& wire : view.wires()) {
-            if (wire.toNodeId == kStateResultUVE) {
+            if (wire.toNodeId == kStateResult) {
                 if (machine != nullptr) {
                     machine->inputs[scope.state] = static_cast<std::uint32_t>(wire.fromNodeId);
                 }
                 continue;
             }
-            for (NodeUVE& node : g.nodes) {
+            for (Node& node : g.nodes) {
                 if (static_cast<int>(node.id) == wire.toNodeId && node.kind != Kind::StateMachine && wire.toPinIndex >= 0 &&
                     static_cast<std::size_t>(wire.toPinIndex) < node.inputs.size()) {
                     node.inputs[static_cast<std::size_t>(wire.toPinIndex)] = static_cast<std::uint32_t>(wire.fromNodeId);
@@ -519,10 +519,10 @@ void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
     m_shown.reset();
 }
 
-int EditorAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec, const prism::Vec2 world) {
+int EditorAnimGraphPanel::Spawn(const prism::BlueprintNodeSpec& spec, const prism::Vec2 world) {
     std::optional<Kind> kind;
-    for (const Kind candidate : kAddableKindsUVE) {
-        if (spec.name == AnimationGraphKindLabelUVE(candidate)) {
+    for (const Kind candidate : kAddableKinds) {
+        if (spec.name == AnimationGraphKindLabel(candidate)) {
             kind = candidate;
         }
     }
@@ -530,36 +530,36 @@ int EditorAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec, cons
         return -1;
     }
     std::uint32_t added = 0U;
-    const AnimationGraphScopeUVE scope = m_shownScope;
-    if (!EditUVE([&](GraphUVE& g) {
-            added = AddAnimationGraphNodeUVE(g.nodes, *kind, Math::Vector2UVE{world.x, world.y});
+    const AnimationGraphScope scope = m_shownScope;
+    if (!Edit([&](Graph& g) {
+            added = AddAnimationGraphNode(g.nodes, *kind, Math::Vector2{world.x, world.y});
             if (added != 0U) {
-                BindNewNodeParametersUVE(g, added);
+                BindNewNodeParameters(g, added);
                 // Made in a state's graph: it stays there.
-                if (const auto made = std::ranges::find(g.nodes, added, &NodeUVE::id); made != g.nodes.end()) {
+                if (const auto made = std::ranges::find(g.nodes, added, &Node::id); made != g.nodes.end()) {
                     made->owner = scope.machine;
                     made->ownerState = scope.state;
                 }
                 // A State Machine starts with a first state, playing a Clip in its own graph.
                 if (*kind == Kind::StateMachine) {
-                    static_cast<void>(AddAnimationStateUVE(g.nodes, added, Math::Vector2UVE{0.0F, 0.0F}));
+                    static_cast<void>(AddAnimationState(g.nodes, added, Math::Vector2{0.0F, 0.0F}));
                 }
             }
         }) || added == 0U) {
         return -1;
     }
-    const GraphUVE* graph = GraphPtrUVE();
+    const Graph* graph = GraphPtr();
     if (graph == nullptr) {
         return -1;
     }
-    const auto node = std::ranges::find(graph->nodes, added, &NodeUVE::id);
+    const auto node = std::ranges::find(graph->nodes, added, &Node::id);
     if (node == graph->nodes.end()) {
         return -1;
     }
     m_rebuilding = true;
-    m_graph->addNode(MakeNodeUVE(*node));
-    if (BodyHeightUVE(*node) > 0.0F) {
-        m_graph->setNodeBody(static_cast<int>(added), BuildBodyUVE(*node));
+    m_graph->addNode(MakeNode(*node));
+    if (BodyHeight(*node) > 0.0F) {
+        m_graph->setNodeBody(static_cast<int>(added), BuildBody(*node));
     }
     m_rebuilding = false;
     m_selected = {added};
@@ -569,44 +569,44 @@ int EditorAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec, cons
 
 // ---------------------------------------------------------------------------------------- edits
 
-bool EditorAnimGraphPanelUVE::EditUVE(const std::function<void(GraphUVE&)>& change) {
-    if (m_view.tree == Scene::kInvalidEntityUVE) {
+bool EditorAnimGraphPanel::Edit(const std::function<void(Graph&)>& change) {
+    if (m_view.tree == Scene::kInvalidEntity) {
         return false;
     }
     m_sideDirty = true;
-    return m_editor.EditAnimationGraphUVE(m_view.tree, change);
+    return m_editor.EditAnimationGraph(m_view.tree, change);
 }
 
-bool EditorAnimGraphPanelUVE::EditNodeUVE(const std::uint32_t id, const std::function<void(NodeUVE&)>& change) {
-    return EditUVE([&](GraphUVE& g) {
-        if (auto node = std::ranges::find(g.nodes, id, &NodeUVE::id); node != g.nodes.end()) {
+bool EditorAnimGraphPanel::EditNode(const std::uint32_t id, const std::function<void(Node&)>& change) {
+    return Edit([&](Graph& g) {
+        if (auto node = std::ranges::find(g.nodes, id, &Node::id); node != g.nodes.end()) {
             change(*node);
         }
     });
 }
 
-void EditorAnimGraphPanelUVE::LiveNodeUVE(const std::uint32_t id, const std::function<void(NodeUVE&)>& change) {
-    GraphUVE* graph = LiveGraphUVE();
+void EditorAnimGraphPanel::LiveNode(const std::uint32_t id, const std::function<void(Node&)>& change) {
+    Graph* graph = LiveGraph();
     if (graph == nullptr) {
         return;
     }
     if (!m_liveBefore.has_value()) {
         m_liveBefore = *graph;
     }
-    if (auto node = std::ranges::find(graph->nodes, id, &NodeUVE::id); node != graph->nodes.end()) {
+    if (auto node = std::ranges::find(graph->nodes, id, &Node::id); node != graph->nodes.end()) {
         change(*node);
     }
 }
 
-void EditorAnimGraphPanelUVE::LiveParameterUVE(const std::size_t index, const float value, const int axis) {
-    GraphUVE* graph = LiveGraphUVE();
+void EditorAnimGraphPanel::LiveParameter(const std::size_t index, const float value, const int axis) {
+    Graph* graph = LiveGraph();
     if (graph == nullptr || index >= graph->parameters.size()) {
         return;
     }
     if (!m_liveBefore.has_value()) {
         m_liveBefore = *graph;
     }
-    Scene::AnimationParameterUVE& parameter = graph->parameters[index];
+    Scene::AnimationParameter& parameter = graph->parameters[index];
     if (axis == 0) {
         parameter.vector.x = value;
     } else if (axis == 1) {
@@ -618,18 +618,18 @@ void EditorAnimGraphPanelUVE::LiveParameterUVE(const std::size_t index, const fl
     }
 }
 
-void EditorAnimGraphPanelUVE::CommitLiveUVE() {
-    GraphUVE* graph = LiveGraphUVE();
+void EditorAnimGraphPanel::CommitLive() {
+    Graph* graph = LiveGraph();
     if (graph == nullptr || !m_liveBefore.has_value()) {
         m_liveBefore.reset();
         return;
     }
     // Back to where the gesture started, then the gesture's result as one undo step.
-    const GraphUVE after = *graph;
+    const Graph after = *graph;
     graph->parameters = m_liveBefore->parameters;
     graph->nodes = m_liveBefore->nodes;
     m_liveBefore.reset();
-    static_cast<void>(EditUVE([&after](GraphUVE& g) {
+    static_cast<void>(Edit([&after](Graph& g) {
         g.parameters = after.parameters;
         g.nodes = after.nodes;
     }));
@@ -637,39 +637,39 @@ void EditorAnimGraphPanelUVE::CommitLiveUVE() {
 
 // -------------------------------------------------------------------------------------- refresh
 
-void EditorAnimGraphPanelUVE::RefreshUVE(const double deltaSeconds, const bool shown) {
+void EditorAnimGraphPanel::Refresh(const double deltaSeconds, const bool shown) {
     if (!shown || !m_graph) {
         return;
     }
     if (!m_liveBefore.has_value()) {
-        m_editor.StepAnimationGraphPreviewUVE(deltaSeconds);
+        m_editor.StepAnimationGraphPreview(deltaSeconds);
     }
-    m_view = m_editor.SyncAnimationGraphViewUVE();
-    const GraphUVE* graph = GraphPtrUVE();
+    m_view = m_editor.SyncAnimationGraphView();
+    const Graph* graph = GraphPtr();
     if (graph == nullptr) {
         return;
     }
-    SyncFocusUVE();
+    SyncFocus();
     if (!m_liveBefore.has_value()) {
-        if (m_shownTree != m_view.tree || !m_shown.has_value() || !m_shown->HasSameSettingsUVE(*graph) || !(m_shownScope == ScopeUVE())) {
-            RebuildGraphUVE(*graph);
+        if (m_shownTree != m_view.tree || !m_shown.has_value() || !m_shown->HasSameSettings(*graph) || !(m_shownScope == Scope())) {
+            RebuildGraph(*graph);
             m_sideDirty = true;
         }
-        const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+        const Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
         if (m_sideDirty || m_selected != m_shownSelection || state.pickedState != m_shownPickedState ||
             state.pickedTransition != m_shownPickedTransition) {
-            RebuildSideUVE(*graph);
+            RebuildSide(*graph);
         }
     }
-    RefreshLiveValuesUVE(*graph);
+    RefreshLiveValues(*graph);
 }
 
-void EditorAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
-    const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+void EditorAnimGraphPanel::RefreshLiveValues(const Graph& graph) {
+    const Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
     if (m_graphButton) {
         m_graphButton->setVisible(m_view.graphs.size() > 1U);
-        const std::string name = NameOfUVE(em, m_view.tree, "AnimationGraph");
+        const std::string name = NameOf(em, m_view.tree, "AnimationGraph");
         if (m_graphButton->text() != name) {
             m_graphButton->setText(name);
         }
@@ -681,14 +681,14 @@ void EditorAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         m_playButton->setIcon(state.previewPaused ? prism::Icon::Play : prism::Icon::Pause);
     }
     if (m_problem) {
-        std::string problem = Scene::DescribeAnimationGraphProblemUVE(graph);
+        std::string problem = Scene::DescribeAnimationGraphProblem(graph);
         if (problem.empty() && !state.status.empty()) {
             problem = state.status;
         }
-        if (problem.empty() && m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree) == Scene::kInvalidEntityUVE) {
+        if (problem.empty() && m_editor.ResolveActiveSequencerForGraph(m_view.tree) == Scene::kInvalidEntity) {
             problem = "No AnimationSequencer: add one to the entity (the graph plays its animations)";
         }
-        if (problem.empty() && m_view.skeleton == Scene::kInvalidEntityUVE) {
+        if (problem.empty() && m_view.skeleton == Scene::kInvalidEntity) {
             problem = "No skeleton to preview on: add a Skeleton3D to the entity";
         }
         if (m_problem->tooltip() != problem) {
@@ -697,8 +697,8 @@ void EditorAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         }
     }
     // Parameter values the preview moves.
-    for (const ParameterRowUVE& row : m_parameterRows) {
-        const auto parameter = std::ranges::find(graph.parameters, row.name, &Scene::AnimationParameterUVE::name);
+    for (const ParameterRow& row : m_parameterRows) {
+        const auto parameter = std::ranges::find(graph.parameters, row.name, &Scene::AnimationParameter::name);
         if (parameter == graph.parameters.end()) {
             continue;
         }
@@ -707,12 +707,12 @@ void EditorAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         }
         if (row.sparkline) {
             const auto history = state.parameterHistory.find(row.name);
-            static_cast<SparklineUVE&>(*row.sparkline).SetSamplesUVE(history != state.parameterHistory.end() ? &history->second : nullptr);
+            static_cast<Sparkline&>(*row.sparkline).SetSamples(history != state.parameterHistory.end() ? &history->second : nullptr);
         }
     }
     if (m_log && state.previewLog.size() != m_shownLogLines) {
         m_log->clear();
-        for (const EditorUVE::AnimationGraphViewStateUVE::PreviewLogLineUVE& line : state.previewLog) {
+        for (const Editor::AnimationGraphViewState::PreviewLogLine& line : state.previewLog) {
             char at[24];
             std::snprintf(at, sizeof(at), "%6.2fs  ", line.at);
             m_log->add(line.stateChange ? prism::LogLevel::Success : prism::LogLevel::Info, std::string{at} + line.text);
@@ -724,28 +724,28 @@ void EditorAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
     }
 }
 
-const Scene::AnimationGraphNodeUVE* EditorAnimGraphPanelUVE::FocusNodeUVE() const {
-    const GraphUVE* graph = GraphPtrUVE();
+const Scene::AnimationGraphNode* EditorAnimGraphPanel::FocusNode() const {
+    const Graph* graph = GraphPtr();
     const std::uint32_t focus = m_editor.m_animGraph.focus;
     if (graph == nullptr || focus == 0U) {
         return nullptr;
     }
-    const auto node = std::ranges::find(graph->nodes, focus, &NodeUVE::id);
+    const auto node = std::ranges::find(graph->nodes, focus, &Node::id);
     return node != graph->nodes.end() ? &*node : nullptr;
 }
 
-void EditorAnimGraphPanelUVE::OpenFocusUVE(const std::uint32_t node) {
-    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+void EditorAnimGraphPanel::OpenFocus(const std::uint32_t node) {
+    Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
     state.focus = node;
     state.pickedState = -1;
     state.pickedTransition = -1;
     state.stateFramed = false;
     m_sideDirty = true;
-    SyncFocusUVE();
+    SyncFocus();
 }
 
-void EditorAnimGraphPanelUVE::OpenStateGraphUVE(const std::uint32_t machine, const std::uint32_t slot) {
-    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+void EditorAnimGraphPanel::OpenStateGraph(const std::uint32_t machine, const std::uint32_t slot) {
+    Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
     state.focus = 0U;
     state.scopeMachine = machine;
     state.scopeState = slot;
@@ -753,34 +753,34 @@ void EditorAnimGraphPanelUVE::OpenStateGraphUVE(const std::uint32_t machine, con
     state.pickedTransition = -1;
     m_selected.clear();
     m_sideDirty = true;
-    SyncFocusUVE();
+    SyncFocus();
 }
 
-AnimationGraphScopeUVE EditorAnimGraphPanelUVE::ScopeUVE() const {
-    const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
-    const GraphUVE* graph = GraphPtrUVE();
+AnimationGraphScope EditorAnimGraphPanel::Scope() const {
+    const Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
+    const Graph* graph = GraphPtr();
     if (graph == nullptr || state.scopeMachine == 0U) {
         return {};
     }
-    const auto machine = std::ranges::find(graph->nodes, state.scopeMachine, &NodeUVE::id);
+    const auto machine = std::ranges::find(graph->nodes, state.scopeMachine, &Node::id);
     if (machine == graph->nodes.end() || machine->kind != Kind::StateMachine || state.scopeState >= machine->inputs.size()) {
         return {};
     }
-    return AnimationGraphScopeUVE{state.scopeMachine, state.scopeState};
+    return AnimationGraphScope{state.scopeMachine, state.scopeState};
 }
 
-void EditorAnimGraphPanelUVE::CloseFocusUVE() {
+void EditorAnimGraphPanel::CloseFocus() {
     // One step up: a State Machine or Blend Space goes back to the graph it sits in; a state's
     // graph goes back to its State Machine.
-    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
-    const GraphUVE* graph = GraphPtrUVE();
+    Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
+    const Graph* graph = GraphPtr();
     if (state.focus != 0U) {
-        const AnimationGraphScopeUVE where = graph != nullptr ? AnimationGraphScopeOfUVE(graph->nodes, state.focus) : AnimationGraphScopeUVE{};
+        const AnimationGraphScope where = graph != nullptr ? AnimationGraphScopeOf(graph->nodes, state.focus) : AnimationGraphScope{};
         m_selected = {state.focus};
         state.focus = 0U;
         state.scopeMachine = where.machine;
         state.scopeState = where.state;
-    } else if (const AnimationGraphScopeUVE scope = ScopeUVE(); scope.machine != 0U) {
+    } else if (const AnimationGraphScope scope = Scope(); scope.machine != 0U) {
         state.focus = scope.machine;
         state.stateFramed = false;
         state.pickedState = static_cast<int>(scope.state);
@@ -790,18 +790,18 @@ void EditorAnimGraphPanelUVE::CloseFocusUVE() {
     }
     state.pickedTransition = -1;
     m_sideDirty = true;
-    SyncFocusUVE();
+    SyncFocus();
 }
 
-void EditorAnimGraphPanelUVE::SyncFocusUVE() {
-    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
-    const NodeUVE* focus = FocusNodeUVE();
+void EditorAnimGraphPanel::SyncFocus() {
+    Editor::AnimationGraphViewState& state = m_editor.m_animGraph;
+    const Node* focus = FocusNode();
     if (state.focus != 0U && (focus == nullptr || (focus->kind != Kind::StateMachine && focus->kind != Kind::BlendSpace1D &&
                                                    focus->kind != Kind::BlendSpace2D))) {
         state.focus = 0U;   // its node went (deleted, undone): back to the tree
         focus = nullptr;
     }
-    if (state.focus == 0U && state.scopeMachine != 0U && ScopeUVE().machine == 0U) {
+    if (state.focus == 0U && state.scopeMachine != 0U && Scope().machine == 0U) {
         state.scopeMachine = 0U;   // its State Machine or state went
         state.scopeState = 0U;
     }
@@ -815,37 +815,37 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
         }
     }
     // The path: Tree > each State Machine and state down to here > what is open.
-    struct CrumbUVE final {
+    struct Crumb final {
         std::string text;
         prism::Icon icon = prism::Icon::None;
         std::function<void()> go;
     };
-    std::vector<CrumbUVE> path;
-    const GraphUVE* graph = GraphPtrUVE();
-    AnimationGraphScopeUVE scope = ScopeUVE();
+    std::vector<Crumb> path;
+    const Graph* graph = GraphPtr();
+    AnimationGraphScope scope = Scope();
     if (graph != nullptr && focus != nullptr) {
         const std::uint32_t id = focus->id;
-        path.push_back(CrumbUVE{(focus->name.empty() ? std::string{AnimationGraphKindLabelUVE(focus->kind)} : focus->name),
+        path.push_back(Crumb{(focus->name.empty() ? std::string{AnimationGraphKindLabel(focus->kind)} : focus->name),
                                 focus->kind == Kind::StateMachine ? prism::Icon::StateMachine : prism::Icon::NodeBlendSpace,
-                                [this, id] { OpenFocusUVE(id); }});
-        scope = AnimationGraphScopeOfUVE(graph->nodes, focus->id);
+                                [this, id] { OpenFocus(id); }});
+        scope = AnimationGraphScopeOf(graph->nodes, focus->id);
     }
     for (std::size_t guard = 0U; graph != nullptr && scope.machine != 0U && guard < 32U; ++guard) {
-        const auto machine = std::ranges::find(graph->nodes, scope.machine, &NodeUVE::id);
+        const auto machine = std::ranges::find(graph->nodes, scope.machine, &Node::id);
         if (machine == graph->nodes.end()) {
             break;
         }
         const std::uint32_t machineId = machine->id;
         const std::uint32_t slot = scope.state;
-        path.push_back(CrumbUVE{AnimationStateNameUVE(graph->nodes, *machine, scope.state), prism::Icon::StateGraph,
-                                [this, machineId, slot] { OpenStateGraphUVE(machineId, slot); }});
-        path.push_back(CrumbUVE{machine->name.empty() ? std::string{"State Machine"} : machine->name, prism::Icon::StateMachine,
-                                [this, machineId] { OpenFocusUVE(machineId); }});
-        scope = AnimationGraphScopeOfUVE(graph->nodes, machineId);
+        path.push_back(Crumb{AnimationStateName(graph->nodes, *machine, scope.state), prism::Icon::StateGraph,
+                                [this, machineId, slot] { OpenStateGraph(machineId, slot); }});
+        path.push_back(Crumb{machine->name.empty() ? std::string{"State Machine"} : machine->name, prism::Icon::StateMachine,
+                                [this, machineId] { OpenFocus(machineId); }});
+        scope = AnimationGraphScopeOf(graph->nodes, machineId);
     }
     std::ranges::reverse(path);
     std::string signature;
-    for (const CrumbUVE& crumb : path) {
+    for (const Crumb& crumb : path) {
         signature += crumb.text + "\x1f";
     }
     if (m_crumbs) {
@@ -856,26 +856,26 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
         m_crumbRow->clearChildren();
         auto up = prism::make<prism::Button>("", prism::Icon::ChevronLeft, prism::ButtonStyle::Flat);
         up->setTooltip("Up one level (Esc in a State Machine or Blend Space)");
-        up->onClick = [this] { CloseFocusUVE(); };
-        m_crumbRow->add(up, CentreSlotUVE());
+        up->onClick = [this] { CloseFocus(); };
+        m_crumbRow->add(up, CentreSlot());
         auto tree = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);
         tree->setTooltip("Back to the top of the graph");
         tree->onClick = [this] {
-            EditorUVE::AnimationGraphViewStateUVE& s = m_editor.m_animGraph;
+            Editor::AnimationGraphViewState& s = m_editor.m_animGraph;
             s.focus = 0U;
             s.scopeMachine = 0U;
             s.scopeState = 0U;
             m_sideDirty = true;
-            SyncFocusUVE();
+            SyncFocus();
         };
-        m_crumbRow->add(tree, CentreSlotUVE());
+        m_crumbRow->add(tree, CentreSlot());
         for (std::size_t i = 0U; i < path.size(); ++i) {
             auto chevron = prism::make<prism::Label>(">", prism::FontRole::Semibold);
             chevron->setColor(prism::ThemeColor(&prism::Theme::textDim));
-            m_crumbRow->add(chevron, CentreSlotUVE());
+            m_crumbRow->add(chevron, CentreSlot());
             auto step = prism::make<prism::Button>(path[i].text, path[i].icon, i + 1U == path.size() ? prism::ButtonStyle::Default : prism::ButtonStyle::Flat);
             step->onClick = path[i].go;
-            m_crumbRow->add(step, CentreSlotUVE());
+            m_crumbRow->add(step, CentreSlot());
         }
         if (prism::Application::exists()) {
             prism::Application::get().invalidateLayout();
@@ -893,7 +893,7 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
 
 // ----------------------------------------------------------------------------------- side panel
 
-void EditorAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
+void EditorAnimGraphPanel::RebuildSide(const Graph& graph) {
     if (!m_side) {
         return;
     }
@@ -903,7 +903,7 @@ void EditorAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
     m_shownLogLines = static_cast<std::size_t>(-1);
     m_shownPickedState = m_editor.m_animGraph.pickedState;
     m_shownPickedTransition = m_editor.m_animGraph.pickedTransition;
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
     // Built like the entity's Details: categories, a label column, one control per row.
     auto grid = prism::make<prism::PropertyGrid>();
 
@@ -918,43 +918,43 @@ void EditorAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
         };
         return button;
     };
-    const Scene::EntityUVE sequencer = m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree);
+    const Scene::Entity sequencer = m_editor.ResolveActiveSequencerForGraph(m_view.tree);
     grid->addRow(graphCategory, "Sequencer",
-                 picker(sequencer != Scene::kInvalidEntityUVE ? NameOfUVE(em, sequencer, "AnimationSequencer") : std::string{"None"},
-                        [this](const prism::Vec2 at) { ShowSequencerMenuUVE(at); }),
+                 picker(sequencer != Scene::kInvalidEntity ? NameOf(em, sequencer, "AnimationSequencer") : std::string{"None"},
+                        [this](const prism::Vec2 at) { ShowSequencerMenu(at); }),
                  "The AnimationSequencer whose animations the Clip nodes play");
-    const Scene::EntityUVE linkedPlayer = graph.montageSequencer;
+    const Scene::Entity linkedPlayer = graph.montageSequencer;
     grid->addRow(graphCategory, "Montage Sequencer",
-                 picker(linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer) ? NameOfUVE(em, linkedPlayer, "MontageSequencer")
+                 picker(linkedPlayer != Scene::kInvalidEntity && em.IsAlive(linkedPlayer) ? NameOf(em, linkedPlayer, "MontageSequencer")
                                                                                                  : std::string{"None"},
-                        [this](const prism::Vec2 at) { ShowMontageSequencerMenuUVE(at); }),
+                        [this](const prism::Vec2 at) { ShowMontageSequencerMenu(at); }),
                  "Optional: the MontageSequencer whose motion montages play on the Slot nodes. None: any MontageSequencer on the same skeleton.");
 
-    if (const NodeUVE* focus = FocusNodeUVE(); focus != nullptr && focus->kind == Kind::StateMachine) {
-        BuildStateMachineSideUVE(*grid, graph, *focus);
+    if (const Node* focus = FocusNode(); focus != nullptr && focus->kind == Kind::StateMachine) {
+        BuildStateMachineSide(*grid, graph, *focus);
     } else if (focus != nullptr) {
-        BuildBlendSpaceSideUVE(*grid, graph, *focus);
+        BuildBlendSpaceSide(*grid, graph, *focus);
     } else {
-        BuildSelectedUVE(*grid, graph);
+        BuildSelected(*grid, graph);
     }
-    BuildParametersUVE(*grid, graph);
-    BuildPreviewUVE(*grid);
-    m_side->setContent(prism::make<FitWidthUVE>(grid));
+    BuildParameters(*grid, graph);
+    BuildPreview(*grid);
+    m_side->setContent(prism::make<FitWidth>(grid));
 }
 
-void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, const GraphUVE& graph) {
+void EditorAnimGraphPanel::BuildParameters(prism::PropertyGrid& grid, const Graph& graph) {
     const int category = grid.addCategory("Parameters");
     static constexpr const char* kTypes[] = {"Float", "Bool", "Trigger", "Vector3"};
     for (std::size_t index = 0U; index < graph.parameters.size(); ++index) {
-        const Scene::AnimationParameterUVE& parameter = graph.parameters[index];
+        const Scene::AnimationParameter& parameter = graph.parameters[index];
         auto row = prism::hbox(4.0F);
         auto name = prism::make<prism::TextInput>(parameter.name, "Name");
         const std::string old = parameter.name;
         // Which nodes it drives, so the list reads as the graph's controls.
         std::string drives;
-        for (const NodeUVE& node : graph.nodes) {
+        for (const Node& node : graph.nodes) {
             if (node.kind != Kind::Slot && (node.parameter == old || node.parameterY == old || node.alphaParameter == old)) {
-                drives += (drives.empty() ? "" : ", ") + (node.name.empty() ? std::string(AnimationGraphKindLabelUVE(node.kind)) : node.name);
+                drives += (drives.empty() ? "" : ", ") + (node.name.empty() ? std::string(AnimationGraphKindLabel(node.kind)) : node.name);
             }
         }
         name->setTooltip(drives.empty() ? std::string{"Not used by a node"} : "Drives " + drives);
@@ -963,23 +963,23 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
                 return;
             }
             // References follow the rename: nodes and transitions read the parameter by name.
-            EditUVE([&old, &to](GraphUVE& g) { static_cast<void>(RenameGraphParameterUVE(g, old, to)); });
+            Edit([&old, &to](Graph& g) { static_cast<void>(RenameGraphParameter(g, old, to)); });
         };
         row->add(name, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-        ParameterRowUVE live{parameter.name, nullptr, nullptr};
+        ParameterRow live{parameter.name, nullptr, nullptr};
         switch (parameter.type) {
-            case Scene::AnimationParameterTypeUVE::Float: {
+            case Scene::AnimationParameterType::Float: {
                 auto number = prism::make<prism::NumberField>(parameter.value, 0.01F, 2);
-                number->onChange = [this, index](const float v) { LiveParameterUVE(index, v); };
-                number->onCommit = [this](float) { CommitLiveUVE(); };
+                number->onChange = [this, index](const float v) { LiveParameter(index, v); };
+                number->onCommit = [this](float) { CommitLive(); };
                 row->add(number, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
                 live.number = number;
                 break;
             }
-            case Scene::AnimationParameterTypeUVE::Bool: {
+            case Scene::AnimationParameterType::Bool: {
                 auto check = prism::make<prism::CheckBox>("", parameter.value > 0.5F);
                 check->onChange = [this, index](const bool on) {
-                    EditUVE([index, on](GraphUVE& g) {
+                    Edit([index, on](Graph& g) {
                         if (index < g.parameters.size()) {
                             g.parameters[index].value = on ? 1.0F : 0.0F;
                         }
@@ -988,14 +988,14 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
                 row->add(check, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
                 break;
             }
-            case Scene::AnimationParameterTypeUVE::Vector3: {
+            case Scene::AnimationParameterType::Vector3: {
                 const float values[] = {parameter.vector.x, parameter.vector.y, parameter.vector.z};
                 for (int axis = 0; axis < 3; ++axis) {
                     auto number = prism::make<prism::NumberField>(values[axis], 0.01F, 2);
                     number->onCommit = [this, index, axis](const float v) {
-                        EditUVE([index, axis, v](GraphUVE& g) {
+                        Edit([index, axis, v](Graph& g) {
                             if (index < g.parameters.size()) {
-                                Math::Vector3UVE& at = g.parameters[index].vector;
+                                Math::Vector3& at = g.parameters[index].vector;
                                 (axis == 0 ? at.x : axis == 1 ? at.y : at.z) = v;
                             }
                         });
@@ -1004,10 +1004,10 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
                 }
                 break;
             }
-            case Scene::AnimationParameterTypeUVE::Trigger: {
-                auto fire = ToolButtonUVE(prism::Icon::Fire, "Fire it now");
+            case Scene::AnimationParameterType::Trigger: {
+                auto fire = ToolButton(prism::Icon::Fire, "Fire it now");
                 fire->onClick = [this, index] {
-                    if (GraphUVE* g = LiveGraphUVE(); g != nullptr && index < g->parameters.size()) {
+                    if (Graph* g = LiveGraph(); g != nullptr && index < g->parameters.size()) {
                         g->parameters[index].value = 1.0F;   // runtime only: the step consumes it
                     }
                 };
@@ -1015,9 +1015,9 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
                 break;
             }
         }
-        auto remove = ToolButtonUVE(prism::Icon::Trash, "Remove the parameter");
+        auto remove = ToolButton(prism::Icon::Trash, "Remove the parameter");
         remove->onClick = [this, index] {
-            EditUVE([index](GraphUVE& g) {
+            Edit([index](Graph& g) {
                 if (index >= g.parameters.size()) {
                     return;
                 }
@@ -1025,15 +1025,15 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
                 // transition conditions that read it go with it.
                 const std::string name = g.parameters[index].name;
                 g.parameters.erase(g.parameters.begin() + static_cast<std::ptrdiff_t>(index));
-                for (NodeUVE& node : g.nodes) {
+                for (Node& node : g.nodes) {
                     for (std::string* bound : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
                         if (*bound == name && node.kind != Kind::Slot) {
                             bound->clear();
                         }
                     }
-                    for (Scene::AnimationGraphTransitionUVE& transition : node.transitions) {
+                    for (Scene::AnimationGraphTransition& transition : node.transitions) {
                         std::erase_if(transition.conditions,
-                                      [&name](const Scene::AnimationTransitionConditionUVE& c) { return c.parameter == name; });
+                                      [&name](const Scene::AnimationTransitionCondition& c) { return c.parameter == name; });
                     }
                 }
             });
@@ -1041,14 +1041,14 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
         row->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
         grid.addRow(category, kTypes[std::min<std::size_t>(static_cast<std::size_t>(parameter.type), 3U)], row);
         // Who writes it: a script, or the engine from the character.
-        if (parameter.type == Scene::AnimationParameterTypeUVE::Float || parameter.type == Scene::AnimationParameterTypeUVE::Bool) {
+        if (parameter.type == Scene::AnimationParameterType::Float || parameter.type == Scene::AnimationParameterType::Bool) {
             auto source = prism::make<prism::ComboBox>(
                 std::vector<std::string>{"Script", "Character Speed", "Character Direction", "Character In Air", "Character Grounded"},
                 static_cast<int>(parameter.source));
             source->onChange = [this, index](const int i) {
-                EditUVE([index, i](GraphUVE& g) {
+                Edit([index, i](Graph& g) {
                     if (index < g.parameters.size()) {
-                        g.parameters[index].source = static_cast<Scene::AnimationParameterSourceUVE>(std::clamp(i, 0, 4));
+                        g.parameters[index].source = static_cast<Scene::AnimationParameterSource>(std::clamp(i, 0, 4));
                     }
                 });
             };
@@ -1060,20 +1060,20 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
     auto add = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
     std::weak_ptr<prism::Button> weakAdd = add;
     add->onClick = [this, weakAdd] {
-        const auto addOf = [this](const Scene::AnimationParameterTypeUVE type, const char* base) {
+        const auto addOf = [this](const Scene::AnimationParameterType type, const char* base) {
             return [this, type, base] {
-                EditUVE([type, base](GraphUVE& g) {
-                    Scene::AnimationParameterUVE p;
-                    p.name = UniqueParameterNameUVE(g, base);
+                Edit([type, base](Graph& g) {
+                    Scene::AnimationParameter p;
+                    p.name = UniqueParameterName(g, base);
                     p.type = type;
                     g.parameters.push_back(std::move(p));
                 });
             };
         };
-        std::vector<prism::MenuItem> items{prism::MenuItem::Item("Float", addOf(Scene::AnimationParameterTypeUVE::Float, "Speed"), "", prism::Icon::ParamFloat),
-                                           prism::MenuItem::Item("Bool", addOf(Scene::AnimationParameterTypeUVE::Bool, "IsMoving"), "", prism::Icon::ParamBool),
-                                           prism::MenuItem::Item("Trigger", addOf(Scene::AnimationParameterTypeUVE::Trigger, "Attack"), "", prism::Icon::ParamTrigger),
-                                           prism::MenuItem::Item("Vector3", addOf(Scene::AnimationParameterTypeUVE::Vector3, "Target"), "", prism::Icon::ParamVector)};
+        std::vector<prism::MenuItem> items{prism::MenuItem::Item("Float", addOf(Scene::AnimationParameterType::Float, "Speed"), "", prism::Icon::ParamFloat),
+                                           prism::MenuItem::Item("Bool", addOf(Scene::AnimationParameterType::Bool, "IsMoving"), "", prism::Icon::ParamBool),
+                                           prism::MenuItem::Item("Trigger", addOf(Scene::AnimationParameterType::Trigger, "Attack"), "", prism::Icon::ParamTrigger),
+                                           prism::MenuItem::Item("Vector3", addOf(Scene::AnimationParameterType::Vector3, "Target"), "", prism::Icon::ParamVector)};
         if (auto b = weakAdd.lock()) {
             prism::showContextMenu(std::move(items), prism::Vec2{b->rect().x, b->rect().bottom()});
         }
@@ -1081,53 +1081,53 @@ void EditorAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, cons
     grid.addRow(category, "", add);
 }
 
-void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const GraphUVE& graph) {
+void EditorAnimGraphPanel::BuildSelected(prism::PropertyGrid& grid, const Graph& graph) {
     if (m_selected.size() != 1U) {
         return;
     }
     const std::uint32_t id = m_selected.front();
-    const auto found = std::ranges::find(graph.nodes, id, &NodeUVE::id);
+    const auto found = std::ranges::find(graph.nodes, id, &Node::id);
     if (found == graph.nodes.end()) {
         return;
     }
-    const NodeUVE& node = *found;
-    const int category = grid.addCategory(AnimationGraphKindLabelUVE(node.kind));
-    if (node.kind == Scene::AnimationGraphNodeKindUVE::Output) {
+    const Node& node = *found;
+    const int category = grid.addCategory(AnimationGraphKindLabel(node.kind));
+    if (node.kind == Scene::AnimationGraphNodeKind::Output) {
         return;
     }
     auto name = prism::make<prism::TextInput>(node.name, "Name");
-    name->onCommit = [this, id](const std::string& to) { RenameNodeUVE(id, to); };
-    grid.addRow(category, "Name", name, AnimationGraphKindHelpUVE(node.kind));
+    name->onCommit = [this, id](const std::string& to) { RenameNode(id, to); };
+    grid.addRow(category, "Name", name, AnimationGraphKindHelp(node.kind));
 
     // Its parameter: the name the gameplay sets it by. Typing a name renames it everywhere (or,
     // with none bound yet, makes one).
-    if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(node.kind); spec.has_value()) {
+    if (const std::optional<AnimationNodeParameter> spec = NodeParameterOf(node.kind); spec.has_value()) {
         const std::string bound = node.*(spec->field);
         static constexpr prism::Icon kIcons[] = {prism::Icon::ParamFloat, prism::Icon::ParamBool, prism::Icon::ParamTrigger,
                                                  prism::Icon::ParamVector};
         static constexpr const char* kTypes[] = {"Float", "Bool", "Trigger", "Vector3"};
         const auto typeIndex = std::min<std::size_t>(static_cast<std::size_t>(spec->type), 3U);
-        auto icon = ToolButtonUVE(kIcons[typeIndex], kTypes[typeIndex]);
+        auto icon = ToolButton(kIcons[typeIndex], kTypes[typeIndex]);
         icon->setEnabled(false);
         auto field = prism::make<prism::TextInput>(bound, "Parameter name");
-        const Scene::AnimationParameterTypeUVE type = spec->type;
+        const Scene::AnimationParameterType type = spec->type;
         field->onCommit = [this, id, bound, type](const std::string& to) {
             if (to.empty() || to == bound) {
                 return;
             }
-            EditUVE([id, &bound, &to, type](GraphUVE& g) {
-                const bool exists = std::ranges::any_of(g.parameters, [&bound](const Scene::AnimationParameterUVE& p) { return p.name == bound; });
+            Edit([id, &bound, &to, type](Graph& g) {
+                const bool exists = std::ranges::any_of(g.parameters, [&bound](const Scene::AnimationParameter& p) { return p.name == bound; });
                 if (!bound.empty() && exists) {
-                    static_cast<void>(RenameGraphParameterUVE(g, bound, to));
+                    static_cast<void>(RenameGraphParameter(g, bound, to));
                     return;
                 }
-                const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
-                const std::optional<AnimationNodeParameterUVE> s = n != g.nodes.end() ? NodeParameterOfUVE(n->kind) : std::nullopt;
+                const auto n = std::ranges::find(g.nodes, id, &Node::id);
+                const std::optional<AnimationNodeParameter> s = n != g.nodes.end() ? NodeParameterOf(n->kind) : std::nullopt;
                 if (!s.has_value()) {
                     return;
                 }
-                if (std::ranges::none_of(g.parameters, [&to](const Scene::AnimationParameterUVE& p) { return p.name == to; })) {
-                    Scene::AnimationParameterUVE made;
+                if (std::ranges::none_of(g.parameters, [&to](const Scene::AnimationParameter& p) { return p.name == to; })) {
+                    Scene::AnimationParameter made;
                     made.name = to;
                     made.type = type;
                     g.parameters.push_back(made);
@@ -1136,17 +1136,17 @@ void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const 
             });
         };
         auto row = prism::hbox(4.0F);
-        row->add(icon, CentreSlotUVE());
+        row->add(icon, CentreSlot());
         row->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         grid.addRow(category, "Parameter", row, std::string(kTypes[typeIndex]) + " the gameplay sets this node by");
     }
 
     // A Layered Blend's bones: the branches its second pose replaces, each with its children.
-    if (node.kind == Scene::AnimationGraphNodeKindUVE::LayeredBlend) {
+    if (node.kind == Scene::AnimationGraphNodeKind::LayeredBlend) {
         for (std::size_t i = 0U; i < node.bones.size(); ++i) {
-            auto remove = ToolButtonUVE(prism::Icon::Close, "Take this branch off");
+            auto remove = ToolButton(prism::Icon::Close, "Take this branch off");
             remove->onClick = [this, id, i] {
-                EditNodeUVE(id, [i](NodeUVE& n) {
+                EditNode(id, [i](Node& n) {
                     if (i < n.bones.size()) {
                         n.bones.erase(n.bones.begin() + static_cast<std::ptrdiff_t>(i));
                     }
@@ -1154,13 +1154,13 @@ void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const 
             };
             auto row = prism::hbox(4.0F);
             row->add(prism::make<prism::Label>(node.bones[i]), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-            row->add(remove, CentreSlotUVE());
+            row->add(remove, CentreSlot());
             grid.addRow(category, i == 0U ? "Bones" : "", row);
         }
         std::vector<std::string> bones{"Add"};
-        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-        if (m_view.skeleton != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton)) {
-            for (const Scene::SkeletonBoneUVE& bone : em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton).bones) {
+        const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+        if (m_view.skeleton != Scene::kInvalidEntity && em.HasComponent<Scene::Skeleton3DComponent>(m_view.skeleton)) {
+            for (const Scene::SkeletonBone& bone : em.GetComponent<Scene::Skeleton3DComponent>(m_view.skeleton).bones) {
                 if (std::ranges::find(node.bones, bone.name) == node.bones.end()) {
                     bones.push_back(bone.name);
                 }
@@ -1170,8 +1170,8 @@ void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const 
         pick->onChange = [this, id, bones](const int i) {
             if (i > 0 && static_cast<std::size_t>(i) < bones.size()) {
                 const std::string bone = bones[static_cast<std::size_t>(i)];
-                EditNodeUVE(id, [&bone](NodeUVE& n) {
-                    if (n.bones.size() < Scene::kMaximumAnimationLayerBonesUVE) {
+                EditNode(id, [&bone](Node& n) {
+                    if (n.bones.size() < Scene::kMaximumAnimationLayerBones) {
                         n.bones.push_back(bone);
                     }
                 });
@@ -1182,19 +1182,19 @@ void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const 
     auto actions = prism::hbox(4.0F);
     auto duplicate = prism::make<prism::Button>("Duplicate", prism::Icon::Duplicate, prism::ButtonStyle::Default);
     duplicate->onClick = [this, id] {
-        EditUVE([id](GraphUVE& g) { static_cast<void>(DuplicateAnimationGraphNodesUVE(g.nodes, {id}, Math::Vector2UVE{40.0F, 40.0F})); });
+        Edit([id](Graph& g) { static_cast<void>(DuplicateAnimationGraphNodes(g.nodes, {id}, Math::Vector2{40.0F, 40.0F})); });
     };
     auto remove = prism::make<prism::Button>("Delete", prism::Icon::Trash, prism::ButtonStyle::Default);
     remove->onClick = [this, id] {
         m_selected.clear();
-        EditUVE([id](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, {id})); });
+        Edit([id](Graph& g) { static_cast<void>(DeleteAnimationGraphNodes(g.nodes, {id})); });
     };
     actions->add(duplicate, prism::Slot{1.0F});
     actions->add(remove, prism::Slot{1.0F});
     grid.addRow(category, "", actions);
 }
 
-void EditorAnimGraphPanelUVE::BuildPreviewUVE(prism::PropertyGrid& grid) {
+void EditorAnimGraphPanel::BuildPreview(prism::PropertyGrid& grid) {
     const int category = grid.addCategory("Preview Log", false);
     m_log = prism::make<prism::LogView>();
     auto logBox = prism::make<prism::SizeBox>();
@@ -1205,37 +1205,37 @@ void EditorAnimGraphPanelUVE::BuildPreviewUVE(prism::PropertyGrid& grid) {
 
 // ---------------------------------------------------------------------------------------- menus
 
-void EditorAnimGraphPanelUVE::RenameNodeUVE(const std::uint32_t id, const std::string& to) {
+void EditorAnimGraphPanel::RenameNode(const std::uint32_t id, const std::string& to) {
     if (to.empty()) {
         return;
     }
-    EditUVE([id, &to](GraphUVE& g) {
-        const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
+    Edit([id, &to](Graph& g) {
+        const auto n = std::ranges::find(g.nodes, id, &Node::id);
         if (n == g.nodes.end() || n->kind == Kind::Output) {
             return;
         }
         // Its parameter still named after it follows the new name ("Walk" -> "Run").
-        if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(n->kind); spec.has_value()) {
+        if (const std::optional<AnimationNodeParameter> spec = NodeParameterOf(n->kind); spec.has_value()) {
             const std::string bound = (*n).*(spec->field);
-            if (!bound.empty() && bound == ParameterNameForNodeUVE(n->name)) {
-                const std::string wanted = UniqueParameterNameUVE(g, ParameterNameForNodeUVE(to));
-                static_cast<void>(RenameGraphParameterUVE(g, bound, wanted));
+            if (!bound.empty() && bound == ParameterNameForNode(n->name)) {
+                const std::string wanted = UniqueParameterName(g, ParameterNameForNode(to));
+                static_cast<void>(RenameGraphParameter(g, bound, wanted));
             }
         }
-        const auto again = std::ranges::find(g.nodes, id, &NodeUVE::id);
+        const auto again = std::ranges::find(g.nodes, id, &Node::id);
         again->name = to;
     });
     m_sideDirty = true;
 }
 
-bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std::vector<int>& ids) {
-    const GraphUVE* graph = GraphPtrUVE();
+bool EditorAnimGraphPanel::NodeAction(const std::string& action, const std::vector<int>& ids) {
+    const Graph* graph = GraphPtr();
     if (graph == nullptr) {
         return true;
     }
     std::vector<std::uint32_t> picked;
     for (const int id : ids) {
-        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &Node::id);
         if (node != graph->nodes.end() && node->kind != Kind::Output) {
             picked.push_back(node->id);
         }
@@ -1243,16 +1243,16 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
     if (action == "Copy" || action == "Cut") {
         m_clipboard.clear();
         for (const std::uint32_t id : picked) {
-            m_clipboard.push_back(*std::ranges::find(graph->nodes, id, &NodeUVE::id));
+            m_clipboard.push_back(*std::ranges::find(graph->nodes, id, &Node::id));
         }
         if (action == "Cut" && !picked.empty()) {
-            EditUVE([&picked](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, picked)); });
+            Edit([&picked](Graph& g) { static_cast<void>(DeleteAnimationGraphNodes(g.nodes, picked)); });
         }
         return true;
     }
     if (action == "Delete") {
         if (!picked.empty()) {
-            EditUVE([&picked](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, picked)); });
+            Edit([&picked](Graph& g) { static_cast<void>(DeleteAnimationGraphNodes(g.nodes, picked)); });
         }
         m_selected.clear();
         m_sideDirty = true;
@@ -1261,7 +1261,7 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
     if (action == "Duplicate") {
         std::vector<std::uint32_t> made;
         if (!picked.empty()) {
-            EditUVE([&](GraphUVE& g) { made = DuplicateAnimationGraphNodesUVE(g.nodes, picked, Math::Vector2UVE{40.0F, 40.0F}); });
+            Edit([&](Graph& g) { made = DuplicateAnimationGraphNodes(g.nodes, picked, Math::Vector2{40.0F, 40.0F}); });
         }
         m_selected = made;
         m_sideDirty = true;
@@ -1274,23 +1274,23 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
         const prism::Vec2 mouse = prism::Application::exists() ? prism::Application::get().mousePos() : prism::Vec2{};
         const prism::Vec2 at = m_graph ? m_graph->screenToWorld(mouse) : prism::Vec2{};
         std::vector<std::uint32_t> made;
-        const std::vector<NodeUVE> copies = m_clipboard;
-        EditUVE([&](GraphUVE& g) {
+        const std::vector<Node> copies = m_clipboard;
+        Edit([&](Graph& g) {
             std::uint32_t next = 1U;
-            for (const NodeUVE& node : g.nodes) {
+            for (const Node& node : g.nodes) {
                 next = std::max(next, node.id + 1U);
             }
             float left = 1e30F, top = 1e30F;
-            for (const NodeUVE& node : copies) {
+            for (const Node& node : copies) {
                 left = std::min(left, node.position.x);
                 top = std::min(top, node.position.y);
             }
             std::unordered_map<std::uint32_t, std::uint32_t> remap;
-            for (const NodeUVE& node : copies) {
+            for (const Node& node : copies) {
                 remap.emplace(node.id, next++);
             }
-            for (NodeUVE node : copies) {
-                if (g.nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
+            for (Node node : copies) {
+                if (g.nodes.size() >= Scene::kMaximumAnimationGraphNodes) {
                     break;
                 }
                 node.id = remap[node.id];
@@ -1298,7 +1298,7 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
                     const auto found = remap.find(input);
                     input = found != remap.end() ? found->second : 0U;
                 }
-                node.position = Math::Vector2UVE{at.x + node.position.x - left, at.y + node.position.y - top};
+                node.position = Math::Vector2{at.x + node.position.x - left, at.y + node.position.y - top};
                 node.owner = m_shownScope.machine;
                 node.ownerState = m_shownScope.state;
                 made.push_back(node.id);
@@ -1312,57 +1312,57 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
     return false;
 }
 
-void EditorAnimGraphPanelUVE::ShowGraphMenuUVE() {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+void EditorAnimGraphPanel::ShowGraphMenu() {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
     std::vector<prism::MenuItem> items;
-    for (const Scene::EntityUVE graph : m_view.graphs) {
-        items.push_back(prism::MenuItem::Check(NameOfUVE(em, graph, "AnimationGraph"), graph == m_view.tree,
-                                               [this, graph] { m_editor.SelectEntityUVE(graph); }));
+    for (const Scene::Entity graph : m_view.graphs) {
+        items.push_back(prism::MenuItem::Check(NameOf(em, graph, "AnimationGraph"), graph == m_view.tree,
+                                               [this, graph] { m_editor.SelectEntity(graph); }));
     }
     if (m_graphButton) {
         prism::showContextMenu(std::move(items), prism::Vec2{m_graphButton->rect().x, m_graphButton->rect().bottom()});
     }
 }
 
-void EditorAnimGraphPanelUVE::ShowMontageSequencerMenuUVE(const prism::Vec2 at) {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const GraphUVE* graph = GraphPtrUVE();
-    const Scene::EntityUVE bound = graph != nullptr ? graph->montageSequencer : Scene::kInvalidEntityUVE;
+void EditorAnimGraphPanel::ShowMontageSequencerMenu(const prism::Vec2 at) {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    const Graph* graph = GraphPtr();
+    const Scene::Entity bound = graph != nullptr ? graph->montageSequencer : Scene::kInvalidEntity;
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Check("None", bound == Scene::kInvalidEntityUVE, [this] {
+    items.push_back(prism::MenuItem::Check("None", bound == Scene::kInvalidEntity, [this] {
         m_montageSlots.clear();
-        EditUVE([](GraphUVE& g) { g.montageSequencer = Scene::kInvalidEntityUVE; });
+        Edit([](Graph& g) { g.montageSequencer = Scene::kInvalidEntity; });
     }));
     items.push_back(prism::MenuItem::Sep());
-    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (!em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(object)) {
+    for (const Scene::Entity object : m_editor.CollectEntityEditorObjects()) {
+        if (!em.HasComponent<Scene::MontageSequencerComponent>(object)) {
             continue;
         }
-        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "MontageSequencer"), bound == object, [this, object] {
+        items.push_back(prism::MenuItem::Check(NameOf(em, object, "MontageSequencer"), bound == object, [this, object] {
             m_montageSlots.clear();
-            EditUVE([object](GraphUVE& g) { g.montageSequencer = object; });
+            Edit([object](Graph& g) { g.montageSequencer = object; });
         }));
     }
     prism::showContextMenu(std::move(items), at);
 }
 
-void EditorAnimGraphPanelUVE::ShowSequencerMenuUVE(const prism::Vec2 at) {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const GraphUVE* graph = GraphPtrUVE();
-    const Scene::EntityUVE bound = graph != nullptr ? graph->sequencer : Scene::kInvalidEntityUVE;
+void EditorAnimGraphPanel::ShowSequencerMenu(const prism::Vec2 at) {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    const Graph* graph = GraphPtr();
+    const Scene::Entity bound = graph != nullptr ? graph->sequencer : Scene::kInvalidEntity;
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Check("Automatic", bound == Scene::kInvalidEntityUVE, [this] {
-        m_editor.m_animGraph.sequencer = Scene::kInvalidEntityUVE;
-        EditUVE([](GraphUVE& g) { g.sequencer = Scene::kInvalidEntityUVE; });
+    items.push_back(prism::MenuItem::Check("Automatic", bound == Scene::kInvalidEntity, [this] {
+        m_editor.m_animGraph.sequencer = Scene::kInvalidEntity;
+        Edit([](Graph& g) { g.sequencer = Scene::kInvalidEntity; });
     }));
     items.push_back(prism::MenuItem::Sep());
-    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (!em.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(object)) {
+    for (const Scene::Entity object : m_editor.CollectEntityEditorObjects()) {
+        if (!em.HasComponent<Scene::AnimationSequencerComponent>(object)) {
             continue;
         }
-        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "AnimationSequencer"), bound == object, [this, object] {
+        items.push_back(prism::MenuItem::Check(NameOf(em, object, "AnimationSequencer"), bound == object, [this, object] {
             m_editor.m_animGraph.sequencer = object;
-            EditUVE([object](GraphUVE& g) { g.sequencer = object; });
+            Edit([object](Graph& g) { g.sequencer = object; });
         }));
     }
     prism::showContextMenu(std::move(items), at);

@@ -13,9 +13,9 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-enum class Occluder3DObjectModeUVE : std::uint8_t {
+enum class Occluder3DObjectMode : std::uint8_t {
     ConservativeBox = 0,
 };
 
@@ -23,58 +23,58 @@ enum class Occluder3DObjectModeUVE : std::uint8_t {
 /// that hides whatever stands strictly BEHIND it from the current viewer. Conservative: a
 /// candidate is hidden only when every corner of its world AABB is hidden. A mesh that peeks
 /// around the wall still draws. No state is kept between frames.
-struct Occluder3DComponentUVE final {
-    Math::Vector3UVE halfExtents{2.0F, 2.0F, 2.0F};
-    Occluder3DObjectModeUVE mode = Occluder3DObjectModeUVE::ConservativeBox;
+struct Occluder3DComponent final {
+    Math::Vector3 halfExtents{2.0F, 2.0F, 2.0F};
+    Occluder3DObjectMode mode = Occluder3DObjectMode::ConservativeBox;
     bool enabled = true;
 };
 
-[[nodiscard]] bool IsOccluder3DObjectComponentValidUVE(const Occluder3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsOccluder3DObjectComponentValid(const Occluder3DComponent& value) noexcept;
 
-struct Occluder3DObjectDefinitionUVE final {
+struct Occluder3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Occluder3D";
-    Occluder3DComponentUVE occluder{};
+    Occluder3DComponent occluder{};
 };
 
-void ApplyOccluder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const Occluder3DObjectDefinitionUVE& value);
+void ApplyOccluder3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                        const Occluder3DObjectDefinition& value);
 
 // One occluder against one candidate point. Invalid config, a non-finite pose, the viewer or
 // the point inside the box, or a grazing touch: NOT hidden.
-[[nodiscard]] bool ResolveOccluder3DFullyHiddenUVE(const Occluder3DComponentUVE& config,
-                                                   const Math::Vector3UVE& occluderWorldPosition,
-                                                   const Math::Vector3UVE& viewerWorldPosition,
-                                                   const Math::Vector3UVE& pointWorld) noexcept;
+[[nodiscard]] bool ResolveOccluder3DFullyHidden(const Occluder3DComponent& config,
+                                                   const Math::Vector3& occluderWorldPosition,
+                                                   const Math::Vector3& viewerWorldPosition,
+                                                   const Math::Vector3& pointWorld) noexcept;
 
 // True only when every corner of `bounds` is hidden by this occluder. An unordered or
 // non-finite AABB fails open.
-[[nodiscard]] bool ResolveOccluder3DFullyHidesAabbUVE(const Occluder3DComponentUVE& config,
-                                                      const Math::Vector3UVE& occluderWorldPosition,
-                                                      const Math::Vector3UVE& viewerWorldPosition,
-                                                      const Math::AabbUVE& bounds) noexcept;
+[[nodiscard]] bool ResolveOccluder3DFullyHidesAabb(const Occluder3DComponent& config,
+                                                      const Math::Vector3& occluderWorldPosition,
+                                                      const Math::Vector3& viewerWorldPosition,
+                                                      const Math::Aabb& bounds) noexcept;
 
-struct Occluder3DSnapshotUVE final {
-    Occluder3DComponentUVE config{};
-    Math::Vector3UVE worldPosition{};
+struct Occluder3DSnapshot final {
+    Occluder3DComponent config{};
+    Math::Vector3 worldPosition{};
 };
 
-void CollectOccluder3DSnapshotsUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DSnapshotUVE>& out);
+void CollectOccluder3DSnapshots(IEntityManager& entityManager, std::vector<Occluder3DSnapshot>& out);
 
-[[nodiscard]] bool IsOccluder3DPointDrawHiddenUVE(std::span<const Occluder3DSnapshotUVE> occluders,
-                                                  const Math::Vector3UVE& viewerWorldPosition,
-                                                  const Math::Vector3UVE& pointWorld) noexcept;
+[[nodiscard]] bool IsOccluder3DPointDrawHidden(std::span<const Occluder3DSnapshot> occluders,
+                                                  const Math::Vector3& viewerWorldPosition,
+                                                  const Math::Vector3& pointWorld) noexcept;
 
-[[nodiscard]] bool IsOccluder3DAabbDrawHiddenUVE(std::span<const Occluder3DSnapshotUVE> occluders,
-                                                 const Math::Vector3UVE& viewerWorldPosition,
-                                                 const Math::AabbUVE& bounds) noexcept;
+[[nodiscard]] bool IsOccluder3DAabbDrawHidden(std::span<const Occluder3DSnapshot> occluders,
+                                                 const Math::Vector3& viewerWorldPosition,
+                                                 const Math::Aabb& bounds) noexcept;
 
-struct Occluder3DGizmoUVE final {
-    Math::Vector3UVE origin{};
-    Math::Vector3UVE halfExtents{2.0F, 2.0F, 2.0F};
-    Math::Vector3UVE color{0.95F, 0.45F, 0.28F};
+struct Occluder3DGizmo final {
+    Math::Vector3 origin{};
+    Math::Vector3 halfExtents{2.0F, 2.0F, 2.0F};
+    Math::Vector3 color{0.95F, 0.45F, 0.28F};
     bool enabled = true;
 };
 
-void CollectOccluder3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<Occluder3DGizmoUVE>& out);
+void CollectOccluder3DGizmos(IEntityManager& entityManager, std::vector<Occluder3DGizmo>& out);
 
 } // namespace UVE::Scene

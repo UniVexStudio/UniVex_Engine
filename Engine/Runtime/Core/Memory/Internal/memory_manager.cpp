@@ -8,12 +8,12 @@
 
 namespace UVE::Memory {
 
-MemoryManagerUVE::MemoryManagerUVE() : m_defaultAllocator(this, "MemoryManagerUVE::DefaultAllocator") {}
+MemoryManager::MemoryManager() : m_defaultAllocator(this, "MemoryManager::DefaultAllocator") {}
 
-void MemoryManagerUVE::RecordAllocationUVE(void* pointer, std::size_t sizeBytes,
+void MemoryManager::RecordAllocation(void* pointer, std::size_t sizeBytes,
                                             std::size_t alignment, std::string_view allocatorTag,
                                             const char* sourceFile, int sourceLine) {
-    AllocationRecordUVE record;
+    AllocationRecord record;
     record.pointer = pointer;
     record.sizeBytes = sizeBytes;
     record.alignment = alignment;
@@ -31,7 +31,7 @@ void MemoryManagerUVE::RecordAllocationUVE(void* pointer, std::size_t sizeBytes,
     }
 }
 
-void MemoryManagerUVE::RecordDeallocationUVE(void* pointer) {
+void MemoryManager::RecordDeallocation(void* pointer) {
     const std::lock_guard<std::mutex> lock(m_mutex);
     const auto activeIt = m_activeAllocations.find(pointer);
     UVE_ASSERT(activeIt != m_activeAllocations.end());
@@ -39,38 +39,38 @@ void MemoryManagerUVE::RecordDeallocationUVE(void* pointer) {
     m_activeAllocations.erase(activeIt);
 }
 
-IAllocatorUVE& MemoryManagerUVE::GetDefaultAllocatorUVE() {
+IAllocator& MemoryManager::GetDefaultAllocator() {
     return m_defaultAllocator;
 }
 
-std::size_t MemoryManagerUVE::GetActiveAllocationCountUVE() const {
+std::size_t MemoryManager::GetActiveAllocationCount() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
     return m_activeAllocations.size();
 }
 
-std::size_t MemoryManagerUVE::GetActiveBytesUVE() const {
+std::size_t MemoryManager::GetActiveBytes() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
     return m_activeBytes;
 }
 
-std::size_t MemoryManagerUVE::GetPeakBytesUVE() const {
+std::size_t MemoryManager::GetPeakBytes() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
     return m_peakBytes;
 }
 
-std::uint64_t MemoryManagerUVE::GetTotalAllocationsEverUVE() const {
+std::uint64_t MemoryManager::GetTotalAllocationsEver() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
     return m_totalAllocationsEver;
 }
 
-bool MemoryManagerUVE::HasLeaksUVE() const {
+bool MemoryManager::HasLeaks() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
     return !m_activeAllocations.empty();
 }
 
-std::vector<AllocationRecordUVE> MemoryManagerUVE::GetLeakedAllocationsUVE() const {
+std::vector<AllocationRecord> MemoryManager::GetLeakedAllocations() const {
     const std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<AllocationRecordUVE> leaks;
+    std::vector<AllocationRecord> leaks;
     leaks.reserve(m_activeAllocations.size());
     for (const auto& activeEntry : m_activeAllocations) {
         leaks.push_back(activeEntry.second);
@@ -78,16 +78,16 @@ std::vector<AllocationRecordUVE> MemoryManagerUVE::GetLeakedAllocationsUVE() con
     return leaks;
 }
 
-void MemoryManagerUVE::LogLeakReportUVE() {
-    const std::vector<AllocationRecordUVE> leaks = GetLeakedAllocationsUVE();
-    for (const AllocationRecordUVE& leak : leaks) {
+void MemoryManager::LogLeakReport() {
+    const std::vector<AllocationRecord> leaks = GetLeakedAllocations();
+    for (const AllocationRecord& leak : leaks) {
         UVE_ERROR("Memory leak: allocation #{} ({} bytes, allocator=\"{}\", source={}:{})",
                   leak.allocationId, leak.sizeBytes, leak.allocatorTag,
                   leak.sourceFile != nullptr ? leak.sourceFile : "<unknown>", leak.sourceLine);
     }
     if (!leaks.empty()) {
         UVE_ERROR("Memory leak summary: {} leaked allocation(s), {} byte(s) total", leaks.size(),
-                  GetActiveBytesUVE());
+                  GetActiveBytes());
     }
 }
 

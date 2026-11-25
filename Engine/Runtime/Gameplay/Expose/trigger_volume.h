@@ -19,11 +19,11 @@ namespace UVE::Scene {
 // the edges MEAN: a one-shot that fires its cutscene the first time anything walks in and then
 // spends itself, a pickup that fires on every enter, a damage volume that fires on entry and
 // keeps ticking on a cadence while anything stays inside. The component sits on the area entity
-// and UpdateTriggerVolumesUVE() matches it against `pair.area` every frame.
+// and UpdateTriggerVolumes() matches it against `pair.area` every frame.
 //
 // Each fire carries the trigger, the interactor that caused it (the entering body for edge
 // fires, the first overlapping body in snapshot order for cadence ticks) and a monotonic fire
-// count; the engine bridge turns those into TriggerFiredEventUVE. The cooldown is global to the
+// count; the engine bridge turns those into TriggerFiredEvent. The cooldown is global to the
 // trigger, not per interactor - staggering per-body cooldowns is a follow-up, not v1.
 //
 // One-shots stay spent across save/load: armed, the fire count and both clocks are all
@@ -31,7 +31,7 @@ namespace UVE::Scene {
 // non-finite step freezes the clocks but still processes enter edges - transitions are
 // ephemeral and the tracker never repeats them, so dropping them would lose fires.
 
-enum class TriggerFirePolicyUVE : std::uint8_t {
+enum class TriggerFirePolicy : std::uint8_t {
     /// Fires on the first ready enter edge, then disarms until re-armed.
     OneShot = 0U,
     /// Fires on every ready enter edge while armed.
@@ -41,8 +41,8 @@ enum class TriggerFirePolicyUVE : std::uint8_t {
     WhileOccupied = 2U,
 };
 
-struct TriggerVolumeComponentUVE final {
-    TriggerFirePolicyUVE policy = TriggerFirePolicyUVE::OneShot;
+struct TriggerVolumeComponent final {
+    TriggerFirePolicy policy = TriggerFirePolicy::OneShot;
     float intervalSeconds = 1.0F;
     float cooldownSeconds = 0.0F;
     bool armed = true;
@@ -50,36 +50,36 @@ struct TriggerVolumeComponentUVE final {
     float cooldownRemaining = 0.0F;
     float intervalRemaining = 0.0F;
 
-    [[nodiscard]] bool operator==(const TriggerVolumeComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const TriggerVolumeComponent&) const = default;
 };
 
 /// A known policy, a positive finite interval, and finite non-negative cooldown and clocks.
-[[nodiscard]] bool IsTriggerVolumeComponentValidUVE(const TriggerVolumeComponentUVE& value) noexcept;
+[[nodiscard]] bool IsTriggerVolumeComponentValid(const TriggerVolumeComponent& value) noexcept;
 
-struct TriggerFiredResultUVE final {
-    EntityUVE trigger = kInvalidEntityUVE;
-    EntityUVE interactor = kInvalidEntityUVE;
+struct TriggerFiredResult final {
+    Entity trigger = kInvalidEntity;
+    Entity interactor = kInvalidEntity;
     std::uint32_t firedCount = 0U;
 
-    [[nodiscard]] bool operator==(const TriggerFiredResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const TriggerFiredResult&) const = default;
 };
 
-/// Evaluates every TriggerVolumeComponentUVE against this frame's overlap snapshot and enter/exit
+/// Evaluates every TriggerVolumeComponent against this frame's overlap snapshot and enter/exit
 /// transitions, aging cooldown and interval clocks by `deltaSeconds` and returning one entry per
 /// fire: triggers in (index, generation) order, each trigger's edge fires before its cadence
 /// tick. Invalid and disarmed volumes are skipped wholesale; an empty occupancy resets the
 /// interval clock so the next visit starts fresh. Never invalidates a valid volume.
-[[nodiscard]] std::vector<TriggerFiredResultUVE> UpdateTriggerVolumesUVE(
-    IEntityManagerUVE& entityManager, const Physics::AreaOverlapQueryResultUVE& snapshot,
-    std::span<const Physics::AreaOverlapTransitionUVE> transitions, float deltaSeconds);
+[[nodiscard]] std::vector<TriggerFiredResult> UpdateTriggerVolumes(
+    IEntityManager& entityManager, const Physics::AreaOverlapQueryResult& snapshot,
+    std::span<const Physics::AreaOverlapTransition> transitions, float deltaSeconds);
 
 /// Re-arms `trigger` (latch back on, both clocks zeroed, fire count untouched) so a spent
 /// one-shot can fire again. False when the entity carries no trigger volume. Re-arming is the
 /// recovery path, so it works on invalid volumes too - firing still waits until they're fixed.
-[[nodiscard]] bool RearmTriggerVolumeUVE(IEntityManagerUVE& entityManager, EntityUVE trigger);
+[[nodiscard]] bool RearmTriggerVolume(IEntityManager& entityManager, Entity trigger);
 
 /// Drops the latch on `trigger` so it stops firing until re-armed. False when the entity
 /// carries no trigger volume.
-[[nodiscard]] bool DisarmTriggerVolumeUVE(IEntityManagerUVE& entityManager, EntityUVE trigger);
+[[nodiscard]] bool DisarmTriggerVolume(IEntityManager& entityManager, Entity trigger);
 
 } // namespace UVE::Scene

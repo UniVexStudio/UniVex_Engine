@@ -6,45 +6,45 @@
 #include "editor.h"
 
 namespace UVE::Core {
-class EngineCoreUVE;
-class EngineServicesUVE;
+class EngineCore;
+class EngineServices;
 }
 
 namespace UVE::App::Viewports {
 
 /// Lifecycle owner for all seven physically isolated editor 3D viewports:
-///   1. `LevelViewportUVE`         (`level_viewport`)
-///   2. `CameraPreviewViewportUVE` (`camera_preview_viewport`)
-///   3. `EntityViewportUVE`        (`entity_viewport`)
-///   4. `WidgetPreviewViewportUVE` (`widget_preview_viewport`)
-///   5. `RetargetViewportUVE`      (`retarget_viewport`)
-///   6. `MontageViewportUVE`       (`montage_viewport`)
-///   7. `VfxViewportUVE`           (`vfx_viewport`)
+///   1. `LevelViewport`         (`level_viewport`)
+///   2. `CameraPreviewViewport` (`camera_preview_viewport`)
+///   3. `EntityViewport`        (`entity_viewport`)
+///   4. `WidgetPreviewViewport` (`widget_preview_viewport`)
+///   5. `RetargetViewport`      (`retarget_viewport`)
+///   6. `MontageViewport`       (`montage_viewport`)
+///   7. `VfxViewport`           (`vfx_viewport`)
 ///
 /// Keeps OpenGL and Viewport module types isolated behind a pimpl while binding each window's
-/// dedicated viewport directly to `EditorUVE::EditorViewportsUVE`.
-class EditorViewportHostUVE final {
+/// dedicated viewport directly to `Editor::EditorViewports`.
+class EditorViewportHost final {
 public:
-    EditorViewportHostUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine);
-    ~EditorViewportHostUVE();
+    EditorViewportHost(Editor::Editor& editor, Core::EngineCore& engine);
+    ~EditorViewportHost();
 
-    EditorViewportHostUVE(const EditorViewportHostUVE&) = delete;
-    EditorViewportHostUVE& operator=(const EditorViewportHostUVE&) = delete;
-    EditorViewportHostUVE(EditorViewportHostUVE&&) = delete;
-    EditorViewportHostUVE& operator=(EditorViewportHostUVE&&) = delete;
+    EditorViewportHost(const EditorViewportHost&) = delete;
+    EditorViewportHost& operator=(const EditorViewportHost&) = delete;
+    EditorViewportHost(EditorViewportHost&&) = delete;
+    EditorViewportHost& operator=(EditorViewportHost&&) = delete;
 
     /// Registers all seven dedicated per-window viewport callbacks on `editor`.
-    void BindToEditorUVE(Editor::EditorUVE& editor);
+    void BindToEditor(Editor::Editor& editor);
 
     /// Detaches all viewport callbacks from `editor`.
-    void UnbindFromEditorUVE(Editor::EditorUVE& editor);
+    void UnbindFromEditor(Editor::Editor& editor);
 
     /// Releases every viewport currently bound to `services` before that document scene closes.
-    void ForgetServicesUVE(const Core::EngineServicesUVE& services);
+    void ForgetServices(const Core::EngineServices& services);
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::App::Viewports

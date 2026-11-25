@@ -18,132 +18,132 @@
 namespace UVE::Core {
 namespace {
 
-using Input::InputActionTypeUVE;
-using Input::InputActionUVE;
-using Input::InputBindingSourceUVE;
-using Input::InputBindingUVE;
+using Input::InputActionType;
+using Input::InputAction;
+using Input::InputBindingSource;
+using Input::InputBinding;
 
-constexpr std::int64_t kInputMapVersionUVE = 1;
+constexpr std::int64_t kInputMapVersion = 1;
 /// The input system's own per-side limit.
-constexpr std::size_t kMaximumBindingsPerSideUVE = 32U;
+constexpr std::size_t kMaximumBindingsPerSide = 32U;
 
-[[nodiscard]] std::string_view ActionTypeNameUVE(const InputActionTypeUVE type) noexcept {
-    return type == InputActionTypeUVE::Axis1D ? "Axis" : "Button";
+[[nodiscard]] std::string_view ActionTypeName(const InputActionType type) noexcept {
+    return type == InputActionType::Axis1D ? "Axis" : "Button";
 }
 
-[[nodiscard]] bool IsBindingUsableUVE(const InputBindingUVE& binding) noexcept {
+[[nodiscard]] bool IsBindingUsable(const InputBinding& binding) noexcept {
     switch (binding.source) {
-    case InputBindingSourceUVE::Keyboard:
-        return !Input::GetKeyNameUVE(binding.key).empty();
-    case InputBindingSourceUVE::Mouse:
-        return !Input::GetMouseButtonNameUVE(binding.mouseButton).empty();
-    case InputBindingSourceUVE::GamepadButton:
-        return binding.gamepadIndex < Input::kMaximumGamepadCountUVE &&
-               !Input::GetGamepadButtonNameUVE(binding.gamepadButton).empty();
-    case InputBindingSourceUVE::GamepadAxis:
-        return binding.gamepadIndex < Input::kMaximumGamepadCountUVE &&
-               !Input::GetGamepadAxisNameUVE(binding.gamepadAxis).empty() && std::isfinite(binding.scale) &&
+    case InputBindingSource::Keyboard:
+        return !Input::GetKeyName(binding.key).empty();
+    case InputBindingSource::Mouse:
+        return !Input::GetMouseButtonName(binding.mouseButton).empty();
+    case InputBindingSource::GamepadButton:
+        return binding.gamepadIndex < Input::kMaximumGamepadCount &&
+               !Input::GetGamepadButtonName(binding.gamepadButton).empty();
+    case InputBindingSource::GamepadAxis:
+        return binding.gamepadIndex < Input::kMaximumGamepadCount &&
+               !Input::GetGamepadAxisName(binding.gamepadAxis).empty() && std::isfinite(binding.scale) &&
                binding.scale != 0.0F;
     }
     return false;
 }
 
-[[nodiscard]] std::vector<InputBindingUVE> SanitizeBindingsUVE(std::vector<InputBindingUVE> bindings) {
-    std::erase_if(bindings, [](const InputBindingUVE& binding) { return !IsBindingUsableUVE(binding); });
-    if (bindings.size() > kMaximumBindingsPerSideUVE) {
-        bindings.resize(kMaximumBindingsPerSideUVE);
+[[nodiscard]] std::vector<InputBinding> SanitizeBindings(std::vector<InputBinding> bindings) {
+    std::erase_if(bindings, [](const InputBinding& binding) { return !IsBindingUsable(binding); });
+    if (bindings.size() > kMaximumBindingsPerSide) {
+        bindings.resize(kMaximumBindingsPerSide);
     }
     return bindings;
 }
 
-void WriteBindingsUVE(Config::IConfigManagerUVE& store, const std::string& prefix,
-                      const std::vector<InputBindingUVE>& bindings) {
-    store.SetIntUVE(prefix + ".count", static_cast<std::int64_t>(bindings.size()));
+void WriteBindings(Config::IConfigManager& store, const std::string& prefix,
+                      const std::vector<InputBinding>& bindings) {
+    store.SetInt(prefix + ".count", static_cast<std::int64_t>(bindings.size()));
     for (std::size_t index = 0U; index < bindings.size(); ++index) {
-        const InputBindingUVE& binding = bindings[index];
+        const InputBinding& binding = bindings[index];
         const std::string key = prefix + "." + std::to_string(index) + ".";
-        store.SetStringUVE(key + "device", std::string(Input::GetInputBindingSourceNameUVE(binding.source)));
+        store.SetString(key + "device", std::string(Input::GetInputBindingSourceName(binding.source)));
         switch (binding.source) {
-        case InputBindingSourceUVE::Keyboard:
-            store.SetStringUVE(key + "key", std::string(Input::GetKeyNameUVE(binding.key)));
+        case InputBindingSource::Keyboard:
+            store.SetString(key + "key", std::string(Input::GetKeyName(binding.key)));
             break;
-        case InputBindingSourceUVE::Mouse:
-            store.SetStringUVE(key + "button", std::string(Input::GetMouseButtonNameUVE(binding.mouseButton)));
+        case InputBindingSource::Mouse:
+            store.SetString(key + "button", std::string(Input::GetMouseButtonName(binding.mouseButton)));
             break;
-        case InputBindingSourceUVE::GamepadButton:
-            store.SetIntUVE(key + "pad", static_cast<std::int64_t>(binding.gamepadIndex) + 1);
-            store.SetStringUVE(key + "button", std::string(Input::GetGamepadButtonNameUVE(binding.gamepadButton)));
+        case InputBindingSource::GamepadButton:
+            store.SetInt(key + "pad", static_cast<std::int64_t>(binding.gamepadIndex) + 1);
+            store.SetString(key + "button", std::string(Input::GetGamepadButtonName(binding.gamepadButton)));
             break;
-        case InputBindingSourceUVE::GamepadAxis:
-            store.SetIntUVE(key + "pad", static_cast<std::int64_t>(binding.gamepadIndex) + 1);
-            store.SetStringUVE(key + "axis", std::string(Input::GetGamepadAxisNameUVE(binding.gamepadAxis)));
-            store.SetDoubleUVE(key + "scale", static_cast<double>(binding.scale));
+        case InputBindingSource::GamepadAxis:
+            store.SetInt(key + "pad", static_cast<std::int64_t>(binding.gamepadIndex) + 1);
+            store.SetString(key + "axis", std::string(Input::GetGamepadAxisName(binding.gamepadAxis)));
+            store.SetDouble(key + "scale", static_cast<double>(binding.scale));
             break;
         }
     }
 }
 
-[[nodiscard]] std::optional<InputBindingUVE> ReadBindingUVE(const Config::IConfigManagerUVE& store,
+[[nodiscard]] std::optional<InputBinding> ReadBinding(const Config::IConfigManager& store,
                                                             const std::string& key) {
-    const std::optional<InputBindingSourceUVE> source =
-        Input::ParseInputBindingSourceNameUVE(store.GetStringUVE(key + "device", ""));
+    const std::optional<InputBindingSource> source =
+        Input::ParseInputBindingSourceName(store.GetString(key + "device", ""));
     if (!source) {
         return std::nullopt;
     }
-    InputBindingUVE binding;
+    InputBinding binding;
     binding.source = *source;
     // Pads are counted from one in the file, as a person counts them.
-    const std::int64_t pad = store.GetIntUVE(key + "pad", 1) - 1;
-    binding.gamepadIndex = pad >= 0 ? static_cast<std::size_t>(pad) : Input::kMaximumGamepadCountUVE;
+    const std::int64_t pad = store.GetInt(key + "pad", 1) - 1;
+    binding.gamepadIndex = pad >= 0 ? static_cast<std::size_t>(pad) : Input::kMaximumGamepadCount;
     switch (*source) {
-    case InputBindingSourceUVE::Keyboard: {
-        const auto parsed = Input::ParseKeyNameUVE(store.GetStringUVE(key + "key", ""));
+    case InputBindingSource::Keyboard: {
+        const auto parsed = Input::ParseKeyName(store.GetString(key + "key", ""));
         if (!parsed) {
             return std::nullopt;
         }
         binding.key = *parsed;
         break;
     }
-    case InputBindingSourceUVE::Mouse: {
-        const auto parsed = Input::ParseMouseButtonNameUVE(store.GetStringUVE(key + "button", ""));
+    case InputBindingSource::Mouse: {
+        const auto parsed = Input::ParseMouseButtonName(store.GetString(key + "button", ""));
         if (!parsed) {
             return std::nullopt;
         }
         binding.mouseButton = *parsed;
         break;
     }
-    case InputBindingSourceUVE::GamepadButton: {
-        const auto parsed = Input::ParseGamepadButtonNameUVE(store.GetStringUVE(key + "button", ""));
+    case InputBindingSource::GamepadButton: {
+        const auto parsed = Input::ParseGamepadButtonName(store.GetString(key + "button", ""));
         if (!parsed) {
             return std::nullopt;
         }
         binding.gamepadButton = *parsed;
         break;
     }
-    case InputBindingSourceUVE::GamepadAxis: {
-        const auto parsed = Input::ParseGamepadAxisNameUVE(store.GetStringUVE(key + "axis", ""));
+    case InputBindingSource::GamepadAxis: {
+        const auto parsed = Input::ParseGamepadAxisName(store.GetString(key + "axis", ""));
         if (!parsed) {
             return std::nullopt;
         }
         binding.gamepadAxis = *parsed;
-        const double scale = store.GetDoubleUVE(key + "scale", 1.0);
+        const double scale = store.GetDouble(key + "scale", 1.0);
         // A scale beyond float range would not survive the narrowing; it is not a real scale.
         binding.scale = std::abs(scale) <= 1.0e6 ? static_cast<float>(scale) : 0.0F;
         break;
     }
     }
-    return IsBindingUsableUVE(binding) ? std::optional<InputBindingUVE>(binding) : std::nullopt;
+    return IsBindingUsable(binding) ? std::optional<InputBinding>(binding) : std::nullopt;
 }
 
-[[nodiscard]] std::vector<InputBindingUVE> ReadBindingsUVE(const Config::IConfigManagerUVE& store,
+[[nodiscard]] std::vector<InputBinding> ReadBindings(const Config::IConfigManager& store,
                                                            const std::string& prefix) {
     const auto count = static_cast<std::size_t>(
-        std::clamp<std::int64_t>(store.GetIntUVE(prefix + ".count", 0), 0,
-                                 static_cast<std::int64_t>(kMaximumBindingsPerSideUVE)));
-    std::vector<InputBindingUVE> bindings;
+        std::clamp<std::int64_t>(store.GetInt(prefix + ".count", 0), 0,
+                                 static_cast<std::int64_t>(kMaximumBindingsPerSide)));
+    std::vector<InputBinding> bindings;
     for (std::size_t index = 0U; index < count; ++index) {
-        if (const std::optional<InputBindingUVE> binding =
-                ReadBindingUVE(store, prefix + "." + std::to_string(index) + ".")) {
+        if (const std::optional<InputBinding> binding =
+                ReadBinding(store, prefix + "." + std::to_string(index) + ".")) {
             bindings.push_back(*binding);
         }
     }
@@ -152,26 +152,26 @@ void WriteBindingsUVE(Config::IConfigManagerUVE& store, const std::string& prefi
 
 } // namespace
 
-std::vector<InputActionUVE> InputMapDocumentUVE::SanitizeUVE(std::vector<InputActionUVE> actions) {
-    std::vector<InputActionUVE> kept;
+std::vector<InputAction> InputMapDocument::Sanitize(std::vector<InputAction> actions) {
+    std::vector<InputAction> kept;
     std::unordered_set<std::string> names;
-    for (InputActionUVE& action : actions) {
-        if (kept.size() >= Input::kMaximumInputActionsUVE || action.name.empty() ||
-            action.name.size() > Input::kMaximumInputActionNameBytesUVE ||
+    for (InputAction& action : actions) {
+        if (kept.size() >= Input::kMaximumInputActions || action.name.empty() ||
+            action.name.size() > Input::kMaximumInputActionNameBytes ||
             action.name.contains('\0') || !names.insert(action.name).second) {
             continue;
         }
-        action.positiveBindings = SanitizeBindingsUVE(std::move(action.positiveBindings));
+        action.positiveBindings = SanitizeBindings(std::move(action.positiveBindings));
         // Only an axis has a negative direction.
-        action.negativeBindings = action.type == InputActionTypeUVE::Axis1D
-                                      ? SanitizeBindingsUVE(std::move(action.negativeBindings))
-                                      : std::vector<InputBindingUVE>{};
+        action.negativeBindings = action.type == InputActionType::Axis1D
+                                      ? SanitizeBindings(std::move(action.negativeBindings))
+                                      : std::vector<InputBinding>{};
         kept.push_back(std::move(action));
     }
     return kept;
 }
 
-bool InputMapDocumentUVE::LoadUVE(const std::filesystem::path& path) {
+bool InputMapDocument::Load(const std::filesystem::path& path) {
     m_path = path;
     m_dirty = false;
     std::error_code error;
@@ -179,71 +179,71 @@ bool InputMapDocumentUVE::LoadUVE(const std::filesystem::path& path) {
         m_actions.clear();
         return true;
     }
-    Config::ConfigManagerUVE store;
-    if (!store.LoadUVE(path)) {
+    Config::ConfigManager store;
+    if (!store.Load(path)) {
         return false;
     }
     const auto count = static_cast<std::size_t>(std::clamp<std::int64_t>(
-        store.GetIntUVE("actions.count", 0), 0, static_cast<std::int64_t>(Input::kMaximumInputActionsUVE)));
-    std::vector<InputActionUVE> actions;
+        store.GetInt("actions.count", 0), 0, static_cast<std::int64_t>(Input::kMaximumInputActions)));
+    std::vector<InputAction> actions;
     for (std::size_t index = 0U; index < count; ++index) {
         const std::string prefix = "actions." + std::to_string(index);
-        InputActionUVE action;
-        action.name = store.GetStringUVE(prefix + ".name", "");
-        const std::string type = store.GetStringUVE(prefix + ".type", "Button");
+        InputAction action;
+        action.name = store.GetString(prefix + ".name", "");
+        const std::string type = store.GetString(prefix + ".type", "Button");
         if (type != "Button" && type != "Axis") {
             continue;
         }
-        action.type = type == "Axis" ? InputActionTypeUVE::Axis1D : InputActionTypeUVE::Button;
-        action.positiveBindings = ReadBindingsUVE(store, prefix + ".positive");
-        action.negativeBindings = ReadBindingsUVE(store, prefix + ".negative");
+        action.type = type == "Axis" ? InputActionType::Axis1D : InputActionType::Button;
+        action.positiveBindings = ReadBindings(store, prefix + ".positive");
+        action.negativeBindings = ReadBindings(store, prefix + ".negative");
         actions.push_back(std::move(action));
     }
-    m_actions = SanitizeUVE(std::move(actions));
+    m_actions = Sanitize(std::move(actions));
     return true;
 }
 
-bool InputMapDocumentUVE::SaveUVE() {
+bool InputMapDocument::Save() {
     if (m_path.empty()) {
         return false;
     }
     // Written into a fresh document, so an action removed since the last save leaves no trace.
-    Config::ConfigManagerUVE store;
-    store.SetIntUVE("version", kInputMapVersionUVE);
-    store.SetIntUVE("actions.count", static_cast<std::int64_t>(m_actions.size()));
+    Config::ConfigManager store;
+    store.SetInt("version", kInputMapVersion);
+    store.SetInt("actions.count", static_cast<std::int64_t>(m_actions.size()));
     for (std::size_t index = 0U; index < m_actions.size(); ++index) {
-        const InputActionUVE& action = m_actions[index];
+        const InputAction& action = m_actions[index];
         const std::string prefix = "actions." + std::to_string(index);
-        store.SetStringUVE(prefix + ".name", action.name);
-        store.SetStringUVE(prefix + ".type", std::string(ActionTypeNameUVE(action.type)));
-        WriteBindingsUVE(store, prefix + ".positive", action.positiveBindings);
-        if (action.type == InputActionTypeUVE::Axis1D) {
-            WriteBindingsUVE(store, prefix + ".negative", action.negativeBindings);
+        store.SetString(prefix + ".name", action.name);
+        store.SetString(prefix + ".type", std::string(ActionTypeName(action.type)));
+        WriteBindings(store, prefix + ".positive", action.positiveBindings);
+        if (action.type == InputActionType::Axis1D) {
+            WriteBindings(store, prefix + ".negative", action.negativeBindings);
         }
     }
-    if (!store.SaveUVE(m_path)) {
+    if (!store.Save(m_path)) {
         return false;
     }
     m_dirty = false;
     return true;
 }
 
-void InputMapDocumentUVE::SetActionsUVE(std::vector<InputActionUVE> actions) {
-    m_actions = SanitizeUVE(std::move(actions));
+void InputMapDocument::SetActions(std::vector<InputAction> actions) {
+    m_actions = Sanitize(std::move(actions));
     m_dirty = true;
 }
 
-void InputMapDocumentUVE::ApplyUVE(Input::IInputSystemUVE& inputSystem) {
+void InputMapDocument::Apply(Input::IInputSystem& inputSystem) {
     std::vector<std::string> applied;
     applied.reserve(m_actions.size());
-    for (const InputActionUVE& action : m_actions) {
-        InputActionUVE copy = action;
-        inputSystem.RegisterActionUVE(std::move(copy));
+    for (const InputAction& action : m_actions) {
+        InputAction copy = action;
+        inputSystem.RegisterAction(std::move(copy));
         applied.push_back(action.name);
     }
     for (const std::string& name : m_appliedNames) {
         if (std::find(applied.begin(), applied.end(), name) == applied.end()) {
-            static_cast<void>(inputSystem.UnregisterActionUVE(name));
+            static_cast<void>(inputSystem.UnregisterAction(name));
         }
     }
     m_appliedNames = std::move(applied);

@@ -10,80 +10,80 @@
 
 namespace UVE::Config {
 
-/// IConfigManagerUVE is the engine's JSON-backed key-value settings store
+/// IConfigManager is the engine's JSON-backed key-value settings store
 /// interface (the `.uvsettings` file — engine/editor settings such as
 /// keybinds, theme, layout, and platform preferences). Keys are addressed
 /// by dot-separated path (e.g. "editor.theme") into a nested JSON
 /// document; the JSON library itself never appears in this interface or
-/// any implementation's public header (see ConfigManagerUVE). Only scalar
+/// any implementation's public header (see ConfigManager). Only scalar
 /// value types are supported — string, 64-bit integer, double, and bool.
-/// A root-level `version` integer is reserved for document schema metadata. SettingsDocumentUVE
+/// A root-level `version` integer is reserved for document schema metadata. SettingsDocument
 /// writes it and runs registered migrations; this raw key-value interface does not interpret it.
 /// Thread-safety: implementations must be safe to call from any thread
 /// concurrently, guarded by an internal mutex.
-class IConfigManagerUVE {
+class IConfigManager {
 public:
-    virtual ~IConfigManagerUVE() = default;
+    virtual ~IConfigManager() = default;
 
     /// Loads and parses the JSON document at `path`, replacing the
     /// in-memory document on success and remembering `path` as the default
-    /// target for SaveUVE(). If `path` does not exist, logs a Warning and
+    /// target for Save(). If `path` does not exist, logs a Warning and
     /// leaves the in-memory document as an empty object (not fatal — a
     /// first-run engine has no settings file yet). If the file exists but
     /// cannot be opened or fails to parse as JSON, logs an Error and leaves
     /// the previous in-memory document untouched.
     /// Returns true only on a fully successful load.
-    virtual bool LoadUVE(const std::filesystem::path& path) = 0;
+    virtual bool Load(const std::filesystem::path& path) = 0;
 
     /// Pretty-prints the in-memory document to the path most recently
-    /// passed to LoadUVE() or SaveUVE(). Returns false (and logs an Error
+    /// passed to Load() or Save(). Returns false (and logs an Error
     /// containing the target path and failure reason) if no path is known
     /// yet, or if the file cannot be opened for writing — this does not
     /// automatically create missing parent directories. Never fatal.
-    virtual bool SaveUVE() = 0;
+    virtual bool Save() = 0;
 
     /// Pretty-prints the in-memory document to `path`, remembering it as
-    /// the new default target for future no-argument SaveUVE() calls.
-    /// Same failure behavior as SaveUVE() above.
-    virtual bool SaveUVE(const std::filesystem::path& path) = 0;
+    /// the new default target for future no-argument Save() calls.
+    /// Same failure behavior as Save() above.
+    virtual bool Save(const std::filesystem::path& path) = 0;
 
     /// Returns the string value at dot-path `keyPath`, or `defaultValue`
     /// if the path does not exist or does not resolve to a string.
-    [[nodiscard]] virtual std::string GetStringUVE(std::string_view keyPath,
+    [[nodiscard]] virtual std::string GetString(std::string_view keyPath,
                                                      std::string_view defaultValue) const = 0;
     /// Returns the 64-bit integer value at dot-path `keyPath`, or
     /// `defaultValue` if the path does not exist or is not an integer.
-    [[nodiscard]] virtual std::int64_t GetIntUVE(std::string_view keyPath,
+    [[nodiscard]] virtual std::int64_t GetInt(std::string_view keyPath,
                                                   std::int64_t defaultValue) const = 0;
     /// Returns the double value at dot-path `keyPath`, or `defaultValue`
     /// if the path does not exist or is not a number.
-    [[nodiscard]] virtual double GetDoubleUVE(std::string_view keyPath, double defaultValue) const = 0;
+    [[nodiscard]] virtual double GetDouble(std::string_view keyPath, double defaultValue) const = 0;
     /// Returns the bool value at dot-path `keyPath`, or `defaultValue` if
     /// the path does not exist or is not a bool.
-    [[nodiscard]] virtual bool GetBoolUVE(std::string_view keyPath, bool defaultValue) const = 0;
+    [[nodiscard]] virtual bool GetBool(std::string_view keyPath, bool defaultValue) const = 0;
 
     /// Sets the string value at dot-path `keyPath`, creating any missing
     /// intermediate objects along the path.
-    virtual void SetStringUVE(std::string_view keyPath, std::string value) = 0;
+    virtual void SetString(std::string_view keyPath, std::string value) = 0;
     /// Sets the 64-bit integer value at dot-path `keyPath`, creating any
     /// missing intermediate objects along the path.
-    virtual void SetIntUVE(std::string_view keyPath, std::int64_t value) = 0;
+    virtual void SetInt(std::string_view keyPath, std::int64_t value) = 0;
     /// Sets the double value at dot-path `keyPath`, creating any missing
     /// intermediate objects along the path.
-    virtual void SetDoubleUVE(std::string_view keyPath, double value) = 0;
+    virtual void SetDouble(std::string_view keyPath, double value) = 0;
     /// Sets the bool value at dot-path `keyPath`, creating any missing
     /// intermediate objects along the path.
-    virtual void SetBoolUVE(std::string_view keyPath, bool value) = 0;
+    virtual void SetBool(std::string_view keyPath, bool value) = 0;
 
     /// True iff `keyPath` exists and resolves to a leaf value (not merely
     /// an intermediate object).
-    [[nodiscard]] virtual bool HasKeyUVE(std::string_view keyPath) const = 0;
+    [[nodiscard]] virtual bool HasKey(std::string_view keyPath) const = 0;
 
     /// Removes the leaf value at dot-path `keyPath`, then any object along
     /// the path that the removal left empty, so the document holds no
     /// husks. Returns true iff a leaf value was removed; an intermediate
     /// object is never removed by naming it.
-    virtual bool RemoveKeyUVE(std::string_view keyPath) = 0;
+    virtual bool RemoveKey(std::string_view keyPath) = 0;
 };
 
 } // namespace UVE::Config

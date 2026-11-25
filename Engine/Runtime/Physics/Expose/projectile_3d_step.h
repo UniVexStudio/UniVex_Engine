@@ -13,7 +13,7 @@
 namespace UVE::Physics {
 
 /// Why one fixed-step evaluation of a Projectile3D did what it did, or why it did nothing.
-enum class Projectile3DStepCodeUVE : std::uint8_t {
+enum class Projectile3DStepCode : std::uint8_t {
     /// Flew the whole step; nothing was in the way.
     Stepped = 0,
     /// A contact reflected the motion (policy Bounce); still flying.
@@ -28,10 +28,10 @@ enum class Projectile3DStepCodeUVE : std::uint8_t {
     InvalidDeltaTime,
     /// No such entity.
     UnknownEntity,
-    /// The entity is not a projectile: no Projectile3DComponentUVE.
+    /// The entity is not a projectile: no Projectile3DComponent.
     NotAProjectile,
-    /// No TransformComponentUVE (where the motion is written) or no
-    /// WorldTransformComponentUVE (the space the sweep runs in).
+    /// No TransformComponent (where the motion is written) or no
+    /// WorldTransformComponent (the space the sweep runs in).
     MissingTransform,
     /// The component is past its own contract (an unknown policy, a coefficient outside 0..1, a
     /// non-finite field, a claimed hit that names nothing). Refused rather than clamped: a
@@ -45,8 +45,8 @@ enum class Projectile3DStepCodeUVE : std::uint8_t {
 /// `code` names the most consequential thing that happened, in the order Stopped, Expired,
 /// Bounced, Stepped - while the flags are independent, so a step that bounced and then expired in
 /// the same step reports `Expired` with both `bounced` and `expired` true.
-struct Projectile3DStepResultUVE final {
-    Projectile3DStepCodeUVE code = Projectile3DStepCodeUVE::UnknownEntity;
+struct Projectile3DStepResult final {
+    Projectile3DStepCode code = Projectile3DStepCode::UnknownEntity;
     bool hasHit = false;
     /// A contact ended the motion this step.
     bool stoppedOnHit = false;
@@ -54,17 +54,17 @@ struct Projectile3DStepResultUVE final {
     bool bounced = false;
     /// The lifetime reached zero this step.
     bool expired = false;
-    Scene::EntityUVE hitEntity = Scene::kInvalidEntityUVE;
+    Scene::Entity hitEntity = Scene::kInvalidEntity;
     /// World-space point on the obstacle's surface where the sphere first touched.
-    Math::Vector3UVE hitPosition{};
+    Math::Vector3 hitPosition{};
     /// World-space surface normal at that point.
-    Math::Vector3UVE hitNormal{};
+    Math::Vector3 hitNormal{};
     /// The motion this step ends with, in the projectile's own axes.
-    Math::Vector3UVE velocity{};
+    Math::Vector3 velocity{};
     /// The speed into the surface at the moment of contact, in metres per second.
     float impactSpeed = 0.0F;
     /// What the projectile's policy was, and therefore what this step executed.
-    Scene::Projectile3DHitPolicyUVE appliedPolicy = Scene::Projectile3DHitPolicyUVE::Stop;
+    Scene::Projectile3DHitPolicy appliedPolicy = Scene::Projectile3DHitPolicy::Stop;
     /// World metres the projectile actually advanced this step - less than `|velocity| * dt` when
     /// a contact stopped it short. The skin a bounce takes off the surface is not travel.
     float movedDistance = 0.0F;
@@ -73,29 +73,29 @@ struct Projectile3DStepResultUVE final {
     /// `remainingLifetime` after this step.
     float remainingLifetime = 0.0F;
 
-    [[nodiscard]] bool IsSteppedUVE() const noexcept { return code == Projectile3DStepCodeUVE::Stepped; }
+    [[nodiscard]] bool IsStepped() const noexcept { return code == Projectile3DStepCode::Stepped; }
     /// A bounce happened this step - independent of `code`, which expiry can overshadow.
-    [[nodiscard]] bool BouncedUVE() const noexcept { return bounced; }
+    [[nodiscard]] bool Bounced() const noexcept { return bounced; }
     /// A contact ended the motion this step.
-    [[nodiscard]] bool StoppedUVE() const noexcept { return stoppedOnHit; }
+    [[nodiscard]] bool Stopped() const noexcept { return stoppedOnHit; }
     /// The lifetime ran out this step, whatever else also happened.
-    [[nodiscard]] bool ExpiredUVE() const noexcept { return expired; }
-    [[nodiscard]] bool IsDisabledUVE() const noexcept { return code == Projectile3DStepCodeUVE::Disabled; }
+    [[nodiscard]] bool Expired() const noexcept { return expired; }
+    [[nodiscard]] bool IsDisabled() const noexcept { return code == Projectile3DStepCode::Disabled; }
     /// True for every code that means the step was refused rather than performed: the component
     /// and its transform were not touched.
-    [[nodiscard]] bool IsRefusedUVE() const noexcept {
+    [[nodiscard]] bool IsRefused() const noexcept {
         switch (code) {
-            case Projectile3DStepCodeUVE::InvalidDeltaTime:
-            case Projectile3DStepCodeUVE::UnknownEntity:
-            case Projectile3DStepCodeUVE::NotAProjectile:
-            case Projectile3DStepCodeUVE::MissingTransform:
-            case Projectile3DStepCodeUVE::InvalidComponent:
+            case Projectile3DStepCode::InvalidDeltaTime:
+            case Projectile3DStepCode::UnknownEntity:
+            case Projectile3DStepCode::NotAProjectile:
+            case Projectile3DStepCode::MissingTransform:
+            case Projectile3DStepCode::InvalidComponent:
                 return true;
-            case Projectile3DStepCodeUVE::Stepped:
-            case Projectile3DStepCodeUVE::Bounced:
-            case Projectile3DStepCodeUVE::Stopped:
-            case Projectile3DStepCodeUVE::Expired:
-            case Projectile3DStepCodeUVE::Disabled:
+            case Projectile3DStepCode::Stepped:
+            case Projectile3DStepCode::Bounced:
+            case Projectile3DStepCode::Stopped:
+            case Projectile3DStepCode::Expired:
+            case Projectile3DStepCode::Disabled:
                 return false;
         }
         return true;
@@ -104,20 +104,20 @@ struct Projectile3DStepResultUVE final {
 
 /// Queued once per resolved contact. The engine owns the *motion* decision and so reports it here;
 /// the consequences (damage, effects, despawn) are gameplay's, and it decides them from this
-/// evidence. Delivery is owned by IEventSystemUVE.
-struct Projectile3DHitEventUVE final {
-    Scene::EntityUVE projectile = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE hitEntity = Scene::kInvalidEntityUVE;
-    Math::Vector3UVE position{};
-    Math::Vector3UVE normal{};
+/// evidence. Delivery is owned by IEventSystem.
+struct Projectile3DHitEvent final {
+    Scene::Entity projectile = Scene::kInvalidEntity;
+    Scene::Entity hitEntity = Scene::kInvalidEntity;
+    Math::Vector3 position{};
+    Math::Vector3 normal{};
     float impactSpeed = 0.0F;
-    Scene::Projectile3DHitPolicyUVE policy = Scene::Projectile3DHitPolicyUVE::Stop;
+    Scene::Projectile3DHitPolicy policy = Scene::Projectile3DHitPolicy::Stop;
     /// What the policy did this step: the projectile is stopped (and inactive) when true, still
     /// flying when false.
     bool stopped = false;
     std::uint32_t bounceCount = 0U;
 
-    [[nodiscard]] bool operator==(const Projectile3DHitEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const Projectile3DHitEvent&) const noexcept = default;
 };
 
 /// Runs one fixed step of `entity`'s projectile:
@@ -129,7 +129,7 @@ struct Projectile3DHitEventUVE final {
 ///      world position along the world-normalized velocity, because that is the space colliders
 ///      live in. `collisionMask` selects the obstacle layers; the projectile's own entity and
 ///      `ignoreEntity` are skipped;
-///   4. resolves the contact through `Scene::Projectile3DUVE`: Stop halts at the contact, Bounce
+///   4. resolves the contact through `Scene::Projectile3D`: Stop halts at the contact, Bounce
 ///      reflects and leaves the sphere one contact-skin off the surface so the next sweep starts
 ///      outside it. A bounce that leaves no motion at all is a stop;
 ///   5. counts `remainingLifetime` down and clears `active` when it reaches zero.
@@ -143,13 +143,13 @@ struct Projectile3DHitEventUVE final {
 /// local axes (like Kinematic3D's target velocity), the sweep runs in world space, and the
 /// contact normal is rotated back into local space for the reflection. Rotation is handled
 /// exactly; parent scale is ignored, which is this physics module's standing contract for every
-/// authored extent (see Detail::BuildColliderWorldAabbCacheUVE).
+/// authored extent (see Detail::BuildColliderWorldAabbCache).
 ///
 /// The world pose read here is the one the scene graph last resolved; the engine updates it every
 /// frame after its fixed steps, and a caller driving this by hand should do the same.
-[[nodiscard]] Projectile3DStepResultUVE StepProjectile3DUVE(Scene::IEntityManagerUVE& entityManager,
-                                                             Scene::ISceneGraphUVE& sceneGraph,
-                                                             Scene::EntityUVE entity,
+[[nodiscard]] Projectile3DStepResult StepProjectile3D(Scene::IEntityManager& entityManager,
+                                                             Scene::ISceneGraph& sceneGraph,
+                                                             Scene::Entity entity,
                                                              float deltaTimeSeconds);
 
 } // namespace UVE::Physics

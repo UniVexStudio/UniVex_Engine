@@ -141,8 +141,8 @@ ANDROID_PAGE_SIZE_BYTES = 16384
 ANDROID_SYSTEM_LIBRARIES = ["android", "log", "EGL", "GLESv3", "m", "dl"]
 # The entry points Android loads dynamically (NativeActivity glue and Hub's dlopen editor entry).
 ANDROID_ACTIVITY_ENTRY = "ANativeActivity_onCreate"
-ANDROID_EDITOR_ENTRY = "UveEditorRunUVE"
-ANDROID_EDITOR_ABI_VERSION_ENTRY = "UveEditorAbiVersionUVE"
+ANDROID_EDITOR_ENTRY = "UveEditorRun"
+ANDROID_EDITOR_ABI_VERSION_ENTRY = "UveEditorAbiVersion"
 # Optional static Linux UI libraries built when system packages are absent or UVBT_STATIC_LINUX_UI=1.
 LINUX_GLFW_REPO = ("glfw", "https://github.com/glfw/glfw.git", "3.4")
 LINUX_GLEW_REPO = ("glew", "https://github.com/Perlmint/glew-cmake.git", "glew-cmake-2.2.0")

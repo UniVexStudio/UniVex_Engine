@@ -8,12 +8,12 @@
 #   Release / Linux      The engine (editor, runtime, packer), Release.
 #   Release / Windows    The same on Windows; the staged editor is started once so its DLLs are proven.
 #   Release / Android    The Android engine runtime and in-process editor shared library (arm64-v8a + x86_64)
-#                        with strict ELF symbol isolation verified against contracts/v1.
+#                        with strict ELF symbol isolation verified against contracts/v2.
 #   All CI Checks        Aggregate gate that passes only when all 4 jobs above succeeded.
 #   Publish the release  Release only, after everything above passed: .uvpackage archives + .sha256 files.
 #
 # UniVex Hub (desktop installers and signed Android Hub APK) builds and releases independently from
-# UniVexStudio/UniVex_Hub against the shared v1 contracts under contracts/v1/.
+# UniVexStudio/UniVex_Hub against the shared v2 contracts under contracts/v2/.
 #
 # Two kinds of release, both made by the same jobs:
 #
@@ -197,8 +197,8 @@ jobs:
 
       - name: Verify the Vulkan device tests actually ran
         run: |
-          ./.uvbt/bin/Linux/${{ matrix.mode }}/UniVexTests --gtest_filter='VulkanRenderDeviceUVETest.*' | tee /tmp/vulkan.log
-          executed=$(grep -c '^\[       OK \] VulkanRenderDeviceUVETest' /tmp/vulkan.log)
+          ./.uvbt/bin/Linux/${{ matrix.mode }}/UniVexTests --gtest_filter='VulkanRenderDeviceTest.*' | tee /tmp/vulkan.log
+          executed=$(grep -c '^\[       OK \] VulkanRenderDeviceTest' /tmp/vulkan.log)
           echo "Vulkan device cases executed: $executed"
           if [ "$executed" -lt 17 ]; then
             echo "::error::Only $executed Vulkan device cases ran (expected at least 17) - the runner has no working Vulkan driver."
@@ -208,14 +208,14 @@ jobs:
       - name: Verify software OpenGL device tests actually ran
         run: |
           set -o pipefail
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/${{ matrix.mode }}/UniVexTests --gtest_filter='GlRenderDeviceUVETest.*' | tee /tmp/opengl.log
-          executed=$(grep -c '^\[       OK \] GlRenderDeviceUVETest' /tmp/opengl.log)
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/${{ matrix.mode }}/UniVexTests --gtest_filter='GlRenderDeviceTest.*' | tee /tmp/opengl.log
+          executed=$(grep -c '^\[       OK \] GlRenderDeviceTest' /tmp/opengl.log)
           echo "OpenGL device cases executed: $executed"
           if [ "$executed" -lt 1 ]; then
             echo "::error::No software OpenGL device case ran; a capability skip is not native verification."
             exit 1
           fi
-          if ! grep -Fq '[       OK ] GlRenderDeviceUVETest.BindGroupAppliesRealTextureSamplerAndBufferBindings' /tmp/opengl.log; then
+          if ! grep -Fq '[       OK ] GlRenderDeviceTest.BindGroupAppliesRealTextureSamplerAndBufferBindings' /tmp/opengl.log; then
             echo "::error::The native bind-group contract was not exercised."
             exit 1
           fi
@@ -518,15 +518,15 @@ jobs:
             # Verify ELF symbol isolation: only entry points are exported dynamically.
             exported=$("${ndk_bin}/llvm-nm" -D --defined-only "${stage}/${editor_lib}" | awk '{print $3}')
             echo "Exported symbols in ${abi}/${editor_lib}: ${exported}"
-            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorRunUVE'; then
-              echo "::error::${abi}/${editor_lib} does not export UveEditorRunUVE."
+            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorRun'; then
+              echo "::error::${abi}/${editor_lib} does not export UveEditorRun."
               exit 1
             fi
-            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorAbiVersionUVE'; then
-              echo "::error::${abi}/${editor_lib} does not export UveEditorAbiVersionUVE."
+            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorAbiVersion'; then
+              echo "::error::${abi}/${editor_lib} does not export UveEditorAbiVersion."
               exit 1
             fi
-            unexpected=$(printf '%s\n' "${exported}" | grep -Ev '^(UveEditorRunUVE|UveEditorAbiVersionUVE|ANativeActivity_onCreate|_edata|_end|__bss_start)$' || true)
+            unexpected=$(printf '%s\n' "${exported}" | grep -Ev '^(UveEditorRun|UveEditorAbiVersion|ANativeActivity_onCreate|_edata|_end|__bss_start)$' || true)
             if [ -n "${unexpected}" ]; then
               echo "::error::${abi}/${editor_lib} leaks unexpected dynamic symbols: ${unexpected}"
               exit 1

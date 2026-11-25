@@ -12,13 +12,13 @@
 namespace UVE::Retarget {
 namespace {
 
-[[nodiscard]] const std::unordered_set<std::string>& DrivingBonesUVE() {
+[[nodiscard]] const std::unordered_set<std::string>& DrivingBones() {
     static const std::unordered_set<std::string> bones = [] {
         std::unordered_set<std::string> names;
-        const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+        const HumanoidReference& reference = GetHumanoidReference();
         for (std::size_t index = 0U; index < reference.skeleton.bones.size(); ++index) {
-            const HumanoidBoneKindUVE kind = reference.info[index].kind;
-            if (kind == HumanoidBoneKindUVE::Root || kind == HumanoidBoneKindUVE::IK ||
+            const HumanoidBoneKind kind = reference.info[index].kind;
+            if (kind == HumanoidBoneKind::Root || kind == HumanoidBoneKind::IK ||
                 reference.info[index].key == "C|hips") {
                 names.insert(reference.skeleton.bones[index].name);
             }
@@ -28,13 +28,13 @@ namespace {
     return bones;
 }
 
-struct WorldUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
+struct World final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
 };
 
 /// A bone's world position, walking down from its root; false when the parents do not lead to it.
-[[nodiscard]] bool WorldOfUVE(std::span<const RestBoneViewUVE> skeleton, const std::size_t bone, Math::Vector3UVE& out) {
+[[nodiscard]] bool WorldOf(std::span<const RestBoneView> skeleton, const std::size_t bone, Math::Vector3& out) {
     std::vector<std::size_t> chain;
     for (std::int32_t at = static_cast<std::int32_t>(bone); at >= 0; at = skeleton[static_cast<std::size_t>(at)].parent) {
         if (chain.size() > skeleton.size()) {
@@ -42,36 +42,36 @@ struct WorldUVE final {
         }
         chain.push_back(static_cast<std::size_t>(at));
     }
-    WorldUVE world;
-    world.rotation = Math::QuaternionUVE{};
+    World world;
+    world.rotation = Math::Quaternion{};
     for (auto link = chain.rbegin(); link != chain.rend(); ++link) {
-        const RestBoneViewUVE& part = skeleton[*link];
-        world.position = world.position + Math::RotateVectorUVE(world.rotation, part.position);
-        world.rotation = Math::MultiplyUVE(world.rotation, part.rotation);
+        const RestBoneView& part = skeleton[*link];
+        world.position = world.position + Math::RotateVector(world.rotation, part.position);
+        world.rotation = Math::Multiply(world.rotation, part.rotation);
     }
     out = world.position;
     return true;
 }
 
-[[nodiscard]] std::size_t IndexOfUVE(std::span<const RestBoneViewUVE> skeleton, const std::string_view name) {
-    const auto found = std::ranges::find(skeleton, name, &RestBoneViewUVE::name);
+[[nodiscard]] std::size_t IndexOf(std::span<const RestBoneView> skeleton, const std::string_view name) {
+    const auto found = std::ranges::find(skeleton, name, &RestBoneView::name);
     return found == skeleton.end() ? skeleton.size() : static_cast<std::size_t>(found - skeleton.begin());
 }
 
 } // namespace
 
-float ConformedHipsHeightUVE(const std::span<const RestBoneViewUVE> skeleton) {
-    Math::Vector3UVE hips{};
-    const std::size_t hipsIndex = IndexOfUVE(skeleton, "Hips");
-    if (hipsIndex >= skeleton.size() || !WorldOfUVE(skeleton, hipsIndex, hips)) {
+float ConformedHipsHeight(const std::span<const RestBoneView> skeleton) {
+    Math::Vector3 hips{};
+    const std::size_t hipsIndex = IndexOf(skeleton, "Hips");
+    if (hipsIndex >= skeleton.size() || !WorldOf(skeleton, hipsIndex, hips)) {
         return 0.0F;
     }
     bool found = false;
     float ground = 0.0F;
     for (const char* name : {"Foot_L", "Foot_R", "Toe_L", "Toe_R"}) {
-        const std::size_t index = IndexOfUVE(skeleton, name);
-        Math::Vector3UVE position{};
-        if (index < skeleton.size() && WorldOfUVE(skeleton, index, position)) {
+        const std::size_t index = IndexOf(skeleton, name);
+        Math::Vector3 position{};
+        if (index < skeleton.size() && WorldOf(skeleton, index, position)) {
             ground = found ? std::min(ground, position.y) : position.y;
             found = true;
         }
@@ -79,32 +79,32 @@ float ConformedHipsHeightUVE(const std::span<const RestBoneViewUVE> skeleton) {
     return std::max(hips.y - (found ? ground : 0.0F), 0.0F);
 }
 
-bool ConformedPlaybackUVE::DrivesTranslationUVE(const std::string_view boneName) {
-    return DrivingBonesUVE().contains(std::string{boneName});
+bool ConformedPlayback::DrivesTranslation(const std::string_view boneName) {
+    return DrivingBones().contains(std::string{boneName});
 }
 
-Math::Vector3UVE ConformedPlaybackUVE::PositionUVE(const std::string_view boneName, const Math::Vector3UVE& sampled,
-                                                   const Math::Vector3UVE& rest) const {
+Math::Vector3 ConformedPlayback::Position(const std::string_view boneName, const Math::Vector3& sampled,
+                                                   const Math::Vector3& rest) const {
     if (!active) {
         return sampled;
     }
-    return DrivesTranslationUVE(boneName) ? sampled * heightScale : rest;
+    return DrivesTranslation(boneName) ? sampled * heightScale : rest;
 }
 
-ConformedPlaybackUVE PlanConformedPlaybackUVE(const Asset::AnimationClipAssetUVE& clip,
-                                              const std::span<const RestBoneViewUVE> skeleton) {
-    ConformedPlaybackUVE plan;
+ConformedPlayback PlanConformedPlayback(const Asset::AnimationClipAsset& clip,
+                                              const std::span<const RestBoneView> skeleton) {
+    ConformedPlayback plan;
     if (!clip.conformed) {
         return plan;
     }
     plan.active = true;
-    std::vector<RestBoneViewUVE> clipRest;
+    std::vector<RestBoneView> clipRest;
     clipRest.reserve(clip.rest.size());
-    for (const Asset::AnimationAssetRestBoneUVE& bone : clip.rest) {
-        clipRest.push_back(RestBoneViewUVE{bone.bone, bone.parent, bone.position, bone.rotation});
+    for (const Asset::AnimationAssetRestBone& bone : clip.rest) {
+        clipRest.push_back(RestBoneView{bone.bone, bone.parent, bone.position, bone.rotation});
     }
-    const float clipHeight = ConformedHipsHeightUVE(clipRest);
-    const float characterHeight = ConformedHipsHeightUVE(skeleton);
+    const float clipHeight = ConformedHipsHeight(clipRest);
+    const float characterHeight = ConformedHipsHeight(skeleton);
     if (clipHeight > 1e-4F && characterHeight > 1e-4F) {
         plan.heightScale = characterHeight / clipHeight;
     }

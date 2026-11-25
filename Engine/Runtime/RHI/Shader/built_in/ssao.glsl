@@ -38,8 +38,8 @@ uniform int uSampleCount;
 
 // Stratified 12-sample low-discrepancy hemisphere kernel ordered so the first 4 (Low), 8 (Medium),
 // and 12 (High) taps each span all quadrants and the full radius [0.35..0.95] * uRadius.
-const int kKernelSizeUVE = 12;
-const vec3 kKernelUVE[12] = vec3[](
+const int kKernelSize = 12;
+const vec3 kKernel[12] = vec3[](
     vec3( 0.2400,  0.1400,  0.2200),
     vec3(-0.3600,  0.2900,  0.3400),
     vec3( 0.1900, -0.5200,  0.4100),
@@ -54,14 +54,14 @@ const vec3 kKernelUVE[12] = vec3[](
     vec3( 0.5400, -0.6200,  0.4900)
 );
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
-    float ndcZ = DecodeNdcDepthUVE(depthSample);
+vec3 ReconstructViewPosition(vec2 uv, float depthSample) {
+    float ndcZ = DecodeNdcDepth(depthSample);
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -74,7 +74,7 @@ vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
 
 // Reconstructs a clean view-space normal from 4-neighbor minimum-difference depth taps.
 // Avoids screen-space derivative UB after early returns and prevents dark halos across depth edges.
-vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+vec3 ReconstructViewNormal(vec2 uv, vec3 centerViewPos) {
     vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
     vec2 halfTexel = texel * 0.5;
     vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
@@ -87,10 +87,10 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     float dD = texture(uDepthTexture, uvD).r;
     float dU = texture(uDepthTexture, uvU).r;
 
-    vec3 pL = dL < 0.999999 ? ReconstructViewPositionUVE(uvL, dL) : centerViewPos;
-    vec3 pR = dR < 0.999999 ? ReconstructViewPositionUVE(uvR, dR) : centerViewPos;
-    vec3 pD = dD < 0.999999 ? ReconstructViewPositionUVE(uvD, dD) : centerViewPos;
-    vec3 pU = dU < 0.999999 ? ReconstructViewPositionUVE(uvU, dU) : centerViewPos;
+    vec3 pL = dL < 0.999999 ? ReconstructViewPosition(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPosition(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPosition(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPosition(uvU, dU) : centerViewPos;
 
     bool validL = dL < 0.999999;
     bool validR = dR < 0.999999;
@@ -138,12 +138,12 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
 }
 
 // High-frequency blue-noise-like screen-space rotation with zero Moire patterns.
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
 // Orthonormal basis from a unit normal without any pole singularity.
-void BuildOrthonormalBasisUVE(vec3 n, out vec3 b1, out vec3 b2) {
+void BuildOrthonormalBasis(vec3 n, out vec3 b1, out vec3 b2) {
     if (n.z < -0.999999999) {
         b1 = vec3(0.0, -1.0, 0.0);
         b2 = vec3(-1.0, 0.0, 0.0);
@@ -161,13 +161,13 @@ void main() {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
         return;
     }
-    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
-    vec3 viewNormal = ReconstructViewNormalUVE(vTexCoord, centerViewPos);
+    vec3 centerViewPos = ReconstructViewPosition(vTexCoord, centerDepth);
+    vec3 viewNormal = ReconstructViewNormal(vTexCoord, centerViewPos);
 
     vec3 basisT;
     vec3 basisB;
-    BuildOrthonormalBasisUVE(viewNormal, basisT, basisB);
-    float rotationAngle = InterleavedGradientNoiseUVE(gl_FragCoord.xy) * 6.28318530718;
+    BuildOrthonormalBasis(viewNormal, basisT, basisB);
+    float rotationAngle = InterleavedGradientNoise(gl_FragCoord.xy) * 6.28318530718;
     float cosAngle = cos(rotationAngle);
     float sinAngle = sin(rotationAngle);
     vec3 tangent = basisT * cosAngle + basisB * sinAngle;
@@ -182,10 +182,10 @@ void main() {
     float safeRadius = max(uRadius, 0.01);
 
     float occlusion = 0.0;
-    int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
+    int sampleCount = clamp(uSampleCount, 1, kKernelSize);
     int validSamples = 0;
     for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
-        vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * safeRadius;
+        vec3 samplePos = centerViewPos + (tbn * kKernel[sampleIndex]) * safeRadius;
 
         vec4 sampleClip = uProjection * vec4(samplePos, 1.0);
         if (sampleClip.w <= 0.0001) {
@@ -202,7 +202,7 @@ void main() {
             ++validSamples;
             continue;
         }
-        vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
+        vec3 sampledViewPos = ReconstructViewPosition(sampleUv, sampledDepth);
 
         float depthDelta = abs(centerViewPos.z - sampledViewPos.z);
         float rangeCheck = 1.0 - smoothstep(safeRadius * 0.65, safeRadius * 1.5, depthDelta);

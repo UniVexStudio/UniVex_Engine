@@ -16,29 +16,29 @@
 namespace UVE::Scene {
 namespace {
 
-constexpr float kCubemapDenomEpsilonUVE = 1.0e-8F;
-constexpr float kBoxRayEpsilonUVE = 1.0e-8F;
+constexpr float kCubemapDenomEpsilon = 1.0e-8F;
+constexpr float kBoxRayEpsilon = 1.0e-8F;
 
 } // namespace
 
-bool IsReflectionProbe3DObjectComponentValidUVE(const ReflectionProbe3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.size) && value.size.x > 0.0F && value.size.y > 0.0F &&
-           value.size.z > 0.0F && value.updateMode <= ReflectionProbeUpdateModeUVE::OnDemand &&
-           IsReflectionProbeResolutionValidUVE(value.resolution);
+bool IsReflectionProbe3DObjectComponentValid(const ReflectionProbe3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.size) && value.size.x > 0.0F && value.size.y > 0.0F &&
+           value.size.z > 0.0F && value.updateMode <= ReflectionProbeUpdateMode::OnDemand &&
+           IsReflectionProbeResolutionValid(value.resolution);
 }
 
-void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                               const ReflectionProbe3DObjectDefinitionUVE& value) {
-    ApplyObject3DRecipeUVE(entityManager, entity, ReflectionProbe3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) &&
-        !entityManager.HasComponentUVE<ReflectionProbe3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<ReflectionProbe3DComponentUVE>(entity, value.probe);
+void ApplyReflectionProbe3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                               const ReflectionProbe3DObjectDefinition& value) {
+    ApplyObject3DRecipe(entityManager, entity, ReflectionProbe3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) &&
+        !entityManager.HasComponent<ReflectionProbe3DComponent>(entity)) {
+        entityManager.AddComponent<ReflectionProbe3DComponent>(entity, value.probe);
     }
 }
 
-float ResolveReflectionProbe3DInfluenceWeightUVE(
-    const Math::Vector3UVE& probeLocalPoint,
-    const Math::Vector3UVE& probeHalfExtents) noexcept {
+float ResolveReflectionProbe3DInfluenceWeight(
+    const Math::Vector3& probeLocalPoint,
+    const Math::Vector3& probeHalfExtents) noexcept {
     if (!std::isfinite(probeLocalPoint.x) || !std::isfinite(probeLocalPoint.y) ||
         !std::isfinite(probeLocalPoint.z) || !std::isfinite(probeHalfExtents.x) ||
         !std::isfinite(probeHalfExtents.y) || !std::isfinite(probeHalfExtents.z) ||
@@ -55,65 +55,65 @@ float ResolveReflectionProbe3DInfluenceWeightUVE(
     return 1.0F - normalizedDistance;
 }
 
-ReflectionProbe3DCaptureActionUVE ResolveReflectionProbe3DCaptureActionUVE(
-    const ReflectionProbe3DCaptureFrameUVE& frame) noexcept {
-    if (!frame.enabled || frame.updateMode > ReflectionProbeUpdateModeUVE::OnDemand ||
+ReflectionProbe3DCaptureAction ResolveReflectionProbe3DCaptureAction(
+    const ReflectionProbe3DCaptureFrame& frame) noexcept {
+    if (!frame.enabled || frame.updateMode > ReflectionProbeUpdateMode::OnDemand ||
         (frame.hasCameraViewer && !std::isfinite(frame.cameraInfluenceWeight))) {
-        return ReflectionProbe3DCaptureActionUVE::None;
+        return ReflectionProbe3DCaptureAction::None;
     }
     switch (frame.updateMode) {
-    case ReflectionProbeUpdateModeUVE::EveryFrame:
+    case ReflectionProbeUpdateMode::EveryFrame:
         if (frame.hasCameraViewer && frame.cameraInfluenceWeight > 0.0F) {
-            return ReflectionProbe3DCaptureActionUVE::Capture;
+            return ReflectionProbe3DCaptureAction::Capture;
         }
         break;
-    case ReflectionProbeUpdateModeUVE::OnDemand:
+    case ReflectionProbeUpdateMode::OnDemand:
         if (frame.updateRequested) {
-            return ReflectionProbe3DCaptureActionUVE::Capture;
+            return ReflectionProbe3DCaptureAction::Capture;
         }
         break;
-    case ReflectionProbeUpdateModeUVE::Once:
+    case ReflectionProbeUpdateMode::Once:
         if (!frame.capturedOnce) {
-            return ReflectionProbe3DCaptureActionUVE::Capture;
+            return ReflectionProbe3DCaptureAction::Capture;
         }
         break;
     }
-    return ReflectionProbe3DCaptureActionUVE::None;
+    return ReflectionProbe3DCaptureAction::None;
 }
 
-bool TryGetCubemapFaceBasisUVE(const CubemapFaceUVE face, Math::Vector3UVE& outForward,
-                               Math::Vector3UVE& outUp) noexcept {
+bool TryGetCubemapFaceBasis(const CubemapFace face, Math::Vector3& outForward,
+                               Math::Vector3& outUp) noexcept {
     switch (face) {
-    case CubemapFaceUVE::PositiveX:
-        outForward = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-        outUp = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    case CubemapFace::PositiveX:
+        outForward = Math::Vector3{1.0F, 0.0F, 0.0F};
+        outUp = Math::Vector3{0.0F, 1.0F, 0.0F};
         return true;
-    case CubemapFaceUVE::NegativeX:
-        outForward = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
-        outUp = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    case CubemapFace::NegativeX:
+        outForward = Math::Vector3{-1.0F, 0.0F, 0.0F};
+        outUp = Math::Vector3{0.0F, 1.0F, 0.0F};
         return true;
-    case CubemapFaceUVE::PositiveY:
-        outForward = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-        outUp = Math::Vector3UVE{0.0F, 0.0F, -1.0F};
+    case CubemapFace::PositiveY:
+        outForward = Math::Vector3{0.0F, 1.0F, 0.0F};
+        outUp = Math::Vector3{0.0F, 0.0F, -1.0F};
         return true;
-    case CubemapFaceUVE::NegativeY:
-        outForward = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
-        outUp = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+    case CubemapFace::NegativeY:
+        outForward = Math::Vector3{0.0F, -1.0F, 0.0F};
+        outUp = Math::Vector3{0.0F, 0.0F, 1.0F};
         return true;
-    case CubemapFaceUVE::PositiveZ:
-        outForward = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
-        outUp = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    case CubemapFace::PositiveZ:
+        outForward = Math::Vector3{0.0F, 0.0F, 1.0F};
+        outUp = Math::Vector3{0.0F, 1.0F, 0.0F};
         return true;
-    case CubemapFaceUVE::NegativeZ:
-        outForward = Math::Vector3UVE{0.0F, 0.0F, -1.0F};
-        outUp = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    case CubemapFace::NegativeZ:
+        outForward = Math::Vector3{0.0F, 0.0F, -1.0F};
+        outUp = Math::Vector3{0.0F, 1.0F, 0.0F};
         return true;
     }
     return false;
 }
 
-bool TrySelectCubemapFaceUVE(const Math::Vector3UVE& direction, CubemapFaceUVE& outFace) noexcept {
-    if (!Math::IsFiniteUVE(direction)) {
+bool TrySelectCubemapFace(const Math::Vector3& direction, CubemapFace& outFace) noexcept {
+    if (!Math::IsFinite(direction)) {
         return false;
     }
     const float absX = std::fabs(direction.x);
@@ -123,133 +123,133 @@ bool TrySelectCubemapFaceUVE(const Math::Vector3UVE& direction, CubemapFaceUVE& 
         return false;
     }
     if (absX >= absY && absX >= absZ) {
-        outFace = direction.x >= 0.0F ? CubemapFaceUVE::PositiveX : CubemapFaceUVE::NegativeX;
+        outFace = direction.x >= 0.0F ? CubemapFace::PositiveX : CubemapFace::NegativeX;
         return true;
     }
     if (absY >= absZ) {
-        outFace = direction.y >= 0.0F ? CubemapFaceUVE::PositiveY : CubemapFaceUVE::NegativeY;
+        outFace = direction.y >= 0.0F ? CubemapFace::PositiveY : CubemapFace::NegativeY;
         return true;
     }
-    outFace = direction.z >= 0.0F ? CubemapFaceUVE::PositiveZ : CubemapFaceUVE::NegativeZ;
+    outFace = direction.z >= 0.0F ? CubemapFace::PositiveZ : CubemapFace::NegativeZ;
     return true;
 }
 
-bool TryMakeCubemapFaceCameraRotationUVE(const CubemapFaceUVE face, Math::QuaternionUVE& outRotation) noexcept {
-    Math::Vector3UVE forward{};
-    Math::Vector3UVE up{};
-    if (!TryGetCubemapFaceBasisUVE(face, forward, up)) {
+bool TryMakeCubemapFaceCameraRotation(const CubemapFace face, Math::Quaternion& outRotation) noexcept {
+    Math::Vector3 forward{};
+    Math::Vector3 up{};
+    if (!TryGetCubemapFaceBasis(face, forward, up)) {
         return false;
     }
-    return Math::TryMakeLookAtUVE(Math::Vector3UVE{-forward.x, -forward.y, -forward.z}, up, outRotation);
+    return Math::TryMakeLookAt(Math::Vector3{-forward.x, -forward.y, -forward.z}, up, outRotation);
 }
 
-bool TryMakeCubemapFaceUvUVE(const Math::Vector3UVE& direction, const CubemapFaceUVE face,
-                             Math::Vector2UVE& outUv) noexcept {
-    outUv = Math::Vector2UVE{};
-    if (!Math::IsFiniteUVE(direction)) {
+bool TryMakeCubemapFaceUv(const Math::Vector3& direction, const CubemapFace face,
+                             Math::Vector2& outUv) noexcept {
+    outUv = Math::Vector2{};
+    if (!Math::IsFinite(direction)) {
         return false;
     }
-    Math::QuaternionUVE rotation{};
-    if (!TryMakeCubemapFaceCameraRotationUVE(face, rotation)) {
+    Math::Quaternion rotation{};
+    if (!TryMakeCubemapFaceCameraRotation(face, rotation)) {
         return false;
     }
-    const Math::Vector3UVE right = Math::RotateVectorUVE(rotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    const Math::Vector3UVE up = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-    const Math::Vector3UVE look = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-    if (!Math::IsFiniteUVE(right) || !Math::IsFiniteUVE(up) || !Math::IsFiniteUVE(look)) {
+    const Math::Vector3 right = Math::RotateVector(rotation, Math::Vector3{1.0F, 0.0F, 0.0F});
+    const Math::Vector3 up = Math::RotateVector(rotation, Math::Vector3{0.0F, 1.0F, 0.0F});
+    const Math::Vector3 look = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, -1.0F});
+    if (!Math::IsFinite(right) || !Math::IsFinite(up) || !Math::IsFinite(look)) {
         return false;
     }
-    const float denom = Math::DotUVE(direction, look);
-    if (!(denom > kCubemapDenomEpsilonUVE)) {
+    const float denom = Math::Dot(direction, look);
+    if (!(denom > kCubemapDenomEpsilon)) {
         return false;
     }
-    const float u = Math::DotUVE(direction, right) / denom * 0.5F + 0.5F;
-    const float v = Math::DotUVE(direction, up) / denom * 0.5F + 0.5F;
+    const float u = Math::Dot(direction, right) / denom * 0.5F + 0.5F;
+    const float v = Math::Dot(direction, up) / denom * 0.5F + 0.5F;
     if (!std::isfinite(u) || !std::isfinite(v)) {
         return false;
     }
-    outUv = Math::Vector2UVE{u, v};
+    outUv = Math::Vector2{u, v};
     return true;
 }
 
-bool TryProjectCubemapDirectionUVE(const Math::Vector3UVE& direction, CubemapFaceUVE& outFace,
-                                   Math::Vector2UVE& outUv) noexcept {
-    if (!TrySelectCubemapFaceUVE(direction, outFace)) {
+bool TryProjectCubemapDirection(const Math::Vector3& direction, CubemapFace& outFace,
+                                   Math::Vector2& outUv) noexcept {
+    if (!TrySelectCubemapFace(direction, outFace)) {
         return false;
     }
-    return TryMakeCubemapFaceUvUVE(direction, outFace, outUv);
+    return TryMakeCubemapFaceUv(direction, outFace, outUv);
 }
 
-bool TryMakeReflectionProbe3DFrameUVE(const ReflectionProbe3DComponentUVE& value,
-                                      const Math::Vector3UVE& worldPosition,
-                                      const Math::QuaternionUVE& worldRotation,
-                                      ReflectionProbe3DFrameUVE& out) noexcept {
-    out = ReflectionProbe3DFrameUVE{};
-    if (!IsReflectionProbe3DObjectComponentValidUVE(value) || !IsFinite3DObjectVectorUVE(worldPosition) ||
-        !IsFinite3DObjectQuaternionUVE(worldRotation)) {
+bool TryMakeReflectionProbe3DFrame(const ReflectionProbe3DComponent& value,
+                                      const Math::Vector3& worldPosition,
+                                      const Math::Quaternion& worldRotation,
+                                      ReflectionProbe3DFrame& out) noexcept {
+    out = ReflectionProbe3DFrame{};
+    if (!IsReflectionProbe3DObjectComponentValid(value) || !IsFinite3DObjectVector(worldPosition) ||
+        !IsFinite3DObjectQuaternion(worldRotation)) {
         return false;
     }
-    Math::QuaternionUVE rotation{};
-    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+    Math::Quaternion rotation{};
+    if (!Math::TryNormalize(worldRotation, rotation)) {
         return false;
     }
-    const Math::Vector3UVE axisX = Math::RotateVectorUVE(rotation, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    const Math::Vector3UVE axisY = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-    const Math::Vector3UVE axisZ = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
-    if (!Math::IsFiniteUVE(axisX) || !Math::IsFiniteUVE(axisY) || !Math::IsFiniteUVE(axisZ)) {
+    const Math::Vector3 axisX = Math::RotateVector(rotation, Math::Vector3{1.0F, 0.0F, 0.0F});
+    const Math::Vector3 axisY = Math::RotateVector(rotation, Math::Vector3{0.0F, 1.0F, 0.0F});
+    const Math::Vector3 axisZ = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, 1.0F});
+    if (!Math::IsFinite(axisX) || !Math::IsFinite(axisY) || !Math::IsFinite(axisZ)) {
         return false;
     }
     out.worldPosition = worldPosition;
     out.axisX = axisX;
     out.axisY = axisY;
     out.axisZ = axisZ;
-    out.halfExtents = Math::Vector3UVE{value.size.x * 0.5F, value.size.y * 0.5F, value.size.z * 0.5F};
+    out.halfExtents = Math::Vector3{value.size.x * 0.5F, value.size.y * 0.5F, value.size.z * 0.5F};
     out.visibilityLayers = value.visibilityLayers;
-    out.captureResolution = GetReflectionProbeResolutionPixelsUVE(value.resolution);
+    out.captureResolution = GetReflectionProbeResolutionPixels(value.resolution);
     out.captureGeneration = value.captureGeneration;
     out.capturedOnce = value.capturedOnce;
     out.enabled = value.enabled;
     return true;
 }
 
-std::optional<Math::Vector3UVE> ReflectionProbe3DWorldToLocalUVE(const ReflectionProbe3DFrameUVE& frame,
-                                                                const Math::Vector3UVE& worldPoint) noexcept {
-    if (!Math::IsFiniteUVE(worldPoint) || !Math::IsFiniteUVE(frame.worldPosition) || !Math::IsFiniteUVE(frame.axisX) ||
-        !Math::IsFiniteUVE(frame.axisY) || !Math::IsFiniteUVE(frame.axisZ)) {
+std::optional<Math::Vector3> ReflectionProbe3DWorldToLocal(const ReflectionProbe3DFrame& frame,
+                                                                const Math::Vector3& worldPoint) noexcept {
+    if (!Math::IsFinite(worldPoint) || !Math::IsFinite(frame.worldPosition) || !Math::IsFinite(frame.axisX) ||
+        !Math::IsFinite(frame.axisY) || !Math::IsFinite(frame.axisZ)) {
         return std::nullopt;
     }
-    const Math::Vector3UVE delta = worldPoint - frame.worldPosition;
-    const Math::Vector3UVE local{Math::DotUVE(delta, frame.axisX), Math::DotUVE(delta, frame.axisY),
-                                 Math::DotUVE(delta, frame.axisZ)};
-    if (!Math::IsFiniteUVE(local)) {
+    const Math::Vector3 delta = worldPoint - frame.worldPosition;
+    const Math::Vector3 local{Math::Dot(delta, frame.axisX), Math::Dot(delta, frame.axisY),
+                                 Math::Dot(delta, frame.axisZ)};
+    if (!Math::IsFinite(local)) {
         return std::nullopt;
     }
     return local;
 }
 
-float SampleReflectionProbe3DInfluenceUVE(const ReflectionProbe3DFrameUVE& frame,
-                                          const Math::Vector3UVE& worldPoint) noexcept {
-    const std::optional<Math::Vector3UVE> local = ReflectionProbe3DWorldToLocalUVE(frame, worldPoint);
+float SampleReflectionProbe3DInfluence(const ReflectionProbe3DFrame& frame,
+                                          const Math::Vector3& worldPoint) noexcept {
+    const std::optional<Math::Vector3> local = ReflectionProbe3DWorldToLocal(frame, worldPoint);
     if (!local.has_value()) {
         return 0.0F;
     }
-    return ResolveReflectionProbe3DInfluenceWeightUVE(*local, frame.halfExtents);
+    return ResolveReflectionProbe3DInfluenceWeight(*local, frame.halfExtents);
 }
 
-bool TryBoxProjectReflectionUVE(const ReflectionProbe3DFrameUVE& frame, const Math::Vector3UVE& worldOrigin,
-                                const Math::Vector3UVE& worldDirection, Math::Vector3UVE& outWorldPoint) noexcept {
-    outWorldPoint = Math::Vector3UVE{};
-    const std::optional<Math::Vector3UVE> localOrigin = ReflectionProbe3DWorldToLocalUVE(frame, worldOrigin);
-    if (!localOrigin.has_value() || !Math::IsFiniteUVE(worldDirection)) {
+bool TryBoxProjectReflection(const ReflectionProbe3DFrame& frame, const Math::Vector3& worldOrigin,
+                                const Math::Vector3& worldDirection, Math::Vector3& outWorldPoint) noexcept {
+    outWorldPoint = Math::Vector3{};
+    const std::optional<Math::Vector3> localOrigin = ReflectionProbe3DWorldToLocal(frame, worldOrigin);
+    if (!localOrigin.has_value() || !Math::IsFinite(worldDirection)) {
         return false;
     }
     if (!(frame.halfExtents.x > 0.0F) || !(frame.halfExtents.y > 0.0F) || !(frame.halfExtents.z > 0.0F)) {
         return false;
     }
-    const Math::Vector3UVE localDirection{Math::DotUVE(worldDirection, frame.axisX),
-                                          Math::DotUVE(worldDirection, frame.axisY),
-                                          Math::DotUVE(worldDirection, frame.axisZ)};
-    if (!Math::IsFiniteUVE(localDirection)) {
+    const Math::Vector3 localDirection{Math::Dot(worldDirection, frame.axisX),
+                                          Math::Dot(worldDirection, frame.axisY),
+                                          Math::Dot(worldDirection, frame.axisZ)};
+    if (!Math::IsFinite(localDirection)) {
         return false;
     }
     const float origin[3] = {localOrigin->x, localOrigin->y, localOrigin->z};
@@ -257,7 +257,7 @@ bool TryBoxProjectReflectionUVE(const ReflectionProbe3DFrameUVE& frame, const Ma
     const float half[3] = {frame.halfExtents.x, frame.halfExtents.y, frame.halfExtents.z};
     float tFar = std::numeric_limits<float>::infinity();
     for (std::size_t axis = 0; axis < 3U; ++axis) {
-        if (std::fabs(direction[axis]) < kBoxRayEpsilonUVE) {
+        if (std::fabs(direction[axis]) < kBoxRayEpsilon) {
             if (origin[axis] < -half[axis] || origin[axis] > half[axis]) {
                 return false;
             }
@@ -268,52 +268,52 @@ bool TryBoxProjectReflectionUVE(const ReflectionProbe3DFrameUVE& frame, const Ma
         const float t2 = (half[axis] - origin[axis]) * inv;
         tFar = std::fmin(tFar, std::fmax(t1, t2));
     }
-    if (!std::isfinite(tFar) || !(tFar > kBoxRayEpsilonUVE)) {
+    if (!std::isfinite(tFar) || !(tFar > kBoxRayEpsilon)) {
         return false;
     }
-    const Math::Vector3UVE localHit{localOrigin->x + localDirection.x * tFar, localOrigin->y + localDirection.y * tFar,
+    const Math::Vector3 localHit{localOrigin->x + localDirection.x * tFar, localOrigin->y + localDirection.y * tFar,
                                     localOrigin->z + localDirection.z * tFar};
-    if (!Math::IsFiniteUVE(localHit)) {
+    if (!Math::IsFinite(localHit)) {
         return false;
     }
     outWorldPoint = frame.worldPosition + frame.axisX * localHit.x + frame.axisY * localHit.y + frame.axisZ * localHit.z;
-    return Math::IsFiniteUVE(outWorldPoint);
+    return Math::IsFinite(outWorldPoint);
 }
 
-std::size_t CollectReflectionProbe3DFramesUVE(IEntityManagerUVE& entityManager, const Math::Vector3UVE& viewPosition,
-                                              const std::span<ReflectionProbe3DFrameUVE> out) {
+std::size_t CollectReflectionProbe3DFrames(IEntityManager& entityManager, const Math::Vector3& viewPosition,
+                                              const std::span<ReflectionProbe3DFrame> out) {
     if (out.empty()) {
         return 0;
     }
-    struct RankedUVE final {
-        ReflectionProbe3DFrameUVE frame;
+    struct Ranked final {
+        ReflectionProbe3DFrame frame;
         float influence = 0.0F;
         float distanceSquared = 0.0F;
         std::uint32_t index = 0;
         std::uint32_t generation = 0;
     };
-    std::vector<RankedUVE> ranked;
-    entityManager.ForEachUVE<WorldTransformComponentUVE, ReflectionProbe3DComponentUVE>(
-        [&entityManager, &viewPosition, &ranked](const EntityUVE entity, const WorldTransformComponentUVE& world,
-                                                 const ReflectionProbe3DComponentUVE& probe) {
-            if (world.dirty || !probe.enabled || !IsReflectionProbe3DObjectComponentValidUVE(probe)) {
+    std::vector<Ranked> ranked;
+    entityManager.ForEach<WorldTransformComponent, ReflectionProbe3DComponent>(
+        [&entityManager, &viewPosition, &ranked](const Entity entity, const WorldTransformComponent& world,
+                                                 const ReflectionProbe3DComponent& probe) {
+            if (world.dirty || !probe.enabled || !IsReflectionProbe3DObjectComponentValid(probe)) {
                 return;
             }
-            if (entityManager.HasComponentUVE<VisibilityComponentUVE>(entity) &&
-                !entityManager.GetComponentUVE<VisibilityComponentUVE>(entity).visibleInHierarchy) {
+            if (entityManager.HasComponent<VisibilityComponent>(entity) &&
+                !entityManager.GetComponent<VisibilityComponent>(entity).visibleInHierarchy) {
                 return;
             }
-            ReflectionProbe3DFrameUVE frame{};
-            if (!TryMakeReflectionProbe3DFrameUVE(probe, world.worldPosition, world.worldRotation, frame)) {
+            ReflectionProbe3DFrame frame{};
+            if (!TryMakeReflectionProbe3DFrame(probe, world.worldPosition, world.worldRotation, frame)) {
                 return;
             }
             frame.entity = entity;
-            frame.influenceWeight = SampleReflectionProbe3DInfluenceUVE(frame, viewPosition);
-            const Math::Vector3UVE offset = world.worldPosition - viewPosition;
-            ranked.push_back(RankedUVE{frame, frame.influenceWeight, Math::LengthSquaredUVE(offset), entity.index,
+            frame.influenceWeight = SampleReflectionProbe3DInfluence(frame, viewPosition);
+            const Math::Vector3 offset = world.worldPosition - viewPosition;
+            ranked.push_back(Ranked{frame, frame.influenceWeight, Math::LengthSquared(offset), entity.index,
                                        entity.generation});
         });
-    std::sort(ranked.begin(), ranked.end(), [](const RankedUVE& lhs, const RankedUVE& rhs) {
+    std::sort(ranked.begin(), ranked.end(), [](const Ranked& lhs, const Ranked& rhs) {
         if (lhs.influence != rhs.influence) {
             return lhs.influence > rhs.influence;
         }
@@ -332,19 +332,19 @@ std::size_t CollectReflectionProbe3DFramesUVE(IEntityManagerUVE& entityManager, 
     return count;
 }
 
-void CollectReflectionProbe3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<ReflectionProbe3DGizmoUVE>& out) {
-    entityManager.ForEachUVE<WorldTransformComponentUVE, ReflectionProbe3DComponentUVE>(
-        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE& world,
-                               const ReflectionProbe3DComponentUVE& probe) {
-            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) || world.dirty) {
+void CollectReflectionProbe3DGizmos(IEntityManager& entityManager, std::vector<ReflectionProbe3DGizmo>& out) {
+    entityManager.ForEach<WorldTransformComponent, ReflectionProbe3DComponent>(
+        [&entityManager, &out](const Entity entity, const WorldTransformComponent& world,
+                               const ReflectionProbe3DComponent& probe) {
+            if (entityManager.HasComponent<EditorInternalEntityComponent>(entity) || world.dirty) {
                 return;
             }
-            ReflectionProbe3DFrameUVE frame{};
-            if (!TryMakeReflectionProbe3DFrameUVE(probe, world.worldPosition, world.worldRotation, frame) ||
+            ReflectionProbe3DFrame frame{};
+            if (!TryMakeReflectionProbe3DFrame(probe, world.worldPosition, world.worldRotation, frame) ||
                 !frame.enabled) {
                 return;
             }
-            ReflectionProbe3DGizmoUVE gizmo;
+            ReflectionProbe3DGizmo gizmo;
             gizmo.origin = frame.worldPosition;
             gizmo.axisX = frame.axisX;
             gizmo.axisY = frame.axisY;

@@ -16,7 +16,7 @@ class TextInput;
 
 namespace UVE::Editor {
 
-class KeyframeViewUVE;
+class KeyframeView;
 
 /// The Entity Editor dock's Animation Sequencer page, in PRISM:
 ///
@@ -27,42 +27,42 @@ class KeyframeViewUVE;
 ///   [ > Hips          ][  <>  <>  <>  <>  <>  <>  <>                                                     ]
 ///   [ Filter bones | Position Rotation Scale | Walk  1.00 s  30 frames  30 fps | status                  ]
 ///
-/// Everything it shows and does is EditorUVE's Animation Sequencer session
-/// (SyncAnimationTimelineUVE and the calls beside it); the keys are KeyframeViewUVE's.
-class EditorSequencerPanelUVE final {
+/// Everything it shows and does is Editor's Animation Sequencer session
+/// (SyncAnimationTimeline and the calls beside it); the keys are KeyframeView's.
+class EditorSequencerPanel final {
 public:
-    explicit EditorSequencerPanelUVE(EditorUVE& editor);
-    ~EditorSequencerPanelUVE();
-    EditorSequencerPanelUVE(const EditorSequencerPanelUVE&) = delete;
-    EditorSequencerPanelUVE& operator=(const EditorSequencerPanelUVE&) = delete;
+    explicit EditorSequencerPanel(Editor& editor);
+    ~EditorSequencerPanel();
+    EditorSequencerPanel(const EditorSequencerPanel&) = delete;
+    EditorSequencerPanel& operator=(const EditorSequencerPanel&) = delete;
 
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
     /// Advances the preview by `deltaSeconds` while the page is `shown` and refreshes the toolbar;
     /// hidden, a playing preview pauses. Inside the Entity Editor's window.
-    void RefreshUVE(double deltaSeconds, bool shown);
+    void Refresh(double deltaSeconds, bool shown);
 
-    [[nodiscard]] EditorUVE& EditorRefUVE() noexcept { return m_editor; }
+    [[nodiscard]] Editor& EditorRef() noexcept { return m_editor; }
     /// The session as it is now (re-resolved: call after any edit before reading the clip).
-    const EditorUVE::AnimationTimelineViewUVE& ResyncUVE();
-    [[nodiscard]] const EditorUVE::AnimationTimelineViewUVE& ViewUVE() const noexcept { return m_view; }
+    const Editor::AnimationTimelineView& Resync();
+    [[nodiscard]] const Editor::AnimationTimelineView& View() const noexcept { return m_view; }
     /// Asks for a name in a small dialog; `done` gets it.
-    static void AskNameUVE(const std::string& title, const std::string& initial, std::function<void(const std::string&)> done);
+    static void AskName(const std::string& title, const std::string& initial, std::function<void(const std::string&)> done);
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildToolbarUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildStatusBarUVE();
-    void ShowPlayerMenuUVE();
-    void ShowClipMenuUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildToolbar();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildStatusBar();
+    void ShowPlayerMenu();
+    void ShowClipMenu();
     /// Load Library: import a project's .uvanimlib into this player's list (or link it live).
     /// Export Library: this player's animations to a new .uvanimlib, named in a dialog.
-    void ExportLibraryUVE();
-    void ShowSettingsMenuUVE();
+    void ExportLibrary();
+    void ShowSettingsMenu();
     /// A file dropped on the panel: a library is loaded, a clip is added.
-    bool AcceptDroppedUVE(const std::string& contentRelative);
+    bool AcceptDropped(const std::string& contentRelative);
 
-    EditorUVE& m_editor;
-    EditorUVE::AnimationTimelineViewUVE m_view;
-    std::shared_ptr<KeyframeViewUVE> m_keys;
+    Editor& m_editor;
+    Editor::AnimationTimelineView m_view;
+    std::shared_ptr<KeyframeView> m_keys;
     std::shared_ptr<prism::Button> m_playerButton;
     std::shared_ptr<prism::Button> m_clipButton;
     std::shared_ptr<prism::Button> m_playButton;

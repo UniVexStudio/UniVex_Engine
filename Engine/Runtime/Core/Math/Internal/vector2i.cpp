@@ -8,11 +8,11 @@
 
 namespace UVE::Math {
 
-float LengthUVE(const Vector2iUVE& v) noexcept {
+float Length(const Vector2i& v) noexcept {
     return static_cast<float>(std::hypot(static_cast<double>(v.x), static_cast<double>(v.y)));
 }
 
-std::string ToStringUVE(const Vector2iUVE& vector) {
+std::string ToString(const Vector2i& vector) {
     return "(" + std::to_string(vector.x) + ", " + std::to_string(vector.y) + ")";
 }
 

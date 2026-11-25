@@ -12,8 +12,8 @@ namespace UVE::Editor {
 
 /// One object of a catalogue template. `parent` indexes an earlier object of the same template; the
 /// first object is the root and has no parent (-1).
-struct ContentCatalogueObjectUVE final {
-    Scene::Objects::SceneObjectKindUVE kind = Scene::Objects::SceneObjectKindUVE::Object3D;
+struct ContentCatalogueObject final {
+    Scene::Objects::SceneObjectKind kind = Scene::Objects::SceneObjectKind::Object3D;
     std::int32_t parent = -1;
     /// Name of the object inside the asset. Empty keeps the object's default name; the root is always
     /// named after the asset file instead.
@@ -21,7 +21,7 @@ struct ContentCatalogueObjectUVE final {
 };
 
 /// What an item makes when picked.
-enum class ContentCatalogueActionUVE : std::uint8_t {
+enum class ContentCatalogueAction : std::uint8_t {
     /// A real directory in the current Content folder.
     Folder = 0,
     /// A `.uventity` asset holding `objects`.
@@ -44,20 +44,20 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
 };
 
 /// An entry of the Content "+ Add" / right-click menu.
-struct ContentCatalogueItemUVE final {
+struct ContentCatalogueItem final {
     std::string_view id;
     std::string_view label;
     std::string_view group;
     std::string_view tooltip;
-    ContentCatalogueActionUVE action = ContentCatalogueActionUVE::EntityAsset;
-    std::span<const ContentCatalogueObjectUVE> objects;
+    ContentCatalogueAction action = ContentCatalogueAction::EntityAsset;
+    std::span<const ContentCatalogueObject> objects;
     /// The canonical file stem to name the new asset (e.g. "Character" for label "Character 3D").
     /// Empty falls back to label.
     std::string_view fileStem{};
 };
 
 /// One entity class the Entity Class window offers: a catalogue item, plus the words the window says about it.
-struct ContentCatalogueEntityClassUVE final {
+struct ContentCatalogueEntityClass final {
     /// The catalogue item that makes this body (`player`, `character`, ...). Its label names the
     /// body, its kind picks the icon, and its tooltip is the menu's.
     std::string_view itemId;
@@ -68,32 +68,32 @@ struct ContentCatalogueEntityClassUVE final {
 };
 
 /// Every item, in menu order: items of one group are adjacent and groups appear in the order of
-/// GetContentCatalogueGroupsUVE().
-[[nodiscard]] std::span<const ContentCatalogueItemUVE> GetContentCatalogueItemsUVE() noexcept;
+/// GetContentCatalogueGroups().
+[[nodiscard]] std::span<const ContentCatalogueItem> GetContentCatalogueItems() noexcept;
 
 /// The group names, in menu order.
-[[nodiscard]] std::span<const std::string_view> GetContentCatalogueGroupsUVE() noexcept;
+[[nodiscard]] std::span<const std::string_view> GetContentCatalogueGroups() noexcept;
 
-[[nodiscard]] const ContentCatalogueItemUVE* FindContentCatalogueItemUVE(std::string_view id) noexcept;
+[[nodiscard]] const ContentCatalogueItem* FindContentCatalogueItem(std::string_view id) noexcept;
 
 /// True when `item` matches a search: every space-separated word of `query` appears
 /// (case-insensitive) in its label, group or tooltip. An empty query matches everything.
-[[nodiscard]] bool DoesContentCatalogueItemMatchUVE(const ContentCatalogueItemUVE& item,
+[[nodiscard]] bool DoesContentCatalogueItemMatch(const ContentCatalogueItem& item,
                                                     std::string_view query) noexcept;
 
 /// How well `item` matches a search, for ordering results: 0 no match, 1 matched only through its
 /// group or tooltip, 2 its label contains the first word, 3 its label starts with it.
-[[nodiscard]] int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, std::string_view query) noexcept;
+[[nodiscard]] int RankContentCatalogueItem(const ContentCatalogueItem& item, std::string_view query) noexcept;
 
 /// The entity classes the Entity Class window offers, in window order. Each names a catalogue item, so a body added to
 /// the menu is listed there without a second description of what it is.
-[[nodiscard]] std::span<const ContentCatalogueEntityClassUVE> GetContentCatalogueEntityClassesUVE() noexcept;
+[[nodiscard]] std::span<const ContentCatalogueEntityClass> GetContentCatalogueEntityClasses() noexcept;
 
 /// True when `itemId` is one of the entity classes - the only ids the Entity Class window makes.
-[[nodiscard]] bool IsContentCatalogueEntityClassUVE(std::string_view itemId) noexcept;
+[[nodiscard]] bool IsContentCatalogueEntityClass(std::string_view itemId) noexcept;
 
 /// The object kind whose icon stands for `item` (its root; Folder for a folder).
-[[nodiscard]] Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(
-    const ContentCatalogueItemUVE& item) noexcept;
+[[nodiscard]] Scene::Objects::SceneObjectKind GetContentCatalogueIconKind(
+    const ContentCatalogueItem& item) noexcept;
 
 } // namespace UVE::Editor

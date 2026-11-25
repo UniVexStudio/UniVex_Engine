@@ -14,10 +14,10 @@
 
 namespace UVE::Render {
 
-inline constexpr std::size_t kMaxRtSceneBoxesUVE = 4096U;
+inline constexpr std::size_t kMaxRtSceneBoxes = 4096U;
 
 /// 64-byte std430-aligned ray-tracing scene proxy node for compute RT shadows, reflections, and GI.
-struct alignas(16) RtSceneBoxNodeUVE final {
+struct alignas(16) RtSceneBoxNode final {
     /// xyz = world AABB min, w = metallic.
     std::array<float, 4> minAndMetallic{0.0F, 0.0F, 0.0F, 0.0F};
     /// xyz = world AABB max, w = roughness.
@@ -28,42 +28,42 @@ struct alignas(16) RtSceneBoxNodeUVE final {
     std::array<float, 4> emissive{0.0F, 0.0F, 0.0F, 0.0F};
 };
 
-static_assert(sizeof(RtSceneBoxNodeUVE) == 64U, "RtSceneBoxNodeUVE must match std430 64-byte stride");
+static_assert(sizeof(RtSceneBoxNode) == 64U, "RtSceneBoxNode must match std430 64-byte stride");
 
-struct RtRayHitUVE final {
+struct RtRayHit final {
     bool hit = false;
     float distance = 0.0F;
     std::uint32_t boxIndex = 0U;
-    Math::Vector3UVE normal{0.0F, 1.0F, 0.0F};
-    Math::Vector3UVE albedo{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE emissive{0.0F, 0.0F, 0.0F};
+    Math::Vector3 normal{0.0F, 1.0F, 0.0F};
+    Math::Vector3 albedo{0.0F, 0.0F, 0.0F};
+    Math::Vector3 emissive{0.0F, 0.0F, 0.0F};
 };
 
 /// Collects ray-tracing scene proxy boxes from visible primitives in `entityManager`.
-[[nodiscard]] std::vector<RtSceneBoxNodeUVE> BuildRtSceneBoxesFromEntitiesUVE(
-    Scene::IEntityManagerUVE& entityManager, std::size_t maxBoxes = kMaxRtSceneBoxesUVE);
+[[nodiscard]] std::vector<RtSceneBoxNode> BuildRtSceneBoxesFromEntities(
+    Scene::IEntityManager& entityManager, std::size_t maxBoxes = kMaxRtSceneBoxes);
 
 /// Exact ray-AABB slab tracer matching `rt_trace.glsl` bit-for-bit in float32 arithmetic.
-[[nodiscard]] RtRayHitUVE TraceRayAgainstSceneBoxesUVE(std::span<const RtSceneBoxNodeUVE> boxes,
-                                                       const Math::Vector3UVE& origin,
-                                                       const Math::Vector3UVE& direction,
+[[nodiscard]] RtRayHit TraceRayAgainstSceneBoxes(std::span<const RtSceneBoxNode> boxes,
+                                                       const Math::Vector3& origin,
+                                                       const Math::Vector3& direction,
                                                        float tMin = 0.002F,
                                                        float tMax = 250.0F) noexcept;
 
 /// Evaluates ray-traced directional sun shadow visibility (0 = occluded, 1 = lit) and 1-bounce
 /// reflection/GI radiance at `worldPos` with surface `normal`.
-struct RtSurfaceResultUVE final {
+struct RtSurfaceResult final {
     float sunVisibility = 1.0F;
-    Math::Vector3UVE reflectionRadiance{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE giBounceRadiance{0.0F, 0.0F, 0.0F};
+    Math::Vector3 reflectionRadiance{0.0F, 0.0F, 0.0F};
+    Math::Vector3 giBounceRadiance{0.0F, 0.0F, 0.0F};
 };
 
-[[nodiscard]] RtSurfaceResultUVE EvaluateRtShadowAndBounceUVE(std::span<const RtSceneBoxNodeUVE> boxes,
-                                                              const Math::Vector3UVE& worldPos,
-                                                              const Math::Vector3UVE& normal,
-                                                              const Math::Vector3UVE& viewDir,
-                                                              const Math::Vector3UVE& sunDir,
-                                                              const Math::Vector3UVE& sunRadiance,
-                                                              const Math::Vector3UVE& skyColor) noexcept;
+[[nodiscard]] RtSurfaceResult EvaluateRtShadowAndBounce(std::span<const RtSceneBoxNode> boxes,
+                                                              const Math::Vector3& worldPos,
+                                                              const Math::Vector3& normal,
+                                                              const Math::Vector3& viewDir,
+                                                              const Math::Vector3& sunDir,
+                                                              const Math::Vector3& sunRadiance,
+                                                              const Math::Vector3& skyColor) noexcept;
 
 } // namespace UVE::Render

@@ -23,10 +23,10 @@ this is not unused-content reachability stripping or world partitioning. Output 
 
 Launch a relocated package with `uve_runtime --project game.uvproject`. The cooked catalog resolves
 against the package root, independently of working directory or the original author's machine.
-The engine's existing asynchronous `LoadUVE<T>(guid, database)` is the demand-loading API. Handles
+The engine's existing asynchronous `Load<T>(guid, database)` is the demand-loading API. Handles
 pin data; duplicate requests share a record. Release all handles and collect to unload. A finite
 budget rejects a candidate that cannot fit, leaving a failed handle/diagnostic; release unused
-handles and call `ReloadUVE` (or release the failed handle, collect, then request it again).
+handles and call `Reload` (or release the failed handle, collect, then request it again).
 Failed replacements keep last-known-good data. A loader under a finite budget must supply a size
 callback. Built-in mesh, texture, shader, material, audio, animation and table loaders supply one.
 

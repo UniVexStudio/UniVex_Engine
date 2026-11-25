@@ -31,109 +31,109 @@
 namespace UVE::Editor {
 namespace {
 
-void DestroyTreeUVE(Core::EngineServicesUVE& services, const Scene::EntityUVE root) {
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
-    if (root == Scene::kInvalidEntityUVE || !em.IsAliveUVE(root)) {
+void DestroyTree(Core::EngineServices& services, const Scene::Entity root) {
+    Scene::IEntityManager& em = services.GetEntityManager();
+    if (root == Scene::kInvalidEntity || !em.IsAlive(root)) {
         return;
     }
-    std::vector<Scene::EntityUVE> doomed{root};
+    std::vector<Scene::Entity> doomed{root};
     for (std::size_t i = 0U; i < doomed.size(); ++i) {
-        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(em, doomed[i]);
+        const std::vector<Scene::Entity> children = services.GetSceneGraph().GetChildren(em, doomed[i]);
         doomed.insert(doomed.end(), children.begin(), children.end());
     }
     for (auto it = doomed.rbegin(); it != doomed.rend(); ++it) {
-        if (em.IsAliveUVE(*it)) {
-            em.DestroyEntityUVE(*it);
+        if (em.IsAlive(*it)) {
+            em.DestroyEntity(*it);
         }
     }
 }
 
-[[nodiscard]] Scene::EntityUVE FindNamedUnderUVE(Core::EngineServicesUVE& services, const Scene::EntityUVE root,
+[[nodiscard]] Scene::Entity FindNamedUnder(Core::EngineServices& services, const Scene::Entity root,
                                                const std::string_view name) {
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
-    std::vector<Scene::EntityUVE> open{root};
+    Scene::IEntityManager& em = services.GetEntityManager();
+    std::vector<Scene::Entity> open{root};
     for (std::size_t i = 0U; i < open.size() && i < 4096U; ++i) {
-        if (open[i] != root && em.HasComponentUVE<Scene::NameComponentUVE>(open[i]) &&
-            em.GetComponentUVE<Scene::NameComponentUVE>(open[i]).name == name) {
+        if (open[i] != root && em.HasComponent<Scene::NameComponent>(open[i]) &&
+            em.GetComponent<Scene::NameComponent>(open[i]).name == name) {
             return open[i];
         }
-        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(em, open[i]);
+        const std::vector<Scene::Entity> children = services.GetSceneGraph().GetChildren(em, open[i]);
         open.insert(open.end(), children.begin(), children.end());
     }
-    return Scene::kInvalidEntityUVE;
+    return Scene::kInvalidEntity;
 }
 
 } // namespace
 
-std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& request, const Math::Vector2UVE& size,
-                                                Math::Vector2UVE& outUsed) {
-    outUsed = Math::Vector2UVE{0.0F, 0.0F};
+std::uint64_t Editor::RenderWidgetPreview(const WidgetPreviewRequest& request, const Math::Vector2& size,
+                                                Math::Vector2& outUsed) {
+    outUsed = Math::Vector2{0.0F, 0.0F};
     if (request.assetPath.empty() || !m_viewports.widgetPreview || !m_documentSceneFactory || size.x < 8.0F || size.y < 8.0F) {
         return 0U;
     }
     if (!m_widgetPreview.has_value()) {
-        WidgetPreviewUVE preview;
+        WidgetPreview preview;
         preview.scene = m_documentSceneFactory();
         if (preview.scene == nullptr) {
             return 0U;
         }
         m_widgetPreview = std::move(preview);
     }
-    WidgetPreviewUVE& preview = *m_widgetPreview;
-    Core::EngineServicesUVE& services = preview.scene->GetServicesUVE();
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& graph = services.GetSceneGraphUVE();
+    WidgetPreview& preview = *m_widgetPreview;
+    Core::EngineServices& services = preview.scene->GetServices();
+    Scene::IEntityManager& em = services.GetEntityManager();
+    Scene::ISceneGraph& graph = services.GetSceneGraph();
 
     // The asset, stood in the preview's world again when the widget names another.
-    if (preview.assetPath != request.assetPath || (preview.root != Scene::kInvalidEntityUVE && !em.IsAliveUVE(preview.root))) {
-        DestroyTreeUVE(services, preview.root);
-        preview.root = Scene::kInvalidEntityUVE;
+    if (preview.assetPath != request.assetPath || (preview.root != Scene::kInvalidEntity && !em.IsAlive(preview.root))) {
+        DestroyTree(services, preview.root);
+        preview.root = Scene::kInvalidEntity;
         preview.assetPath = request.assetPath;
-        std::filesystem::path absolute = m_services->GetFileSystemUVE().ResolveRealPathUVE(request.assetPath);
+        std::filesystem::path absolute = m_services->GetFileSystem().ResolveRealPath(request.assetPath);
         std::error_code error;
         if (absolute.empty() || !std::filesystem::is_regular_file(absolute, error)) {
-            absolute = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot.parent_path() / request.assetPath;
+            absolute = m_services->GetProjectFileIndex().GetSnapshot().contentRoot.parent_path() / request.assetPath;
         }
         if (std::filesystem::is_regular_file(absolute, error)) {
-            const Asset::AssetGuidUVE guid = services.GetAssetDatabaseUVE().RegisterUVE(absolute);
-            if (guid != Asset::kInvalidAssetGuidUVE) {
-                preview.root = services.GetPrefabSystemUVE().InstantiateUVE(em, graph, services.GetAssetDatabaseUVE(), guid,
-                                                                            Scene::kInvalidEntityUVE);
+            const Asset::AssetGuid guid = services.GetAssetDatabase().Register(absolute);
+            if (guid != Asset::kInvalidAssetGuid) {
+                preview.root = services.GetPrefabSystem().Instantiate(em, graph, services.GetAssetDatabase(), guid,
+                                                                            Scene::kInvalidEntity);
             }
         }
         preview.framedRadius = 0.0F;   // frame again
     }
     // The widget's Stage, rebuilt when it changed in the editor.
-    if (request.stage != preview.stageBytes || (preview.stage != Scene::kInvalidEntityUVE && !em.IsAliveUVE(preview.stage))) {
-        DestroyTreeUVE(services, preview.stage);
-        preview.stage = Scene::kInvalidEntityUVE;
-        preview.stageCamera = Scene::kInvalidEntityUVE;
+    if (request.stage != preview.stageBytes || (preview.stage != Scene::kInvalidEntity && !em.IsAlive(preview.stage))) {
+        DestroyTree(services, preview.stage);
+        preview.stage = Scene::kInvalidEntity;
+        preview.stageCamera = Scene::kInvalidEntity;
         preview.stageBytes = request.stage;
         if (!request.stage.empty()) {
-            const std::vector<Scene::EntityUVE> roots = services.GetSceneSerializerUVE().RestoreUVE(
-                em, Scene::SceneSnapshotUVE{request.stage, Scene::SceneAssetTypeUVE::Prefab});
+            const std::vector<Scene::Entity> roots = services.GetSceneSerializer().Restore(
+                em, Scene::SceneSnapshot{request.stage, Scene::SceneAssetType::Prefab});
             if (roots.size() == 1U) {
                 preview.stage = roots.front();
-                preview.stageCamera = FindNamedUnderUVE(services, preview.stage, Scene::kWidgetStageCameraNameUVE);
-                if (preview.stageCamera != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::CameraComponentUVE>(preview.stageCamera)) {
-                    em.GetComponentUVE<Scene::CameraComponentUVE>(preview.stageCamera).current = false;
+                preview.stageCamera = FindNamedUnder(services, preview.stage, Scene::kWidgetStageCameraName);
+                if (preview.stageCamera != Scene::kInvalidEntity && em.HasComponent<Scene::CameraComponent>(preview.stageCamera)) {
+                    em.GetComponent<Scene::CameraComponent>(preview.stageCamera).current = false;
                 }
             }
         }
     }
-    if (preview.root == Scene::kInvalidEntityUVE || !em.IsAliveUVE(preview.root) ||
-        !em.HasComponentUVE<Scene::TransformComponentUVE>(preview.root)) {
+    if (preview.root == Scene::kInvalidEntity || !em.IsAlive(preview.root) ||
+        !em.HasComponent<Scene::TransformComponent>(preview.root)) {
         return 0U;
     }
     // On the Stage the asset stands on its ModelSpot; alone, at the middle of the studio.
-    const Scene::EntityUVE spot = em.IsAliveUVE(preview.stage) ? FindNamedUnderUVE(services, preview.stage, Scene::kWidgetModelSpotNameUVE)
-                                                              : Scene::kInvalidEntityUVE;
+    const Scene::Entity spot = em.IsAlive(preview.stage) ? FindNamedUnder(services, preview.stage, Scene::kWidgetModelSpotName)
+                                                              : Scene::kInvalidEntity;
     {
-        const Scene::EntityUVE parent = em.HasComponentUVE<Scene::HierarchyComponentUVE>(preview.root)
-                                            ? em.GetComponentUVE<Scene::HierarchyComponentUVE>(preview.root).parent
-                                            : Scene::kInvalidEntityUVE;
+        const Scene::Entity parent = em.HasComponent<Scene::HierarchyComponent>(preview.root)
+                                            ? em.GetComponent<Scene::HierarchyComponent>(preview.root).parent
+                                            : Scene::kInvalidEntity;
         if (parent != spot) {
-            graph.SetParentUVE(em, preview.root, spot);
+            graph.SetParent(em, preview.root, spot);
         }
     }
 
@@ -144,19 +144,19 @@ std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& r
         preview.spinDegrees = std::fmod(preview.spinDegrees + request.spinDegreesPerSecond * dt, 360.0F);
     }
     preview.lastFrame = now;
-    Scene::TransformComponentUVE transform = em.GetComponentUVE<Scene::TransformComponentUVE>(preview.root);
-    Math::QuaternionUVE turn{};
-    if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F},
-                                  (request.yawDegrees + preview.spinDegrees) * (Math::kPiUVE / 180.0F), turn)) {
-        transform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    Scene::TransformComponent transform = em.GetComponent<Scene::TransformComponent>(preview.root);
+    Math::Quaternion turn{};
+    if (Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F},
+                                  (request.yawDegrees + preview.spinDegrees) * (Math::kPi / 180.0F), turn)) {
+        transform.localPosition = Math::Vector3{0.0F, 0.0F, 0.0F};
         transform.localRotation = turn;
-        transform.rotationEditMode = Scene::RotationEditModeUVE::Quaternion;
-        graph.SetLocalTransformUVE(em, preview.root, transform);
+        transform.rotationEditMode = Scene::RotationEditMode::Quaternion;
+        graph.SetLocalTransform(em, preview.root, transform);
     }
-    graph.UpdateUVE(em);
+    graph.Update(em);
 
     // Framed on the look-at height, as far back as the widget's camera stands.
-    ViewportOverlayStateUVE& state = preview.overlay;
+    ViewportOverlayState& state = preview.overlay;
     const std::array<float, 3> target{0.0F, request.lookAtHeight, 0.0F};
     const float radius = std::max(0.5F, request.cameraDistance * 0.4F);
     if (target != preview.framedTarget || std::fabs(radius - preview.framedRadius) > 1.0e-3F) {
@@ -173,17 +173,17 @@ std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& r
     state.pointerOverOverlay = false;
     state.bones.clear();
     state.colliderLines.clear();
-    state.input = EditorViewportInputUVE{};
+    state.input = EditorViewportInput{};
 
     // On a Stage the view looks through its StageCamera, as the game will; else the studio.
-    const bool throughStage = preview.stageCamera != Scene::kInvalidEntityUVE && em.IsAliveUVE(preview.stageCamera);
+    const bool throughStage = preview.stageCamera != Scene::kInvalidEntity && em.IsAlive(preview.stageCamera);
     state.studioView = !throughStage;
 
     // The view draws whatever document is active: for this call, the preview's world.
-    Core::EngineServicesUVE* const previous = m_services;
-    const Scene::EntityUVE previousCamera = m_previewCamera;
+    Core::EngineServices* const previous = m_services;
+    const Scene::Entity previousCamera = m_previewCamera;
     m_services = &services;
-    m_previewCamera = throughStage ? preview.stageCamera : Scene::kInvalidEntityUVE;
+    m_previewCamera = throughStage ? preview.stageCamera : Scene::kInvalidEntity;
     std::uint64_t texture = 0U;
     try {
         texture = m_viewports.widgetPreview(size, outUsed, state);
@@ -197,12 +197,12 @@ std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& r
     return texture;
 }
 
-void EditorUVE::EndWidgetPreviewUVE() {
+void Editor::EndWidgetPreview() {
     if (!m_widgetPreview.has_value()) {
         return;
     }
     if (m_widgetPreview->scene != nullptr && m_documentSceneClosing) {
-        m_documentSceneClosing(m_widgetPreview->scene->GetServicesUVE());
+        m_documentSceneClosing(m_widgetPreview->scene->GetServices());
     }
     m_widgetPreview.reset();
 }

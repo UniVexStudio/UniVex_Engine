@@ -6,8 +6,8 @@
 
 namespace UVE::Math {
 
-std::string ToStringUVE(const SphereUVE& sphere) {
-    return "SphereUVE(center=" + ToStringUVE(sphere.center) +
+std::string ToString(const Sphere& sphere) {
+    return "Sphere(center=" + ToString(sphere.center) +
            ", radius=" + std::to_string(sphere.radius) + ")";
 }
 

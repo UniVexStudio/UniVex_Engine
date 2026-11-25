@@ -22,20 +22,20 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr float kLargeUVE = 240.0F;
+constexpr float kLarge = 240.0F;
 
 /// The large look at a slot's preview: the picture and the asset's name.
-class LargePreviewUVE final : public prism::Widget {
+class LargePreview final : public prism::Widget {
 public:
-    LargePreviewUVE(std::vector<std::uint32_t> pixels, const int width, const int height, std::string name)
+    LargePreview(std::vector<std::uint32_t> pixels, const int width, const int height, std::string name)
         : m_pixels(std::move(pixels)), m_width(width), m_height(height), m_name(std::move(name)) {}
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(kLargeUVE + 12.0F, kLargeUVE + 34.0F)); }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(kLarge + 12.0F, kLarge + 34.0F)); }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         const prism::Rect r = rect();
         c.fillRoundRect(r, 5.0F, t.panel);
         c.strokeRoundRect(r, 5.0F, t.borderStrong, 1);
-        const prism::Rect image{r.x + 6.0F, r.y + 6.0F, kLargeUVE, kLargeUVE};
+        const prism::Rect image{r.x + 6.0F, r.y + 6.0F, kLarge, kLarge};
         prism::drawThumbnailBackdrop(c, image);
         c.blitBlend(m_pixels.data(), m_width, m_height, m_width, image);
         c.textIn(*t.small, prism::Rect{r.x + 8.0F, image.bottom() + 4.0F, r.w - 16.0F, 20.0F}, m_name, t.textBright,
@@ -53,7 +53,7 @@ private:
     std::string m_name;
 };
 
-[[nodiscard]] std::filesystem::path ResolveContentRelativePathUVE(const std::filesystem::path& path,
+[[nodiscard]] std::filesystem::path ResolveContentRelativePath(const std::filesystem::path& path,
                                                                   const std::filesystem::path& contentRoot) {
     if (path.empty()) {
         return {};
@@ -94,7 +94,7 @@ private:
 
 } // namespace
 
-bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int& width, int& height,
+bool ReadTexturePixels(const std::uintptr_t texture, const bool bottomUp, int& width, int& height,
                           std::vector<std::uint32_t>& pixels) {
     if (texture == 0U) {
         return false;
@@ -146,14 +146,14 @@ bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int
     return true;
 }
 
-AssetThumbnailUVE::AssetThumbnailUVE(EditorUVE& editor, const KindUVE kind, const float side)
+AssetThumbnail::AssetThumbnail(Editor& editor, const Kind kind, const float side)
     : m_editor(editor), m_kind(kind), m_side(std::clamp(side, 32.0F, 256.0F)) {
     setTooltip("Click to see it large");
 }
 
-void AssetThumbnailUVE::setAssetUVE(const std::filesystem::path& absolute) {
-    const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-    const std::filesystem::path relative = ResolveContentRelativePathUVE(absolute, root);
+void AssetThumbnail::setAsset(const std::filesystem::path& absolute) {
+    const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+    const std::filesystem::path relative = ResolveContentRelativePath(absolute, root);
     const bool has = !relative.empty();
     if (relative != m_relative || has != m_hasAsset) {
         m_relative = relative;
@@ -163,43 +163,43 @@ void AssetThumbnailUVE::setAssetUVE(const std::filesystem::path& absolute) {
         m_pixels.clear();
         invalidate();
     }
-    refreshUVE();
+    refresh();
 }
 
-void AssetThumbnailUVE::refreshUVE() {
+void AssetThumbnail::refresh() {
     if (!m_hasAsset) {
         return;
     }
     std::uintptr_t texture = 0U;
     std::uint64_t generation = 0U;
     switch (m_kind) {
-        case KindUVE::Material:
-            texture = m_editor.GetMaterialThumbnailUVE(m_relative);
+        case Kind::Material:
+            texture = m_editor.GetMaterialThumbnail(m_relative);
             generation = m_editor.m_materialThumbnailGeneration;
             break;
-        case KindUVE::Mesh:
-            texture = m_editor.GetMeshThumbnailUVE(m_relative);
+        case Kind::Mesh:
+            texture = m_editor.GetMeshThumbnail(m_relative);
             generation = m_editor.m_meshThumbnailGeneration;
             break;
-        case KindUVE::Texture: texture = m_editor.GetTextureThumbnailUVE(m_relative); break;
+        case Kind::Texture: texture = m_editor.GetTextureThumbnail(m_relative); break;
     }
     if (texture == 0U || (texture == m_texture && generation == m_generation && !m_pixels.empty())) {
         return;
     }
     // A material preview is a render target (bottom-up); a texture is an uploaded image, and the
     // mesh preview is drawn upright already (its projection is flipped for top-down images).
-    if (ReadTexturePixelsUVE(texture, m_kind == KindUVE::Material, m_width, m_height, m_pixels)) {
+    if (ReadTexturePixels(texture, m_kind == Kind::Material, m_width, m_height, m_pixels)) {
         m_texture = texture;
         m_generation = generation;
         invalidate();
     }
 }
 
-prism::Vec2 AssetThumbnailUVE::measure(prism::Vec2) {
+prism::Vec2 AssetThumbnail::measure(prism::Vec2) {
     return m_desired = constrain(prism::Vec2(m_side, m_side));
 }
 
-void AssetThumbnailUVE::paint(prism::Canvas& c) {
+void AssetThumbnail::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const float side = std::min(rect().w, rect().h);
     const prism::Rect r{rect().x, rect().y, side, side};
@@ -213,12 +213,12 @@ void AssetThumbnailUVE::paint(prism::Canvas& c) {
     c.strokeRect(r, hovered() ? t.highlight : t.border, 1);
 }
 
-bool AssetThumbnailUVE::onMouseDown(const prism::MouseEvent& e) {
+bool AssetThumbnail::onMouseDown(const prism::MouseEvent& e) {
     if (e.button != prism::MouseButton::Left || m_pixels.empty() || !prism::Application::exists()) {
         return e.button == prism::MouseButton::Left;
     }
     // Large, in a popup beside the slot, the slot itself unchanged; a click anywhere closes it.
-    auto large = prism::make<LargePreviewUVE>(m_pixels, m_width, m_height, m_relative.filename().string());
+    auto large = prism::make<LargePreview>(m_pixels, m_width, m_height, m_relative.filename().string());
     prism::PopupOptions options{};
     options.placement = prism::PopupPlacement::Below;
     options.anchor = rect();

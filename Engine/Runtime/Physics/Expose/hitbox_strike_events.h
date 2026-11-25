@@ -12,10 +12,10 @@ namespace UVE::Physics {
 /// the evidence (what struck what, how deeply, along which axis, on which channel); damage numbers,
 /// knockback, i-frames and hit reactions are gameplay, and it decides them from this. `strike` is
 /// the copied first-frame evidence: for an exit the numbers are the last-known live ones.
-struct Hitbox3DStrikeEnteredEventUVE final {
-    Hitbox3DStrikePairUVE strike;
+struct Hitbox3DStrikeEnteredEvent final {
+    Hitbox3DStrikePair strike;
 
-    [[nodiscard]] bool operator==(const Hitbox3DStrikeEnteredEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const Hitbox3DStrikeEnteredEvent&) const noexcept = default;
 };
 
 /// Queued when a pairing that was live on the previous tick is no longer in the snapshot - the
@@ -25,10 +25,10 @@ struct Hitbox3DStrikeEnteredEventUVE final {
 /// A strike that ends because the hurtbox was destroyed still carries the hurtbox handle and its
 /// last-known channel: gameplay that tracks "who am I currently hitting" by this event can drop the
 /// entry without a second lookup that would already be too late.
-struct Hitbox3DStrikeExitedEventUVE final {
-    Hitbox3DStrikePairUVE strike;
+struct Hitbox3DStrikeExitedEvent final {
+    Hitbox3DStrikePair strike;
 
-    [[nodiscard]] bool operator==(const Hitbox3DStrikeExitedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const Hitbox3DStrikeExitedEvent&) const noexcept = default;
 };
 
 } // namespace UVE::Physics

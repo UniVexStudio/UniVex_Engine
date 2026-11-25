@@ -29,7 +29,7 @@ namespace UVE::Physics {
 ///    than one quantum is treated as equal. Quantizing the SIMULATION would trade real accuracy
 ///    for that (a body moving less than a quantum per step would stop moving), so only the digest -
 ///    the thing that answers "are these two simulations still the same?" - is quantized.
-struct DeterministicStepSettingsUVE final {
+struct DeterministicStepSettings final {
     bool enabled = false;
 
     /// Lattice spacing for positions, in metres. 1/1024 is about a millimetre: fine enough that no
@@ -45,20 +45,20 @@ struct DeterministicStepSettingsUVE final {
 /// Entity indices are recycled, so the generation is part of the key: two different bodies can
 /// occupy the same index in different runs, and ordering by index alone would silently reorder
 /// them. Ordered lexicographically, index first.
-struct DeterministicBodyKeyUVE final {
+struct DeterministicBodyKey final {
     std::uint32_t index = 0U;
     std::uint32_t generation = 0U;
 
-    [[nodiscard]] constexpr bool operator<(const DeterministicBodyKeyUVE& rhs) const noexcept {
+    [[nodiscard]] constexpr bool operator<(const DeterministicBodyKey& rhs) const noexcept {
         return index < rhs.index || (index == rhs.index && generation < rhs.generation);
     }
-    [[nodiscard]] constexpr bool operator==(const DeterministicBodyKeyUVE& rhs) const noexcept {
+    [[nodiscard]] constexpr bool operator==(const DeterministicBodyKey& rhs) const noexcept {
         return index == rhs.index && generation == rhs.generation;
     }
 };
 
-[[nodiscard]] constexpr DeterministicBodyKeyUVE MakeBodyKeyUVE(const Scene::EntityUVE entity) noexcept {
-    return DeterministicBodyKeyUVE{entity.index, entity.generation};
+[[nodiscard]] constexpr DeterministicBodyKey MakeBodyKey(const Scene::Entity entity) noexcept {
+    return DeterministicBodyKey{entity.index, entity.generation};
 }
 
 /// Maps a value onto the integer lattice of spacing `quantum`.
@@ -66,32 +66,32 @@ struct DeterministicBodyKeyUVE final {
 /// Returns 0 for a non-finite value or a non-positive quantum, so a NaN can never reach the digest
 /// as a paylod-dependent bit pattern - two peers with the same broken input must agree that it is
 /// broken, not disagree on how.
-[[nodiscard]] std::int64_t QuantizeToLatticeUVE(float value, float quantum) noexcept;
+[[nodiscard]] std::int64_t QuantizeToLattice(float value, float quantum) noexcept;
 
 /// A lattice coordinate back as a float. The single multiplication is the only rounding step, so
 /// the result is bit-identical wherever the integer is.
-[[nodiscard]] float LatticeToScalarUVE(std::int64_t lattice, float quantum) noexcept;
+[[nodiscard]] float LatticeToScalar(std::int64_t lattice, float quantum) noexcept;
 
 /// One body's state as the digest sees it. Positions and velocities are already world-space: the
 /// digest never reads a transform hierarchy, because walking one would reintroduce a traversal
 /// order.
-struct DeterministicBodySampleUVE final {
-    Scene::EntityUVE entity{};
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE velocity{};
-    Math::Vector3UVE angularVelocity{};
+struct DeterministicBodySample final {
+    Scene::Entity entity{};
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 velocity{};
+    Math::Vector3 angularVelocity{};
 };
 
 /// FNV-1a, 64-bit. Chosen over a cryptographic hash because the input is a fixed, small,
 /// non-adversarial record and this runs per body per step; replay verification compares hashes for
 /// equality, never for secrecy.
-inline constexpr std::uint64_t kFnvOffsetBasis64UVE = 14695981039346656037ULL;
-inline constexpr std::uint64_t kFnvPrime64UVE = 1099511628211ULL;
+inline constexpr std::uint64_t kFnvOffsetBasis64 = 14695981039346656037ULL;
+inline constexpr std::uint64_t kFnvPrime64 = 1099511628211ULL;
 
-[[nodiscard]] std::uint64_t HashBytesUVE(std::uint64_t seed, const void* data, std::size_t size) noexcept;
+[[nodiscard]] std::uint64_t HashBytes(std::uint64_t seed, const void* data, std::size_t size) noexcept;
 
-[[nodiscard]] std::uint64_t HashScalarUVE(std::uint64_t seed, std::uint64_t value) noexcept;
+[[nodiscard]] std::uint64_t HashScalar(std::uint64_t seed, std::uint64_t value) noexcept;
 
 /// Digest of one world state, independent of the order `samples` happens to be in.
 ///
@@ -99,9 +99,9 @@ inline constexpr std::uint64_t kFnvPrime64UVE = 1099511628211ULL;
 /// stored in a different archetype layout - digests identically. That property is the whole point:
 /// a digest that only matched when the storage matched would report false divergence on every
 /// peer, which is worse than no digest at all.
-[[nodiscard]] std::uint64_t ComputeWorldDigestUVE(
-    std::span<const DeterministicBodySampleUVE> samples,
-    const DeterministicStepSettingsUVE& settings) noexcept;
+[[nodiscard]] std::uint64_t ComputeWorldDigest(
+    std::span<const DeterministicBodySample> samples,
+    const DeterministicStepSettings& settings) noexcept;
 
 /// Puts a pair list into canonical order and orientation.
 ///
@@ -113,6 +113,6 @@ inline constexpr std::uint64_t kFnvPrime64UVE = 1099511628211ULL;
 ///   without the negation would resolve every corrected pair in the wrong direction.
 ///
 /// Deterministic, in-place, no allocation.
-void CanonicalizeCollisionPairsUVE(std::vector<CollisionPairUVE>& pairs) noexcept;
+void CanonicalizeCollisionPairs(std::vector<CollisionPair>& pairs) noexcept;
 
 } // namespace UVE::Physics

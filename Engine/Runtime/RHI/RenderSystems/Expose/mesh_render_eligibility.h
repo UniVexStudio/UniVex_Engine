@@ -14,7 +14,7 @@
 
 namespace UVE::Render {
 
-enum class MeshRenderEligibilityReasonUVE : std::uint8_t {
+enum class MeshRenderEligibilityReason : std::uint8_t {
     Eligible = 0,
     InvalidAssetReferences,
     InvalidWorldTransform,
@@ -35,8 +35,8 @@ enum class MeshRenderEligibilityReasonUVE : std::uint8_t {
 /// frustum test there was nowhere for either to hook in.
 ///
 /// ON OCCLUSION CULLING, since this is where someone will come looking for it.
-/// Occluder3DComponentUVE is consumed by MeshRendererUVE's visibility build, which asks
-/// ResolveOccluder3DFullyHiddenUVE() against every occluder for every candidate and counts what it
+/// Occluder3DComponent is consumed by MeshRenderer's visibility build, which asks
+/// ResolveOccluder3DFullyHidden() against every occluder for every candidate and counts what it
 /// hides in `occlusionCulledEntities` (four integration tests cover that wiring, including a
 /// disabled occluder and the no-state camera-move case). Before that wiring landed, a conservative
 /// screen-space box rejection was costed here against the cull as it stands - clustered, roughly
@@ -61,25 +61,25 @@ enum class MeshRenderEligibilityReasonUVE : std::uint8_t {
 ///
 /// The hook point is this struct: worldBounds is already frustum-independent and already computed
 /// once per frame, which is exactly what a rejection stage needs.
-struct MeshRenderPlacementUVE final {
-    MeshRenderEligibilityReasonUVE reason = MeshRenderEligibilityReasonUVE::InvalidAssetReferences;
-    Math::Matrix4x4UVE worldMatrix{};
-    Math::AabbUVE worldBounds{};
+struct MeshRenderPlacement final {
+    MeshRenderEligibilityReason reason = MeshRenderEligibilityReason::InvalidAssetReferences;
+    Math::Matrix4x4 worldMatrix{};
+    Math::Aabb worldBounds{};
 
     /// True when the placement is usable - it says nothing about visibility, which needs a frustum.
-    [[nodiscard]] bool IsPlacedUVE() const noexcept {
-        return reason == MeshRenderEligibilityReasonUVE::Eligible;
+    [[nodiscard]] bool IsPlaced() const noexcept {
+        return reason == MeshRenderEligibilityReason::Eligible;
     }
 };
 
-struct MeshRenderEligibilityUVE final {
-    MeshRenderEligibilityReasonUVE reason = MeshRenderEligibilityReasonUVE::InvalidAssetReferences;
-    Math::Matrix4x4UVE worldMatrix{};
-    Math::AabbUVE worldBounds{};
+struct MeshRenderEligibility final {
+    MeshRenderEligibilityReason reason = MeshRenderEligibilityReason::InvalidAssetReferences;
+    Math::Matrix4x4 worldMatrix{};
+    Math::Aabb worldBounds{};
     float sortDepth = 0.0F;
 
-    [[nodiscard]] bool IsEligibleUVE() const noexcept {
-        return reason == MeshRenderEligibilityReasonUVE::Eligible;
+    [[nodiscard]] bool IsEligible() const noexcept {
+        return reason == MeshRenderEligibilityReason::Eligible;
     }
 };
 
@@ -87,7 +87,7 @@ struct MeshRenderEligibilityUVE final {
 /// reason to keep the placement. Defined IN TERMS of them rather than duplicating their logic, so
 /// the one-frustum and many-frustum paths can never drift apart.
 ///
-/// Evaluates one loaded scene MeshComponentUVE for render-queue handoff. The contract validates
+/// Evaluates one loaded scene MeshComponent for render-queue handoff. The contract validates
 /// asset GUID coherence, finite world transform/quaternion normalization, finite ordered mesh bounds,
 /// transformed bounds, frustum visibility, and finite sort depth, then publishes copied matrix/bounds
 /// facts. It performs no asset loading, GPU allocation, command submission, or ownership transfer.
@@ -95,11 +95,11 @@ struct MeshRenderEligibilityUVE final {
 /// rotation, finite ordered local bounds, the composed world matrix and the transformed world
 /// bounds. Every validity rule that does not mention a frustum lives here, so the two entry points
 /// cannot disagree about which meshes are well-formed.
-[[nodiscard]] bool EvaluateMeshRenderPlacementUVE(
-    const Scene::MeshComponentUVE& meshComponent,
-    const Scene::WorldTransformComponentUVE& worldTransform,
-    const Asset::MeshAssetUVE& mesh,
-    MeshRenderPlacementUVE& outPlacement) noexcept;
+[[nodiscard]] bool EvaluateMeshRenderPlacement(
+    const Scene::MeshComponent& meshComponent,
+    const Scene::WorldTransformComponent& worldTransform,
+    const Asset::MeshAsset& mesh,
+    MeshRenderPlacement& outPlacement) noexcept;
 
 /// Tests an already-computed placement against one frustum and derives its sort depth.
 ///
@@ -109,23 +109,23 @@ struct MeshRenderEligibilityUVE final {
 /// An unplaced input is rejected rather than trusted. A caller that skipped the placement step, or
 /// whose placement failed, must not silently get a queue entry built on a default matrix.
 ///
-/// `frustumTestsDisabled` is the frustum-culling debug freeze (see CullingSettingsUVE and
-/// MeshVisibilitySetUVE::frustumTestsDisabled): the plane test is skipped, so a placed mesh outside
+/// `frustumTestsDisabled` is the frustum-culling debug freeze (see CullingSettings and
+/// MeshVisibilitySet::frustumTestsDisabled): the plane test is skipped, so a placed mesh outside
 /// the frustum is still eligible. The sort depth is NOT skipped - it is measured against this same
 /// frustum's near plane, which is what keeps a frozen frame's queue order meaningful instead of
 /// leaving every off-screen item at depth zero. Placement validity is never skipped either: a
 /// freeze draws everything that exists, not everything that was malformed.
-[[nodiscard]] bool TestMeshRenderVisibilityUVE(
-    const MeshRenderPlacementUVE& placement,
-    const Math::FrustumUVE& cullFrustum,
-    MeshRenderEligibilityUVE& outEligibility,
+[[nodiscard]] bool TestMeshRenderVisibility(
+    const MeshRenderPlacement& placement,
+    const Math::Frustum& cullFrustum,
+    MeshRenderEligibility& outEligibility,
     bool frustumTestsDisabled = false) noexcept;
 
-[[nodiscard]] bool EvaluateMeshRenderEligibilityUVE(
-    const Scene::MeshComponentUVE& meshComponent,
-    const Scene::WorldTransformComponentUVE& worldTransform,
-    const Asset::MeshAssetUVE& mesh,
-    const Math::FrustumUVE& cullFrustum,
-    MeshRenderEligibilityUVE& outEligibility) noexcept;
+[[nodiscard]] bool EvaluateMeshRenderEligibility(
+    const Scene::MeshComponent& meshComponent,
+    const Scene::WorldTransformComponent& worldTransform,
+    const Asset::MeshAsset& mesh,
+    const Math::Frustum& cullFrustum,
+    MeshRenderEligibility& outEligibility) noexcept;
 
 } // namespace UVE::Render

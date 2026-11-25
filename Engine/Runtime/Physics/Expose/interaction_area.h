@@ -18,29 +18,29 @@ namespace UVE::Physics {
 /// ones that passed the gates and were actually evaluated, and `truncatedAreaCount` counts the
 /// areas whose authored `maximumCandidates` cut their list short - the overflow is reported here
 /// AND on the area itself, never silently swallowed.
-struct InteractionAreaScanResultUVE final {
+struct InteractionAreaScanResult final {
     /// Eligible interactors this frame: a character controller carrying a valid collider and a
     /// world transform. This is the candidate set every area was evaluated against.
     std::size_t interactorCount = 0U;
-    /// Every InteractionArea3DComponentUVE the scan visited.
+    /// Every InteractionArea3DComponent the scan visited.
     std::size_t areaCount = 0U;
     /// The areas that passed `enabled` + validator + world transform and were evaluated.
     std::size_t refreshedAreaCount = 0U;
     /// Areas whose authored `maximumCandidates` filled before their overlaps ran out.
     std::size_t truncatedAreaCount = 0U;
     /// The primary interactor this frame - the first in (index, generation) order - or
-    /// kInvalidEntityUVE when nothing in the scene can interact.
-    Scene::EntityUVE primaryInteractor = Scene::kInvalidEntityUVE;
+    /// kInvalidEntity when nothing in the scene can interact.
+    Scene::Entity primaryInteractor = Scene::kInvalidEntity;
     /// The single area marked focused this frame (nearest to the primary interactor, ties broken
-    /// by (index, generation)), or kInvalidEntityUVE when nothing is focused.
-    Scene::EntityUVE focusedArea = Scene::kInvalidEntityUVE;
+    /// by (index, generation)), or kInvalidEntity when nothing is focused.
+    Scene::Entity focusedArea = Scene::kInvalidEntity;
 
-    [[nodiscard]] bool HasPrimaryInteractorUVE() const noexcept {
-        return primaryInteractor != Scene::kInvalidEntityUVE;
+    [[nodiscard]] bool HasPrimaryInteractor() const noexcept {
+        return primaryInteractor != Scene::kInvalidEntity;
     }
 
-    [[nodiscard]] bool HasFocusedAreaUVE() const noexcept {
-        return focusedArea != Scene::kInvalidEntityUVE;
+    [[nodiscard]] bool HasFocusedArea() const noexcept {
+        return focusedArea != Scene::kInvalidEntity;
     }
 };
 
@@ -49,8 +49,8 @@ struct InteractionAreaScanResultUVE final {
 /// is focused on.
 ///
 /// This is the whole per-frame contract, in one callable place, because the alternative is what
-/// this engine had before: the same three passes living inside EngineCoreUVE's tick where nothing
-/// without an EngineCoreUVE could exercise them. The engine core still owns WHEN this runs (the
+/// this engine had before: the same three passes living inside EngineCore's tick where nothing
+/// without an EngineCore could exercise them. The engine core still owns WHEN this runs (the
 /// fixed-step order is a tick decision); what runs is here, and it is testable against a plain
 /// entity manager.
 ///
@@ -67,10 +67,10 @@ struct InteractionAreaScanResultUVE final {
 ///    interactor list or a stale focus flag can never outlive the reason it existed.
 ///
 ///  * **Overlap is exact and symmetric.** Two oriented boxes (world pose + authored half extents;
-///    the area's own world scale is deliberately not applied, the ColliderComponentUVE /
-///    AreaComponentUVE convention) must overlap by the 15-axis test - touching boundaries do not
+///    the area's own world scale is deliberately not applied, the ColliderComponent /
+///    AreaComponent convention) must overlap by the 15-axis test - touching boundaries do not
 ///    count - and BOTH layer/mask directions must accept: `(interactor.layer & area.mask)` and
-///    `(area.layer & interactor.mask)`, AreaOverlapSystemUVE's rule. An area never lists the
+///    `(area.layer & interactor.mask)`, AreaOverlapSystem's rule. An area never lists the
 ///    interactor living on its own entity.
 ///
 ///  * **`interactionTag` is carried, not filtered.** Two areas with different tags both track the
@@ -79,7 +79,7 @@ struct InteractionAreaScanResultUVE final {
 ///    and authored for that layer.
 ///
 ///  * **The list is bounded twice.** The authored `maximumCandidates` is honoured as-is, capped by
-///    kMaximumInteractionAreaCandidatesUVE, the fixed storage. The moment a candidate does not fit,
+///    kMaximumInteractionAreaCandidates, the fixed storage. The moment a candidate does not fit,
 ///    `interactorsTruncated` is set - the list says "at least this many" rather than pretending it
 ///    is complete. An authored 0 never reaches this code: it fails the component validator
 ///    (`maximumCandidates > 0`), so the area is refused as invalid and cleared - tracking nobody on
@@ -94,7 +94,7 @@ struct InteractionAreaScanResultUVE final {
 /// Acting on the focus (prompt UI, an "interact" binding, focus enter/exit events) is deliberately
 /// not done here - that is the gameplay layer this engine does not own yet, and the same boundary
 /// Hitbox3D/Hurtbox3D keep for damage.
-[[nodiscard]] InteractionAreaScanResultUVE SyncInteractionAreasUVE(
-    Scene::IEntityManagerUVE& entityManager);
+[[nodiscard]] InteractionAreaScanResult SyncInteractionAreas(
+    Scene::IEntityManager& entityManager);
 
 } // namespace UVE::Physics

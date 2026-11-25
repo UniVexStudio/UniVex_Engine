@@ -13,62 +13,62 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] Math::QuaternionUVE UsableRotationUVE(const Math::QuaternionUVE& rotation) noexcept {
-    Math::QuaternionUVE normalized{};
-    if (Math::TryNormalizeUVE(rotation, normalized)) {
+[[nodiscard]] Math::Quaternion UsableRotation(const Math::Quaternion& rotation) noexcept {
+    Math::Quaternion normalized{};
+    if (Math::TryNormalize(rotation, normalized)) {
         return normalized;
     }
     return {};
 }
 
-[[nodiscard]] bool IsRuntimeColliderValidUVE(const ColliderComponentUVE& collider) noexcept {
-    ColliderComponentUVE sanitized = collider;
+[[nodiscard]] bool IsRuntimeColliderValid(const ColliderComponent& collider) noexcept {
+    ColliderComponent sanitized = collider;
     sanitized.friction = std::isfinite(sanitized.friction) ? std::clamp(sanitized.friction, 0.0F, 1.0F) : 0.0F;
     sanitized.restitution =
         std::isfinite(sanitized.restitution) ? std::clamp(sanitized.restitution, 0.0F, 1.0F) : 0.0F;
-    return IsColliderComponentValidUVE(sanitized);
+    return IsColliderComponentValid(sanitized);
 }
 
-[[nodiscard]] Math::Vector3UVE ToLocalUVE(const Math::Vector3UVE& center,
-                                          const Math::QuaternionUVE& rotation,
-                                          const Math::Vector3UVE& point) noexcept {
-    Math::QuaternionUVE inverse{};
-    if (!Math::TryInverseUVE(rotation, inverse)) {
+[[nodiscard]] Math::Vector3 ToLocal(const Math::Vector3& center,
+                                          const Math::Quaternion& rotation,
+                                          const Math::Vector3& point) noexcept {
+    Math::Quaternion inverse{};
+    if (!Math::TryInverse(rotation, inverse)) {
         inverse = {};
     }
-    return Math::RotateVectorUVE(inverse, point - center);
+    return Math::RotateVector(inverse, point - center);
 }
 
-[[nodiscard]] Math::Vector3UVE ClosestPointOnSegmentUVE(const Math::Vector3UVE& start,
-                                                        const Math::Vector3UVE& end,
-                                                        const Math::Vector3UVE& point) noexcept {
-    const Math::Vector3UVE delta = end - start;
-    const float lengthSquared = Math::LengthSquaredUVE(delta);
+[[nodiscard]] Math::Vector3 ClosestPointOnSegment(const Math::Vector3& start,
+                                                        const Math::Vector3& end,
+                                                        const Math::Vector3& point) noexcept {
+    const Math::Vector3 delta = end - start;
+    const float lengthSquared = Math::LengthSquared(delta);
     if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
         return start;
     }
-    const float t = std::clamp(Math::DotUVE(point - start, delta) / lengthSquared, 0.0F, 1.0F);
+    const float t = std::clamp(Math::Dot(point - start, delta) / lengthSquared, 0.0F, 1.0F);
     return start + delta * t;
 }
 
-[[nodiscard]] bool CapsuleSegmentUVE(const ColliderComponentUVE& collider,
-                                     const Math::Vector3UVE& center,
-                                     const Math::QuaternionUVE& rotation, Math::Vector3UVE& start,
-                                     Math::Vector3UVE& end) noexcept {
+[[nodiscard]] bool CapsuleSegment(const ColliderComponent& collider,
+                                     const Math::Vector3& center,
+                                     const Math::Quaternion& rotation, Math::Vector3& start,
+                                     Math::Vector3& end) noexcept {
     const float half = collider.height * 0.5F - collider.radius;
     if (!std::isfinite(half) || half < 0.0F) {
         return false;
     }
-    const Math::Vector3UVE offset = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, half, 0.0F});
+    const Math::Vector3 offset = Math::RotateVector(rotation, Math::Vector3{0.0F, half, 0.0F});
     start = center - offset;
     end = center + offset;
-    return Math::IsFiniteUVE(start) && Math::IsFiniteUVE(end);
+    return Math::IsFinite(start) && Math::IsFinite(end);
 }
 
-[[nodiscard]] std::optional<Math::RayHitUVE> RaySphereUVE(const Math::RayUVE& ray,
-                                                          const Math::Vector3UVE& center, const float radius,
+[[nodiscard]] std::optional<Math::RayHit> RaySphere(const Math::Ray& ray,
+                                                          const Math::Vector3& center, const float radius,
                                                           const float maxDistance) noexcept {
-    if (!Math::IsFiniteUVE(ray.origin) || !Math::IsFiniteUVE(ray.direction) || !Math::IsFiniteUVE(center) ||
+    if (!Math::IsFinite(ray.origin) || !Math::IsFinite(ray.direction) || !Math::IsFinite(center) ||
         !std::isfinite(radius) || radius <= 0.0F || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
         return std::nullopt;
     }
@@ -84,7 +84,7 @@ namespace {
         return std::nullopt;
     }
     if (c <= 0.0) {
-        return Math::RayHitUVE{0.0F, {}};
+        return Math::RayHit{0.0F, {}};
     }
     const double b = 2.0 * (ox * dx + oy * dy + oz * dz);
     const double disc = b * b - 4.0 * a * c;
@@ -99,32 +99,32 @@ namespace {
     if (!std::isfinite(t) || t < 0.0 || t > static_cast<double>(maxDistance)) {
         return std::nullopt;
     }
-    const Math::Vector3UVE hit = ray.origin + ray.direction * static_cast<float>(t);
-    const Math::Vector3UVE outward = hit - center;
-    const float lengthSquared = Math::LengthSquaredUVE(outward);
+    const Math::Vector3 hit = ray.origin + ray.direction * static_cast<float>(t);
+    const Math::Vector3 outward = hit - center;
+    const float lengthSquared = Math::LengthSquared(outward);
     if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
-        return Math::RayHitUVE{static_cast<float>(t), {}};
+        return Math::RayHit{static_cast<float>(t), {}};
     }
-    return Math::RayHitUVE{static_cast<float>(t), Math::NormalizeUVE(outward)};
+    return Math::RayHit{static_cast<float>(t), Math::Normalize(outward)};
 }
 
-[[nodiscard]] std::optional<Math::RayHitUVE> RayCapsuleUVE(const Math::RayUVE& ray,
-                                                           const Math::Vector3UVE& start,
-                                                           const Math::Vector3UVE& end, const float radius,
+[[nodiscard]] std::optional<Math::RayHit> RayCapsule(const Math::Ray& ray,
+                                                           const Math::Vector3& start,
+                                                           const Math::Vector3& end, const float radius,
                                                            const float maxDistance) noexcept {
-    const Math::Vector3UVE axis = end - start;
-    const float axisLengthSquared = Math::LengthSquaredUVE(axis);
+    const Math::Vector3 axis = end - start;
+    const float axisLengthSquared = Math::LengthSquared(axis);
     if (!std::isfinite(axisLengthSquared) || axisLengthSquared <= 0.0F) {
-        return RaySphereUVE(ray, start, radius, maxDistance);
+        return RaySphere(ray, start, radius, maxDistance);
     }
     const float axisLength = std::sqrt(axisLengthSquared);
-    const Math::Vector3UVE unit = axis * (1.0F / axisLength);
-    if (!Math::IsFiniteUVE(unit)) {
+    const Math::Vector3 unit = axis * (1.0F / axisLength);
+    if (!Math::IsFinite(unit)) {
         return std::nullopt;
     }
 
-    std::optional<Math::RayHitUVE> best = RaySphereUVE(ray, start, radius, maxDistance);
-    const auto consider = [&best](const std::optional<Math::RayHitUVE>& hit) {
+    std::optional<Math::RayHit> best = RaySphere(ray, start, radius, maxDistance);
+    const auto consider = [&best](const std::optional<Math::RayHit>& hit) {
         if (!hit.has_value()) {
             return;
         }
@@ -132,7 +132,7 @@ namespace {
             best = hit;
         }
     };
-    consider(RaySphereUVE(ray, end, radius, maxDistance));
+    consider(RaySphere(ray, end, radius, maxDistance));
 
     const double ux = static_cast<double>(unit.x);
     const double uy = static_cast<double>(unit.y);
@@ -168,14 +168,14 @@ namespace {
                 if (axial < 0.0 || axial > static_cast<double>(axisLength)) {
                     continue;
                 }
-                const Math::Vector3UVE hit = ray.origin + ray.direction * static_cast<float>(t);
-                const Math::Vector3UVE onAxis = start + unit * static_cast<float>(axial);
-                const Math::Vector3UVE outward = hit - onAxis;
-                const float lengthSquared = Math::LengthSquaredUVE(outward);
+                const Math::Vector3 hit = ray.origin + ray.direction * static_cast<float>(t);
+                const Math::Vector3 onAxis = start + unit * static_cast<float>(axial);
+                const Math::Vector3 outward = hit - onAxis;
+                const float lengthSquared = Math::LengthSquared(outward);
                 if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
                     continue;
                 }
-                consider(Math::RayHitUVE{static_cast<float>(t), Math::NormalizeUVE(outward)});
+                consider(Math::RayHit{static_cast<float>(t), Math::Normalize(outward)});
             }
         }
     }
@@ -184,125 +184,125 @@ namespace {
 
 } // namespace
 
-bool IsCollider3DObjectDefinitionValidUVE(const Collider3DObjectDefinitionUVE& value) noexcept {
-    return IsColliderComponentValidUVE(value.collider);
+bool IsCollider3DObjectDefinitionValid(const Collider3DObjectDefinition& value) noexcept {
+    return IsColliderComponentValid(value.collider);
 }
 
-void ApplyCollider3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                        const Collider3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, Collider3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+void ApplyCollider3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                        const Collider3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, Collider3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ColliderComponent>(entity, value.collider);
 }
 
-ColliderComponentUVE Collider3DUVE::MakeBoxUVE(const Math::Vector3UVE& halfExtents) noexcept {
-    ColliderComponentUVE collider{};
-    collider.shapeType = ColliderShapeTypeUVE::Box;
+ColliderComponent Collider3D::MakeBox(const Math::Vector3& halfExtents) noexcept {
+    ColliderComponent collider{};
+    collider.shapeType = ColliderShapeType::Box;
     collider.halfExtents = halfExtents;
     return collider;
 }
 
-ColliderComponentUVE Collider3DUVE::MakeSphereUVE(const float radius) noexcept {
-    ColliderComponentUVE collider{};
-    collider.shapeType = ColliderShapeTypeUVE::Sphere;
+ColliderComponent Collider3D::MakeSphere(const float radius) noexcept {
+    ColliderComponent collider{};
+    collider.shapeType = ColliderShapeType::Sphere;
     collider.radius = radius;
     collider.halfExtents = {radius, radius, radius};
     return collider;
 }
 
-ColliderComponentUVE Collider3DUVE::MakeCapsuleUVE(const float radius, const float height) noexcept {
-    ColliderComponentUVE collider{};
-    collider.shapeType = ColliderShapeTypeUVE::Capsule;
+ColliderComponent Collider3D::MakeCapsule(const float radius, const float height) noexcept {
+    ColliderComponent collider{};
+    collider.shapeType = ColliderShapeType::Capsule;
     collider.radius = radius;
     collider.height = height;
     collider.halfExtents = {radius, height * 0.5F, radius};
     return collider;
 }
 
-bool Collider3DUVE::IsParticipatingUVE(const ColliderComponentUVE& collider) noexcept {
-    return IsRuntimeColliderValidUVE(collider) && !collider.disabled;
+bool Collider3D::IsParticipating(const ColliderComponent& collider) noexcept {
+    return IsRuntimeColliderValid(collider) && !collider.disabled;
 }
 
-Math::AabbUVE Collider3DUVE::GetLocalAabbUVE(const ColliderComponentUVE& collider) noexcept {
-    return Math::AabbUVE::FromCenterExtentsUVE({}, GetColliderLocalHalfExtentsUVE(collider));
+Math::Aabb Collider3D::GetLocalAabb(const ColliderComponent& collider) noexcept {
+    return Math::Aabb::FromCenterExtents({}, GetColliderLocalHalfExtents(collider));
 }
 
-Math::AabbUVE Collider3DUVE::GetWorldAabbUVE(const ColliderComponentUVE& collider,
-                                            const Math::Vector3UVE& center,
-                                            const Math::QuaternionUVE& rotation,
-                                            const Math::Vector3UVE& worldScale) noexcept {
-    const Math::QuaternionUVE usable = UsableRotationUVE(rotation);
+Math::Aabb Collider3D::GetWorldAabb(const ColliderComponent& collider,
+                                            const Math::Vector3& center,
+                                            const Math::Quaternion& rotation,
+                                            const Math::Vector3& worldScale) noexcept {
+    const Math::Quaternion usable = UsableRotation(rotation);
     // Scale first, then rotate the already-scaled extents. The other order scales a rotated
     // bounding box, which is neither what the shape is nor what the mesh looks like.
-    const ColliderComponentUVE scaled = ScaleColliderUVE(collider, worldScale);
-    const Math::Vector3UVE local = GetColliderLocalHalfExtentsUVE(scaled);
-    Math::Vector3UVE worldHalf = local;
-    if (scaled.shapeType == ColliderShapeTypeUVE::Capsule) {
-        Math::Vector3UVE start{};
-        Math::Vector3UVE end{};
-        if (CapsuleSegmentUVE(scaled, center, usable, start, end)) {
-            const Math::Vector3UVE offset = end - center;
+    const ColliderComponent scaled = ScaleCollider(collider, worldScale);
+    const Math::Vector3 local = GetColliderLocalHalfExtents(scaled);
+    Math::Vector3 worldHalf = local;
+    if (scaled.shapeType == ColliderShapeType::Capsule) {
+        Math::Vector3 start{};
+        Math::Vector3 end{};
+        if (CapsuleSegment(scaled, center, usable, start, end)) {
+            const Math::Vector3 offset = end - center;
             worldHalf = {scaled.radius + std::fabs(offset.x), scaled.radius + std::fabs(offset.y),
                          scaled.radius + std::fabs(offset.z)};
         }
-    } else if (scaled.shapeType == ColliderShapeTypeUVE::Box) {
-        const Math::Vector3UVE x = Math::RotateVectorUVE(usable, Math::Vector3UVE{local.x, 0.0F, 0.0F});
-        const Math::Vector3UVE y = Math::RotateVectorUVE(usable, Math::Vector3UVE{0.0F, local.y, 0.0F});
-        const Math::Vector3UVE z = Math::RotateVectorUVE(usable, Math::Vector3UVE{0.0F, 0.0F, local.z});
+    } else if (scaled.shapeType == ColliderShapeType::Box) {
+        const Math::Vector3 x = Math::RotateVector(usable, Math::Vector3{local.x, 0.0F, 0.0F});
+        const Math::Vector3 y = Math::RotateVector(usable, Math::Vector3{0.0F, local.y, 0.0F});
+        const Math::Vector3 z = Math::RotateVector(usable, Math::Vector3{0.0F, 0.0F, local.z});
         worldHalf = {std::fabs(x.x) + std::fabs(y.x) + std::fabs(z.x),
                      std::fabs(x.y) + std::fabs(y.y) + std::fabs(z.y),
                      std::fabs(x.z) + std::fabs(y.z) + std::fabs(z.z)};
     }
-    return Math::AabbUVE::FromCenterExtentsUVE(center, worldHalf);
+    return Math::Aabb::FromCenterExtents(center, worldHalf);
 }
 
-float Collider3DUVE::GetVolumeUVE(const ColliderComponentUVE& collider) noexcept {
-    if (!IsRuntimeColliderValidUVE(collider)) {
+float Collider3D::GetVolume(const ColliderComponent& collider) noexcept {
+    if (!IsRuntimeColliderValid(collider)) {
         return 0.0F;
     }
     switch (collider.shapeType) {
-    case ColliderShapeTypeUVE::Sphere: {
+    case ColliderShapeType::Sphere: {
         const float r = collider.radius;
-        return (4.0F / 3.0F) * Math::kPiUVE * r * r * r;
+        return (4.0F / 3.0F) * Math::kPi * r * r * r;
     }
-    case ColliderShapeTypeUVE::Capsule: {
+    case ColliderShapeType::Capsule: {
         const float r = collider.radius;
         const float cylinder = collider.height - 2.0F * r;
-        return Math::kPiUVE * r * r * cylinder +
-               (4.0F / 3.0F) * Math::kPiUVE * r * r * r;
+        return Math::kPi * r * r * cylinder +
+               (4.0F / 3.0F) * Math::kPi * r * r * r;
     }
-    case ColliderShapeTypeUVE::Box:
+    case ColliderShapeType::Box:
     default:
         return 8.0F * collider.halfExtents.x * collider.halfExtents.y * collider.halfExtents.z;
     }
 }
 
-bool Collider3DUVE::ContainsPointUVE(const ColliderComponentUVE& collider, const Math::Vector3UVE& center,
-                                     const Math::QuaternionUVE& rotation,
-                                     const Math::Vector3UVE& point) noexcept {
-    if (!IsParticipatingUVE(collider) || !Math::IsFiniteUVE(center) || !Math::IsFiniteUVE(point)) {
+bool Collider3D::ContainsPoint(const ColliderComponent& collider, const Math::Vector3& center,
+                                     const Math::Quaternion& rotation,
+                                     const Math::Vector3& point) noexcept {
+    if (!IsParticipating(collider) || !Math::IsFinite(center) || !Math::IsFinite(point)) {
         return false;
     }
-    const Math::QuaternionUVE usable = UsableRotationUVE(rotation);
+    const Math::Quaternion usable = UsableRotation(rotation);
     switch (collider.shapeType) {
-    case ColliderShapeTypeUVE::Sphere: {
-        const float distanceSquared = Math::LengthSquaredUVE(point - center);
+    case ColliderShapeType::Sphere: {
+        const float distanceSquared = Math::LengthSquared(point - center);
         return std::isfinite(distanceSquared) &&
                distanceSquared <= collider.radius * collider.radius;
     }
-    case ColliderShapeTypeUVE::Capsule: {
-        Math::Vector3UVE start{};
-        Math::Vector3UVE end{};
-        if (!CapsuleSegmentUVE(collider, center, usable, start, end)) {
+    case ColliderShapeType::Capsule: {
+        Math::Vector3 start{};
+        Math::Vector3 end{};
+        if (!CapsuleSegment(collider, center, usable, start, end)) {
             return false;
         }
-        const Math::Vector3UVE closest = ClosestPointOnSegmentUVE(start, end, point);
-        const float distanceSquared = Math::LengthSquaredUVE(point - closest);
+        const Math::Vector3 closest = ClosestPointOnSegment(start, end, point);
+        const float distanceSquared = Math::LengthSquared(point - closest);
         return std::isfinite(distanceSquared) &&
                distanceSquared <= collider.radius * collider.radius;
     }
-    case ColliderShapeTypeUVE::Box:
+    case ColliderShapeType::Box:
     default: {
-        const Math::Vector3UVE local = ToLocalUVE(center, usable, point);
+        const Math::Vector3 local = ToLocal(center, usable, point);
         return std::fabs(local.x) <= collider.halfExtents.x &&
                std::fabs(local.y) <= collider.halfExtents.y &&
                std::fabs(local.z) <= collider.halfExtents.z;
@@ -310,18 +310,18 @@ bool Collider3DUVE::ContainsPointUVE(const ColliderComponentUVE& collider, const
     }
 }
 
-std::optional<Math::Vector3UVE> Collider3DUVE::ClosestPointUVE(const ColliderComponentUVE& collider,
-                                                              const Math::Vector3UVE& center,
-                                                              const Math::QuaternionUVE& rotation,
-                                                              const Math::Vector3UVE& point) noexcept {
-    if (!IsParticipatingUVE(collider) || !Math::IsFiniteUVE(center) || !Math::IsFiniteUVE(point)) {
+std::optional<Math::Vector3> Collider3D::ClosestPoint(const ColliderComponent& collider,
+                                                              const Math::Vector3& center,
+                                                              const Math::Quaternion& rotation,
+                                                              const Math::Vector3& point) noexcept {
+    if (!IsParticipating(collider) || !Math::IsFinite(center) || !Math::IsFinite(point)) {
         return std::nullopt;
     }
-    const Math::QuaternionUVE usable = UsableRotationUVE(rotation);
+    const Math::Quaternion usable = UsableRotation(rotation);
     switch (collider.shapeType) {
-    case ColliderShapeTypeUVE::Sphere: {
-        const Math::Vector3UVE offset = point - center;
-        const float lengthSquared = Math::LengthSquaredUVE(offset);
+    case ColliderShapeType::Sphere: {
+        const Math::Vector3 offset = point - center;
+        const float lengthSquared = Math::LengthSquared(offset);
         if (!std::isfinite(lengthSquared)) {
             return std::nullopt;
         }
@@ -331,17 +331,17 @@ std::optional<Math::Vector3UVE> Collider3DUVE::ClosestPointUVE(const ColliderCom
         if (lengthSquared <= 0.0F) {
             return center;
         }
-        return center + Math::NormalizeUVE(offset) * collider.radius;
+        return center + Math::Normalize(offset) * collider.radius;
     }
-    case ColliderShapeTypeUVE::Capsule: {
-        Math::Vector3UVE start{};
-        Math::Vector3UVE end{};
-        if (!CapsuleSegmentUVE(collider, center, usable, start, end)) {
+    case ColliderShapeType::Capsule: {
+        Math::Vector3 start{};
+        Math::Vector3 end{};
+        if (!CapsuleSegment(collider, center, usable, start, end)) {
             return std::nullopt;
         }
-        const Math::Vector3UVE onAxis = ClosestPointOnSegmentUVE(start, end, point);
-        const Math::Vector3UVE offset = point - onAxis;
-        const float lengthSquared = Math::LengthSquaredUVE(offset);
+        const Math::Vector3 onAxis = ClosestPointOnSegment(start, end, point);
+        const Math::Vector3 offset = point - onAxis;
+        const float lengthSquared = Math::LengthSquared(offset);
         if (!std::isfinite(lengthSquared)) {
             return std::nullopt;
         }
@@ -351,59 +351,59 @@ std::optional<Math::Vector3UVE> Collider3DUVE::ClosestPointUVE(const ColliderCom
         if (lengthSquared <= 0.0F) {
             return onAxis;
         }
-        return onAxis + Math::NormalizeUVE(offset) * collider.radius;
+        return onAxis + Math::Normalize(offset) * collider.radius;
     }
-    case ColliderShapeTypeUVE::Box:
+    case ColliderShapeType::Box:
     default: {
-        const Math::Vector3UVE local = ToLocalUVE(center, usable, point);
-        const Math::Vector3UVE clamped{
+        const Math::Vector3 local = ToLocal(center, usable, point);
+        const Math::Vector3 clamped{
             std::clamp(local.x, -collider.halfExtents.x, collider.halfExtents.x),
             std::clamp(local.y, -collider.halfExtents.y, collider.halfExtents.y),
             std::clamp(local.z, -collider.halfExtents.z, collider.halfExtents.z),
         };
-        return center + Math::RotateVectorUVE(usable, clamped);
+        return center + Math::RotateVector(usable, clamped);
     }
     }
 }
 
-std::optional<Math::RayHitUVE> Collider3DUVE::IntersectRayUVE(const ColliderComponentUVE& collider,
-                                                             const Math::Vector3UVE& center,
-                                                             const Math::QuaternionUVE& rotation,
-                                                             const Math::RayUVE& ray,
+std::optional<Math::RayHit> Collider3D::IntersectRay(const ColliderComponent& collider,
+                                                             const Math::Vector3& center,
+                                                             const Math::Quaternion& rotation,
+                                                             const Math::Ray& ray,
                                                              const float maxDistance) noexcept {
-    if (!IsParticipatingUVE(collider) || !Math::IsFiniteUVE(center) || !Math::IsFiniteUVE(ray.origin) ||
-        !Math::IsFiniteUVE(ray.direction) || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
+    if (!IsParticipating(collider) || !Math::IsFinite(center) || !Math::IsFinite(ray.origin) ||
+        !Math::IsFinite(ray.direction) || !std::isfinite(maxDistance) || maxDistance < 0.0F) {
         return std::nullopt;
     }
-    const Math::QuaternionUVE usable = UsableRotationUVE(rotation);
+    const Math::Quaternion usable = UsableRotation(rotation);
     switch (collider.shapeType) {
-    case ColliderShapeTypeUVE::Sphere:
-        return RaySphereUVE(ray, center, collider.radius, maxDistance);
-    case ColliderShapeTypeUVE::Capsule: {
-        Math::Vector3UVE start{};
-        Math::Vector3UVE end{};
-        if (!CapsuleSegmentUVE(collider, center, usable, start, end)) {
+    case ColliderShapeType::Sphere:
+        return RaySphere(ray, center, collider.radius, maxDistance);
+    case ColliderShapeType::Capsule: {
+        Math::Vector3 start{};
+        Math::Vector3 end{};
+        if (!CapsuleSegment(collider, center, usable, start, end)) {
             return std::nullopt;
         }
-        if (ContainsPointUVE(collider, center, usable, ray.origin)) {
-            return Math::RayHitUVE{0.0F, {}};
+        if (ContainsPoint(collider, center, usable, ray.origin)) {
+            return Math::RayHit{0.0F, {}};
         }
-        return RayCapsuleUVE(ray, start, end, collider.radius, maxDistance);
+        return RayCapsule(ray, start, end, collider.radius, maxDistance);
     }
-    case ColliderShapeTypeUVE::Box:
+    case ColliderShapeType::Box:
     default: {
-        Math::QuaternionUVE inverse{};
-        if (!Math::TryInverseUVE(usable, inverse)) {
+        Math::Quaternion inverse{};
+        if (!Math::TryInverse(usable, inverse)) {
             inverse = {};
         }
-        const Math::RayUVE localRay{ToLocalUVE(center, usable, ray.origin),
-                                    Math::RotateVectorUVE(inverse, ray.direction)};
-        const std::optional<Math::RayHitUVE> localHit = Math::IntersectRayUVE(
-            localRay, Math::AabbUVE::FromCenterExtentsUVE({}, collider.halfExtents), maxDistance);
+        const Math::Ray localRay{ToLocal(center, usable, ray.origin),
+                                    Math::RotateVector(inverse, ray.direction)};
+        const std::optional<Math::RayHit> localHit = Math::IntersectRay(
+            localRay, Math::Aabb::FromCenterExtents({}, collider.halfExtents), maxDistance);
         if (!localHit.has_value()) {
             return std::nullopt;
         }
-        return Math::RayHitUVE{localHit->distance, Math::RotateVectorUVE(usable, localHit->normal)};
+        return Math::RayHit{localHit->distance, Math::RotateVector(usable, localHit->normal)};
     }
     }
 }

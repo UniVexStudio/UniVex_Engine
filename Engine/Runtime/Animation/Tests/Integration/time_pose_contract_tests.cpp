@@ -8,59 +8,59 @@
 
 namespace UVE::Core {
 
-TEST(UnifiedTimeContractUVETest, AdvanceUVE_UpdatesScaledDomainsAndFixedStepsDeterministically) {
+TEST(UnifiedTimeContractTest, Advance_UpdatesScaledDomainsAndFixedStepsDeterministically) {
     std::size_t fixedSteps = 0U;
     bool inputClamped = false;
-    const UnifiedTimeStateUVE state = UnifiedTimeContractUVE::AdvanceUVE(
-        {}, UnifiedTimeAdvanceInputUVE{0.1, 2.0, 0.5, 0.05, 8U, false}, fixedSteps, inputClamped);
+    const UnifiedTimeState state = UnifiedTimeContract::Advance(
+        {}, UnifiedTimeAdvanceInput{0.1, 2.0, 0.5, 0.05, 8U, false}, fixedSteps, inputClamped);
 
-    EXPECT_EQ(state, (UnifiedTimeStateUVE{1U, 0.1, 0.2, 0.1, 0.05, 0.0, 0.1, 0.2, 0.05, false}));
+    EXPECT_EQ(state, (UnifiedTimeState{1U, 0.1, 0.2, 0.1, 0.05, 0.0, 0.1, 0.2, 0.05, false}));
     EXPECT_EQ(fixedSteps, 2U);
     EXPECT_FALSE(inputClamped);
 }
 
-TEST(UnifiedTimeContractUVETest, AdvanceUVE_ClampsDeltaAndFixedStepBudget) {
+TEST(UnifiedTimeContractTest, Advance_ClampsDeltaAndFixedStepBudget) {
     std::size_t fixedSteps = 0U;
     bool inputClamped = false;
-    const UnifiedTimeStateUVE state = UnifiedTimeContractUVE::AdvanceUVE(
-        {}, UnifiedTimeAdvanceInputUVE{1.0, 1.0, 1.0, 0.01, 100U, false}, fixedSteps, inputClamped);
+    const UnifiedTimeState state = UnifiedTimeContract::Advance(
+        {}, UnifiedTimeAdvanceInput{1.0, 1.0, 1.0, 0.01, 100U, false}, fixedSteps, inputClamped);
 
-    EXPECT_DOUBLE_EQ(state.realDeltaSeconds, UnifiedTimeContractUVE::kMaximumFrameDeltaSecondsUVE);
-    EXPECT_EQ(fixedSteps, UnifiedTimeContractUVE::kMaximumFixedStepsPerAdvanceUVE);
+    EXPECT_DOUBLE_EQ(state.realDeltaSeconds, UnifiedTimeContract::kMaximumFrameDeltaSeconds);
+    EXPECT_EQ(fixedSteps, UnifiedTimeContract::kMaximumFixedStepsPerAdvance);
     EXPECT_TRUE(inputClamped);
     EXPECT_NEAR(state.fixedAccumulatorSeconds, 0.17, 1.0e-12);
 }
 
-TEST(UnifiedTimeContractUVETest, AdvanceUVE_RejectsDerivedTimeOverflowAtomically) {
-    const UnifiedTimeStateUVE previous{
+TEST(UnifiedTimeContractTest, Advance_RejectsDerivedTimeOverflowAtomically) {
+    const UnifiedTimeState previous{
         7U, 1.0, 1.0, 0.5, std::numeric_limits<double>::max(), 0.01, 0.1, 0.2, 0.3, false};
     std::size_t fixedSteps = 99U;
     bool inputClamped = false;
-    const UnifiedTimeStateUVE next = UnifiedTimeContractUVE::AdvanceUVE(
-        previous, UnifiedTimeAdvanceInputUVE{0.25, 1.0, std::numeric_limits<double>::max(), 0.05, 8U, false},
+    const UnifiedTimeState next = UnifiedTimeContract::Advance(
+        previous, UnifiedTimeAdvanceInput{0.25, 1.0, std::numeric_limits<double>::max(), 0.05, 8U, false},
         fixedSteps, inputClamped);
     EXPECT_EQ(next, previous);
     EXPECT_EQ(fixedSteps, 0U);
     EXPECT_TRUE(inputClamped);
 
-    const UnifiedTimeStateUVE scaledPrevious{
+    const UnifiedTimeState scaledPrevious{
         8U, 1.0, std::numeric_limits<double>::max(), 0.5, 0.75, 0.01, 0.1, 0.2, 0.3, false};
     fixedSteps = 99U;
     inputClamped = false;
-    const UnifiedTimeStateUVE scaledNext = UnifiedTimeContractUVE::AdvanceUVE(
-        scaledPrevious, UnifiedTimeAdvanceInputUVE{0.25, std::numeric_limits<double>::max(), 1.0, 0.05, 8U, false},
+    const UnifiedTimeState scaledNext = UnifiedTimeContract::Advance(
+        scaledPrevious, UnifiedTimeAdvanceInput{0.25, std::numeric_limits<double>::max(), 1.0, 0.05, 8U, false},
         fixedSteps, inputClamped);
     EXPECT_EQ(scaledNext, scaledPrevious);
     EXPECT_EQ(fixedSteps, 0U);
     EXPECT_TRUE(inputClamped);
 }
 
-TEST(UnifiedTimeContractUVETest, AdvanceUVE_PauseFreezesSimulationDomainsButAdvancesRealDomain) {
-    const UnifiedTimeStateUVE previous{4U, 2.0, 1.0, 0.9, 1.5, 0.02, 0.1, 0.2, 0.3, false};
+TEST(UnifiedTimeContractTest, Advance_PauseFreezesSimulationDomainsButAdvancesRealDomain) {
+    const UnifiedTimeState previous{4U, 2.0, 1.0, 0.9, 1.5, 0.02, 0.1, 0.2, 0.3, false};
     std::size_t fixedSteps = 0U;
     bool inputClamped = false;
-    const UnifiedTimeStateUVE state = UnifiedTimeContractUVE::AdvanceUVE(
-        previous, UnifiedTimeAdvanceInputUVE{0.1, 2.0, 2.0, 0.05, 8U, true}, fixedSteps, inputClamped);
+    const UnifiedTimeState state = UnifiedTimeContract::Advance(
+        previous, UnifiedTimeAdvanceInput{0.1, 2.0, 2.0, 0.05, 8U, true}, fixedSteps, inputClamped);
 
     EXPECT_EQ(state.frameNumber, 5U);
     EXPECT_DOUBLE_EQ(state.realTimeSeconds, 2.1);
@@ -74,121 +74,121 @@ TEST(UnifiedTimeContractUVETest, AdvanceUVE_PauseFreezesSimulationDomainsButAdva
     EXPECT_FALSE(inputClamped);
 }
 
-TEST(TransformPoseUVETest, TryNormalizeTransformPoseUVE_NormalizesRotationAndPreservesValues) {
-    const TransformPoseUVE input{{1.0F, 2.0F, 3.0F}, {0.0F, 0.0F, 0.0F, 2.0F}, {2.0F, 3.0F, 4.0F}};
-    TransformPoseUVE normalized;
+TEST(TransformPoseTest, TryNormalizeTransformPose_NormalizesRotationAndPreservesValues) {
+    const TransformPose input{{1.0F, 2.0F, 3.0F}, {0.0F, 0.0F, 0.0F, 2.0F}, {2.0F, 3.0F, 4.0F}};
+    TransformPose normalized;
 
-    ASSERT_TRUE(TryNormalizeTransformPoseUVE(input, normalized));
+    ASSERT_TRUE(TryNormalizeTransformPose(input, normalized));
     EXPECT_EQ(normalized.position, input.position);
     EXPECT_EQ(normalized.scale, input.scale);
-    EXPECT_EQ(normalized.rotation, (Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 1.0F}));
-    EXPECT_TRUE(IsFiniteTransformPoseUVE(normalized));
+    EXPECT_EQ(normalized.rotation, (Math::Quaternion{0.0F, 0.0F, 0.0F, 1.0F}));
+    EXPECT_TRUE(IsFiniteTransformPose(normalized));
 }
 
-TEST(AnimationPoseContractUVETest, ValidatesSkeletonPoseAndEvaluationContextTogether) {
-    const SkeletonDefinitionUVE skeleton{
-        "humanoid", {SkeletonJointUVE{"root", ""}, SkeletonJointUVE{"hand", "root"}}};
-    const PoseBufferUVE pose{
+TEST(AnimationPoseContractTest, ValidatesSkeletonPoseAndEvaluationContextTogether) {
+    const SkeletonDefinition skeleton{
+        "humanoid", {SkeletonJoint{"root", ""}, SkeletonJoint{"hand", "root"}}};
+    const PoseBuffer pose{
         "humanoid",
-        {TransformPoseUVE{{}, {}, {1.0F, 1.0F, 1.0F}},
-         TransformPoseUVE{{1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}}};
-    AnimationEvaluationContextUVE context;
+        {TransformPose{{}, {}, {1.0F, 1.0F, 1.0F}},
+         TransformPose{{1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}}};
+    AnimationEvaluationContext context;
     context.time.animationTimeSeconds = 1.25;
     context.time.animationDeltaSeconds = 1.0 / 60.0;
     context.sampleTimeSeconds = 0.5;
 
-    EXPECT_TRUE(ValidateSkeletonDefinitionUVE(skeleton).IsValidUVE());
-    EXPECT_TRUE(ValidatePoseBufferUVE(pose, skeleton).IsValidUVE());
-    EXPECT_TRUE(ValidateAnimationEvaluationContextUVE(context).IsValidUVE());
+    EXPECT_TRUE(ValidateSkeletonDefinition(skeleton).IsValid());
+    EXPECT_TRUE(ValidatePoseBuffer(pose, skeleton).IsValid());
+    EXPECT_TRUE(ValidateAnimationEvaluationContext(context).IsValid());
 }
 
-TEST(AnimationPoseContractUVETest, RejectsDuplicateOrUnknownJointsAndMismatchedPose) {
-    const SkeletonDefinitionUVE duplicate{
-        "humanoid", {SkeletonJointUVE{"root", ""}, SkeletonJointUVE{"root", ""}}};
-    EXPECT_EQ(ValidateSkeletonDefinitionUVE(duplicate).code,
-              AnimationContractValidationCodeUVE::DuplicateJoint);
+TEST(AnimationPoseContractTest, RejectsDuplicateOrUnknownJointsAndMismatchedPose) {
+    const SkeletonDefinition duplicate{
+        "humanoid", {SkeletonJoint{"root", ""}, SkeletonJoint{"root", ""}}};
+    EXPECT_EQ(ValidateSkeletonDefinition(duplicate).code,
+              AnimationContractValidationCode::DuplicateJoint);
 
-    const SkeletonDefinitionUVE unknownParent{
-        "humanoid", {SkeletonJointUVE{"root", "missing"}}};
-    EXPECT_EQ(ValidateSkeletonDefinitionUVE(unknownParent).code,
-              AnimationContractValidationCodeUVE::UnknownParent);
+    const SkeletonDefinition unknownParent{
+        "humanoid", {SkeletonJoint{"root", "missing"}}};
+    EXPECT_EQ(ValidateSkeletonDefinition(unknownParent).code,
+              AnimationContractValidationCode::UnknownParent);
 
-    const SkeletonDefinitionUVE skeleton{
-        "humanoid", {SkeletonJointUVE{"root", ""}}};
-    const PoseBufferUVE mismatched{"other", {TransformPoseUVE{}}};
-    EXPECT_EQ(ValidatePoseBufferUVE(mismatched, skeleton).code,
-              AnimationContractValidationCodeUVE::SkeletonMismatch);
+    const SkeletonDefinition skeleton{
+        "humanoid", {SkeletonJoint{"root", ""}}};
+    const PoseBuffer mismatched{"other", {TransformPose{}}};
+    EXPECT_EQ(ValidatePoseBuffer(mismatched, skeleton).code,
+              AnimationContractValidationCode::SkeletonMismatch);
 }
 
-TEST(AnimationPoseContractUVETest, RejectsEmbeddedNulAnimationIdentifiers) {
-    SkeletonDefinitionUVE nulSkeleton{
+TEST(AnimationPoseContractTest, RejectsEmbeddedNulAnimationIdentifiers) {
+    SkeletonDefinition nulSkeleton{
         std::string{"humanoid"} + std::string(1U, static_cast<char>(0)) + "suffix",
-        {SkeletonJointUVE{"root", ""}}};
-    EXPECT_EQ(ValidateSkeletonDefinitionUVE(nulSkeleton).code,
-              AnimationContractValidationCodeUVE::InvalidIdentifier);
+        {SkeletonJoint{"root", ""}}};
+    EXPECT_EQ(ValidateSkeletonDefinition(nulSkeleton).code,
+              AnimationContractValidationCode::InvalidIdentifier);
 
-    SkeletonDefinitionUVE nulJoint{
+    SkeletonDefinition nulJoint{
         "humanoid",
-        {SkeletonJointUVE{std::string{"root"} + std::string(1U, static_cast<char>(0)) + "suffix", ""}}};
-    EXPECT_EQ(ValidateSkeletonDefinitionUVE(nulJoint).code,
-              AnimationContractValidationCodeUVE::InvalidIdentifier);
+        {SkeletonJoint{std::string{"root"} + std::string(1U, static_cast<char>(0)) + "suffix", ""}}};
+    EXPECT_EQ(ValidateSkeletonDefinition(nulJoint).code,
+              AnimationContractValidationCode::InvalidIdentifier);
 
-    SkeletonDefinitionUVE nulParent{
+    SkeletonDefinition nulParent{
         "humanoid",
-        {SkeletonJointUVE{"root", "root"},
-         SkeletonJointUVE{"hand", std::string{"root"} + std::string(1U, static_cast<char>(0)) + "suffix"}}};
-    EXPECT_EQ(ValidateSkeletonDefinitionUVE(nulParent).code,
-              AnimationContractValidationCodeUVE::InvalidIdentifier);
+        {SkeletonJoint{"root", "root"},
+         SkeletonJoint{"hand", std::string{"root"} + std::string(1U, static_cast<char>(0)) + "suffix"}}};
+    EXPECT_EQ(ValidateSkeletonDefinition(nulParent).code,
+              AnimationContractValidationCode::InvalidIdentifier);
 
-    const SkeletonDefinitionUVE skeleton{
-        "humanoid", {SkeletonJointUVE{"root", ""}}};
-    const PoseBufferUVE nulPose{
-        std::string{"humanoid"} + std::string(1U, static_cast<char>(0)) + "suffix", {TransformPoseUVE{}}};
-    EXPECT_EQ(ValidatePoseBufferUVE(nulPose, skeleton).code,
-              AnimationContractValidationCodeUVE::InvalidIdentifier);
+    const SkeletonDefinition skeleton{
+        "humanoid", {SkeletonJoint{"root", ""}}};
+    const PoseBuffer nulPose{
+        std::string{"humanoid"} + std::string(1U, static_cast<char>(0)) + "suffix", {TransformPose{}}};
+    EXPECT_EQ(ValidatePoseBuffer(nulPose, skeleton).code,
+              AnimationContractValidationCode::InvalidIdentifier);
 
-    const SkeletonDefinitionUVE target{
-        "target", {SkeletonJointUVE{"pelvis", ""}}};
-    const auto nulMap = ValidateSkeletonRetargetMapUVE(
+    const SkeletonDefinition target{
+        "target", {SkeletonJoint{"pelvis", ""}}};
+    const auto nulMap = ValidateSkeletonRetargetMap(
         skeleton, target,
-        std::vector<SkeletonRetargetMapEntryUVE>{{
+        std::vector<SkeletonRetargetMapEntry>{{
             std::string{"root"} + std::string(1U, static_cast<char>(0)) + "suffix", "pelvis"}});
-    EXPECT_EQ(nulMap.code, AnimationContractValidationCodeUVE::InvalidIdentifier);
+    EXPECT_EQ(nulMap.code, AnimationContractValidationCode::InvalidIdentifier);
 }
 
-TEST(AnimationPoseContractUVETest, ValidatesOneToOneSkeletonRetargetMap) {
-    const SkeletonDefinitionUVE source{
-        "source", {SkeletonJointUVE{"root", ""}, SkeletonJointUVE{"hand", "root"}}};
-    const SkeletonDefinitionUVE target{
-        "target", {SkeletonJointUVE{"pelvis", ""}, SkeletonJointUVE{"arm", "pelvis"}}};
-    const std::vector<SkeletonRetargetMapEntryUVE> validMap{
+TEST(AnimationPoseContractTest, ValidatesOneToOneSkeletonRetargetMap) {
+    const SkeletonDefinition source{
+        "source", {SkeletonJoint{"root", ""}, SkeletonJoint{"hand", "root"}}};
+    const SkeletonDefinition target{
+        "target", {SkeletonJoint{"pelvis", ""}, SkeletonJoint{"arm", "pelvis"}}};
+    const std::vector<SkeletonRetargetMapEntry> validMap{
         {"root", "pelvis"}, {"hand", "arm"}};
-    EXPECT_TRUE(ValidateSkeletonRetargetMapUVE(source, target, validMap).IsValidUVE());
+    EXPECT_TRUE(ValidateSkeletonRetargetMap(source, target, validMap).IsValid());
 
-    const auto unknown = ValidateSkeletonRetargetMapUVE(
-        source, target, std::vector<SkeletonRetargetMapEntryUVE>{{"missing", "pelvis"}});
-    EXPECT_EQ(unknown.code, AnimationContractValidationCodeUVE::SkeletonMismatch);
+    const auto unknown = ValidateSkeletonRetargetMap(
+        source, target, std::vector<SkeletonRetargetMapEntry>{{"missing", "pelvis"}});
+    EXPECT_EQ(unknown.code, AnimationContractValidationCode::SkeletonMismatch);
 
-    const auto duplicate = ValidateSkeletonRetargetMapUVE(
-        source, target, std::vector<SkeletonRetargetMapEntryUVE>{{"root", "pelvis"}, {"root", "arm"}});
-    EXPECT_EQ(duplicate.code, AnimationContractValidationCodeUVE::DuplicateJoint);
+    const auto duplicate = ValidateSkeletonRetargetMap(
+        source, target, std::vector<SkeletonRetargetMapEntry>{{"root", "pelvis"}, {"root", "arm"}});
+    EXPECT_EQ(duplicate.code, AnimationContractValidationCode::DuplicateJoint);
 }
 
-TEST(AnimationPoseContractUVETest, RejectsNegativeEvaluationTime) {
-    AnimationEvaluationContextUVE context;
+TEST(AnimationPoseContractTest, RejectsNegativeEvaluationTime) {
+    AnimationEvaluationContext context;
     context.time.animationDeltaSeconds = -0.01;
-    EXPECT_EQ(ValidateAnimationEvaluationContextUVE(context).code,
-              AnimationContractValidationCodeUVE::InvalidTime);
+    EXPECT_EQ(ValidateAnimationEvaluationContext(context).code,
+              AnimationContractValidationCode::InvalidTime);
 }
 
-TEST(TransformPoseUVETest, TryNormalizeTransformPoseUVE_RejectsNonFiniteAndZeroRotation) {
-    TransformPoseUVE output;
-    EXPECT_FALSE(TryNormalizeTransformPoseUVE(
-        TransformPoseUVE{{0.0F, 0.0F, 0.0F}, {0.0F, 0.0F, 0.0F, 0.0F}, {}}, output));
-    EXPECT_FALSE(TryNormalizeTransformPoseUVE(
-        TransformPoseUVE{{std::numeric_limits<float>::infinity(), 0.0F, 0.0F}, {}, {}}, output));
-    EXPECT_FALSE(IsFiniteTransformPoseUVE(
-        TransformPoseUVE{{0.0F, 0.0F, 0.0F}, {}, {std::numeric_limits<float>::quiet_NaN(), 1.0F, 1.0F}}));
+TEST(TransformPoseTest, TryNormalizeTransformPose_RejectsNonFiniteAndZeroRotation) {
+    TransformPose output;
+    EXPECT_FALSE(TryNormalizeTransformPose(
+        TransformPose{{0.0F, 0.0F, 0.0F}, {0.0F, 0.0F, 0.0F, 0.0F}, {}}, output));
+    EXPECT_FALSE(TryNormalizeTransformPose(
+        TransformPose{{std::numeric_limits<float>::infinity(), 0.0F, 0.0F}, {}, {}}, output));
+    EXPECT_FALSE(IsFiniteTransformPose(
+        TransformPose{{0.0F, 0.0F, 0.0F}, {}, {std::numeric_limits<float>::quiet_NaN(), 1.0F, 1.0F}}));
 }
 
 } // namespace UVE::Core

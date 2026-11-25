@@ -7,13 +7,13 @@
 
 namespace UVE::Render {
 
-/// Opaque handle to a GPU sampler object created via IRenderDeviceUVE::CreateSamplerUVE().
-/// Instantiation of the shared ResourceHandleUVE template - see resource_handle_uve.h for the
+/// Opaque handle to a GPU sampler object created via IRenderDevice::CreateSampler().
+/// Instantiation of the shared ResourceHandle template - see resource_handle_uve.h for the
 /// shared wrapper/equality/hash semantics.
-struct SamplerTagUVE {};
-using SamplerHandleUVE = ResourceHandleUVE<SamplerTagUVE>;
+struct SamplerTag {};
+using SamplerHandle = ResourceHandle<SamplerTag>;
 
-/// The sentinel "no sampler" value. Never returned by a successful CreateSamplerUVE() call.
-inline constexpr SamplerHandleUVE kInvalidSamplerHandleUVE{};
+/// The sentinel "no sampler" value. Never returned by a successful CreateSampler() call.
+inline constexpr SamplerHandle kInvalidSamplerHandle{};
 
 } // namespace UVE::Render

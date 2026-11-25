@@ -12,42 +12,42 @@
 namespace UVE::World::Tests {
 namespace {
 
-class WorldUVETest : public ::testing::Test {
+class WorldTest : public ::testing::Test {
 protected:
-    Memory::HeapAllocatorUVE allocator;
-    Events::EventSystemUVE eventSystem;
-    WorldUVE world{allocator, eventSystem};
+    Memory::HeapAllocator allocator;
+    Events::EventSystem eventSystem;
+    World world{allocator, eventSystem};
 };
 
-TEST_F(WorldUVETest, TickUVE_AdvancesFrameCountAndAccumulatedTime) {
-    EXPECT_EQ(world.GetFrameCountUVE(), 0U);
-    EXPECT_FLOAT_EQ(world.GetTotalTimeSecondsUVE(), 0.0F);
+TEST_F(WorldTest, Tick_AdvancesFrameCountAndAccumulatedTime) {
+    EXPECT_EQ(world.GetFrameCount(), 0U);
+    EXPECT_FLOAT_EQ(world.GetTotalTimeSeconds(), 0.0F);
 
-    world.TickUVE(0.5F);
-    EXPECT_EQ(world.GetFrameCountUVE(), 1U);
-    EXPECT_FLOAT_EQ(world.GetTotalTimeSecondsUVE(), 0.5F);
+    world.Tick(0.5F);
+    EXPECT_EQ(world.GetFrameCount(), 1U);
+    EXPECT_FLOAT_EQ(world.GetTotalTimeSeconds(), 0.5F);
 
-    world.TickUVE(0.25F);
-    EXPECT_EQ(world.GetFrameCountUVE(), 2U);
-    EXPECT_FLOAT_EQ(world.GetTotalTimeSecondsUVE(), 0.75F);
+    world.Tick(0.25F);
+    EXPECT_EQ(world.GetFrameCount(), 2U);
+    EXPECT_FLOAT_EQ(world.GetTotalTimeSeconds(), 0.75F);
 }
 
-TEST_F(WorldUVETest, TickUVE_PropagatesParentWorldTransformToChild) {
-    Scene::IEntityManagerUVE& entityManager = world.GetEntityManagerUVE();
+TEST_F(WorldTest, Tick_PropagatesParentWorldTransformToChild) {
+    UVE::Scene::IEntityManager& entityManager = world.GetEntityManager();
 
-    const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
-    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
+    const UVE::Scene::Entity parent = entityManager.CreateEntity();
+    const UVE::Scene::Entity child = entityManager.CreateEntity();
 
-    Scene::SceneGraphUVE sceneGraph;
-    sceneGraph.AttachTransformUVE(entityManager, parent,
-                                   Scene::TransformComponentUVE{{2.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}});
-    sceneGraph.AttachTransformUVE(entityManager, child,
-                                   Scene::TransformComponentUVE{{1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}});
-    sceneGraph.SetParentUVE(entityManager, child, parent);
+    UVE::Scene::SceneGraph sceneGraph;
+    sceneGraph.AttachTransform(entityManager, parent,
+                                   UVE::Scene::TransformComponent{{2.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}});
+    sceneGraph.AttachTransform(entityManager, child,
+                                   UVE::Scene::TransformComponent{{1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}});
+    sceneGraph.SetParent(entityManager, child, parent);
 
-    world.TickUVE(1.0F / 60.0F);
+    world.Tick(1.0F / 60.0F);
 
-    const auto& childWorldTransform = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child);
+    const auto& childWorldTransform = entityManager.GetComponent<UVE::Scene::WorldTransformComponent>(child);
     EXPECT_FLOAT_EQ(childWorldTransform.worldPosition.x, 3.0F);
 }
 

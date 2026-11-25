@@ -7,31 +7,31 @@
 
 namespace UVE::Physics {
 
-/// Engine-composed implementation of IPhysicsQuerySystemUVE. It is stateless apart from a
-/// non-owning collision-system dependency used by CharacterControllerUVE movement commands.
-class PhysicsQuerySystemUVE final : public IPhysicsQuerySystemUVE {
+/// Engine-composed implementation of IPhysicsQuerySystem. It is stateless apart from a
+/// non-owning collision-system dependency used by CharacterController movement commands.
+class PhysicsQuerySystem final : public IPhysicsQuerySystem {
 public:
-    explicit PhysicsQuerySystemUVE(ICollisionSystemUVE& collisionSystem) noexcept
+    explicit PhysicsQuerySystem(ICollisionSystem& collisionSystem) noexcept
         : m_collisionSystem(&collisionSystem) {}
 
-    [[nodiscard]] std::optional<SphereCastHitUVE> SphereCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const SphereCastQueryUVE& query) const override;
-    [[nodiscard]] std::optional<BoxCastHitUVE> BoxCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const BoxCastQueryUVE& query) const override;
-    [[nodiscard]] std::optional<CapsuleCastHitUVE> CapsuleCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const CapsuleCastQueryUVE& query) const override;
-    [[nodiscard]] AreaOverlapQueryResultUVE QueryAreaOverlapsUVE(
-        Scene::IEntityManagerUVE& entityManager,
-        std::size_t maximumResults = kMaximumAreaOverlapResultsUVE) const override;
-    [[nodiscard]] CharacterControllerMoveResultUVE MoveCharacterUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        const CharacterControllerInputUVE& input) const override;
-    [[nodiscard]] CharacterControllerMoveResultUVE MoveCharacterWithToIUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        const CharacterControllerInputUVE& input) const override;
+    [[nodiscard]] std::optional<SphereCastHit> SphereCast(
+        Scene::IEntityManager& entityManager, const SphereCastQuery& query) const override;
+    [[nodiscard]] std::optional<BoxCastHit> BoxCast(
+        Scene::IEntityManager& entityManager, const BoxCastQuery& query) const override;
+    [[nodiscard]] std::optional<CapsuleCastHit> CapsuleCast(
+        Scene::IEntityManager& entityManager, const CapsuleCastQuery& query) const override;
+    [[nodiscard]] AreaOverlapQueryResult QueryAreaOverlaps(
+        Scene::IEntityManager& entityManager,
+        std::size_t maximumResults = kMaximumAreaOverlapResults) const override;
+    [[nodiscard]] CharacterControllerMoveResult MoveCharacter(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        const CharacterControllerInput& input) const override;
+    [[nodiscard]] CharacterControllerMoveResult MoveCharacterWithToI(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        const CharacterControllerInput& input) const override;
 
 private:
-    ICollisionSystemUVE* m_collisionSystem;
+    ICollisionSystem* m_collisionSystem;
 };
 
 } // namespace UVE::Physics

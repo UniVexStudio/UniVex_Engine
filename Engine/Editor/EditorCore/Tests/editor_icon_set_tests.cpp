@@ -15,64 +15,64 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-TEST(EditorIconSetUVETest, EveryObjectTypeHasItsOwnIcon) {
-    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
-        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, descriptor.typeId), nullptr)
+TEST(EditorIconSetTest, EveryObjectTypeHasItsOwnIcon) {
+    for (const Scene::Objects::SceneObjectDescriptor& descriptor : Scene::Objects::GetSceneObjectDescriptors()) {
+        EXPECT_NE(FindEditorIconSource(EditorIconGroup::Object, descriptor.typeId), nullptr)
             << "no icon for object type " << descriptor.typeId;
     }
 }
 
-TEST(EditorIconSetUVETest, EveryPaletteCategoryHasAnIconByItsDisplayName) {
+TEST(EditorIconSetTest, EveryPaletteCategoryHasAnIconByItsDisplayName) {
     std::set<std::string_view> categories;
-    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+    for (const Scene::Objects::SceneObjectDescriptor& descriptor : Scene::Objects::GetSceneObjectDescriptors()) {
         categories.insert(descriptor.category);
     }
     ASSERT_FALSE(categories.empty());
     for (const std::string_view category : categories) {
-        EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, category), nullptr)
+        EXPECT_NE(FindEditorIconSource(EditorIconGroup::ObjectCategory, category), nullptr)
             << "no icon for category " << category;
     }
 }
 
-TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
+TEST(EditorIconSetTest, AnOpenFolderHasItsOwnIcon) {
     // Every asset table type's icon is checked in editor_uve_tests.cpp, which can see the
     // editor's private type list; the open folder is the one icon no type names.
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder_open"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder_open"),
-              FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder"));
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::ContentType, "folder_open"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::ContentType, "folder_open"),
+              FindEditorIconSource(EditorIconGroup::ContentType, "folder"));
 }
 
-TEST(EditorIconSetUVETest, ObjectsAndContentTypesAndComponentsExist) {
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "character_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "player_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "camera_3d"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "material"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "shader"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_transform"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_mesh"), nullptr);
-    EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::Component, "component_collider"), nullptr);
+TEST(EditorIconSetTest, ObjectsAndContentTypesAndComponentsExist) {
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Object, "character_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Object, "player_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Object, "camera_3d"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::ContentType, "material"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::ContentType, "shader"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::ContentType, "folder"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Component, "component_transform"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Component, "component_mesh"), nullptr);
+    EXPECT_NE(FindEditorIconSource(EditorIconGroup::Component, "component_collider"), nullptr);
 }
 
-TEST(EditorIconSetUVETest, LookupIsPerGroupAndIgnoresOnlyCase) {
+TEST(EditorIconSetTest, LookupIsPerGroupAndIgnoresOnlyCase) {
     // "script" is both an object and a content type; the group decides which picture comes back.
-    const EditorIconSourceUVE* const object = FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "script");
-    const EditorIconSourceUVE* const file = FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "Script");
+    const EditorIconSource* const object = FindEditorIconSource(EditorIconGroup::Object, "script");
+    const EditorIconSource* const file = FindEditorIconSource(EditorIconGroup::ContentType, "Script");
     ASSERT_NE(object, nullptr);
     ASSERT_NE(file, nullptr);
     EXPECT_NE(object, file);
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, "PHYSICS"),
-              FindEditorIconSourceUVE(EditorIconGroupUVE::ObjectCategory, "physics"));
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, "box_mesh"), nullptr);
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::Object, ""), nullptr);
-    EXPECT_EQ(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "box_mesh_3d"), nullptr);
+    EXPECT_EQ(FindEditorIconSource(EditorIconGroup::ObjectCategory, "PHYSICS"),
+              FindEditorIconSource(EditorIconGroup::ObjectCategory, "physics"));
+    EXPECT_EQ(FindEditorIconSource(EditorIconGroup::Object, "box_mesh"), nullptr);
+    EXPECT_EQ(FindEditorIconSource(EditorIconGroup::Object, ""), nullptr);
+    EXPECT_EQ(FindEditorIconSource(EditorIconGroup::ContentType, "box_mesh_3d"), nullptr);
 }
 
-TEST(EditorIconSetUVETest, EveryEmbeddedIconDecodesToAFullMipChainWithSomethingDrawn) {
-    const auto sources = GetEditorIconSourcesUVE();
+TEST(EditorIconSetTest, EveryEmbeddedIconDecodesToAFullMipChainWithSomethingDrawn) {
+    const auto sources = GetEditorIconSources();
     ASSERT_FALSE(sources.empty());
-    for (const EditorIconSourceUVE& source : sources) {
-        const std::vector<EditorIconLevelUVE> levels = DecodeEditorIconUVE(source.png);
+    for (const EditorIconSource& source : sources) {
+        const std::vector<EditorIconLevel> levels = DecodeEditorIcon(source.png);
         ASSERT_EQ(levels.size(), 7U) << source.name;
         EXPECT_EQ(levels.front().size, 64) << source.name;
         for (std::size_t level = 0U; level < levels.size(); ++level) {
@@ -90,11 +90,11 @@ TEST(EditorIconSetUVETest, EveryEmbeddedIconDecodesToAFullMipChainWithSomethingD
     }
 }
 
-TEST(EditorIconSetUVETest, DownsamplingWeighsColourByAlphaSoEdgesDoNotDarken) {
+TEST(EditorIconSetTest, DownsamplingWeighsColourByAlphaSoEdgesDoNotDarken) {
     // One opaque white pixel beside three fully transparent black ones: the average is white at a
     // quarter coverage. A plain average would give a grey, the dark rim this function exists to avoid.
     const std::array<std::uint8_t, 16> block{255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    const std::vector<std::uint8_t> half = DownsampleEditorIconUVE(block, 2);
+    const std::vector<std::uint8_t> half = DownsampleEditorIcon(block, 2);
     ASSERT_EQ(half.size(), 4U);
     EXPECT_EQ(half[0], 255U);
     EXPECT_EQ(half[1], 255U);
@@ -103,19 +103,19 @@ TEST(EditorIconSetUVETest, DownsamplingWeighsColourByAlphaSoEdgesDoNotDarken) {
 
     // Nothing covered stays nothing, rather than dividing by zero.
     const std::array<std::uint8_t, 16> empty{};
-    EXPECT_EQ(DownsampleEditorIconUVE(empty, 2), (std::vector<std::uint8_t>{0, 0, 0, 0}));
+    EXPECT_EQ(DownsampleEditorIcon(empty, 2), (std::vector<std::uint8_t>{0, 0, 0, 0}));
     // A size that does not match the pixels is refused.
-    EXPECT_TRUE(DownsampleEditorIconUVE(block, 4).empty());
-    EXPECT_TRUE(DownsampleEditorIconUVE(block, 1).empty());
+    EXPECT_TRUE(DownsampleEditorIcon(block, 4).empty());
+    EXPECT_TRUE(DownsampleEditorIcon(block, 1).empty());
 }
 
-TEST(EditorIconSetUVETest, BytesThatAreNotAnIconPngDecodeToNothing) {
-    EXPECT_TRUE(DecodeEditorIconUVE({}).empty());
+TEST(EditorIconSetTest, BytesThatAreNotAnIconPngDecodeToNothing) {
+    EXPECT_TRUE(DecodeEditorIcon({}).empty());
     const std::array<std::uint8_t, 8> garbage{1, 2, 3, 4, 5, 6, 7, 8};
-    EXPECT_TRUE(DecodeEditorIconUVE(garbage).empty());
+    EXPECT_TRUE(DecodeEditorIcon(garbage).empty());
     // A real PNG cut short.
-    const auto png = GetEditorIconSourcesUVE().front().png;
-    EXPECT_TRUE(DecodeEditorIconUVE(png.first(png.size() / 2U)).empty());
+    const auto png = GetEditorIconSources().front().png;
+    EXPECT_TRUE(DecodeEditorIcon(png.first(png.size() / 2U)).empty());
 }
 
 } // namespace

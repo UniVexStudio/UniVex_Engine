@@ -15,48 +15,48 @@
 
 namespace UVE::Platform {
 
-inline constexpr std::uint32_t kCurrentEditorProjectSchemaVersionUVE = 1U;
-inline constexpr std::size_t kMaximumEditorProjectIdBytesUVE = 128U;
+inline constexpr std::uint32_t kCurrentEditorProjectSchemaVersion = 1U;
+inline constexpr std::size_t kMaximumEditorProjectIdBytes = 128U;
 /// File extension of a project manifest.
-inline constexpr std::string_view kEditorProjectFileExtensionUVE = ".uvproject";
-inline constexpr std::size_t kMaximumEditorProjectNameBytesUVE = 256U;
-inline constexpr std::size_t kMaximumEditorProjectPathBytesUVE = 256U;
-inline constexpr std::size_t kMaximumEditorProductNameBytesUVE = 256U;
-inline constexpr std::size_t kMaximumEditorProductShortNameBytesUVE = 64U;
-inline constexpr std::size_t kMaximumEditorProductDescriptionBytesUVE = 4096U;
-inline constexpr std::size_t kMaximumEditorProductVersionBytesUVE = 64U;
-inline constexpr std::size_t kMaximumEditorPublisherNameBytesUVE = 256U;
-inline constexpr std::size_t kMaximumEditorCopyrightLineBytesUVE = 512U;
-inline constexpr std::size_t kMaximumEditorApplicationIdentifierBytesUVE = 128U;
-inline constexpr std::size_t kMaximumEditorSymbolUploadEndpointBytesUVE = 2048U;
-inline constexpr std::size_t kMaximumEditorIconSizesPerTargetUVE = 16U;
+inline constexpr std::string_view kEditorProjectFileExtension = ".uvproject";
+inline constexpr std::size_t kMaximumEditorProjectNameBytes = 256U;
+inline constexpr std::size_t kMaximumEditorProjectPathBytes = 256U;
+inline constexpr std::size_t kMaximumEditorProductNameBytes = 256U;
+inline constexpr std::size_t kMaximumEditorProductShortNameBytes = 64U;
+inline constexpr std::size_t kMaximumEditorProductDescriptionBytes = 4096U;
+inline constexpr std::size_t kMaximumEditorProductVersionBytes = 64U;
+inline constexpr std::size_t kMaximumEditorPublisherNameBytes = 256U;
+inline constexpr std::size_t kMaximumEditorCopyrightLineBytes = 512U;
+inline constexpr std::size_t kMaximumEditorApplicationIdentifierBytes = 128U;
+inline constexpr std::size_t kMaximumEditorSymbolUploadEndpointBytes = 2048U;
+inline constexpr std::size_t kMaximumEditorIconSizesPerTarget = 16U;
 
-struct EditorProjectVersionUVE final {
+struct EditorProjectVersion final {
     std::uint32_t major = 0U;
     std::uint32_t minor = 0U;
     std::uint32_t patch = 0U;
     std::uint32_t build = 0U;
 
-    [[nodiscard]] bool operator==(const EditorProjectVersionUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorProjectVersion&) const = default;
 };
 
 /// Shipped-product identity/version, distinct from the editor-facing project display name and
 /// the engine build that last edited the project. Empty `name` and `shortName` keep older projects
 /// compatible; consumers use the project display name when no product name is set.
-struct EditorProjectProductMetadataUVE final {
+struct EditorProjectProductMetadata final {
     std::string name;
     std::string shortName;
     std::string description;
     std::string version = "1.0.0";
     std::uint32_t buildNumber = 0U;
 
-    [[nodiscard]] bool operator==(const EditorProjectProductMetadataUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorProjectProductMetadata&) const = default;
 };
 
 /// Runtime/application policy saved with a project. File paths in this block (icons, splash and
 /// crash dumps) are project-relative or user-data-relative as their names document; no executable
 /// code, credentials, or platform binaries are embedded in the manifest.
-struct EditorProjectApplicationSettingsUVE final {
+struct EditorProjectApplicationSettings final {
     std::string publisherName;
     std::string copyrightLine;
 
@@ -82,7 +82,7 @@ struct EditorProjectApplicationSettingsUVE final {
     /// supplies the reference size for viewport stretching.
     std::uint32_t windowWidth = 1280U;
     std::uint32_t windowHeight = 720U;
-    WindowModeUVE windowMode = WindowModeUVE::Windowed;
+    WindowMode windowMode = WindowMode::Windowed;
     bool windowResizable = true;
     bool windowBorderless = false;
     bool windowAlwaysOnTop = false;
@@ -98,13 +98,13 @@ struct EditorProjectApplicationSettingsUVE final {
     bool highDpiAware = true;
     bool perMonitorScaling = true;
     double contentScaleOverride = 0.0;
-    StretchModeUVE stretchMode = StretchModeUVE::Disabled;
-    AspectPolicyUVE aspectPolicy = AspectPolicyUVE::Keep;
+    StretchMode stretchMode = StretchMode::Disabled;
+    AspectPolicy aspectPolicy = AspectPolicy::Keep;
     bool integerOnlyScaling = false;
-    DisplayOrientationUVE orientation = DisplayOrientationUVE::Auto;
-    std::vector<DisplayOrientationUVE> allowedOrientations{
-        DisplayOrientationUVE::Landscape, DisplayOrientationUVE::Portrait};
-    VSyncModeUVE vsyncMode = VSyncModeUVE::On;
+    DisplayOrientation orientation = DisplayOrientation::Auto;
+    std::vector<DisplayOrientation> allowedOrientations{
+        DisplayOrientation::Landscape, DisplayOrientation::Portrait};
+    VSyncMode vsyncMode = VSyncMode::On;
     std::uint32_t focusedFrameRateCap = 0U;
     std::uint32_t unfocusedFrameRateCap = 0U;
     bool allowDisplaySleep = true;
@@ -126,17 +126,17 @@ struct EditorProjectApplicationSettingsUVE final {
     /// Optional HTTPS endpoint reserved for a host-provided symbol/crash service.
     std::string symbolUploadEndpoint;
 
-    [[nodiscard]] bool operator==(const EditorProjectApplicationSettingsUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorProjectApplicationSettings&) const = default;
 };
 
-struct EditorProjectPackageUVE final {
-    std::uint32_t schemaVersion = kCurrentEditorProjectSchemaVersionUVE;
+struct EditorProjectPackage final {
+    std::uint32_t schemaVersion = kCurrentEditorProjectSchemaVersion;
     std::uint64_t revision = 1U;
     std::string projectId;
     std::string displayName;
-    EditorProjectVersionUVE engineVersion{};
-    EditorProjectProductMetadataUVE productMetadata{};
-    EditorProjectApplicationSettingsUVE applicationSettings{};
+    EditorProjectVersion engineVersion{};
+    EditorProjectProductMetadata productMetadata{};
+    EditorProjectApplicationSettings applicationSettings{};
     std::filesystem::path contentRoot;
     std::filesystem::path assetDatabasePath;
     std::filesystem::path settingsPath;
@@ -145,18 +145,18 @@ struct EditorProjectPackageUVE final {
     /// should load and play first (roadmap item #7's own "manifest naming the startup scene").
     /// Empty means "not configured yet" - a project with no startup scene can still be authored
     /// and saved, it just cannot be packaged/launched standalone until one is set (see
-    /// `ProjectPackagerUVE`/`LoadAndActivateProjectSceneUVE`). Absent from older `.uvproject` files
+    /// `ProjectPackager`/`LoadAndActivateProjectScene`). Absent from older `.uvproject` files
     /// written before this field existed; the codec defaults it to empty on load for those.
     std::filesystem::path startupScenePath;
 
     /// Project rendering profile chosen in UniVex Hub (`Compatibility`, `Mobile`, or `Forward+`).
     /// Absent in older `.uvproject` files; defaults to the host's recommended profile on load.
-    RendererProfileUVE rendererProfile = DefaultRendererProfileForHostUVE();
+    RendererProfile rendererProfile = DefaultRendererProfileForHost();
 
-    [[nodiscard]] bool operator==(const EditorProjectPackageUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorProjectPackage&) const = default;
 };
 
-enum class EditorProjectPackageCodeUVE : std::uint8_t {
+enum class EditorProjectPackageCode : std::uint8_t {
     Applied = 0,
     InvalidPath,
     InvalidPackage,
@@ -168,21 +168,21 @@ enum class EditorProjectPackageCodeUVE : std::uint8_t {
     ProjectIdentityConflict,
 };
 
-struct EditorProjectPackageResultUVE final {
-    EditorProjectPackageCodeUVE code = EditorProjectPackageCodeUVE::InvalidPackage;
+struct EditorProjectPackageResult final {
+    EditorProjectPackageCode code = EditorProjectPackageCode::InvalidPackage;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == EditorProjectPackageCodeUVE::Applied;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == EditorProjectPackageCode::Applied;
     }
 };
 
-struct EditorProjectPackageLoadResultUVE final {
-    EditorProjectPackageResultUVE result;
-    std::optional<EditorProjectPackageUVE> package;
+struct EditorProjectPackageLoadResult final {
+    EditorProjectPackageResult result;
+    std::optional<EditorProjectPackage> package;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return result.IsAcceptedUVE() && package.has_value();
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return result.IsAccepted() && package.has_value();
     }
 };
 
@@ -190,25 +190,25 @@ struct EditorProjectPackageLoadResultUVE final {
 /// project/content manifest: it references existing relative content, asset-database, and settings
 /// authorities but does not embed scene/assets, own credentials, or generate platform binaries.
 /// Thread-safety: stateless and safe to call concurrently; each operation owns its local file data.
-class EditorProjectPackageCodecUVE final {
+class EditorProjectPackageCodec final {
 public:
-    [[nodiscard]] static EditorProjectPackageResultUVE ValidateUVE(
-        const EditorProjectPackageUVE& package) noexcept;
+    [[nodiscard]] static EditorProjectPackageResult Validate(
+        const EditorProjectPackage& package) noexcept;
 
-    [[nodiscard]] static EditorProjectPackageLoadResultUVE LoadUVE(
+    [[nodiscard]] static EditorProjectPackageLoadResult Load(
         const std::filesystem::path& packagePath);
 
-    [[nodiscard]] static EditorProjectPackageResultUVE SaveUVE(
+    [[nodiscard]] static EditorProjectPackageResult Save(
         const std::filesystem::path& packagePath,
-        const EditorProjectPackageUVE& package);
+        const EditorProjectPackage& package);
 
     /// Replaces an existing package only when the caller supplies the current revision, the project
     /// identity matches, the replacement validates, and its revision is strictly newer. Publication
-    /// uses the same temporary-sibling rename as SaveUVE, so rejected updates never mutate the file.
-    [[nodiscard]] static EditorProjectPackageResultUVE ApplyUpdateUVE(
+    /// uses the same temporary-sibling rename as Save, so rejected updates never mutate the file.
+    [[nodiscard]] static EditorProjectPackageResult ApplyUpdate(
         const std::filesystem::path& packagePath,
         std::uint64_t expectedRevision,
-        const EditorProjectPackageUVE& replacement);
+        const EditorProjectPackage& replacement);
 };
 
 } // namespace UVE::Platform

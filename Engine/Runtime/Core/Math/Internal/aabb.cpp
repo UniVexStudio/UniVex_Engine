@@ -10,25 +10,25 @@
 
 namespace UVE::Math {
 
-AabbUVE AabbUVE::TransformUVE(const Matrix4x4UVE& matrix) const noexcept {
-    const std::array<Vector3UVE, 8> corners = {
-        Vector3UVE{min.x, min.y, min.z}, Vector3UVE{max.x, min.y, min.z}, Vector3UVE{min.x, max.y, min.z},
-        Vector3UVE{max.x, max.y, min.z}, Vector3UVE{min.x, min.y, max.z}, Vector3UVE{max.x, min.y, max.z},
-        Vector3UVE{min.x, max.y, max.z}, Vector3UVE{max.x, max.y, max.z},
+Aabb Aabb::Transform(const Matrix4x4& matrix) const noexcept {
+    const std::array<Vector3, 8> corners = {
+        Vector3{min.x, min.y, min.z}, Vector3{max.x, min.y, min.z}, Vector3{min.x, max.y, min.z},
+        Vector3{max.x, max.y, min.z}, Vector3{min.x, min.y, max.z}, Vector3{max.x, min.y, max.z},
+        Vector3{min.x, max.y, max.z}, Vector3{max.x, max.y, max.z},
     };
 
-    std::array<Vector3UVE, 8> transformedCorners{};
-    if (!TryTransformPointsUVE(matrix, corners, transformedCorners)) {
+    std::array<Vector3, 8> transformedCorners{};
+    if (!TryTransformPoints(matrix, corners, transformedCorners)) {
         // Matching disjoint arrays satisfy the current batch contract; preserve the scalar
         // result even if a future kernel introduces additional validation requirements.
         for (std::size_t index = 0U; index < corners.size(); ++index) {
-            transformedCorners[index] = TransformPointUVE(matrix, corners[index]);
+            transformedCorners[index] = TransformPoint(matrix, corners[index]);
         }
     }
-    Vector3UVE newMin = transformedCorners[0];
-    Vector3UVE newMax = newMin;
+    Vector3 newMin = transformedCorners[0];
+    Vector3 newMax = newMin;
     for (std::size_t index = 1; index < corners.size(); ++index) {
-        const Vector3UVE transformed = transformedCorners[index];
+        const Vector3 transformed = transformedCorners[index];
         newMin.x = std::min(newMin.x, transformed.x);
         newMin.y = std::min(newMin.y, transformed.y);
         newMin.z = std::min(newMin.z, transformed.z);
@@ -36,59 +36,59 @@ AabbUVE AabbUVE::TransformUVE(const Matrix4x4UVE& matrix) const noexcept {
         newMax.y = std::max(newMax.y, transformed.y);
         newMax.z = std::max(newMax.z, transformed.z);
     }
-    return AabbUVE{newMin, newMax};
+    return Aabb{newMin, newMax};
 }
 
-std::string ToStringUVE(const AabbUVE& box) {
-    return "[" + ToStringUVE(box.min) + " .. " + ToStringUVE(box.max) + "]";
+std::string ToString(const Aabb& box) {
+    return "[" + ToString(box.min) + " .. " + ToString(box.max) + "]";
 }
 
-std::optional<PenetrationUVE> ComputePenetrationUVE(const AabbUVE& a, const AabbUVE& b) noexcept {
-    if (!IsFiniteUVE(a.min) || !IsFiniteUVE(a.max) || !IsFiniteUVE(b.min) ||
-        !IsFiniteUVE(b.max) || a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z ||
-        b.min.x > b.max.x || b.min.y > b.max.y || b.min.z > b.max.z || !a.IntersectsUVE(b)) {
+std::optional<Penetration> ComputePenetration(const Aabb& a, const Aabb& b) noexcept {
+    if (!IsFinite(a.min) || !IsFinite(a.max) || !IsFinite(b.min) ||
+        !IsFinite(b.max) || a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z ||
+        b.min.x > b.max.x || b.min.y > b.max.y || b.min.z > b.max.z || !a.Intersects(b)) {
         return std::nullopt;
     }
 
     const float overlapX = std::min(a.max.x, b.max.x) - std::max(a.min.x, b.min.x);
     const float overlapY = std::min(a.max.y, b.max.y) - std::max(a.min.y, b.min.y);
     const float overlapZ = std::min(a.max.z, b.max.z) - std::max(a.min.z, b.min.z);
-    const Vector3UVE centerA = a.GetCenterUVE();
-    const Vector3UVE centerB = b.GetCenterUVE();
+    const Vector3 centerA = a.GetCenter();
+    const Vector3 centerB = b.GetCenter();
     if (!std::isfinite(overlapX) || !std::isfinite(overlapY) || !std::isfinite(overlapZ) ||
-        overlapX <= 0.0F || overlapY <= 0.0F || overlapZ <= 0.0F || !IsFiniteUVE(centerA) ||
-        !IsFiniteUVE(centerB)) {
+        overlapX <= 0.0F || overlapY <= 0.0F || overlapZ <= 0.0F || !IsFinite(centerA) ||
+        !IsFinite(centerB)) {
         return std::nullopt;
     }
 
     if (overlapX <= overlapY && overlapX <= overlapZ) {
-        return PenetrationUVE{Vector3UVE{centerB.x >= centerA.x ? 1.0F : -1.0F, 0.0F, 0.0F}, overlapX};
+        return Penetration{Vector3{centerB.x >= centerA.x ? 1.0F : -1.0F, 0.0F, 0.0F}, overlapX};
     }
     if (overlapY <= overlapZ) {
-        return PenetrationUVE{Vector3UVE{0.0F, centerB.y >= centerA.y ? 1.0F : -1.0F, 0.0F}, overlapY};
+        return Penetration{Vector3{0.0F, centerB.y >= centerA.y ? 1.0F : -1.0F, 0.0F}, overlapY};
     }
-    return PenetrationUVE{Vector3UVE{0.0F, 0.0F, centerB.z >= centerA.z ? 1.0F : -1.0F}, overlapZ};
+    return Penetration{Vector3{0.0F, 0.0F, centerB.z >= centerA.z ? 1.0F : -1.0F}, overlapZ};
 }
 
-std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3UVE& displacement,
-                                                   const AabbUVE& target) noexcept {
-    if (!IsFiniteUVE(moving.min) || !IsFiniteUVE(moving.max) ||
-        !IsFiniteUVE(displacement) || !IsFiniteUVE(target.min) ||
-        !IsFiniteUVE(target.max) || moving.IntersectsUVE(target)) {
+std::optional<SweptAabbHit> SweepAabb(const Aabb& moving, const Vector3& displacement,
+                                                   const Aabb& target) noexcept {
+    if (!IsFinite(moving.min) || !IsFinite(moving.max) ||
+        !IsFinite(displacement) || !IsFinite(target.min) ||
+        !IsFinite(target.max) || moving.Intersects(target)) {
         return std::nullopt;
     }
 
-    const Vector3UVE movingExtents = moving.GetExtentsUVE();
-    if (!IsFiniteUVE(movingExtents) || movingExtents.x < 0.0F || movingExtents.y < 0.0F ||
+    const Vector3 movingExtents = moving.GetExtents();
+    if (!IsFinite(movingExtents) || movingExtents.x < 0.0F || movingExtents.y < 0.0F ||
         movingExtents.z < 0.0F) {
         return std::nullopt;
     }
-    const AabbUVE expandedTarget{
-        Vector3UVE{target.min.x - movingExtents.x, target.min.y - movingExtents.y,
+    const Aabb expandedTarget{
+        Vector3{target.min.x - movingExtents.x, target.min.y - movingExtents.y,
                    target.min.z - movingExtents.z},
-        Vector3UVE{target.max.x + movingExtents.x, target.max.y + movingExtents.y,
+        Vector3{target.max.x + movingExtents.x, target.max.y + movingExtents.y,
                    target.max.z + movingExtents.z}};
-    const Vector3UVE origin = moving.GetCenterUVE();
+    const Vector3 origin = moving.GetCenter();
     const std::array<float, 3> origins{origin.x, origin.y, origin.z};
     const std::array<float, 3> directions{displacement.x, displacement.y, displacement.z};
     const std::array<float, 3> boxMin{expandedTarget.min.x, expandedTarget.min.y, expandedTarget.min.z};
@@ -96,7 +96,7 @@ std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3
 
     float entryTime = 0.0F;
     float exitTime = 1.0F;
-    Vector3UVE normal{};
+    Vector3 normal{};
     for (std::size_t axis = 0U; axis < 3U; ++axis) {
         if (directions[axis] == 0.0F) {
             if (origins[axis] < boxMin[axis] || origins[axis] > boxMax[axis]) {
@@ -109,9 +109,9 @@ std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3
         if (nearTime > farTime) {
             std::swap(nearTime, farTime);
         }
-        if (nearTime > entryTime || (nearTime == entryTime && normal == Vector3UVE{})) {
+        if (nearTime > entryTime || (nearTime == entryTime && normal == Vector3{})) {
             entryTime = nearTime;
-            normal = Vector3UVE{};
+            normal = Vector3{};
             const float directionSign = directions[axis] > 0.0F ? 1.0F : -1.0F;
             if (axis == 0U) {
                 normal.x = directionSign;
@@ -126,15 +126,15 @@ std::optional<SweptAabbHitUVE> SweepAabbUVE(const AabbUVE& moving, const Vector3
             return std::nullopt;
         }
     }
-    if (entryTime < 0.0F || entryTime > 1.0F || normal == Vector3UVE{}) {
+    if (entryTime < 0.0F || entryTime > 1.0F || normal == Vector3{}) {
         return std::nullopt;
     }
-    return SweptAabbHitUVE{entryTime, normal};
+    return SweptAabbHit{entryTime, normal};
 }
 
-std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb, float maxDistance) noexcept {
-    if (!IsFiniteUVE(ray.origin) || !IsFiniteUVE(ray.direction) ||
-        !IsFiniteUVE(aabb.min) || !IsFiniteUVE(aabb.max) || !std::isfinite(maxDistance) ||
+std::optional<RayHit> IntersectRay(const Ray& ray, const Aabb& aabb, float maxDistance) noexcept {
+    if (!IsFinite(ray.origin) || !IsFinite(ray.direction) ||
+        !IsFinite(aabb.min) || !IsFinite(aabb.max) || !std::isfinite(maxDistance) ||
         maxDistance < 0.0F || aabb.min.x > aabb.max.x || aabb.min.y > aabb.max.y || aabb.min.z > aabb.max.z) {
         return std::nullopt;
     }
@@ -146,7 +146,7 @@ std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb,
 
     float tmin = 0.0F;
     float tmax = maxDistance;
-    Vector3UVE normal{0.0F, 0.0F, 0.0F};
+    Vector3 normal{0.0F, 0.0F, 0.0F};
 
     for (std::size_t axis = 0; axis < 3; ++axis) {
         if (direction[axis] == 0.0F) {
@@ -174,7 +174,7 @@ std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb,
 
         if (tNear > tmin) {
             tmin = tNear;
-            normal = Vector3UVE{0.0F, 0.0F, 0.0F};
+            normal = Vector3{0.0F, 0.0F, 0.0F};
             if (axis == 0) {
                 normal.x = nearSign;
             } else if (axis == 1) {
@@ -189,10 +189,10 @@ std::optional<RayHitUVE> IntersectRayUVE(const RayUVE& ray, const AabbUVE& aabb,
         }
     }
 
-    if (!std::isfinite(tmin) || !IsFiniteUVE(normal)) {
+    if (!std::isfinite(tmin) || !IsFinite(normal)) {
         return std::nullopt;
     }
-    return RayHitUVE{tmin, normal};
+    return RayHit{tmin, normal};
 }
 
 } // namespace UVE::Math

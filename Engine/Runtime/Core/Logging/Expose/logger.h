@@ -16,33 +16,33 @@
 
 namespace UVE::Debug {
 
-/// LoggerUVE is the concrete, engine-standard implementation of ILoggerUVE.
-/// Owned by EngineCoreUVE for the lifetime of the engine. While initialized
+/// Logger is the concrete, engine-standard implementation of ILogger.
+/// Owned by EngineCore for the lifetime of the engine. While initialized
 /// (between Init() and Shutdown()), registers itself as the process-wide
-/// "active" logger (see GetActiveInstanceUVE()) so the UVE_LOG/UVE_TRACE/...
+/// "active" logger (see GetActiveInstance()) so the UVE_LOG/UVE_TRACE/...
 /// macros can reach it without a service reference in scope. That static
 /// pointer is the single intentional piece of global state in the engine
 /// (see docs/CODING_STANDARDS.md) — everything else reaches the logger
-/// through EngineServicesUVE.
+/// through EngineServices.
 /// Thread-safety: thread-safe. LogFormatted() and sink registration are
 /// serialized by an internal mutex; the min-level threshold and the active-
 /// instance pointer use atomics so they can be read cheaply/safely from any
 /// thread without taking the sink lock.
-class LoggerUVE final : public ILoggerUVE {
+class Logger final : public ILogger {
 public:
-    LoggerUVE();
-    ~LoggerUVE() override;
+    Logger();
+    ~Logger() override;
 
-    LoggerUVE(const LoggerUVE&) = delete;
-    LoggerUVE& operator=(const LoggerUVE&) = delete;
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
 
     /// Prepares the logger for use and registers it as the instance
-    /// returned by GetActiveInstanceUVE(). Must be called before any
+    /// returned by GetActiveInstance(). Must be called before any
     /// UVE_LOG-family macro is expected to produce output. Not thread-safe
     /// with respect to concurrent Init()/Shutdown() calls on the same
     /// instance; intended to be called once, during single-threaded engine
     /// startup.
-    void Init(LogLevelUVE minLevel) override;
+    void Init(LogLevel minLevel) override;
 
     /// Flushes and releases every sink, then clears this instance's
     /// active-instance registration (if it was the active one). After this
@@ -53,10 +53,10 @@ public:
     /// stopped logging.
     void Shutdown() override;
 
-    void AddSink(std::unique_ptr<ILogSinkUVE> sink) override;
-    void SetMinLevel(LogLevelUVE level) override;
-    [[nodiscard]] LogLevelUVE GetMinLevel() const override;
-    void LogFormatted(LogLevelUVE level,
+    void AddSink(std::unique_ptr<ILogSink> sink) override;
+    void SetMinLevel(LogLevel level) override;
+    [[nodiscard]] LogLevel GetMinLevel() const override;
+    void LogFormatted(LogLevel level,
                        std::string_view category,
                        const char* sourceFile,
                        int sourceLine,
@@ -66,16 +66,16 @@ public:
     /// logger is initialized (before the first Init() call, or after
     /// Shutdown()). Safe to call from any thread. Used internally by the
     /// UVE_LOG-family macros.
-    [[nodiscard]] static LoggerUVE* GetActiveInstanceUVE() noexcept;
+    [[nodiscard]] static Logger* GetActiveInstance() noexcept;
 
 private:
     void FlushAllSinksLocked();
 
     std::mutex m_sinkMutex;
-    std::vector<std::unique_ptr<ILogSinkUVE>> m_sinks;
-    std::atomic<LogLevelUVE> m_minLevel{LogLevelUVE::Trace};
+    std::vector<std::unique_ptr<ILogSink>> m_sinks;
+    std::atomic<LogLevel> m_minLevel{LogLevel::Trace};
 
-    static std::atomic<LoggerUVE*> s_activeInstance;
+    static std::atomic<Logger*> s_activeInstance;
 };
 
 } // namespace UVE::Debug

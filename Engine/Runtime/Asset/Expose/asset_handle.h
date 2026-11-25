@@ -9,38 +9,38 @@
 
 namespace UVE::Asset {
 
-/// AssetHandleUVE<T> is a ref-counted RAII reference to one asset tracked by an IAssetManagerUVE,
-/// obtained only via IAssetManagerUVE::LoadUVE<T>(). Copying increments the manager's reference
+/// AssetHandle<T> is a ref-counted RAII reference to one asset tracked by an IAssetManager,
+/// obtained only via IAssetManager::Load<T>(). Copying increments the manager's reference
 /// count for this asset; destruction (and move-from) decrements it. The referenced
-/// IAssetManagerUVE& must outlive every handle to assets it produced (the same "systems don't
-/// outlive their owner" contract already implicit elsewhere in the engine, e.g. IEntityManagerUVE&
-/// arguments never outliving the EntityManagerUVE that owns them).
+/// IAssetManager& must outlive every handle to assets it produced (the same "systems don't
+/// outlive their owner" contract already implicit elsewhere in the engine, e.g. IEntityManager&
+/// arguments never outliving the EntityManager that owns them).
 /// Thread-safety: safe to copy/move/destroy from any thread — every operation routes through
-/// IAssetManagerUVE's own thread-safe ref-count primitives.
+/// IAssetManager's own thread-safe ref-count primitives.
 template <typename T>
-class AssetHandleUVE final {
+class AssetHandle final {
 public:
-    AssetHandleUVE(const AssetHandleUVE& other) noexcept : m_manager(other.m_manager), m_guid(other.m_guid) {
-        m_manager->AddRefUVE(m_guid);
+    AssetHandle(const AssetHandle& other) noexcept : m_manager(other.m_manager), m_guid(other.m_guid) {
+        m_manager->AddRef(m_guid);
     }
 
-    AssetHandleUVE(AssetHandleUVE&& other) noexcept : m_manager(other.m_manager), m_guid(other.m_guid) {
+    AssetHandle(AssetHandle&& other) noexcept : m_manager(other.m_manager), m_guid(other.m_guid) {
         other.m_manager = nullptr;
     }
 
-    AssetHandleUVE& operator=(const AssetHandleUVE& other) noexcept {
+    AssetHandle& operator=(const AssetHandle& other) noexcept {
         if (this != &other) {
-            ReleaseIfOwnedUVE();
+            ReleaseIfOwned();
             m_manager = other.m_manager;
             m_guid = other.m_guid;
-            m_manager->AddRefUVE(m_guid);
+            m_manager->AddRef(m_guid);
         }
         return *this;
     }
 
-    AssetHandleUVE& operator=(AssetHandleUVE&& other) noexcept {
+    AssetHandle& operator=(AssetHandle&& other) noexcept {
         if (this != &other) {
-            ReleaseIfOwnedUVE();
+            ReleaseIfOwned();
             m_manager = other.m_manager;
             m_guid = other.m_guid;
             other.m_manager = nullptr;
@@ -48,49 +48,49 @@ public:
         return *this;
     }
 
-    ~AssetHandleUVE() { ReleaseIfOwnedUVE(); }
+    ~AssetHandle() { ReleaseIfOwned(); }
 
-    /// True once the underlying load has completed successfully — TryGetUVE() returns non-null.
-    [[nodiscard]] bool IsReadyUVE() const { return m_manager->GetLoadStateUVE(m_guid) == AssetLoadStateUVE::Loaded; }
+    /// True once the underlying load has completed successfully — TryGet() returns non-null.
+    [[nodiscard]] bool IsReady() const { return m_manager->GetLoadState(m_guid) == AssetLoadState::Loaded; }
 
     /// True once the underlying first load has completed and failed. A failed reload of an
     /// already-loaded record preserves the last-known-good value, so this remains false in that
-    /// case while GetFailureReasonUVE() exposes the copied reload diagnostic.
-    [[nodiscard]] bool HasFailedUVE() const {
-        return m_manager->GetLoadStateUVE(m_guid) == AssetLoadStateUVE::Failed;
+    /// case while GetFailureReason() exposes the copied reload diagnostic.
+    [[nodiscard]] bool HasFailed() const {
+        return m_manager->GetLoadState(m_guid) == AssetLoadState::Failed;
     }
 
     /// Returns a copied diagnostic for the most recent failed load/reload. A failed reload may
-    /// provide a diagnostic while TryGetUVE() still returns the last-known-good value; a successful
+    /// provide a diagnostic while TryGet() still returns the last-known-good value; a successful
     /// replacement clears it. The copy remains valid independently of the manager record.
-    [[nodiscard]] std::string GetFailureReasonUVE() const { return m_manager->GetFailureReasonUVE(m_guid); }
+    [[nodiscard]] std::string GetFailureReason() const { return m_manager->GetFailureReason(m_guid); }
 
     /// Returns a pointer to the loaded `T`, or `nullptr` if the load hasn't finished or has
     /// failed without a previous loaded value. The pointer may be invalidated by a future
-    /// HotReloadUVE-triggered successful replacement — callers
-    /// that need a stable reference across frames should re-call TryGetUVE() each time.
-    [[nodiscard]] T* TryGetUVE() const {
-        return IsReadyUVE() ? static_cast<T*>(m_manager->GetRawPointerUVE(m_guid)) : nullptr;
+    /// HotReload-triggered successful replacement — callers
+    /// that need a stable reference across frames should re-call TryGet() each time.
+    [[nodiscard]] T* TryGet() const {
+        return IsReady() ? static_cast<T*>(m_manager->GetRawPointer(m_guid)) : nullptr;
     }
 
-    [[nodiscard]] AssetGuidUVE GetGuidUVE() const noexcept { return m_guid; }
+    [[nodiscard]] AssetGuid GetGuid() const noexcept { return m_guid; }
 
 private:
-    friend class IAssetManagerUVE;
+    friend class IAssetManager;
 
-    /// Constructs a handle for a reference IAssetManagerUVE::LoadUVE<T>() has already accounted
-    /// for — deliberately private (only LoadUVE<T>() may call this) so no caller can construct a
+    /// Constructs a handle for a reference IAssetManager::Load<T>() has already accounted
+    /// for — deliberately private (only Load<T>() may call this) so no caller can construct a
     /// handle for a reference that was never actually counted.
-    AssetHandleUVE(IAssetManagerUVE& manager, AssetGuidUVE guid) noexcept : m_manager(&manager), m_guid(guid) {}
+    AssetHandle(IAssetManager& manager, AssetGuid guid) noexcept : m_manager(&manager), m_guid(guid) {}
 
-    void ReleaseIfOwnedUVE() {
+    void ReleaseIfOwned() {
         if (m_manager != nullptr) {
-            m_manager->ReleaseUVE(m_guid);
+            m_manager->Release(m_guid);
         }
     }
 
-    IAssetManagerUVE* m_manager;
-    AssetGuidUVE m_guid;
+    IAssetManager* m_manager;
+    AssetGuid m_guid;
 };
 
 } // namespace UVE::Asset

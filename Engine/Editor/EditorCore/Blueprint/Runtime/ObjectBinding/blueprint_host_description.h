@@ -21,26 +21,26 @@ namespace UVE::Blueprint {
 ///     event tick(float)
 ///
 /// Types are bool, int, float, str, vec3 and none; any other name is an object kind.
-class DescribedHostUVE final : public UVScriptHostUVE {
+class DescribedHost final : public UVScriptHost {
 public:
     /// Nothing, with `error` set ("line 3: ..."), when the text is not a valid description.
-    [[nodiscard]] static std::optional<DescribedHostUVE> ParseUVE(std::string_view text, std::string& error);
+    [[nodiscard]] static std::optional<DescribedHost> Parse(std::string_view text, std::string& error);
 
-    [[nodiscard]] std::optional<HostPropertyUVE> DescribePropertyUVE(std::string_view name) const override;
-    [[nodiscard]] std::optional<HostFunctionUVE> DescribeFunctionUVE(std::string_view name) const override;
-    [[nodiscard]] std::optional<std::vector<TypeUVE>> DescribeEventUVE(std::string_view event) const override;
+    [[nodiscard]] std::optional<HostProperty> DescribeProperty(std::string_view name) const override;
+    [[nodiscard]] std::optional<HostFunction> DescribeFunction(std::string_view name) const override;
+    [[nodiscard]] std::optional<std::vector<Type>> DescribeEvent(std::string_view event) const override;
 
     /// Run-time calls do nothing: a described host never runs a script.
-    [[nodiscard]] ValueUVE GetPropertyUVE(std::string_view name) override;
-    void SetPropertyUVE(std::string_view name, const ValueUVE& value) override;
-    [[nodiscard]] ValueUVE CallFunctionUVE(std::string_view name, std::span<const ValueUVE> args) override;
-    void CallMethodUVE(ObjectRefUVE target, std::string_view method, std::span<const ValueUVE> args) override;
-    void PrintUVE(std::string_view text) override;
+    [[nodiscard]] Value GetProperty(std::string_view name) override;
+    void SetProperty(std::string_view name, const Value& value) override;
+    [[nodiscard]] Value CallFunction(std::string_view name, std::span<const Value> args) override;
+    void CallMethod(ObjectRef target, std::string_view method, std::span<const Value> args) override;
+    void Print(std::string_view text) override;
 
 private:
-    std::map<std::string, HostPropertyUVE, std::less<>> m_properties;
-    std::map<std::string, HostFunctionUVE, std::less<>> m_functions;
-    std::map<std::string, std::vector<TypeUVE>, std::less<>> m_events;
+    std::map<std::string, HostProperty, std::less<>> m_properties;
+    std::map<std::string, HostFunction, std::less<>> m_functions;
+    std::map<std::string, std::vector<Type>, std::less<>> m_events;
 };
 
 } // namespace UVE::Blueprint

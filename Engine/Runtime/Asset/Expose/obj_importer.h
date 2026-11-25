@@ -8,9 +8,9 @@
 namespace UVE::Asset {
 
 /// Registers the bounded raw OBJ source importer. The importer reads a caller-owned filesystem path,
-/// converts supported source forms through ConvertObjMeshUVE, persists one validated MeshAssetUVE as
-/// a .uvmodel destination, and leaves AssetImporterUVE responsible for database registration. It
+/// converts supported source forms through ConvertObjMesh, persists one validated MeshAsset as
+/// a .uvmodel destination, and leaves AssetImporter responsible for database registration. It
 /// owns no MTL files, VFS mounts, GPU resources, background work, or asset-manager state.
-void RegisterObjImporterUVE(IAssetImporterUVE& importer);
+void RegisterObjImporter(IAssetImporter& importer);
 
 } // namespace UVE::Asset

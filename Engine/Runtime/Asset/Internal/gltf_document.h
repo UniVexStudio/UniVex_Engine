@@ -24,7 +24,7 @@
 
 namespace UVE::Asset::Detail {
 
-struct AccessorDefinitionUVE final {
+struct AccessorDefinition final {
     std::uint64_t bufferView = 0U;
     std::uint64_t byteOffset = 0U;
     std::uint64_t count = 0U;
@@ -32,14 +32,14 @@ struct AccessorDefinitionUVE final {
     std::string type;
 };
 
-struct BufferViewDefinitionUVE final {
+struct BufferViewDefinition final {
     std::uint64_t buffer = 0U;
     std::uint64_t byteOffset = 0U;
     std::uint64_t byteLength = 0U;
     std::uint64_t byteStride = 0U;
 };
 
-[[nodiscard]] inline std::optional<std::uint64_t> ReadJsonUintUVE(const nlohmann::json& object,
+[[nodiscard]] inline std::optional<std::uint64_t> ReadJsonUint(const nlohmann::json& object,
                                                                   const char* key,
                                                                   const bool required) {
     if (!object.contains(key)) {
@@ -55,15 +55,15 @@ struct BufferViewDefinitionUVE final {
     return std::nullopt;
 }
 
-[[nodiscard]] inline std::optional<std::uint32_t> ReadJsonU32UVE(const nlohmann::json& object, const char* key) {
-    const auto value = ReadJsonUintUVE(object, key, true);
+[[nodiscard]] inline std::optional<std::uint32_t> ReadJsonU32(const nlohmann::json& object, const char* key) {
+    const auto value = ReadJsonUint(object, key, true);
     if (!value.has_value() || *value > std::numeric_limits<std::uint32_t>::max()) {
         return std::nullopt;
     }
     return static_cast<std::uint32_t>(*value);
 }
 
-[[nodiscard]] inline std::optional<nlohmann::json::size_type> CheckedJsonArrayIndexUVE(
+[[nodiscard]] inline std::optional<nlohmann::json::size_type> CheckedJsonArrayIndex(
     const nlohmann::json& array, const std::uint64_t index) {
     if (!array.is_array() || index > static_cast<std::uint64_t>(std::numeric_limits<nlohmann::json::size_type>::max()) ||
         index >= array.size()) {
@@ -72,63 +72,63 @@ struct BufferViewDefinitionUVE final {
     return static_cast<nlohmann::json::size_type>(index);
 }
 
-[[nodiscard]] inline std::optional<BufferViewDefinitionUVE> ReadBufferViewUVE(const nlohmann::json& document,
+[[nodiscard]] inline std::optional<BufferViewDefinition> ReadBufferView(const nlohmann::json& document,
                                                                               const std::uint64_t index) {
     if (!document.contains("bufferViews")) {
         return std::nullopt;
     }
-    const auto bufferViewsIndex = CheckedJsonArrayIndexUVE(document.at("bufferViews"), index);
+    const auto bufferViewsIndex = CheckedJsonArrayIndex(document.at("bufferViews"), index);
     if (!bufferViewsIndex || !document.at("bufferViews").at(*bufferViewsIndex).is_object()) {
         return std::nullopt;
     }
     const auto& value = document.at("bufferViews").at(*bufferViewsIndex);
-    const auto buffer = ReadJsonUintUVE(value, "buffer", true);
-    const auto byteOffset = ReadJsonUintUVE(value, "byteOffset", false);
-    const auto byteLength = ReadJsonUintUVE(value, "byteLength", true);
-    const auto byteStride = ReadJsonUintUVE(value, "byteStride", false);
+    const auto buffer = ReadJsonUint(value, "buffer", true);
+    const auto byteOffset = ReadJsonUint(value, "byteOffset", false);
+    const auto byteLength = ReadJsonUint(value, "byteLength", true);
+    const auto byteStride = ReadJsonUint(value, "byteStride", false);
     if (!buffer || !byteOffset || !byteLength || !byteStride) {
         return std::nullopt;
     }
-    return BufferViewDefinitionUVE{*buffer, *byteOffset, *byteLength, *byteStride};
+    return BufferViewDefinition{*buffer, *byteOffset, *byteLength, *byteStride};
 }
 
-[[nodiscard]] inline std::optional<AccessorDefinitionUVE> ReadAccessorUVE(const nlohmann::json& document,
+[[nodiscard]] inline std::optional<AccessorDefinition> ReadAccessor(const nlohmann::json& document,
                                                                            const std::uint64_t index) {
     if (!document.contains("accessors")) {
         return std::nullopt;
     }
-    const auto accessorsIndex = CheckedJsonArrayIndexUVE(document.at("accessors"), index);
+    const auto accessorsIndex = CheckedJsonArrayIndex(document.at("accessors"), index);
     if (!accessorsIndex || !document.at("accessors").at(*accessorsIndex).is_object()) {
         return std::nullopt;
     }
     const auto& value = document.at("accessors").at(*accessorsIndex);
-    const auto bufferView = ReadJsonUintUVE(value, "bufferView", true);
-    const auto byteOffset = ReadJsonUintUVE(value, "byteOffset", false);
-    const auto count = ReadJsonUintUVE(value, "count", true);
-    const auto componentType = ReadJsonU32UVE(value, "componentType");
+    const auto bufferView = ReadJsonUint(value, "bufferView", true);
+    const auto byteOffset = ReadJsonUint(value, "byteOffset", false);
+    const auto count = ReadJsonUint(value, "count", true);
+    const auto componentType = ReadJsonU32(value, "componentType");
     if (!bufferView || !byteOffset || !count || !componentType || !value.contains("type") ||
-        !value.at("type").is_string() || *count > kMaximumGltfAccessorElementsUVE) {
+        !value.at("type").is_string() || *count > kMaximumGltfAccessorElements) {
         return std::nullopt;
     }
-    return AccessorDefinitionUVE{*bufferView, *byteOffset, *count, *componentType, value.at("type").get<std::string>()};
+    return AccessorDefinition{*bufferView, *byteOffset, *count, *componentType, value.at("type").get<std::string>()};
 }
 
-[[nodiscard]] inline std::optional<GltfComponentTypeUVE> ToComponentTypeUVE(const std::uint32_t value) noexcept {
+[[nodiscard]] inline std::optional<GltfComponentType> ToComponentType(const std::uint32_t value) noexcept {
     switch (value) {
     case 5121U:
-        return GltfComponentTypeUVE::UnsignedByte;
+        return GltfComponentType::UnsignedByte;
     case 5123U:
-        return GltfComponentTypeUVE::UnsignedShort;
+        return GltfComponentType::UnsignedShort;
     case 5125U:
-        return GltfComponentTypeUVE::UnsignedInt;
+        return GltfComponentType::UnsignedInt;
     case 5126U:
-        return GltfComponentTypeUVE::Float;
+        return GltfComponentType::Float;
     default:
         return std::nullopt;
     }
 }
 
-[[nodiscard]] inline bool AddU64UVE(const std::uint64_t left, const std::uint64_t right,
+[[nodiscard]] inline bool AddU64(const std::uint64_t left, const std::uint64_t right,
                                     std::uint64_t& outValue) noexcept {
     if (right > std::numeric_limits<std::uint64_t>::max() - left) {
         return false;
@@ -141,32 +141,32 @@ struct BufferViewDefinitionUVE final {
 /// width, bufferView containment, and stride math without overflow. `allowIndices` selects integer
 /// components (indices, JOINTS_0) versus float32 (everything else). Unknown `expectedType` values
 /// fail closed rather than sizing as scalar.
-[[nodiscard]] inline std::optional<GltfAccessorViewUVE> BuildAccessorViewUVE(
+[[nodiscard]] inline std::optional<GltfAccessorView> BuildAccessorView(
     const nlohmann::json& document, const std::vector<std::byte>& buffer, const std::uint64_t accessorIndex,
     const std::string_view expectedType, const bool allowIndices) {
-    const auto accessor = ReadAccessorUVE(document, accessorIndex);
+    const auto accessor = ReadAccessor(document, accessorIndex);
     if (!accessor || accessor->type != expectedType) {
         return std::nullopt;
     }
-    const auto componentType = ToComponentTypeUVE(accessor->componentType);
-    if (!componentType || (!allowIndices && *componentType != GltfComponentTypeUVE::Float) ||
-        (allowIndices && *componentType == GltfComponentTypeUVE::Float)) {
+    const auto componentType = ToComponentType(accessor->componentType);
+    if (!componentType || (!allowIndices && *componentType != GltfComponentType::Float) ||
+        (allowIndices && *componentType == GltfComponentType::Float)) {
         return std::nullopt;
     }
-    const auto view = ReadBufferViewUVE(document, accessor->bufferView);
+    const auto view = ReadBufferView(document, accessor->bufferView);
     if (!view || view->buffer != 0U) {
         return std::nullopt;
     }
     std::uint64_t totalOffset = 0U;
     std::uint64_t viewEnd = 0U;
-    if (!AddU64UVE(view->byteOffset, view->byteLength, viewEnd) || viewEnd > buffer.size() ||
-        !AddU64UVE(view->byteOffset, accessor->byteOffset, totalOffset) ||
+    if (!AddU64(view->byteOffset, view->byteLength, viewEnd) || viewEnd > buffer.size() ||
+        !AddU64(view->byteOffset, accessor->byteOffset, totalOffset) ||
         accessor->byteOffset > view->byteLength) {
         return std::nullopt;
     }
-    const std::uint64_t componentSize = *componentType == GltfComponentTypeUVE::UnsignedByte
+    const std::uint64_t componentSize = *componentType == GltfComponentType::UnsignedByte
                                              ? 1U
-                                             : *componentType == GltfComponentTypeUVE::UnsignedShort ? 2U : 4U;
+                                             : *componentType == GltfComponentType::UnsignedShort ? 2U : 4U;
     std::uint64_t elementSize = 0U;
     if (expectedType == "SCALAR") {
         elementSize = componentSize;
@@ -182,11 +182,11 @@ struct BufferViewDefinitionUVE final {
         return std::nullopt;
     }
     const std::uint64_t stride = view->byteStride == 0U ? elementSize : view->byteStride;
-    if (!ValidateGltfAccessorSpanUVE(view->byteLength, accessor->byteOffset, accessor->count, stride, elementSize) ||
-        !ValidateGltfAccessorSpanUVE(buffer.size(), totalOffset, accessor->count, stride, elementSize)) {
+    if (!ValidateGltfAccessorSpan(view->byteLength, accessor->byteOffset, accessor->count, stride, elementSize) ||
+        !ValidateGltfAccessorSpan(buffer.size(), totalOffset, accessor->count, stride, elementSize)) {
         return std::nullopt;
     }
-    return GltfAccessorViewUVE{std::span<const std::byte>{buffer.data(), buffer.size()}, totalOffset,
+    return GltfAccessorView{std::span<const std::byte>{buffer.data(), buffer.size()}, totalOffset,
                                accessor->count, view->byteStride, *componentType};
 }
 
@@ -195,23 +195,23 @@ struct BufferViewDefinitionUVE final {
 // skin, and animation converters so the span math exists exactly once. (The mesh converter's
 // originals moved here verbatim when the skin converter needed the same readers.)
 
-[[nodiscard]] inline std::uint64_t GltfComponentSizeUVE(const GltfComponentTypeUVE componentType) noexcept {
+[[nodiscard]] inline std::uint64_t GltfComponentSize(const GltfComponentType componentType) noexcept {
     switch (componentType) {
-    case GltfComponentTypeUVE::UnsignedByte:
+    case GltfComponentType::UnsignedByte:
         return 1U;
-    case GltfComponentTypeUVE::UnsignedShort:
+    case GltfComponentType::UnsignedShort:
         return 2U;
-    case GltfComponentTypeUVE::UnsignedInt:
-    case GltfComponentTypeUVE::Float:
+    case GltfComponentType::UnsignedInt:
+    case GltfComponentType::Float:
         return 4U;
     }
     return 0U;
 }
 
-[[nodiscard]] inline bool ValidateGltfAccessorViewUVE(const GltfAccessorViewUVE& accessor,
+[[nodiscard]] inline bool ValidateGltfAccessorView(const GltfAccessorView& accessor,
                                                       const std::uint64_t elementSize,
                                                       const std::uint64_t maximumElements) noexcept {
-    if (GltfComponentSizeUVE(accessor.componentType) == 0U || accessor.elementCount == 0U ||
+    if (GltfComponentSize(accessor.componentType) == 0U || accessor.elementCount == 0U ||
         accessor.elementCount > maximumElements) {
         return false;
     }
@@ -219,11 +219,11 @@ struct BufferViewDefinitionUVE final {
     if (stride < elementSize || stride > std::numeric_limits<std::size_t>::max()) {
         return false;
     }
-    return ValidateGltfAccessorSpanUVE(accessor.buffer.size(), accessor.byteOffset, accessor.elementCount, stride,
+    return ValidateGltfAccessorSpan(accessor.buffer.size(), accessor.byteOffset, accessor.elementCount, stride,
                                        elementSize, maximumElements);
 }
 
-[[nodiscard]] inline const std::byte* GltfAccessorElementUVE(const GltfAccessorViewUVE& accessor,
+[[nodiscard]] inline const std::byte* GltfAccessorElement(const GltfAccessorView& accessor,
                                                              const std::size_t elementIndex,
                                                              const std::uint64_t elementSize) noexcept {
     const std::uint64_t stride = accessor.byteStride == 0U ? elementSize : accessor.byteStride;
@@ -235,20 +235,20 @@ struct BufferViewDefinitionUVE final {
     return accessor.buffer.data() + static_cast<std::size_t>(offset);
 }
 
-[[nodiscard]] inline std::uint32_t ReadGltfU32LEUVE(const std::byte* bytes) noexcept {
+[[nodiscard]] inline std::uint32_t ReadGltfU32LE(const std::byte* bytes) noexcept {
     return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[0])) |
            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[1])) << 8U) |
            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[2])) << 16U) |
            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[3])) << 24U);
 }
 
-[[nodiscard]] inline std::uint16_t ReadGltfU16LEUVE(const std::byte* bytes) noexcept {
+[[nodiscard]] inline std::uint16_t ReadGltfU16LE(const std::byte* bytes) noexcept {
     return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[0])) |
            static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[1]) << 8U);
 }
 
-[[nodiscard]] inline float ReadGltfFloatLEUVE(const std::byte* bytes) noexcept {
-    return std::bit_cast<float>(ReadGltfU32LEUVE(bytes));
+[[nodiscard]] inline float ReadGltfFloatLE(const std::byte* bytes) noexcept {
+    return std::bit_cast<float>(ReadGltfU32LE(bytes));
 }
 
 } // namespace UVE::Asset::Detail

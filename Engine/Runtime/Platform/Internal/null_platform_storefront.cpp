@@ -9,10 +9,10 @@
 
 namespace UVE::Platform {
 
-LocalMockPlatformStorefrontUVE::LocalMockPlatformStorefrontUVE(std::filesystem::path storageDir)
+LocalMockPlatformStorefront::LocalMockPlatformStorefront(std::filesystem::path storageDir)
     : m_storageDir(std::move(storageDir)) {}
 
-bool LocalMockPlatformStorefrontUVE::UnlockAchievementUVE(const std::string_view achievementId) {
+bool LocalMockPlatformStorefront::UnlockAchievement(const std::string_view achievementId) {
     if (achievementId.empty()) {
         return false;
     }
@@ -27,7 +27,7 @@ bool LocalMockPlatformStorefrontUVE::UnlockAchievementUVE(const std::string_view
     return true;
 }
 
-bool LocalMockPlatformStorefrontUVE::SetAchievementProgressUVE(const std::string_view achievementId,
+bool LocalMockPlatformStorefront::SetAchievementProgress(const std::string_view achievementId,
                                                                const float progress01) {
     if (achievementId.empty()) {
         return false;
@@ -36,18 +36,18 @@ bool LocalMockPlatformStorefrontUVE::SetAchievementProgressUVE(const std::string
     ach.id = std::string(achievementId);
     ach.progress01 = std::clamp(progress01, 0.0F, 1.0F);
     if (ach.progress01 >= 1.0F) {
-        return UnlockAchievementUVE(achievementId);
+        return UnlockAchievement(achievementId);
     }
     return true;
 }
 
-bool LocalMockPlatformStorefrontUVE::IsAchievementUnlockedUVE(
+bool LocalMockPlatformStorefront::IsAchievementUnlocked(
     const std::string_view achievementId) const {
     const auto it = m_achievements.find(std::string(achievementId));
     return it != m_achievements.end() && it->second.unlocked;
 }
 
-bool LocalMockPlatformStorefrontUVE::SetStatIntUVE(const std::string_view statName,
+bool LocalMockPlatformStorefront::SetStatInt(const std::string_view statName,
                                                    const std::int64_t value) {
     if (statName.empty()) {
         return false;
@@ -56,23 +56,23 @@ bool LocalMockPlatformStorefrontUVE::SetStatIntUVE(const std::string_view statNa
     return true;
 }
 
-std::int64_t LocalMockPlatformStorefrontUVE::GetStatIntUVE(const std::string_view statName,
+std::int64_t LocalMockPlatformStorefront::GetStatInt(const std::string_view statName,
                                                            const std::int64_t defaultValue) const {
     const auto it = m_stats.find(std::string(statName));
     return it != m_stats.end() ? it->second : defaultValue;
 }
 
-void LocalMockPlatformStorefrontUVE::GrantEntitlementUVE(std::string entitlementId) {
+void LocalMockPlatformStorefront::GrantEntitlement(std::string entitlementId) {
     if (!entitlementId.empty()) {
         m_entitlements.insert(std::move(entitlementId));
     }
 }
 
-bool LocalMockPlatformStorefrontUVE::HasEntitlementUVE(const std::string_view entitlementId) const {
+bool LocalMockPlatformStorefront::HasEntitlement(const std::string_view entitlementId) const {
     return m_entitlements.find(std::string(entitlementId)) != m_entitlements.end();
 }
 
-bool LocalMockPlatformStorefrontUVE::WriteCloudFileUVE(const std::string_view slotName,
+bool LocalMockPlatformStorefront::WriteCloudFile(const std::string_view slotName,
                                                        const std::vector<std::uint8_t>& bytes) {
     if (slotName.empty()) {
         return false;
@@ -93,7 +93,7 @@ bool LocalMockPlatformStorefrontUVE::WriteCloudFileUVE(const std::string_view sl
     return true;
 }
 
-bool LocalMockPlatformStorefrontUVE::ReadCloudFileUVE(const std::string_view slotName,
+bool LocalMockPlatformStorefront::ReadCloudFile(const std::string_view slotName,
                                                       std::vector<std::uint8_t>& outBytes) const {
     const auto it = m_cloudFiles.find(std::string(slotName));
     if (it != m_cloudFiles.end()) {

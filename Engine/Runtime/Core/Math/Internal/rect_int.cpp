@@ -7,8 +7,8 @@
 
 namespace UVE::Math {
 
-std::string ToStringUVE(const RectIntUVE& rect) {
-    return "(" + ToStringUVE(rect.position) + ", " + ToStringUVE(rect.size) + ")";
+std::string ToString(const RectInt& rect) {
+    return "(" + ToString(rect.position) + ", " + ToString(rect.size) + ")";
 }
 
 } // namespace UVE::Math

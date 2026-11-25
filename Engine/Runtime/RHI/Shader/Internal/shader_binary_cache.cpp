@@ -14,37 +14,37 @@ namespace UVE::Render::Shader::Detail {
 
 namespace {
 
-constexpr std::array<char, 8> kMagicUVE = {'U', 'V', 'E', 'P', 'B', 'C', '0', '1'};
-constexpr std::uint32_t kCacheFormatVersionUVE = 1;
+constexpr std::array<char, 8> kMagic = {'U', 'V', 'E', 'P', 'B', 'C', '0', '1'};
+constexpr std::uint32_t kCacheFormatVersion = 1;
 
 #if defined(_WIN32)
-constexpr const char* kPlatformDirectoryUVE = "windows";
+constexpr const char* kPlatformDirectory = "windows";
 #elif defined(__APPLE__)
-constexpr const char* kPlatformDirectoryUVE = "macos";
+constexpr const char* kPlatformDirectory = "macos";
 #else
-constexpr const char* kPlatformDirectoryUVE = "linux";
+constexpr const char* kPlatformDirectory = "linux";
 #endif
 
 template <typename TValue>
-void WriteRawUVE(std::ofstream& stream, const TValue& value) {
+void WriteRaw(std::ofstream& stream, const TValue& value) {
     stream.write(reinterpret_cast<const char*>(&value), sizeof(TValue));
 }
 
 template <typename TValue>
-[[nodiscard]] bool ReadRawUVE(std::ifstream& stream, TValue& outValue) {
+[[nodiscard]] bool ReadRaw(std::ifstream& stream, TValue& outValue) {
     stream.read(reinterpret_cast<char*>(&outValue), sizeof(TValue));
     return stream.good();
 }
 
 } // namespace
 
-std::filesystem::path GetCacheFilePathUVE(const std::filesystem::path& cachePath, std::uint64_t contentHash) {
+std::filesystem::path GetCacheFilePath(const std::filesystem::path& cachePath, std::uint64_t contentHash) {
     std::array<char, 17> hexDigits{};
     std::snprintf(hexDigits.data(), hexDigits.size(), "%016llx", static_cast<unsigned long long>(contentHash));
-    return cachePath / kPlatformDirectoryUVE / (std::string(hexDigits.data()) + ".uvshadercache");
+    return cachePath / kPlatformDirectory / (std::string(hexDigits.data()) + ".uvshadercache");
 }
 
-std::optional<CacheEntryUVE> ReadCacheEntryUVE(const std::filesystem::path& filePath) {
+std::optional<CacheEntry> ReadCacheEntry(const std::filesystem::path& filePath) {
     std::ifstream stream(filePath, std::ios::binary);
     if (!stream.is_open()) {
         return std::nullopt;
@@ -52,22 +52,22 @@ std::optional<CacheEntryUVE> ReadCacheEntryUVE(const std::filesystem::path& file
 
     std::array<char, 8> magic{};
     stream.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-    if (!stream.good() || magic != kMagicUVE) {
+    if (!stream.good() || magic != kMagic) {
         return std::nullopt;
     }
 
     std::uint32_t formatVersion = 0;
-    if (!ReadRawUVE(stream, formatVersion) || formatVersion != kCacheFormatVersionUVE) {
+    if (!ReadRaw(stream, formatVersion) || formatVersion != kCacheFormatVersion) {
         return std::nullopt;
     }
 
-    CacheEntryUVE entry;
-    if (!ReadRawUVE(stream, entry.glBinaryFormat)) {
+    CacheEntry entry;
+    if (!ReadRaw(stream, entry.glBinaryFormat)) {
         return std::nullopt;
     }
 
     std::uint64_t payloadLength = 0;
-    if (!ReadRawUVE(stream, payloadLength)) {
+    if (!ReadRaw(stream, payloadLength)) {
         return std::nullopt;
     }
 
@@ -82,32 +82,32 @@ std::optional<CacheEntryUVE> ReadCacheEntryUVE(const std::filesystem::path& file
     return entry;
 }
 
-bool WriteCacheEntryUVE(const std::filesystem::path& filePath, std::uint32_t glBinaryFormat,
+bool WriteCacheEntry(const std::filesystem::path& filePath, std::uint32_t glBinaryFormat,
                         std::span<const std::byte> payload) {
     std::error_code errorCode;
     std::filesystem::create_directories(filePath.parent_path(), errorCode);
     if (errorCode) {
-        UVE_WARNING("ShaderManagerUVE: failed to create shader cache directory \"{}\": {}",
+        UVE_WARNING("ShaderManager: failed to create shader cache directory \"{}\": {}",
                      filePath.parent_path().string(), errorCode.message());
         return false;
     }
 
     std::ofstream stream(filePath, std::ios::binary | std::ios::trunc);
     if (!stream.is_open()) {
-        UVE_WARNING("ShaderManagerUVE: failed to open shader cache file \"{}\" for writing", filePath.string());
+        UVE_WARNING("ShaderManager: failed to open shader cache file \"{}\" for writing", filePath.string());
         return false;
     }
 
-    stream.write(kMagicUVE.data(), static_cast<std::streamsize>(kMagicUVE.size()));
-    WriteRawUVE(stream, kCacheFormatVersionUVE);
-    WriteRawUVE(stream, glBinaryFormat);
-    WriteRawUVE(stream, static_cast<std::uint64_t>(payload.size()));
+    stream.write(kMagic.data(), static_cast<std::streamsize>(kMagic.size()));
+    WriteRaw(stream, kCacheFormatVersion);
+    WriteRaw(stream, glBinaryFormat);
+    WriteRaw(stream, static_cast<std::uint64_t>(payload.size()));
     if (!payload.empty()) {
         stream.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
     }
 
     if (!stream.good()) {
-        UVE_WARNING("ShaderManagerUVE: failed writing shader cache file \"{}\"", filePath.string());
+        UVE_WARNING("ShaderManager: failed writing shader cache file \"{}\"", filePath.string());
         return false;
     }
     return true;

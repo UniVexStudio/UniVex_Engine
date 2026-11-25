@@ -15,35 +15,35 @@ namespace UVE::Scene {
 /// queries can match it, prefabs can override it, and toggling it migrates the entity to an
 /// archetype the disabled-skipping systems never visit.
 ///
-/// NOT VISIBILITY. `VisibilityComponentUVE` answers "is it drawn" (render-only, with hierarchy
+/// NOT VISIBILITY. `VisibilityComponent` answers "is it drawn" (render-only, with hierarchy
 /// inheritance); this answers "is it simulated". A disabled entity keeps its transform updated
 /// by the scene graph — the editor can still move it — but no gameplay system advances it.
-/// Each system opts in by checking `IsEntityEnabledUVE`; the manager never filters implicitly,
-/// because implicit filtering would change what every existing `ForEachUVE` visits.
+/// Each system opts in by checking `IsEntityEnabled`; the manager never filters implicitly,
+/// because implicit filtering would change what every existing `ForEach` visits.
 ///
-/// Serialized as an empty object under "DisabledComponentUVE" (presence is the data); the
-/// serializer's hand-written branch is next to `VisibilityComponentUVE`'s.
+/// Serialized as an empty object under "DisabledComponent" (presence is the data); the
+/// serializer's hand-written branch is next to `VisibilityComponent`'s.
 ///
 /// Thread-safety: value type; safe to copy and move freely with no shared state.
-struct DisabledComponentUVE final {
+struct DisabledComponent final {
 };
 
 /// Always true: a tag has no fields and therefore no invalid state. Present so the component has
 /// the same validate seam every other component has - a caller writing generic code should not
 /// have to special-case which components can be checked.
-[[nodiscard]] bool IsDisabledComponentValidUVE(const DisabledComponentUVE& component) noexcept;
+[[nodiscard]] bool IsDisabledComponentValid(const DisabledComponent& component) noexcept;
 
 /// True when the tag pointer is non-null (the entity carries the disabled simulation tag).
-[[nodiscard]] bool IsDisabledTagPresentUVE(const DisabledComponentUVE* component) noexcept;
+[[nodiscard]] bool IsDisabledTagPresent(const DisabledComponent* component) noexcept;
 
 /// True when the entity is enabled for simulation (`component == nullptr`).
-[[nodiscard]] bool ShouldSimulateEntityUVE(const DisabledComponentUVE* component) noexcept;
+[[nodiscard]] bool ShouldSimulateEntity(const DisabledComponent* component) noexcept;
 
 /// True when gameplay, AI, physics, and particle systems should skip the entity.
-[[nodiscard]] bool ShouldSkipEntitySimulationUVE(const DisabledComponentUVE* component) noexcept;
+[[nodiscard]] bool ShouldSkipEntitySimulation(const DisabledComponent* component) noexcept;
 
-/// Scene-graph transform propagation always runs even when `DisabledComponentUVE` is present.
-[[nodiscard]] bool ShouldPropagateTransformWhenDisabledUVE(
-    const DisabledComponentUVE* component) noexcept;
+/// Scene-graph transform propagation always runs even when `DisabledComponent` is present.
+[[nodiscard]] bool ShouldPropagateTransformWhenDisabled(
+    const DisabledComponent* component) noexcept;
 
 } // namespace UVE::Scene

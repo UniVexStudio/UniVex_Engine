@@ -6,10 +6,10 @@
 #include "packet_capture_sample.h"
 
 int main() {
-    UVE::Samples::PacketCaptureSampleConfigUVE config;
+    UVE::Samples::PacketCaptureSampleConfig config;
     config.log = [](const std::string& line) { std::printf("%s\n", line.c_str()); };
-    const UVE::Samples::PacketCaptureSampleResultUVE result =
-        UVE::Samples::RunPacketCaptureSampleUVE(config);
+    const UVE::Samples::PacketCaptureSampleResult result =
+        UVE::Samples::RunPacketCaptureSample(config);
     if (!result.success) {
         std::printf("SAMPLE FAIL (%zu violation%s):\n", result.failures.size(),
                     result.failures.size() == 1U ? "" : "s");

@@ -13,16 +13,16 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr double kStartupFadeSecondsUVE = 0.25;
+constexpr double kStartupFadeSeconds = 0.25;
 
-[[nodiscard]] float SmoothStepUVE(const float x) noexcept {
+[[nodiscard]] float SmoothStep(const float x) noexcept {
     const float t = std::clamp(x, 0.0F, 1.0F);
     return t * t * (3.0F - 2.0F * t);
 }
 
 } // namespace
 
-void EditorLoadingScreenUVE::SyncRenderUVE(const bool shown, const prism::Rect view, std::string text, std::string detail,
+void EditorLoadingScreen::SyncRender(const bool shown, const prism::Rect view, std::string text, std::string detail,
                                            const float progress) {
     m_renderShown = shown;
     m_renderView = view;
@@ -34,7 +34,7 @@ void EditorLoadingScreenUVE::SyncRenderUVE(const bool shown, const prism::Rect v
     }
 }
 
-void EditorLoadingScreenUVE::SyncUVE(const EditorUVE::EditorLoadingStateUVE& state, const std::string& project) {
+void EditorLoadingScreen::Sync(const Editor::EditorLoadingState& state, const std::string& project) {
     const auto now = std::chrono::steady_clock::now();
     if (state.startup) {
         m_wasStartup = true;
@@ -51,8 +51,8 @@ void EditorLoadingScreenUVE::SyncUVE(const EditorUVE::EditorLoadingStateUVE& sta
             m_lastStartupProgress = 1.0F;
         }
         const double elapsed = std::chrono::duration<double>(now - m_startupFadeBegan).count();
-        const float t = static_cast<float>(std::clamp(elapsed / kStartupFadeSecondsUVE, 0.0, 1.0));
-        m_startupAlpha = 1.0F - SmoothStepUVE(t);
+        const float t = static_cast<float>(std::clamp(elapsed / kStartupFadeSeconds, 0.0, 1.0));
+        m_startupAlpha = 1.0F - SmoothStep(t);
         if (t >= 1.0F) {
             m_wasStartup = false;
             m_startupAlpha = 0.0F;
@@ -90,23 +90,23 @@ void EditorLoadingScreenUVE::SyncUVE(const EditorUVE::EditorLoadingStateUVE& sta
     invalidate();
 }
 
-prism::Vec2 EditorLoadingScreenUVE::measure(const prism::Vec2 avail) {
+prism::Vec2 EditorLoadingScreen::measure(const prism::Vec2 avail) {
     return m_desired = constrain(avail);
 }
 
-prism::Rect EditorLoadingScreenUVE::CornerPanelRectUVE(const prism::Rect bounds) const {
+prism::Rect EditorLoadingScreen::CornerPanelRect(const prism::Rect bounds) const {
     const float w = std::min(344.0F, std::max(240.0F, bounds.w - 28.0F));
     const float h = 72.0F;
     return prism::Rect{std::floor(bounds.right() - w - 16.0F), std::floor(bounds.bottom() - h - 34.0F), w, h};
 }
 
-prism::Rect EditorLoadingScreenUVE::CancelButtonRectUVE(const prism::Rect panel) const {
+prism::Rect EditorLoadingScreen::CancelButtonRect(const prism::Rect panel) const {
     constexpr float btnW = 58.0F;
     constexpr float btnH = 20.0F;
     return prism::Rect{std::floor(panel.right() - btnW - 12.0F), std::floor(panel.y + 28.0F), btnW, btnH};
 }
 
-prism::Widget* EditorLoadingScreenUVE::hitTest(const prism::Vec2 p) {
+prism::Widget* EditorLoadingScreen::hitTest(const prism::Vec2 p) {
     if (!visible()) {
         return nullptr;
     }
@@ -114,7 +114,7 @@ prism::Widget* EditorLoadingScreenUVE::hitTest(const prism::Vec2 p) {
         return rect().contains(p) ? this : nullptr;
     }
     if (m_startupAlpha <= 0.005F && m_state.busy && m_state.cancellable) {
-        const prism::Rect cancelRect = CancelButtonRectUVE(CornerPanelRectUVE(rect()));
+        const prism::Rect cancelRect = CancelButtonRect(CornerPanelRect(rect()));
         if (cancelRect.contains(p)) {
             return this;
         }
@@ -122,7 +122,7 @@ prism::Widget* EditorLoadingScreenUVE::hitTest(const prism::Vec2 p) {
     return nullptr;
 }
 
-bool EditorLoadingScreenUVE::onMouseDown(const prism::MouseEvent& e) {
+bool EditorLoadingScreen::onMouseDown(const prism::MouseEvent& e) {
     if (m_state.startup) {
         // Held a while: a click lets the rest go on behind the editor.
         if (m_frames > 180 && onDismiss) {
@@ -131,7 +131,7 @@ bool EditorLoadingScreenUVE::onMouseDown(const prism::MouseEvent& e) {
         return true;
     }
     if (m_startupAlpha <= 0.005F && m_state.busy && m_state.cancellable) {
-        const prism::Rect cancelRect = CancelButtonRectUVE(CornerPanelRectUVE(rect()));
+        const prism::Rect cancelRect = CancelButtonRect(CornerPanelRect(rect()));
         if (cancelRect.contains(e.pos)) {
             if (onCancel) {
                 onCancel();
@@ -142,9 +142,9 @@ bool EditorLoadingScreenUVE::onMouseDown(const prism::MouseEvent& e) {
     return false;
 }
 
-bool EditorLoadingScreenUVE::onMouseMove(const prism::MouseEvent& e) {
+bool EditorLoadingScreen::onMouseMove(const prism::MouseEvent& e) {
     if (!m_state.startup && m_startupAlpha <= 0.005F && m_state.busy && m_state.cancellable) {
-        const bool over = CancelButtonRectUVE(CornerPanelRectUVE(rect())).contains(e.pos);
+        const bool over = CancelButtonRect(CornerPanelRect(rect())).contains(e.pos);
         if (over != m_cancelHovered) {
             m_cancelHovered = over;
             invalidate();
@@ -154,18 +154,18 @@ bool EditorLoadingScreenUVE::onMouseMove(const prism::MouseEvent& e) {
     return false;
 }
 
-void EditorLoadingScreenUVE::onMouseLeave() {
+void EditorLoadingScreen::onMouseLeave() {
     if (m_cancelHovered) {
         m_cancelHovered = false;
         invalidate();
     }
 }
 
-prism::Cursor EditorLoadingScreenUVE::cursor() const {
+prism::Cursor EditorLoadingScreen::cursor() const {
     return m_cancelHovered ? prism::Cursor::Hand : prism::Cursor::Arrow;
 }
 
-void EditorLoadingScreenUVE::PaintMarkUVE(prism::Canvas& c, const prism::Rect mark, const float alpha) const {
+void EditorLoadingScreen::PaintMark(prism::Canvas& c, const prism::Rect mark, const float alpha) const {
     if (prism::hasBrandMark()) {
         prism::drawBrandMark(c, mark, alpha);
         return;
@@ -176,7 +176,7 @@ void EditorLoadingScreenUVE::PaintMarkUVE(prism::Canvas& c, const prism::Rect ma
     c.strokeRoundRect(mark, mark.w * 0.22F, t.accent.alpha(alpha), 2);
 }
 
-void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
+void EditorLoadingScreen::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
     const prism::Color accent = t.accent;
@@ -206,7 +206,7 @@ void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
 
     if (!startupVisible) {
         // Non-blocking bottom-right progress card for background copies/imports/animations.
-        const prism::Rect panel = CornerPanelRectUVE(r);
+        const prism::Rect panel = CornerPanelRect(r);
         c.shadow(panel, 6.0F, 10, prism::Color(0, 0, 0, 140));
         c.fillRoundRect(panel, 6.0F, t.header.withAlpha(246));
         c.strokeRoundRect(panel, 6.0F, t.border, 1);
@@ -230,7 +230,7 @@ void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
                  itemLabel, t.textDim);
 
         if (m_state.cancellable) {
-            m_cancelButtonRect = CancelButtonRectUVE(panel);
+            m_cancelButtonRect = CancelButtonRect(panel);
             c.fillRoundRect(m_cancelButtonRect, 4.0F, m_cancelHovered ? t.controlHover : t.control);
             c.strokeRoundRect(m_cancelButtonRect, 4.0F, m_cancelHovered ? t.borderStrong : t.border, 1);
             c.textIn(*t.small, m_cancelButtonRect, "Cancel", m_cancelHovered ? t.textBright : t.text, prism::HAlign::Center);
@@ -260,7 +260,7 @@ void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
 
     // Real univex_logo.png centered cleanly above title & progress.
     const prism::Rect markRect{std::floor(centerX - logoSide * 0.5F), topY, logoSide, logoSide};
-    PaintMarkUVE(c, markRect, a);
+    PaintMark(c, markRect, a);
 
     float y = markRect.bottom() + (compact ? 14.0F : 20.0F);
     c.textIn(*t.semibold, prism::Rect{r.x + 24.0F, y, r.w - 48.0F, 24.0F}, "UniVex Engine",

@@ -8,77 +8,77 @@
 
 namespace UVE::Input {
 
-Math::Vector2UVE MobileInputSystemUVE::SanitizePositionUVE(const Math::Vector2UVE position) noexcept {
-    return Math::Vector2UVE{std::isfinite(position.x) ? position.x : 0.0F,
+Math::Vector2 MobileInputSystem::SanitizePosition(const Math::Vector2 position) noexcept {
+    return Math::Vector2{std::isfinite(position.x) ? position.x : 0.0F,
                             std::isfinite(position.y) ? position.y : 0.0F};
 }
 
-Math::Vector3UVE MobileInputSystemUVE::SanitizeRotationRateUVE(
-    const Math::Vector3UVE rotationRate) noexcept {
-    return Math::Vector3UVE{std::isfinite(rotationRate.x) ? rotationRate.x : 0.0F,
+Math::Vector3 MobileInputSystem::SanitizeRotationRate(
+    const Math::Vector3 rotationRate) noexcept {
+    return Math::Vector3{std::isfinite(rotationRate.x) ? rotationRate.x : 0.0F,
                             std::isfinite(rotationRate.y) ? rotationRate.y : 0.0F,
                             std::isfinite(rotationRate.z) ? rotationRate.z : 0.0F};
 }
 
-float MobileInputSystemUVE::SanitizePressureUVE(const float pressure) noexcept {
+float MobileInputSystem::SanitizePressure(const float pressure) noexcept {
     return std::isfinite(pressure) ? std::clamp(pressure, 0.0F, 1.0F) : 0.0F;
 }
 
-void MobileInputSystemUVE::SetTouchStateUVE(const std::size_t touchSlot, const bool active,
+void MobileInputSystem::SetTouchState(const std::size_t touchSlot, const bool active,
                                             const std::uint64_t identifier,
-                                            const Math::Vector2UVE position, const float pressure) {
-    if (touchSlot >= kMaximumTouchCountUVE || (active && identifier == 0U)) {
+                                            const Math::Vector2 position, const float pressure) {
+    if (touchSlot >= kMaximumTouchCount || (active && identifier == 0U)) {
         return;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     if (active) {
-        for (std::size_t otherSlot = 0U; otherSlot < kMaximumTouchCountUVE; ++otherSlot) {
+        for (std::size_t otherSlot = 0U; otherSlot < kMaximumTouchCount; ++otherSlot) {
             if (otherSlot != touchSlot && m_liveState.touches[otherSlot].active &&
                 m_liveState.touches[otherSlot].identifier == identifier) {
                 return;
             }
         }
     }
-    TouchPointStateUVE& touch = m_liveState.touches[touchSlot];
+    TouchPointState& touch = m_liveState.touches[touchSlot];
     touch.active = active;
     touch.identifier = active ? identifier : 0U;
-    touch.position = active ? SanitizePositionUVE(position) : Math::Vector2UVE{};
+    touch.position = active ? SanitizePosition(position) : Math::Vector2{};
     touch.delta = {};
-    touch.pressure = active ? SanitizePressureUVE(pressure) : 0.0F;
+    touch.pressure = active ? SanitizePressure(pressure) : 0.0F;
 }
 
-void MobileInputSystemUVE::SetGyroscopeRotationRateUVE(const Math::Vector3UVE rotationRate) {
+void MobileInputSystem::SetGyroscopeRotationRate(const Math::Vector3 rotationRate) {
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
-    m_liveState.gyroscopeRotationRate = SanitizeRotationRateUVE(rotationRate);
+    m_liveState.gyroscopeRotationRate = SanitizeRotationRate(rotationRate);
 }
 
-void MobileInputSystemUVE::UpdateUVE() {
+void MobileInputSystem::Update() {
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     m_previousState = m_currentState;
-    AdvanceInputFrameNumberUVE(m_liveState.frameNumber);
+    AdvanceInputFrameNumber(m_liveState.frameNumber);
     m_currentState = m_liveState;
 
-    for (std::size_t touchSlot = 0U; touchSlot < kMaximumTouchCountUVE; ++touchSlot) {
-        TouchPointStateUVE& currentTouch = m_currentState.touches[touchSlot];
-        const TouchPointStateUVE& previousTouch = m_previousState.touches[touchSlot];
+    for (std::size_t touchSlot = 0U; touchSlot < kMaximumTouchCount; ++touchSlot) {
+        TouchPointState& currentTouch = m_currentState.touches[touchSlot];
+        const TouchPointState& previousTouch = m_previousState.touches[touchSlot];
         if (currentTouch.active && previousTouch.active &&
             currentTouch.identifier == previousTouch.identifier) {
-            const Math::Vector2UVE delta = currentTouch.position - previousTouch.position;
+            const Math::Vector2 delta = currentTouch.position - previousTouch.position;
             currentTouch.delta = std::isfinite(delta.x) && std::isfinite(delta.y)
                 ? delta
-                : Math::Vector2UVE{};
+                : Math::Vector2{};
         } else {
             currentTouch.delta = {};
         }
     }
 }
 
-MobileInputSnapshotUVE MobileInputSystemUVE::GetSnapshotUVE() const {
+MobileInputSnapshot MobileInputSystem::GetSnapshot() const {
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_currentState;
 }
 
-MobileInputSnapshotUVE MobileInputSystemUVE::GetPreviousSnapshotUVE() const {
+MobileInputSnapshot MobileInputSystem::GetPreviousSnapshot() const {
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_previousState;
 }

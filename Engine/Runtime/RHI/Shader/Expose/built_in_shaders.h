@@ -10,10 +10,10 @@ namespace UVE::Render::Shader::BuiltIn {
 /// The built-in shaders (4 from Increment 21, plus shadow_depth from Increment 26), each a single
 /// physical `.glsl` file under
 /// engine/render/shader/built_in/ containing both stages, split via `#ifdef VERTEX_SHADER` /
-/// `#ifdef FRAGMENT_SHADER` (ShaderManagerUVE::CreateProgramUVE() compiles the same resolved
+/// `#ifdef FRAGMENT_SHADER` (ShaderManager::CreateProgram() compiles the same resolved
 /// source twice, injecting the matching macro each time). Every constant here is the embedded
-/// fallback ShaderManagerUVE transparently uses when the corresponding virtual path isn't
-/// reachable (see ShaderProgramDescUVE's doc comment) — kept byte-identical to its `.glsl` file
+/// fallback ShaderManager transparently uses when the corresponding virtual path isn't
+/// reachable (see ShaderProgramDesc's doc comment) — kept byte-identical to its `.glsl` file
 /// by convention, enforced by tests/render/shader/built_in_shaders_parity_uve_tests.cpp.
 
 inline constexpr std::string_view kBasic3DVirtualPath = "shaders/basic_3d.glsl";
@@ -31,7 +31,7 @@ extern const std::string_view kProceduralSkySource;
 inline constexpr std::string_view kShadowDepthVirtualPath = "shaders/shadow_depth.glsl";
 extern const std::string_view kShadowDepthSource;
 
-/// Renderer3DUVE's occlusion proxy (Foundation WP3): a position-only box drawn depth-tested with
+/// Renderer3D's occlusion proxy (Foundation WP3): a position-only box drawn depth-tested with
 /// depth writes off and an all-zero additive colour, so it changes neither attachment and only
 /// feeds the AnySamplesPassed bracket it is recorded inside.
 inline constexpr std::string_view kOcclusionProxyVirtualPath = "shaders/occlusion_proxy.glsl";
@@ -48,24 +48,24 @@ extern const std::string_view kParticleSource;
 inline constexpr std::string_view kDecalVirtualPath = "shaders/decal.glsl";
 extern const std::string_view kDecalSource;
 
-/// DebugRendererUVE's line pass: world-space positions with per-vertex colors through
+/// DebugRenderer's line pass: world-space positions with per-vertex colors through
 /// uViewProjection, so one batch carries every debug line of the frame in a single draw.
 inline constexpr std::string_view kDebugLineVirtualPath = "shaders/debug_line.glsl";
-/// DebugRendererUVE's point pass: the line pass's vertex format drawn as a Points pipeline, with
+/// DebugRenderer's point pass: the line pass's vertex format drawn as a Points pipeline, with
 /// one batch-wide uPointSize (pixels) written to gl_PointSize.
 inline constexpr std::string_view kDebugPointVirtualPath = "shaders/debug_point.glsl";
 extern const std::string_view kDebugPointSource;
 extern const std::string_view kDebugLineSource;
 
-/// The compute kernel Render::ParticleComputeSimulationUVE dispatches (CS4) - the GPU twin of
-/// Scene::ParticleRuntimeUVE's per-particle integration. Unlike every other entry here this file
+/// The compute kernel Render::ParticleComputeSimulation dispatches (CS4) - the GPU twin of
+/// Scene::ParticleRuntime's per-particle integration. Unlike every other entry here this file
 /// holds a single COMPUTE stage, so it carries no VERTEX_SHADER/FRAGMENT_SHADER split and is
-/// compiled once, through IComputeSystemUVE::CreateProgramUVE() rather than ShaderManagerUVE.
+/// compiled once, through IComputeSystem::CreateProgram() rather than ShaderManager.
 inline constexpr std::string_view kParticleSimulateVirtualPath = "shaders/particle_simulate.glsl";
 extern const std::string_view kParticleSimulateSource;
 
-/// The compute kernel Render::FrustumCullComputeUVE dispatches (CS5) - the GPU twin of
-/// Math::FrustumUVE::IntersectsUVE over many boxes at once. COMPUTE-only, like its
+/// The compute kernel Render::FrustumCullCompute dispatches (CS5) - the GPU twin of
+/// Math::Frustum::Intersects over many boxes at once. COMPUTE-only, like its
 /// particle_simulate sibling, so it carries no VERTEX/FRAGMENT split.
 inline constexpr std::string_view kFrustumCullVirtualPath = "shaders/frustum_cull.glsl";
 extern const std::string_view kFrustumCullSource;
@@ -77,7 +77,7 @@ inline constexpr std::string_view kFrustumCullIndirectVirtualPath =
     "shaders/frustum_cull_indirect.glsl";
 extern const std::string_view kFrustumCullIndirectSource;
 
-/// CS10's skinning kernel: the GPU twin of Asset::TrySkinMeshUVE. COMPUTE-only.
+/// CS10's skinning kernel: the GPU twin of Asset::TrySkinMesh. COMPUTE-only.
 inline constexpr std::string_view kMeshSkinVirtualPath = "shaders/mesh_skin.glsl";
 extern const std::string_view kMeshSkinSource;
 

@@ -8,7 +8,7 @@
 namespace UVE::Scene {
 
 /// A camera that positions itself from another entity every frame. The follow runs in the engine
-/// update after every mover has stepped and before SceneGraphUVE::UpdateUVE() propagates, so the
+/// update after every mover has stepped and before SceneGraph::Update() propagates, so the
 /// camera's world transform is current for the same frame's render - but the target position it
 /// reads is last frame's propagation (the graph propagates once, at the end), so a followed
 /// target leads its camera by one frame. At 60 Hz that is 16 ms of lag: imperceptible for a
@@ -27,31 +27,31 @@ namespace UVE::Scene {
 ///
 /// Serialization resolves `target` through file-local ids: a target outside the saved set
 /// loads back as invalid, parking the camera.
-struct CameraFollowComponentUVE final {
-    EntityUVE target = kInvalidEntityUVE;
-    Math::Vector3UVE offset{};
+struct CameraFollowComponent final {
+    Entity target = kInvalidEntity;
+    Math::Vector3 offset{};
     bool followPossessedPawn = false;
 
-    [[nodiscard]] bool operator==(const CameraFollowComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const CameraFollowComponent&) const = default;
 };
 
 /// A finite offset. The target is dynamic, not structural: any entity id validates.
-[[nodiscard]] bool IsCameraFollowComponentValidUVE(const CameraFollowComponentUVE& value) noexcept;
+[[nodiscard]] bool IsCameraFollowComponentValid(const CameraFollowComponent& value) noexcept;
 
-/// True when `value.target != kInvalidEntityUVE` and `value.target != cameraEntity`.
-[[nodiscard]] bool HasCameraFollowTargetUVE(const CameraFollowComponentUVE& value,
-                                            EntityUVE cameraEntity = kInvalidEntityUVE) noexcept;
+/// True when `value.target != kInvalidEntity` and `value.target != cameraEntity`.
+[[nodiscard]] bool HasCameraFollowTarget(const CameraFollowComponent& value,
+                                            Entity cameraEntity = kInvalidEntity) noexcept;
 
 /// Sanitizes `value` by replacing any non-finite `offset` axis with `0.0F` and clearing a self-target.
-[[nodiscard]] CameraFollowComponentUVE SanitizeCameraFollowComponentUVE(
-    const CameraFollowComponentUVE& value, EntityUVE cameraEntity = kInvalidEntityUVE) noexcept;
+[[nodiscard]] CameraFollowComponent SanitizeCameraFollowComponent(
+    const CameraFollowComponent& value, Entity cameraEntity = kInvalidEntity) noexcept;
 
 /// Computes the desired world-space camera position (`targetWorldPosition + value.offset`).
-[[nodiscard]] Math::Vector3UVE ResolveCameraFollowDesiredPositionUVE(
-    const CameraFollowComponentUVE& value, const Math::Vector3UVE& targetWorldPosition) noexcept;
+[[nodiscard]] Math::Vector3 ResolveCameraFollowDesiredPosition(
+    const CameraFollowComponent& value, const Math::Vector3& targetWorldPosition) noexcept;
 
 /// Applies player-possession retargeting when `value.followPossessedPawn` is true.
-void ApplyPlayerPossessionToCameraFollowUVE(CameraFollowComponentUVE& value,
-                                            EntityUVE possessedPawn) noexcept;
+void ApplyPlayerPossessionToCameraFollow(CameraFollowComponent& value,
+                                            Entity possessedPawn) noexcept;
 
 } // namespace UVE::Scene

@@ -3,7 +3,7 @@
 // The metadata-driven half of the Inspector: one drawer per declared component type, built from
 // what the type says about itself rather than from a hand-written form per type.
 //
-// What this replaced. The Inspector used to dispatch on EditorSceneComponentKindUVE - a closed
+// What this replaced. The Inspector used to dispatch on EditorSceneComponentKind - a closed
 // enum with a positionally-parallel std::variant - across eight sites, plus roughly ninety
 // per-type branches in the panel file. Adding one component meant editing a dozen places in five
 // files, and because that was expensive, nine of the twenty-two drawers had never been finished:
@@ -82,44 +82,44 @@
 namespace UVE::Editor {
 namespace {
 
-using Core::TypeMetadataEntryUVE;
-using Core::TypeMetadataPropertyFlagsUVE;
-using Core::TypeMetadataPropertyUVE;
+using Core::TypeMetadataEntry;
+using Core::TypeMetadataPropertyFlags;
+using Core::TypeMetadataProperty;
 
-[[nodiscard]] std::vector<std::string> FileDrawerExtensionsUVE(std::string_view drawerId);
-[[nodiscard]] std::filesystem::path ClampPickerStartDirectoryUVE(const Asset::ProjectFileSnapshotUVE& project,
+[[nodiscard]] std::vector<std::string> FileDrawerExtensions(std::string_view drawerId);
+[[nodiscard]] std::filesystem::path ClampPickerStartDirectory(const Asset::ProjectFileSnapshot& project,
                                                                  const std::filesystem::path& wanted);
 
 }
 
-void EditorUVE::ApplyPendingComponentChangeUVE() {
+void Editor::ApplyPendingComponentChange() {
     // A structural edit a row asked for last frame runs here, once, before any section takes a
     // pointer into an entity's component storage: adding or removing a component moves the entity
     // into another archetype, which frees the chunk the row that asked was drawn from. The row
     // therefore records the intent and this turns it into the edit - see the field's own comment.
-    const PendingComponentChangeUVE change = m_pendingComponentChange;
-    const Scene::EntityUVE target = m_pendingComponentChangeEntity;
-    m_pendingComponentChange = PendingComponentChangeUVE::None;
-    m_pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
-    if (change == PendingComponentChangeUVE::None || target == Scene::kInvalidEntityUVE) {
+    const PendingComponentChange change = m_pendingComponentChange;
+    const Scene::Entity target = m_pendingComponentChangeEntity;
+    m_pendingComponentChange = PendingComponentChange::None;
+    m_pendingComponentChangeEntity = Scene::kInvalidEntity;
+    if (change == PendingComponentChange::None || target == Scene::kInvalidEntity) {
         return;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!IsDocumentEntityUVE(target) || !entityManager.IsAliveUVE(target)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!IsDocumentEntity(target) || !entityManager.IsAlive(target)) {
         return;
     }
-    const bool hasSky = entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(target);
-    if (change == PendingComponentChangeUVE::AddSky && !hasSky) {
-        entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(target, Scene::Sky3DComponentUVE{});
-    } else if (change == PendingComponentChangeUVE::RemoveSky && hasSky) {
-        entityManager.RemoveComponentUVE<Scene::Sky3DComponentUVE>(target);
+    const bool hasSky = entityManager.HasComponent<Scene::Sky3DComponent>(target);
+    if (change == PendingComponentChange::AddSky && !hasSky) {
+        entityManager.AddComponent<Scene::Sky3DComponent>(target, Scene::Sky3DComponent{});
+    } else if (change == PendingComponentChange::RemoveSky && hasSky) {
+        entityManager.RemoveComponent<Scene::Sky3DComponent>(target);
     }
 }
 
 namespace {
 
 /// "file:uvaudio,wav" -> {".uvaudio", ".wav"}.
-[[nodiscard]] std::vector<std::string> FileDrawerExtensionsUVE(std::string_view drawerId) {
+[[nodiscard]] std::vector<std::string> FileDrawerExtensions(std::string_view drawerId) {
     constexpr std::string_view kPrefix = "file:";
     if (drawerId.size() <= kPrefix.size()) {
         return {};
@@ -135,13 +135,13 @@ namespace {
 }
 
 /// `wanted` when it is Content itself or a folder the snapshot knows, else Content itself.
-[[nodiscard]] std::filesystem::path ClampPickerStartDirectoryUVE(const Asset::ProjectFileSnapshotUVE& project,
+[[nodiscard]] std::filesystem::path ClampPickerStartDirectory(const Asset::ProjectFileSnapshot& project,
                                                                  const std::filesystem::path& wanted) {
     if (wanted.empty()) {
         return std::filesystem::path{};
     }
-    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-        if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory && entry.relativePath == wanted) {
+    for (const Asset::ProjectFileEntry& entry : project.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKind::Directory && entry.relativePath == wanted) {
             return wanted;
         }
     }
@@ -150,42 +150,42 @@ namespace {
 
 } // namespace
 
-Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::path& absolutePath) {
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+Asset::AssetGuid Editor::PublishTextureSource(const std::filesystem::path& absolutePath) {
+    Asset::IAssetDatabase& database = m_services->GetAssetDatabase();
     std::error_code error;
     if (!std::filesystem::is_regular_file(absolutePath, error)) {
-        return Asset::kInvalidAssetGuidUVE;
+        return Asset::kInvalidAssetGuid;
     }
     std::string extension = absolutePath.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (extension == ".uvtex") {
-        return database.RegisterUVE(absolutePath);
+        return database.Register(absolutePath);
     }
     // The published form of this source, beside it - where the model importers publish a model's
     // textures too, and where the picker already looks for it when deciding which row to offer.
     const std::filesystem::path publishedPath =
         absolutePath.parent_path() / (absolutePath.stem().string() + ".uvtex");
     if (std::filesystem::is_regular_file(publishedPath, error)) {
-        return database.RegisterUVE(publishedPath);
+        return database.Register(publishedPath);
     }
-    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
-        absolutePath, publishedPath, database, LoadTextureImportSettingsUVE(absolutePath));
-    if (imported == Asset::kInvalidAssetGuidUVE) {
+    const Asset::AssetGuid imported = m_services->GetAssetImporter().Import(
+        absolutePath, publishedPath, database, LoadTextureImportSettings(absolutePath));
+    if (imported == Asset::kInvalidAssetGuid) {
         // No importer for this kind, or the decode refused it. Registering the source keeps the
         // slot showing the picture it was given - the runtime texture loader decodes a source
         // image itself - instead of emptying a slot the author had just filled.
-        return database.RegisterUVE(absolutePath);
+        return database.Register(absolutePath);
     }
     // The published texture is a new file in the project; Content must show it now, not on the
     // next rescan, or the author sees a slot pointing at something that does not appear to exist.
-    RefreshProjectFileIndexUVE();
+    RefreshProjectFileIndex();
     return imported;
 }
 
 namespace {
 
-[[nodiscard]] bool IsTextureSourceImageUVE(const std::filesystem::path& path) {
+[[nodiscard]] bool IsTextureSourceImage(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
@@ -194,8 +194,8 @@ namespace {
 
 } // namespace
 
-std::filesystem::path EditorUVE::FindTextureSourceUVE(const std::filesystem::path& texturePath) {
-    if (IsTextureSourceImageUVE(texturePath)) {
+std::filesystem::path Editor::FindTextureSource(const std::filesystem::path& texturePath) {
+    if (IsTextureSourceImage(texturePath)) {
         return texturePath;
     }
     std::error_code error;
@@ -208,12 +208,12 @@ std::filesystem::path EditorUVE::FindTextureSourceUVE(const std::filesystem::pat
     return {};
 }
 
-Asset::TextureImportSettingsUVE EditorUVE::LoadTextureImportSettingsUVE(const std::filesystem::path& source) {
-    Asset::TextureImportSettingsUVE settings;
-    Asset::AssetImportSidecarUVE sidecar;
+Asset::TextureImportSettings Editor::LoadTextureImportSettings(const std::filesystem::path& source) {
+    Asset::TextureImportSettings settings;
+    Asset::AssetImportSidecar sidecar;
     std::error_code error;
-    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPathUVE(source);
-    if (!std::filesystem::is_regular_file(sidecarPath, error) || !Asset::LoadImportSidecarUVE(sidecarPath, sidecar)) {
+    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPath(source);
+    if (!std::filesystem::is_regular_file(sidecarPath, error) || !Asset::LoadImportSidecar(sidecarPath, sidecar)) {
         return settings;
     }
     const auto option = [&sidecar](const char* key) -> const std::string* {
@@ -234,20 +234,20 @@ Asset::TextureImportSettingsUVE EditorUVE::LoadTextureImportSettingsUVE(const st
         }
     };
     if (const std::string* value = option("colorSpace")) {
-        settings.colorSpace = *value == "linear" ? Asset::TextureAssetColorSpaceUVE::Linear : Asset::TextureAssetColorSpaceUVE::Srgb;
+        settings.colorSpace = *value == "linear" ? Asset::TextureAssetColorSpace::Linear : Asset::TextureAssetColorSpace::Srgb;
     }
     if (const std::string* value = option("usage")) {
-        settings.usage = *value == "normal" ? Asset::TextureUsageUVE::Normal
-                         : *value == "data" ? Asset::TextureUsageUVE::Data
-                                            : Asset::TextureUsageUVE::Color;
+        settings.usage = *value == "normal" ? Asset::TextureUsage::Normal
+                         : *value == "data" ? Asset::TextureUsage::Data
+                                            : Asset::TextureUsage::Color;
     }
     if (const std::string* value = option("mipFilter")) {
-        settings.mipFilter = *value == "nearest" ? Asset::TextureMipmapFilterUVE::Nearest : Asset::TextureMipmapFilterUVE::Box;
+        settings.mipFilter = *value == "nearest" ? Asset::TextureMipmapFilter::Nearest : Asset::TextureMipmapFilter::Box;
     }
     if (const std::string* value = option("compression")) {
-        settings.compressionMode = *value == "etc1s" ? Asset::TextureCompressionModeUVE::BasisETC1S
-                                   : *value == "uastc" ? Asset::TextureCompressionModeUVE::BasisUASTC
-                                                       : Asset::TextureCompressionModeUVE::None;
+        settings.compressionMode = *value == "etc1s" ? Asset::TextureCompressionMode::BasisETC1S
+                                   : *value == "uastc" ? Asset::TextureCompressionMode::BasisUASTC
+                                                       : Asset::TextureCompressionMode::None;
     }
     flag("generateMipmaps", settings.generateMipmaps);
     flag("invertGreen", settings.invertGreenChannel);
@@ -256,65 +256,65 @@ Asset::TextureImportSettingsUVE EditorUVE::LoadTextureImportSettingsUVE(const st
     return settings;
 }
 
-bool EditorUVE::ReimportTextureUVE(const std::filesystem::path& source, const Asset::TextureImportSettingsUVE& settings) {
-    Asset::AssetImportSidecarUVE sidecar;
+bool Editor::ReimportTexture(const std::filesystem::path& source, const Asset::TextureImportSettings& settings) {
+    Asset::AssetImportSidecar sidecar;
     std::error_code error;
-    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPathUVE(source);
+    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPath(source);
     if (std::filesystem::is_regular_file(sidecarPath, error)) {
-        static_cast<void>(Asset::LoadImportSidecarUVE(sidecarPath, sidecar));
+        static_cast<void>(Asset::LoadImportSidecar(sidecarPath, sidecar));
     }
-    sidecar.options["colorSpace"] = settings.colorSpace == Asset::TextureAssetColorSpaceUVE::Linear ? "linear" : "srgb";
-    sidecar.options["usage"] = settings.usage == Asset::TextureUsageUVE::Normal ? "normal"
-                               : settings.usage == Asset::TextureUsageUVE::Data ? "data"
+    sidecar.options["colorSpace"] = settings.colorSpace == Asset::TextureAssetColorSpace::Linear ? "linear" : "srgb";
+    sidecar.options["usage"] = settings.usage == Asset::TextureUsage::Normal ? "normal"
+                               : settings.usage == Asset::TextureUsage::Data ? "data"
                                                                                 : "color";
-    sidecar.options["mipFilter"] = settings.mipFilter == Asset::TextureMipmapFilterUVE::Nearest ? "nearest" : "box";
-    sidecar.options["compression"] = settings.compressionMode == Asset::TextureCompressionModeUVE::BasisETC1S ? "etc1s"
-                                     : settings.compressionMode == Asset::TextureCompressionModeUVE::BasisUASTC ? "uastc"
+    sidecar.options["mipFilter"] = settings.mipFilter == Asset::TextureMipmapFilter::Nearest ? "nearest" : "box";
+    sidecar.options["compression"] = settings.compressionMode == Asset::TextureCompressionMode::BasisETC1S ? "etc1s"
+                                     : settings.compressionMode == Asset::TextureCompressionMode::BasisUASTC ? "uastc"
                                                                                                                   : "none";
     sidecar.options["generateMipmaps"] = settings.generateMipmaps ? "true" : "false";
     sidecar.options["invertGreen"] = settings.invertGreenChannel ? "true" : "false";
     sidecar.options["premultiplyAlpha"] = settings.premultiplyAlpha ? "true" : "false";
     sidecar.options["maxSize"] = std::to_string(settings.maxResolutionClamp);
     sidecar.reimportNeeded = false;
-    if (!Asset::SaveImportSidecarUVE(sidecar, sidecarPath)) {
+    if (!Asset::SaveImportSidecar(sidecar, sidecarPath)) {
         return false;
     }
     const std::filesystem::path publishedPath = source.parent_path() / (source.stem().string() + ".uvtex");
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(source, publishedPath, database, settings);
-    if (imported == Asset::kInvalidAssetGuidUVE) {
+    Asset::IAssetDatabase& database = m_services->GetAssetDatabase();
+    const Asset::AssetGuid imported = m_services->GetAssetImporter().Import(source, publishedPath, database, settings);
+    if (imported == Asset::kInvalidAssetGuid) {
         return false;
     }
     // Everything that drew the old import draws the new one: the previews now, the renderer on its reload.
-    ClearTextureThumbnailCacheUVE();
-    RefreshProjectFileIndexUVE();
+    ClearTextureThumbnailCache();
+    RefreshProjectFileIndex();
     return true;
 }
 
-Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path& absolutePath) {
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+Asset::AssetGuid Editor::PublishModelSource(const std::filesystem::path& absolutePath) {
+    Asset::IAssetDatabase& database = m_services->GetAssetDatabase();
     std::error_code error;
     if (!std::filesystem::is_regular_file(absolutePath, error)) {
-        return Asset::kInvalidAssetGuidUVE;
+        return Asset::kInvalidAssetGuid;
     }
     std::string extension = absolutePath.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     if (extension == ".uvmodel") {
-        static_cast<void>(RegisterImportedModelArtifactsUVE(absolutePath));
-        return database.RegisterUVE(absolutePath);
+        static_cast<void>(RegisterImportedModelArtifacts(absolutePath));
+        return database.Register(absolutePath);
     }
     // Not a model at all - a picker that was opened for some other asset kind. Registering it is
     // still the right answer: this is the published form of what the author picked.
     if (extension != ".fbx" && extension != ".glb" && extension != ".gltf" && extension != ".obj") {
-        return database.RegisterUVE(absolutePath);
+        return database.Register(absolutePath);
     }
 
     // A source outside the project must come inside it first. The converted mesh is keyed on the
     // content-relative path, so a file imported straight from the Desktop would convert to a
     // .uvmodel outside the project - a mesh that works today and is gone the moment the project
     // folder is moved or shared.
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
     const auto contentRelative = [](const std::filesystem::path& path, const std::filesystem::path& base) {
     // Both sides canonical: a symlinked or relative content root (Android /sdcard, "assets/")
     // must not make a file inside the project look outside it.
@@ -330,17 +330,17 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
         const std::filesystem::path modelDirectory = project.contentRoot / "Models";
         std::filesystem::create_directories(modelDirectory, error);
         const std::filesystem::path destination =
-            MakeUniqueContentPathUVE(modelDirectory, absolutePath.stem().string(), extension);
+            MakeUniqueContentPath(modelDirectory, absolutePath.stem().string(), extension);
         std::filesystem::copy_file(absolutePath, destination, error);
         if (error) {
-            UVE_ERROR("EditorUVE: could not copy model \"{}\" into Content: {}", absolutePath.string(),
+            UVE_ERROR("Editor: could not copy model \"{}\" into Content: {}", absolutePath.string(),
                       error.message());
-            return Asset::kInvalidAssetGuidUVE;
+            return Asset::kInvalidAssetGuid;
         }
         relative = destination.lexically_relative(project.contentRoot);
     }
 
-    const std::filesystem::path importedPath = GetImportedModelPathUVE(relative);
+    const std::filesystem::path importedPath = GetImportedModelPath(relative);
     // If the imported .uvmodel is already present and up to date, reuse it directly without
     // triggering a full project file index rescan and thumbnail flush.
     if (std::filesystem::is_regular_file(importedPath, error)) {
@@ -349,22 +349,22 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
         const auto importedTime = timeError ? std::filesystem::file_time_type::min()
                                             : std::filesystem::last_write_time(importedPath, timeError);
         if (!timeError && importedTime >= sourceTime) {
-            return RegisterImportedModelArtifactsUVE(importedPath);
+            return RegisterImportedModelArtifacts(importedPath);
         }
     }
 
     std::filesystem::create_directories(importedPath.parent_path(), error);
-    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
-        project.contentRoot / relative, importedPath, database, Asset::AssetImportSettingsUVE{});
-    if (imported == Asset::kInvalidAssetGuidUVE) {
+    const Asset::AssetGuid imported = m_services->GetAssetImporter().Import(
+        project.contentRoot / relative, importedPath, database, Asset::AssetImportSettings{});
+    if (imported == Asset::kInvalidAssetGuid) {
         // No GUID rather than the source's. A slot naming a file the mesh loader cannot read looks
         // filled and draws nothing forever; an unchanged slot at least tells the truth.
-        return Asset::kInvalidAssetGuidUVE;
+        return Asset::kInvalidAssetGuid;
     }
-    static_cast<void>(RegisterImportedModelArtifactsUVE(importedPath));
+    static_cast<void>(RegisterImportedModelArtifacts(importedPath));
     // The source is new to Content, and the .uvmodel is new to the project; both must appear now,
     // not on the next rescan, or the author sees a slot pointing at something that is not listed.
-    RefreshProjectFileIndexUVE();
+    RefreshProjectFileIndex();
     return imported;
 }
 
@@ -373,21 +373,21 @@ namespace {
 /// How far the derived slope is pushed. At 2.0 an edge from black to white across two pixels tilts
 /// about 45 degrees: strong enough that a photo reads as relief under a moving light, weak enough
 /// that its cast shadows stay shadows instead of becoming cliffs.
-constexpr float kDerivedNormalStrengthUVE = 2.0F;
+constexpr float kDerivedNormalStrength = 2.0F;
 
 } // namespace
 
-std::optional<Asset::AssetGuidUVE> EditorUVE::DeriveNormalMapForAlbedoUVE(const Asset::AssetGuidUVE albedo) {
-    if (albedo == Asset::kInvalidAssetGuidUVE) {
+std::optional<Asset::AssetGuid> Editor::DeriveNormalMapForAlbedo(const Asset::AssetGuid albedo) {
+    if (albedo == Asset::kInvalidAssetGuid) {
         return std::nullopt;
     }
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-    const std::filesystem::path albedoPath = database.ResolveUVE(albedo);
+    Asset::IAssetDatabase& database = m_services->GetAssetDatabase();
+    const std::filesystem::path albedoPath = database.Resolve(albedo);
     if (albedoPath.empty()) {
         return std::nullopt;
     }
-    Asset::TextureAssetUVE albedoTexture;
-    if (!Asset::LoadTextureAssetSourceUVE(albedoPath, albedoTexture)) {
+    Asset::TextureAsset albedoTexture;
+    if (!Asset::LoadTextureAssetSource(albedoPath, albedoTexture)) {
         return std::nullopt;
     }
     // Beside the picture and named after it, so the map is an asset the author can see, move and
@@ -396,44 +396,44 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DeriveNormalMapForAlbedoUVE(const 
         albedoPath.parent_path() / (albedoPath.stem().string() + "_normal.uvtex");
     std::error_code error;
     if (!std::filesystem::is_regular_file(normalPath, error)) {
-        Asset::TextureAssetUVE normal;
-        if (!Asset::DeriveNormalTextureUVE(albedoTexture, kDerivedNormalStrengthUVE, normal) ||
-            !Asset::SaveTextureAssetUVE(normal, normalPath)) {
+        Asset::TextureAsset normal;
+        if (!Asset::DeriveNormalTexture(albedoTexture, kDerivedNormalStrength, normal) ||
+            !Asset::SaveTextureAsset(normal, normalPath)) {
             return std::nullopt;
         }
-        RefreshProjectFileIndexUVE();
+        RefreshProjectFileIndex();
     }
-    const Asset::AssetGuidUVE derived = database.RegisterUVE(normalPath);
-    if (derived == Asset::kInvalidAssetGuidUVE) {
+    const Asset::AssetGuid derived = database.Register(normalPath);
+    if (derived == Asset::kInvalidAssetGuid) {
         return std::nullopt;
     }
     return derived;
 }
 
-bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scene::SkinComponentUVE& skin) {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+bool Editor::AutoPopulateSkinFromModel(const Scene::Entity entity, Scene::SkinComponent& skin) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
 
     // 1. Try to find Skeleton3D on entity, its children, siblings, or parent
-    const Scene::Skeleton3DComponentUVE* skelComp = nullptr;
-    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity)) {
-        skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity);
+    const Scene::Skeleton3DComponent* skelComp = nullptr;
+    if (entityManager.HasComponent<Scene::Skeleton3DComponent>(entity)) {
+        skelComp = &entityManager.GetComponent<Scene::Skeleton3DComponent>(entity);
     } else {
-        for (const Scene::EntityUVE child : m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity)) {
-            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(child)) {
-                skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(child);
+        for (const Scene::Entity child : m_services->GetSceneGraph().GetChildren(entityManager, entity)) {
+            if (entityManager.HasComponent<Scene::Skeleton3DComponent>(child)) {
+                skelComp = &entityManager.GetComponent<Scene::Skeleton3DComponent>(child);
                 break;
             }
         }
-        if (skelComp == nullptr && entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-            const Scene::EntityUVE parent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
-            if (parent != Scene::kInvalidEntityUVE) {
-                if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
-                    skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(parent);
+        if (skelComp == nullptr && entityManager.HasComponent<Scene::HierarchyComponent>(entity)) {
+            const Scene::Entity parent = entityManager.GetComponent<Scene::HierarchyComponent>(entity).parent;
+            if (parent != Scene::kInvalidEntity) {
+                if (entityManager.HasComponent<Scene::Skeleton3DComponent>(parent)) {
+                    skelComp = &entityManager.GetComponent<Scene::Skeleton3DComponent>(parent);
                 } else {
-                    for (const Scene::EntityUVE sibling :
-                         m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, parent)) {
-                        if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(sibling)) {
-                            skelComp = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(sibling);
+                    for (const Scene::Entity sibling :
+                         m_services->GetSceneGraph().GetChildren(entityManager, parent)) {
+                        if (entityManager.HasComponent<Scene::Skeleton3DComponent>(sibling)) {
+                            skelComp = &entityManager.GetComponent<Scene::Skeleton3DComponent>(sibling);
                             break;
                         }
                     }
@@ -447,9 +447,9 @@ bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scen
         // mesh's joint 3 - is only right when the two lists came from one export in one order, and
         // silently wrong in every other case: the Inspector would show a configured Skin that
         // poses the model into a knot.
-        const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(entity);
+        const std::optional<Asset::MeshAsset> meshAsset = LoadEntityMeshAsset(entity);
         if (meshAsset.has_value() &&
-            Scene::TryBuildSkinFromMeshJointsUVE(*meshAsset, *skelComp, skin)) {
+            Scene::TryBuildSkinFromMeshJoints(*meshAsset, *skelComp, skin)) {
             return true;
         }
         // Nothing to match against - a skeleton with no skinned mesh of its own - so the binds are
@@ -457,23 +457,23 @@ bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scen
         skin.boneBinds.clear();
         skin.boneBinds.reserve(skelComp->bones.size());
         for (std::size_t i = 0; i < skelComp->bones.size(); ++i) {
-            Scene::SkinBoneBindUVE bind;
+            Scene::SkinBoneBind bind;
             bind.boneName = skelComp->bones[i].name;
             bind.boneIndex = static_cast<std::int32_t>(i);
-            bind.inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
+            bind.inverseBindPose = Math::Matrix4x4::Identity();
             skin.boneBinds.push_back(std::move(bind));
         }
         skin.bindCount = static_cast<std::uint32_t>(skin.boneBinds.size());
         return true;
     }
 
-    // 2. Read skeleton from assigned model in MeshComponentUVE (using cached LoadEntityMeshAssetUVE)
-    if (const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(entity);
+    // 2. Read skeleton from assigned model in MeshComponent (using cached LoadEntityMeshAsset)
+    if (const std::optional<Asset::MeshAsset> meshAsset = LoadEntityMeshAsset(entity);
         meshAsset.has_value() && !meshAsset->joints.empty()) {
         skin.boneBinds.clear();
         skin.boneBinds.reserve(meshAsset->joints.size());
         for (std::size_t i = 0; i < meshAsset->joints.size(); ++i) {
-            Scene::SkinBoneBindUVE bind;
+            Scene::SkinBoneBind bind;
             bind.boneName = meshAsset->joints[i].name.empty()
                                 ? ("Bone_" + std::to_string(i))
                                 : meshAsset->joints[i].name;
@@ -487,24 +487,24 @@ bool EditorUVE::AutoPopulateSkinFromModelUVE(const Scene::EntityUVE entity, Scen
     return false;
 }
 
-std::optional<Asset::MeshAssetUVE> EditorUVE::LoadEntityMeshAssetUVE(const Scene::EntityUVE entity) {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+std::optional<Asset::MeshAsset> Editor::LoadEntityMeshAsset(const Scene::Entity entity) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent<Scene::MeshComponent>(entity)) {
         return std::nullopt;
     }
-    const Scene::MeshComponentUVE meshComponent = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity);
-    if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE) {
+    const Scene::MeshComponent meshComponent = entityManager.GetComponent<Scene::MeshComponent>(entity);
+    if (meshComponent.meshGuid == Asset::kInvalidAssetGuid) {
         return std::nullopt;
     }
-    std::filesystem::path resolved = m_services->GetAssetDatabaseUVE().ResolveUVE(meshComponent.meshGuid);
+    std::filesystem::path resolved = m_services->GetAssetDatabase().Resolve(meshComponent.meshGuid);
     std::error_code ec;
     if (resolved.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolved, ec)) {
         // A model source (.glb/.fbx/...) draws through the .uvmodel the importer wrote; resolve
         // that the same way the skin and material paths do.
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
         const std::filesystem::path relative = resolved.lexically_relative(project.contentRoot);
         if (!relative.empty() && *relative.begin() != "..") {
-            const std::filesystem::path imported = GetImportedModelPathUVE(relative);
+            const std::filesystem::path imported = GetImportedModelPath(relative);
             if (std::filesystem::is_regular_file(imported, ec)) {
                 resolved = imported;
             }
@@ -518,106 +518,106 @@ std::optional<Asset::MeshAssetUVE> EditorUVE::LoadEntityMeshAssetUVE(const Scene
         m_inspectorMeshAssetCache->lastWriteTime == writeTime) {
         return m_inspectorMeshAssetCache->meshAsset;
     }
-    Asset::MeshAssetUVE meshAsset;
-    if (!Asset::LoadMeshAssetUVE(resolved, meshAsset)) {
+    Asset::MeshAsset meshAsset;
+    if (!Asset::LoadMeshAsset(resolved, meshAsset)) {
         return std::nullopt;
     }
     if (!ec) {
-        m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{resolved, writeTime, meshAsset};
+        m_inspectorMeshAssetCache = EntityEditorMeshCacheEntry{resolved, writeTime, meshAsset};
     }
     return meshAsset;
 }
 
-bool EditorUVE::IsPropertyAtDefaultUVE(const TypeMetadataEntryUVE& entry, const TypeMetadataPropertyUVE& property,
+bool Editor::IsPropertyAtDefault(const TypeMetadataEntry& entry, const TypeMetadataProperty& property,
                                        const void* const instance) {
-    if (property.areEqual == nullptr || !entry.HasFactoryUVE()) {
+    if (property.areEqual == nullptr || !entry.HasFactory()) {
         return false;
     }
     auto defaults = m_inspectorDefaultInstances.find(&entry);
     if (defaults == m_inspectorDefaultInstances.end()) {
-        defaults = m_inspectorDefaultInstances.emplace(&entry, Core::TypeInstanceUVE::MakeDefaultUVE(entry)).first;
+        defaults = m_inspectorDefaultInstances.emplace(&entry, Core::TypeInstance::MakeDefault(entry)).first;
     }
-    return defaults->second.IsValidUVE() && property.areEqual(defaults->second.GetUVE(), instance);
+    return defaults->second.IsValid() && property.areEqual(defaults->second.Get(), instance);
 }
 
-bool EditorUVE::SetSelectedComponentValueUVE(const TypeMetadataEntryUVE& entry, const void* const newInstance) {
+bool Editor::SetSelectedComponentValue(const TypeMetadataEntry& entry, const void* const newInstance) {
     // A live edit still in flight is finished first, before this one changes anything, so the two
     // land in history in the order they happened.
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE() ||
+    static_cast<void>(CommitComponentPropertyPreview());
+    if (!IsAuthoringCommandAllowed() || !HasSingleDocumentSelection() || !entry.HasFactory() ||
         newInstance == nullptr || (entry.isInstanceValid != nullptr && !entry.isInstanceValid(newInstance))) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent(m_selectedEntity, entry.typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
-    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, instance);
-    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(entry, newInstance);
-    if (!before.IsValidUVE() || !after.IsValidUVE()) {
+    void* const instance = entityManager.GetComponentPointer(m_selectedEntity, entry.typeIndex);
+    Core::TypeInstance before = Core::TypeInstance::Clone(entry, instance);
+    Core::TypeInstance after = Core::TypeInstance::Clone(entry, newInstance);
+    if (!before.IsValid() || !after.IsValid()) {
         return false;
     }
     entry.assignInstance(instance, newInstance);
-    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const EditorSelectionSnapshot selectionBefore = CaptureSelectionSnapshot();
     const bool dirtyBefore = m_sceneDirty;
     m_sceneDirty = true;
-    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before), std::move(after),
-                                                      selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore,
+    RecordHistory(ComponentPropertyHistoryEntry{m_selectedEntity, &entry, std::move(before), std::move(after),
+                                                      selectionBefore, CaptureSelectionSnapshot(), dirtyBefore,
                                                       true});
     return true;
 }
 
-bool EditorUVE::CopySelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
-    if (!HasSingleDocumentSelectionUVE() || !entry.HasFactoryUVE()) {
+bool Editor::CopySelectedComponent(const TypeMetadataEntry& entry) {
+    if (!HasSingleDocumentSelection() || !entry.HasFactory()) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent(m_selectedEntity, entry.typeIndex)) {
         return false;
     }
-    Core::TypeInstanceUVE copy =
-        Core::TypeInstanceUVE::CloneUVE(entry, entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex));
-    if (!copy.IsValidUVE()) {
+    Core::TypeInstance copy =
+        Core::TypeInstance::Clone(entry, entityManager.GetComponentPointer(m_selectedEntity, entry.typeIndex));
+    if (!copy.IsValid()) {
         return false;
     }
-    m_componentClipboard = ComponentClipboardUVE{&entry, std::move(copy)};
+    m_componentClipboard = ComponentClipboard{&entry, std::move(copy)};
     return true;
 }
 
-bool EditorUVE::CanPasteSelectedComponentUVE(const TypeMetadataEntryUVE& entry) const noexcept {
+bool Editor::CanPasteSelectedComponent(const TypeMetadataEntry& entry) const noexcept {
     // Types are compared by identity, not by name: two entries can never share a type index.
     return m_componentClipboard.has_value() && m_componentClipboard->entry != nullptr &&
-           m_componentClipboard->entry->typeIndex == entry.typeIndex && m_componentClipboard->value.IsValidUVE();
+           m_componentClipboard->entry->typeIndex == entry.typeIndex && m_componentClipboard->value.IsValid();
 }
 
-bool EditorUVE::PasteSelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
-    if (!CanPasteSelectedComponentUVE(entry)) {
+bool Editor::PasteSelectedComponent(const TypeMetadataEntry& entry) {
+    if (!CanPasteSelectedComponent(entry)) {
         return false;
     }
-    return SetSelectedComponentValueUVE(entry, m_componentClipboard->value.GetUVE());
+    return SetSelectedComponentValue(entry, m_componentClipboard->value.Get());
 }
 
-bool EditorUVE::ResetSelectedComponentUVE(const TypeMetadataEntryUVE& entry) {
-    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(entry);
-    return defaults.IsValidUVE() && SetSelectedComponentValueUVE(entry, defaults.GetUVE());
+bool Editor::ResetSelectedComponent(const TypeMetadataEntry& entry) {
+    const Core::TypeInstance defaults = Core::TypeInstance::MakeDefault(entry);
+    return defaults.IsValid() && SetSelectedComponentValue(entry, defaults.Get());
 }
 
-bool EditorUVE::CopySelectedTransformUVE() {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!HasSingleDocumentSelectionUVE() ||
-        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+bool Editor::CopySelectedTransform() {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!HasSingleDocumentSelection() ||
+        !entityManager.HasComponent<Scene::TransformComponent>(m_selectedEntity)) {
         return false;
     }
-    m_transformClipboard = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity);
+    m_transformClipboard = entityManager.GetComponent<Scene::TransformComponent>(m_selectedEntity);
     return true;
 }
 
 namespace {
 
 // The local pose of `pose` written over `target`, leaving everything that is not pose alone.
-Scene::TransformComponentUVE WithLocalPoseUVE(Scene::TransformComponentUVE target,
-                                              const Scene::TransformComponentUVE& pose) {
+Scene::TransformComponent WithLocalPose(Scene::TransformComponent target,
+                                              const Scene::TransformComponent& pose) {
     target.localPosition = pose.localPosition;
     target.localRotation = pose.localRotation;
     target.localScale = pose.localScale;
@@ -629,82 +629,82 @@ Scene::TransformComponentUVE WithLocalPoseUVE(Scene::TransformComponentUVE targe
 
 } // namespace
 
-bool EditorUVE::PasteSelectedTransformUVE() {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!m_transformClipboard.has_value() || !HasSingleDocumentSelectionUVE() ||
-        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+bool Editor::PasteSelectedTransform() {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!m_transformClipboard.has_value() || !HasSingleDocumentSelection() ||
+        !entityManager.HasComponent<Scene::TransformComponent>(m_selectedEntity)) {
         return false;
     }
-    return SetSelectedLocalTransformUVE(WithLocalPoseUVE(
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity), *m_transformClipboard));
+    return SetSelectedLocalTransform(WithLocalPose(
+        entityManager.GetComponent<Scene::TransformComponent>(m_selectedEntity), *m_transformClipboard));
 }
 
-bool EditorUVE::ResetSelectedTransformUVE() {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!HasSingleDocumentSelectionUVE() ||
-        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity)) {
+bool Editor::ResetSelectedTransform() {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!HasSingleDocumentSelection() ||
+        !entityManager.HasComponent<Scene::TransformComponent>(m_selectedEntity)) {
         return false;
     }
-    return SetSelectedLocalTransformUVE(WithLocalPoseUVE(
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_selectedEntity), Scene::TransformComponentUVE{}));
+    return SetSelectedLocalTransform(WithLocalPose(
+        entityManager.GetComponent<Scene::TransformComponent>(m_selectedEntity), Scene::TransformComponent{}));
 }
 
-bool EditorUVE::SetEntityVisibleUVE(const Scene::EntityUVE entity, const bool visible) {
-    if (!IsAuthoringCommandAllowedUVE() || !IsDocumentEntityUVE(entity)) {
+bool Editor::SetEntityVisible(const Scene::Entity entity, const bool visible) {
+    if (!IsAuthoringCommandAllowed() || !IsDocumentEntity(entity)) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent<Scene::VisibilityComponent>(entity)) {
         return false;
     }
-    const Core::TypeMetadataEntryUVE* const entry = Scene::GetSceneComponentMetadataRegistryUVE().FindTypeByIndexUVE(
-        std::type_index(typeid(Scene::VisibilityComponentUVE)));
-    if (entry == nullptr || !entry->HasFactoryUVE()) {
+    const Core::TypeMetadataEntry* const entry = Scene::GetSceneComponentMetadataRegistry().FindTypeByIndex(
+        std::type_index(typeid(Scene::VisibilityComponent)));
+    if (entry == nullptr || !entry->HasFactory()) {
         return false;
     }
-    auto& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+    auto& visibility = entityManager.GetComponent<Scene::VisibilityComponent>(entity);
     if (visibility.visible == visible) {
         return false;
     }
     // Same history entry as an Inspector edit, so undo restores the whole component on this
     // entity and leaves the selection exactly as it was.
-    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(*entry, &visibility);
-    if (!before.IsValidUVE()) {
+    Core::TypeInstance before = Core::TypeInstance::Clone(*entry, &visibility);
+    if (!before.IsValid()) {
         return false;
     }
     visibility.visible = visible;
-    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*entry, &visibility);
-    if (!after.IsValidUVE()) {
+    Core::TypeInstance after = Core::TypeInstance::Clone(*entry, &visibility);
+    if (!after.IsValid()) {
         visibility.visible = !visible;
         return false;
     }
-    const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+    const EditorSelectionSnapshot selection = CaptureSelectionSnapshot();
     const bool dirtyBefore = m_sceneDirty;
     m_sceneDirty = true;
-    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{entity, entry, std::move(before), std::move(after), selection,
+    RecordHistory(ComponentPropertyHistoryEntry{entity, entry, std::move(before), std::move(after), selection,
                                                       selection, dirtyBefore, true});
     return true;
 }
 
-bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
-                                                const TypeMetadataPropertyUVE& property,
+bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
+                                                const TypeMetadataProperty& property,
                                                 const void* const newValue) {
-    // See SetSelectedComponentValueUVE: a live edit in flight is recorded before this one.
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
+    // See SetSelectedComponentValue: a live edit in flight is recorded before this one.
+    static_cast<void>(CommitComponentPropertyPreview());
+    if (!IsAuthoringCommandAllowed() || !HasSingleDocumentSelection() ||
+        !property.IsAuthoringWritable() || !entry.HasFactory() || newValue == nullptr) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent(m_selectedEntity, entry.typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
+    void* const instance = entityManager.GetComponentPointer(m_selectedEntity, entry.typeIndex);
 
     // The prior value is cloned before the write, so an undo restores the whole component rather
     // than replaying a reverse edit - the same guarantee the per-type commands give.
-    Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, instance);
-    if (!before.IsValidUVE()) {
+    Core::TypeInstance before = Core::TypeInstance::Clone(entry, instance);
+    if (!before.IsValid()) {
         return false;
     }
     property.setValue(instance, newValue);
@@ -714,169 +714,169 @@ bool EditorUVE::SetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entr
     // drag, so it only repairs a shape that cannot express itself and never overrules a height the
     // author chose on purpose afterwards. It happens before the validity check and before the
     // "after" clone, so the repaired value is what gets recorded and what undo puts back.
-    if (entry.typeIndex == std::type_index(typeid(Scene::ColliderComponentUVE))) {
-        auto* const collider = static_cast<Scene::ColliderComponentUVE*>(instance);
-        *collider = Scene::FitColliderShapeUVE(*collider);
+    if (entry.typeIndex == std::type_index(typeid(Scene::ColliderComponent))) {
+        auto* const collider = static_cast<Scene::ColliderComponent*>(instance);
+        *collider = Scene::FitColliderShape(*collider);
     }
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
         // The component's own rule refuses this combination; put the prior value back.
-        entry.assignInstance(instance, before.GetUVE());
+        entry.assignInstance(instance, before.Get());
         return false;
     }
     // An edit that changed nothing records no history, matching what the per-type commands do.
     // A property with no equality operator is treated as changed, which over-records rather than
     // silently dropping a real edit.
-    if (property.areEqual != nullptr && property.areEqual(before.GetUVE(), instance)) {
+    if (property.areEqual != nullptr && property.areEqual(before.Get(), instance)) {
         return false;
     }
 
-    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(entry, instance);
-    if (!after.IsValidUVE()) {
+    Core::TypeInstance after = Core::TypeInstance::Clone(entry, instance);
+    if (!after.IsValid()) {
         // The write already happened; putting the prior value back leaves the scene consistent
         // rather than mutated with no way to undo it.
-        entry.assignInstance(instance, before.GetUVE());
+        entry.assignInstance(instance, before.Get());
         return false;
     }
 
-    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const EditorSelectionSnapshot selectionBefore = CaptureSelectionSnapshot();
     const bool dirtyBefore = m_sceneDirty;
     m_sceneDirty = true;
-    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{m_selectedEntity, &entry, std::move(before),
+    RecordHistory(ComponentPropertyHistoryEntry{m_selectedEntity, &entry, std::move(before),
                                                       std::move(after), selectionBefore,
-                                                      CaptureSelectionSnapshotUVE(), dirtyBefore, true});
-    if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
-        const auto* const camera = static_cast<const Scene::CameraComponentUVE*>(instance);
+                                                      CaptureSelectionSnapshot(), dirtyBefore, true});
+    if (entry.typeIndex == std::type_index(typeid(Scene::CameraComponent))) {
+        const auto* const camera = static_cast<const Scene::CameraComponent*>(instance);
         if (camera != nullptr && camera->current) {
-            Scene::MakeCameraCurrentUVE(entityManager, m_selectedEntity);
+            Scene::MakeCameraCurrent(entityManager, m_selectedEntity);
         }
     }
     return true;
 }
 
-bool EditorUVE::PreviewSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
-                                                    const TypeMetadataPropertyUVE& property,
+bool Editor::PreviewSelectedComponentProperty(const TypeMetadataEntry& entry,
+                                                    const TypeMetadataProperty& property,
                                                     const void* const newValue) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !property.IsAuthoringWritableUVE() || !entry.HasFactoryUVE() || newValue == nullptr) {
+    if (!IsAuthoringCommandAllowed() || !HasSingleDocumentSelection() ||
+        !property.IsAuthoringWritable() || !entry.HasFactory() || newValue == nullptr) {
         return false;
     }
     if (m_componentPropertyPreview.has_value() &&
         (m_componentPropertyPreview->entity != m_selectedEntity || m_componentPropertyPreview->entry != &entry ||
          m_componentPropertyPreview->property != &property)) {
-        static_cast<void>(CommitComponentPropertyPreviewUVE());
+        static_cast<void>(CommitComponentPropertyPreview());
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE(m_selectedEntity, entry.typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent(m_selectedEntity, entry.typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(m_selectedEntity, entry.typeIndex);
-    Core::TypeInstanceUVE previous = Core::TypeInstanceUVE::CloneUVE(entry, instance);
-    if (!previous.IsValidUVE()) {
+    void* const instance = entityManager.GetComponentPointer(m_selectedEntity, entry.typeIndex);
+    Core::TypeInstance previous = Core::TypeInstance::Clone(entry, instance);
+    if (!previous.IsValid()) {
         return false;
     }
     if (!m_componentPropertyPreview.has_value()) {
-        Core::TypeInstanceUVE before = Core::TypeInstanceUVE::CloneUVE(entry, instance);
-        if (!before.IsValidUVE()) {
+        Core::TypeInstance before = Core::TypeInstance::Clone(entry, instance);
+        if (!before.IsValid()) {
             return false;
         }
-        m_componentPropertyPreview = ComponentPropertyPreviewUVE{m_selectedEntity, &entry, &property, std::move(before),
-                                                                 CaptureSelectionSnapshotUVE(), m_sceneDirty};
+        m_componentPropertyPreview = ComponentPropertyPreview{m_selectedEntity, &entry, &property, std::move(before),
+                                                                 CaptureSelectionSnapshot(), m_sceneDirty};
     }
     property.setValue(instance, newValue);
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
         // Refused by the component's own rule: keep the last accepted value on screen.
-        entry.assignInstance(instance, previous.GetUVE());
+        entry.assignInstance(instance, previous.Get());
         return false;
     }
     m_sceneDirty = true;
     return true;
 }
 
-bool EditorUVE::CommitComponentPropertyPreviewUVE() {
+bool Editor::CommitComponentPropertyPreview() {
     if (!m_componentPropertyPreview.has_value()) {
         return false;
     }
-    ComponentPropertyPreviewUVE preview = std::move(*m_componentPropertyPreview);
+    ComponentPropertyPreview preview = std::move(*m_componentPropertyPreview);
     m_componentPropertyPreview.reset();
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!IsDocumentEntityUVE(preview.entity) || !entityManager.HasComponentUVE(preview.entity, preview.entry->typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!IsDocumentEntity(preview.entity) || !entityManager.HasComponent(preview.entity, preview.entry->typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(preview.entity, preview.entry->typeIndex);
-    if (preview.property->areEqual != nullptr && preview.property->areEqual(preview.before.GetUVE(), instance)) {
+    void* const instance = entityManager.GetComponentPointer(preview.entity, preview.entry->typeIndex);
+    if (preview.property->areEqual != nullptr && preview.property->areEqual(preview.before.Get(), instance)) {
         // Opened and closed without a net change: nothing to undo, and nothing left unsaved.
         m_sceneDirty = preview.dirtyBefore;
         return true;
     }
-    Core::TypeInstanceUVE after = Core::TypeInstanceUVE::CloneUVE(*preview.entry, instance);
-    if (!after.IsValidUVE()) {
-        preview.entry->assignInstance(instance, preview.before.GetUVE());
+    Core::TypeInstance after = Core::TypeInstance::Clone(*preview.entry, instance);
+    if (!after.IsValid()) {
+        preview.entry->assignInstance(instance, preview.before.Get());
         m_sceneDirty = preview.dirtyBefore;
         return false;
     }
     m_sceneDirty = true;
-    RecordHistoryUVE(ComponentPropertyHistoryEntryUVE{preview.entity, preview.entry, std::move(preview.before),
+    RecordHistory(ComponentPropertyHistoryEntry{preview.entity, preview.entry, std::move(preview.before),
                                                       std::move(after), preview.selectionBefore,
-                                                      CaptureSelectionSnapshotUVE(), preview.dirtyBefore, true});
+                                                      CaptureSelectionSnapshot(), preview.dirtyBefore, true});
     return true;
 }
 
-bool EditorUVE::CancelComponentPropertyPreviewUVE() {
+bool Editor::CancelComponentPropertyPreview() {
     if (!m_componentPropertyPreview.has_value()) {
         return false;
     }
-    ComponentPropertyPreviewUVE preview = std::move(*m_componentPropertyPreview);
+    ComponentPropertyPreview preview = std::move(*m_componentPropertyPreview);
     m_componentPropertyPreview.reset();
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!IsDocumentEntityUVE(preview.entity) || !entityManager.HasComponentUVE(preview.entity, preview.entry->typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!IsDocumentEntity(preview.entity) || !entityManager.HasComponent(preview.entity, preview.entry->typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(preview.entity, preview.entry->typeIndex);
-    preview.entry->assignInstance(instance, preview.before.GetUVE());
+    void* const instance = entityManager.GetComponentPointer(preview.entity, preview.entry->typeIndex);
+    preview.entry->assignInstance(instance, preview.before.Get());
     m_sceneDirty = preview.dirtyBefore;
     return true;
 }
 
-bool EditorUVE::CommitComponentPropertyPreviewForUVE(const TypeMetadataEntryUVE& entry,
-                                                    const TypeMetadataPropertyUVE& property) {
+bool Editor::CommitComponentPropertyPreviewFor(const TypeMetadataEntry& entry,
+                                                    const TypeMetadataProperty& property) {
     if (!m_componentPropertyPreview.has_value() || m_componentPropertyPreview->entry != &entry ||
         m_componentPropertyPreview->property != &property) {
         return false;
     }
-    return CommitComponentPropertyPreviewUVE();
+    return CommitComponentPropertyPreview();
 }
 
-bool EditorUVE::ApplyComponentPropertySnapshotUVE(const Scene::EntityUVE entity,
-                                                  const TypeMetadataEntryUVE* const metadata,
+bool Editor::ApplyComponentPropertySnapshot(const Scene::Entity entity,
+                                                  const TypeMetadataEntry* const metadata,
                                                   const void* const snapshot) {
-    if (metadata == nullptr || snapshot == nullptr || !metadata->HasFactoryUVE() ||
-        !IsDocumentEntityUVE(entity)) {
+    if (metadata == nullptr || snapshot == nullptr || !metadata->HasFactory() ||
+        !IsDocumentEntity(entity)) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE(entity, metadata->typeIndex)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent(entity, metadata->typeIndex)) {
         return false;
     }
-    void* const instance = entityManager.GetComponentPointerUVE(entity, metadata->typeIndex);
+    void* const instance = entityManager.GetComponentPointer(entity, metadata->typeIndex);
     metadata->assignInstance(instance, snapshot);
     return true;
 }
 
-std::vector<Scene::EntityUVE> EditorUVE::GetEntityReferenceCandidatesUVE() {
+std::vector<Scene::Entity> Editor::GetEntityReferenceCandidates() {
     // Outliner order, by the same walk the Outliner itself uses: roots reversed onto a stack, then
     // each object's children pushed in reverse so the next one popped is the next one drawn.
-    std::vector<Scene::EntityUVE> candidates;
-    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    std::vector<Scene::EntityUVE> pending = GetDocumentRootsUVE();
+    std::vector<Scene::Entity> candidates;
+    const Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    std::vector<Scene::Entity> pending = GetDocumentRoots();
     std::reverse(pending.begin(), pending.end());
     while (!pending.empty()) {
-        const Scene::EntityUVE candidate = pending.back();
+        const Scene::Entity candidate = pending.back();
         pending.pop_back();
-        std::vector<Scene::EntityUVE> children =
-            m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), candidate);
+        std::vector<Scene::Entity> children =
+            m_services->GetSceneGraph().GetChildren(m_services->GetEntityManager(), candidate);
         pending.insert(pending.end(), children.rbegin(), children.rend());
         if (candidate == m_selectedEntity ||
-            !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+            !entityManager.HasComponent<Scene::TransformComponent>(candidate)) {
             continue;
         }
         candidates.push_back(candidate);
@@ -884,53 +884,53 @@ std::vector<Scene::EntityUVE> EditorUVE::GetEntityReferenceCandidatesUVE() {
     return candidates;
 }
 
-bool EditorUVE::ResetSelectedComponentPropertyUVE(const TypeMetadataEntryUVE& entry,
-                                                  const TypeMetadataPropertyUVE& property) {
-    if (!entry.HasFactoryUVE() || property.getValue == nullptr) {
+bool Editor::ResetSelectedComponentProperty(const TypeMetadataEntry& entry,
+                                                  const TypeMetadataProperty& property) {
+    if (!entry.HasFactory() || property.getValue == nullptr) {
         return false;
     }
-    const Core::TypeInstanceUVE defaults = Core::TypeInstanceUVE::MakeDefaultUVE(entry);
-    if (!defaults.IsValidUVE()) {
+    const Core::TypeInstance defaults = Core::TypeInstance::MakeDefault(entry);
+    if (!defaults.IsValid()) {
         return false;
     }
     // Read the default through the same accessor the live value uses, so the buffer is exactly the
     // right size and type for the write that follows - without this function naming either.
     std::array<std::byte, 64> buffer{};
-    if (property.typeId == Scene::kPropertyTypeStringUVE) {
+    if (property.typeId == Scene::kPropertyTypeString) {
         std::string value;
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
+        property.getValue(defaults.Get(), &value);
+        return SetSelectedComponentProperty(entry, property, &value);
     }
-    if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
-        Asset::AssetGuidUVE value{};
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
+    if (property.typeId == Scene::kPropertyTypeAssetGuid) {
+        Asset::AssetGuid value{};
+        property.getValue(defaults.Get(), &value);
+        return SetSelectedComponentProperty(entry, property, &value);
     }
-    if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        Scene::EntityUVE value = Scene::kInvalidEntityUVE;
-        property.getValue(defaults.GetUVE(), &value);
-        return SetSelectedComponentPropertyUVE(entry, property, &value);
+    if (property.typeId == Scene::kPropertyTypeEntity) {
+        Scene::Entity value = Scene::kInvalidEntity;
+        property.getValue(defaults.Get(), &value);
+        return SetSelectedComponentProperty(entry, property, &value);
     }
     // The byte buffer is only sound for trivially copyable values, so the types allowed through it
     // are named rather than assumed. A list or other owning value (the metadata entries) is never
     // reset through here; its custom drawer owns that.
-    const bool trivial = !property.enumEntries.empty() || property.typeId == Scene::kPropertyTypeBoolUVE ||
-                         property.typeId == Scene::kPropertyTypeFloatUVE ||
-                         property.typeId == Scene::kPropertyTypeInt32UVE ||
-                         property.typeId == Scene::kPropertyTypeUInt32UVE ||
-                         property.typeId == Scene::kPropertyTypeUInt8UVE ||
-                         property.typeId == Scene::kPropertyTypeBitMask32UVE ||
-                         property.typeId == Scene::kPropertyTypeVector2UVE ||
-                         property.typeId == Scene::kPropertyTypeVector3UVE ||
-                         property.typeId == Scene::kPropertyTypeRectUVE ||
-                         property.typeId == Scene::kPropertyTypeColorUVE ||
-                         property.typeId == Scene::kPropertyTypeLinearColorUVE ||
-                         property.typeId == Scene::kPropertyTypeQuaternionUVE;
+    const bool trivial = !property.enumEntries.empty() || property.typeId == Scene::kPropertyTypeBool ||
+                         property.typeId == Scene::kPropertyTypeFloat ||
+                         property.typeId == Scene::kPropertyTypeInt32 ||
+                         property.typeId == Scene::kPropertyTypeUInt32 ||
+                         property.typeId == Scene::kPropertyTypeUInt8 ||
+                         property.typeId == Scene::kPropertyTypeBitMask32 ||
+                         property.typeId == Scene::kPropertyTypeVector2 ||
+                         property.typeId == Scene::kPropertyTypeVector3 ||
+                         property.typeId == Scene::kPropertyTypeRect ||
+                         property.typeId == Scene::kPropertyTypeColor ||
+                         property.typeId == Scene::kPropertyTypeLinearColor ||
+                         property.typeId == Scene::kPropertyTypeQuaternion;
     if (!trivial) {
         return false;
     }
-    property.getValue(defaults.GetUVE(), buffer.data());
-    return SetSelectedComponentPropertyUVE(entry, property, buffer.data());
+    property.getValue(defaults.Get(), buffer.data());
+    return SetSelectedComponentProperty(entry, property, buffer.data());
 }
 
 } // namespace UVE::Editor

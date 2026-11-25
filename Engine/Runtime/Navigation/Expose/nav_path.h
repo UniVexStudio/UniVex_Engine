@@ -13,7 +13,7 @@ namespace UVE::Navigation {
 
 /// What a path request produced, in the terms an agent cares about: can I follow this, and did I
 /// reach what I asked for.
-enum class NavPathStatusUVE : std::uint8_t {
+enum class NavPathStatus : std::uint8_t {
     /// A complete path from the start's polygon to the target's polygon.
     Found = 0,
     /// A path toward the target that stops short of it: the goal is on an island this navmesh does
@@ -29,9 +29,9 @@ enum class NavPathStatusUVE : std::uint8_t {
     NoMesh,
 };
 
-struct NavPathRequestUVE final {
-    Math::Vector3UVE start{};
-    Math::Vector3UVE target{};
+struct NavPathRequest final {
+    Math::Vector3 start{};
+    Math::Vector3 target{};
     /// Which polygons the path may use: a polygon is traversable when
     /// `(polygon.navigationLayers & navigationLayers) != 0`. Defaults to every layer, so a caller
     /// that has no opinion still gets a path.
@@ -49,24 +49,24 @@ struct NavPathRequestUVE final {
     std::size_t maximumExpandedNodes = 4096U;
 };
 
-struct NavPathUVE final {
+struct NavPath final {
     /// The corners the path turns at, ending with the goal. The START is deliberately not in here:
     /// the caller already stands there, and a follower that must first walk to its own position
     /// spends a step doing nothing.
-    std::vector<Math::Vector3UVE> waypoints;
+    std::vector<Math::Vector3> waypoints;
     /// Length of the waypoint polyline, measured from the start's own point on the mesh to the goal.
     float lengthMetres = 0.0F;
     /// Search nodes the request took off its open list, one per doorway the chain stepped through.
     /// Reported so a truncated search is visible as one.
     std::size_t expandedNodes = 0U;
-    NavPathStatusUVE status = NavPathStatusUVE::NoMesh;
+    NavPathStatus status = NavPathStatus::NoMesh;
 
-    [[nodiscard]] bool IsUsableUVE() const noexcept {
-        return status == NavPathStatusUVE::Found || status == NavPathStatusUVE::Partial;
+    [[nodiscard]] bool IsUsable() const noexcept {
+        return status == NavPathStatus::Found || status == NavPathStatus::Partial;
     }
-    [[nodiscard]] bool IsCompleteUVE() const noexcept { return status == NavPathStatusUVE::Found; }
+    [[nodiscard]] bool IsComplete() const noexcept { return status == NavPathStatus::Found; }
 
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 };
 
 /// Finds a path across `mesh` from `request.start` to `request.target`.
@@ -79,6 +79,6 @@ struct NavPathUVE final {
 ///
 /// The search never leaves the polygons whose layers the request allows, so "this agent may not walk
 /// there" is a property of the path rather than of the follower.
-[[nodiscard]] NavPathUVE FindNavPathUVE(const NavmeshUVE& mesh, const NavPathRequestUVE& request);
+[[nodiscard]] NavPath FindNavPath(const Navmesh& mesh, const NavPathRequest& request);
 
 } // namespace UVE::Navigation

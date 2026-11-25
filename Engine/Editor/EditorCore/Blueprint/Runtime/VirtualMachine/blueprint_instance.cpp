@@ -16,19 +16,19 @@ namespace {
 
 /// One event's run is cut off after this many instructions, so a loop that never ends stops the
 /// script instead of the game.
-constexpr std::size_t kInstructionBudgetUVE = 1'000'000U;
-constexpr std::size_t kMaximumCallDepthUVE = 256U;
+constexpr std::size_t kInstructionBudget = 1'000'000U;
+constexpr std::size_t kMaximumCallDepth = 256U;
 
-/// Cross-node calls re-enter CallUVE through the host; without a cap two scripts calling each
+/// Cross-node calls re-enter Call through the host; without a cap two scripts calling each
 /// other would eat the C++ stack. Same depth as calls within one script.
-thread_local std::size_t g_callDepthUVE = 0U;
-struct CallDepthGuardUVE final {
-    CallDepthGuardUVE() { ++g_callDepthUVE; }
-    ~CallDepthGuardUVE() { --g_callDepthUVE; }
+thread_local std::size_t g_callDepth = 0U;
+struct CallDepthGuard final {
+    CallDepthGuard() { ++g_callDepth; }
+    ~CallDepthGuard() { --g_callDepth; }
 };
 
-struct FrameUVE final {
-    const ChunkUVE* chunk = nullptr;
+struct Frame final {
+    const Chunk* chunk = nullptr;
     std::size_t ip = 0U;
     std::size_t base = 0U;
     /// Source line of the previous instruction checked in this frame. Breakpoints and steps
@@ -39,68 +39,68 @@ struct FrameUVE final {
 
 /// A handler that is running or paused on `wait`. Interpreted, it is a value stack and call
 /// frames; native, the generated chunk's own frame.
-struct CoroutineUVE final {
-    std::vector<ValueUVE> stack;
-    std::vector<FrameUVE> frames;
+struct Coroutine final {
+    std::vector<Value> stack;
+    std::vector<Frame> frames;
     double waitRemaining = 0.0;
     std::size_t nativeChunk = 0U;
-    Native::FrameUVE nativeFrame;
+    Native::Frame nativeFrame;
     bool nativeRunning = false;
 
-    [[nodiscard]] bool IsRunningUVE() const noexcept { return nativeRunning || !frames.empty(); }
+    [[nodiscard]] bool IsRunning() const noexcept { return nativeRunning || !frames.empty(); }
 };
 
-using Native::ErrorUVE;
+using Native::Error;
 
-[[nodiscard]] Native::ArithmeticOpUVE ToArithmeticUVE(const OpUVE op) noexcept {
+[[nodiscard]] Native::ArithmeticOp ToArithmetic(const Op op) noexcept {
     switch (op) {
-        case OpUVE::Sub: return Native::ArithmeticOpUVE::Sub;
-        case OpUVE::Mul: return Native::ArithmeticOpUVE::Mul;
-        case OpUVE::Div: return Native::ArithmeticOpUVE::Div;
-        case OpUVE::Mod: return Native::ArithmeticOpUVE::Mod;
-        default: return Native::ArithmeticOpUVE::Add;
+        case Op::Sub: return Native::ArithmeticOp::Sub;
+        case Op::Mul: return Native::ArithmeticOp::Mul;
+        case Op::Div: return Native::ArithmeticOp::Div;
+        case Op::Mod: return Native::ArithmeticOp::Mod;
+        default: return Native::ArithmeticOp::Add;
     }
 }
 
-[[nodiscard]] Native::CompareOpUVE ToCompareUVE(const OpUVE op) noexcept {
+[[nodiscard]] Native::CompareOp ToCompare(const Op op) noexcept {
     switch (op) {
-        case OpUVE::Le: return Native::CompareOpUVE::Le;
-        case OpUVE::Gt: return Native::CompareOpUVE::Gt;
-        case OpUVE::Ge: return Native::CompareOpUVE::Ge;
-        default: return Native::CompareOpUVE::Lt;
+        case Op::Le: return Native::CompareOp::Le;
+        case Op::Gt: return Native::CompareOp::Gt;
+        case Op::Ge: return Native::CompareOp::Ge;
+        default: return Native::CompareOp::Lt;
     }
 }
 
 } // namespace
 
 /// StartChunk's index for the field initializers, which are not one of the program's functions.
-constexpr std::size_t kInitChunkUVE = static_cast<std::size_t>(-1);
+constexpr std::size_t kInitChunk = static_cast<std::size_t>(-1);
 
-struct ScriptInstanceUVE::StateUVE final {
-    std::shared_ptr<const ProgramUVE> program;
+struct ScriptInstance::State final {
+    std::shared_ptr<const Program> program;
     /// The program's native form when one is linked in (and not refused), else null.
-    const Native::ProgramTableUVE* native = nullptr;
-    UVScriptHostUVE* host = nullptr;
-    std::vector<ValueUVE> fields;
-    std::vector<CoroutineUVE> waiting;
+    const Native::ProgramTable* native = nullptr;
+    UVScriptHost* host = nullptr;
+    std::vector<Value> fields;
+    std::vector<Coroutine> waiting;
     std::string lastError;
 
-    enum class DebugActionUVE : std::uint8_t { Continue, StepInto, StepOver };
+    enum class DebugAction : std::uint8_t { Continue, StepInto, StepOver };
     bool debuggerEnabled = false;
     std::size_t executionDepth = 0U;
     std::unordered_set<std::uint32_t> breakpoints;
-    DebugActionUVE debugAction = DebugActionUVE::Continue;
+    DebugAction debugAction = DebugAction::Continue;
     std::size_t debugStepDepth = 0U;
     bool debugSkipFirstInstruction = false;
     bool debugPaused = false;
-    std::optional<CoroutineUVE> pausedCoroutine;
+    std::optional<Coroutine> pausedCoroutine;
     bool pausedFromCall = false;
-    std::optional<ScriptDebugSnapshotUVE> debugSnapshot;
+    std::optional<ScriptDebugSnapshot> debugSnapshot;
 
-    [[nodiscard]] ScriptDebugSnapshotUVE MakeDebugSnapshotUVE(const CoroutineUVE& co,
-                                                            const FrameUVE& frame,
+    [[nodiscard]] ScriptDebugSnapshot MakeDebugSnapshot(const Coroutine& co,
+                                                            const Frame& frame,
                                                             const std::size_t instructionIndex) const {
-        ScriptDebugSnapshotUVE snapshot;
+        ScriptDebugSnapshot snapshot;
         snapshot.line = frame.chunk->code[instructionIndex].line;
         snapshot.functionName = frame.chunk->name;
         snapshot.instructionIndex = instructionIndex;
@@ -116,40 +116,40 @@ struct ScriptInstanceUVE::StateUVE final {
         return snapshot;
     }
 
-    [[nodiscard]] ScriptDebugResumeResultUVE ResumePausedUVE(const DebugActionUVE action) {
+    [[nodiscard]] ScriptDebugResumeResult ResumePaused(const DebugAction action) {
         if (!pausedCoroutine.has_value()) {
-            return {ScriptDebugStateUVE::NotPaused, std::nullopt};
+            return {ScriptDebugState::NotPaused, std::nullopt};
         }
         debugAction = action;
         debugStepDepth = pausedCoroutine->frames.size();
         lastError.clear();
         debugSkipFirstInstruction = true;
         debugPaused = false;
-        CoroutineUVE co = std::move(*pausedCoroutine);
+        Coroutine co = std::move(*pausedCoroutine);
         pausedCoroutine.reset();
         const bool fromCall = pausedFromCall;
-        std::optional<ValueUVE> result = Resume(co);
+        std::optional<Value> result = Resume(co);
         if (debugPaused) {
             pausedCoroutine = std::move(co);
-            return {ScriptDebugStateUVE::Paused, std::nullopt};
+            return {ScriptDebugState::Paused, std::nullopt};
         }
-        if (co.IsRunningUVE()) {
+        if (co.IsRunning()) {
             waiting.push_back(std::move(co));
-            return {ScriptDebugStateUVE::Waiting, std::nullopt};
+            return {ScriptDebugState::Waiting, std::nullopt};
         }
         if (!lastError.empty()) {
-            return {ScriptDebugStateUVE::Failed, std::nullopt};
+            return {ScriptDebugState::Failed, std::nullopt};
         }
-        return {ScriptDebugStateUVE::Completed, fromCall ? result : std::nullopt};
+        return {ScriptDebugState::Completed, fromCall ? result : std::nullopt};
     }
 
-    [[nodiscard]] bool DebuggerBusyUVE() const noexcept {
+    [[nodiscard]] bool DebuggerBusy() const noexcept {
         return debugPaused || (debuggerEnabled && executionDepth != 0U);
     }
 
     /// Starts `chunk` with `args` on a fresh coroutine.
-    CoroutineUVE Start(const ChunkUVE& chunk, const std::span<const ValueUVE> args) const {
-        CoroutineUVE co;
+    Coroutine Start(const Chunk& chunk, const std::span<const Value> args) const {
+        Coroutine co;
         co.stack.assign(args.begin(), args.end());
         co.stack.resize(chunk.localCount);
         co.frames.push_back({&chunk, 0U, 0U});
@@ -158,17 +158,17 @@ struct ScriptInstanceUVE::StateUVE final {
 
     /// Runs until the coroutine finishes (returns its result), waits (returns nothing, `co` keeps
     /// its place) or fails (lastError is set, returns nothing and clears the frames).
-    std::optional<ValueUVE> Run(CoroutineUVE& co) {
-        std::size_t budget = kInstructionBudgetUVE;
+    std::optional<Value> Run(Coroutine& co) {
+        std::size_t budget = kInstructionBudget;
         std::uint32_t line = 0U;
         try {
             while (!co.frames.empty()) {
                 if (budget-- == 0U) {
-                    throw ErrorUVE{"this ran too long without stopping - is a loop missing its exit?"};
+                    throw Error{"this ran too long without stopping - is a loop missing its exit?"};
                 }
-                FrameUVE& frame = co.frames.back();
+                Frame& frame = co.frames.back();
                 const std::size_t instructionIndex = frame.ip;
-                const InstructionUVE& in = frame.chunk->code[instructionIndex];
+                const Instruction& in = frame.chunk->code[instructionIndex];
                 line = in.line;
                 if (debuggerEnabled) {
                     const bool arrivedAtLine = frame.debugLine != line;
@@ -177,146 +177,146 @@ struct ScriptInstanceUVE::StateUVE final {
                         debugSkipFirstInstruction = false;
                     } else if (arrivedAtLine && breakpoints.contains(line)) {
                         pause = true;
-                    } else if (debugAction == DebugActionUVE::StepInto) {
+                    } else if (debugAction == DebugAction::StepInto) {
                         pause = arrivedAtLine;
-                    } else if (debugAction == DebugActionUVE::StepOver) {
+                    } else if (debugAction == DebugAction::StepOver) {
                         pause = co.frames.size() <= debugStepDepth && arrivedAtLine;
                     }
                     frame.debugLine = line;
                     if (pause) {
                         debugPaused = true;
-                        debugSnapshot = MakeDebugSnapshotUVE(co, frame, instructionIndex);
+                        debugSnapshot = MakeDebugSnapshot(co, frame, instructionIndex);
                         return std::nullopt;
                     }
                 }
                 ++frame.ip;
-                std::vector<ValueUVE>& s = co.stack;
+                std::vector<Value>& s = co.stack;
                 const auto pop = [&s] {
-                    ValueUVE v = std::move(s.back());
+                    Value v = std::move(s.back());
                     s.pop_back();
                     return v;
                 };
                 switch (in.op) {
-                    case OpUVE::PushConst: s.push_back(program->constants[static_cast<std::size_t>(in.a)]); break;
-                    case OpUVE::Pop: s.pop_back(); break;
-                    case OpUVE::LoadLocal: s.push_back(s[frame.base + static_cast<std::size_t>(in.a)]); break;
-                    case OpUVE::StoreLocal: s[frame.base + static_cast<std::size_t>(in.a)] = pop(); break;
-                    case OpUVE::LoadField: s.push_back(fields[static_cast<std::size_t>(in.a)]); break;
-                    case OpUVE::StoreField: fields[static_cast<std::size_t>(in.a)] = pop(); break;
-                    case OpUVE::LoadProp:
-                        s.push_back(host->GetPropertyUVE(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)])));
+                    case Op::PushConst: s.push_back(program->constants[static_cast<std::size_t>(in.a)]); break;
+                    case Op::Pop: s.pop_back(); break;
+                    case Op::LoadLocal: s.push_back(s[frame.base + static_cast<std::size_t>(in.a)]); break;
+                    case Op::StoreLocal: s[frame.base + static_cast<std::size_t>(in.a)] = pop(); break;
+                    case Op::LoadField: s.push_back(fields[static_cast<std::size_t>(in.a)]); break;
+                    case Op::StoreField: fields[static_cast<std::size_t>(in.a)] = pop(); break;
+                    case Op::LoadProp:
+                        s.push_back(host->GetProperty(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)])));
                         break;
-                    case OpUVE::StoreProp: {
-                        const ValueUVE value = pop();
-                        host->SetPropertyUVE(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), value);
-                        break;
-                    }
-                    case OpUVE::Add:
-                    case OpUVE::Sub:
-                    case OpUVE::Mul:
-                    case OpUVE::Div:
-                    case OpUVE::Mod: {
-                        const ValueUVE b = pop();
-                        const ValueUVE a = pop();
-                        s.push_back(Native::ArithmeticUVE(ToArithmeticUVE(in.op), a, b));
+                    case Op::StoreProp: {
+                        const Value value = pop();
+                        host->SetProperty(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), value);
                         break;
                     }
-                    case OpUVE::Neg: s.push_back(Native::NegateUVE(pop())); break;
-                    case OpUVE::Not: s.push_back(!Native::AsBoolUVE(pop())); break;
-                    case OpUVE::Eq:
-                    case OpUVE::Ne: {
-                        const ValueUVE b = pop();
-                        const ValueUVE a = pop();
-                        s.push_back(Native::EqualUVE(a, b) == (in.op == OpUVE::Eq));
+                    case Op::Add:
+                    case Op::Sub:
+                    case Op::Mul:
+                    case Op::Div:
+                    case Op::Mod: {
+                        const Value b = pop();
+                        const Value a = pop();
+                        s.push_back(Native::Arithmetic(ToArithmetic(in.op), a, b));
                         break;
                     }
-                    case OpUVE::Lt:
-                    case OpUVE::Le:
-                    case OpUVE::Gt:
-                    case OpUVE::Ge: {
-                        const ValueUVE b = pop();
-                        const ValueUVE a = pop();
-                        s.push_back(Native::CompareUVE(ToCompareUVE(in.op), a, b));
+                    case Op::Neg: s.push_back(Native::Negate(pop())); break;
+                    case Op::Not: s.push_back(!Native::AsBool(pop())); break;
+                    case Op::Eq:
+                    case Op::Ne: {
+                        const Value b = pop();
+                        const Value a = pop();
+                        s.push_back(Native::Equal(a, b) == (in.op == Op::Eq));
                         break;
                     }
-                    case OpUVE::ToFloat: s.push_back(Native::AsDoubleUVE(pop())); break;
-                    case OpUVE::GetComponent: s.push_back(Native::GetComponentUVE(pop(), in.a)); break;
-                    case OpUVE::SetComponent: {
-                        const ValueUVE value = pop();
-                        const ValueUVE vector = pop();
-                        s.push_back(Native::SetComponentUVE(vector, in.a, value));
+                    case Op::Lt:
+                    case Op::Le:
+                    case Op::Gt:
+                    case Op::Ge: {
+                        const Value b = pop();
+                        const Value a = pop();
+                        s.push_back(Native::Compare(ToCompare(in.op), a, b));
                         break;
                     }
-                    case OpUVE::Concat: {
-                        ValueUVE text = Native::ConcatUVE(s, static_cast<std::size_t>(in.a));
+                    case Op::ToFloat: s.push_back(Native::AsDouble(pop())); break;
+                    case Op::GetComponent: s.push_back(Native::GetComponent(pop(), in.a)); break;
+                    case Op::SetComponent: {
+                        const Value value = pop();
+                        const Value vector = pop();
+                        s.push_back(Native::SetComponent(vector, in.a, value));
+                        break;
+                    }
+                    case Op::Concat: {
+                        Value text = Native::Concat(s, static_cast<std::size_t>(in.a));
                         s.push_back(std::move(text));
                         break;
                     }
-                    case OpUVE::BuildList: s.push_back(Native::BuildListUVE(s, static_cast<std::size_t>(in.a))); break;
-                    case OpUVE::BuildMap: s.push_back(Native::BuildMapUVE(s, static_cast<std::size_t>(in.a))); break;
-                    case OpUVE::BuildTuple: s.push_back(Native::BuildTupleUVE(s, static_cast<std::size_t>(in.a))); break;
-                    case OpUVE::GetIndex: {
-                        const ValueUVE key = pop();
-                        const ValueUVE container = pop();
-                        s.push_back(Native::GetIndexUVE(container, key));
+                    case Op::BuildList: s.push_back(Native::BuildList(s, static_cast<std::size_t>(in.a))); break;
+                    case Op::BuildMap: s.push_back(Native::BuildMap(s, static_cast<std::size_t>(in.a))); break;
+                    case Op::BuildTuple: s.push_back(Native::BuildTuple(s, static_cast<std::size_t>(in.a))); break;
+                    case Op::GetIndex: {
+                        const Value key = pop();
+                        const Value container = pop();
+                        s.push_back(Native::GetIndex(container, key));
                         break;
                     }
-                    case OpUVE::SetIndex: {
-                        const ValueUVE value = pop();
-                        const ValueUVE key = pop();
-                        const ValueUVE container = pop();
-                        s.push_back(Native::SetIndexUVE(container, key, value));
+                    case Op::SetIndex: {
+                        const Value value = pop();
+                        const Value key = pop();
+                        const Value container = pop();
+                        s.push_back(Native::SetIndex(container, key, value));
                         break;
                     }
-                    case OpUVE::Unpack: Native::UnpackUVE(s, static_cast<std::size_t>(in.a)); break;
-                    case OpUVE::Jump: frame.ip = static_cast<std::size_t>(in.a); break;
-                    case OpUVE::JumpIfFalse:
-                        if (!Native::AsBoolUVE(pop())) frame.ip = static_cast<std::size_t>(in.a);
+                    case Op::Unpack: Native::Unpack(s, static_cast<std::size_t>(in.a)); break;
+                    case Op::Jump: frame.ip = static_cast<std::size_t>(in.a); break;
+                    case Op::JumpIfFalse:
+                        if (!Native::AsBool(pop())) frame.ip = static_cast<std::size_t>(in.a);
                         break;
-                    case OpUVE::JumpIfFalseKeep:
-                        if (!Native::AsBoolUVE(s.back())) frame.ip = static_cast<std::size_t>(in.a);
+                    case Op::JumpIfFalseKeep:
+                        if (!Native::AsBool(s.back())) frame.ip = static_cast<std::size_t>(in.a);
                         else s.pop_back();
                         break;
-                    case OpUVE::JumpIfTrueKeep:
-                        if (Native::AsBoolUVE(s.back())) frame.ip = static_cast<std::size_t>(in.a);
+                    case Op::JumpIfTrueKeep:
+                        if (Native::AsBool(s.back())) frame.ip = static_cast<std::size_t>(in.a);
                         else s.pop_back();
                         break;
-                    case OpUVE::Call: {
-                        if (co.frames.size() >= kMaximumCallDepthUVE) {
-                            throw ErrorUVE{"functions call each other too deeply"};
+                    case Op::Call: {
+                        if (co.frames.size() >= kMaximumCallDepth) {
+                            throw Error{"functions call each other too deeply"};
                         }
-                        const ChunkUVE& callee = program->functions[static_cast<std::size_t>(in.a)];
+                        const Chunk& callee = program->functions[static_cast<std::size_t>(in.a)];
                         const std::size_t base = s.size() - static_cast<std::size_t>(in.b);
                         s.resize(base + callee.localCount);
                         co.frames.push_back({&callee, 0U, base});
                         break;
                     }
-                    case OpUVE::CallBuiltin: {
+                    case Op::CallBuiltin: {
                         const std::size_t argc = static_cast<std::size_t>(in.b);
-                        const std::vector<ValueUVE> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
+                        const std::vector<Value> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
                         s.resize(s.size() - argc);
-                        s.push_back(Native::CallBuiltinUVE(*host, in.a, args));
+                        s.push_back(Native::CallBuiltin(*host, in.a, args));
                         break;
                     }
-                    case OpUVE::CallHost: {
+                    case Op::CallHost: {
                         const std::size_t argc = static_cast<std::size_t>(in.b);
-                        const std::vector<ValueUVE> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
+                        const std::vector<Value> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
                         s.resize(s.size() - argc);
-                        s.push_back(host->CallFunctionUVE(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), args));
+                        s.push_back(host->CallFunction(std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), args));
                         break;
                     }
-                    case OpUVE::CallMethod: {
+                    case Op::CallMethod: {
                         const std::size_t argc = static_cast<std::size_t>(in.b);
-                        const std::vector<ValueUVE> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
+                        const std::vector<Value> args(s.end() - static_cast<std::ptrdiff_t>(argc), s.end());
                         s.resize(s.size() - argc);
-                        const ObjectRefUVE target = Native::AsObjectRefUVE(pop());
-                        host->CallMethodUVE(target, std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), args);
-                        s.push_back(ValueUVE{});
+                        const ObjectRef target = Native::AsObjectRef(pop());
+                        host->CallMethod(target, std::get<std::string>(program->constants[static_cast<std::size_t>(in.a)]), args);
+                        s.push_back(Value{});
                         break;
                     }
-                    case OpUVE::Return:
-                    case OpUVE::ReturnNone: {
-                        ValueUVE result = in.op == OpUVE::Return ? pop() : ValueUVE{};
+                    case Op::Return:
+                    case Op::ReturnNone: {
+                        Value result = in.op == Op::Return ? pop() : Value{};
                         const std::size_t base = frame.base;
                         co.frames.pop_back();
                         s.resize(base);
@@ -326,12 +326,12 @@ struct ScriptInstanceUVE::StateUVE final {
                         s.push_back(std::move(result));
                         break;
                     }
-                    case OpUVE::Wait:
-                        co.waitRemaining = std::max(0.0, Native::AsDoubleUVE(pop()));
+                    case Op::Wait:
+                        co.waitRemaining = std::max(0.0, Native::AsDouble(pop()));
                         return std::nullopt;
                 }
             }
-        } catch (const ErrorUVE& error) {
+        } catch (const Error& error) {
             lastError = "line " + std::to_string(line) + ": " + error.message;
         } catch (const std::bad_variant_access&) {
             lastError = "line " + std::to_string(line) + ": a value had an unexpected type";
@@ -342,13 +342,13 @@ struct ScriptInstanceUVE::StateUVE final {
     }
 
     /// Starts `chunk` (a program function index, or the init chunk) the way this instance runs.
-    CoroutineUVE StartChunk(const std::size_t index, const std::span<const ValueUVE> args) const {
-        const ChunkUVE& chunk = index == kInitChunkUVE ? program->init : program->functions[index];
+    Coroutine StartChunk(const std::size_t index, const std::span<const Value> args) const {
+        const Chunk& chunk = index == kInitChunk ? program->init : program->functions[index];
         if (native == nullptr) {
             return Start(chunk, args);
         }
-        CoroutineUVE co;
-        co.nativeChunk = index == kInitChunkUVE ? native->initIndex : index;
+        Coroutine co;
+        co.nativeChunk = index == kInitChunk ? native->initIndex : index;
         co.nativeFrame.locals.assign(args.begin(), args.end());
         co.nativeFrame.locals.resize(chunk.localCount);
         co.nativeRunning = true;
@@ -356,28 +356,28 @@ struct ScriptInstanceUVE::StateUVE final {
     }
 
     /// Run, for either form of coroutine.
-    std::optional<ValueUVE> Resume(CoroutineUVE& co) {
-        struct ExecutionGuardUVE final {
+    std::optional<Value> Resume(Coroutine& co) {
+        struct ExecutionGuard final {
             std::size_t& depth;
-            explicit ExecutionGuardUVE(std::size_t& value) : depth(value) { ++depth; }
-            ~ExecutionGuardUVE() { --depth; }
+            explicit ExecutionGuard(std::size_t& value) : depth(value) { ++depth; }
+            ~ExecutionGuard() { --depth; }
         } guard{executionDepth};
         if (!co.nativeRunning) {
-            std::optional<ValueUVE> result = Run(co);
+            std::optional<Value> result = Run(co);
             if (!debugPaused) {
-                debugAction = DebugActionUVE::Continue;
+                debugAction = DebugAction::Continue;
             }
             return result;
         }
-        Native::ContextUVE context{fields, *host, kInstructionBudgetUVE, 0U, 0U};
+        Native::Context context{fields, *host, kInstructionBudget, 0U, 0U};
         try {
-            if (native->chunks[co.nativeChunk](context, co.nativeFrame) == Native::StatusUVE::Waiting) {
+            if (native->chunks[co.nativeChunk](context, co.nativeFrame) == Native::Status::Waiting) {
                 co.waitRemaining = co.nativeFrame.waitSeconds;
                 return std::nullopt;
             }
             co.nativeRunning = false;
             return std::move(co.nativeFrame.result);
-        } catch (const ErrorUVE& error) {
+        } catch (const Error& error) {
             lastError = "line " + std::to_string(context.line) + ": " + error.message;
         } catch (const std::bad_variant_access&) {
             lastError = "line " + std::to_string(context.line) + ": a value had an unexpected type";
@@ -391,16 +391,16 @@ namespace {
 
 /// Whether a value handed in from outside fits a parameter's declared type. Both ways of running
 /// rely on it: generated code unboxes parameters as their declared type.
-[[nodiscard]] bool ArgsFitUVE(const ChunkUVE& chunk, const std::span<const ValueUVE> args) {
+[[nodiscard]] bool ArgsFit(const Chunk& chunk, const std::span<const Value> args) {
     for (std::size_t i = 0U; i < args.size() && i < chunk.localTypes.size(); ++i) {
-        const ValueUVE& v = args[i];
+        const Value& v = args[i];
         bool fits = true;
         switch (chunk.localTypes[i].kind) {
-            case TypeUVE::KindUVE::Bool: fits = std::holds_alternative<bool>(v); break;
-            case TypeUVE::KindUVE::Int: fits = std::holds_alternative<std::int64_t>(v); break;
-            case TypeUVE::KindUVE::Float: fits = std::holds_alternative<double>(v); break;
-            case TypeUVE::KindUVE::Str: fits = std::holds_alternative<std::string>(v); break;
-            case TypeUVE::KindUVE::Vec3: fits = std::holds_alternative<Vec3ValueUVE>(v); break;
+            case Type::Kind::Bool: fits = std::holds_alternative<bool>(v); break;
+            case Type::Kind::Int: fits = std::holds_alternative<std::int64_t>(v); break;
+            case Type::Kind::Float: fits = std::holds_alternative<double>(v); break;
+            case Type::Kind::Str: fits = std::holds_alternative<std::string>(v); break;
+            case Type::Kind::Vec3: fits = std::holds_alternative<Vec3Value>(v); break;
             default: break;
         }
         if (!fits) {
@@ -412,49 +412,49 @@ namespace {
 
 } // namespace
 
-ScriptInstanceUVE::ScriptInstanceUVE(std::shared_ptr<const ProgramUVE> program, UVScriptHostUVE& host,
-                                     const ExecutionUVE execution)
-    : m_state(std::make_unique<StateUVE>()) {
+ScriptInstance::ScriptInstance(std::shared_ptr<const Program> program, UVScriptHost& host,
+                                     const Execution execution)
+    : m_state(std::make_unique<State>()) {
     m_state->program = std::move(program);
     m_state->host = &host;
-    if (execution == ExecutionUVE::Auto) {
-        m_state->native = Native::FindNativeProgramUVE(m_state->program->fingerprint);
+    if (execution == Execution::Auto) {
+        m_state->native = Native::FindNativeProgram(m_state->program->fingerprint);
         // A table from a different build of the same fingerprint would not line up; refuse it.
         if (m_state->native != nullptr && m_state->native->chunks.size() != m_state->program->functions.size() + 1U) {
             m_state->native = nullptr;
         }
     }
     m_state->fields.resize(m_state->program->fields.size());
-    CoroutineUVE init = m_state->StartChunk(kInitChunkUVE, {});
+    Coroutine init = m_state->StartChunk(kInitChunk, {});
     static_cast<void>(m_state->Resume(init));
 }
 
-ScriptInstanceUVE::~ScriptInstanceUVE() = default;
+ScriptInstance::~ScriptInstance() = default;
 
-bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::span<const ValueUVE> args) {
-    if (m_state->DebuggerBusyUVE()) return false;
+bool ScriptInstance::RaiseEvent(const std::string_view event, const std::span<const Value> args) {
+    if (m_state->DebuggerBusy()) return false;
     const auto& handlers = m_state->program->handlers;
     const auto it = std::ranges::find_if(handlers, [event](const auto& h) { return h.first == event; });
     if (it == handlers.end()) {
         return false;
     }
-    const ChunkUVE& chunk = m_state->program->functions[it->second];
+    const Chunk& chunk = m_state->program->functions[it->second];
     if (args.size() != chunk.paramCount) {
         m_state->lastError = "'" + std::string{event} + "' was raised with the wrong number of values";
         return false;
     }
-    if (!ArgsFitUVE(chunk, args)) {
+    if (!ArgsFit(chunk, args)) {
         m_state->lastError = "'" + std::string{event} + "' was raised with a value of the wrong type";
         return false;
     }
     const std::string before = m_state->lastError;
     m_state->lastError.clear();
-    CoroutineUVE co = m_state->StartChunk(it->second, args);
+    Coroutine co = m_state->StartChunk(it->second, args);
     static_cast<void>(m_state->Resume(co));
     if (m_state->debugPaused) {
         m_state->pausedCoroutine = std::move(co);
         m_state->pausedFromCall = false;
-    } else if (co.IsRunningUVE()) {
+    } else if (co.IsRunning()) {
         m_state->waiting.push_back(std::move(co));
     }
     const bool ok = m_state->lastError.empty();
@@ -464,13 +464,13 @@ bool ScriptInstanceUVE::RaiseEventUVE(const std::string_view event, const std::s
     return ok;
 }
 
-void ScriptInstanceUVE::AdvanceUVE(const double seconds) {
-    if (m_state->DebuggerBusyUVE()) return;
+void ScriptInstance::Advance(const double seconds) {
+    if (m_state->DebuggerBusy()) return;
     // Only those already waiting when this call starts count down now; a handler that waits again
     // while resuming joins the back of the line for the next call.
-    std::vector<CoroutineUVE> waiting = std::move(m_state->waiting);
+    std::vector<Coroutine> waiting = std::move(m_state->waiting);
     m_state->waiting.clear();
-    for (CoroutineUVE& co : waiting) {
+    for (Coroutine& co : waiting) {
         co.waitRemaining -= seconds;
         // Keep other ready handlers queued once one owns the debugger pause. Time still
         // advances once for every handler that was waiting on entry to this tick.
@@ -486,14 +486,14 @@ void ScriptInstanceUVE::AdvanceUVE(const double seconds) {
         if (m_state->debugPaused) {
             m_state->pausedCoroutine = std::move(co);
             m_state->pausedFromCall = false;
-        } else if (co.IsRunningUVE()) {
+        } else if (co.IsRunning()) {
             m_state->waiting.push_back(std::move(co));
         }
     }
 }
 
-bool ScriptInstanceUVE::HasFunctionUVE(const std::string_view name, const std::size_t argc) const noexcept {
-    for (const ChunkUVE& chunk : m_state->program->functions) {
+bool ScriptInstance::HasFunction(const std::string_view name, const std::size_t argc) const noexcept {
+    for (const Chunk& chunk : m_state->program->functions) {
         if (chunk.name == name && static_cast<std::size_t>(chunk.paramCount) == argc) {
             return true;
         }
@@ -501,26 +501,26 @@ bool ScriptInstanceUVE::HasFunctionUVE(const std::string_view name, const std::s
     return false;
 }
 
-std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
-    if (m_state->DebuggerBusyUVE()) return std::nullopt;
-    if (g_callDepthUVE >= kMaximumCallDepthUVE) {
+std::optional<Value> ScriptInstance::Call(const std::string_view name, const std::span<const Value> args) {
+    if (m_state->DebuggerBusy()) return std::nullopt;
+    if (g_callDepth >= kMaximumCallDepth) {
         // Fail closed like a missing method, without an error: the chain stops, and every call
         // already entered still completes. Writing lastError here would fail the outer calls too,
         // which all ran fine - only the call past the cap never started.
         return std::nullopt;
     }
-    const CallDepthGuardUVE depth;
+    const CallDepthGuard depth;
     const auto& functions = m_state->program->functions;
     for (std::size_t index = 0U; index < functions.size(); ++index) {
-        const ChunkUVE& chunk = functions[index];
+        const Chunk& chunk = functions[index];
         if (chunk.name == name && chunk.paramCount == args.size()) {
-            if (!ArgsFitUVE(chunk, args)) {
+            if (!ArgsFit(chunk, args)) {
                 m_state->lastError = "'" + std::string{name} + "' was called with a value of the wrong type";
                 return std::nullopt;
             }
             m_state->lastError.clear();
-            CoroutineUVE co = m_state->StartChunk(index, args);
-            std::optional<ValueUVE> result = m_state->Resume(co);
+            Coroutine co = m_state->StartChunk(index, args);
+            std::optional<Value> result = m_state->Resume(co);
             if (m_state->debugPaused) {
                 m_state->pausedCoroutine = std::move(co);
                 m_state->pausedFromCall = true;
@@ -531,7 +531,7 @@ std::optional<ValueUVE> ScriptInstanceUVE::CallUVE(const std::string_view name, 
     return std::nullopt;
 }
 
-std::optional<ValueUVE> ScriptInstanceUVE::GetFieldUVE(const std::string_view name) const {
+std::optional<Value> ScriptInstance::GetField(const std::string_view name) const {
     const auto& fields = m_state->program->fields;
     for (std::size_t i = 0U; i < fields.size(); ++i) {
         if (fields[i].name == name) {
@@ -541,13 +541,13 @@ std::optional<ValueUVE> ScriptInstanceUVE::GetFieldUVE(const std::string_view na
     return std::nullopt;
 }
 
-bool ScriptInstanceUVE::SetFieldUVE(const std::string_view name, const ValueUVE& value) {
+bool ScriptInstance::SetField(const std::string_view name, const Value& value) {
     const auto& fields = m_state->program->fields;
     for (std::size_t i = 0U; i < fields.size(); ++i) {
         if (fields[i].name != name) {
             continue;
         }
-        if (fields[i].kind == FieldKindUVE::Const || value.index() != m_state->fields[i].index()) {
+        if (fields[i].kind == FieldKind::Const || value.index() != m_state->fields[i].index()) {
             return false;
         }
         m_state->fields[i] = value;
@@ -556,36 +556,36 @@ bool ScriptInstanceUVE::SetFieldUVE(const std::string_view name, const ValueUVE&
     return false;
 }
 
-bool ScriptInstanceUVE::IsNativeUVE() const noexcept {
+bool ScriptInstance::IsNative() const noexcept {
     return m_state->native != nullptr;
 }
 
-std::size_t ScriptInstanceUVE::GetWaitingCountUVE() const noexcept {
+std::size_t ScriptInstance::GetWaitingCount() const noexcept {
     return m_state->waiting.size();
 }
 
-const std::string& ScriptInstanceUVE::GetLastErrorUVE() const noexcept {
+const std::string& ScriptInstance::GetLastError() const noexcept {
     return m_state->lastError;
 }
 
-bool ScriptInstanceUVE::EnableDebuggerUVE() {
-    if (IsNativeUVE() || m_state->executionDepth != 0U) return false;
+bool ScriptInstance::EnableDebugger() {
+    if (IsNative() || m_state->executionDepth != 0U) return false;
     m_state->debuggerEnabled = true;
     return true;
 }
 
-void ScriptInstanceUVE::DisableDebuggerUVE() noexcept {
+void ScriptInstance::DisableDebugger() noexcept {
     m_state->debuggerEnabled = false;
     m_state->breakpoints.clear();
     m_state->pausedCoroutine.reset();
     m_state->debugSnapshot.reset();
     m_state->debugPaused = false;
     m_state->debugSkipFirstInstruction = false;
-    m_state->debugAction = StateUVE::DebugActionUVE::Continue;
+    m_state->debugAction = State::DebugAction::Continue;
 }
 
-bool ScriptInstanceUVE::SetDebuggerBreakpointsUVE(const std::span<const std::uint32_t> lines) {
-    if (!EnableDebuggerUVE()) return false;
+bool ScriptInstance::SetDebuggerBreakpoints(const std::span<const std::uint32_t> lines) {
+    if (!EnableDebugger()) return false;
     m_state->breakpoints.clear();
     for (const std::uint32_t line : lines) {
         if (line != 0U) m_state->breakpoints.insert(line);
@@ -593,20 +593,20 @@ bool ScriptInstanceUVE::SetDebuggerBreakpointsUVE(const std::span<const std::uin
     return true;
 }
 
-void ScriptInstanceUVE::ClearDebuggerBreakpointsUVE() noexcept { m_state->breakpoints.clear(); }
-bool ScriptInstanceUVE::IsDebuggerEnabledUVE() const noexcept { return m_state->debuggerEnabled; }
-bool ScriptInstanceUVE::IsDebugPausedUVE() const noexcept { return m_state->debugPaused; }
-std::optional<ScriptDebugSnapshotUVE> ScriptInstanceUVE::GetDebugSnapshotUVE() const {
+void ScriptInstance::ClearDebuggerBreakpoints() noexcept { m_state->breakpoints.clear(); }
+bool ScriptInstance::IsDebuggerEnabled() const noexcept { return m_state->debuggerEnabled; }
+bool ScriptInstance::IsDebugPaused() const noexcept { return m_state->debugPaused; }
+std::optional<ScriptDebugSnapshot> ScriptInstance::GetDebugSnapshot() const {
     return m_state->debugPaused ? m_state->debugSnapshot : std::nullopt;
 }
-ScriptDebugResumeResultUVE ScriptInstanceUVE::ContinueDebugUVE() {
-    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::Continue);
+ScriptDebugResumeResult ScriptInstance::ContinueDebug() {
+    return m_state->ResumePaused(State::DebugAction::Continue);
 }
-ScriptDebugResumeResultUVE ScriptInstanceUVE::StepIntoDebugUVE() {
-    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::StepInto);
+ScriptDebugResumeResult ScriptInstance::StepIntoDebug() {
+    return m_state->ResumePaused(State::DebugAction::StepInto);
 }
-ScriptDebugResumeResultUVE ScriptInstanceUVE::StepOverDebugUVE() {
-    return m_state->ResumePausedUVE(StateUVE::DebugActionUVE::StepOver);
+ScriptDebugResumeResult ScriptInstance::StepOverDebug() {
+    return m_state->ResumePaused(State::DebugAction::StepOver);
 }
 
 } // namespace UVE::Blueprint

@@ -36,14 +36,14 @@ uniform float uStrength;
 uniform int uStepCount;
 uniform float uDepthBiasMeters;
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
-    float ndcZ = DecodeNdcDepthUVE(depthSample);
+vec3 ReconstructViewPosition(vec2 uv, float depthSample) {
+    float ndcZ = DecodeNdcDepth(depthSample);
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -54,7 +54,7 @@ vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
     return viewPos.xyz / max(abs(viewPos.w), 1.0e-6);
 }
 
-vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+vec3 ViewNormal(vec2 uv, vec3 centerViewPos) {
     vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
     vec2 halfTexel = texel * 0.5;
     vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
@@ -67,10 +67,10 @@ vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     float dD = texture(uDepthTexture, uvD).r;
     float dU = texture(uDepthTexture, uvU).r;
 
-    vec3 pL = dL < 0.999999 ? ReconstructViewPositionUVE(uvL, dL) : centerViewPos;
-    vec3 pR = dR < 0.999999 ? ReconstructViewPositionUVE(uvR, dR) : centerViewPos;
-    vec3 pD = dD < 0.999999 ? ReconstructViewPositionUVE(uvD, dD) : centerViewPos;
-    vec3 pU = dU < 0.999999 ? ReconstructViewPositionUVE(uvU, dU) : centerViewPos;
+    vec3 pL = dL < 0.999999 ? ReconstructViewPosition(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPosition(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPosition(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPosition(uvU, dU) : centerViewPos;
 
     vec3 dPdx = (dR < 0.999999 && dL < 0.999999)
                     ? (abs(pR.z - centerViewPos.z) < abs(centerViewPos.z - pL.z)
@@ -99,7 +99,7 @@ vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     return viewNormal;
 }
 
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
@@ -109,7 +109,7 @@ void main() {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         return;
     }
-    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
+    vec3 centerViewPos = ReconstructViewPosition(vTexCoord, centerDepth);
 
     vec3 lightDirection = uLightDirectionView;
     float lightLengthSq = dot(lightDirection, lightDirection);
@@ -119,14 +119,14 @@ void main() {
     }
     lightDirection *= inversesqrt(lightLengthSq);
 
-    if (dot(ViewNormalUVE(vTexCoord, centerViewPos), lightDirection) <= 0.0) {
+    if (dot(ViewNormal(vTexCoord, centerViewPos), lightDirection) <= 0.0) {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         return;
     }
 
     int stepCount = clamp(uStepCount, 1, 16);
     float inverseStepCount = 1.0 / float(stepCount);
-    float jitter = InterleavedGradientNoiseUVE(gl_FragCoord.xy);
+    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
     int testedSteps = 0;
     float occludedWeight = 0.0;
     for (int stepIndex = 0; stepIndex < stepCount; ++stepIndex) {
@@ -148,7 +148,7 @@ void main() {
         if (sampledDepth >= 0.999999) {
             continue;
         }
-        vec3 sampleSceneViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
+        vec3 sampleSceneViewPos = ReconstructViewPosition(sampleUv, sampledDepth);
         float delta = sampleSceneViewPos.z - samplePoint.z;
         ++testedSteps;
         if (delta > uDepthBiasMeters && delta < uThicknessMeters) {

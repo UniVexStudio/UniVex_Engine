@@ -7,6 +7,6 @@ namespace UVE::Asset::Detail {
 /// Initializes Basis exactly once across encoder and transcoder call sites. On desktop, the
 /// encoder's initializer also initializes the transcoder; mobile builds initialize only the
 /// smaller transcoder library.
-[[nodiscard]] bool EnsureBasisUniversalInitializedUVE() noexcept;
+[[nodiscard]] bool EnsureBasisUniversalInitialized() noexcept;
 
 } // namespace UVE::Asset::Detail

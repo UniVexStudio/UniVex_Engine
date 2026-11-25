@@ -8,29 +8,29 @@
 
 namespace UVE::Gameplay {
 
-struct HealthDamagedEventUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE hitbox = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE hurtbox = Scene::kInvalidEntityUVE;
+struct HealthDamagedEvent final {
+    Scene::Entity entity = Scene::kInvalidEntity;
+    Scene::Entity hitbox = Scene::kInvalidEntity;
+    Scene::Entity hurtbox = Scene::kInvalidEntity;
     float amount = 0.0F;
     float remaining = 0.0F;
 
-    [[nodiscard]] bool operator==(const HealthDamagedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const HealthDamagedEvent&) const noexcept = default;
 };
 
-struct HealthDepletedEventUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct HealthDepletedEvent final {
+    Scene::Entity entity = Scene::kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const HealthDepletedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const HealthDepletedEvent&) const noexcept = default;
 };
 
-struct HealthHealedEventUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct HealthHealedEvent final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::string effectId;
     float amount = 0.0F;
     float remaining = 0.0F;
 
-    [[nodiscard]] bool operator==(const HealthHealedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const HealthHealedEvent&) const noexcept = default;
 };
 
 } // namespace UVE::Gameplay

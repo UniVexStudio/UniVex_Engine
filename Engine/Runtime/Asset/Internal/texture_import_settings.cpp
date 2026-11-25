@@ -8,7 +8,7 @@
 
 namespace UVE::Asset {
 
-std::string TextureImportSettingsUVE::GetCacheVersionUVE() const {
+std::string TextureImportSettings::GetCacheVersion() const {
     return "texture-import-v3;color-space=" +
            std::to_string(static_cast<std::uint32_t>(colorSpace)) + ";usage=" +
            std::to_string(static_cast<std::uint32_t>(usage)) + ";generate-mipmaps=" +
@@ -20,9 +20,9 @@ std::string TextureImportSettingsUVE::GetCacheVersionUVE() const {
            std::to_string(static_cast<std::uint32_t>(compressionEffort));
 }
 
-TextureImportSettingsUVE ResolveTextureImportSettingsUVE(const AssetImportSettingsUVE& settings) noexcept {
-    const auto* const textureSettings = dynamic_cast<const TextureImportSettingsUVE*>(&settings);
-    return textureSettings == nullptr ? TextureImportSettingsUVE{} : *textureSettings;
+TextureImportSettings ResolveTextureImportSettings(const AssetImportSettings& settings) noexcept {
+    const auto* const textureSettings = dynamic_cast<const TextureImportSettings*>(&settings);
+    return textureSettings == nullptr ? TextureImportSettings{} : *textureSettings;
 }
 
 } // namespace UVE::Asset

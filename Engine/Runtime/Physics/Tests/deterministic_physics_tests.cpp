@@ -13,27 +13,27 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-[[nodiscard]] Scene::EntityUVE MakeEntityUVE(const std::uint32_t index,
+[[nodiscard]] Scene::Entity MakeEntity(const std::uint32_t index,
                                              const std::uint32_t generation = 0U) {
-    Scene::EntityUVE entity{};
+    Scene::Entity entity{};
     entity.index = index;
     entity.generation = generation;
     return entity;
 }
 
-[[nodiscard]] DeterministicBodySampleUVE MakeSampleUVE(const Scene::EntityUVE entity,
-                                                       const Math::Vector3UVE& position) {
-    DeterministicBodySampleUVE sample{};
+[[nodiscard]] DeterministicBodySample MakeSample(const Scene::Entity entity,
+                                                       const Math::Vector3& position) {
+    DeterministicBodySample sample{};
     sample.entity = entity;
     sample.position = position;
-    sample.rotation = Math::QuaternionUVE{};
-    sample.velocity = Math::Vector3UVE{};
-    sample.angularVelocity = Math::Vector3UVE{};
+    sample.rotation = Math::Quaternion{};
+    sample.velocity = Math::Vector3{};
+    sample.angularVelocity = Math::Vector3{};
     return sample;
 }
 
-[[nodiscard]] DeterministicStepSettingsUVE MakeEnabledSettingsUVE() {
-    DeterministicStepSettingsUVE settings;
+[[nodiscard]] DeterministicStepSettings MakeEnabledSettings() {
+    DeterministicStepSettings settings;
     settings.enabled = true;
     return settings;
 }
@@ -42,44 +42,44 @@ namespace {
 // Lattice
 // ---------------------------------------------------------------------------------------------
 
-TEST(DeterministicPhysicsUVETest, Lattice_RoundsToTheNearestGridPoint) {
+TEST(DeterministicPhysicsTest, Lattice_RoundsToTheNearestGridPoint) {
     constexpr float quantum = 0.25F;
-    EXPECT_EQ(QuantizeToLatticeUVE(1.0F, quantum), 4);
-    EXPECT_EQ(QuantizeToLatticeUVE(1.1F, quantum), 4);
-    EXPECT_EQ(QuantizeToLatticeUVE(1.2F, quantum), 5);
-    EXPECT_EQ(QuantizeToLatticeUVE(-1.2F, quantum), -5);
-    EXPECT_EQ(QuantizeToLatticeUVE(0.0F, quantum), 0);
+    EXPECT_EQ(QuantizeToLattice(1.0F, quantum), 4);
+    EXPECT_EQ(QuantizeToLattice(1.1F, quantum), 4);
+    EXPECT_EQ(QuantizeToLattice(1.2F, quantum), 5);
+    EXPECT_EQ(QuantizeToLattice(-1.2F, quantum), -5);
+    EXPECT_EQ(QuantizeToLattice(0.0F, quantum), 0);
 }
 
-TEST(DeterministicPhysicsUVETest, Lattice_RoundTripsExactly) {
+TEST(DeterministicPhysicsTest, Lattice_RoundTripsExactly) {
     constexpr float quantum = 1.0F / 1024.0F;
     for (const float value : {0.0F, 1.0F, -1.0F, 12.5F, -0.001F, 1000.0F}) {
-        const std::int64_t lattice = QuantizeToLatticeUVE(value, quantum);
-        const float restored = LatticeToScalarUVE(lattice, quantum);
+        const std::int64_t lattice = QuantizeToLattice(value, quantum);
+        const float restored = LatticeToScalar(lattice, quantum);
         // Re-quantizing the restored value must land on the same lattice point: a round trip that
         // does not is drift, and drift is what makes two peers disagree a minute later.
-        EXPECT_EQ(QuantizeToLatticeUVE(restored, quantum), lattice) << "value " << value;
+        EXPECT_EQ(QuantizeToLattice(restored, quantum), lattice) << "value " << value;
         EXPECT_NEAR(restored, value, quantum * 0.5F + 1.0e-6F);
     }
 }
 
-TEST(DeterministicPhysicsUVETest, Lattice_RejectsNonFiniteValuesAndQuanta) {
+TEST(DeterministicPhysicsTest, Lattice_RejectsNonFiniteValuesAndQuanta) {
     constexpr float quantum = 1.0F / 1024.0F;
-    EXPECT_EQ(QuantizeToLatticeUVE(std::numeric_limits<float>::quiet_NaN(), quantum), 0);
-    EXPECT_EQ(QuantizeToLatticeUVE(std::numeric_limits<float>::infinity(), quantum), 0);
-    EXPECT_EQ(QuantizeToLatticeUVE(-std::numeric_limits<float>::infinity(), quantum), 0);
+    EXPECT_EQ(QuantizeToLattice(std::numeric_limits<float>::quiet_NaN(), quantum), 0);
+    EXPECT_EQ(QuantizeToLattice(std::numeric_limits<float>::infinity(), quantum), 0);
+    EXPECT_EQ(QuantizeToLattice(-std::numeric_limits<float>::infinity(), quantum), 0);
     // A zero or negative quantum has no lattice; reporting zero is honest, wrapping is not.
-    EXPECT_EQ(QuantizeToLatticeUVE(1.0F, 0.0F), 0);
-    EXPECT_EQ(QuantizeToLatticeUVE(1.0F, -1.0F), 0);
-    EXPECT_FLOAT_EQ(LatticeToScalarUVE(10, 0.0F), 0.0F);
+    EXPECT_EQ(QuantizeToLattice(1.0F, 0.0F), 0);
+    EXPECT_EQ(QuantizeToLattice(1.0F, -1.0F), 0);
+    EXPECT_FLOAT_EQ(LatticeToScalar(10, 0.0F), 0.0F);
 }
 
-TEST(DeterministicPhysicsUVETest, Lattice_AbsorbsSubQuantumDifferences) {
+TEST(DeterministicPhysicsTest, Lattice_AbsorbsSubQuantumDifferences) {
     // The property the digest relies on: two values closer than half a quantum map to one point.
     constexpr float quantum = 1.0F / 1024.0F;
     const float base = 3.0F;
     for (const float delta : {1.0e-7F, -1.0e-7F, quantum * 0.1F, -quantum * 0.1F}) {
-        EXPECT_EQ(QuantizeToLatticeUVE(base + delta, quantum), QuantizeToLatticeUVE(base, quantum))
+        EXPECT_EQ(QuantizeToLattice(base + delta, quantum), QuantizeToLattice(base, quantum))
             << "delta " << delta;
     }
 }
@@ -88,91 +88,91 @@ TEST(DeterministicPhysicsUVETest, Lattice_AbsorbsSubQuantumDifferences) {
 // Body ordering
 // ---------------------------------------------------------------------------------------------
 
-TEST(DeterministicPhysicsUVETest, BodyKey_OrdersByIndexThenGeneration) {
-    EXPECT_TRUE(MakeBodyKeyUVE(MakeEntityUVE(1U, 0U)) < MakeBodyKeyUVE(MakeEntityUVE(2U, 0U)));
-    EXPECT_TRUE(MakeBodyKeyUVE(MakeEntityUVE(1U, 0U)) < MakeBodyKeyUVE(MakeEntityUVE(1U, 1U)));
-    EXPECT_FALSE(MakeBodyKeyUVE(MakeEntityUVE(1U, 1U)) < MakeBodyKeyUVE(MakeEntityUVE(1U, 1U)));
+TEST(DeterministicPhysicsTest, BodyKey_OrdersByIndexThenGeneration) {
+    EXPECT_TRUE(MakeBodyKey(MakeEntity(1U, 0U)) < MakeBodyKey(MakeEntity(2U, 0U)));
+    EXPECT_TRUE(MakeBodyKey(MakeEntity(1U, 0U)) < MakeBodyKey(MakeEntity(1U, 1U)));
+    EXPECT_FALSE(MakeBodyKey(MakeEntity(1U, 1U)) < MakeBodyKey(MakeEntity(1U, 1U)));
     // A recycled index must not sort as "the same body" as the one that used to live there.
-    EXPECT_TRUE(MakeBodyKeyUVE(MakeEntityUVE(1U, 0U)) != MakeBodyKeyUVE(MakeEntityUVE(1U, 5U)));
+    EXPECT_TRUE(MakeBodyKey(MakeEntity(1U, 0U)) != MakeBodyKey(MakeEntity(1U, 5U)));
 }
 
 // ---------------------------------------------------------------------------------------------
 // World digest
 // ---------------------------------------------------------------------------------------------
 
-TEST(DeterministicPhysicsUVETest, Digest_IsIndependentOfSampleOrder) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    const std::vector<DeterministicBodySampleUVE> forward{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-        MakeSampleUVE(MakeEntityUVE(2U), Math::Vector3UVE{0.0F, 2.0F, 0.0F}),
-        MakeSampleUVE(MakeEntityUVE(3U), Math::Vector3UVE{0.0F, 0.0F, 3.0F})};
-    const std::vector<DeterministicBodySampleUVE> reversed{forward[2], forward[1], forward[0]};
+TEST(DeterministicPhysicsTest, Digest_IsIndependentOfSampleOrder) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    const std::vector<DeterministicBodySample> forward{
+        MakeSample(MakeEntity(1U), Math::Vector3{1.0F, 0.0F, 0.0F}),
+        MakeSample(MakeEntity(2U), Math::Vector3{0.0F, 2.0F, 0.0F}),
+        MakeSample(MakeEntity(3U), Math::Vector3{0.0F, 0.0F, 3.0F})};
+    const std::vector<DeterministicBodySample> reversed{forward[2], forward[1], forward[0]};
 
     // This is the property that lets two peers digest the same world while discovering their
     // bodies in whatever order their storage happens to yield.
-    EXPECT_EQ(ComputeWorldDigestUVE(forward, settings), ComputeWorldDigestUVE(reversed, settings));
+    EXPECT_EQ(ComputeWorldDigest(forward, settings), ComputeWorldDigest(reversed, settings));
 }
 
-TEST(DeterministicPhysicsUVETest, Digest_ChangesWhenAnyBodyActuallyMoves) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    const std::vector<DeterministicBodySampleUVE> before{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{1.0F, 0.0F, 0.0F})};
-    std::vector<DeterministicBodySampleUVE> after = before;
+TEST(DeterministicPhysicsTest, Digest_ChangesWhenAnyBodyActuallyMoves) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    const std::vector<DeterministicBodySample> before{
+        MakeSample(MakeEntity(1U), Math::Vector3{1.0F, 0.0F, 0.0F})};
+    std::vector<DeterministicBodySample> after = before;
     after[0].position.x += 0.5F;
 
-    EXPECT_NE(ComputeWorldDigestUVE(before, settings), ComputeWorldDigestUVE(after, settings));
+    EXPECT_NE(ComputeWorldDigest(before, settings), ComputeWorldDigest(after, settings));
 }
 
-TEST(DeterministicPhysicsUVETest, Digest_IgnoresMotionBelowTheQuantum) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    const std::vector<DeterministicBodySampleUVE> before{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{1.0F, 0.0F, 0.0F})};
-    std::vector<DeterministicBodySampleUVE> jittered = before;
+TEST(DeterministicPhysicsTest, Digest_IgnoresMotionBelowTheQuantum) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    const std::vector<DeterministicBodySample> before{
+        MakeSample(MakeEntity(1U), Math::Vector3{1.0F, 0.0F, 0.0F})};
+    std::vector<DeterministicBodySample> jittered = before;
     jittered[0].position.x += settings.positionQuantum * 0.2F;
 
-    EXPECT_EQ(ComputeWorldDigestUVE(before, settings), ComputeWorldDigestUVE(jittered, settings));
+    EXPECT_EQ(ComputeWorldDigest(before, settings), ComputeWorldDigest(jittered, settings));
 }
 
-TEST(DeterministicPhysicsUVETest, Digest_DistinguishesBodyCountAndIdentity) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    const std::vector<DeterministicBodySampleUVE> one{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{})};
-    const std::vector<DeterministicBodySampleUVE> two{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{}),
-        MakeSampleUVE(MakeEntityUVE(2U), Math::Vector3UVE{})};
-    const std::vector<DeterministicBodySampleUVE> recycled{
-        MakeSampleUVE(MakeEntityUVE(1U, 7U), Math::Vector3UVE{})};
+TEST(DeterministicPhysicsTest, Digest_DistinguishesBodyCountAndIdentity) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    const std::vector<DeterministicBodySample> one{
+        MakeSample(MakeEntity(1U), Math::Vector3{})};
+    const std::vector<DeterministicBodySample> two{
+        MakeSample(MakeEntity(1U), Math::Vector3{}),
+        MakeSample(MakeEntity(2U), Math::Vector3{})};
+    const std::vector<DeterministicBodySample> recycled{
+        MakeSample(MakeEntity(1U, 7U), Math::Vector3{})};
 
-    EXPECT_NE(ComputeWorldDigestUVE(one, settings), ComputeWorldDigestUVE(two, settings));
+    EXPECT_NE(ComputeWorldDigest(one, settings), ComputeWorldDigest(two, settings));
     // Same index, different generation: a different body, so a different digest.
-    EXPECT_NE(ComputeWorldDigestUVE(one, settings), ComputeWorldDigestUVE(recycled, settings));
+    EXPECT_NE(ComputeWorldDigest(one, settings), ComputeWorldDigest(recycled, settings));
 }
 
-TEST(DeterministicPhysicsUVETest, Digest_DistinguishesVelocityEvenAtIdenticalPositions) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    std::vector<DeterministicBodySampleUVE> moving{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{})};
-    moving[0].velocity = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-    const std::vector<DeterministicBodySampleUVE> still{
-        MakeSampleUVE(MakeEntityUVE(1U), Math::Vector3UVE{})};
+TEST(DeterministicPhysicsTest, Digest_DistinguishesVelocityEvenAtIdenticalPositions) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    std::vector<DeterministicBodySample> moving{
+        MakeSample(MakeEntity(1U), Math::Vector3{})};
+    moving[0].velocity = Math::Vector3{5.0F, 0.0F, 0.0F};
+    const std::vector<DeterministicBodySample> still{
+        MakeSample(MakeEntity(1U), Math::Vector3{})};
 
-    EXPECT_NE(ComputeWorldDigestUVE(moving, settings), ComputeWorldDigestUVE(still, settings));
+    EXPECT_NE(ComputeWorldDigest(moving, settings), ComputeWorldDigest(still, settings));
 }
 
-TEST(DeterministicPhysicsUVETest, Digest_OfAnEmptyWorldIsStable) {
-    const DeterministicStepSettingsUVE settings = MakeEnabledSettingsUVE();
-    const std::vector<DeterministicBodySampleUVE> empty;
-    EXPECT_EQ(ComputeWorldDigestUVE(empty, settings), ComputeWorldDigestUVE(empty, settings));
-    EXPECT_NE(ComputeWorldDigestUVE(empty, settings), kFnvOffsetBasis64UVE);
+TEST(DeterministicPhysicsTest, Digest_OfAnEmptyWorldIsStable) {
+    const DeterministicStepSettings settings = MakeEnabledSettings();
+    const std::vector<DeterministicBodySample> empty;
+    EXPECT_EQ(ComputeWorldDigest(empty, settings), ComputeWorldDigest(empty, settings));
+    EXPECT_NE(ComputeWorldDigest(empty, settings), kFnvOffsetBasis64);
 }
 
 // ---------------------------------------------------------------------------------------------
 // Collision pair canonicalization
 // ---------------------------------------------------------------------------------------------
 
-[[nodiscard]] CollisionPairUVE MakePairUVE(const Scene::EntityUVE first, const Scene::EntityUVE second,
-                                           const Math::Vector3UVE& axis, const float depth = 0.1F) {
-    CollisionPairUVE pair{};
+[[nodiscard]] CollisionPair MakePair(const Scene::Entity first, const Scene::Entity second,
+                                           const Math::Vector3& axis, const float depth = 0.1F) {
+    CollisionPair pair{};
     pair.first = first;
     pair.second = second;
     pair.separationAxis = axis;
@@ -180,50 +180,50 @@ TEST(DeterministicPhysicsUVETest, Digest_OfAnEmptyWorldIsStable) {
     return pair;
 }
 
-TEST(DeterministicPhysicsUVETest, Canonicalize_SortsPairsByStableKey) {
-    std::vector<CollisionPairUVE> pairs{
-        MakePairUVE(MakeEntityUVE(5U), MakeEntityUVE(9U), Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-        MakePairUVE(MakeEntityUVE(1U), MakeEntityUVE(2U), Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-        MakePairUVE(MakeEntityUVE(1U), MakeEntityUVE(7U), Math::Vector3UVE{1.0F, 0.0F, 0.0F})};
+TEST(DeterministicPhysicsTest, Canonicalize_SortsPairsByStableKey) {
+    std::vector<CollisionPair> pairs{
+        MakePair(MakeEntity(5U), MakeEntity(9U), Math::Vector3{1.0F, 0.0F, 0.0F}),
+        MakePair(MakeEntity(1U), MakeEntity(2U), Math::Vector3{1.0F, 0.0F, 0.0F}),
+        MakePair(MakeEntity(1U), MakeEntity(7U), Math::Vector3{1.0F, 0.0F, 0.0F})};
 
-    CanonicalizeCollisionPairsUVE(pairs);
+    CanonicalizeCollisionPairs(pairs);
 
     ASSERT_EQ(pairs.size(), 3U);
-    EXPECT_EQ(pairs[0].first, MakeEntityUVE(1U));
-    EXPECT_EQ(pairs[0].second, MakeEntityUVE(2U));
-    EXPECT_EQ(pairs[1].first, MakeEntityUVE(1U));
-    EXPECT_EQ(pairs[1].second, MakeEntityUVE(7U));
-    EXPECT_EQ(pairs[2].first, MakeEntityUVE(5U));
-    EXPECT_EQ(pairs[2].second, MakeEntityUVE(9U));
+    EXPECT_EQ(pairs[0].first, MakeEntity(1U));
+    EXPECT_EQ(pairs[0].second, MakeEntity(2U));
+    EXPECT_EQ(pairs[1].first, MakeEntity(1U));
+    EXPECT_EQ(pairs[1].second, MakeEntity(7U));
+    EXPECT_EQ(pairs[2].first, MakeEntity(5U));
+    EXPECT_EQ(pairs[2].second, MakeEntity(9U));
 }
 
-TEST(DeterministicPhysicsUVETest, Canonicalize_OrientsEveryPairLowestKeyFirst) {
+TEST(DeterministicPhysicsTest, Canonicalize_OrientsEveryPairLowestKeyFirst) {
     // Handed in backwards on purpose: `separationAxis` points first -> second, so a swap that does
     // not negate the axis would resolve the pair in the wrong direction and push the bodies deeper.
-    std::vector<CollisionPairUVE> pairs{
-        MakePairUVE(MakeEntityUVE(9U), MakeEntityUVE(2U), Math::Vector3UVE{0.0F, 1.0F, 0.0F})};
+    std::vector<CollisionPair> pairs{
+        MakePair(MakeEntity(9U), MakeEntity(2U), Math::Vector3{0.0F, 1.0F, 0.0F})};
 
-    CanonicalizeCollisionPairsUVE(pairs);
+    CanonicalizeCollisionPairs(pairs);
 
     ASSERT_EQ(pairs.size(), 1U);
-    EXPECT_EQ(pairs[0].first, MakeEntityUVE(2U));
-    EXPECT_EQ(pairs[0].second, MakeEntityUVE(9U));
+    EXPECT_EQ(pairs[0].first, MakeEntity(2U));
+    EXPECT_EQ(pairs[0].second, MakeEntity(9U));
     EXPECT_FLOAT_EQ(pairs[0].separationAxis.x, 0.0F);
     EXPECT_FLOAT_EQ(pairs[0].separationAxis.y, -1.0F);
     // The depth is a scalar magnitude and must survive the swap untouched.
     EXPECT_FLOAT_EQ(pairs[0].penetrationDepth, 0.1F);
 }
 
-TEST(DeterministicPhysicsUVETest, Canonicalize_IsIdempotentAndOrderIndependent) {
-    const std::vector<CollisionPairUVE> original{
-        MakePairUVE(MakeEntityUVE(9U), MakeEntityUVE(2U), Math::Vector3UVE{0.0F, 1.0F, 0.0F}),
-        MakePairUVE(MakeEntityUVE(3U), MakeEntityUVE(4U), Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-        MakePairUVE(MakeEntityUVE(1U), MakeEntityUVE(8U), Math::Vector3UVE{1.0F, 0.0F, 0.0F})};
-    std::vector<CollisionPairUVE> a = original;
-    std::vector<CollisionPairUVE> b{original[2], original[0], original[1]};
+TEST(DeterministicPhysicsTest, Canonicalize_IsIdempotentAndOrderIndependent) {
+    const std::vector<CollisionPair> original{
+        MakePair(MakeEntity(9U), MakeEntity(2U), Math::Vector3{0.0F, 1.0F, 0.0F}),
+        MakePair(MakeEntity(3U), MakeEntity(4U), Math::Vector3{1.0F, 0.0F, 0.0F}),
+        MakePair(MakeEntity(1U), MakeEntity(8U), Math::Vector3{1.0F, 0.0F, 0.0F})};
+    std::vector<CollisionPair> a = original;
+    std::vector<CollisionPair> b{original[2], original[0], original[1]};
 
-    CanonicalizeCollisionPairsUVE(a);
-    CanonicalizeCollisionPairsUVE(b);
+    CanonicalizeCollisionPairs(a);
+    CanonicalizeCollisionPairs(b);
     ASSERT_EQ(a.size(), b.size());
     for (std::size_t index = 0; index < a.size(); ++index) {
         EXPECT_EQ(a[index].first, b[index].first) << "index " << index;
@@ -232,16 +232,16 @@ TEST(DeterministicPhysicsUVETest, Canonicalize_IsIdempotentAndOrderIndependent) 
     }
 
     // Running it again on an already-canonical list must not flip anything back.
-    const std::vector<CollisionPairUVE> before = a;
-    CanonicalizeCollisionPairsUVE(a);
+    const std::vector<CollisionPair> before = a;
+    CanonicalizeCollisionPairs(a);
     for (std::size_t index = 0; index < a.size(); ++index) {
         EXPECT_EQ(a[index].separationAxis, before[index].separationAxis) << "index " << index;
     }
 }
 
-TEST(DeterministicPhysicsUVETest, Canonicalize_LeavesAnEmptyListAlone) {
-    std::vector<CollisionPairUVE> pairs;
-    CanonicalizeCollisionPairsUVE(pairs);
+TEST(DeterministicPhysicsTest, Canonicalize_LeavesAnEmptyListAlone) {
+    std::vector<CollisionPair> pairs;
+    CanonicalizeCollisionPairs(pairs);
     EXPECT_TRUE(pairs.empty());
 }
 

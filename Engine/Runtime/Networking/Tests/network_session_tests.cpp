@@ -13,542 +13,542 @@
 namespace UVE::Network::Tests {
 namespace {
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-[[nodiscard]] std::vector<std::uint8_t> TaggedUVE(const std::uint8_t tag, const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Tagged(const std::uint8_t tag, const std::string& text) {
     std::vector<std::uint8_t> datagram{tag};
-    for (const std::uint8_t byte : BytesUVE(text)) {
+    for (const std::uint8_t byte : Bytes(text)) {
         datagram.push_back(byte);
     }
     return datagram;
 }
 
-struct SessionHarnessUVE final {
-    LoopbackTransportPairUVE link;
-    NetworkSessionUVE client;
-    NetworkSessionUVE server;
+struct SessionHarness final {
+    LoopbackTransportPair link;
+    NetworkSession client;
+    NetworkSession server;
 
-    void UpdateBothUVE(const std::uint64_t nowMs) {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    void UpdateBoth(const std::uint64_t nowMs) {
+        client.Update(nowMs);
+        server.Update(nowMs);
     }
 
     // A handshake needs two pump rounds: the first carries Hello to the server and queues the
     // Welcome, the second delivers it to the client.
-    [[nodiscard]] bool EstablishUVE(const std::uint64_t nowMs) {
-        if (!client.ConnectUVE(nowMs)) {
+    [[nodiscard]] bool Establish(const std::uint64_t nowMs) {
+        if (!client.Connect(nowMs)) {
             return false;
         }
-        UpdateBothUVE(nowMs);
-        UpdateBothUVE(nowMs);
-        return client.StateUVE() == SessionStateUVE::Established &&
-               server.StateUVE() == SessionStateUVE::Established;
+        UpdateBoth(nowMs);
+        UpdateBoth(nowMs);
+        return client.State() == SessionState::Established &&
+               server.State() == SessionState::Established;
     }
 };
 
-[[nodiscard]] SessionHarnessUVE MakeSessionsUVE(
-    const std::uint64_t timeoutMs = kDefaultSessionTimeoutMsUVE) {
-    LoopbackTransportPairUVE pair = CreateLoopbackTransportPairUVE(64U);
-    NetworkSessionUVE client(SessionRoleUVE::Client,
-                             std::make_unique<LoopbackEndpointUVE>(pair.a), timeoutMs);
-    NetworkSessionUVE server(SessionRoleUVE::Server,
-                             std::make_unique<LoopbackEndpointUVE>(pair.b), timeoutMs);
-    return SessionHarnessUVE{std::move(pair), std::move(client), std::move(server)};
+[[nodiscard]] SessionHarness MakeSessions(
+    const std::uint64_t timeoutMs = kDefaultSessionTimeoutMs) {
+    LoopbackTransportPair pair = CreateLoopbackTransportPair(64U);
+    NetworkSession client(SessionRole::Client,
+                             std::make_unique<LoopbackEndpoint>(pair.a), timeoutMs);
+    NetworkSession server(SessionRole::Server,
+                             std::make_unique<LoopbackEndpoint>(pair.b), timeoutMs);
+    return SessionHarness{std::move(pair), std::move(client), std::move(server)};
 }
 
-TEST(NetworkSessionUVETest, Handshake_ClientAndServerReachEstablished) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
+TEST(NetworkSessionTest, Handshake_ClientAndServerReachEstablished) {
+    SessionHarness harness = MakeSessions();
 
-    ASSERT_TRUE(harness.client.ConnectUVE(1000U));
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Connecting);
-    harness.UpdateBothUVE(1000U);
-    harness.UpdateBothUVE(1000U);
+    ASSERT_TRUE(harness.client.Connect(1000U));
+    EXPECT_EQ(harness.client.State(), SessionState::Connecting);
+    harness.UpdateBoth(1000U);
+    harness.UpdateBoth(1000U);
 
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::None);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::None);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::None);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::None);
 }
 
-TEST(NetworkSessionUVETest, RoleRules_RejectInvalidTransitions) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
+TEST(NetworkSessionTest, RoleRules_RejectInvalidTransitions) {
+    SessionHarness harness = MakeSessions();
 
-    EXPECT_FALSE(harness.server.ConnectUVE(1000U));
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_FALSE(harness.client.DisconnectUVE());
-    EXPECT_FALSE(harness.client.SendDataUVE(BytesUVE("early")));
+    EXPECT_FALSE(harness.server.Connect(1000U));
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_FALSE(harness.client.Disconnect());
+    EXPECT_FALSE(harness.client.SendData(Bytes("early")));
 
-    ASSERT_TRUE(harness.client.ConnectUVE(1000U));
-    EXPECT_FALSE(harness.client.ConnectUVE(1000U));
-    EXPECT_FALSE(harness.client.SendDataUVE(BytesUVE("connecting")));
+    ASSERT_TRUE(harness.client.Connect(1000U));
+    EXPECT_FALSE(harness.client.Connect(1000U));
+    EXPECT_FALSE(harness.client.SendData(Bytes("connecting")));
 }
 
-TEST(NetworkSessionUVETest, DataFlowsBothWaysAfterHandshake) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
+TEST(NetworkSessionTest, DataFlowsBothWaysAfterHandshake) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_EQ(harness.client.State(), SessionState::Established);
 
-    ASSERT_TRUE(harness.client.SendDataUVE(BytesUVE("c-to-s")));
-    ASSERT_TRUE(harness.server.SendDataUVE(BytesUVE("s-to-c")));
-    harness.UpdateBothUVE(1000U);
+    ASSERT_TRUE(harness.client.SendData(Bytes("c-to-s")));
+    ASSERT_TRUE(harness.server.SendData(Bytes("s-to-c")));
+    harness.UpdateBoth(1000U);
 
-    EXPECT_EQ(harness.server.TryReceiveDataUVE(),
-              std::optional<std::vector<std::uint8_t>>(BytesUVE("c-to-s")));
-    EXPECT_EQ(harness.client.TryReceiveDataUVE(),
-              std::optional<std::vector<std::uint8_t>>(BytesUVE("s-to-c")));
-    EXPECT_FALSE(harness.client.TryReceiveDataUVE().has_value());
+    EXPECT_EQ(harness.server.TryReceiveData(),
+              std::optional<std::vector<std::uint8_t>>(Bytes("c-to-s")));
+    EXPECT_EQ(harness.client.TryReceiveData(),
+              std::optional<std::vector<std::uint8_t>>(Bytes("s-to-c")));
+    EXPECT_FALSE(harness.client.TryReceiveData().has_value());
 }
 
-TEST(NetworkSessionUVETest, Disconnect_ByeClosesBothSidesAndClearsQueuedData) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendDataUVE(BytesUVE("unread")));
+TEST(NetworkSessionTest, Disconnect_ByeClosesBothSidesAndClearsQueuedData) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendData(Bytes("unread")));
 
-    EXPECT_TRUE(harness.client.DisconnectUVE());
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::LocalDisconnect);
+    EXPECT_TRUE(harness.client.Disconnect());
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::LocalDisconnect);
 
-    harness.server.UpdateUVE(1000U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::RemoteDisconnect);
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
+    harness.server.Update(1000U);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::RemoteDisconnect);
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
 }
 
-TEST(NetworkSessionUVETest, Timeout_ConnectingWithoutWelcome) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.ConnectUVE(1000U));
+TEST(NetworkSessionTest, Timeout_ConnectingWithoutWelcome) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.Connect(1000U));
 
-    harness.client.UpdateUVE(5999U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Connecting);
+    harness.client.Update(5999U);
+    EXPECT_EQ(harness.client.State(), SessionState::Connecting);
 
-    harness.client.UpdateUVE(6000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::Timeout);
+    harness.client.Update(6000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::Timeout);
 }
 
-TEST(NetworkSessionUVETest, Timeout_EstablishedGoesQuiet) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkSessionTest, Timeout_EstablishedGoesQuiet) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
 
-    harness.UpdateBothUVE(5999U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
+    harness.UpdateBoth(5999U);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
 
-    harness.UpdateBothUVE(6000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::Timeout);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::Timeout);
+    harness.UpdateBoth(6000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::Timeout);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::Timeout);
 }
 
-TEST(NetworkSessionUVETest, TrafficResetsTheTimeoutPerDirection) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkSessionTest, TrafficResetsTheTimeoutPerDirection) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
 
     // Only inbound datagrams refresh a session's clock: each side must hear the other.
-    ASSERT_TRUE(harness.client.SendDataUVE(BytesUVE("c1")));
-    ASSERT_TRUE(harness.server.SendDataUVE(BytesUVE("s1")));
-    harness.UpdateBothUVE(5000U);
-    harness.UpdateBothUVE(9999U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
+    ASSERT_TRUE(harness.client.SendData(Bytes("c1")));
+    ASSERT_TRUE(harness.server.SendData(Bytes("s1")));
+    harness.UpdateBoth(5000U);
+    harness.UpdateBoth(9999U);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
 
-    harness.UpdateBothUVE(10000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
+    harness.UpdateBoth(10000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
 }
 
-TEST(NetworkSessionUVETest, VersionMismatch_ServerAnswersByeAndStaysDisconnected) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
+TEST(NetworkSessionTest, VersionMismatch_ServerAnswersByeAndStaysDisconnected) {
+    SessionHarness harness = MakeSessions();
     const std::vector<std::uint8_t> badHello{
-        static_cast<std::uint8_t>(SessionMessageTagUVE::Hello), 0x09U, 0x00U};
-    ASSERT_TRUE(harness.link.a.SendUVE(badHello));
+        static_cast<std::uint8_t>(SessionMessageTag::Hello), 0x09U, 0x00U};
+    ASSERT_TRUE(harness.link.a.Send(badHello));
 
-    harness.server.UpdateUVE(1000U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::None);
+    harness.server.Update(1000U);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::None);
 
     const std::vector<std::uint8_t> expectedBye{
-        static_cast<std::uint8_t>(SessionMessageTagUVE::Bye)};
-    EXPECT_EQ(harness.link.a.TryReceiveUVE(),
+        static_cast<std::uint8_t>(SessionMessageTag::Bye)};
+    EXPECT_EQ(harness.link.a.TryReceive(),
               std::optional<std::vector<std::uint8_t>>(expectedBye));
 }
 
-TEST(NetworkSessionUVETest, GarbageAndEarlyData_AreIgnored) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.link.a.SendUVE(BytesUVE("no-tag-here")));
-    ASSERT_TRUE(harness.link.a.SendUVE(std::vector<std::uint8_t>{}));
-    ASSERT_TRUE(harness.link.a.SendUVE(
-        TaggedUVE(static_cast<std::uint8_t>(SessionMessageTagUVE::Data), "early-data")));
+TEST(NetworkSessionTest, GarbageAndEarlyData_AreIgnored) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.link.a.Send(Bytes("no-tag-here")));
+    ASSERT_TRUE(harness.link.a.Send(std::vector<std::uint8_t>{}));
+    ASSERT_TRUE(harness.link.a.Send(
+        Tagged(static_cast<std::uint8_t>(SessionMessageTag::Data), "early-data")));
 
-    harness.server.UpdateUVE(1000U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
+    harness.server.Update(1000U);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
 
-    ASSERT_TRUE(harness.EstablishUVE(2000U));
-    ASSERT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
-    ASSERT_TRUE(harness.link.a.SendUVE(TaggedUVE(0xFFU, "unknown-tag")));
-    harness.server.UpdateUVE(2000U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
+    ASSERT_TRUE(harness.Establish(2000U));
+    ASSERT_EQ(harness.server.State(), SessionState::Established);
+    ASSERT_TRUE(harness.link.a.Send(Tagged(0xFFU, "unknown-tag")));
+    harness.server.Update(2000U);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
 }
 
-TEST(NetworkSessionUVETest, DataPayload_BoundedOneByteUnderTheDatagramCap) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkSessionTest, DataPayload_BoundedOneByteUnderTheDatagramCap) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
 
-    const std::vector<std::uint8_t> maxed(kSessionMaximumPayloadBytesUVE, 0xCDU);
-    const std::vector<std::uint8_t> tooBig(kSessionMaximumPayloadBytesUVE + 1U, 0xCDU);
-    ASSERT_TRUE(harness.client.SendDataUVE(maxed));
-    EXPECT_FALSE(harness.client.SendDataUVE(tooBig));
+    const std::vector<std::uint8_t> maxed(kSessionMaximumPayloadBytes, 0xCDU);
+    const std::vector<std::uint8_t> tooBig(kSessionMaximumPayloadBytes + 1U, 0xCDU);
+    ASSERT_TRUE(harness.client.SendData(maxed));
+    EXPECT_FALSE(harness.client.SendData(tooBig));
 
-    harness.server.UpdateUVE(1000U);
-    const std::optional<std::vector<std::uint8_t>> received = harness.server.TryReceiveDataUVE();
+    harness.server.Update(1000U);
+    const std::optional<std::vector<std::uint8_t>> received = harness.server.TryReceiveData();
     ASSERT_TRUE(received.has_value());
     EXPECT_EQ(*received, maxed);
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
 }
 
 // Byte-distinct across all eight token bytes, so a byte-order slip anywhere in the Hello
 // framing cannot hide.
-inline constexpr std::uint64_t kTestSessionTokenUVE = 0x0102030405060708U;
+inline constexpr std::uint64_t kTestSessionToken = 0x0102030405060708U;
 
-// Establishes with a token, the way EstablishUVE does anonymously: two pump rounds carry
+// Establishes with a token, the way Establish does anonymously: two pump rounds carry
 // Hello to the server and the Welcome back.
-[[nodiscard]] bool EstablishWithTokenUVE(SessionHarnessUVE& harness, const std::uint64_t nowMs,
+[[nodiscard]] bool EstablishWithToken(SessionHarness& harness, const std::uint64_t nowMs,
                                          const std::uint64_t token) {
-    if (!harness.client.ConnectUVE(nowMs, token)) {
+    if (!harness.client.Connect(nowMs, token)) {
         return false;
     }
-    harness.UpdateBothUVE(nowMs);
-    harness.UpdateBothUVE(nowMs);
-    return harness.client.StateUVE() == SessionStateUVE::Established &&
-           harness.server.StateUVE() == SessionStateUVE::Established;
+    harness.UpdateBoth(nowMs);
+    harness.UpdateBoth(nowMs);
+    return harness.client.State() == SessionState::Established &&
+           harness.server.State() == SessionState::Established;
 }
 
-TEST(NetworkSessionUVETest, Token_ClientHelloBindsItOnBothSides) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
+TEST(NetworkSessionTest, Token_ClientHelloBindsItOnBothSides) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
 
-    EXPECT_EQ(harness.client.SessionTokenUVE(), kTestSessionTokenUVE);
-    EXPECT_EQ(harness.server.SessionTokenUVE(), kTestSessionTokenUVE);
-    EXPECT_FALSE(harness.client.DidResumeUVE());
-    EXPECT_FALSE(harness.server.DidResumeUVE());
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 0U);
+    EXPECT_EQ(harness.client.SessionToken(), kTestSessionToken);
+    EXPECT_EQ(harness.server.SessionToken(), kTestSessionToken);
+    EXPECT_FALSE(harness.client.DidResume());
+    EXPECT_FALSE(harness.server.DidResume());
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 0U);
 }
 
-TEST(NetworkSessionUVETest, Resume_ReturningTokenIsRecognized) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 10U});
+TEST(NetworkSessionTest, Resume_ReturningTokenIsRecognized) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 10U});
 
     // Silence past the timeout drops both sides; the client starts redialing instead of
     // disconnecting, and reports no closure while it still tries.
-    harness.UpdateBothUVE(6000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::None);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 0U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::Timeout);
+    harness.UpdateBoth(6000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Reconnecting);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::None);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 0U);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::Timeout);
 
     // The first due attempt redials; the server accepts in the same pump and recognizes
     // the returning token, while the Welcome is still in flight to the client.
-    harness.UpdateBothUVE(6100U);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 1U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.server.SessionTokenUVE(), kTestSessionTokenUVE);
-    EXPECT_TRUE(harness.server.DidResumeUVE());
+    harness.UpdateBoth(6100U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 1U);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
+    EXPECT_EQ(harness.server.SessionToken(), kTestSessionToken);
+    EXPECT_TRUE(harness.server.DidResume());
 
-    harness.UpdateBothUVE(6100U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_TRUE(harness.client.DidResumeUVE());
+    harness.UpdateBoth(6100U);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_TRUE(harness.client.DidResume());
     // The landing attempt stays readable: the redial succeeded "1 of 10".
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 1U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 1U);
 }
 
-TEST(NetworkSessionUVETest, Resume_AnonymousTokenNeverMatches) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 10U});
+TEST(NetworkSessionTest, Resume_AnonymousTokenNeverMatches) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 10U});
 
-    harness.UpdateBothUVE(6000U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
+    harness.UpdateBoth(6000U);
+    ASSERT_EQ(harness.client.State(), SessionState::Reconnecting);
 
-    harness.UpdateBothUVE(6100U);
-    harness.UpdateBothUVE(6100U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
+    harness.UpdateBoth(6100U);
+    harness.UpdateBoth(6100U);
+    ASSERT_EQ(harness.client.State(), SessionState::Established);
     // The redial itself succeeded, so the client reports a resume - but the server bound
     // an anonymous token, which never matches anything, not even itself.
-    EXPECT_TRUE(harness.client.DidResumeUVE());
-    EXPECT_FALSE(harness.server.DidResumeUVE());
-    EXPECT_EQ(harness.server.SessionTokenUVE(), kAnonymousSessionTokenUVE);
+    EXPECT_TRUE(harness.client.DidResume());
+    EXPECT_FALSE(harness.server.DidResume());
+    EXPECT_EQ(harness.server.SessionToken(), kAnonymousSessionToken);
 }
 
-TEST(NetworkSessionUVETest, Redial_GivesUpAfterMaxAttempts) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 3U});
+TEST(NetworkSessionTest, Redial_GivesUpAfterMaxAttempts) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 3U});
 
     // The server is never pumped again: every Hello lands in an unread queue.
-    harness.client.UpdateUVE(6000U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
+    harness.client.Update(6000U);
+    ASSERT_EQ(harness.client.State(), SessionState::Reconnecting);
 
-    harness.client.UpdateUVE(6099U);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 0U);
-    harness.client.UpdateUVE(6100U);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 1U);
-    harness.client.UpdateUVE(6200U);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 2U);
-    harness.client.UpdateUVE(6300U);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 3U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
+    harness.client.Update(6099U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 0U);
+    harness.client.Update(6100U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 1U);
+    harness.client.Update(6200U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 2U);
+    harness.client.Update(6300U);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 3U);
+    EXPECT_EQ(harness.client.State(), SessionState::Reconnecting);
 
     // Three is the budget: the next pump gives up without firing a fourth, and the frozen
     // count proves no further Hello ever goes out.
-    harness.client.UpdateUVE(6400U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::ReconnectFailed);
-    harness.client.UpdateUVE(99999U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 3U);
+    harness.client.Update(6400U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::ReconnectFailed);
+    harness.client.Update(99999U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 3U);
 }
 
-TEST(NetworkSessionUVETest, Redial_LocalDisconnectNeverRetries) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 10U});
+TEST(NetworkSessionTest, Redial_LocalDisconnectNeverRetries) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 10U});
 
-    ASSERT_TRUE(harness.client.DisconnectUVE());
-    harness.client.UpdateUVE(99999U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::LocalDisconnect);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 0U);
+    ASSERT_TRUE(harness.client.Disconnect());
+    harness.client.Update(99999U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::LocalDisconnect);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 0U);
 }
 
-TEST(NetworkSessionUVETest, Redial_ByeDuringRedialDisconnectsImmediately) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{1000U, 10U});
+TEST(NetworkSessionTest, Redial_ByeDuringRedialDisconnectsImmediately) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{1000U, 10U});
 
-    harness.client.UpdateUVE(6000U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
+    harness.client.Update(6000U);
+    ASSERT_EQ(harness.client.State(), SessionState::Reconnecting);
     // Reconnecting counts as live: dialing over a redial is refused, hang up first.
-    EXPECT_FALSE(harness.client.ConnectUVE(6000U));
+    EXPECT_FALSE(harness.client.Connect(6000U));
 
     // A refusal mid-redial (the version-mismatch Bye takes this path) ends it: retrying
     // against a server that says no is futile.
-    ASSERT_TRUE(harness.link.b.SendUVE(
-        std::vector<std::uint8_t>{static_cast<std::uint8_t>(SessionMessageTagUVE::Bye)}));
-    harness.client.UpdateUVE(6000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::RemoteDisconnect);
-    EXPECT_EQ(harness.client.ReconnectAttemptsUVE(), 0U);
+    ASSERT_TRUE(harness.link.b.Send(
+        std::vector<std::uint8_t>{static_cast<std::uint8_t>(SessionMessageTag::Bye)}));
+    harness.client.Update(6000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::RemoteDisconnect);
+    EXPECT_EQ(harness.client.ReconnectAttempts(), 0U);
 }
 
-TEST(NetworkSessionUVETest, Redial_DisablingMidFlightCancelsToOriginalReason) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 10U});
+TEST(NetworkSessionTest, Redial_DisablingMidFlightCancelsToOriginalReason) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 10U});
 
-    harness.UpdateBothUVE(6000U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
+    harness.UpdateBoth(6000U);
+    ASSERT_EQ(harness.client.State(), SessionState::Reconnecting);
 
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{});
-    harness.client.UpdateUVE(6100U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.client.CloseReasonUVE(), SessionCloseReasonUVE::Timeout);
+    harness.client.SetReconnectConfig(SessionReconnectConfig{});
+    harness.client.Update(6100U);
+    EXPECT_EQ(harness.client.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.client.CloseReason(), SessionCloseReason::Timeout);
 }
 
-TEST(NetworkSessionUVETest, Server_ForgetsTokenOnLocalDisconnect) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(EstablishWithTokenUVE(harness, 1000U, kTestSessionTokenUVE));
-    harness.client.SetReconnectConfigUVE(SessionReconnectConfigUVE{100U, 10U});
+TEST(NetworkSessionTest, Server_ForgetsTokenOnLocalDisconnect) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(EstablishWithToken(harness, 1000U, kTestSessionToken));
+    harness.client.SetReconnectConfig(SessionReconnectConfig{100U, 10U});
 
-    ASSERT_TRUE(harness.server.DisconnectUVE());
+    ASSERT_TRUE(harness.server.Disconnect());
     // The client's Bye becomes a redial, and the server - having hung up - greets the
     // same token as a stranger.
-    harness.client.UpdateUVE(1000U);
-    ASSERT_EQ(harness.client.StateUVE(), SessionStateUVE::Reconnecting);
-    harness.UpdateBothUVE(1100U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
-    EXPECT_FALSE(harness.server.DidResumeUVE());
-    harness.UpdateBothUVE(1100U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_TRUE(harness.client.DidResumeUVE());
+    harness.client.Update(1000U);
+    ASSERT_EQ(harness.client.State(), SessionState::Reconnecting);
+    harness.UpdateBoth(1100U);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
+    EXPECT_FALSE(harness.server.DidResume());
+    harness.UpdateBoth(1100U);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_TRUE(harness.client.DidResume());
 }
 
-TEST(NetworkSessionUVETest, Hello_RightVersionWithoutTokenIsIgnored) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
+TEST(NetworkSessionTest, Hello_RightVersionWithoutTokenIsIgnored) {
+    SessionHarness harness = MakeSessions();
     const std::vector<std::uint8_t> shortHello{
-        static_cast<std::uint8_t>(SessionMessageTagUVE::Hello),
-        static_cast<std::uint8_t>(kSessionProtocolVersionUVE & 0xFFU),
-        static_cast<std::uint8_t>((kSessionProtocolVersionUVE >> 8) & 0xFFU)};
-    ASSERT_TRUE(harness.link.a.SendUVE(shortHello));
+        static_cast<std::uint8_t>(SessionMessageTag::Hello),
+        static_cast<std::uint8_t>(kSessionProtocolVersion & 0xFFU),
+        static_cast<std::uint8_t>((kSessionProtocolVersion >> 8) & 0xFFU)};
+    ASSERT_TRUE(harness.link.a.Send(shortHello));
 
-    harness.server.UpdateUVE(1000U);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_EQ(harness.server.CloseReasonUVE(), SessionCloseReasonUVE::None);
+    harness.server.Update(1000U);
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_EQ(harness.server.CloseReason(), SessionCloseReason::None);
     // Neither welcomed nor refused: a version-correct Hello with no token is malformed,
     // and malformed mail gets silence.
-    EXPECT_FALSE(harness.link.a.TryReceiveUVE().has_value());
+    EXPECT_FALSE(harness.link.a.TryReceive().has_value());
 }
 
-TEST(NetworkSessionUVETest, Multiplex_EnableGuards) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    EXPECT_TRUE(harness.client.EnableMultiplexingUVE());
-    EXPECT_TRUE(harness.server.EnableMultiplexingUVE());
-    EXPECT_TRUE(harness.client.IsMultiplexedUVE());
-    EXPECT_TRUE(harness.server.IsMultiplexedUVE());
-    EXPECT_TRUE(harness.client.EnableMultiplexingUVE()); // Idempotent while disconnected.
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    EXPECT_FALSE(harness.client.EnableMultiplexingUVE());
-    EXPECT_FALSE(harness.server.EnableMultiplexingUVE());
+TEST(NetworkSessionTest, Multiplex_EnableGuards) {
+    SessionHarness harness = MakeSessions();
+    EXPECT_TRUE(harness.client.EnableMultiplexing());
+    EXPECT_TRUE(harness.server.EnableMultiplexing());
+    EXPECT_TRUE(harness.client.IsMultiplexed());
+    EXPECT_TRUE(harness.server.IsMultiplexed());
+    EXPECT_TRUE(harness.client.EnableMultiplexing()); // Idempotent while disconnected.
+    ASSERT_TRUE(harness.Establish(1000U));
+    EXPECT_FALSE(harness.client.EnableMultiplexing());
+    EXPECT_FALSE(harness.server.EnableMultiplexing());
 }
 
-TEST(NetworkSessionUVETest, Multiplex_HandshakeStaysSingleAndUntagged) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.client.ConnectUVE(1000U, 0x1234U));
-    const std::optional<std::vector<std::uint8_t>> hello = harness.link.b.TryReceiveUVE();
+TEST(NetworkSessionTest, Multiplex_HandshakeStaysSingleAndUntagged) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.client.Connect(1000U, 0x1234U));
+    const std::optional<std::vector<std::uint8_t>> hello = harness.link.b.TryReceive();
     ASSERT_TRUE(hello.has_value());
-    ASSERT_EQ(hello->size(), kSessionHelloBytesUVE);
-    EXPECT_EQ(hello->front(), static_cast<std::uint8_t>(SessionMessageTagUVE::Hello));
-    ASSERT_TRUE(harness.link.a.SendUVE(*hello));
-    harness.UpdateBothUVE(1000U);
-    harness.UpdateBothUVE(1000U);
-    EXPECT_EQ(harness.client.StateUVE(), SessionStateUVE::Established);
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
+    ASSERT_EQ(hello->size(), kSessionHelloBytes);
+    EXPECT_EQ(hello->front(), static_cast<std::uint8_t>(SessionMessageTag::Hello));
+    ASSERT_TRUE(harness.link.a.Send(*hello));
+    harness.UpdateBoth(1000U);
+    harness.UpdateBoth(1000U);
+    EXPECT_EQ(harness.client.State(), SessionState::Established);
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
 }
 
-TEST(NetworkSessionUVETest, Multiplex_ChannelsRoundTripIsolated) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(1U, BytesUVE("a1")));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(2U, BytesUVE("b1")));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(1U, BytesUVE("a2")));
-    ASSERT_TRUE(harness.server.SendChannelDataUVE(9U, BytesUVE("s9")));
-    harness.UpdateBothUVE(1100U);
-    EXPECT_EQ(harness.server.TryReceiveChannelDataUVE(1U), BytesUVE("a1"));
-    EXPECT_EQ(harness.server.TryReceiveChannelDataUVE(2U), BytesUVE("b1"));
-    EXPECT_EQ(harness.server.TryReceiveChannelDataUVE(1U), BytesUVE("a2"));
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(1U).has_value());
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(3U).has_value());
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
-    EXPECT_EQ(harness.client.TryReceiveChannelDataUVE(9U), BytesUVE("s9"));
+TEST(NetworkSessionTest, Multiplex_ChannelsRoundTripIsolated) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendChannelData(1U, Bytes("a1")));
+    ASSERT_TRUE(harness.client.SendChannelData(2U, Bytes("b1")));
+    ASSERT_TRUE(harness.client.SendChannelData(1U, Bytes("a2")));
+    ASSERT_TRUE(harness.server.SendChannelData(9U, Bytes("s9")));
+    harness.UpdateBoth(1100U);
+    EXPECT_EQ(harness.server.TryReceiveChannelData(1U), Bytes("a1"));
+    EXPECT_EQ(harness.server.TryReceiveChannelData(2U), Bytes("b1"));
+    EXPECT_EQ(harness.server.TryReceiveChannelData(1U), Bytes("a2"));
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(1U).has_value());
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(3U).has_value());
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
+    EXPECT_EQ(harness.client.TryReceiveChannelData(9U), Bytes("s9"));
 }
 
-TEST(NetworkSessionUVETest, Multiplex_UntaggedSendsRefuse) {
-    SessionHarnessUVE muxed = MakeSessionsUVE();
-    ASSERT_TRUE(muxed.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(muxed.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(muxed.EstablishUVE(1000U));
-    EXPECT_FALSE(muxed.client.SendDataUVE(BytesUVE("x")));
-    EXPECT_FALSE(muxed.server.SendDataUVE(BytesUVE("x")));
+TEST(NetworkSessionTest, Multiplex_UntaggedSendsRefuse) {
+    SessionHarness muxed = MakeSessions();
+    ASSERT_TRUE(muxed.client.EnableMultiplexing());
+    ASSERT_TRUE(muxed.server.EnableMultiplexing());
+    ASSERT_TRUE(muxed.Establish(1000U));
+    EXPECT_FALSE(muxed.client.SendData(Bytes("x")));
+    EXPECT_FALSE(muxed.server.SendData(Bytes("x")));
 
-    SessionHarnessUVE legacy = MakeSessionsUVE();
-    ASSERT_TRUE(legacy.EstablishUVE(1000U));
-    EXPECT_FALSE(legacy.client.SendChannelDataUVE(1U, BytesUVE("x")));
-    EXPECT_FALSE(legacy.client.TryReceiveChannelDataUVE(1U).has_value());
+    SessionHarness legacy = MakeSessions();
+    ASSERT_TRUE(legacy.Establish(1000U));
+    EXPECT_FALSE(legacy.client.SendChannelData(1U, Bytes("x")));
+    EXPECT_FALSE(legacy.client.TryReceiveChannelData(1U).has_value());
 }
 
-TEST(NetworkSessionUVETest, Multiplex_BareTagHasNoChannel) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    const std::uint8_t dataTag = static_cast<std::uint8_t>(SessionMessageTagUVE::Data);
-    ASSERT_TRUE(harness.link.a.SendUVE(std::vector<std::uint8_t>{dataTag}));
-    harness.server.UpdateUVE(1100U);
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(0U).has_value());
-    EXPECT_FALSE(harness.server.TryReceiveDataUVE().has_value());
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Established);
+TEST(NetworkSessionTest, Multiplex_BareTagHasNoChannel) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    const std::uint8_t dataTag = static_cast<std::uint8_t>(SessionMessageTag::Data);
+    ASSERT_TRUE(harness.link.a.Send(std::vector<std::uint8_t>{dataTag}));
+    harness.server.Update(1100U);
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(0U).has_value());
+    EXPECT_FALSE(harness.server.TryReceiveData().has_value());
+    EXPECT_EQ(harness.server.State(), SessionState::Established);
 }
 
-TEST(NetworkSessionUVETest, Multiplex_ChannelPayloadBound) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    EXPECT_TRUE(harness.client.SendChannelDataUVE(
-        1U, std::vector<std::uint8_t>(kSessionMaximumChannelPayloadBytesUVE, 0xAAU)));
-    EXPECT_FALSE(harness.client.SendChannelDataUVE(
-        1U, std::vector<std::uint8_t>(kSessionMaximumChannelPayloadBytesUVE + 1U, 0xAAU)));
-    harness.UpdateBothUVE(1100U);
+TEST(NetworkSessionTest, Multiplex_ChannelPayloadBound) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    EXPECT_TRUE(harness.client.SendChannelData(
+        1U, std::vector<std::uint8_t>(kSessionMaximumChannelPayloadBytes, 0xAAU)));
+    EXPECT_FALSE(harness.client.SendChannelData(
+        1U, std::vector<std::uint8_t>(kSessionMaximumChannelPayloadBytes + 1U, 0xAAU)));
+    harness.UpdateBoth(1100U);
     const std::optional<std::vector<std::uint8_t>> got =
-        harness.server.TryReceiveChannelDataUVE(1U);
+        harness.server.TryReceiveChannelData(1U);
     ASSERT_TRUE(got.has_value());
-    EXPECT_EQ(got->size(), kSessionMaximumChannelPayloadBytesUVE);
+    EXPECT_EQ(got->size(), kSessionMaximumChannelPayloadBytes);
 }
 
-TEST(NetworkSessionUVETest, Multiplex_DisconnectClearsChannels) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(1U, BytesUVE("first")));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(1U, BytesUVE("second")));
-    harness.server.UpdateUVE(1100U);
-    EXPECT_EQ(harness.server.TryReceiveChannelDataUVE(1U), BytesUVE("first"));
-    ASSERT_TRUE(harness.server.DisconnectUVE());
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(1U).has_value());
+TEST(NetworkSessionTest, Multiplex_DisconnectClearsChannels) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendChannelData(1U, Bytes("first")));
+    ASSERT_TRUE(harness.client.SendChannelData(1U, Bytes("second")));
+    harness.server.Update(1100U);
+    EXPECT_EQ(harness.server.TryReceiveChannelData(1U), Bytes("first"));
+    ASSERT_TRUE(harness.server.Disconnect());
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(1U).has_value());
 }
 
-TEST(NetworkSessionUVETest, Multiplex_TimeoutClearsChannels) {
-    SessionHarnessUVE harness = MakeSessionsUVE(100U);
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendChannelDataUVE(1U, BytesUVE("doomed")));
-    harness.server.UpdateUVE(1000U); // Queues it.
-    harness.server.UpdateUVE(1200U); // Silence past the timeout.
-    EXPECT_EQ(harness.server.StateUVE(), SessionStateUVE::Disconnected);
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(1U).has_value());
+TEST(NetworkSessionTest, Multiplex_TimeoutClearsChannels) {
+    SessionHarness harness = MakeSessions(100U);
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendChannelData(1U, Bytes("doomed")));
+    harness.server.Update(1000U); // Queues it.
+    harness.server.Update(1200U); // Silence past the timeout.
+    EXPECT_EQ(harness.server.State(), SessionState::Disconnected);
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(1U).has_value());
 }
 
-TEST(NetworkSessionUVETest, Raw_RoundTripsLegacy) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendRawDataUVE(std::vector<std::uint8_t>{0x01U, 0x02U, 0x03U}));
-    harness.UpdateBothUVE(1100U);
-    EXPECT_EQ(harness.server.TryReceiveRawDataUVE(),
+TEST(NetworkSessionTest, Raw_RoundTripsLegacy) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendRawData(std::vector<std::uint8_t>{0x01U, 0x02U, 0x03U}));
+    harness.UpdateBoth(1100U);
+    EXPECT_EQ(harness.server.TryReceiveRawData(),
               std::vector<std::uint8_t>({0x01U, 0x02U, 0x03U}));
-    EXPECT_FALSE(harness.server.TryReceiveRawDataUVE().has_value());
+    EXPECT_FALSE(harness.server.TryReceiveRawData().has_value());
 }
 
-TEST(NetworkSessionUVETest, Raw_PreservesChannelByteMuxed) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.client.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.server.EnableMultiplexingUVE());
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendRawDataUVE(std::vector<std::uint8_t>{0x05U, 0x09U, 0x09U}));
-    harness.UpdateBothUVE(1100U);
+TEST(NetworkSessionTest, Raw_PreservesChannelByteMuxed) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.client.EnableMultiplexing());
+    ASSERT_TRUE(harness.server.EnableMultiplexing());
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendRawData(std::vector<std::uint8_t>{0x05U, 0x09U, 0x09U}));
+    harness.UpdateBoth(1100U);
     // Re-tagged with the channel it arrived on: byte for byte what the sender framed.
-    EXPECT_EQ(harness.server.TryReceiveRawDataUVE(),
+    EXPECT_EQ(harness.server.TryReceiveRawData(),
               std::vector<std::uint8_t>({0x05U, 0x09U, 0x09U}));
     // Raw and channel receives share the queues: the raw pop already drained channel 5.
-    EXPECT_FALSE(harness.server.TryReceiveChannelDataUVE(5U).has_value());
+    EXPECT_FALSE(harness.server.TryReceiveChannelData(5U).has_value());
 }
 
-TEST(NetworkSessionUVETest, Raw_CrossApiInteropAndGuards) {
-    SessionHarnessUVE harness = MakeSessionsUVE();
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
-    ASSERT_TRUE(harness.client.SendDataUVE(BytesUVE("hi")));
-    harness.UpdateBothUVE(1100U);
-    EXPECT_EQ(harness.server.TryReceiveRawDataUVE(), BytesUVE("hi"));
-    ASSERT_TRUE(harness.client.SendRawDataUVE(BytesUVE("yo")));
-    harness.UpdateBothUVE(1200U);
-    EXPECT_EQ(harness.server.TryReceiveDataUVE(), BytesUVE("yo"));
+TEST(NetworkSessionTest, Raw_CrossApiInteropAndGuards) {
+    SessionHarness harness = MakeSessions();
+    ASSERT_TRUE(harness.Establish(1000U));
+    ASSERT_TRUE(harness.client.SendData(Bytes("hi")));
+    harness.UpdateBoth(1100U);
+    EXPECT_EQ(harness.server.TryReceiveRawData(), Bytes("hi"));
+    ASSERT_TRUE(harness.client.SendRawData(Bytes("yo")));
+    harness.UpdateBoth(1200U);
+    EXPECT_EQ(harness.server.TryReceiveData(), Bytes("yo"));
 
-    SessionHarnessUVE fresh = MakeSessionsUVE();
-    EXPECT_FALSE(fresh.client.SendRawDataUVE(BytesUVE("x")));
-    EXPECT_FALSE(fresh.client.TryReceiveRawDataUVE().has_value());
-    EXPECT_FALSE(harness.client.SendRawDataUVE(
-        std::vector<std::uint8_t>(kSessionMaximumPayloadBytesUVE + 1U, 0xAAU)));
+    SessionHarness fresh = MakeSessions();
+    EXPECT_FALSE(fresh.client.SendRawData(Bytes("x")));
+    EXPECT_FALSE(fresh.client.TryReceiveRawData().has_value());
+    EXPECT_FALSE(harness.client.SendRawData(
+        std::vector<std::uint8_t>(kSessionMaximumPayloadBytes + 1U, 0xAAU)));
 }
 
 } // namespace

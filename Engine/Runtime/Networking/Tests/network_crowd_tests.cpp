@@ -21,92 +21,92 @@
 namespace UVE::Network::Tests {
 namespace {
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-struct CrowdHarnessUVE final {
-    std::vector<LoopbackTransportPairUVE> lobbyLinks;
-    std::vector<NetworkLobbyClientUVE> facades;
-    std::vector<LobbyClientIdUVE> facadeIds;
-    NetworkLobbyUVE lobby;
-    std::vector<LoopbackTransportPairUVE> relayLinks;
-    std::vector<NetworkSessionUVE> relayClients;
-    std::vector<RelayPeerIdUVE> relayPeers;
-    NetworkRelayUVE relay;
+struct CrowdHarness final {
+    std::vector<LoopbackTransportPair> lobbyLinks;
+    std::vector<NetworkLobbyClient> facades;
+    std::vector<LobbyClientId> facadeIds;
+    NetworkLobby lobby;
+    std::vector<LoopbackTransportPair> relayLinks;
+    std::vector<NetworkSession> relayClients;
+    std::vector<RelayPeerId> relayPeers;
+    NetworkRelay relay;
 
-    void AddClientUVE() {
-        LoopbackTransportPairUVE lobbyPair = CreateLoopbackTransportPairUVE(256U);
-        NetworkSessionUVE lobbyClient(SessionRoleUVE::Client,
-                                      std::make_unique<LoopbackEndpointUVE>(lobbyPair.a));
-        NetworkSessionUVE lobbyServer(SessionRoleUVE::Server,
-                                      std::make_unique<LoopbackEndpointUVE>(lobbyPair.b));
-        facadeIds.push_back(lobby.AddClientUVE(std::move(lobbyServer)));
+    void AddClient() {
+        LoopbackTransportPair lobbyPair = CreateLoopbackTransportPair(256U);
+        NetworkSession lobbyClient(SessionRole::Client,
+                                      std::make_unique<LoopbackEndpoint>(lobbyPair.a));
+        NetworkSession lobbyServer(SessionRole::Server,
+                                      std::make_unique<LoopbackEndpoint>(lobbyPair.b));
+        facadeIds.push_back(lobby.AddClient(std::move(lobbyServer)));
         facades.emplace_back(std::move(lobbyClient));
         lobbyLinks.push_back(std::move(lobbyPair));
 
-        LoopbackTransportPairUVE relayPair = CreateLoopbackTransportPairUVE(256U);
-        NetworkSessionUVE relayClient(SessionRoleUVE::Client,
-                                      std::make_unique<LoopbackEndpointUVE>(relayPair.a));
-        NetworkSessionUVE relayServer(SessionRoleUVE::Server,
-                                      std::make_unique<LoopbackEndpointUVE>(relayPair.b));
-        relayPeers.push_back(relay.AddPeerUVE(std::move(relayServer)));
+        LoopbackTransportPair relayPair = CreateLoopbackTransportPair(256U);
+        NetworkSession relayClient(SessionRole::Client,
+                                      std::make_unique<LoopbackEndpoint>(relayPair.a));
+        NetworkSession relayServer(SessionRole::Server,
+                                      std::make_unique<LoopbackEndpoint>(relayPair.b));
+        relayPeers.push_back(relay.AddPeer(std::move(relayServer)));
         relayClients.push_back(std::move(relayClient));
         relayLinks.push_back(std::move(relayPair));
     }
 
-    void AddClientsUVE(const std::size_t count) {
+    void AddClients(const std::size_t count) {
         for (std::size_t i = 0U; i < count; ++i) {
-            AddClientUVE();
+            AddClient();
         }
     }
 
-    void UpdateAllUVE(const std::uint64_t nowMs) {
-        lobby.UpdateUVE(nowMs);
+    void UpdateAll(const std::uint64_t nowMs) {
+        lobby.Update(nowMs);
         for (auto& facade : facades) {
-            facade.UpdateUVE(nowMs);
+            facade.Update(nowMs);
         }
-        relay.UpdateUVE(nowMs);
+        relay.Update(nowMs);
         for (auto& client : relayClients) {
-            client.UpdateUVE(nowMs);
+            client.Update(nowMs);
         }
     }
 
-    void SettleUVE(const std::uint64_t nowMs) {
-        UpdateAllUVE(nowMs);
-        UpdateAllUVE(nowMs);
-        UpdateAllUVE(nowMs);
+    void Settle(const std::uint64_t nowMs) {
+        UpdateAll(nowMs);
+        UpdateAll(nowMs);
+        UpdateAll(nowMs);
     }
 
-    [[nodiscard]] bool EstablishUVE(const std::uint64_t nowMs) {
+    [[nodiscard]] bool Establish(const std::uint64_t nowMs) {
         for (auto& facade : facades) {
-            if (!facade.SessionUVE().ConnectUVE(nowMs)) {
+            if (!facade.Session().Connect(nowMs)) {
                 return false;
             }
         }
         for (auto& client : relayClients) {
-            if (!client.ConnectUVE(nowMs)) {
+            if (!client.Connect(nowMs)) {
                 return false;
             }
         }
-        UpdateAllUVE(nowMs);
-        UpdateAllUVE(nowMs);
+        UpdateAll(nowMs);
+        UpdateAll(nowMs);
         for (auto& facade : facades) {
-            if (facade.SessionUVE().StateUVE() != SessionStateUVE::Established) {
+            if (facade.Session().State() != SessionState::Established) {
                 return false;
             }
         }
         for (auto& client : relayClients) {
-            if (client.StateUVE() != SessionStateUVE::Established) {
+            if (client.State() != SessionState::Established) {
                 return false;
             }
         }
         return true;
     }
 
-    [[nodiscard]] bool SyncRoomsUVE() {
+    [[nodiscard]] bool SyncRooms() {
         for (std::size_t i = 0U; i < facades.size(); ++i) {
-            if (!relay.SetPeerRoomUVE(relayPeers[i], lobby.ClientRoomUVE(facadeIds[i]))) {
+            if (!relay.SetPeerRoom(relayPeers[i], lobby.ClientRoom(facadeIds[i]))) {
                 return false;
             }
         }
@@ -114,26 +114,26 @@ struct CrowdHarnessUVE final {
     }
 };
 
-struct StormDigestUVE final {
-    LobbyStatsUVE lobby;
-    RelayStatsUVE relay;
+struct StormDigest final {
+    LobbyStats lobby;
+    RelayStats relay;
     std::size_t rooms = 0U;
     std::size_t peers = 0U;
-    std::vector<LobbyRoomIdUVE> serverRooms;
-    std::vector<LobbyRoomIdUVE> cachedRooms;
+    std::vector<LobbyRoomId> serverRooms;
+    std::vector<LobbyRoomId> cachedRooms;
     std::uint64_t initiated = 0U;
     std::uint64_t fired = 0U;
     std::uint64_t sent = 0U;
     std::uint64_t drained = 0U;
 
-    [[nodiscard]] bool operator==(const StormDigestUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const StormDigest&) const noexcept = default;
 };
 
 // One storm: every client runs one seeded op per tick (relay sends, lobby calls, interest
 // mutes), then the tick settles and the app re-syncs relay rooms from the lobby.
-[[nodiscard]] bool RunStormUVE(CrowdHarnessUVE& harness, StormDigestUVE& digest,
+[[nodiscard]] bool RunStorm(CrowdHarness& harness, StormDigest& digest,
                                const unsigned seed, const int ticks) {
-    if (!harness.EstablishUVE(1000U)) {
+    if (!harness.Establish(1000U)) {
         return false;
     }
     std::mt19937 rng(seed);
@@ -149,32 +149,32 @@ struct StormDigestUVE final {
             if (op <= 2) {
                 const std::string text =
                     "s" + std::to_string(tick) + "-" + std::to_string(i);
-                if (harness.relayClients[i].SendDataUVE(BytesUVE(text))) {
+                if (harness.relayClients[i].SendData(Bytes(text))) {
                     ++sent;
                 }
             } else if (op == 3) {
                 ++initiated;
-                harness.facades[i].CreateRoomUVE(
+                harness.facades[i].CreateRoom(
                     "r" + std::to_string(tick) + "c" + std::to_string(i), me, 8U,
-                    [&](LobbyRoomIdUVE, const std::string&) { ++fired; });
+                    [&](LobbyRoomId, const std::string&) { ++fired; });
             } else if (op == 4) {
-                const auto room = static_cast<LobbyRoomIdUVE>(rng() % 12U + 1U);
+                const auto room = static_cast<LobbyRoomId>(rng() % 12U + 1U);
                 ++initiated;
-                harness.facades[i].JoinRoomUVE(
+                harness.facades[i].JoinRoom(
                     room, me,
                     [&](std::vector<std::string>, const std::string&) { ++fired; });
             } else if (op == 5) {
                 ++initiated;
-                harness.facades[i].LeaveRoomUVE(
+                harness.facades[i].LeaveRoom(
                     [&](bool, const std::string&) { ++fired; });
             } else if (op == 6) {
                 ++initiated;
-                harness.facades[i].ListRoomsUVE(
-                    [&](std::vector<LobbyRoomInfoUVE>, const std::string&) { ++fired; });
+                harness.facades[i].ListRooms(
+                    [&](std::vector<LobbyRoomInfo>, const std::string&) { ++fired; });
             } else if (op == 7) {
-                const auto room = static_cast<LobbyRoomIdUVE>(rng() % 12U + 1U);
+                const auto room = static_cast<LobbyRoomId>(rng() % 12U + 1U);
                 ++initiated;
-                harness.facades[i].QueryRosterUVE(
+                harness.facades[i].QueryRoster(
                     room, [&](std::vector<std::string>, const std::string&) { ++fired; });
             } else if (op == 8) {
                 const std::size_t a = rng() % clients;
@@ -183,27 +183,27 @@ struct StormDigestUVE final {
                     b = (b + 1U) % clients;
                 }
                 // Ids are valid by construction; the sync loop below is the asserted path.
-                static_cast<void>(harness.relay.SetPeerInterestUVE(
+                static_cast<void>(harness.relay.SetPeerInterest(
                     harness.relayPeers[a], harness.relayPeers[b], (rng() % 2U) == 0U));
             }
         }
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
-        static_cast<void>(harness.SyncRoomsUVE());
+        static_cast<void>(harness.SyncRooms());
     }
     std::uint64_t drained = 0U;
     for (std::size_t i = 0U; i < clients; ++i) {
-        while (harness.relayClients[i].TryReceiveDataUVE().has_value()) {
+        while (harness.relayClients[i].TryReceiveData().has_value()) {
             ++drained;
         }
     }
-    digest.lobby = harness.lobby.StatsUVE();
-    digest.relay = harness.relay.StatsUVE();
-    digest.rooms = harness.lobby.RoomCountUVE();
-    digest.peers = harness.lobby.PeerCountUVE();
+    digest.lobby = harness.lobby.Stats();
+    digest.relay = harness.relay.Stats();
+    digest.rooms = harness.lobby.RoomCount();
+    digest.peers = harness.lobby.PeerCount();
     for (std::size_t i = 0U; i < clients; ++i) {
-        digest.serverRooms.push_back(harness.lobby.ClientRoomUVE(harness.facadeIds[i]));
-        digest.cachedRooms.push_back(harness.facades[i].CurrentRoomUVE());
+        digest.serverRooms.push_back(harness.lobby.ClientRoom(harness.facadeIds[i]));
+        digest.cachedRooms.push_back(harness.facades[i].CurrentRoom());
     }
     digest.initiated = initiated;
     digest.fired = fired;
@@ -212,16 +212,16 @@ struct StormDigestUVE final {
     return true;
 }
 
-TEST(NetworkCrowdUVETest, Storm_DeterministicTwice) {
-    CrowdHarnessUVE first;
-    first.AddClientsUVE(32U);
-    StormDigestUVE firstDigest;
-    ASSERT_TRUE(RunStormUVE(first, firstDigest, 7U, 40));
+TEST(NetworkCrowdTest, Storm_DeterministicTwice) {
+    CrowdHarness first;
+    first.AddClients(32U);
+    StormDigest firstDigest;
+    ASSERT_TRUE(RunStorm(first, firstDigest, 7U, 40));
 
-    CrowdHarnessUVE second;
-    second.AddClientsUVE(32U);
-    StormDigestUVE secondDigest;
-    ASSERT_TRUE(RunStormUVE(second, secondDigest, 7U, 40));
+    CrowdHarness second;
+    second.AddClients(32U);
+    StormDigest secondDigest;
+    ASSERT_TRUE(RunStorm(second, secondDigest, 7U, 40));
 
     EXPECT_EQ(firstDigest.lobby, secondDigest.lobby);
     EXPECT_EQ(firstDigest.relay, secondDigest.relay);
@@ -237,93 +237,93 @@ TEST(NetworkCrowdUVETest, Storm_DeterministicTwice) {
     EXPECT_GT(firstDigest.sent, 0U);
 }
 
-TEST(NetworkCrowdUVETest, Storm_InvariantsHold) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(32U);
-    StormDigestUVE digest;
-    ASSERT_TRUE(RunStormUVE(harness, digest, 11U, 40));
+TEST(NetworkCrowdTest, Storm_InvariantsHold) {
+    CrowdHarness harness;
+    harness.AddClients(32U);
+    StormDigest digest;
+    ASSERT_TRUE(RunStorm(harness, digest, 11U, 40));
 
     for (std::size_t i = 0U; i < 32U; ++i) {
-        EXPECT_EQ(harness.facades[i].SessionUVE().StateUVE(),
-                  SessionStateUVE::Established);
-        EXPECT_EQ(harness.relayClients[i].StateUVE(), SessionStateUVE::Established);
-        EXPECT_EQ(harness.facades[i].CurrentRoomUVE(),
-                  harness.lobby.ClientRoomUVE(harness.facadeIds[i]));
+        EXPECT_EQ(harness.facades[i].Session().State(),
+                  SessionState::Established);
+        EXPECT_EQ(harness.relayClients[i].State(), SessionState::Established);
+        EXPECT_EQ(harness.facades[i].CurrentRoom(),
+                  harness.lobby.ClientRoom(harness.facadeIds[i]));
     }
 
     bool listed = false;
-    std::vector<LobbyRoomInfoUVE> rooms;
-    harness.facades[0].ListRoomsUVE(
-        [&](std::vector<LobbyRoomInfoUVE> found, const std::string& error) {
+    std::vector<LobbyRoomInfo> rooms;
+    harness.facades[0].ListRooms(
+        [&](std::vector<LobbyRoomInfo> found, const std::string& error) {
             listed = true;
             rooms = std::move(found);
             EXPECT_TRUE(error.empty());
         });
-    harness.SettleUVE(5100U);
+    harness.Settle(5100U);
     ASSERT_TRUE(listed);
-    EXPECT_EQ(rooms.size(), harness.lobby.RoomCountUVE());
+    EXPECT_EQ(rooms.size(), harness.lobby.RoomCount());
     std::uint32_t seated = 0U;
-    for (const LobbyRoomInfoUVE& room : rooms) {
+    for (const LobbyRoomInfo& room : rooms) {
         EXPECT_GT(room.players, 0U);
         seated += room.players;
     }
     std::uint32_t expected = 0U;
-    for (const LobbyRoomIdUVE room : digest.serverRooms) {
-        if (room != kInvalidLobbyRoomIdUVE) {
+    for (const LobbyRoomId room : digest.serverRooms) {
+        if (room != kInvalidLobbyRoomId) {
             ++expected;
         }
     }
     EXPECT_EQ(seated, expected);
 
-    const RelayStatsUVE before = harness.relay.StatsUVE();
-    const LobbyStatsUVE lobbyBefore = harness.lobby.StatsUVE();
-    harness.SettleUVE(5200U);
-    harness.SettleUVE(5300U);
-    EXPECT_EQ(harness.relay.StatsUVE(), before);
-    EXPECT_EQ(harness.lobby.StatsUVE(), lobbyBefore);
+    const RelayStats before = harness.relay.Stats();
+    const LobbyStats lobbyBefore = harness.lobby.Stats();
+    harness.Settle(5200U);
+    harness.Settle(5300U);
+    EXPECT_EQ(harness.relay.Stats(), before);
+    EXPECT_EQ(harness.lobby.Stats(), lobbyBefore);
 }
 
-TEST(NetworkCrowdUVETest, Storm_Conservation) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(32U);
-    StormDigestUVE digest;
-    ASSERT_TRUE(RunStormUVE(harness, digest, 13U, 40));
+TEST(NetworkCrowdTest, Storm_Conservation) {
+    CrowdHarness harness;
+    harness.AddClients(32U);
+    StormDigest digest;
+    ASSERT_TRUE(RunStorm(harness, digest, 13U, 40));
 
     EXPECT_EQ(digest.relay.payloadsReceived, digest.sent);
     EXPECT_EQ(digest.drained, digest.relay.payloadsForwarded);
     EXPECT_LE(digest.relay.payloadsForwarded, digest.relay.payloadsReceived * 31U);
     EXPECT_EQ(digest.relay.forwardsDropped, 0U);
     EXPECT_EQ(digest.lobby.roomsCreated,
-              digest.lobby.roomsRemoved + harness.lobby.RoomCountUVE());
+              digest.lobby.roomsRemoved + harness.lobby.RoomCount());
 }
 
-TEST(NetworkCrowdUVETest, Storm_NoStrandedCallbacks) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(24U);
-    StormDigestUVE digest;
-    ASSERT_TRUE(RunStormUVE(harness, digest, 21U, 30));
+TEST(NetworkCrowdTest, Storm_NoStrandedCallbacks) {
+    CrowdHarness harness;
+    harness.AddClients(24U);
+    StormDigest digest;
+    ASSERT_TRUE(RunStorm(harness, digest, 21U, 30));
     EXPECT_GT(digest.initiated, 0U);
     EXPECT_EQ(digest.fired, digest.initiated);
 }
 
-TEST(NetworkCrowdUVETest, Storm_SingleRoomJoinAvalanche) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(32U);
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkCrowdTest, Storm_SingleRoomJoinAvalanche) {
+    CrowdHarness harness;
+    harness.AddClients(32U);
+    ASSERT_TRUE(harness.Establish(1000U));
 
     bool created = false;
-    harness.facades[0].CreateRoomUVE(
-        "mega", "p0", 64U, [&](LobbyRoomIdUVE id, const std::string& error) {
+    harness.facades[0].CreateRoom(
+        "mega", "p0", 64U, [&](LobbyRoomId id, const std::string& error) {
             created = true;
             EXPECT_EQ(id, 1U);
             EXPECT_TRUE(error.empty());
         });
-    harness.SettleUVE(1100U);
+    harness.Settle(1100U);
     ASSERT_TRUE(created);
 
     std::uint32_t joined = 0U;
     for (std::size_t i = 1U; i < 32U; ++i) {
-        harness.facades[i].JoinRoomUVE(
+        harness.facades[i].JoinRoom(
             1U, "p" + std::to_string(i),
             [&](std::vector<std::string>, const std::string& error) {
                 ++joined;
@@ -332,7 +332,7 @@ TEST(NetworkCrowdUVETest, Storm_SingleRoomJoinAvalanche) {
     }
     std::uint64_t nowMs = 1200U;
     for (int round = 0; round < 15; ++round) {
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
     }
     EXPECT_EQ(joined, 31U);
@@ -342,70 +342,70 @@ TEST(NetworkCrowdUVETest, Storm_SingleRoomJoinAvalanche) {
         full.push_back("p" + std::to_string(i));
     }
     for (std::size_t i = 0U; i < 32U; ++i) {
-        EXPECT_EQ(harness.facades[i].CachedRosterUVE(), full);
+        EXPECT_EQ(harness.facades[i].CachedRoster(), full);
     }
-    const LobbyStatsUVE stats = harness.lobby.StatsUVE();
+    const LobbyStats stats = harness.lobby.Stats();
     EXPECT_EQ(stats.joinsAccepted, 31U);
     EXPECT_EQ(stats.joinsRejected, 0U);
     EXPECT_EQ(stats.notificationsSent, 496U);
     EXPECT_EQ(stats.notificationsDropped, 0U);
 }
 
-TEST(NetworkCrowdUVETest, Storm_RelayMeshFlood) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(16U);
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkCrowdTest, Storm_RelayMeshFlood) {
+    CrowdHarness harness;
+    harness.AddClients(16U);
+    ASSERT_TRUE(harness.Establish(1000U));
 
     std::uint64_t nowMs = 1100U;
     for (int round = 0; round < 10; ++round) {
         for (std::size_t i = 0U; i < 16U; ++i) {
-            ASSERT_TRUE(harness.relayClients[i].SendDataUVE(
-                BytesUVE("r" + std::to_string(round) + "c" + std::to_string(i))));
+            ASSERT_TRUE(harness.relayClients[i].SendData(
+                Bytes("r" + std::to_string(round) + "c" + std::to_string(i))));
         }
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
     }
     for (std::size_t i = 0U; i < 16U; ++i) {
         std::uint32_t inbox = 0U;
-        while (harness.relayClients[i].TryReceiveDataUVE().has_value()) {
+        while (harness.relayClients[i].TryReceiveData().has_value()) {
             ++inbox;
         }
         EXPECT_EQ(inbox, 150U);
     }
-    const RelayStatsUVE stats = harness.relay.StatsUVE();
+    const RelayStats stats = harness.relay.Stats();
     EXPECT_EQ(stats.payloadsReceived, 160U);
     EXPECT_EQ(stats.payloadsForwarded, 2400U);
     EXPECT_EQ(stats.forwardsDropped, 0U);
 }
 
-TEST(NetworkCrowdUVETest, Storm_ChurnRooms) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(12U);
-    ASSERT_TRUE(harness.EstablishUVE(1000U));
+TEST(NetworkCrowdTest, Storm_ChurnRooms) {
+    CrowdHarness harness;
+    harness.AddClients(12U);
+    ASSERT_TRUE(harness.Establish(1000U));
 
     std::uint64_t nowMs = 1100U;
     for (int round = 0; round < 5; ++round) {
-        std::vector<LobbyRoomIdUVE> ids(12U, kInvalidLobbyRoomIdUVE);
+        std::vector<LobbyRoomId> ids(12U, kInvalidLobbyRoomId);
         std::uint32_t created = 0U;
         for (std::size_t i = 0U; i < 12U; ++i) {
-            harness.facades[i].CreateRoomUVE(
+            harness.facades[i].CreateRoom(
                 "c" + std::to_string(i) + "r" + std::to_string(round),
                 "p" + std::to_string(i), 8U,
-                [&, i](LobbyRoomIdUVE id, const std::string& error) {
+                [&, i](LobbyRoomId id, const std::string& error) {
                     ++created;
                     EXPECT_TRUE(error.empty());
                     ids[i] = id;
                 });
         }
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
         ASSERT_EQ(created, 12U);
 
         std::uint32_t joined = 0U;
         std::vector<std::pair<std::size_t, std::string>> joinFailures;
         for (std::size_t i = 0U; i < 12U; ++i) {
-            ASSERT_NE(ids[i], kInvalidLobbyRoomIdUVE);
-            harness.facades[i].JoinRoomUVE(
+            ASSERT_NE(ids[i], kInvalidLobbyRoomId);
+            harness.facades[i].JoinRoom(
                 ids[(i + 1U) % 12U], "p" + std::to_string(i),
                 [&, i](std::vector<std::string>, const std::string& error) {
                     if (error.empty()) {
@@ -415,7 +415,7 @@ TEST(NetworkCrowdUVETest, Storm_ChurnRooms) {
                     }
                 });
         }
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
         // Joins process in peer-id order: client 0 leaves R0 first, so client 11 always
         // arrives at a removed room. One race rejection per round, deterministically.
@@ -426,18 +426,18 @@ TEST(NetworkCrowdUVETest, Storm_ChurnRooms) {
 
         std::uint32_t left = 0U;
         for (std::size_t i = 0U; i < 12U; ++i) {
-            harness.facades[i].LeaveRoomUVE([&](bool wasLeft, const std::string& error) {
+            harness.facades[i].LeaveRoom([&](bool wasLeft, const std::string& error) {
                 ++left;
                 EXPECT_TRUE(wasLeft);
                 EXPECT_TRUE(error.empty());
             });
         }
-        harness.SettleUVE(nowMs);
+        harness.Settle(nowMs);
         nowMs += 100U;
         ASSERT_EQ(left, 12U);
     }
 
-    const LobbyStatsUVE stats = harness.lobby.StatsUVE();
+    const LobbyStats stats = harness.lobby.Stats();
     EXPECT_EQ(stats.roomsCreated, 60U);
     EXPECT_EQ(stats.roomsRemoved, 60U);
     EXPECT_EQ(stats.joinsAccepted, 55U);
@@ -448,46 +448,46 @@ TEST(NetworkCrowdUVETest, Storm_ChurnRooms) {
     // 22 per round: 11 join-notifies + 10 auto-leave-notifies + 1 two-member-leave-notify.
     EXPECT_EQ(stats.notificationsSent, 110U);
     EXPECT_EQ(stats.notificationsDropped, 0U);
-    EXPECT_EQ(harness.lobby.RoomCountUVE(), 0U);
+    EXPECT_EQ(harness.lobby.RoomCount(), 0U);
 }
 
-TEST(NetworkCrowdUVETest, Storm_BindingSurvivesLoad) {
-    CrowdHarnessUVE harness;
-    harness.AddClientsUVE(32U);
-    StormDigestUVE digest;
-    ASSERT_TRUE(RunStormUVE(harness, digest, 29U, 25));
+TEST(NetworkCrowdTest, Storm_BindingSurvivesLoad) {
+    CrowdHarness harness;
+    harness.AddClients(32U);
+    StormDigest digest;
+    ASSERT_TRUE(RunStorm(harness, digest, 29U, 25));
 
     for (std::size_t i = 0U; i < 32U; ++i) {
-        EXPECT_EQ(harness.relay.PeerRoomUVE(harness.relayPeers[i]),
-                  harness.lobby.ClientRoomUVE(harness.facadeIds[i]));
+        EXPECT_EQ(harness.relay.PeerRoom(harness.relayPeers[i]),
+                  harness.lobby.ClientRoom(harness.facadeIds[i]));
     }
 
     bool created = false;
-    harness.facades[0].CreateRoomUVE(
-        "probe", "p0", 8U, [&](LobbyRoomIdUVE, const std::string& error) {
+    harness.facades[0].CreateRoom(
+        "probe", "p0", 8U, [&](LobbyRoomId, const std::string& error) {
             created = true;
             EXPECT_TRUE(error.empty());
         });
-    harness.SettleUVE(3600U);
+    harness.Settle(3600U);
     ASSERT_TRUE(created);
-    const LobbyRoomIdUVE probe = harness.facades[0].CurrentRoomUVE();
-    ASSERT_NE(probe, kInvalidLobbyRoomIdUVE);
+    const LobbyRoomId probe = harness.facades[0].CurrentRoom();
+    ASSERT_NE(probe, kInvalidLobbyRoomId);
 
     bool joined = false;
-    harness.facades[1].JoinRoomUVE(
+    harness.facades[1].JoinRoom(
         probe, "p1", [&](std::vector<std::string>, const std::string& error) {
             joined = true;
             EXPECT_TRUE(error.empty());
         });
-    harness.SettleUVE(3700U);
+    harness.Settle(3700U);
     ASSERT_TRUE(joined);
-    ASSERT_TRUE(harness.SyncRoomsUVE());
+    ASSERT_TRUE(harness.SyncRooms());
 
-    ASSERT_TRUE(harness.relayClients[0].SendDataUVE(BytesUVE("probe")));
-    harness.SettleUVE(3800U);
-    EXPECT_EQ(harness.relayClients[1].TryReceiveDataUVE(), BytesUVE("probe"));
+    ASSERT_TRUE(harness.relayClients[0].SendData(Bytes("probe")));
+    harness.Settle(3800U);
+    EXPECT_EQ(harness.relayClients[1].TryReceiveData(), Bytes("probe"));
     for (std::size_t i = 2U; i < 32U; ++i) {
-        EXPECT_FALSE(harness.relayClients[i].TryReceiveDataUVE().has_value());
+        EXPECT_FALSE(harness.relayClients[i].TryReceiveData().has_value());
     }
 }
 

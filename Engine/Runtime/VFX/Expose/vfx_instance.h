@@ -23,39 +23,39 @@
 namespace UVE::VFX {
 
 /// Frame owner state supplied by the level entity or preview when stepping a VFX instance.
-struct VfxOwnerUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE velocity{};
+struct VfxOwner final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 velocity{};
     std::uint8_t qualityLevel = 2U; ///< 0 = Low, 1 = Medium, 2 = High.
 };
 
 /// Primitive shape mirrored from scene Collider3D components for real-time particle collision.
-enum class VfxColliderShapeKindUVE : std::uint8_t {
+enum class VfxColliderShapeKind : std::uint8_t {
     Box = 0U,
     Sphere = 1U,
     Capsule = 2U,
 };
 
 /// World-space collider snapshot supplied to VFX simulation for real-time particle collision.
-struct VfxColliderVolumeUVE final {
-    VfxColliderShapeKindUVE kind = VfxColliderShapeKindUVE::Box;
-    Math::Vector3UVE center{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+struct VfxColliderVolume final {
+    VfxColliderShapeKind kind = VfxColliderShapeKind::Box;
+    Math::Vector3 center{};
+    Math::Quaternion rotation{};
+    Math::Vector3 halfExtents{0.5F, 0.5F, 0.5F};
     float radius = 0.5F;
     float height = 1.0F;
 };
 
 /// Structure-of-arrays particle state owned by a single emitter inside a running instance.
 /// Only attribute arrays included in the compiled program's `attributeMask` are populated.
-struct VfxEmitterStateUVE final {
+struct VfxEmitterState final {
     std::size_t liveCount = 0U;
     std::uint32_t nextId = 0U;
     float emitterAge = 0.0F;
     bool completed = false;
     bool hasLastOwnerPos = false;
-    Math::Vector3UVE lastOwnerPos{};
+    Math::Vector3 lastOwnerPos{};
     std::vector<double> spawnCarry;
     std::uint32_t stepCounter = 0U;
 
@@ -98,81 +98,81 @@ struct VfxEmitterStateUVE final {
     std::vector<float> accZ;
     std::vector<float> normalizedAge;
 
-    Math::AabbUVE liveBounds{};
+    Math::Aabb liveBounds{};
     bool hasLiveBounds = false;
 };
 
 /// CPU simulator instance for a single playing particle system.
-class VfxInstanceUVE final {
+class VfxInstance final {
 public:
-    VfxInstanceUVE() = default;
+    VfxInstance() = default;
 
     /// Compiles `system` into runtime programs and initializes simulation state (including warm-up).
-    [[nodiscard]] bool InitializeUVE(const Asset::ParticleSystemAssetUVE& system,
-                                     const VfxOwnerUVE& initialOwner = {},
+    [[nodiscard]] bool Initialize(const Asset::ParticleSystemAsset& system,
+                                     const VfxOwner& initialOwner = {},
                                      std::uint32_t instanceSeed = 1U,
-                                     const VfxCompileContextUVE& compileContext = {},
-                                     std::vector<ParticleCompileMessageUVE>* outMessages = nullptr);
+                                     const VfxCompileContext& compileContext = {},
+                                     std::vector<ParticleCompileMessage>* outMessages = nullptr);
 
     /// Resets emitter ages, counters and live particles to initial state, then runs warm-up if configured.
-    void ResetUVE(const VfxOwnerUVE& initialOwner = {});
+    void Reset(const VfxOwner& initialOwner = {});
 
     /// Stops all emitters from spawning new particles while allowing live particles to finish aging.
-    void StopUVE() noexcept;
+    void Stop() noexcept;
 
     /// Immediately removes all live particles across all emitters and marks the instance stopped.
-    void KillUVE() noexcept;
+    void Kill() noexcept;
 
     /// Advances all enabled emitters by `dt` seconds (clamped to [0, 0.1] and split into <= 1/30s steps).
-    void TickUVE(float dt,
-                 const VfxOwnerUVE& owner,
+    void Tick(float dt,
+                 const VfxOwner& owner,
                  float externalSpawnScale = 1.0F,
-                 std::span<const VfxColliderVolumeUVE> sceneColliders = {});
+                 std::span<const VfxColliderVolume> sceneColliders = {});
 
     /// Runtime user-parameter overrides (take precedence over asset defaults).
-    bool SetParameterFloatUVE(std::string_view name, float value) noexcept;
-    bool SetParameterVectorUVE(std::string_view name, const Math::Vector3UVE& value) noexcept;
-    bool SetParameterColorUVE(std::string_view name, const Math::ColorUVE& color, float alpha = 1.0F) noexcept;
-    bool SetParameterBoolUVE(std::string_view name, bool value) noexcept;
-    bool SetParameterIntUVE(std::string_view name, std::int32_t value) noexcept;
-    void ClearParameterOverridesUVE() noexcept;
+    bool SetParameterFloat(std::string_view name, float value) noexcept;
+    bool SetParameterVector(std::string_view name, const Math::Vector3& value) noexcept;
+    bool SetParameterColor(std::string_view name, const Math::Color& color, float alpha = 1.0F) noexcept;
+    bool SetParameterBool(std::string_view name, bool value) noexcept;
+    bool SetParameterInt(std::string_view name, std::int32_t value) noexcept;
+    void ClearParameterOverrides() noexcept;
 
-    [[nodiscard]] bool IsInitializedUVE() const noexcept { return m_initialized; }
-    [[nodiscard]] bool IsStoppedUVE() const noexcept { return m_stopped; }
-    [[nodiscard]] bool IsAliveUVE() const noexcept;
-    [[nodiscard]] std::size_t GetLiveCountUVE() const noexcept;
-    [[nodiscard]] std::size_t GetEmitterCountUVE() const noexcept { return m_emitters.size(); }
-    [[nodiscard]] const ParticleProgramUVE& GetProgramUVE(std::size_t emitterIndex) const;
-    [[nodiscard]] const VfxEmitterStateUVE& GetEmitterStateUVE(std::size_t emitterIndex) const;
-    [[nodiscard]] std::uint32_t GetInstanceSeedUVE() const noexcept { return m_instanceSeed; }
-    [[nodiscard]] const std::vector<VfxParameterValueUVE>& GetParametersUVE() const noexcept { return m_parameters; }
-    [[nodiscard]] float GetDurationUVE() const noexcept { return m_duration; }
-    [[nodiscard]] bool IsLoopingUVE() const noexcept { return m_looping; }
-    [[nodiscard]] float GetWarmUpSecondsUVE() const noexcept { return m_warmUpSeconds; }
-    [[nodiscard]] const Math::AabbUVE& GetFixedBoundsUVE() const noexcept { return m_fixedBounds; }
-    [[nodiscard]] Math::AabbUVE GetLiveBoundsUVE() const noexcept;
-    [[nodiscard]] const Asset::ParticleScalabilityUVE& GetScalabilityUVE(std::uint8_t qualityLevel) const noexcept {
+    [[nodiscard]] bool IsInitialized() const noexcept { return m_initialized; }
+    [[nodiscard]] bool IsStopped() const noexcept { return m_stopped; }
+    [[nodiscard]] bool IsAlive() const noexcept;
+    [[nodiscard]] std::size_t GetLiveCount() const noexcept;
+    [[nodiscard]] std::size_t GetEmitterCount() const noexcept { return m_emitters.size(); }
+    [[nodiscard]] const ParticleProgram& GetProgram(std::size_t emitterIndex) const;
+    [[nodiscard]] const VfxEmitterState& GetEmitterState(std::size_t emitterIndex) const;
+    [[nodiscard]] std::uint32_t GetInstanceSeed() const noexcept { return m_instanceSeed; }
+    [[nodiscard]] const std::vector<VfxParameterValue>& GetParameters() const noexcept { return m_parameters; }
+    [[nodiscard]] float GetDuration() const noexcept { return m_duration; }
+    [[nodiscard]] bool IsLooping() const noexcept { return m_looping; }
+    [[nodiscard]] float GetWarmUpSeconds() const noexcept { return m_warmUpSeconds; }
+    [[nodiscard]] const Math::Aabb& GetFixedBounds() const noexcept { return m_fixedBounds; }
+    [[nodiscard]] Math::Aabb GetLiveBounds() const noexcept;
+    [[nodiscard]] const Asset::ParticleScalability& GetScalability(std::uint8_t qualityLevel) const noexcept {
         return m_scalability[std::min<std::size_t>(qualityLevel, 2U)];
     }
 
 private:
-    struct EmitterRuntimeUVE final {
-        ParticleProgramUVE program;
-        VfxEmitterStateUVE state;
+    struct EmitterRuntime final {
+        ParticleProgram program;
+        VfxEmitterState state;
     };
 
-    void StepSingleSubstepUVE(float dt,
-                              const Math::Vector3UVE& prevOwnerPos,
-                              const VfxOwnerUVE& owner,
+    void StepSingleSubstep(float dt,
+                              const Math::Vector3& prevOwnerPos,
+                              const VfxOwner& owner,
                               float externalSpawnScale,
-                              std::span<const VfxColliderVolumeUVE> sceneColliders);
-    void StepEmitterUVE(std::size_t emitterIndex,
-                        EmitterRuntimeUVE& runtime,
+                              std::span<const VfxColliderVolume> sceneColliders);
+    void StepEmitter(std::size_t emitterIndex,
+                        EmitterRuntime& runtime,
                         float dt,
-                        const Math::Vector3UVE& prevOwnerPos,
-                        const VfxOwnerUVE& owner,
+                        const Math::Vector3& prevOwnerPos,
+                        const VfxOwner& owner,
                         float externalSpawnScale,
-                        std::span<const VfxColliderVolumeUVE> sceneColliders);
+                        std::span<const VfxColliderVolume> sceneColliders);
 
     bool m_initialized = false;
     bool m_stopped = false;
@@ -181,13 +181,13 @@ private:
     float m_duration = 2.0F;
     bool m_looping = true;
     float m_warmUpSeconds = 0.0F;
-    Math::AabbUVE m_fixedBounds{{-2.0F, -2.0F, -2.0F}, {2.0F, 2.0F, 2.0F}};
-    Math::Vector3UVE m_lastOwnerPos{};
-    std::array<Asset::ParticleScalabilityUVE, 3> m_scalability{};
-    std::vector<VfxParameterValueUVE> m_defaultParameters;
-    std::vector<VfxParameterValueUVE> m_parameters;
+    Math::Aabb m_fixedBounds{{-2.0F, -2.0F, -2.0F}, {2.0F, 2.0F, 2.0F}};
+    Math::Vector3 m_lastOwnerPos{};
+    std::array<Asset::ParticleScalability, 3> m_scalability{};
+    std::vector<VfxParameterValue> m_defaultParameters;
+    std::vector<VfxParameterValue> m_parameters;
     std::unordered_map<std::string, std::uint32_t> m_parameterIndices;
-    std::vector<EmitterRuntimeUVE> m_emitters;
+    std::vector<EmitterRuntime> m_emitters;
 };
 
 } // namespace UVE::VFX

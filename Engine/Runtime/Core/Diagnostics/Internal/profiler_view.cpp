@@ -10,35 +10,35 @@
 
 namespace UVE::Core {
 
-std::string_view ProfilerCategoryNameUVE(const DiagnosticCategoryUVE category) noexcept {
+std::string_view ProfilerCategoryName(const DiagnosticCategory category) noexcept {
     switch (category) {
-        case DiagnosticCategoryUVE::Cpu:
+        case DiagnosticCategory::Cpu:
             return "cpu";
-        case DiagnosticCategoryUVE::Task:
+        case DiagnosticCategory::Task:
             return "task";
-        case DiagnosticCategoryUVE::Memory:
+        case DiagnosticCategory::Memory:
             return "memory";
-        case DiagnosticCategoryUVE::Animation:
+        case DiagnosticCategory::Animation:
             return "animation";
-        case DiagnosticCategoryUVE::ECS:
+        case DiagnosticCategory::ECS:
             return "ecs";
-        case DiagnosticCategoryUVE::VM:
+        case DiagnosticCategory::VM:
             return "vm";
-        case DiagnosticCategoryUVE::Render:
+        case DiagnosticCategory::Render:
             return "render";
-        case DiagnosticCategoryUVE::Audio:
+        case DiagnosticCategory::Audio:
             return "audio";
-        case DiagnosticCategoryUVE::Streaming:
+        case DiagnosticCategory::Streaming:
             return "streaming";
-        case DiagnosticCategoryUVE::Net:
+        case DiagnosticCategory::Net:
             return "net";
-        case DiagnosticCategoryUVE::Count:
+        case DiagnosticCategory::Count:
             return "unknown";
     }
     return "unknown";
 }
 
-std::string FormatProfilerDurationUVE(const std::uint64_t nanoseconds) {
+std::string FormatProfilerDuration(const std::uint64_t nanoseconds) {
     char text[32];
     if (nanoseconds < 1000U) {
         std::snprintf(text, sizeof(text), "%lluns", static_cast<unsigned long long>(nanoseconds));
@@ -58,7 +58,7 @@ std::string FormatProfilerDurationUVE(const std::uint64_t nanoseconds) {
     return text;
 }
 
-std::string FormatProfilerCounterUVE(const double value) {
+std::string FormatProfilerCounter(const double value) {
     char text[32];
     if (std::isfinite(value) && value == std::trunc(value) && std::fabs(value) < 1e15) {
         std::snprintf(text, sizeof(text), "%.0f", value);
@@ -68,12 +68,12 @@ std::string FormatProfilerCounterUVE(const double value) {
     return text;
 }
 
-std::vector<ProfilerSpanRowUVE> BuildProfilerSpanRowsUVE(
-    const std::vector<DiagnosticSpanUVE>& spans) {
-    std::vector<ProfilerSpanRowUVE> rows;
+std::vector<ProfilerSpanRow> BuildProfilerSpanRows(
+    const std::vector<DiagnosticSpan>& spans) {
+    std::vector<ProfilerSpanRow> rows;
     rows.reserve(spans.size());
-    for (const DiagnosticSpanUVE& span : spans) {
-        ProfilerSpanRowUVE row;
+    for (const DiagnosticSpan& span : spans) {
+        ProfilerSpanRow row;
         row.name = span.name;
         row.category = span.category;
         row.beginNanoseconds = span.beginTimestampNanoseconds;
@@ -83,22 +83,22 @@ std::vector<ProfilerSpanRowUVE> BuildProfilerSpanRowsUVE(
         rows.push_back(std::move(row));
     }
     std::sort(rows.begin(), rows.end(),
-              [](const ProfilerSpanRowUVE& left, const ProfilerSpanRowUVE& right) {
+              [](const ProfilerSpanRow& left, const ProfilerSpanRow& right) {
                   return std::tie(left.beginNanoseconds, left.name) <
                          std::tie(right.beginNanoseconds, right.name);
               });
     return rows;
 }
 
-std::vector<ProfilerCounterRowUVE> BuildProfilerCounterRowsUVE(
-    const std::vector<DiagnosticCounterUVE>& counters) {
-    std::map<std::pair<DiagnosticCategoryUVE, std::string>, ProfilerCounterRowUVE> latest;
-    for (const DiagnosticCounterUVE& counter : counters) {
-        const std::pair<DiagnosticCategoryUVE, std::string> key{counter.category, counter.name};
+std::vector<ProfilerCounterRow> BuildProfilerCounterRows(
+    const std::vector<DiagnosticCounter>& counters) {
+    std::map<std::pair<DiagnosticCategory, std::string>, ProfilerCounterRow> latest;
+    for (const DiagnosticCounter& counter : counters) {
+        const std::pair<DiagnosticCategory, std::string> key{counter.category, counter.name};
         const auto found = latest.find(key);
         if (found == latest.end() ||
             counter.timestampNanoseconds >= found->second.timestampNanoseconds) {
-            ProfilerCounterRowUVE row;
+            ProfilerCounterRow row;
             row.name = counter.name;
             row.category = counter.category;
             row.value = counter.value;
@@ -106,7 +106,7 @@ std::vector<ProfilerCounterRowUVE> BuildProfilerCounterRowsUVE(
             latest[key] = std::move(row);
         }
     }
-    std::vector<ProfilerCounterRowUVE> rows;
+    std::vector<ProfilerCounterRow> rows;
     rows.reserve(latest.size());
     for (auto& [_, row] : latest) {
         rows.push_back(std::move(row));

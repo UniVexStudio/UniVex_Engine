@@ -10,30 +10,30 @@
 
 namespace UVE::Render {
 
-inline constexpr std::size_t kMaximumParticleDrawCommandsUVE = 1'000'000U;
+inline constexpr std::size_t kMaximumParticleDrawCommands = 1'000'000U;
 
-struct ParticleDrawCommandUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE position{};
+struct ParticleDrawCommand final {
+    Scene::Entity entity;
+    Math::Vector3 position{};
     float remainingLifetimeSeconds = 0.0F;
     float sortDepth = 0.0F;
     std::uint64_t sequence = 0U;
 
-    [[nodiscard]] bool operator==(const ParticleDrawCommandUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleDrawCommand&) const = default;
 };
 
-[[nodiscard]] bool IsValidParticleDrawCommandUVE(const ParticleDrawCommandUVE& command) noexcept;
+[[nodiscard]] bool IsValidParticleDrawCommand(const ParticleDrawCommand& command) noexcept;
 
-struct ParticleDrawRecordingUVE final {
+struct ParticleDrawRecording final {
     std::size_t sourceItemCount = 0U;
     bool truncated = false;
-    std::vector<ParticleDrawCommandUVE> commands;
+    std::vector<ParticleDrawCommand> commands;
 
-    [[nodiscard]] bool operator==(const ParticleDrawRecordingUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleDrawRecording&) const = default;
 };
 
-struct ParticleGpuUploadPlanUVE final {
-    static constexpr std::size_t kParticleStrideBytesUVE = sizeof(float) * 5U;
+struct ParticleGpuUploadPlan final {
+    static constexpr std::size_t kParticleStrideBytes = sizeof(float) * 5U;
     std::size_t commandCount = 0U;
     std::size_t byteCount = 0U;
     bool truncated = false;
@@ -41,27 +41,27 @@ struct ParticleGpuUploadPlanUVE final {
 
 /// Plans a bounded fixed-stride particle upload from copied draw commands. It does not allocate
 /// GPU buffers, resolve materials, bind pipelines, submit commands, or mutate the recording.
-[[nodiscard]] inline bool PlanParticleGpuUploadUVE(
-    const ParticleDrawRecordingUVE& recording, const std::size_t maximumBytes,
-    ParticleGpuUploadPlanUVE& outPlan) noexcept {
-    if (recording.commands.size() > kMaximumParticleDrawCommandsUVE ||
+[[nodiscard]] inline bool PlanParticleGpuUpload(
+    const ParticleDrawRecording& recording, const std::size_t maximumBytes,
+    ParticleGpuUploadPlan& outPlan) noexcept {
+    if (recording.commands.size() > kMaximumParticleDrawCommands ||
         recording.sourceItemCount < recording.commands.size() ||
         (!recording.truncated && recording.sourceItemCount != recording.commands.size()) ||
-        maximumBytes < ParticleGpuUploadPlanUVE::kParticleStrideBytesUVE) {
+        maximumBytes < ParticleGpuUploadPlan::kParticleStrideBytes) {
         return false;
     }
     const std::size_t commandCount = recording.commands.size();
-    if (commandCount > maximumBytes / ParticleGpuUploadPlanUVE::kParticleStrideBytesUVE) {
+    if (commandCount > maximumBytes / ParticleGpuUploadPlan::kParticleStrideBytes) {
         return false;
     }
-    for (const ParticleDrawCommandUVE& command : recording.commands) {
-        if (!IsValidParticleDrawCommandUVE(command)) {
+    for (const ParticleDrawCommand& command : recording.commands) {
+        if (!IsValidParticleDrawCommand(command)) {
             return false;
         }
     }
-    ParticleGpuUploadPlanUVE plan;
+    ParticleGpuUploadPlan plan;
     plan.commandCount = commandCount;
-    plan.byteCount = commandCount * ParticleGpuUploadPlanUVE::kParticleStrideBytesUVE;
+    plan.byteCount = commandCount * ParticleGpuUploadPlan::kParticleStrideBytes;
     plan.truncated = recording.truncated;
     outPlan = plan;
     return true;
@@ -69,16 +69,16 @@ struct ParticleGpuUploadPlanUVE final {
 
 /// Copies renderer-owned particle queue values into a bounded command description. This v1 does
 /// not allocate GPU buffers, bind pipelines, submit OpenGL calls, resolve assets, or mutate the queue.
-class ParticleDrawRecorderUVE final {
+class ParticleDrawRecorder final {
 public:
-    [[nodiscard]] static ParticleDrawRecordingUVE RecordUVE(
-        const RenderQueueUVE& queue,
-        std::size_t maximumCommands = kMaximumParticleDrawCommandsUVE);
+    [[nodiscard]] static ParticleDrawRecording Record(
+        const RenderQueue& queue,
+        std::size_t maximumCommands = kMaximumParticleDrawCommands);
 
     /// Fills caller-owned recording storage while preserving command-vector capacity between
-    /// frames. The same hard cap and truncation rules as RecordUVE() apply.
-    static void RecordIntoUVE(const RenderQueueUVE& queue, std::size_t maximumCommands,
-                              ParticleDrawRecordingUVE& outRecording);
+    /// frames. The same hard cap and truncation rules as Record() apply.
+    static void RecordInto(const RenderQueue& queue, std::size_t maximumCommands,
+                              ParticleDrawRecording& outRecording);
 };
 
 } // namespace UVE::Render

@@ -23,65 +23,65 @@ namespace UVE::Editor {
 #if defined(__ANDROID__)
 namespace {
 
-[[nodiscard]] bool TouchOnlyUVE() {
-    return !Window::AndroidGlfwHasHardwareInputUVE();
+[[nodiscard]] bool TouchOnly() {
+    return !Window::AndroidGlfwHasHardwareInput();
 }
 
 /// Sends a key as a keyboard would - modifiers down, key down and up, modifiers up - so the shortcut
 /// reaches whatever had focus (a Blueprint's own undo, the editor's Save, ...). The latched
 /// Ctrl/Shift/Alt are left out: Undo is Ctrl+Z even with Shift latched.
-void SendChordUVE(const int key, const int mods) {
+void SendChord(const int key, const int mods) {
     static constexpr std::array<std::pair<int, int>, 3> kModKeys{{
         {GLFW_MOD_CONTROL, GLFW_KEY_LEFT_CONTROL},
         {GLFW_MOD_SHIFT, GLFW_KEY_LEFT_SHIFT},
         {GLFW_MOD_ALT, GLFW_KEY_LEFT_ALT},
     }};
-    const int sticky = Window::AndroidGlfwStickyModsUVE();
-    Window::SetAndroidGlfwStickyModsUVE(0);
+    const int sticky = Window::AndroidGlfwStickyMods();
+    Window::SetAndroidGlfwStickyMods(0);
     int held = 0;
     for (const auto& [bit, modKey] : kModKeys) {
         if ((mods & bit) != 0) {
             held |= bit;
-            Window::DispatchAndroidGlfwKeyUVE(modKey, GLFW_PRESS, held);
+            Window::DispatchAndroidGlfwKey(modKey, GLFW_PRESS, held);
         }
     }
-    Window::DispatchAndroidGlfwKeyUVE(key, GLFW_PRESS, held);
-    Window::DispatchAndroidGlfwKeyUVE(key, GLFW_RELEASE, held);
+    Window::DispatchAndroidGlfwKey(key, GLFW_PRESS, held);
+    Window::DispatchAndroidGlfwKey(key, GLFW_RELEASE, held);
     for (auto it = kModKeys.rbegin(); it != kModKeys.rend(); ++it) {
         if ((mods & it->first) != 0) {
             held &= ~it->first;
-            Window::DispatchAndroidGlfwKeyUVE(it->second, GLFW_RELEASE, held);
+            Window::DispatchAndroidGlfwKey(it->second, GLFW_RELEASE, held);
         }
     }
-    Window::SetAndroidGlfwStickyModsUVE(sticky);
+    Window::SetAndroidGlfwStickyMods(sticky);
 }
 
 /// A panel button that leaves keyboard focus where it was, so the shortcut it sends goes to the panel
 /// or graph being worked in, not to the button.
-class PanelButtonUVE final : public prism::Button {
+class PanelButton final : public prism::Button {
 public:
     using prism::Button::Button;
     bool focusable() const override { return false; }
 };
 
 /// The toolbar's Controls button: hidden (not drawn, not hit) while a mouse or keyboard is attached.
-class ControlsToolButtonUVE final : public prism::Button {
+class ControlsToolButton final : public prism::Button {
 public:
     using prism::Button::Button;
     bool focusable() const override { return false; }
     void paint(prism::Canvas& c) override {
-        if (TouchOnlyUVE()) {
+        if (TouchOnly()) {
             prism::Button::paint(c);
         }
     }
-    prism::Widget* hitTest(const prism::Vec2 p) override { return TouchOnlyUVE() ? prism::Button::hitTest(p) : nullptr; }
+    prism::Widget* hitTest(const prism::Vec2 p) override { return TouchOnly() ? prism::Button::hitTest(p) : nullptr; }
 };
 
-std::weak_ptr<prism::Widget> g_panelUVE;
-prism::Vec2 g_panelPosUVE{-1.0F, -1.0F};   // where the panel was last left, for the session
+std::weak_ptr<prism::Widget> g_panel;
+prism::Vec2 g_panelPos{-1.0F, -1.0F};   // where the panel was last left, for the session
 
 /// The panel's title bar: dragging it moves the panel.
-class PanelTitleUVE final : public prism::Border {
+class PanelTitle final : public prism::Border {
 public:
     std::weak_ptr<prism::Widget> panel;
     bool onMouseDown(const prism::MouseEvent& e) override {
@@ -99,7 +99,7 @@ public:
         }
         if (const auto p = panel.lock()) {
             prism::Application::get().movePopup(p.get(), e.pos - m_grab);
-            g_panelPosUVE = {p->rect().x, p->rect().y};
+            g_panelPos = {p->rect().x, p->rect().y};
         }
         return true;
     }
@@ -116,14 +116,14 @@ private:
     bool m_drag = false;
 };
 
-void ClosePanelUVE() {
-    if (const auto p = g_panelUVE.lock()) {
+void ClosePanel() {
+    if (const auto p = g_panel.lock()) {
         prism::Application::get().closePopup(p.get());
     }
-    g_panelUVE.reset();
+    g_panel.reset();
 }
 
-void OpenPanelUVE(const prism::Rect anchor) {
+void OpenPanel(const prism::Rect anchor) {
     auto root = prism::make<prism::Border>();
     root->setBackground(prism::ThemeColor(&prism::Theme::panel));
     root->setBorder(prism::ThemeColor(&prism::Theme::borderStrong));
@@ -131,26 +131,26 @@ void OpenPanelUVE(const prism::Rect anchor) {
     const std::weak_ptr<prism::Widget> weakRoot = root;
 
     auto col = prism::vbox(4.0F);
-    auto title = prism::make<PanelTitleUVE>();
+    auto title = prism::make<PanelTitle>();
     title->panel = weakRoot;
     title->setBackground(prism::ThemeColor(&prism::Theme::header));
     title->setPadding(prism::Margin(10.0F, 0.0F, 2.0F, 0.0F));
     title->setFixedHeight(28.0F);
     auto titleRow = prism::hbox();
     titleRow->add(prism::make<prism::Label>("Controls", prism::FontRole::Semibold), prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    auto close = prism::make<PanelButtonUVE>("", prism::Icon::Close, prism::ButtonStyle::Toolbar);
-    close->onClick = [] { ClosePanelUVE(); };
+    auto close = prism::make<PanelButton>("", prism::Icon::Close, prism::ButtonStyle::Toolbar);
+    close->onClick = [] { ClosePanel(); };
     titleRow->add(close, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
     title->setChild(titleRow);
     col->add(title);
 
     // Each action runs on the next tick, outside this button's own click handling.
     const auto action = [](std::string label, const prism::Icon icon, const int key, const int mods) {
-        auto b = prism::make<PanelButtonUVE>(std::move(label), icon, prism::ButtonStyle::Default);
+        auto b = prism::make<PanelButton>(std::move(label), icon, prism::ButtonStyle::Default);
         b->setMinSize(76.0F, 34.0F);
         b->onClick = [key, mods] {
             prism::Application::get().addTimer(0, [key, mods] {
-                SendChordUVE(key, mods);
+                SendChord(key, mods);
                 return false;
             });
         };
@@ -158,13 +158,13 @@ void OpenPanelUVE(const prism::Rect anchor) {
     };
     // Ctrl, Shift and Alt latch: lit while on, they ride along every tap and key until tapped off.
     const auto latch = [](std::string label, const int bit) {
-        auto b = prism::make<PanelButtonUVE>(std::move(label), prism::Icon::None, prism::ButtonStyle::Default);
+        auto b = prism::make<PanelButton>(std::move(label), prism::Icon::None, prism::ButtonStyle::Default);
         b->setMinSize(76.0F, 34.0F);
         b->setCheckable(true);
-        b->setChecked((Window::AndroidGlfwStickyModsUVE() & bit) != 0);
+        b->setChecked((Window::AndroidGlfwStickyMods() & bit) != 0);
         b->onToggle = [bit](const bool on) {
-            const int mods = Window::AndroidGlfwStickyModsUVE();
-            Window::SetAndroidGlfwStickyModsUVE(on ? (mods | bit) : (mods & ~bit));
+            const int mods = Window::AndroidGlfwStickyMods();
+            Window::SetAndroidGlfwStickyMods(on ? (mods | bit) : (mods & ~bit));
         };
         return b;
     };
@@ -191,26 +191,26 @@ void OpenPanelUVE(const prism::Rect anchor) {
 
     prism::PopupOptions o;
     o.placement = prism::PopupPlacement::AtPoint;
-    o.anchor = g_panelPosUVE.x >= 0.0F ? prism::Rect{g_panelPosUVE.x, g_panelPosUVE.y, 0.0F, 0.0F}
+    o.anchor = g_panelPos.x >= 0.0F ? prism::Rect{g_panelPos.x, g_panelPos.y, 0.0F, 0.0F}
                                        : prism::Rect{anchor.x, anchor.bottom() + 4.0F, 0.0F, 0.0F};
     o.modal = false;
     o.dismissOnOutside = false;   // it floats: the work goes on under it
-    o.onClose = [] { g_panelUVE.reset(); };
+    o.onClose = [] { g_panel.reset(); };
     prism::Application::get().showPopup(root, o);
-    g_panelUVE = root;
+    g_panel = root;
 }
 
 } // namespace
 
-prism::Ref<prism::Widget> MakeTouchControlsButtonUVE() {
-    auto button = prism::make<ControlsToolButtonUVE>("", prism::Icon::Dots, prism::ButtonStyle::Toolbar);
+prism::Ref<prism::Widget> MakeTouchControlsButton() {
+    auto button = prism::make<ControlsToolButton>("", prism::Icon::Dots, prism::ButtonStyle::Toolbar);
     button->setTooltip("Controls: Undo, Redo, Ctrl/Shift/Alt, Delete, Duplicate, Save, Copy, Paste");
     prism::Button* const self = button.get();
     button->onClick = [self] {
-        if (g_panelUVE.lock()) {
-            ClosePanelUVE();
+        if (g_panel.lock()) {
+            ClosePanel();
         } else {
-            OpenPanelUVE(self->rect());
+            OpenPanel(self->rect());
         }
     };
     return button;
@@ -218,7 +218,7 @@ prism::Ref<prism::Widget> MakeTouchControlsButtonUVE() {
 
 #else
 
-prism::Ref<prism::Widget> MakeTouchControlsButtonUVE() {
+prism::Ref<prism::Widget> MakeTouchControlsButton() {
     return nullptr;
 }
 

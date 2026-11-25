@@ -11,26 +11,26 @@
 
 namespace UVE::Core {
 
-struct AnimationEventUVE final {
+struct AnimationEvent final {
     double timeSeconds = 0.0;
     std::string eventId;
 
-    [[nodiscard]] bool operator==(const AnimationEventUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationEvent&) const = default;
 };
 
-struct AnimationClipUVE final {
-    static constexpr std::size_t kMaximumSamplesUVE = 32768U;
-    static constexpr std::size_t kMaximumEventsUVE = 1024U;
-    static constexpr std::size_t kMaximumCollectedEventsUVE = 1024U;
-    static constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
+struct AnimationClip final {
+    static constexpr std::size_t kMaximumSamples = 32768U;
+    static constexpr std::size_t kMaximumEvents = 1024U;
+    static constexpr std::size_t kMaximumCollectedEvents = 1024U;
+    static constexpr std::size_t kMaximumIdentifierBytes = 128U;
 
     std::string clipId;
     double durationSeconds = 0.0;
-    std::vector<PoseSampleUVE> samples;
-    std::vector<AnimationEventUVE> events;
+    std::vector<PoseSample> samples;
+    std::vector<AnimationEvent> events;
 };
 
-enum class AnimationClipValidationCodeUVE : std::uint8_t {
+enum class AnimationClipValidationCode : std::uint8_t {
     Valid = 0,
     InvalidIdentifier,
     InvalidDuration,
@@ -43,25 +43,25 @@ enum class AnimationClipValidationCodeUVE : std::uint8_t {
     InvalidEventIdentifier,
 };
 
-struct AnimationClipValidationResultUVE final {
-    AnimationClipValidationCodeUVE code = AnimationClipValidationCodeUVE::InvalidIdentifier;
+struct AnimationClipValidationResult final {
+    AnimationClipValidationCode code = AnimationClipValidationCode::InvalidIdentifier;
     std::size_t index = 0U;
     std::string message;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == AnimationClipValidationCodeUVE::Valid;
+    [[nodiscard]] bool IsValid() const noexcept {
+        return code == AnimationClipValidationCode::Valid;
     }
 };
 
-[[nodiscard]] AnimationClipValidationResultUVE ValidateAnimationClipUVE(
-    const AnimationClipUVE& clip) noexcept;
+[[nodiscard]] AnimationClipValidationResult ValidateAnimationClip(
+    const AnimationClip& clip) noexcept;
 
-[[nodiscard]] bool TrySampleAnimationClipUVE(const AnimationClipUVE& clip, double timeSeconds,
-                                             bool looping, TransformPoseUVE& outPose) noexcept;
+[[nodiscard]] bool TrySampleAnimationClip(const AnimationClip& clip, double timeSeconds,
+                                             bool looping, TransformPose& outPose) noexcept;
 
 /// Collects events in chronological loop order and caps copied output at
-/// `AnimationClipUVE::kMaximumCollectedEventsUVE`; excessively large loop indices/ranges fail closed.
-[[nodiscard]] std::vector<AnimationEventUVE> CollectAnimationEventsUVE(
-    const AnimationClipUVE& clip, double startSeconds, double endSeconds, bool looping);
+/// `AnimationClip::kMaximumCollectedEvents`; excessively large loop indices/ranges fail closed.
+[[nodiscard]] std::vector<AnimationEvent> CollectAnimationEvents(
+    const AnimationClip& clip, double startSeconds, double endSeconds, bool looping);
 
 } // namespace UVE::Core

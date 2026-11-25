@@ -23,62 +23,62 @@
 namespace UVE::Render::Tests {
 namespace {
 
-// RenderItemUVE holds live AssetHandleUVE<T> members with no default constructor, so a real
-// AssetManagerUVE + registered loaders are the simplest way to obtain valid handles for
-// SortUVE()'s test fixtures — the loaders never actually read a file since the handles are only
+// RenderItem holds live AssetHandle<T> members with no default constructor, so a real
+// AssetManager + registered loaders are the simplest way to obtain valid handles for
+// Sort()'s test fixtures — the loaders never actually read a file since the handles are only
 // used for their identity/lifetime here, not their loaded content.
-class RenderQueueUVETest : public ::testing::Test {
+class RenderQueueTest : public ::testing::Test {
 protected:
-    Threading::ThreadPoolUVE threadPool{2};
-    Events::EventSystemUVE eventSystem;
-    Asset::AssetDatabaseUVE assetDatabase;
-    Asset::AssetManagerUVE assetManager{threadPool, eventSystem};
+    Threading::ThreadPool threadPool{2};
+    Events::EventSystem eventSystem;
+    Asset::AssetDatabase assetDatabase;
+    Asset::AssetManager assetManager{threadPool, eventSystem};
 
-    RenderQueueUVETest() {
-        assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
-            [](const std::filesystem::path&, Asset::MeshAssetUVE&) { return true; });
-        assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
-            [](const std::filesystem::path&, Asset::MaterialAssetUVE&) { return true; });
+    RenderQueueTest() {
+        assetManager.RegisterLoader<Asset::MeshAsset>(
+            [](const std::filesystem::path&, Asset::MeshAsset&) { return true; });
+        assetManager.RegisterLoader<Asset::MaterialAsset>(
+            [](const std::filesystem::path&, Asset::MaterialAsset&) { return true; });
     }
 
-    [[nodiscard]] RenderItemUVE MakeItemUVE(float sortDepth) {
+    [[nodiscard]] RenderItem MakeItem(float sortDepth) {
         static int nextPathSuffix = 0;
-        const Asset::AssetGuidUVE meshGuid =
-            assetDatabase.RegisterUVE("render_queue_tests_mesh_" + std::to_string(nextPathSuffix++) + ".uvmodel");
-        const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
+        const Asset::AssetGuid meshGuid =
+            assetDatabase.Register("render_queue_tests_mesh_" + std::to_string(nextPathSuffix++) + ".uvmodel");
+        const Asset::AssetGuid materialGuid = assetDatabase.Register(
             "render_queue_tests_material_" + std::to_string(nextPathSuffix++) + ".uvmat");
-        Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
-            assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
-        Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
-            assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
-        return RenderItemUVE{Math::Matrix4x4UVE::IdentityUVE(), std::move(meshHandle), std::move(materialHandle),
+        Asset::AssetHandle<Asset::MeshAsset> meshHandle =
+            assetManager.Load<Asset::MeshAsset>(meshGuid, assetDatabase);
+        Asset::AssetHandle<Asset::MaterialAsset> materialHandle =
+            assetManager.Load<Asset::MaterialAsset>(materialGuid, assetDatabase);
+        return RenderItem{Math::Matrix4x4::Identity(), std::move(meshHandle), std::move(materialHandle),
                               sortDepth};
     }
 
     /// An item on a CHOSEN mesh rather than a fresh one, so a test can build a queue where several
-    /// items share a mesh - which is the situation batching exists for and MakeItemUVE cannot
+    /// items share a mesh - which is the situation batching exists for and MakeItem cannot
     /// produce, since it registers a new asset every call.
-    [[nodiscard]] RenderItemUVE MakeItemOnMeshUVE(float sortDepth, int meshIndex) {
-        const Asset::AssetGuidUVE meshGuid =
-            assetDatabase.RegisterUVE("render_queue_tests_shared_mesh_" + std::to_string(meshIndex) + ".uvmodel");
-        const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE(
+    [[nodiscard]] RenderItem MakeItemOnMesh(float sortDepth, int meshIndex) {
+        const Asset::AssetGuid meshGuid =
+            assetDatabase.Register("render_queue_tests_shared_mesh_" + std::to_string(meshIndex) + ".uvmodel");
+        const Asset::AssetGuid materialGuid = assetDatabase.Register(
             "render_queue_tests_shared_material_" + std::to_string(meshIndex) + ".uvmat");
-        Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle =
-            assetManager.LoadUVE<Asset::MeshAssetUVE>(meshGuid, assetDatabase);
-        Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle =
-            assetManager.LoadUVE<Asset::MaterialAssetUVE>(materialGuid, assetDatabase);
-        return RenderItemUVE{Math::Matrix4x4UVE::IdentityUVE(), std::move(meshHandle), std::move(materialHandle),
+        Asset::AssetHandle<Asset::MeshAsset> meshHandle =
+            assetManager.Load<Asset::MeshAsset>(meshGuid, assetDatabase);
+        Asset::AssetHandle<Asset::MaterialAsset> materialHandle =
+            assetManager.Load<Asset::MaterialAsset>(materialGuid, assetDatabase);
+        return RenderItem{Math::Matrix4x4::Identity(), std::move(meshHandle), std::move(materialHandle),
                               sortDepth};
     }
 };
 
-TEST_F(RenderQueueUVETest, SortUVE_OpaqueItems_SortedFrontToBack) {
-    RenderQueueUVE queue;
-    queue.opaqueItems.push_back(MakeItemUVE(5.0F));
-    queue.opaqueItems.push_back(MakeItemUVE(1.0F));
-    queue.opaqueItems.push_back(MakeItemUVE(3.0F));
+TEST_F(RenderQueueTest, Sort_OpaqueItems_SortedFrontToBack) {
+    RenderQueue queue;
+    queue.opaqueItems.push_back(MakeItem(5.0F));
+    queue.opaqueItems.push_back(MakeItem(1.0F));
+    queue.opaqueItems.push_back(MakeItem(3.0F));
 
-    queue.SortUVE();
+    queue.Sort();
 
     ASSERT_EQ(queue.opaqueItems.size(), 3U);
     EXPECT_FLOAT_EQ(queue.opaqueItems[0].sortDepth, 1.0F);
@@ -86,13 +86,13 @@ TEST_F(RenderQueueUVETest, SortUVE_OpaqueItems_SortedFrontToBack) {
     EXPECT_FLOAT_EQ(queue.opaqueItems[2].sortDepth, 5.0F);
 }
 
-TEST_F(RenderQueueUVETest, SortUVE_TransparentItems_SortedBackToFront) {
-    RenderQueueUVE queue;
-    queue.transparentItems.push_back(MakeItemUVE(1.0F));
-    queue.transparentItems.push_back(MakeItemUVE(5.0F));
-    queue.transparentItems.push_back(MakeItemUVE(3.0F));
+TEST_F(RenderQueueTest, Sort_TransparentItems_SortedBackToFront) {
+    RenderQueue queue;
+    queue.transparentItems.push_back(MakeItem(1.0F));
+    queue.transparentItems.push_back(MakeItem(5.0F));
+    queue.transparentItems.push_back(MakeItem(3.0F));
 
-    queue.SortUVE();
+    queue.Sort();
 
     ASSERT_EQ(queue.transparentItems.size(), 3U);
     EXPECT_FLOAT_EQ(queue.transparentItems[0].sortDepth, 5.0F);
@@ -100,48 +100,48 @@ TEST_F(RenderQueueUVETest, SortUVE_TransparentItems_SortedBackToFront) {
     EXPECT_FLOAT_EQ(queue.transparentItems[2].sortDepth, 1.0F);
 }
 
-TEST_F(RenderQueueUVETest, SortUVE_EqualDepthItems_UseDeterministicAssetTieBreak) {
-    const auto assetLess = [](const RenderItemUVE& lhs, const RenderItemUVE& rhs) {
-        const auto lhsMaterial = lhs.materialHandle.GetGuidUVE().value;
-        const auto rhsMaterial = rhs.materialHandle.GetGuidUVE().value;
+TEST_F(RenderQueueTest, Sort_EqualDepthItems_UseDeterministicAssetTieBreak) {
+    const auto assetLess = [](const RenderItem& lhs, const RenderItem& rhs) {
+        const auto lhsMaterial = lhs.materialHandle.GetGuid().value;
+        const auto rhsMaterial = rhs.materialHandle.GetGuid().value;
         if (lhsMaterial != rhsMaterial) {
             return lhsMaterial < rhsMaterial;
         }
-        return lhs.meshHandle.GetGuidUVE().value < rhs.meshHandle.GetGuidUVE().value;
+        return lhs.meshHandle.GetGuid().value < rhs.meshHandle.GetGuid().value;
     };
 
-    RenderItemUVE opaqueFirst = MakeItemUVE(2.0F);
-    RenderItemUVE opaqueSecond = MakeItemUVE(2.0F);
-    ASSERT_NE(opaqueFirst.materialHandle.GetGuidUVE(), opaqueSecond.materialHandle.GetGuidUVE());
-    RenderQueueUVE opaqueQueue;
+    RenderItem opaqueFirst = MakeItem(2.0F);
+    RenderItem opaqueSecond = MakeItem(2.0F);
+    ASSERT_NE(opaqueFirst.materialHandle.GetGuid(), opaqueSecond.materialHandle.GetGuid());
+    RenderQueue opaqueQueue;
     opaqueQueue.opaqueItems.push_back(std::move(opaqueSecond));
     opaqueQueue.opaqueItems.push_back(std::move(opaqueFirst));
-    opaqueQueue.SortUVE();
+    opaqueQueue.Sort();
     ASSERT_EQ(opaqueQueue.opaqueItems.size(), 2U);
     EXPECT_TRUE(assetLess(opaqueQueue.opaqueItems[0], opaqueQueue.opaqueItems[1]));
     EXPECT_FLOAT_EQ(opaqueQueue.opaqueItems[0].sortDepth, 2.0F);
     EXPECT_FLOAT_EQ(opaqueQueue.opaqueItems[1].sortDepth, 2.0F);
 
-    RenderItemUVE transparentFirst = MakeItemUVE(3.0F);
-    RenderItemUVE transparentSecond = MakeItemUVE(3.0F);
-    ASSERT_NE(transparentFirst.materialHandle.GetGuidUVE(), transparentSecond.materialHandle.GetGuidUVE());
-    RenderQueueUVE transparentQueue;
+    RenderItem transparentFirst = MakeItem(3.0F);
+    RenderItem transparentSecond = MakeItem(3.0F);
+    ASSERT_NE(transparentFirst.materialHandle.GetGuid(), transparentSecond.materialHandle.GetGuid());
+    RenderQueue transparentQueue;
     transparentQueue.transparentItems.push_back(std::move(transparentSecond));
     transparentQueue.transparentItems.push_back(std::move(transparentFirst));
-    transparentQueue.SortUVE();
+    transparentQueue.Sort();
     ASSERT_EQ(transparentQueue.transparentItems.size(), 2U);
     EXPECT_TRUE(assetLess(transparentQueue.transparentItems[0], transparentQueue.transparentItems[1]));
     EXPECT_FLOAT_EQ(transparentQueue.transparentItems[0].sortDepth, 3.0F);
     EXPECT_FLOAT_EQ(transparentQueue.transparentItems[1].sortDepth, 3.0F);
 }
 
-TEST_F(RenderQueueUVETest, SortUVE_NonFiniteDepthsArePlacedAfterFiniteItems) {
-    RenderQueueUVE opaqueQueue;
-    opaqueQueue.opaqueItems.push_back(MakeItemUVE(std::numeric_limits<float>::quiet_NaN()));
-    opaqueQueue.opaqueItems.push_back(MakeItemUVE(1.0F));
-    opaqueQueue.opaqueItems.push_back(MakeItemUVE(std::numeric_limits<float>::infinity()));
-    opaqueQueue.opaqueItems.push_back(MakeItemUVE(3.0F));
-    opaqueQueue.SortUVE();
+TEST_F(RenderQueueTest, Sort_NonFiniteDepthsArePlacedAfterFiniteItems) {
+    RenderQueue opaqueQueue;
+    opaqueQueue.opaqueItems.push_back(MakeItem(std::numeric_limits<float>::quiet_NaN()));
+    opaqueQueue.opaqueItems.push_back(MakeItem(1.0F));
+    opaqueQueue.opaqueItems.push_back(MakeItem(std::numeric_limits<float>::infinity()));
+    opaqueQueue.opaqueItems.push_back(MakeItem(3.0F));
+    opaqueQueue.Sort();
 
     ASSERT_EQ(opaqueQueue.opaqueItems.size(), 4U);
     EXPECT_FLOAT_EQ(opaqueQueue.opaqueItems[0].sortDepth, 1.0F);
@@ -149,12 +149,12 @@ TEST_F(RenderQueueUVETest, SortUVE_NonFiniteDepthsArePlacedAfterFiniteItems) {
     EXPECT_FALSE(std::isfinite(opaqueQueue.opaqueItems[2].sortDepth));
     EXPECT_FALSE(std::isfinite(opaqueQueue.opaqueItems[3].sortDepth));
 
-    RenderQueueUVE transparentQueue;
-    transparentQueue.transparentItems.push_back(MakeItemUVE(-std::numeric_limits<float>::infinity()));
-    transparentQueue.transparentItems.push_back(MakeItemUVE(2.0F));
-    transparentQueue.transparentItems.push_back(MakeItemUVE(std::numeric_limits<float>::quiet_NaN()));
-    transparentQueue.transparentItems.push_back(MakeItemUVE(5.0F));
-    transparentQueue.SortUVE();
+    RenderQueue transparentQueue;
+    transparentQueue.transparentItems.push_back(MakeItem(-std::numeric_limits<float>::infinity()));
+    transparentQueue.transparentItems.push_back(MakeItem(2.0F));
+    transparentQueue.transparentItems.push_back(MakeItem(std::numeric_limits<float>::quiet_NaN()));
+    transparentQueue.transparentItems.push_back(MakeItem(5.0F));
+    transparentQueue.Sort();
 
     ASSERT_EQ(transparentQueue.transparentItems.size(), 4U);
     EXPECT_FLOAT_EQ(transparentQueue.transparentItems[0].sortDepth, 5.0F);
@@ -163,12 +163,12 @@ TEST_F(RenderQueueUVETest, SortUVE_NonFiniteDepthsArePlacedAfterFiniteItems) {
     EXPECT_FALSE(std::isfinite(transparentQueue.transparentItems[3].sortDepth));
 }
 
-TEST_F(RenderQueueUVETest, ClearUVE_ClearsFrameStateAndPreservesCapacity) {
-    RenderQueueUVE queue;
-    queue.ReserveUVE(8U, 7U, 6U);
-    queue.opaqueItems.push_back(MakeItemUVE(1.0F));
-    queue.transparentItems.push_back(MakeItemUVE(2.0F));
-    queue.particleItems.push_back({{11U, 2U}, Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 1.0F, 4.0F, 1U});
+TEST_F(RenderQueueTest, Clear_ClearsFrameStateAndPreservesCapacity) {
+    RenderQueue queue;
+    queue.Reserve(8U, 7U, 6U);
+    queue.opaqueItems.push_back(MakeItem(1.0F));
+    queue.transparentItems.push_back(MakeItem(2.0F));
+    queue.particleItems.push_back({{11U, 2U}, Math::Vector3{1.0F, 2.0F, 3.0F}, 1.0F, 4.0F, 1U});
     queue.particleItemsTruncated = true;
     queue.invalidAssetReferences = 1U;
     queue.pendingAssetLoads = 2U;
@@ -179,7 +179,7 @@ TEST_F(RenderQueueUVETest, ClearUVE_ClearsFrameStateAndPreservesCapacity) {
     const std::size_t transparentCapacity = queue.transparentItems.capacity();
     const std::size_t particleCapacity = queue.particleItems.capacity();
 
-    queue.ClearUVE();
+    queue.Clear();
 
     EXPECT_TRUE(queue.opaqueItems.empty());
     EXPECT_TRUE(queue.transparentItems.empty());
@@ -195,29 +195,29 @@ TEST_F(RenderQueueUVETest, ClearUVE_ClearsFrameStateAndPreservesCapacity) {
 }
 
 } // namespace
-TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_GroupsItemsByMeshSoTheShadowBatcherCanMergeThem) {
-    // The reason this function exists. BuildShadowBatchesUVE merges only ADJACENT same-mesh items,
+TEST_F(RenderQueueTest, SortForDepthOnlyPass_GroupsItemsByMeshSoTheShadowBatcherCanMergeThem) {
+    // The reason this function exists. BuildShadowBatches merges only ADJACENT same-mesh items,
     // so the batch count is decided by the ordering it is handed, and depth order interleaves
     // meshes by distance. This asserts the batch count directly rather than the ordering, because
     // the batch count is what costs draw calls.
-    RenderQueueUVE queue;
+    RenderQueue queue;
     constexpr std::size_t kItemCount = 300U;
     constexpr int kDistinctMeshes = 3;
     for (std::size_t index = 0U; index < kItemCount; ++index) {
         // Depth deliberately uncorrelated with mesh, which is the case that splits runs apart.
         const float depth = static_cast<float>((index * 7919U) % 1000U) * 0.1F;
-        queue.opaqueItems.push_back(MakeItemOnMeshUVE(depth, static_cast<int>(index) % kDistinctMeshes));
+        queue.opaqueItems.push_back(MakeItemOnMesh(depth, static_cast<int>(index) % kDistinctMeshes));
     }
 
-    RenderQueueUVE depthOrdered;
+    RenderQueue depthOrdered;
     depthOrdered.opaqueItems = queue.opaqueItems;
-    depthOrdered.SortUVE();
-    RenderBatchSetUVE depthBatches;
-    BuildShadowBatchesUVE(depthOrdered.opaqueItems, depthBatches);
+    depthOrdered.Sort();
+    RenderBatchSet depthBatches;
+    BuildShadowBatches(depthOrdered.opaqueItems, depthBatches);
 
-    queue.SortForDepthOnlyPassUVE();
-    RenderBatchSetUVE meshBatches;
-    BuildShadowBatchesUVE(queue.opaqueItems, meshBatches);
+    queue.SortForDepthOnlyPass();
+    RenderBatchSet meshBatches;
+    BuildShadowBatches(queue.opaqueItems, meshBatches);
 
     EXPECT_EQ(meshBatches.batches.size(), static_cast<std::size_t>(kDistinctMeshes))
         << "mesh ordering must collapse to one batch per distinct mesh";
@@ -226,15 +226,15 @@ TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_GroupsItemsByMeshSoTheShadowB
     EXPECT_EQ(queue.opaqueItems.size(), kItemCount) << "ordering must not lose or duplicate items";
 }
 
-TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_OrdersByDepthWithinEachMesh) {
+TEST_F(RenderQueueTest, SortForDepthOnlyPass_OrdersByDepthWithinEachMesh) {
     // Mesh first is the point, but within one mesh the pass should still draw nearest-first so the
     // depth test rejects as much as it can. This pins the secondary key.
-    RenderQueueUVE queue;
+    RenderQueue queue;
     for (const float depth : {9.0F, 1.0F, 5.0F, 3.0F}) {
-        queue.opaqueItems.push_back(MakeItemOnMeshUVE(depth, 0));
+        queue.opaqueItems.push_back(MakeItemOnMesh(depth, 0));
     }
 
-    queue.SortForDepthOnlyPassUVE();
+    queue.SortForDepthOnlyPass();
 
     ASSERT_EQ(queue.opaqueItems.size(), 4U);
     for (std::size_t index = 1U; index < queue.opaqueItems.size(); ++index) {
@@ -243,36 +243,36 @@ TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_OrdersByDepthWithinEachMesh) 
     }
 }
 
-TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_NonFiniteDepthsDoNotBreakTheOrdering) {
+TEST_F(RenderQueueTest, SortForDepthOnlyPass_NonFiniteDepthsDoNotBreakTheOrdering) {
     // A NaN depth makes a naive comparator inconsistent, which is undefined behaviour in
-    // std::sort rather than just a wrong order - the same hazard SortUVE guards against, and easy
+    // std::sort rather than just a wrong order - the same hazard Sort guards against, and easy
     // to forget when writing a second comparator.
-    RenderQueueUVE queue;
-    queue.opaqueItems.push_back(MakeItemOnMeshUVE(std::numeric_limits<float>::quiet_NaN(), 0));
-    queue.opaqueItems.push_back(MakeItemOnMeshUVE(2.0F, 1));
-    queue.opaqueItems.push_back(MakeItemOnMeshUVE(std::numeric_limits<float>::infinity(), 0));
-    queue.opaqueItems.push_back(MakeItemOnMeshUVE(1.0F, 1));
+    RenderQueue queue;
+    queue.opaqueItems.push_back(MakeItemOnMesh(std::numeric_limits<float>::quiet_NaN(), 0));
+    queue.opaqueItems.push_back(MakeItemOnMesh(2.0F, 1));
+    queue.opaqueItems.push_back(MakeItemOnMesh(std::numeric_limits<float>::infinity(), 0));
+    queue.opaqueItems.push_back(MakeItemOnMesh(1.0F, 1));
 
-    queue.SortForDepthOnlyPassUVE();
+    queue.SortForDepthOnlyPass();
 
     ASSERT_EQ(queue.opaqueItems.size(), 4U) << "no item may be lost to a NaN comparison";
     // Still grouped by mesh, which is what the pass downstream relies on.
     for (std::size_t index = 1U; index < queue.opaqueItems.size(); ++index) {
-        EXPECT_LE(queue.opaqueItems[index - 1U].meshHandle.GetGuidUVE().value,
-                  queue.opaqueItems[index].meshHandle.GetGuidUVE().value);
+        EXPECT_LE(queue.opaqueItems[index - 1U].meshHandle.GetGuid().value,
+                  queue.opaqueItems[index].meshHandle.GetGuid().value);
     }
 }
 
-TEST_F(RenderQueueUVETest, SortForDepthOnlyPassUVE_LeavesTransparentAndParticleBucketsAlone) {
+TEST_F(RenderQueueTest, SortForDepthOnlyPass_LeavesTransparentAndParticleBucketsAlone) {
     // A depth-only pass draws neither, so reordering them would be work with no consumer. Pinned
     // because "sort everything for symmetry" is the obvious thing for someone to add later.
-    RenderQueueUVE queue;
-    queue.transparentItems.push_back(MakeItemUVE(3.0F));
-    queue.transparentItems.push_back(MakeItemUVE(2.0F));
-    queue.transparentItems.push_back(MakeItemUVE(1.0F));
+    RenderQueue queue;
+    queue.transparentItems.push_back(MakeItem(3.0F));
+    queue.transparentItems.push_back(MakeItem(2.0F));
+    queue.transparentItems.push_back(MakeItem(1.0F));
     const std::vector<float> depthsBefore{3.0F, 2.0F, 1.0F};
 
-    queue.SortForDepthOnlyPassUVE();
+    queue.SortForDepthOnlyPass();
 
     ASSERT_EQ(queue.transparentItems.size(), depthsBefore.size());
     for (std::size_t index = 0U; index < depthsBefore.size(); ++index) {

@@ -11,8 +11,8 @@
 
 namespace UVE::Asset {
 
-std::optional<AssetContentFingerprintUVE>
-ComputeAssetContentFingerprintUVE(const std::filesystem::path& path) {
+std::optional<AssetContentFingerprint>
+ComputeAssetContentFingerprint(const std::filesystem::path& path) {
     if (path.empty()) {
         return std::nullopt;
     }
@@ -27,8 +27,8 @@ ComputeAssetContentFingerprintUVE(const std::filesystem::path& path) {
         return std::nullopt;
     }
 
-    AssetContentFingerprintUVE fingerprint;
-    Utilities::Fnv1a64UVE hasher;
+    AssetContentFingerprint fingerprint;
+    Utilities::Fnv1a64 hasher;
     std::array<char, 16U * 1024U> buffer{};
     while (file.good()) {
         file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));

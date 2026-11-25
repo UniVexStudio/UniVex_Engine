@@ -25,24 +25,24 @@ namespace {
 
 /// A ping-pong reflects off each end; more reflections than this in one step means a clip far
 /// shorter than the step, where the exact phase is meaningless - the time is clamped instead.
-constexpr int kMaximumReflectionsPerStepUVE = 64;
+constexpr int kMaximumReflectionsPerStep = 64;
 
-using PoseUVE = Core::TransformPoseUVE;
+using Pose = Core::TransformPose;
 
-[[nodiscard]] Math::Vector3UVE LerpUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to, const float alpha) noexcept {
+[[nodiscard]] Math::Vector3 Lerp(const Math::Vector3& from, const Math::Vector3& to, const float alpha) noexcept {
     return from + (to - from) * alpha;
 }
 
 /// Inertialization's fade: 1 at the start, 0 at the end, with zero speed and acceleration at both
 /// (the complement of the quintic smoothstep), so the hand-over has no pop and no kink.
-[[nodiscard]] float InertialDecayUVE(const float progress) noexcept {
+[[nodiscard]] float InertialDecay(const float progress) noexcept {
     const float x = std::clamp(progress, 0.0F, 1.0F);
     return 1.0F - x * x * x * (x * (x * 6.0F - 15.0F) + 10.0F);
 }
 
 /// Two bone names name the same bone: equal once a namespace ("mixamorig:", "Rig|") is dropped,
 /// ignoring case - the rule posing uses, so root motion finds the bone the pose does.
-[[nodiscard]] bool SameBoneNameUVE(std::string_view a, std::string_view b) noexcept {
+[[nodiscard]] bool SameBoneName(std::string_view a, std::string_view b) noexcept {
     if (const auto pos = a.find_last_of(":|"); pos != std::string_view::npos) {
         a = a.substr(pos + 1U);
     }
@@ -54,8 +54,8 @@ using PoseUVE = Core::TransformPoseUVE;
            });
 }
 
-[[nodiscard]] const Asset::AnimationAssetBoneTrackUVE* FindTrackForBoneUVE(
-    const std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>& tracks,
+[[nodiscard]] const Asset::AnimationAssetBoneTrack* FindTrackForBone(
+    const std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrack*>& tracks,
     const std::string_view boneName) noexcept {
     if (const auto found = tracks.find(boneName); found != tracks.end()) {
         return found->second;
@@ -80,71 +80,71 @@ using PoseUVE = Core::TransformPoseUVE;
     return nullptr;
 }
 
-[[nodiscard]] Math::QuaternionUVE SlerpOrKeepUVE(const Math::QuaternionUVE& from, const Math::QuaternionUVE& to,
+[[nodiscard]] Math::Quaternion SlerpOrKeep(const Math::Quaternion& from, const Math::Quaternion& to,
                                                  const float alpha) noexcept {
-    Math::QuaternionUVE result = to;
-    if (!Math::TrySlerpUVE(from, to, alpha, result)) {
+    Math::Quaternion result = to;
+    if (!Math::TrySlerp(from, to, alpha, result)) {
         result = alpha < 0.5F ? from : to;
     }
     return result;
 }
 
-[[nodiscard]] PoseUVE ToPoseUVE(const Asset::AnimationAssetPoseUVE& pose) noexcept {
-    return PoseUVE{pose.position, pose.rotation, pose.scale};
+[[nodiscard]] Pose ToPose(const Asset::AnimationAssetPose& pose) noexcept {
+    return Pose{pose.position, pose.rotation, pose.scale};
 }
 
-[[nodiscard]] float SafeRatioUVE(const float numerator, const float denominator) noexcept {
+[[nodiscard]] float SafeRatio(const float numerator, const float denominator) noexcept {
     return std::fabs(denominator) > 1e-6F ? numerator / denominator : numerator;
 }
 
-[[nodiscard]] PoseUVE StartPoseUVE(const AnimationSequencerComponentUVE& player) noexcept {
-    return PoseUVE{player.startPosition, player.startRotation, player.startScale};
+[[nodiscard]] Pose StartPose(const AnimationSequencerComponent& player) noexcept {
+    return Pose{player.startPosition, player.startRotation, player.startScale};
 }
 
 /// The clip's motion since its first frame, laid on top of where the target started.
-[[nodiscard]] PoseUVE MakeRelativeUVE(const AnimationSequencerComponentUVE& player, const PoseUVE& first,
-                                      const PoseUVE& sampled) noexcept {
-    PoseUVE result;
-    const Math::Vector3UVE offset = sampled.position - first.position;
-    result.position = player.startPosition + Math::RotateVectorUVE(player.startRotation, player.startScale * offset);
-    Math::QuaternionUVE inverseFirst{};
-    if (!Math::TryInverseUVE(first.rotation, inverseFirst)) {
-        inverseFirst = Math::QuaternionUVE{};
+[[nodiscard]] Pose MakeRelative(const AnimationSequencerComponent& player, const Pose& first,
+                                      const Pose& sampled) noexcept {
+    Pose result;
+    const Math::Vector3 offset = sampled.position - first.position;
+    result.position = player.startPosition + Math::RotateVector(player.startRotation, player.startScale * offset);
+    Math::Quaternion inverseFirst{};
+    if (!Math::TryInverse(first.rotation, inverseFirst)) {
+        inverseFirst = Math::Quaternion{};
     }
-    result.rotation = Math::MultiplyUVE(player.startRotation, Math::MultiplyUVE(inverseFirst, sampled.rotation));
-    result.scale = Math::Vector3UVE{player.startScale.x * SafeRatioUVE(sampled.scale.x, first.scale.x),
-                                    player.startScale.y * SafeRatioUVE(sampled.scale.y, first.scale.y),
-                                    player.startScale.z * SafeRatioUVE(sampled.scale.z, first.scale.z)};
+    result.rotation = Math::Multiply(player.startRotation, Math::Multiply(inverseFirst, sampled.rotation));
+    result.scale = Math::Vector3{player.startScale.x * SafeRatio(sampled.scale.x, first.scale.x),
+                                    player.startScale.y * SafeRatio(sampled.scale.y, first.scale.y),
+                                    player.startScale.z * SafeRatio(sampled.scale.z, first.scale.z)};
     return result;
 }
 
-void WritePoseUVE(const AnimationDriverComponentUVE& mixer, const PoseUVE& pose, TransformComponentUVE& target) noexcept {
-    WriteAnimatedPoseUVE(pose, mixer.animatePosition, mixer.animateRotation, mixer.animateScale, target);
+void WritePose(const AnimationDriverComponent& mixer, const Pose& pose, TransformComponent& target) noexcept {
+    WriteAnimatedPose(pose, mixer.animatePosition, mixer.animateRotation, mixer.animateScale, target);
 }
 
 /// Moves the clock and applies the loop mode. Returns false when a Once clip reached its end.
-[[nodiscard]] bool AdvanceClockUVE(AnimationSequencerComponentUVE& player, const double duration,
+[[nodiscard]] bool AdvanceClock(AnimationSequencerComponent& player, const double duration,
                                    const float deltaSeconds) noexcept {
     double time = static_cast<double>(player.currentTimeSeconds) +
                   static_cast<double>(player.speed) * static_cast<double>(player.direction) *
                       static_cast<double>(deltaSeconds);
     bool stillPlaying = true;
     switch (player.loopMode) {
-        case AnimationLoopModeUVE::Once:
+        case AnimationLoopMode::Once:
             if (time >= duration || time <= 0.0) {
                 time = std::clamp(time, 0.0, duration);
                 stillPlaying = false;
             }
             break;
-        case AnimationLoopModeUVE::Loop:
+        case AnimationLoopMode::Loop:
             time = std::fmod(time, duration);
             if (time < 0.0) {
                 time += duration;
             }
             break;
-        case AnimationLoopModeUVE::PingPong: {
+        case AnimationLoopMode::PingPong: {
             int reflections = 0;
-            while ((time > duration || time < 0.0) && reflections < kMaximumReflectionsPerStepUVE) {
+            while ((time > duration || time < 0.0) && reflections < kMaximumReflectionsPerStep) {
                 time = time > duration ? 2.0 * duration - time : -time;
                 player.direction = -player.direction;
                 ++reflections;
@@ -163,37 +163,37 @@ namespace {
 
 /// A track's pose at `timeSeconds`: linear position and scale, spherical rotation, clamped to the
 /// first and last sample. `samples` is never empty.
-[[nodiscard]] Core::TransformPoseUVE SampleTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
+[[nodiscard]] Core::TransformPose SampleTrack(const std::vector<Asset::AnimationAssetSample>& samples,
                                                     const double timeSeconds) noexcept {
     const auto upper = std::upper_bound(samples.begin(), samples.end(), timeSeconds,
-                                        [](const double value, const Asset::AnimationAssetSampleUVE& sample) {
+                                        [](const double value, const Asset::AnimationAssetSample& sample) {
                                             return value < sample.timeSeconds;
                                         });
     if (upper == samples.begin()) {
-        return ToPoseUVE(samples.front().pose);
+        return ToPose(samples.front().pose);
     }
     if (upper == samples.end()) {
-        return ToPoseUVE(samples.back().pose);
+        return ToPose(samples.back().pose);
     }
-    const Asset::AnimationAssetSampleUVE& right = *upper;
-    const Asset::AnimationAssetSampleUVE& left = *(upper - 1);
+    const Asset::AnimationAssetSample& right = *upper;
+    const Asset::AnimationAssetSample& left = *(upper - 1);
     const double span = right.timeSeconds - left.timeSeconds;
     const float alpha = span <= 0.0 ? 0.0F : static_cast<float>((timeSeconds - left.timeSeconds) / span);
-    return Core::TransformPoseUVE{LerpUVE(left.pose.position, right.pose.position, alpha),
-                                  SlerpOrKeepUVE(left.pose.rotation, right.pose.rotation, alpha),
-                                  LerpUVE(left.pose.scale, right.pose.scale, alpha)};
+    return Core::TransformPose{Lerp(left.pose.position, right.pose.position, alpha),
+                                  SlerpOrKeep(left.pose.rotation, right.pose.rotation, alpha),
+                                  Lerp(left.pose.scale, right.pose.scale, alpha)};
 }
 
 } // namespace
 
-Core::TransformPoseUVE SampleAnimationTrackUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples,
+Core::TransformPose SampleAnimationTrack(const std::vector<Asset::AnimationAssetSample>& samples,
                                                const double timeSeconds) noexcept {
-    return SampleTrackUVE(samples, timeSeconds);
+    return SampleTrack(samples, timeSeconds);
 }
 
-bool SampleMorphWeightTrackUVE(const Asset::AnimationAssetMorphTrackUVE& track, const double timeSeconds,
+bool SampleMorphWeightTrack(const Asset::AnimationAssetMorphTrack& track, const double timeSeconds,
                               std::vector<float>& outWeights) {
-    const std::vector<Asset::AnimationAssetMorphWeightSampleUVE>& samples = track.samples;
+    const std::vector<Asset::AnimationAssetMorphWeightSample>& samples = track.samples;
     if (samples.empty()) {
         return false;
     }
@@ -209,7 +209,7 @@ bool SampleMorphWeightTrackUVE(const Asset::AnimationAssetMorphTrackUVE& track, 
     // predecessor: the two early returns above guarantee the time lies inside the key range.
     const auto after = std::upper_bound(
         samples.begin(), samples.end(), timeSeconds,
-        [](const double time, const Asset::AnimationAssetMorphWeightSampleUVE& sample) {
+        [](const double time, const Asset::AnimationAssetMorphWeightSample& sample) {
             return time < sample.timeSeconds;
         });
     const auto before = std::prev(after);
@@ -232,26 +232,26 @@ bool SampleMorphWeightTrackUVE(const Asset::AnimationAssetMorphTrackUVE& track, 
     return true;
 }
 
-float AnimationInertialDecayUVE(const float progress) noexcept {
-    return InertialDecayUVE(progress);
+float AnimationInertialDecay(const float progress) noexcept {
+    return InertialDecay(progress);
 }
 
-Core::TransformPoseUVE SampleAnimationClipAssetUVE(const Asset::AnimationClipAssetUVE& clip,
+Core::TransformPose SampleAnimationClipAsset(const Asset::AnimationClipAsset& clip,
                                                          const double timeSeconds) noexcept {
-    return SampleTrackUVE(clip.samples, timeSeconds);
+    return SampleTrack(clip.samples, timeSeconds);
 }
 
-void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool position, const bool rotation, const bool scale,
-                          TransformComponentUVE& target) noexcept {
+void WriteAnimatedPose(const Core::TransformPose& pose, const bool position, const bool rotation, const bool scale,
+                          TransformComponent& target) noexcept {
     if (position) {
         target.localPosition = pose.position;
     }
     if (rotation) {
-        Math::QuaternionUVE normalized{};
-        if (Math::TryNormalizeUVE(pose.rotation, normalized)) {
+        Math::Quaternion normalized{};
+        if (Math::TryNormalize(pose.rotation, normalized)) {
             target.localRotation = normalized;
-            Math::Vector3UVE euler{};
-            if (Math::TryToEulerOrderedUVE(normalized, target.eulerOrder, euler)) {
+            Math::Vector3 euler{};
+            if (Math::TryToEulerOrdered(normalized, target.eulerOrder, euler)) {
                 target.localEulerRadians = euler;
             }
         }
@@ -261,23 +261,23 @@ void WriteAnimatedPoseUVE(const Core::TransformPoseUVE& pose, const bool positio
     }
 }
 
-bool IsAnimationSequencerObjectDefinitionValidUVE(const AnimationSequencerObjectDefinitionUVE& value) noexcept {
-    return IsAnimationSequencerComponentValidUVE(value.player) && IsAnimationDriverComponentValidUVE(value.mixer);
+bool IsAnimationSequencerObjectDefinitionValid(const AnimationSequencerObjectDefinition& value) noexcept {
+    return IsAnimationSequencerComponentValid(value.player) && IsAnimationDriverComponentValid(value.mixer);
 }
 
-void ApplyAnimationSequencerObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const AnimationSequencerObjectDefinitionUVE& value) {
+void ApplyAnimationSequencerObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                           const AnimationSequencerObjectDefinition& value) {
     // The definition's mixer settings win over the base's defaults: added first, kept by the base.
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationDriverComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationDriverComponentUVE>(entity, value.mixer);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<AnimationDriverComponent>(entity)) {
+        entityManager.AddComponent<AnimationDriverComponent>(entity, value.mixer);
     }
-    ApplyAnimationDriverBaseUVE(entityManager, entity, AnimationSequencerObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<AnimationSequencerComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(entity, value.player);
+    ApplyAnimationDriverBase(entityManager, entity, AnimationSequencerObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<AnimationSequencerComponent>(entity)) {
+        entityManager.AddComponent<AnimationSequencerComponent>(entity, value.player);
     }
 }
 
-void PlayAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const TransformComponentUVE& targetNow,
+void PlayAnimationSequencer(AnimationSequencerComponent& player, const TransformComponent& targetNow,
                             const double clipDurationSeconds) noexcept {
     const double duration = std::isfinite(clipDurationSeconds) ? std::max(clipDurationSeconds, 0.0) : 0.0;
     const double offset = std::min(static_cast<double>(player.startOffsetSeconds), duration);
@@ -297,13 +297,13 @@ void PlayAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Tra
     player.startScale = targetNow.localScale;
 }
 
-void StopAnimationSequencerUVE(AnimationSequencerComponentUVE& player) noexcept {
+void StopAnimationSequencer(AnimationSequencerComponent& player) noexcept {
     player.isPlaying = false;
 }
 
-bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
-                            const float deltaSeconds, TransformComponentUVE& target,
-                            const AnimationDriverComponentUVE& mixer) noexcept {
+bool StepAnimationSequencer(AnimationSequencerComponent& player, const Asset::AnimationClipAsset& clip,
+                            const float deltaSeconds, TransformComponent& target,
+                            const AnimationDriverComponent& mixer) noexcept {
     if (!player.isPlaying) {
         return false;
     }
@@ -319,19 +319,19 @@ bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Ass
     const double eventsBefore = static_cast<double>(player.currentTimeSeconds);
     const bool eventsForward = player.speed * player.direction >= 0.0F;
     const bool firstStep = player.blendElapsedSeconds <= 0.0F;
-    const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
+    const bool stillPlaying = AdvanceClock(player, duration, deltaSeconds);
     player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
-    player.firedEvents = CollectPassedAnimationEventsUVE(
+    player.firedEvents = CollectPassedAnimationEvents(
         clip.events, eventsBefore, static_cast<double>(player.currentTimeSeconds), duration, eventsForward,
-        player.loopMode == AnimationLoopModeUVE::Loop &&
+        player.loopMode == AnimationLoopMode::Loop &&
             (eventsForward ? player.currentTimeSeconds < eventsBefore : player.currentTimeSeconds > eventsBefore),
         firstStep);
 
     if (!stillPlaying) {
         player.isPlaying = false;
         player.finished = true;
-        if (movesTarget && player.onFinish == AnimationFinishActionUVE::ReturnToStart && player.hasStartPose) {
-            WritePoseUVE(mixer, StartPoseUVE(player), target);
+        if (movesTarget && player.onFinish == AnimationFinishAction::ReturnToStart && player.hasStartPose) {
+            WritePose(mixer, StartPose(player), target);
             return true;
         }
     }
@@ -339,54 +339,54 @@ bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Ass
         return true;
     }
 
-    PoseUVE pose = SampleAnimationClipAssetUVE(clip, static_cast<double>(player.currentTimeSeconds));
+    Pose pose = SampleAnimationClipAsset(clip, static_cast<double>(player.currentTimeSeconds));
     if (player.relative && player.hasStartPose) {
-        pose = MakeRelativeUVE(player, ToPoseUVE(clip.samples.front().pose), pose);
+        pose = MakeRelative(player, ToPose(clip.samples.front().pose), pose);
     }
     if (player.blendInSeconds > 0.0F && player.hasStartPose && player.blendElapsedSeconds < player.blendInSeconds) {
         const float weight = player.blendElapsedSeconds / player.blendInSeconds;
-        const PoseUVE start = StartPoseUVE(player);
-        pose = PoseUVE{LerpUVE(start.position, pose.position, weight),
-                       SlerpOrKeepUVE(start.rotation, pose.rotation, weight), LerpUVE(start.scale, pose.scale, weight)};
+        const Pose start = StartPose(player);
+        pose = Pose{Lerp(start.position, pose.position, weight),
+                       SlerpOrKeep(start.rotation, pose.rotation, weight), Lerp(start.scale, pose.scale, weight)};
     }
-    WritePoseUVE(mixer, pose, target);
+    WritePose(mixer, pose, target);
     return true;
 }
 
-bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Asset::AnimationClipAssetUVE& clip,
-                                    const float deltaSeconds, Skeleton3DComponentUVE& skeleton,
-                                    const AnimationDriverComponentUVE& mixer) {
+bool StepSkeletalAnimationSequencer(AnimationSequencerComponent& player, const Asset::AnimationClipAsset& clip,
+                                    const float deltaSeconds, Skeleton3DComponent& skeleton,
+                                    const AnimationDriverComponent& mixer) {
     if (!player.isPlaying) {
         return false;
     }
     const double duration = clip.durationSeconds;
-    if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(duration) || duration <= 0.0 ||
+    if (!clip.IsSkeletal() || skeleton.bones.empty() || !std::isfinite(duration) || duration <= 0.0 ||
         !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
         player.isPlaying = false;
         return false;
     }
-    std::vector<SkeletonBonePoseUVE> current = GetSkeletonCurrentPoseUVE(skeleton);
+    std::vector<SkeletonBonePose> current = GetSkeletonCurrentPose(skeleton);
     const float blendBefore = player.blendElapsedSeconds;
     const double timeBefore = static_cast<double>(player.currentTimeSeconds);
     const bool forward = player.speed * player.direction >= 0.0F;
     const bool firstStep = player.blendElapsedSeconds <= 0.0F;
-    const bool stillPlaying = AdvanceClockUVE(player, duration, deltaSeconds);
-    player.firedEvents = CollectPassedAnimationEventsUVE(
+    const bool stillPlaying = AdvanceClock(player, duration, deltaSeconds);
+    player.firedEvents = CollectPassedAnimationEvents(
         clip.events, timeBefore, static_cast<double>(player.currentTimeSeconds), duration, forward,
-        player.loopMode == AnimationLoopModeUVE::Loop &&
+        player.loopMode == AnimationLoopMode::Loop &&
             (forward ? player.currentTimeSeconds < timeBefore : player.currentTimeSeconds > timeBefore),
         firstStep);
     player.blendElapsedSeconds = std::min(player.blendElapsedSeconds + deltaSeconds, 3600.0F);
 
-    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
+    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrack*> tracks;
     tracks.reserve(clip.bones.size());
-    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+    for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
         if (!track.samples.empty()) {
             tracks.emplace(track.bone, &track);
         }
     }
-    const bool returnToRest = !stillPlaying && player.onFinish == AnimationFinishActionUVE::ReturnToStart;
-    const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
+    const bool returnToRest = !stillPlaying && player.onFinish == AnimationFinishAction::ReturnToStart;
+    const Retarget::ConformedPlayback conformed = PlanConformedPlaybackFor(clip, skeleton);
     // Blend In eases from where the skeleton was: each step covers this step's share of what is
     // left of the blend, so the pose arrives exactly when the blend ends.
     float weight = 1.0F;
@@ -397,54 +397,54 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     const double time = static_cast<double>(player.currentTimeSeconds);
     // Inertialization: on the blend's first step, remember how far the pose that was there is from
     // the new clip; then play the clip at full weight with that difference fading out.
-    const bool inertial = mixer.transition == AnimationTransitionModeUVE::Inertialize && player.blendInSeconds > 0.0F;
+    const bool inertial = mixer.transition == AnimationTransitionMode::Inertialize && player.blendInSeconds > 0.0F;
     const std::size_t boneCount = skeleton.bones.size();
     const bool captureOffsets = inertial && blendBefore <= 0.0F;
     if (captureOffsets) {
-        player.inertialPosition.assign(boneCount, Math::Vector3UVE{});
-        player.inertialRotation.assign(boneCount, Math::QuaternionUVE{});
-        player.inertialScale.assign(boneCount, Math::Vector3UVE{});
+        player.inertialPosition.assign(boneCount, Math::Vector3{});
+        player.inertialRotation.assign(boneCount, Math::Quaternion{});
+        player.inertialScale.assign(boneCount, Math::Vector3{});
     }
     const bool haveOffsets = inertial && player.inertialPosition.size() == boneCount &&
                              player.inertialRotation.size() == boneCount && player.inertialScale.size() == boneCount;
-    const float decay = haveOffsets ? InertialDecayUVE(player.blendElapsedSeconds / player.blendInSeconds) : 0.0F;
+    const float decay = haveOffsets ? InertialDecay(player.blendElapsedSeconds / player.blendInSeconds) : 0.0F;
     for (std::size_t index = 0U; index < boneCount; ++index) {
-        const SkeletonBoneUVE& bone = skeleton.bones[index];
-        PoseUVE target{bone.localPosition, bone.localRotation, bone.localScale};
+        const SkeletonBone& bone = skeleton.bones[index];
+        Pose target{bone.localPosition, bone.localRotation, bone.localScale};
         if (!returnToRest) {
-            if (const auto* track = FindTrackForBoneUVE(tracks, bone.name); track != nullptr) {
-                target = SampleTrackUVE(track->samples, time);
-                target.position = conformed.PositionUVE(bone.name, target.position, bone.localPosition);
-                target.scale = conformed.ScaleUVE(target.scale, bone.localScale);
+            if (const auto* track = FindTrackForBone(tracks, bone.name); track != nullptr) {
+                target = SampleTrack(track->samples, time);
+                target.position = conformed.Position(bone.name, target.position, bone.localPosition);
+                target.scale = conformed.Scale(target.scale, bone.localScale);
             }
         }
-        SkeletonBonePoseUVE& out = current[index];
+        SkeletonBonePose& out = current[index];
         if (captureOffsets) {
-            Math::QuaternionUVE inverse{};
-            if (!Math::TryInverseUVE(target.rotation, inverse)) {
-                inverse = Math::QuaternionUVE{};
+            Math::Quaternion inverse{};
+            if (!Math::TryInverse(target.rotation, inverse)) {
+                inverse = Math::Quaternion{};
             }
             player.inertialPosition[index] = out.position - target.position;
-            player.inertialRotation[index] = Math::MultiplyUVE(out.rotation, inverse);
+            player.inertialRotation[index] = Math::Multiply(out.rotation, inverse);
             player.inertialScale[index] = out.scale - target.scale;
         }
-        PoseUVE blended;
+        Pose blended;
         if (haveOffsets) {
-            blended = PoseUVE{target.position + player.inertialPosition[index] * decay,
-                              Math::MultiplyUVE(SlerpOrKeepUVE(Math::QuaternionUVE{}, player.inertialRotation[index], decay),
+            blended = Pose{target.position + player.inertialPosition[index] * decay,
+                              Math::Multiply(SlerpOrKeep(Math::Quaternion{}, player.inertialRotation[index], decay),
                                                 target.rotation),
                               target.scale + player.inertialScale[index] * decay};
         } else {
-            blended = PoseUVE{LerpUVE(out.position, target.position, weight),
-                              SlerpOrKeepUVE(out.rotation, target.rotation, weight),
-                              LerpUVE(out.scale, target.scale, weight)};
+            blended = Pose{Lerp(out.position, target.position, weight),
+                              SlerpOrKeep(out.rotation, target.rotation, weight),
+                              Lerp(out.scale, target.scale, weight)};
         }
         if (mixer.animatePosition) {
             out.position = blended.position;
         }
         if (mixer.animateRotation) {
-            Math::QuaternionUVE normalized{};
-            if (Math::TryNormalizeUVE(blended.rotation, normalized)) {
+            Math::Quaternion normalized{};
+            if (Math::TryNormalize(blended.rotation, normalized)) {
                 out.rotation = normalized;
             }
         }
@@ -459,28 +459,28 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     }
     // Root motion: the root bone's ground travel over this step, across a loop's wrap too, is
     // handed to the caller; the pose keeps the bone over its first frame's ground position.
-    player.rootMotionDelta = Math::Vector3UVE{};
-    if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
-        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
-            if (const Asset::AnimationAssetBoneTrackUVE* const rootTrack = FindTrackForBoneUVE(tracks, skeleton.bones[*rootIndex].name)) {
+    player.rootMotionDelta = Math::Vector3{};
+    if (mixer.rootMotion != AnimationRootMotionMode::Off && mixer.animatePosition) {
+        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBone(skeleton, clip, mixer.rootMotionBone)) {
+            if (const Asset::AnimationAssetBoneTrack* const rootTrack = FindTrackForBone(tracks, skeleton.bones[*rootIndex].name)) {
                 const auto& samples = rootTrack->samples;
                 const std::string& rootName = skeleton.bones[*rootIndex].name;
                 const auto at = [&](const double t) {
-                    return conformed.PositionUVE(rootName, SampleTrackUVE(samples, t).position, Math::Vector3UVE{});
+                    return conformed.Position(rootName, SampleTrack(samples, t).position, Math::Vector3{});
                 };
-                const Math::Vector3UVE first = at(0.0);
+                const Math::Vector3 first = at(0.0);
                 if (!returnToRest) {
-                    Math::Vector3UVE travel = at(time) - at(timeBefore);
-                    if (player.loopMode == AnimationLoopModeUVE::Loop) {
+                    Math::Vector3 travel = at(time) - at(timeBefore);
+                    if (player.loopMode == AnimationLoopMode::Loop) {
                         if (forward && time < timeBefore) {
                             travel = (at(duration) - at(timeBefore)) + (at(time) - first);
                         } else if (!forward && time > timeBefore) {
                             travel = (first - at(timeBefore)) + (at(time) - at(duration));
                         }
                     }
-                    player.rootMotionDelta = Math::Vector3UVE{travel.x * weight, 0.0F, travel.z * weight};
+                    player.rootMotionDelta = Math::Vector3{travel.x * weight, 0.0F, travel.z * weight};
                 }
-                SkeletonBonePoseUVE& root = current[*rootIndex];
+                SkeletonBonePose& root = current[*rootIndex];
                 root.position.x = first.x;
                 root.position.z = first.z;
             }
@@ -494,17 +494,17 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     return true;
 }
 
-std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE& skeleton,
-                                                    const Asset::AnimationClipAssetUVE& clip,
+std::optional<std::size_t> ResolveRootMotionBone(const Skeleton3DComponent& skeleton,
+                                                    const Asset::AnimationClipAsset& clip,
                                                     const std::string_view boneName) {
-    const auto trackOf = [&clip](const std::string_view name) -> const Asset::AnimationAssetBoneTrackUVE* {
-        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+    const auto trackOf = [&clip](const std::string_view name) -> const Asset::AnimationAssetBoneTrack* {
+        for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
             if (track.bone == name && !track.samples.empty()) {
                 return &track;
             }
         }
-        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
-            if (!track.samples.empty() && SameBoneNameUVE(track.bone, name)) {
+        for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
+            if (!track.samples.empty() && SameBoneName(track.bone, name)) {
                 return &track;
             }
         }
@@ -512,24 +512,24 @@ std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE
     };
     if (!boneName.empty()) {
         for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-            if (SameBoneNameUVE(skeleton.bones[index].name, boneName)) {
+            if (SameBoneName(skeleton.bones[index].name, boneName)) {
                 return trackOf(skeleton.bones[index].name) != nullptr ? std::optional<std::size_t>{index} : std::nullopt;
             }
         }
         return std::nullopt;
     }
     // Bones are parents first, so the first one that travels is the highest in the rig.
-    constexpr float kMinimumTravelMetresUVE = 0.01F;
+    constexpr float kMinimumTravelMetres = 0.01F;
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-        const Asset::AnimationAssetBoneTrackUVE* const track = trackOf(skeleton.bones[index].name);
+        const Asset::AnimationAssetBoneTrack* const track = trackOf(skeleton.bones[index].name);
         if (track == nullptr) {
             continue;
         }
-        const Math::Vector3UVE first = track->samples.front().pose.position;
-        for (const Asset::AnimationAssetSampleUVE& sample : track->samples) {
+        const Math::Vector3 first = track->samples.front().pose.position;
+        for (const Asset::AnimationAssetSample& sample : track->samples) {
             const float dx = sample.pose.position.x - first.x;
             const float dz = sample.pose.position.z - first.z;
-            if (dx * dx + dz * dz > kMinimumTravelMetresUVE * kMinimumTravelMetresUVE) {
+            if (dx * dx + dz * dz > kMinimumTravelMetres * kMinimumTravelMetres) {
                 return index;
             }
         }
@@ -537,46 +537,46 @@ std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE
     return std::nullopt;
 }
 
-bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const double timeSeconds,
-                           Skeleton3DComponentUVE& skeleton, const AnimationDriverComponentUVE& mixer) {
-    if (!clip.IsSkeletalUVE() || skeleton.bones.empty() || !std::isfinite(timeSeconds)) {
+bool PoseSkeletonAtTime(const Asset::AnimationClipAsset& clip, const double timeSeconds,
+                           Skeleton3DComponent& skeleton, const AnimationDriverComponent& mixer) {
+    if (!clip.IsSkeletal() || skeleton.bones.empty() || !std::isfinite(timeSeconds)) {
         return false;
     }
     const double time = std::clamp(timeSeconds, 0.0, std::max(clip.durationSeconds, 0.0));
-    const Retarget::ConformedPlaybackUVE conformed = PlanConformedPlaybackForUVE(clip, skeleton);
+    const Retarget::ConformedPlayback conformed = PlanConformedPlaybackFor(clip, skeleton);
 
-    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*> tracks;
+    std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrack*> tracks;
     tracks.reserve(clip.bones.size());
-    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+    for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
         if (!track.samples.empty()) {
             tracks.emplace(track.bone, &track);
         }
     }
 
-    std::vector<SkeletonBonePoseUVE> pose(skeleton.bones.size());
+    std::vector<SkeletonBonePose> pose(skeleton.bones.size());
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-        const SkeletonBoneUVE& bone = skeleton.bones[index];
-        SkeletonBonePoseUVE& out = pose[index];
-        out = SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale};
-        if (const auto* track = FindTrackForBoneUVE(tracks, bone.name); track != nullptr) {
-            const PoseUVE sampled = SampleTrackUVE(track->samples, time);
+        const SkeletonBone& bone = skeleton.bones[index];
+        SkeletonBonePose& out = pose[index];
+        out = SkeletonBonePose{bone.localPosition, bone.localRotation, bone.localScale};
+        if (const auto* track = FindTrackForBone(tracks, bone.name); track != nullptr) {
+            const Pose sampled = SampleTrack(track->samples, time);
             if (mixer.animatePosition) {
-                out.position = conformed.PositionUVE(bone.name, sampled.position, bone.localPosition);
+                out.position = conformed.Position(bone.name, sampled.position, bone.localPosition);
             }
-            Math::QuaternionUVE normalized{};
-            if (mixer.animateRotation && Math::TryNormalizeUVE(sampled.rotation, normalized)) {
+            Math::Quaternion normalized{};
+            if (mixer.animateRotation && Math::TryNormalize(sampled.rotation, normalized)) {
                 out.rotation = normalized;
             }
             if (mixer.animateScale) {
-                out.scale = conformed.ScaleUVE(sampled.scale, bone.localScale);
+                out.scale = conformed.Scale(sampled.scale, bone.localScale);
             }
         }
     }
-    if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
-        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
+    if (mixer.rootMotion != AnimationRootMotionMode::Off && mixer.animatePosition) {
+        if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBone(skeleton, clip, mixer.rootMotionBone)) {
             const std::string& rootName = skeleton.bones[*rootIndex].name;
-            if (const auto* track = FindTrackForBoneUVE(tracks, rootName); track != nullptr && !track->samples.empty()) {
-                const Math::Vector3UVE first = conformed.PositionUVE(track->bone, SampleTrackUVE(track->samples, 0.0).position, Math::Vector3UVE{});
+            if (const auto* track = FindTrackForBone(tracks, rootName); track != nullptr && !track->samples.empty()) {
+                const Math::Vector3 first = conformed.Position(track->bone, SampleTrack(track->samples, 0.0).position, Math::Vector3{});
                 pose[*rootIndex].position.x = first.x;
                 pose[*rootIndex].position.z = first.z;
             }
@@ -586,15 +586,15 @@ bool PoseSkeletonAtTimeUVE(const Asset::AnimationClipAssetUVE& clip, const doubl
     return true;
 }
 
-std::vector<std::string> CollectPassedAnimationEventsUVE(const std::vector<Asset::AnimationAssetEventUVE>& events,
+std::vector<std::string> CollectPassedAnimationEvents(const std::vector<Asset::AnimationAssetEvent>& events,
                                                          const double beforeSeconds, const double afterSeconds,
                                                          const double durationSeconds, const bool forward,
                                                          const bool wrapped, const bool includeStart) {
     // Passing order: forwards the events sorted by time, backwards reversed. A wrap passes the rest
     // of the clip first, then the part from the other end.
-    std::vector<const Asset::AnimationAssetEventUVE*> sorted;
+    std::vector<const Asset::AnimationAssetEvent*> sorted;
     sorted.reserve(events.size());
-    for (const Asset::AnimationAssetEventUVE& event : events) {
+    for (const Asset::AnimationAssetEvent& event : events) {
         sorted.push_back(&event);
     }
     std::ranges::stable_sort(sorted, [](const auto* a, const auto* b) { return a->timeSeconds < b->timeSeconds; });
@@ -603,7 +603,7 @@ std::vector<std::string> CollectPassedAnimationEventsUVE(const std::vector<Asset
     }
     std::vector<std::string> passed;
     const auto collect = [&](const double from, const double to, const bool fromInclusive) {
-        for (const Asset::AnimationAssetEventUVE* event : sorted) {
+        for (const Asset::AnimationAssetEvent* event : sorted) {
             const double t = event->timeSeconds;
             const bool inside = forward ? ((fromInclusive ? t >= from : t > from) && t <= to)
                                         : ((fromInclusive ? t <= from : t < from) && t >= to);

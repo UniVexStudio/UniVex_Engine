@@ -16,32 +16,32 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::size_t kMaximumSoftBody3DPointsUVE = 4096U;
+inline constexpr std::size_t kMaximumSoftBody3DPoints = 4096U;
 
-struct SoftBody3DPointUVE final {
-    Math::Vector3UVE position{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE velocity{0.0F, 0.0F, 0.0F};
+struct SoftBody3DPoint final {
+    Math::Vector3 position{0.0F, 0.0F, 0.0F};
+    Math::Vector3 velocity{0.0F, 0.0F, 0.0F};
     bool pinned = false;
 
-    [[nodiscard]] bool operator==(const SoftBody3DPointUVE&) const = default;
+    [[nodiscard]] bool operator==(const SoftBody3DPoint&) const = default;
 };
 
-struct SoftBodySphereColliderUVE final {
-    Math::Vector3UVE center{0.0F, 0.0F, 0.0F};
+struct SoftBodySphereCollider final {
+    Math::Vector3 center{0.0F, 0.0F, 0.0F};
     float radius = 0.5F;
 };
 
-struct SoftBodyAabbColliderUVE final {
-    Math::AabbUVE bounds{};
+struct SoftBodyAabbCollider final {
+    Math::Aabb bounds{};
 };
 
-/// Deformable XPBD cloth / soft-body physics component built on `SurfaceInstance3DBaseUVE`.
+/// Deformable XPBD cloth / soft-body physics component built on `SurfaceInstance3DBase`.
 /// When `gridWidth >= 2 && gridHeight >= 2 && points.size() == gridWidth * gridHeight`, solves
 /// structural, shear, and bending XPBD distance constraints; otherwise solves a 1D chain.
-struct SoftBody3DComponentUVE final {
-    std::vector<SoftBody3DPointUVE> points{};
+struct SoftBody3DComponent final {
+    std::vector<SoftBody3DPoint> points{};
     std::uint32_t gridWidth = 0U;
     std::uint32_t gridHeight = 0U;
     std::uint32_t substeps = 4U;
@@ -52,83 +52,83 @@ struct SoftBody3DComponentUVE final {
     float damping = 0.05F;
     float restSegmentLength = 0.5F;
     float gravityScale = 1.0F;
-    Math::Vector3UVE windVelocity{0.0F, 0.0F, 0.0F};
+    Math::Vector3 windVelocity{0.0F, 0.0F, 0.0F};
     float windDrag = 0.25F;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const SoftBody3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const SoftBody3DComponent&) const = default;
 };
 
-[[nodiscard]] SoftBody3DComponentUVE BuildClothGridSoftBody3DUVE(
+[[nodiscard]] SoftBody3DComponent BuildClothGridSoftBody3D(
     std::uint32_t width, std::uint32_t height, float spacingMetres,
-    const Math::Vector3UVE& origin = Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+    const Math::Vector3& origin = Math::Vector3{0.0F, 0.0F, 0.0F},
     bool pinTopRow = true);
 
-[[nodiscard]] bool IsSoftBody3DComponentValidUVE(const SoftBody3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsSoftBody3DComponentValid(const SoftBody3DComponent& value) noexcept;
 
-[[nodiscard]] SoftBody3DComponentUVE SanitizeSoftBody3DComponentUVE(
-    const SoftBody3DComponentUVE& value);
+[[nodiscard]] SoftBody3DComponent SanitizeSoftBody3DComponent(
+    const SoftBody3DComponent& value);
 
-struct SoftBody3DObjectDefinitionUVE final {
+struct SoftBody3DObjectDefinition final {
     static constexpr std::string_view defaultName = "SoftBody3D";
-    SoftBody3DComponentUVE softBody{};
+    SoftBody3DComponent softBody{};
 };
 
-[[nodiscard]] bool IsSoftBody3DObjectDefinitionValidUVE(
-    const SoftBody3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsSoftBody3DObjectDefinitionValid(
+    const SoftBody3DObjectDefinition& value) noexcept;
 
-void ApplySoftBody3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const SoftBody3DObjectDefinitionUVE& value);
+void ApplySoftBody3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                        const SoftBody3DObjectDefinition& value);
 
-/// Steps all enabled `SoftBody3DComponentUVE` entities by `deltaTimeSeconds` under `gravity`
+/// Steps all enabled `SoftBody3DComponent` entities by `deltaTimeSeconds` under `gravity`
 /// with XPBD constraint solving and optional sphere/AABB collision resolution.
-std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                       const Math::Vector3UVE& gravity, float deltaTimeSeconds,
-                                       std::span<const SoftBodySphereColliderUVE> sphereColliders,
-                                       std::span<const SoftBodyAabbColliderUVE> boxColliders = {});
+std::size_t UpdateSoftBody3DObjects(IEntityManager& entityManager,
+                                       const Math::Vector3& gravity, float deltaTimeSeconds,
+                                       std::span<const SoftBodySphereCollider> sphereColliders,
+                                       std::span<const SoftBodyAabbCollider> boxColliders = {});
 
-/// Steps all enabled `SoftBody3DComponentUVE` entities by `deltaTimeSeconds` under `gravity`.
-std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                       const Math::Vector3UVE& gravity, float deltaTimeSeconds);
+/// Steps all enabled `SoftBody3DComponent` entities by `deltaTimeSeconds` under `gravity`.
+std::size_t UpdateSoftBody3DObjects(IEntityManager& entityManager,
+                                       const Math::Vector3& gravity, float deltaTimeSeconds);
 
 /// Extruded 2D polygon collision shape (`vertices2D`, `depthMetres`) along local Z
 /// `[-0.5*depthMetres, +0.5*depthMetres]`.
-struct CollisionPolygon3DComponentUVE final {
-    std::vector<Math::Vector2UVE> vertices2D{};
+struct CollisionPolygon3DComponent final {
+    std::vector<Math::Vector2> vertices2D{};
     float depthMetres = 1.0F;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const CollisionPolygon3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const CollisionPolygon3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsCollisionPolygon3DComponentValidUVE(
-    const CollisionPolygon3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsCollisionPolygon3DComponentValid(
+    const CollisionPolygon3DComponent& value) noexcept;
 
-[[nodiscard]] CollisionPolygon3DComponentUVE SanitizeCollisionPolygon3DComponentUVE(
-    const CollisionPolygon3DComponentUVE& value);
+[[nodiscard]] CollisionPolygon3DComponent SanitizeCollisionPolygon3DComponent(
+    const CollisionPolygon3DComponent& value);
 
-struct CollisionPolygon3DObjectDefinitionUVE final {
+struct CollisionPolygon3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CollisionPolygon3D";
-    CollisionPolygon3DComponentUVE polygon{};
+    CollisionPolygon3DComponent polygon{};
 };
 
-[[nodiscard]] bool IsCollisionPolygon3DObjectDefinitionValidUVE(
-    const CollisionPolygon3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsCollisionPolygon3DObjectDefinitionValid(
+    const CollisionPolygon3DObjectDefinition& value) noexcept;
 
-void ApplyCollisionPolygon3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, EntityUVE entity,
-    const CollisionPolygon3DObjectDefinitionUVE& value);
+void ApplyCollisionPolygon3DObjectDefinition(
+    IEntityManager& entityManager, Entity entity,
+    const CollisionPolygon3DObjectDefinition& value);
 
-class CollisionPolygon3DUVE final {
+class CollisionPolygon3D final {
 public:
-    CollisionPolygon3DUVE() = delete;
+    CollisionPolygon3D() = delete;
 
-    [[nodiscard]] static Math::AabbUVE ComputeLocalAabbUVE(
-        const CollisionPolygon3DComponentUVE& polygon) noexcept;
+    [[nodiscard]] static Math::Aabb ComputeLocalAabb(
+        const CollisionPolygon3DComponent& polygon) noexcept;
 
-    [[nodiscard]] static bool ContainsLocalPointUVE(
-        const CollisionPolygon3DComponentUVE& polygon,
-        const Math::Vector3UVE& localPoint) noexcept;
+    [[nodiscard]] static bool ContainsLocalPoint(
+        const CollisionPolygon3DComponent& polygon,
+        const Math::Vector3& localPoint) noexcept;
 };
 
 } // namespace UVE::Scene

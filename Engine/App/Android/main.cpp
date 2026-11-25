@@ -28,10 +28,10 @@ namespace {
 std::filesystem::path cookedProject;
 struct Host {
     android_app* app = nullptr;
-    std::unique_ptr<UVE::Core::EngineCoreUVE> engine;
-    std::unique_ptr<UVE::Input::AndroidTouchRouterUVE> touch;
-    UVE::Scene::EntityUVE cube = UVE::Scene::kInvalidEntityUVE;
-    UVE::Scene::EntityUVE label = UVE::Scene::kInvalidEntityUVE;
+    std::unique_ptr<UVE::Core::EngineCore> engine;
+    std::unique_ptr<UVE::Input::AndroidTouchRouter> touch;
+    UVE::Scene::Entity cube = UVE::Scene::kInvalidEntity;
+    UVE::Scene::Entity label = UVE::Scene::kInvalidEntity;
     bool resumed = false;
     bool focused = false;
     bool failed = false;
@@ -53,21 +53,21 @@ struct Host {
         __android_log_print(ANDROID_LOG_ERROR, "UniVex", "UVE_ANDROID_FAILED %s", reason);
     }
     void Cancel() {
-        if (touch) UVE::Input::CancelAndroidInputUVE(*touch, engine->GetServicesUVE().GetMobileGestureSystemUVE());
+        if (touch) UVE::Input::CancelAndroidInput(*touch, engine->GetServices().GetMobileGestureSystem());
     }
     void ResetPresentationProof() {
         frameReported = false;
         if (engine) {
-            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
-            if (window != nullptr) presentationBaseline = window->GetPresentationCountUVE();
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&engine->GetServices().GetWindowManager());
+            if (window != nullptr) presentationBaseline = window->GetPresentationCount();
         }
     }
     void Focus(bool value) {
         focused = value;
         __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FOCUS %d", value ? 1 : 0);
         if (engine) {
-            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
-            if (window != nullptr) window->SetFocusedUVE(value);
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&engine->GetServices().GetWindowManager());
+            if (window != nullptr) window->SetFocused(value);
         }
         if (!value) Cancel();
     }
@@ -76,30 +76,30 @@ struct Host {
         if (engine) { engine->Shutdown(); engine.reset(); }
     }
     void UpdateDemo() {
-        auto& services = engine->GetServicesUVE();
-        auto& entities = services.GetEntityManagerUVE();
-        const auto snapshot = services.GetMobileInputSystemUVE().GetSnapshotUVE();
+        auto& services = engine->GetServices();
+        auto& entities = services.GetEntityManager();
+        const auto snapshot = services.GetMobileInputSystem().GetSnapshot();
         bool touched = false;
         for (const auto& contact : snapshot.touches) touched = touched || contact.active;
         if (previousTouch != touched) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_TOUCH_APPLIED active=%d", touched ? 1 : 0);
             previousTouch = touched;
         }
-        if (cube != UVE::Scene::kInvalidEntityUVE) entities.GetComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(cube).baseColor = touched
-            ? UVE::Math::Vector3UVE{0.1F, 0.9F, 0.4F} : UVE::Math::Vector3UVE{0.2F, 0.5F, 0.9F};
-        const auto diagnostics = services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        if (cube != UVE::Scene::kInvalidEntity) entities.GetComponent<UVE::Scene::PrimitiveMeshComponent>(cube).baseColor = touched
+            ? UVE::Math::Vector3{0.1F, 0.9F, 0.4F} : UVE::Math::Vector3{0.2F, 0.5F, 0.9F};
+        const auto diagnostics = services.GetRenderer3D().GetLastFrameDiagnostics();
         if (frameAttempts++ < 3U) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_FRAME primitives=%zu gl=%zu",
                 diagnostics.primitiveDrawCallsRecorded, diagnostics.glDrawCallsIssued);
         }
-        const auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&services.GetWindowManagerUVE());
-        if (!frameReported && window != nullptr && window->GetPresentationCountUVE() > presentationBaseline &&
+        const auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&services.GetWindowManager());
+        if (!frameReported && window != nullptr && window->GetPresentationCount() > presentationBaseline &&
             diagnostics.glDrawCallsIssued > 0U) {
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_RENDERED");
             frameReported = true;
         }
-        if (label == UVE::Scene::kInvalidEntityUVE) return;
-        auto& text = entities.GetComponentUVE<UVE::Scene::UITextComponentUVE>(label);
+        if (label == UVE::Scene::kInvalidEntity) return;
+        auto& text = entities.GetComponent<UVE::Scene::UITextComponent>(label);
         text.positionPixels = {16.0F, static_cast<float>(app->contentRect.top) + 28.0F};
     }
     /// The runtime's own scene: a camera, a cube and the label that says what to do with it.
@@ -108,40 +108,40 @@ struct Host {
     /// cannot show its project still shows that the engine works - and the logcat line beside it
     /// says which of the two failed.
     void BuildDemoScene() {
-        auto& entities = engine->GetServicesUVE().GetEntityManagerUVE();
-        auto& graph = engine->GetServicesUVE().GetSceneGraphUVE();
-        const auto camera = entities.CreateEntityUVE();
-        UVE::Scene::TransformComponentUVE transform;
+        auto& entities = engine->GetServices().GetEntityManager();
+        auto& graph = engine->GetServices().GetSceneGraph();
+        const auto camera = entities.CreateEntity();
+        UVE::Scene::TransformComponent transform;
         transform.localPosition = {0.0F, 0.0F, 4.0F};
-        graph.AttachTransformUVE(entities, camera, transform);
-        entities.AddComponentUVE<UVE::Scene::CameraComponentUVE>(camera);
-        engine->SetActiveCameraUVE(camera);
-        cube = entities.CreateEntityUVE();
-        graph.AttachTransformUVE(entities, cube, {});
-        entities.AddComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(cube);
-        label = entities.CreateEntityUVE();
-        UVE::Scene::UITextComponentUVE text;
+        graph.AttachTransform(entities, camera, transform);
+        entities.AddComponent<UVE::Scene::CameraComponent>(camera);
+        engine->SetActiveCamera(camera);
+        cube = entities.CreateEntity();
+        graph.AttachTransform(entities, cube, {});
+        entities.AddComponent<UVE::Scene::PrimitiveMeshComponent>(cube);
+        label = entities.CreateEntity();
+        UVE::Scene::UITextComponent text;
         text.text = "UniVex Android: touch the screen";
         text.positionPixels = {16.0F, 48.0F};
         text.fontSize = 18.0F;
-        entities.AddComponentUVE<UVE::Scene::UITextComponentUVE>(label, text);
+        entities.AddComponent<UVE::Scene::UITextComponent>(label, text);
     }
     void Start() {
         if (engine || app->window == nullptr || failed) return;
         try {
-            UVE::Core::EngineConfigUVE config;
-            config.nativeWindowHandleUVE = app->window;
-            config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
+            UVE::Core::EngineConfig config;
+            config.nativeWindowHandle = app->window;
+            config.renderBackendPreference = UVE::Core::RenderBackendPreference::OpenGL;
             config.shadowMapResolution = 512U;
-            config.ssaoEnabledUVE = false;
-            config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
-            config.screenSpaceAAQualityUVE = 1U;
-            config.sharpeningAmountUVE = 0.25F;
+            config.ssaoEnabled = false;
+            config.postProcessAAMethod = UVE::Core::PostProcessAAMethod::FastApproximate;
+            config.screenSpaceAAQuality = 1U;
+            config.sharpeningAmount = 0.25F;
             config.ambientColor = {0.7F, 0.7F, 0.7F};
-            config.shaderSourceRealDirectoryUVE = "shaders";
-            std::optional<UVE::Pack::ProjectRuntimeSetupUVE> setup;
+            config.shaderSourceRealDirectory = "shaders";
+            std::optional<UVE::Pack::ProjectRuntimeSetup> setup;
             if (!cookedProject.empty()) {
-                auto prepared = UVE::Pack::PrepareProjectRuntimeUVE(cookedProject,config,
+                auto prepared = UVE::Pack::PrepareProjectRuntime(cookedProject,config,
                     std::filesystem::path(app->activity->internalDataPath)/"user-data");
                 if (prepared.setup.has_value()) {
                     setup = std::move(prepared.setup);
@@ -152,19 +152,19 @@ struct Host {
                                         "UVE_ANDROID_COOKED_PROJECT_REJECTED %s", prepared.message.c_str());
                 }
             }
-            engine = std::make_unique<UVE::Core::EngineCoreUVE>(config);
+            engine = std::make_unique<UVE::Core::EngineCore>(config);
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INIT_BEGIN");
             engine->Init();
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INIT_DONE");
             if (!engine->Load()) { Stop(); Fail("engine load failed"); return; }
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_LOAD_DONE");
-            auto* graphics = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&engine->GetServicesUVE().GetRenderDeviceUVE());
-            if (graphics == nullptr || !graphics->IsUsableUVE()) throw std::runtime_error("GLES renderer unavailable");
-            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&engine->GetServicesUVE().GetWindowManagerUVE());
-            if (window != nullptr) window->SetFocusedUVE(focused);
+            auto* graphics = dynamic_cast<UVE::Render::GlRenderDevice*>(&engine->GetServices().GetRenderDevice());
+            if (graphics == nullptr || !graphics->IsUsable()) throw std::runtime_error("GLES renderer unavailable");
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&engine->GetServices().GetWindowManager());
+            if (window != nullptr) window->SetFocused(focused);
             if (setup.has_value()) {
-                const auto loaded = UVE::Pack::LoadAndActivateProjectSceneUVE(*engine,*setup);
-                if (loaded.IsAcceptedUVE()) {
+                const auto loaded = UVE::Pack::LoadAndActivateProjectScene(*engine,*setup);
+                if (loaded.IsAccepted()) {
                     __android_log_print(ANDROID_LOG_INFO,"UniVex","UVE_ANDROID_COOKED_PROJECT_LOADED");
                 } else {
                     __android_log_print(ANDROID_LOG_ERROR, "UniVex",
@@ -174,8 +174,8 @@ struct Host {
             } else {
                 BuildDemoScene();
             }
-            touch = std::make_unique<UVE::Input::AndroidTouchRouterUVE>(
-                engine->GetServicesUVE().GetMobileInputSystemUVE());
+            touch = std::make_unique<UVE::Input::AndroidTouchRouter>(
+                engine->GetServices().GetMobileInputSystem());
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_INITIALIZED");
         } catch (const std::exception& error) {
             __android_log_print(ANDROID_LOG_ERROR, "UniVex", "Startup failed: %s", error.what());
@@ -188,8 +188,8 @@ void Command(android_app* app, int32_t command) {
     switch (command) {
     case APP_CMD_INIT_WINDOW:
         if (host.engine) {
-            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&host.engine->GetServicesUVE().GetWindowManagerUVE());
-            if (window == nullptr || !window->AttachNativeWindowUVE(app->window)) {
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&host.engine->GetServices().GetWindowManager());
+            if (window == nullptr || !window->AttachNativeWindow(app->window)) {
                 __android_log_print(ANDROID_LOG_ERROR, "UniVex", "EGL context recovery failed; runtime stopped");
                 host.Stop(); host.Fail("EGL context recovery failed");
             } else __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_SURFACE_ATTACHED");
@@ -199,8 +199,8 @@ void Command(android_app* app, int32_t command) {
         host.ResetPresentationProof();
         host.Cancel();
         if (host.engine) {
-            auto* window = dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&host.engine->GetServicesUVE().GetWindowManagerUVE());
-            if (window != nullptr) window->DetachNativeWindowUVE();
+            auto* window = dynamic_cast<UVE::Window::AndroidWindowManager*>(&host.engine->GetServices().GetWindowManager());
+            if (window != nullptr) window->DetachNativeWindow();
             __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_SURFACE_DETACHED");
         }
         break;
@@ -209,7 +209,7 @@ void Command(android_app* app, int32_t command) {
     case APP_CMD_GAINED_FOCUS: host.Focus(true); break;
     case APP_CMD_LOST_FOCUS: host.Focus(false); break;
     case APP_CMD_LOW_MEMORY:
-        if (host.engine) host.engine->GetServicesUVE().GetAssetManagerUVE().CollectGarbageUVE();
+        if (host.engine) host.engine->GetServices().GetAssetManager().CollectGarbage();
         break;
     case APP_CMD_DESTROY: host.Stop(); __android_log_print(ANDROID_LOG_INFO, "UniVex", "UVE_ANDROID_DESTROYED"); break;
     default: break;
@@ -218,8 +218,8 @@ void Command(android_app* app, int32_t command) {
 int32_t Input(android_app* app, AInputEvent* event) {
     auto& host = *static_cast<Host*>(app->userData);
     const bool handled = host.touch && host.resumed && host.focused &&
-        UVE::Input::RouteAndroidMotionEventUVE(*host.touch, event,
-            &host.engine->GetServicesUVE().GetMobileGestureSystemUVE());
+        UVE::Input::RouteAndroidMotionEvent(*host.touch, event,
+            &host.engine->GetServices().GetMobileGestureSystem());
     if (handled) {
         const auto action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
         if (action != AMOTION_EVENT_ACTION_MOVE)
@@ -314,8 +314,8 @@ extern "C" void android_main(android_app* app) {
         if (app->destroyRequested != 0) break;
         if (host.engine && host.resumed && app->window != nullptr) {
             try {
-                host.engine->TickFrameUVE(); host.UpdateDemo();
-                if (!host.engine->GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+                host.engine->TickFrame(); host.UpdateDemo();
+                if (!host.engine->GetServices().GetWindowManager().IsValid()) {
                     __android_log_print(ANDROID_LOG_ERROR, "UniVex", "EGL context lost; runtime stopped safely");
                     host.Stop(); host.Fail("EGL context lost");
                 }

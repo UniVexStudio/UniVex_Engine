@@ -10,12 +10,12 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUITextComponentValidUVE(const UITextComponentUVE& component) noexcept {
-    return component.text.size() <= kMaximumUITextBytesUVE &&
+[[nodiscard]] bool IsUITextComponentValid(const UITextComponent& component) noexcept {
+    return component.text.size() <= kMaximumUITextBytes &&
            component.text.find('\0') == std::string::npos &&
            std::isfinite(component.positionPixels.x) && std::isfinite(component.positionPixels.y) &&
-           std::isfinite(component.fontSize) && component.fontSize >= kMinimumUIFontSizeUVE &&
-           component.fontSize <= kMaximumUIFontSizeUVE && std::isfinite(component.color.x) &&
+           std::isfinite(component.fontSize) && component.fontSize >= kMinimumUIFontSize &&
+           component.fontSize <= kMaximumUIFontSize && std::isfinite(component.color.x) &&
            std::isfinite(component.color.y) && std::isfinite(component.color.z) &&
            std::isfinite(component.alpha) && component.alpha >= 0.0F && component.alpha <= 1.0F &&
            std::isfinite(component.boxSize.x) && std::isfinite(component.boxSize.y) && component.boxSize.x >= 0.0F &&
@@ -25,33 +25,33 @@ namespace UVE::Scene {
            component.shadowAlpha <= 1.0F && std::isfinite(component.outlineWidth) && component.outlineWidth >= 0.0F;
 }
 
-float ClampUIFontSizeUVE(const float fontSize) noexcept {
+float ClampUIFontSize(const float fontSize) noexcept {
     if (!std::isfinite(fontSize)) {
-        return kDefaultUIFontSizeUVE;
+        return kDefaultUIFontSize;
     }
-    return std::clamp(fontSize, kMinimumUIFontSizeUVE, kMaximumUIFontSizeUVE);
+    return std::clamp(fontSize, kMinimumUIFontSize, kMaximumUIFontSize);
 }
 
-UITextComponentUVE SanitizeUITextComponentUVE(const UITextComponentUVE& component) {
-    UITextComponentUVE out = component;
+UITextComponent SanitizeUITextComponent(const UITextComponent& component) {
+    UITextComponent out = component;
     std::string cleaned;
-    cleaned.reserve(std::min(out.text.size(), kMaximumUITextBytesUVE));
+    cleaned.reserve(std::min(out.text.size(), kMaximumUITextBytes));
     for (const char ch : out.text) {
         if (ch == '\0') {
             continue;
         }
         cleaned.push_back(ch);
-        if (cleaned.size() >= kMaximumUITextBytesUVE) {
+        if (cleaned.size() >= kMaximumUITextBytes) {
             break;
         }
     }
     out.text = std::move(cleaned);
     if (!std::isfinite(out.positionPixels.x) || !std::isfinite(out.positionPixels.y)) {
-        out.positionPixels = Math::Vector2UVE{0.0F, 0.0F};
+        out.positionPixels = Math::Vector2{0.0F, 0.0F};
     }
-    out.fontSize = ClampUIFontSizeUVE(out.fontSize);
+    out.fontSize = ClampUIFontSize(out.fontSize);
     if (!std::isfinite(out.color.x) || !std::isfinite(out.color.y) || !std::isfinite(out.color.z)) {
-        out.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        out.color = Math::Vector3{1.0F, 1.0F, 1.0F};
     } else {
         out.color.x = std::clamp(out.color.x, 0.0F, 1.0F);
         out.color.y = std::clamp(out.color.y, 0.0F, 1.0F);
@@ -59,15 +59,15 @@ UITextComponentUVE SanitizeUITextComponentUVE(const UITextComponentUVE& componen
     }
     out.alpha = std::isfinite(out.alpha) ? std::clamp(out.alpha, 0.0F, 1.0F) : 1.0F;
     if (!std::isfinite(out.boxSize.x) || !std::isfinite(out.boxSize.y)) {
-        out.boxSize = Math::Vector2UVE{};
+        out.boxSize = Math::Vector2{};
     }
     out.boxSize.x = std::max(0.0F, out.boxSize.x);
     out.boxSize.y = std::max(0.0F, out.boxSize.y);
     if (static_cast<std::uint8_t>(out.horizontalAlign) > 2U) {
-        out.horizontalAlign = UITextHorizontalAlignUVE::Left;
+        out.horizontalAlign = UITextHorizontalAlign::Left;
     }
     if (static_cast<std::uint8_t>(out.verticalAlign) > 2U) {
-        out.verticalAlign = UITextVerticalAlignUVE::Top;
+        out.verticalAlign = UITextVerticalAlign::Top;
     }
     out.lineHeight = std::isfinite(out.lineHeight) && out.lineHeight > 0.0F ? std::clamp(out.lineHeight, 0.5F, 4.0F) : 1.25F;
     out.shadowAlpha = std::isfinite(out.shadowAlpha) ? std::clamp(out.shadowAlpha, 0.0F, 1.0F) : 0.0F;
@@ -75,12 +75,12 @@ UITextComponentUVE SanitizeUITextComponentUVE(const UITextComponentUVE& componen
     return out;
 }
 
-bool IsUITextVisibleForDrawUVE(const UITextComponentUVE& component) noexcept {
+bool IsUITextVisibleForDraw(const UITextComponent& component) noexcept {
     return !component.text.empty() && std::isfinite(component.alpha) && component.alpha > 0.0F &&
-           std::isfinite(component.fontSize) && component.fontSize >= kMinimumUIFontSizeUVE;
+           std::isfinite(component.fontSize) && component.fontSize >= kMinimumUIFontSize;
 }
 
-std::size_t CountUITextLinesUVE(const UITextComponentUVE& component) noexcept {
+std::size_t CountUITextLines(const UITextComponent& component) noexcept {
     if (component.text.empty()) {
         return 0U;
     }
@@ -93,13 +93,13 @@ std::size_t CountUITextLinesUVE(const UITextComponentUVE& component) noexcept {
     return lines;
 }
 
-Math::Vector2UVE EstimateUITextBoundsSizePixelsUVE(const UITextComponentUVE& component,
+Math::Vector2 EstimateUITextBoundsSizePixels(const UITextComponent& component,
                                                    const float glyphAdvanceFactor,
                                                    const float lineHeightFactor) noexcept {
     if (component.text.empty()) {
-        return Math::Vector2UVE{0.0F, 0.0F};
+        return Math::Vector2{0.0F, 0.0F};
     }
-    const float safeFontSize = ClampUIFontSizeUVE(component.fontSize);
+    const float safeFontSize = ClampUIFontSize(component.fontSize);
     const float safeAdvance =
         (std::isfinite(glyphAdvanceFactor) && glyphAdvanceFactor > 0.0F) ? glyphAdvanceFactor : 0.6F;
     const float safeLineHeight =
@@ -120,7 +120,7 @@ Math::Vector2UVE EstimateUITextBoundsSizePixelsUVE(const UITextComponentUVE& com
         ++currentLineChars;
     }
     maxLineChars = std::max(maxLineChars, currentLineChars);
-    return Math::Vector2UVE{
+    return Math::Vector2{
         static_cast<float>(maxLineChars) * safeFontSize * safeAdvance,
         static_cast<float>(lines) * safeFontSize * safeLineHeight,
     };

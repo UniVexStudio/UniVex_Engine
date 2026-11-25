@@ -9,56 +9,56 @@
 
 namespace UVE::Config {
 
-class SettingsDocumentUVE;
+class SettingsDocument;
 
-/// ConfigManagerUVE is the concrete, engine-standard implementation of
-/// IConfigManagerUVE, backed by nlohmann::json. The JSON library is
-/// entirely confined to config_manager_uve.cpp via the private ImplUVE
-/// PIMPL — this header, and every consumer of ConfigManagerUVE, never sees
+/// ConfigManager is the concrete, engine-standard implementation of
+/// IConfigManager, backed by nlohmann::json. The JSON library is
+/// entirely confined to config_manager_uve.cpp via the private Impl
+/// PIMPL — this header, and every consumer of ConfigManager, never sees
 /// the nlohmann::json type (see docs/CODING_STANDARDS.md's dependency
 /// confinement note).
 /// Thread-safety: thread-safe. Every method is guarded by an internal
-/// mutex (`mutable std::mutex m_mutex;` in ImplUVE) — safe to call
+/// mutex (`mutable std::mutex m_mutex;` in Impl) — safe to call
 /// concurrently from any thread.
-class ConfigManagerUVE final : public IConfigManagerUVE {
+class ConfigManager final : public IConfigManager {
 public:
-    ConfigManagerUVE();
-    ~ConfigManagerUVE() override;
+    ConfigManager();
+    ~ConfigManager() override;
 
-    ConfigManagerUVE(const ConfigManagerUVE&) = delete;
-    ConfigManagerUVE& operator=(const ConfigManagerUVE&) = delete;
+    ConfigManager(const ConfigManager&) = delete;
+    ConfigManager& operator=(const ConfigManager&) = delete;
 
-    bool LoadUVE(const std::filesystem::path& path) override;
+    bool Load(const std::filesystem::path& path) override;
     /// Replaces the in-memory JSON document with an empty object without changing the remembered save path.
     /// Thread-safe.
-    void ClearAllUVE();
-    bool SaveUVE() override;
-    bool SaveUVE(const std::filesystem::path& path) override;
+    void ClearAll();
+    bool Save() override;
+    bool Save(const std::filesystem::path& path) override;
 
-    [[nodiscard]] std::string GetStringUVE(std::string_view keyPath,
+    [[nodiscard]] std::string GetString(std::string_view keyPath,
                                             std::string_view defaultValue) const override;
-    [[nodiscard]] std::int64_t GetIntUVE(std::string_view keyPath,
+    [[nodiscard]] std::int64_t GetInt(std::string_view keyPath,
                                           std::int64_t defaultValue) const override;
-    [[nodiscard]] double GetDoubleUVE(std::string_view keyPath, double defaultValue) const override;
-    [[nodiscard]] bool GetBoolUVE(std::string_view keyPath, bool defaultValue) const override;
+    [[nodiscard]] double GetDouble(std::string_view keyPath, double defaultValue) const override;
+    [[nodiscard]] bool GetBool(std::string_view keyPath, bool defaultValue) const override;
 
-    void SetStringUVE(std::string_view keyPath, std::string value) override;
-    void SetIntUVE(std::string_view keyPath, std::int64_t value) override;
-    void SetDoubleUVE(std::string_view keyPath, double value) override;
-    void SetBoolUVE(std::string_view keyPath, bool value) override;
+    void SetString(std::string_view keyPath, std::string value) override;
+    void SetInt(std::string_view keyPath, std::int64_t value) override;
+    void SetDouble(std::string_view keyPath, double value) override;
+    void SetBool(std::string_view keyPath, bool value) override;
 
-    [[nodiscard]] bool HasKeyUVE(std::string_view keyPath) const override;
-    bool RemoveKeyUVE(std::string_view keyPath) override;
+    [[nodiscard]] bool HasKey(std::string_view keyPath) const override;
+    bool RemoveKey(std::string_view keyPath) override;
 
 private:
-    friend class SettingsDocumentUVE;
+    friend class SettingsDocument;
     /// Distinguishes a missing path from a root-level object at reserved metadata keys.
-    [[nodiscard]] bool HasNodeUVE(std::string_view keyPath) const;
+    [[nodiscard]] bool HasNode(std::string_view keyPath) const;
     /// Atomically replaces this store with a fully loaded and migrated candidate.
-    void ReplaceDocumentUVE(ConfigManagerUVE& candidate);
+    void ReplaceDocument(ConfigManager& candidate);
 
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Config

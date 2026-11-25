@@ -17,185 +17,185 @@
 namespace UVE::UI::Tests {
 namespace {
 
-class UIFocusNavigationUVETest : public ::testing::Test {
+class UIFocusNavigationTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Input::InputSystemUVE inputSystem{eventSystem};
-    UIRuntimeUVE runtime;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Input::InputSystem inputSystem{eventSystem};
+    UIRuntime runtime;
 
-    void SetUp() override { runtime.SetViewportSizeUVE({800.0F, 600.0F}); }
+    void SetUp() override { runtime.SetViewportSize({800.0F, 600.0F}); }
 
-    void TickUVE() {
-        inputSystem.UpdateUVE();
-        runtime.SetDeltaTimeUVE(0.016F);
-        runtime.TickUVE(entityManager, inputSystem);
+    void Tick() {
+        inputSystem.Update();
+        runtime.SetDeltaTime(0.016F);
+        runtime.Tick(entityManager, inputSystem);
     }
 
-    void KeyUVE(const Input::KeyCodeUVE key, const bool shift = false) {
-        inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::LeftShift, shift);
-        inputSystem.SetKeyStateUVE(key, true);
-        TickUVE();
-        inputSystem.SetKeyStateUVE(key, false);
-        inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::LeftShift, false);
-        inputSystem.UpdateUVE();
+    void Key(const Input::KeyCode key, const bool shift = false) {
+        inputSystem.SetKeyState(Input::KeyCode::LeftShift, shift);
+        inputSystem.SetKeyState(key, true);
+        Tick();
+        inputSystem.SetKeyState(key, false);
+        inputSystem.SetKeyState(Input::KeyCode::LeftShift, false);
+        inputSystem.Update();
     }
 
-    void MouseUVE(const Math::Vector2UVE position, const bool down) {
-        inputSystem.SetMousePositionUVE(position);
-        inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, down);
-        TickUVE();
+    void Mouse(const Math::Vector2 position, const bool down) {
+        inputSystem.SetMousePosition(position);
+        inputSystem.SetMouseButtonState(Input::MouseButton::Left, down);
+        Tick();
     }
 
-    Scene::EntityUVE MakeButtonUVE(const float y) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UIButtonComponentUVE button{};
-        button.rect = Math::RectUVE{Math::Vector2UVE{10.0F, y}, Math::Vector2UVE{120.0F, 28.0F}};
-        entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(entity, button);
+    Scene::Entity MakeButton(const float y) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UIButtonComponent button{};
+        button.rect = Math::Rect{Math::Vector2{10.0F, y}, Math::Vector2{120.0F, 28.0F}};
+        entityManager.AddComponent<Scene::UIButtonComponent>(entity, button);
         return entity;
     }
 
-    Scene::EntityUVE MakeCheckboxUVE(const float y) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UICheckboxComponentUVE checkbox{};
-        checkbox.rect = Math::RectUVE{Math::Vector2UVE{10.0F, y}, Math::Vector2UVE{24.0F, 24.0F}};
-        entityManager.AddComponentUVE<Scene::UICheckboxComponentUVE>(entity, checkbox);
+    Scene::Entity MakeCheckbox(const float y) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UICheckboxComponent checkbox{};
+        checkbox.rect = Math::Rect{Math::Vector2{10.0F, y}, Math::Vector2{24.0F, 24.0F}};
+        entityManager.AddComponent<Scene::UICheckboxComponent>(entity, checkbox);
         return entity;
     }
 
-    Scene::EntityUVE MakeSliderUVE(const float y) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UISliderComponentUVE slider{};
-        slider.rect = Math::RectUVE{Math::Vector2UVE{10.0F, y}, Math::Vector2UVE{200.0F, 24.0F}};
+    Scene::Entity MakeSlider(const float y) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UISliderComponent slider{};
+        slider.rect = Math::Rect{Math::Vector2{10.0F, y}, Math::Vector2{200.0F, 24.0F}};
         slider.value = 0.5F;
-        entityManager.AddComponentUVE<Scene::UISliderComponentUVE>(entity, slider);
+        entityManager.AddComponent<Scene::UISliderComponent>(entity, slider);
         return entity;
     }
 
-    Scene::EntityUVE MakeDropdownUVE(const float y) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UIDropdownComponentUVE dropdown{};
-        dropdown.rect = Math::RectUVE{Math::Vector2UVE{10.0F, y}, Math::Vector2UVE{160.0F, 28.0F}};
+    Scene::Entity MakeDropdown(const float y) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UIDropdownComponent dropdown{};
+        dropdown.rect = Math::Rect{Math::Vector2{10.0F, y}, Math::Vector2{160.0F, 28.0F}};
         dropdown.options = "Easy\nNormal\nHard";
-        entityManager.AddComponentUVE<Scene::UIDropdownComponentUVE>(entity, dropdown);
+        entityManager.AddComponent<Scene::UIDropdownComponent>(entity, dropdown);
         return entity;
     }
 
-    Scene::EntityUVE MakeFieldUVE(const float y) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UITextInputComponentUVE field{};
-        field.rect = Math::RectUVE{Math::Vector2UVE{10.0F, y}, Math::Vector2UVE{160.0F, 28.0F}};
-        entityManager.AddComponentUVE<Scene::UITextInputComponentUVE>(entity, field);
+    Scene::Entity MakeField(const float y) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UITextInputComponent field{};
+        field.rect = Math::Rect{Math::Vector2{10.0F, y}, Math::Vector2{160.0F, 28.0F}};
+        entityManager.AddComponent<Scene::UITextInputComponent>(entity, field);
         return entity;
     }
 };
 
-TEST_F(UIFocusNavigationUVETest, TabUsesReadingOrderRatherThanCreationOrderAndWraps) {
-    const Scene::EntityUVE button = MakeButtonUVE(100.0F);
-    const Scene::EntityUVE checkbox = MakeCheckboxUVE(10.0F);
-    const Scene::EntityUVE slider = MakeSliderUVE(50.0F);
+TEST_F(UIFocusNavigationTest, TabUsesReadingOrderRatherThanCreationOrderAndWraps) {
+    const Scene::Entity button = MakeButton(100.0F);
+    const Scene::Entity checkbox = MakeCheckbox(10.0F);
+    const Scene::Entity slider = MakeSlider(50.0F);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), checkbox);
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), slider);
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), button);
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), checkbox);
-    KeyUVE(Input::KeyCodeUVE::Tab, true);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), button);
+    Key(Input::KeyCode::Tab);
+    EXPECT_EQ(runtime.GetFocusedEntity(), checkbox);
+    Key(Input::KeyCode::Tab);
+    EXPECT_EQ(runtime.GetFocusedEntity(), slider);
+    Key(Input::KeyCode::Tab);
+    EXPECT_EQ(runtime.GetFocusedEntity(), button);
+    Key(Input::KeyCode::Tab);
+    EXPECT_EQ(runtime.GetFocusedEntity(), checkbox);
+    Key(Input::KeyCode::Tab, true);
+    EXPECT_EQ(runtime.GetFocusedEntity(), button);
 }
 
-TEST_F(UIFocusNavigationUVETest, EnterClicksFocusedButtonAndSpaceTogglesFocusedCheckbox) {
-    const Scene::EntityUVE button = MakeButtonUVE(10.0F);
-    const Scene::EntityUVE checkbox = MakeCheckboxUVE(50.0F);
+TEST_F(UIFocusNavigationTest, EnterClicksFocusedButtonAndSpaceTogglesFocusedCheckbox) {
+    const Scene::Entity button = MakeButton(10.0F);
+    const Scene::Entity checkbox = MakeCheckbox(50.0F);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    ASSERT_EQ(runtime.GetFocusedEntityUVE(), button);
-    KeyUVE(Input::KeyCodeUVE::Enter);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(button).wasClickedThisFrame);
+    Key(Input::KeyCode::Tab);
+    ASSERT_EQ(runtime.GetFocusedEntity(), button);
+    Key(Input::KeyCode::Enter);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::UIButtonComponent>(button).wasClickedThisFrame);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    ASSERT_EQ(runtime.GetFocusedEntityUVE(), checkbox);
-    KeyUVE(Input::KeyCodeUVE::Space);
-    const Scene::UICheckboxComponentUVE& updated =
-        entityManager.GetComponentUVE<Scene::UICheckboxComponentUVE>(checkbox);
+    Key(Input::KeyCode::Tab);
+    ASSERT_EQ(runtime.GetFocusedEntity(), checkbox);
+    Key(Input::KeyCode::Space);
+    const Scene::UICheckboxComponent& updated =
+        entityManager.GetComponent<Scene::UICheckboxComponent>(checkbox);
     EXPECT_TRUE(updated.wasToggledThisFrame);
     EXPECT_TRUE(updated.checked);
 }
 
-TEST_F(UIFocusNavigationUVETest, FocusedSliderRespondsToArrowKeysWithStep) {
-    const Scene::EntityUVE sliderEntity = MakeSliderUVE(10.0F);
-    Scene::UISliderComponentUVE& slider = entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(sliderEntity);
+TEST_F(UIFocusNavigationTest, FocusedSliderRespondsToArrowKeysWithStep) {
+    const Scene::Entity sliderEntity = MakeSlider(10.0F);
+    Scene::UISliderComponent& slider = entityManager.GetComponent<Scene::UISliderComponent>(sliderEntity);
     slider.step = 0.25F;
     slider.value = 0.5F;
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    KeyUVE(Input::KeyCodeUVE::Right);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(sliderEntity).value, 0.75F);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(sliderEntity).wasChangedThisFrame);
-    KeyUVE(Input::KeyCodeUVE::Left);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(sliderEntity).value, 0.5F);
+    Key(Input::KeyCode::Tab);
+    Key(Input::KeyCode::Right);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UISliderComponent>(sliderEntity).value, 0.75F);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::UISliderComponent>(sliderEntity).wasChangedThisFrame);
+    Key(Input::KeyCode::Left);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UISliderComponent>(sliderEntity).value, 0.5F);
 }
 
-TEST_F(UIFocusNavigationUVETest, DropdownOpensMovesAndSelectsFromKeyboard) {
-    const Scene::EntityUVE dropdownEntity = MakeDropdownUVE(10.0F);
+TEST_F(UIFocusNavigationTest, DropdownOpensMovesAndSelectsFromKeyboard) {
+    const Scene::Entity dropdownEntity = MakeDropdown(10.0F);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    KeyUVE(Input::KeyCodeUVE::Enter);
-    Scene::UIDropdownComponentUVE& dropdown =
-        entityManager.GetComponentUVE<Scene::UIDropdownComponentUVE>(dropdownEntity);
+    Key(Input::KeyCode::Tab);
+    Key(Input::KeyCode::Enter);
+    Scene::UIDropdownComponent& dropdown =
+        entityManager.GetComponent<Scene::UIDropdownComponent>(dropdownEntity);
     EXPECT_TRUE(dropdown.open);
     EXPECT_EQ(dropdown.hoveredIndex, 0);
 
-    KeyUVE(Input::KeyCodeUVE::Down);
+    Key(Input::KeyCode::Down);
     EXPECT_EQ(dropdown.hoveredIndex, 1);
-    KeyUVE(Input::KeyCodeUVE::Enter);
+    Key(Input::KeyCode::Enter);
     EXPECT_EQ(dropdown.selectedIndex, 1);
     EXPECT_FALSE(dropdown.open);
     EXPECT_TRUE(dropdown.wasSelectionChangedThisFrame);
 }
 
-TEST_F(UIFocusNavigationUVETest, TabFocusesTextFieldForTypingAndEscapeReleasesIt) {
-    static_cast<void>(MakeButtonUVE(10.0F));
-    const Scene::EntityUVE fieldEntity = MakeFieldUVE(50.0F);
+TEST_F(UIFocusNavigationTest, TabFocusesTextFieldForTypingAndEscapeReleasesIt) {
+    static_cast<void>(MakeButton(10.0F));
+    const Scene::Entity fieldEntity = MakeField(50.0F);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    ASSERT_EQ(runtime.GetFocusedEntityUVE(), fieldEntity);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(fieldEntity).focused);
+    Key(Input::KeyCode::Tab);
+    Key(Input::KeyCode::Tab);
+    ASSERT_EQ(runtime.GetFocusedEntity(), fieldEntity);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::UITextInputComponent>(fieldEntity).focused);
 
-    KeyUVE(Input::KeyCodeUVE::A);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(fieldEntity).text, "a");
-    KeyUVE(Input::KeyCodeUVE::Escape);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(fieldEntity).focused);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), Scene::kInvalidEntityUVE);
+    Key(Input::KeyCode::A);
+    EXPECT_EQ(entityManager.GetComponent<Scene::UITextInputComponent>(fieldEntity).text, "a");
+    Key(Input::KeyCode::Escape);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UITextInputComponent>(fieldEntity).focused);
+    EXPECT_EQ(runtime.GetFocusedEntity(), Scene::kInvalidEntity);
 }
 
-TEST_F(UIFocusNavigationUVETest, MouseFocusedTextFieldBecomesTheNextTabStart) {
-    const Scene::EntityUVE fieldEntity = MakeFieldUVE(10.0F);
-    const Scene::EntityUVE button = MakeButtonUVE(50.0F);
+TEST_F(UIFocusNavigationTest, MouseFocusedTextFieldBecomesTheNextTabStart) {
+    const Scene::Entity fieldEntity = MakeField(10.0F);
+    const Scene::Entity button = MakeButton(50.0F);
 
-    MouseUVE({50.0F, 20.0F}, true);
-    MouseUVE({50.0F, 20.0F}, false);
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(fieldEntity).focused);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), fieldEntity);
+    Mouse({50.0F, 20.0F}, true);
+    Mouse({50.0F, 20.0F}, false);
+    ASSERT_TRUE(entityManager.GetComponent<Scene::UITextInputComponent>(fieldEntity).focused);
+    EXPECT_EQ(runtime.GetFocusedEntity(), fieldEntity);
 
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), button);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(fieldEntity).focused);
+    Key(Input::KeyCode::Tab);
+    EXPECT_EQ(runtime.GetFocusedEntity(), button);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UITextInputComponent>(fieldEntity).focused);
 }
 
-TEST_F(UIFocusNavigationUVETest, DestroyedFocusedWidgetLosesFocusOnNextTick) {
-    const Scene::EntityUVE button = MakeButtonUVE(10.0F);
-    KeyUVE(Input::KeyCodeUVE::Tab);
-    ASSERT_EQ(runtime.GetFocusedEntityUVE(), button);
+TEST_F(UIFocusNavigationTest, DestroyedFocusedWidgetLosesFocusOnNextTick) {
+    const Scene::Entity button = MakeButton(10.0F);
+    Key(Input::KeyCode::Tab);
+    ASSERT_EQ(runtime.GetFocusedEntity(), button);
 
-    entityManager.DestroyEntityUVE(button);
-    TickUVE();
-    EXPECT_EQ(runtime.GetFocusedEntityUVE(), Scene::kInvalidEntityUVE);
+    entityManager.DestroyEntity(button);
+    Tick();
+    EXPECT_EQ(runtime.GetFocusedEntity(), Scene::kInvalidEntity);
 }
 
 } // namespace

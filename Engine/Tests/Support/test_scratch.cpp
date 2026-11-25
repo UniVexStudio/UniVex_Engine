@@ -24,7 +24,7 @@
 namespace UVE::Tests {
 namespace {
 
-[[nodiscard]] unsigned long long CurrentProcessIdUVE() {
+[[nodiscard]] unsigned long long CurrentProcessId() {
 #if defined(_WIN32)
     return static_cast<unsigned long long>(_getpid());
 #else
@@ -36,29 +36,29 @@ namespace {
 /// behind by a crashed earlier run could collide with a live one. The steady-clock stamp closes
 /// that - two processes would have to share both a process id and a nanosecond to collide, and
 /// SetUp() below fails loudly rather than silently reusing the directory if they somehow do.
-[[nodiscard]] std::filesystem::path MakeScratchRootUVE() {
+[[nodiscard]] std::filesystem::path MakeScratchRoot() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     return std::filesystem::temp_directory_path() / "uve_tests" /
-           (std::to_string(CurrentProcessIdUVE()) + "_" + std::to_string(stamp));
+           (std::to_string(CurrentProcessId()) + "_" + std::to_string(stamp));
 }
 
 /// Creates the scratch root and makes it the working directory for the whole process, then tears
 /// it down again. GoogleTest runs this once per process, and gtest_discover_tests gives each test
 /// case its own process, so in practice this is per-test-case isolation.
-class ScratchDirectoryEnvironmentUVE final : public ::testing::Environment {
+class ScratchDirectoryEnvironment final : public ::testing::Environment {
 public:
     void SetUp() override {
         m_originalWorkingDirectory = std::filesystem::current_path();
 
         std::error_code errorCode;
-        const bool created = std::filesystem::create_directories(ScratchRootUVE(), errorCode);
-        ASSERT_FALSE(errorCode) << "could not create the scratch root " << ScratchRootUVE() << ": "
+        const bool created = std::filesystem::create_directories(ScratchRoot(), errorCode);
+        ASSERT_FALSE(errorCode) << "could not create the scratch root " << ScratchRoot() << ": "
                                 << errorCode.message();
-        ASSERT_TRUE(created) << "the scratch root " << ScratchRootUVE()
+        ASSERT_TRUE(created) << "the scratch root " << ScratchRoot()
                              << " already existed - the per-process name is not unique";
 
-        std::filesystem::current_path(ScratchRootUVE(), errorCode);
-        ASSERT_FALSE(errorCode) << "could not enter the scratch root " << ScratchRootUVE() << ": "
+        std::filesystem::current_path(ScratchRoot(), errorCode);
+        ASSERT_FALSE(errorCode) << "could not enter the scratch root " << ScratchRoot() << ": "
                                 << errorCode.message();
     }
 
@@ -73,11 +73,11 @@ public:
         // never reaches this at all, which is the other reason every root lives under one
         // "uve_tests" parent: orphans are removable in a single command.
         if (::testing::UnitTest::GetInstance()->Failed()) {
-            std::cerr << "[  SCRATCH ] kept for inspection: " << ScratchRootUVE() << '\n';
+            std::cerr << "[  SCRATCH ] kept for inspection: " << ScratchRoot() << '\n';
             return;
         }
 
-        std::filesystem::remove_all(ScratchRootUVE(), errorCode);
+        std::filesystem::remove_all(ScratchRoot(), errorCode);
     }
 
 private:
@@ -90,24 +90,24 @@ private:
 /// UnitTest::GetInstance(), a function-local static that constructs on first use. The translation
 /// unit is named directly in each add_executable(), so the linker cannot drop it the way it could
 /// if this lived in a static library.
-struct ScratchEnvironmentRegistrarUVE final {
-    ScratchEnvironmentRegistrarUVE() { ::testing::AddGlobalTestEnvironment(new ScratchDirectoryEnvironmentUVE()); }
+struct ScratchEnvironmentRegistrar final {
+    ScratchEnvironmentRegistrar() { ::testing::AddGlobalTestEnvironment(new ScratchDirectoryEnvironment()); }
 };
 
-[[maybe_unused]] const ScratchEnvironmentRegistrarUVE kScratchEnvironmentRegistrarUVE{};
+[[maybe_unused]] const ScratchEnvironmentRegistrar kScratchEnvironmentRegistrar{};
 
 } // namespace
 
-const std::filesystem::path& ScratchRootUVE() {
-    static const std::filesystem::path root = MakeScratchRootUVE();
+const std::filesystem::path& ScratchRoot() {
+    static const std::filesystem::path root = MakeScratchRoot();
     return root;
 }
 
-std::filesystem::path ScratchPathUVE(const std::string_view name) {
-    return ScratchRootUVE() / name;
+std::filesystem::path ScratchPath(const std::string_view name) {
+    return ScratchRoot() / name;
 }
 
-std::filesystem::path MakeTestCaseDirectoryUVE(const std::string_view label) {
+std::filesystem::path MakeTestCaseDirectory(const std::string_view label) {
     const ::testing::TestInfo* const testInfo = ::testing::UnitTest::GetInstance()->current_test_info();
 
     // current_test_info() is null outside a running test (a fixture's static setup, say). Falling
@@ -119,7 +119,7 @@ std::filesystem::path MakeTestCaseDirectoryUVE(const std::string_view label) {
     // directories instead of the one being asked for.
     std::replace(directoryName.begin(), directoryName.end(), '/', '_');
 
-    std::filesystem::path directory = ScratchRootUVE() / directoryName;
+    std::filesystem::path directory = ScratchRoot() / directoryName;
     if (!label.empty()) {
         directory /= label;
     }
@@ -131,7 +131,7 @@ std::filesystem::path MakeTestCaseDirectoryUVE(const std::string_view label) {
     return directory;
 }
 
-std::filesystem::path RepositoryRootUVE() {
+std::filesystem::path RepositoryRoot() {
     return std::filesystem::path(UVE_SOURCE_DIR);
 }
 

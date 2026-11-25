@@ -14,7 +14,7 @@
 namespace UVE::Asset {
 
 /// Sidecar import settings document persisted next to a source asset (`<source>.uvimport`, Part 5.1).
-struct AssetImportSidecarUVE final {
+struct AssetImportSidecar final {
     std::string importerVersion = "v1";
     std::string presetName;
     bool reimportNeeded = false;
@@ -23,35 +23,35 @@ struct AssetImportSidecarUVE final {
 };
 
 /// Returns `<sourcePath>.uvimport` next to the source file (Part 5.1).
-[[nodiscard]] std::filesystem::path GetImportSidecarPathUVE(const std::filesystem::path& sourcePath);
+[[nodiscard]] std::filesystem::path GetImportSidecarPath(const std::filesystem::path& sourcePath);
 
 /// Saves `sidecar` as a JSON `.uvimport` sidecar file (Part 5.1).
-[[nodiscard]] bool SaveImportSidecarUVE(const AssetImportSidecarUVE& sidecar,
+[[nodiscard]] bool SaveImportSidecar(const AssetImportSidecar& sidecar,
                                         const std::filesystem::path& sidecarPath);
 
 /// Loads `outSidecar` from a JSON `.uvimport` sidecar file (Part 5.1).
-[[nodiscard]] bool LoadImportSidecarUVE(const std::filesystem::path& sidecarPath,
-                                        AssetImportSidecarUVE& outSidecar);
+[[nodiscard]] bool LoadImportSidecar(const std::filesystem::path& sidecarPath,
+                                        AssetImportSidecar& outSidecar);
 
-enum class MeshImportNormalModeUVE : std::uint8_t {
+enum class MeshImportNormalMode : std::uint8_t {
     Import = 0,
     Recalculate = 1,
     RecalculateSmoothAngle = 2,
 };
 
-enum class MeshImportTangentModeUVE : std::uint8_t {
+enum class MeshImportTangentMode : std::uint8_t {
     Import = 0,
     Recalculate = 1,
     None = 2,
 };
 
-enum class MeshImportSplitModeUVE : std::uint8_t {
+enum class MeshImportSplitMode : std::uint8_t {
     KeepSingleMesh = 0,
     ByMaterial = 1,
     ByObject = 2,
 };
 
-enum class MeshImportCollisionModeUVE : std::uint8_t {
+enum class MeshImportCollisionMode : std::uint8_t {
     None = 0,
     ConvexHull = 1,
     MultipleConvexHulls = 2,
@@ -61,7 +61,7 @@ enum class MeshImportCollisionModeUVE : std::uint8_t {
 };
 
 /// Per-source-node import override entry (Part 5.6).
-struct PerNodeImportOverrideUVE final {
+struct PerNodeImportOverride final {
     std::string nodeName;
     bool skipNode = false;
     std::string overrideNodeType;
@@ -73,20 +73,20 @@ struct PerNodeImportOverrideUVE final {
 };
 
 /// Mesh, LOD, collision, skeleton, animation, and per-node import settings (Part 5.2 - 5.6).
-struct MeshImportSettingsUVE final : AssetImportSettingsUVE {
+struct MeshImportSettings final : AssetImportSettings {
     // 5.2 Mesh import
     float scaleFactor = 1.0F;
     bool detectUnitsFromSource = true;
     std::string upAxis = "+Y";
     std::string forwardAxis = "-Z";
     bool applyRootTransform = false;
-    MeshImportNormalModeUVE normalMode = MeshImportNormalModeUVE::Import;
+    MeshImportNormalMode normalMode = MeshImportNormalMode::Import;
     float smoothingAngleDegrees = 60.0F;
-    MeshImportTangentModeUVE tangentMode = MeshImportTangentModeUVE::Import;
+    MeshImportTangentMode tangentMode = MeshImportTangentMode::Import;
     float weldPositionTolerance = 1.0e-4F;
     float weldUvTolerance = 1.0e-4F;
     bool optimizeVertexCache = true;
-    MeshImportSplitModeUVE splitMode = MeshImportSplitModeUVE::KeepSingleMesh;
+    MeshImportSplitMode splitMode = MeshImportSplitMode::KeepSingleMesh;
     bool preserveHierarchy = true;
     bool importVertexColors = true;
     bool importUv2 = true;
@@ -105,7 +105,7 @@ struct MeshImportSettingsUVE final : AssetImportSettingsUVE {
     bool generateFurthestImpostor = false;
 
     // 5.4 Collision generation
-    MeshImportCollisionModeUVE collisionMode = MeshImportCollisionModeUVE::None;
+    MeshImportCollisionMode collisionMode = MeshImportCollisionMode::None;
     std::uint8_t maxConvexHulls = 8U;
     std::uint8_t maxVerticesPerHull = 32U;
     float concavityTolerance = 0.01F;
@@ -133,18 +133,18 @@ struct MeshImportSettingsUVE final : AssetImportSettingsUVE {
 
     // 5.6 Per-node overrides
     bool keepSceneAsEditableInstance = false;
-    std::vector<PerNodeImportOverrideUVE> nodeOverrides;
+    std::vector<PerNodeImportOverride> nodeOverrides;
 
-    [[nodiscard]] std::string GetCacheVersionUVE() const override;
+    [[nodiscard]] std::string GetCacheVersion() const override;
 };
 
-/// Resolves mesh import settings from a generic `AssetImportSettingsUVE` reference (Part 5.1 / 5.2).
-[[nodiscard]] MeshImportSettingsUVE ResolveMeshImportSettingsUVE(
-    const AssetImportSettingsUVE& settings) noexcept;
+/// Resolves mesh import settings from a generic `AssetImportSettings` reference (Part 5.1 / 5.2).
+[[nodiscard]] MeshImportSettings ResolveMeshImportSettings(
+    const AssetImportSettings& settings) noexcept;
 
 /// Procedural primitive geometry parameters (Part 5.7).
-struct PrimitiveGeometryParametersUVE final {
-    Math::Vector3UVE boxSize{1.0F, 1.0F, 1.0F};
+struct PrimitiveGeometryParameters final {
+    Math::Vector3 boxSize{1.0F, 1.0F, 1.0F};
     std::uint16_t boxSubdivisionsX = 1U;
     std::uint16_t boxSubdivisionsY = 1U;
     std::uint16_t boxSubdivisionsZ = 1U;
@@ -178,7 +178,7 @@ struct PrimitiveGeometryParametersUVE final {
     std::uint16_t torusRingSegments = 16U;
 
     float prismLeftToRightSkew = 0.5F;
-    Math::Vector3UVE prismSize{1.0F, 1.0F, 1.0F};
+    Math::Vector3 prismSize{1.0F, 1.0F, 1.0F};
 
     std::string textMeshString = "Text";
     float textMeshFontSize = 16.0F;
@@ -194,18 +194,18 @@ struct PrimitiveGeometryParametersUVE final {
     bool addCollision = false;
 };
 
-[[nodiscard]] bool IsPrimitiveGeometryParametersValidUVE(
-    const PrimitiveGeometryParametersUVE& params) noexcept;
+[[nodiscard]] bool IsPrimitiveGeometryParametersValid(
+    const PrimitiveGeometryParameters& params) noexcept;
 
-enum class AudioImportLoadModeUVE : std::uint8_t {
+enum class AudioImportLoadMode : std::uint8_t {
     InMemory = 0,
     Streamed = 1,
     DecompressOnLoad = 2,
 };
 
 /// Audio import settings (Part 6.1).
-struct AudioImportSettingsUVE final : AssetImportSettingsUVE {
-    AudioImportLoadModeUVE loadMode = AudioImportLoadModeUVE::InMemory;
+struct AudioImportSettings final : AssetImportSettings {
+    AudioImportLoadMode loadMode = AudioImportLoadMode::InMemory;
     std::string compressionFormat = "PCM";
     float compressionQuality = 0.8F;
     bool forceMono = false;
@@ -219,18 +219,18 @@ struct AudioImportSettingsUVE final : AssetImportSettingsUVE {
     std::string defaultBusName = "Master";
     bool preloadOnSceneLoad = true;
 
-    [[nodiscard]] std::string GetCacheVersionUVE() const override;
+    [[nodiscard]] std::string GetCacheVersion() const override;
 };
 
-enum class FontImportRenderingModeUVE : std::uint8_t {
+enum class FontImportRenderingMode : std::uint8_t {
     Bitmap = 0,
     SignedDistanceField = 1,
     MultiChannelSdf = 2,
 };
 
 /// Font import settings (Part 6.2).
-struct FontImportSettingsUVE final : AssetImportSettingsUVE {
-    FontImportRenderingModeUVE renderingMode = FontImportRenderingModeUVE::SignedDistanceField;
+struct FontImportSettings final : AssetImportSettings {
+    FontImportRenderingMode renderingMode = FontImportRenderingMode::SignedDistanceField;
     std::uint16_t baseSizePixels = 32U;
     std::vector<std::uint16_t> preRenderedSizes{12U, 16U, 24U, 32U};
     std::string hintingMode = "Normal";
@@ -245,7 +245,7 @@ struct FontImportSettingsUVE final : AssetImportSettingsUVE {
     std::uint16_t atlasHeight = 1024U;
     std::uint8_t atlasPaddingPixels = 2U;
 
-    [[nodiscard]] std::string GetCacheVersionUVE() const override;
+    [[nodiscard]] std::string GetCacheVersion() const override;
 };
 
 } // namespace UVE::Asset

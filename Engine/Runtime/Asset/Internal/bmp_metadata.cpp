@@ -13,18 +13,18 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool CanReadUVE(const std::vector<std::byte>& bytes, const std::size_t offset,
+[[nodiscard]] bool CanRead(const std::vector<std::byte>& bytes, const std::size_t offset,
                               const std::size_t size) noexcept {
     return offset <= bytes.size() && size <= bytes.size() - offset;
 }
 
-[[nodiscard]] std::uint16_t ReadU16LittleEndianUVE(const std::vector<std::byte>& bytes,
+[[nodiscard]] std::uint16_t ReadU16LittleEndian(const std::vector<std::byte>& bytes,
                                                    const std::size_t offset) noexcept {
     return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
            static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1U]) << 8U);
 }
 
-[[nodiscard]] std::uint32_t ReadU32LittleEndianUVE(const std::vector<std::byte>& bytes,
+[[nodiscard]] std::uint32_t ReadU32LittleEndian(const std::vector<std::byte>& bytes,
                                                    const std::size_t offset) noexcept {
     return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset + 1U])) << 8U) |
@@ -34,38 +34,38 @@ namespace {
 
 } // namespace
 
-bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUVE& outImage) noexcept {
-    constexpr std::size_t kFileHeaderBytesUVE = 14U;
-    constexpr std::size_t kInfoHeaderBytesUVE = 40U;
-    constexpr std::size_t kMaximumBmpHeaderAndPaletteOverheadBytesUVE = 4096U;
-    if (bytes.size() > kMaximumBmpDecodedPixelBytesUVE + kMaximumBmpHeaderAndPaletteOverheadBytesUVE ||
-        !CanReadUVE(bytes, 0U, kFileHeaderBytesUVE) ||
+bool DecodeBmpRgba8Image(const std::vector<std::byte>& bytes, BmpRgba8Image& outImage) noexcept {
+    constexpr std::size_t kFileHeaderBytes = 14U;
+    constexpr std::size_t kInfoHeaderBytes = 40U;
+    constexpr std::size_t kMaximumBmpHeaderAndPaletteOverheadBytes = 4096U;
+    if (bytes.size() > kMaximumBmpDecodedPixelBytes + kMaximumBmpHeaderAndPaletteOverheadBytes ||
+        !CanRead(bytes, 0U, kFileHeaderBytes) ||
         bytes[0] != std::byte{'B'} || bytes[1] != std::byte{'M'}) {
         return false;
     }
 
-    const std::uint32_t declaredFileSize = ReadU32LittleEndianUVE(bytes, 2U);
-    const std::uint32_t pixelOffset = ReadU32LittleEndianUVE(bytes, 10U);
+    const std::uint32_t declaredFileSize = ReadU32LittleEndian(bytes, 2U);
+    const std::uint32_t pixelOffset = ReadU32LittleEndian(bytes, 10U);
     if (declaredFileSize != 0U && declaredFileSize > bytes.size()) {
         return false;
     }
-    if (pixelOffset < kFileHeaderBytesUVE || !CanReadUVE(bytes, kFileHeaderBytesUVE, kInfoHeaderBytesUVE)) {
+    if (pixelOffset < kFileHeaderBytes || !CanRead(bytes, kFileHeaderBytes, kInfoHeaderBytes)) {
         return false;
     }
 
-    const std::uint32_t infoHeaderSize = ReadU32LittleEndianUVE(bytes, kFileHeaderBytesUVE);
-    if (infoHeaderSize < kInfoHeaderBytesUVE ||
-        !CanReadUVE(bytes, kFileHeaderBytesUVE, static_cast<std::size_t>(infoHeaderSize))) {
+    const std::uint32_t infoHeaderSize = ReadU32LittleEndian(bytes, kFileHeaderBytes);
+    if (infoHeaderSize < kInfoHeaderBytes ||
+        !CanRead(bytes, kFileHeaderBytes, static_cast<std::size_t>(infoHeaderSize))) {
         return false;
     }
     const std::int32_t signedWidth = static_cast<std::int32_t>(
-        ReadU32LittleEndianUVE(bytes, kFileHeaderBytesUVE + 4U));
+        ReadU32LittleEndian(bytes, kFileHeaderBytes + 4U));
     const std::int32_t signedHeight = static_cast<std::int32_t>(
-        ReadU32LittleEndianUVE(bytes, kFileHeaderBytesUVE + 8U));
-    const std::uint16_t planes = ReadU16LittleEndianUVE(bytes, kFileHeaderBytesUVE + 12U);
-    const std::uint16_t bitsPerPixel = ReadU16LittleEndianUVE(bytes, kFileHeaderBytesUVE + 14U);
-    const std::uint32_t compression = ReadU32LittleEndianUVE(bytes, kFileHeaderBytesUVE + 16U);
-    const std::uint32_t colorsUsed = ReadU32LittleEndianUVE(bytes, kFileHeaderBytesUVE + 32U);
+        ReadU32LittleEndian(bytes, kFileHeaderBytes + 8U));
+    const std::uint16_t planes = ReadU16LittleEndian(bytes, kFileHeaderBytes + 12U);
+    const std::uint16_t bitsPerPixel = ReadU16LittleEndian(bytes, kFileHeaderBytes + 14U);
+    const std::uint32_t compression = ReadU32LittleEndian(bytes, kFileHeaderBytes + 16U);
+    const std::uint32_t colorsUsed = ReadU32LittleEndian(bytes, kFileHeaderBytes + 32U);
     const bool packed1Image = bitsPerPixel == 1U;
     const bool packed4Image = bitsPerPixel == 4U;
     const bool indexedImage = packed1Image || packed4Image || bitsPerPixel == 8U;
@@ -83,42 +83,42 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
     }
 
     const std::uint64_t width = static_cast<std::uint32_t>(signedWidth);
-    const std::size_t paletteOffset = kFileHeaderBytesUVE + static_cast<std::size_t>(infoHeaderSize);
+    const std::size_t paletteOffset = kFileHeaderBytes + static_cast<std::size_t>(infoHeaderSize);
     const std::uint32_t paletteEntryCount = indexedImage
                                                   ? (colorsUsed == 0U ? (packed1Image ? 2U : (packed4Image ? 16U : 256U))
                                                                       : colorsUsed)
                                                   : 0U;
-    constexpr std::size_t kBmpPaletteEntryBytesUVE = 4U;
+    constexpr std::size_t kBmpPaletteEntryBytes = 4U;
     const std::uint32_t maximumPaletteEntries = packed1Image ? 2U : (packed4Image ? 16U : 256U);
     if (indexedImage && paletteEntryCount > maximumPaletteEntries) {
         return false;
     }
-    const std::size_t paletteBytes = static_cast<std::size_t>(paletteEntryCount) * kBmpPaletteEntryBytesUVE;
-    if (indexedImage && (!CanReadUVE(bytes, paletteOffset, paletteBytes) ||
+    const std::size_t paletteBytes = static_cast<std::size_t>(paletteEntryCount) * kBmpPaletteEntryBytes;
+    if (indexedImage && (!CanRead(bytes, paletteOffset, paletteBytes) ||
                          static_cast<std::uint64_t>(pixelOffset) < static_cast<std::uint64_t>(paletteOffset) + paletteBytes)) {
         return false;
     }
-    constexpr std::size_t kBmpBitfieldsOffsetUVE = kFileHeaderBytesUVE + kInfoHeaderBytesUVE;
-    constexpr std::size_t kBmpBitfieldsBytesUVE = 12U;
+    constexpr std::size_t kBmpBitfieldsOffset = kFileHeaderBytes + kInfoHeaderBytes;
+    constexpr std::size_t kBmpBitfieldsBytes = 12U;
     bool bitfields555Image = false;
     bool bitfields565Image = false;
     bool bitfields32BgraImage = false;
     if (bitfieldsImage) {
         const bool hasAlphaMask = bitsPerPixel == 32U && (compression == 6U || extendedBitfieldsHeader);
-        const std::size_t maskBytes = hasAlphaMask ? 16U : kBmpBitfieldsBytesUVE;
+        const std::size_t maskBytes = hasAlphaMask ? 16U : kBmpBitfieldsBytes;
         const std::uint64_t requiredPixelOffset = extendedBitfieldsHeader
-            ? static_cast<std::uint64_t>(kFileHeaderBytesUVE) + infoHeaderSize
-            : static_cast<std::uint64_t>(kBmpBitfieldsOffsetUVE + maskBytes);
-        if ((!extendedBitfieldsHeader && infoHeaderSize != kInfoHeaderBytesUVE) ||
-            !CanReadUVE(bytes, kBmpBitfieldsOffsetUVE, maskBytes) ||
+            ? static_cast<std::uint64_t>(kFileHeaderBytes) + infoHeaderSize
+            : static_cast<std::uint64_t>(kBmpBitfieldsOffset + maskBytes);
+        if ((!extendedBitfieldsHeader && infoHeaderSize != kInfoHeaderBytes) ||
+            !CanRead(bytes, kBmpBitfieldsOffset, maskBytes) ||
             static_cast<std::uint64_t>(pixelOffset) < requiredPixelOffset) {
             return false;
         }
-        const std::uint32_t redMask = ReadU32LittleEndianUVE(bytes, kBmpBitfieldsOffsetUVE);
-        const std::uint32_t greenMask = ReadU32LittleEndianUVE(bytes, kBmpBitfieldsOffsetUVE + 4U);
-        const std::uint32_t blueMask = ReadU32LittleEndianUVE(bytes, kBmpBitfieldsOffsetUVE + 8U);
+        const std::uint32_t redMask = ReadU32LittleEndian(bytes, kBmpBitfieldsOffset);
+        const std::uint32_t greenMask = ReadU32LittleEndian(bytes, kBmpBitfieldsOffset + 4U);
+        const std::uint32_t blueMask = ReadU32LittleEndian(bytes, kBmpBitfieldsOffset + 8U);
         const std::uint32_t alphaMask = hasAlphaMask
-            ? ReadU32LittleEndianUVE(bytes, kBmpBitfieldsOffsetUVE + 12U) : 0U;
+            ? ReadU32LittleEndian(bytes, kBmpBitfieldsOffset + 12U) : 0U;
         bitfields555Image = redMask == 0x7C00U && greenMask == 0x03E0U && blueMask == 0x001FU;
         bitfields565Image = redMask == 0xF800U && greenMask == 0x07E0U && blueMask == 0x001FU;
         const bool validBgrxMasks = bitfields32Image && compression == 3U && !extendedBitfieldsHeader &&
@@ -143,7 +143,7 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
     const std::uint64_t decodedBytes = width * absoluteHeight * 4U;
     if (width > std::numeric_limits<std::uint32_t>::max() ||
         absoluteHeight > std::numeric_limits<std::uint32_t>::max() ||
-        decodedBytes > kMaximumBmpDecodedPixelBytesUVE ||
+        decodedBytes > kMaximumBmpDecodedPixelBytes ||
         static_cast<std::uint64_t>(pixelOffset) > bytes.size()) {
         return false;
     }
@@ -164,7 +164,7 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
     }
 
     try {
-        BmpRgba8ImageUVE candidate;
+        BmpRgba8Image candidate;
         candidate.width = static_cast<std::uint32_t>(width);
         candidate.height = static_cast<std::uint32_t>(absoluteHeight);
         candidate.pixels.resize(static_cast<std::size_t>(decodedBytes));
@@ -184,7 +184,7 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
                 std::byte* const rgba = candidate.pixels.data() + outputRow * outputStride +
                                         static_cast<std::size_t>(x) * 4U;
                 const std::size_t palettePixelOffset = paletteOffset +
-                                                       static_cast<std::size_t>(paletteIndex) * kBmpPaletteEntryBytesUVE;
+                                                       static_cast<std::size_t>(paletteIndex) * kBmpPaletteEntryBytes;
                 rgba[0] = bytes[palettePixelOffset + 2U];
                 rgba[1] = bytes[palettePixelOffset + 1U];
                 rgba[2] = bytes[palettePixelOffset];
@@ -301,7 +301,7 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
                             return false;
                         }
                         const std::size_t palettePixelOffset = paletteOffset +
-                                                               static_cast<std::size_t>(paletteIndex) * kBmpPaletteEntryBytesUVE;
+                                                               static_cast<std::size_t>(paletteIndex) * kBmpPaletteEntryBytes;
                         rgba[0] = bytes[palettePixelOffset + 2U];
                         rgba[1] = bytes[palettePixelOffset + 1U];
                         rgba[2] = bytes[palettePixelOffset];
@@ -343,7 +343,7 @@ bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUV
         outImage = std::move(candidate);
         return true;
     } catch (const std::bad_alloc&) {
-        UVE_ERROR("BmpMetadataUVE: allocation failed while decoding bounded BMP image");
+        UVE_ERROR("BmpMetadata: allocation failed while decoding bounded BMP image");
         return false;
     }
 }

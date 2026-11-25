@@ -9,9 +9,9 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::Objects::SceneObjectKindUVE;
-using Object = ContentCatalogueObjectUVE;
-using Action = ContentCatalogueActionUVE;
+using Kind = Scene::Objects::SceneObjectKind;
+using Object = ContentCatalogueObject;
+using Action = ContentCatalogueAction;
 
 template <std::size_t N>
 using Tree = std::array<Object, N>;
@@ -64,7 +64,7 @@ constexpr std::array<std::string_view, 9> kGroups{"CREATE BASIC ASSET", "Entity"
 // The entity classes, in the order the Entity Class window lists them: the two things a player is made of
 // first, then what a level is built from, then the two that mark a place or an area. Each is a
 // catalogue item, so the window reads its name and icon from the menu rather than restating them.
-constexpr std::array<ContentCatalogueEntityClassUVE, 6> kEntityClasses{{
+constexpr std::array<ContentCatalogueEntityClass, 6> kEntityClasses{{
     {"player", "The body the game gives its input to.",
      "A Player3D is the object play begins from: input drives it, and the view the player sees looks "
      "out from whatever you attach to it. Add the mesh it wears, the spring arm that holds the "
@@ -86,7 +86,7 @@ constexpr std::array<ContentCatalogueEntityClassUVE, 6> kEntityClasses{{
      "to come back. Its transform is the whole object, so there is nothing to add to it."},
 }};
 
-constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
+constexpr std::array<ContentCatalogueItem, 40> kItems{{
     {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, "Folder"},
     {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
      "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D, "Viewport3D"},
@@ -166,17 +166,17 @@ constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
     {"occluder", "Occluder 3D", "World", "Hides what is behind it from rendering", Action::EntityAsset, kOccluder, "Occluder"},
 }};
 
-[[nodiscard]] char LowerUVE(const char character) noexcept {
+[[nodiscard]] char Lower(const char character) noexcept {
     return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 }
 
-[[nodiscard]] bool ContainsUVE(std::string_view haystack, std::string_view needle) noexcept {
+[[nodiscard]] bool Contains(std::string_view haystack, std::string_view needle) noexcept {
     if (needle.empty()) {
         return true;
     }
     for (std::size_t start = 0U; start + needle.size() <= haystack.size(); ++start) {
         std::size_t matched = 0U;
-        while (matched < needle.size() && LowerUVE(haystack[start + matched]) == LowerUVE(needle[matched])) {
+        while (matched < needle.size() && Lower(haystack[start + matched]) == Lower(needle[matched])) {
             ++matched;
         }
         if (matched == needle.size()) {
@@ -188,26 +188,26 @@ constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
 
 } // namespace
 
-std::span<const ContentCatalogueItemUVE> GetContentCatalogueItemsUVE() noexcept {
+std::span<const ContentCatalogueItem> GetContentCatalogueItems() noexcept {
     return kItems;
 }
 
-std::span<const std::string_view> GetContentCatalogueGroupsUVE() noexcept {
+std::span<const std::string_view> GetContentCatalogueGroups() noexcept {
     return kGroups;
 }
 
-std::span<const ContentCatalogueEntityClassUVE> GetContentCatalogueEntityClassesUVE() noexcept {
+std::span<const ContentCatalogueEntityClass> GetContentCatalogueEntityClasses() noexcept {
     return kEntityClasses;
 }
 
-bool IsContentCatalogueEntityClassUVE(const std::string_view itemId) noexcept {
-    return std::ranges::any_of(kEntityClasses, [itemId](const ContentCatalogueEntityClassUVE& entry) {
+bool IsContentCatalogueEntityClass(const std::string_view itemId) noexcept {
+    return std::ranges::any_of(kEntityClasses, [itemId](const ContentCatalogueEntityClass& entry) {
         return entry.itemId == itemId;
     });
 }
 
-const ContentCatalogueItemUVE* FindContentCatalogueItemUVE(const std::string_view id) noexcept {
-    for (const ContentCatalogueItemUVE& item : kItems) {
+const ContentCatalogueItem* FindContentCatalogueItem(const std::string_view id) noexcept {
+    for (const ContentCatalogueItem& item : kItems) {
         if (item.id == id) {
             return &item;
         }
@@ -215,12 +215,12 @@ const ContentCatalogueItemUVE* FindContentCatalogueItemUVE(const std::string_vie
     return nullptr;
 }
 
-bool DoesContentCatalogueItemMatchUVE(const ContentCatalogueItemUVE& item, std::string_view query) noexcept {
+bool DoesContentCatalogueItemMatch(const ContentCatalogueItem& item, std::string_view query) noexcept {
     while (!query.empty()) {
         const std::size_t space = query.find(' ');
         const std::string_view word = query.substr(0U, space);
-        if (!word.empty() && !ContainsUVE(item.label, word) && !ContainsUVE(item.group, word) &&
-            !ContainsUVE(item.tooltip, word)) {
+        if (!word.empty() && !Contains(item.label, word) && !Contains(item.group, word) &&
+            !Contains(item.tooltip, word)) {
             return false;
         }
         if (space == std::string_view::npos) {
@@ -231,8 +231,8 @@ bool DoesContentCatalogueItemMatchUVE(const ContentCatalogueItemUVE& item, std::
     return true;
 }
 
-int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, const std::string_view query) noexcept {
-    if (!DoesContentCatalogueItemMatchUVE(item, query)) {
+int RankContentCatalogueItem(const ContentCatalogueItem& item, const std::string_view query) noexcept {
+    if (!DoesContentCatalogueItemMatch(item, query)) {
         return 0;
     }
     const std::size_t start = query.find_first_not_of(' ');
@@ -240,21 +240,21 @@ int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, const std::
         return 1;
     }
     const std::string_view word = query.substr(start, query.find(' ', start) - start);
-    if (word.size() <= item.label.size() && ContainsUVE(item.label.substr(0U, word.size()), word)) {
+    if (word.size() <= item.label.size() && Contains(item.label.substr(0U, word.size()), word)) {
         return 3;
     }
-    return ContainsUVE(item.label, word) ? 2 : 1;
+    return Contains(item.label, word) ? 2 : 1;
 }
 
-Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
-    if (item.action == ContentCatalogueActionUVE::Folder) {
+Scene::Objects::SceneObjectKind GetContentCatalogueIconKind(const ContentCatalogueItem& item) noexcept {
+    if (item.action == ContentCatalogueAction::Folder) {
         return Kind::Folder;
     }
-    if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+    if (item.action == ContentCatalogueAction::ScriptAsset) {
         return Kind::Script;
     }
-    if (item.action == ContentCatalogueActionUVE::MontageAsset || item.action == ContentCatalogueActionUVE::LibraryAsset ||
-        item.action == ContentCatalogueActionUVE::MontageLibraryAsset) {
+    if (item.action == ContentCatalogueAction::MontageAsset || item.action == ContentCatalogueAction::LibraryAsset ||
+        item.action == ContentCatalogueAction::MontageLibraryAsset) {
         return Kind::AnimationSequencer;
     }
     if (item.objects.empty()) {

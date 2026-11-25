@@ -13,9 +13,9 @@
 namespace UVE::Render {
 namespace {
 
-[[nodiscard]] bool IntersectRayBoxUVE(const Math::Vector3UVE& origin, const Math::Vector3UVE& invDir,
-                                      const RtSceneBoxNodeUVE& box, const float tMin, const float tMax,
-                                      float& outT, Math::Vector3UVE& outNormal) noexcept {
+[[nodiscard]] bool IntersectRayBox(const Math::Vector3& origin, const Math::Vector3& invDir,
+                                      const RtSceneBoxNode& box, const float tMin, const float tMax,
+                                      float& outT, Math::Vector3& outNormal) noexcept {
     const float tx0 = (box.minAndMetallic[0] - origin.x) * invDir.x;
     const float tx1 = (box.maxAndRoughness[0] - origin.x) * invDir.x;
     const float ty0 = (box.minAndMetallic[1] - origin.y) * invDir.y;
@@ -38,41 +38,41 @@ namespace {
 
     outT = tEnter;
     if (tEnter == tminX) {
-        outNormal = Math::Vector3UVE{invDir.x < 0.0F ? 1.0F : -1.0F, 0.0F, 0.0F};
+        outNormal = Math::Vector3{invDir.x < 0.0F ? 1.0F : -1.0F, 0.0F, 0.0F};
     } else if (tEnter == tminY) {
-        outNormal = Math::Vector3UVE{0.0F, invDir.y < 0.0F ? 1.0F : -1.0F, 0.0F};
+        outNormal = Math::Vector3{0.0F, invDir.y < 0.0F ? 1.0F : -1.0F, 0.0F};
     } else {
-        outNormal = Math::Vector3UVE{0.0F, 0.0F, invDir.z < 0.0F ? 1.0F : -1.0F};
+        outNormal = Math::Vector3{0.0F, 0.0F, invDir.z < 0.0F ? 1.0F : -1.0F};
     }
     return true;
 }
 
 } // namespace
 
-std::vector<RtSceneBoxNodeUVE> BuildRtSceneBoxesFromEntitiesUVE(Scene::IEntityManagerUVE& entityManager,
+std::vector<RtSceneBoxNode> BuildRtSceneBoxesFromEntities(Scene::IEntityManager& entityManager,
                                                                 const std::size_t maxBoxes) {
-    const std::size_t limit = std::min(maxBoxes, kMaxRtSceneBoxesUVE);
-    std::vector<RtSceneBoxNodeUVE> boxes;
+    const std::size_t limit = std::min(maxBoxes, kMaxRtSceneBoxes);
+    std::vector<RtSceneBoxNode> boxes;
     boxes.reserve(64U);
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& wt,
-            const Scene::PrimitiveMeshComponentUVE& prim) {
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::PrimitiveMeshComponent>(
+        [&](const Scene::Entity entity, const Scene::WorldTransformComponent& wt,
+            const Scene::PrimitiveMeshComponent& prim) {
             if (boxes.size() >= limit || wt.dirty) {
                 return;
             }
-            if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
-                const auto& vis = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+            if (entityManager.HasComponent<Scene::VisibilityComponent>(entity)) {
+                const auto& vis = entityManager.GetComponent<Scene::VisibilityComponent>(entity);
                 if (!vis.visible || !vis.visibleInHierarchy) {
                     return;
                 }
             }
-            const Math::Vector3UVE half{
+            const Math::Vector3 half{
                 std::max(std::abs(wt.worldScale.x) * 0.5F, 0.01F),
                 std::max(std::abs(wt.worldScale.y) * 0.5F, 0.01F),
                 std::max(std::abs(wt.worldScale.z) * 0.5F, 0.01F),
             };
-            RtSceneBoxNodeUVE node{};
+            RtSceneBoxNode node{};
             node.minAndMetallic = {wt.worldPosition.x - half.x, wt.worldPosition.y - half.y,
                                    wt.worldPosition.z - half.z, 0.0F};
             node.maxAndRoughness = {wt.worldPosition.x + half.x, wt.worldPosition.y + half.y,
@@ -83,12 +83,12 @@ std::vector<RtSceneBoxNodeUVE> BuildRtSceneBoxesFromEntitiesUVE(Scene::IEntityMa
     return boxes;
 }
 
-RtRayHitUVE TraceRayAgainstSceneBoxesUVE(const std::span<const RtSceneBoxNodeUVE> boxes,
-                                         const Math::Vector3UVE& origin, const Math::Vector3UVE& direction,
+RtRayHit TraceRayAgainstSceneBoxes(const std::span<const RtSceneBoxNode> boxes,
+                                         const Math::Vector3& origin, const Math::Vector3& direction,
                                          const float tMin, const float tMax) noexcept {
-    RtRayHitUVE best{};
-    const Math::Vector3UVE dir = Math::NormalizeUVE(direction);
-    const Math::Vector3UVE invDir{
+    RtRayHit best{};
+    const Math::Vector3 dir = Math::Normalize(direction);
+    const Math::Vector3 invDir{
         std::abs(dir.x) > 1.0e-6F ? (1.0F / dir.x) : 1.0e6F,
         std::abs(dir.y) > 1.0e-6F ? (1.0F / dir.y) : 1.0e6F,
         std::abs(dir.z) > 1.0e-6F ? (1.0F / dir.z) : 1.0e6F,
@@ -97,44 +97,44 @@ RtRayHitUVE TraceRayAgainstSceneBoxesUVE(const std::span<const RtSceneBoxNodeUVE
     float closestT = tMax;
     for (std::size_t i = 0U; i < boxes.size(); ++i) {
         float hitT = 0.0F;
-        Math::Vector3UVE hitN{};
-        if (IntersectRayBoxUVE(origin, invDir, boxes[i], tMin, closestT, hitT, hitN)) {
+        Math::Vector3 hitN{};
+        if (IntersectRayBox(origin, invDir, boxes[i], tMin, closestT, hitT, hitN)) {
             closestT = hitT;
             best.hit = true;
             best.distance = hitT;
             best.boxIndex = static_cast<std::uint32_t>(i);
             best.normal = hitN;
-            best.albedo = Math::Vector3UVE{boxes[i].albedo[0], boxes[i].albedo[1], boxes[i].albedo[2]};
-            best.emissive = Math::Vector3UVE{boxes[i].emissive[0], boxes[i].emissive[1], boxes[i].emissive[2]};
+            best.albedo = Math::Vector3{boxes[i].albedo[0], boxes[i].albedo[1], boxes[i].albedo[2]};
+            best.emissive = Math::Vector3{boxes[i].emissive[0], boxes[i].emissive[1], boxes[i].emissive[2]};
         }
     }
     return best;
 }
 
-RtSurfaceResultUVE EvaluateRtShadowAndBounceUVE(const std::span<const RtSceneBoxNodeUVE> boxes,
-                                                const Math::Vector3UVE& worldPos, const Math::Vector3UVE& normal,
-                                                const Math::Vector3UVE& viewDir, const Math::Vector3UVE& sunDir,
-                                                const Math::Vector3UVE& sunRadiance,
-                                                const Math::Vector3UVE& skyColor) noexcept {
-    RtSurfaceResultUVE result{};
-    const Math::Vector3UVE n = Math::NormalizeUVE(normal);
-    const Math::Vector3UVE origin = worldPos + n * 0.01F;
+RtSurfaceResult EvaluateRtShadowAndBounce(const std::span<const RtSceneBoxNode> boxes,
+                                                const Math::Vector3& worldPos, const Math::Vector3& normal,
+                                                const Math::Vector3& viewDir, const Math::Vector3& sunDir,
+                                                const Math::Vector3& sunRadiance,
+                                                const Math::Vector3& skyColor) noexcept {
+    RtSurfaceResult result{};
+    const Math::Vector3 n = Math::Normalize(normal);
+    const Math::Vector3 origin = worldPos + n * 0.01F;
 
     // 1. Ray-traced shadow ray toward the sun.
-    const Math::Vector3UVE sDir = Math::NormalizeUVE(sunDir);
-    if (Math::DotUVE(n, sDir) > 0.0F) {
-        const RtRayHitUVE shadowHit = TraceRayAgainstSceneBoxesUVE(boxes, origin, sDir, 0.005F, 250.0F);
+    const Math::Vector3 sDir = Math::Normalize(sunDir);
+    if (Math::Dot(n, sDir) > 0.0F) {
+        const RtRayHit shadowHit = TraceRayAgainstSceneBoxes(boxes, origin, sDir, 0.005F, 250.0F);
         result.sunVisibility = shadowHit.hit ? 0.0F : 1.0F;
     }
 
     // 2. Ray-traced 1-bounce specular reflection ray.
-    const Math::Vector3UVE v = Math::NormalizeUVE(viewDir);
-    const Math::Vector3UVE reflDir = (n * (2.0F * Math::DotUVE(n, v))) - v;
-    const RtRayHitUVE reflHit = TraceRayAgainstSceneBoxesUVE(boxes, origin, reflDir, 0.005F, 250.0F);
+    const Math::Vector3 v = Math::Normalize(viewDir);
+    const Math::Vector3 reflDir = (n * (2.0F * Math::Dot(n, v))) - v;
+    const RtRayHit reflHit = TraceRayAgainstSceneBoxes(boxes, origin, reflDir, 0.005F, 250.0F);
     if (reflHit.hit) {
-        const float hitNdl = std::max(Math::DotUVE(reflHit.normal, sDir), 0.0F);
+        const float hitNdl = std::max(Math::Dot(reflHit.normal, sDir), 0.0F);
         result.reflectionRadiance =
-            Math::Vector3UVE{reflHit.albedo.x * (skyColor.x * 0.25F + sunRadiance.x * hitNdl) + reflHit.emissive.x,
+            Math::Vector3{reflHit.albedo.x * (skyColor.x * 0.25F + sunRadiance.x * hitNdl) + reflHit.emissive.x,
                              reflHit.albedo.y * (skyColor.y * 0.25F + sunRadiance.y * hitNdl) + reflHit.emissive.y,
                              reflHit.albedo.z * (skyColor.z * 0.25F + sunRadiance.z * hitNdl) + reflHit.emissive.z};
     } else {
@@ -142,11 +142,11 @@ RtSurfaceResultUVE EvaluateRtShadowAndBounceUVE(const std::span<const RtSceneBox
     }
 
     // 3. Ray-traced 1-bounce diffuse GI ray along the surface normal.
-    const RtRayHitUVE giHit = TraceRayAgainstSceneBoxesUVE(boxes, origin, n, 0.005F, 64.0F);
+    const RtRayHit giHit = TraceRayAgainstSceneBoxes(boxes, origin, n, 0.005F, 64.0F);
     if (giHit.hit) {
-        const float hitNdl = std::max(Math::DotUVE(giHit.normal, sDir), 0.0F);
+        const float hitNdl = std::max(Math::Dot(giHit.normal, sDir), 0.0F);
         result.giBounceRadiance =
-            Math::Vector3UVE{giHit.albedo.x * sunRadiance.x * hitNdl * 0.35F + giHit.emissive.x,
+            Math::Vector3{giHit.albedo.x * sunRadiance.x * hitNdl * 0.35F + giHit.emissive.x,
                              giHit.albedo.y * sunRadiance.y * hitNdl * 0.35F + giHit.emissive.y,
                              giHit.albedo.z * sunRadiance.z * hitNdl * 0.35F + giHit.emissive.z};
     } else {

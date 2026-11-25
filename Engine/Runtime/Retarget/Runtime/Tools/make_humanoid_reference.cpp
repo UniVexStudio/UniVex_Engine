@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // Builds the humanoid reference (Data/humanoid_reference.json) from a source rig: reads the rig's
-// skeleton from an FBX the same way the importer does, then BuildHumanoidReferenceUVE renames it,
+// skeleton from an FBX the same way the importer does, then BuildHumanoidReference renames it,
 // straightens it to the A-pose and fills in each bone's role. The source FBX stays outside the
 // repository; only the JSON it produces is kept.
 //
@@ -25,26 +25,26 @@
 
 namespace {
 
-void PrintReportUVE(const UVE::Retarget::RetargetSkeletonUVE& source, const UVE::Retarget::HumanoidReferenceUVE& reference) {
+void PrintReport(const UVE::Retarget::RetargetSkeleton& source, const UVE::Retarget::HumanoidReference& reference) {
     using namespace UVE;
-    const Retarget::RetargetSkeletonUVE folded = Retarget::FoldScaleUVE(source);
-    const std::vector<Retarget::WorldTransformUVE> before = Retarget::ComputeWorldTransformsUVE(folded);
-    const std::vector<Retarget::WorldTransformUVE> after = Retarget::ComputeWorldTransformsUVE(reference.skeleton);
+    const Retarget::RetargetSkeleton folded = Retarget::FoldScale(source);
+    const std::vector<Retarget::WorldTransform> before = Retarget::ComputeWorldTransforms(folded);
+    const std::vector<Retarget::WorldTransform> after = Retarget::ComputeWorldTransforms(reference.skeleton);
     std::printf("name\tsource\tkind\tparent\tlength_before\tlength_after\t"
                 "before_px\tbefore_py\tbefore_pz\tbefore_qx\tbefore_qy\tbefore_qz\tbefore_qw\t"
                 "after_px\tafter_py\tafter_pz\tafter_qx\tafter_qy\tafter_qz\tafter_qw\n");
     for (std::size_t index = 0U; index < reference.skeleton.bones.size(); ++index) {
         const std::int32_t parent = reference.skeleton.bones[index].parent;
-        const auto lengthOf = [parent, index](const std::vector<Retarget::WorldTransformUVE>& world) {
+        const auto lengthOf = [parent, index](const std::vector<Retarget::WorldTransform>& world) {
             return parent < 0 ? 0.0F
-                              : Math::LengthUVE(world[index].position - world[static_cast<std::size_t>(parent)].position);
+                              : Math::Length(world[index].position - world[static_cast<std::size_t>(parent)].position);
         };
-        const Retarget::WorldTransformUVE& a = before[index];
-        const Retarget::WorldTransformUVE& b = after[index];
+        const Retarget::WorldTransform& a = before[index];
+        const Retarget::WorldTransform& b = after[index];
         std::printf("%s\t%s\t%s\t%s\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%.5f\t%."
                     "5f\t%.5f\n",
                     reference.skeleton.bones[index].name.c_str(), source.bones[index].name.c_str(),
-                    Retarget::HumanoidBoneKindNameUVE(reference.info[index].kind),
+                    Retarget::HumanoidBoneKindName(reference.info[index].kind),
                     parent < 0 ? "-" : reference.skeleton.bones[static_cast<std::size_t>(parent)].name.c_str(),
                     static_cast<double>(lengthOf(before)), static_cast<double>(lengthOf(after)),
                     static_cast<double>(a.position.x), static_cast<double>(a.position.y),
@@ -72,14 +72,14 @@ int main(const int argc, char** const argv) {
         return 1;
     }
     const std::span<const std::byte> bytes{reinterpret_cast<const std::byte*>(raw.data()), raw.size()};
-    const std::optional<UVE::Asset::GltfSkeletonUVE> skeleton = UVE::Asset::ReadFbxSkeletonUVE(bytes, 256U);
+    const std::optional<UVE::Asset::GltfSkeleton> skeleton = UVE::Asset::ReadFbxSkeleton(bytes, 256U);
     if (!skeleton.has_value()) {
         std::fprintf(stderr, "%s has no skeleton the importer can read\n", argv[1]);
         return 1;
     }
-    UVE::Retarget::RetargetSkeletonUVE source;
-    for (const UVE::Asset::GltfJointUVE& joint : skeleton->joints) {
-        UVE::Retarget::RetargetBoneUVE bone;
+    UVE::Retarget::RetargetSkeleton source;
+    for (const UVE::Asset::GltfJoint& joint : skeleton->joints) {
+        UVE::Retarget::RetargetBone bone;
         bone.name = joint.name;
         bone.parent = joint.parentIndex;
         bone.position = joint.translation;
@@ -88,20 +88,20 @@ int main(const int argc, char** const argv) {
         source.bones.push_back(bone);
     }
     std::string error;
-    const std::optional<UVE::Retarget::HumanoidReferenceUVE> reference =
-        UVE::Retarget::BuildHumanoidReferenceUVE(source, &error);
+    const std::optional<UVE::Retarget::HumanoidReference> reference =
+        UVE::Retarget::BuildHumanoidReference(source, &error);
     if (!reference.has_value()) {
         std::fprintf(stderr, "cannot build the reference: %s\n", error.c_str());
         return 1;
     }
     std::ofstream output(argv[2], std::ios::binary | std::ios::trunc);
-    output << UVE::Retarget::WriteHumanoidReferenceUVE(*reference) << '\n';
+    output << UVE::Retarget::WriteHumanoidReference(*reference) << '\n';
     if (!output) {
         std::fprintf(stderr, "cannot write %s\n", argv[2]);
         return 1;
     }
     if (report) {
-        PrintReportUVE(source, *reference);
+        PrintReport(source, *reference);
     }
     std::fprintf(stderr, "%zu bones, hips %.3f m above the ground -> %s\n", reference->skeleton.bones.size(),
                  static_cast<double>(reference->hipsHeight), argv[2]);

@@ -22,44 +22,44 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-constexpr float kEpsilonUVE = 1.0e-4F;
-constexpr float kHalfTurnUVE = 1.5707963F;
+constexpr float kEpsilon = 1.0e-4F;
+constexpr float kHalfTurn = 1.5707963F;
 
-[[nodiscard]] bool SameRotationUVE(const Math::QuaternionUVE& lhs, const Math::QuaternionUVE& rhs) {
+[[nodiscard]] bool SameRotation(const Math::Quaternion& lhs, const Math::Quaternion& rhs) {
     const float dot = lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z + lhs.w * rhs.w;
-    return std::fabs(std::fabs(dot) - 1.0F) <= kEpsilonUVE;
+    return std::fabs(std::fabs(dot) - 1.0F) <= kEpsilon;
 }
 
-class Marker3DQueryUVETest : public ::testing::Test {
+class Marker3DQueryTest : public ::testing::Test {
 protected:
-    [[nodiscard]] EntityUVE MakeMarkerUVE(const Math::Vector3UVE& position,
-                                          const Marker3DComponentUVE& component) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        TransformComponentUVE transform{};
+    [[nodiscard]] Entity MakeMarker(const Math::Vector3& position,
+                                          const Marker3DComponent& component) {
+        const Entity entity = entityManager.CreateEntity();
+        TransformComponent transform{};
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Marker3DComponentUVE>(entity, component);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Marker3DComponent>(entity, component);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 };
 
-TEST_F(Marker3DQueryUVETest, AnEmptyQueryFindsEveryLiveMarkerInStableContentOrder) {
-    const EntityUVE first = MakeMarkerUVE({1.0F, 0.0F, 0.0F}, Marker3DComponentUVE{});
-    const EntityUVE second = MakeMarkerUVE({2.0F, 0.0F, 0.0F}, Marker3DComponentUVE{});
-    const EntityUVE third = MakeMarkerUVE({3.0F, 0.0F, 0.0F}, Marker3DComponentUVE{});
+TEST_F(Marker3DQueryTest, AnEmptyQueryFindsEveryLiveMarkerInStableContentOrder) {
+    const Entity first = MakeMarker({1.0F, 0.0F, 0.0F}, Marker3DComponent{});
+    const Entity second = MakeMarker({2.0F, 0.0F, 0.0F}, Marker3DComponent{});
+    const Entity third = MakeMarker({3.0F, 0.0F, 0.0F}, Marker3DComponent{});
 
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, Marker3DQuery{});
 
     ASSERT_EQ(results.count, 3U);
     EXPECT_FALSE(results.overflowed);
-    EXPECT_TRUE(results.HasAnyUVE());
-    EXPECT_EQ(results.FirstUVE(), &results.results[0]);
+    EXPECT_TRUE(results.HasAny());
+    EXPECT_EQ(results.First(), &results.results[0]);
     EXPECT_EQ(results.results[0].entity, first);
     EXPECT_EQ(results.results[1].entity, second);
     EXPECT_EQ(results.results[2].entity, third);
@@ -68,150 +68,150 @@ TEST_F(Marker3DQueryUVETest, AnEmptyQueryFindsEveryLiveMarkerInStableContentOrde
     }
 }
 
-TEST_F(Marker3DQueryUVETest, TheNameSelectsWhatTheCallerAskedForAndEmptyTakesEverything) {
-    Marker3DComponentUVE boss;
+TEST_F(Marker3DQueryTest, TheNameSelectsWhatTheCallerAskedForAndEmptyTakesEverything) {
+    Marker3DComponent boss;
     boss.markerName = "Boss view";
-    Marker3DComponentUVE cut;
+    Marker3DComponent cut;
     cut.markerName = "cut A";
-    const EntityUVE bossEntity = MakeMarkerUVE({0.0F, 0.0F, 0.0F}, boss);
-    const EntityUVE defaultEntity = MakeMarkerUVE({1.0F, 0.0F, 0.0F}, Marker3DComponentUVE{});
-    static_cast<void>(MakeMarkerUVE({2.0F, 0.0F, 0.0F}, cut));
+    const Entity bossEntity = MakeMarker({0.0F, 0.0F, 0.0F}, boss);
+    const Entity defaultEntity = MakeMarker({1.0F, 0.0F, 0.0F}, Marker3DComponent{});
+    static_cast<void>(MakeMarker({2.0F, 0.0F, 0.0F}, cut));
 
-    Marker3DQueryUVE query;
+    Marker3DQuery query;
     query.name = "Boss view";
-    const Marker3DQueryResultsUVE bosses = QueryMarkers3DUVE(entityManager, query);
+    const Marker3DQueryResults bosses = QueryMarkers3D(entityManager, query);
     ASSERT_EQ(bosses.count, 1U);
     EXPECT_EQ(bosses.results[0].entity, bossEntity);
     EXPECT_EQ(bosses.results[0].name, "Boss view");
 
     query.name = "team red";
-    const Marker3DQueryResultsUVE none = QueryMarkers3DUVE(entityManager, query);
+    const Marker3DQueryResults none = QueryMarkers3D(entityManager, query);
     EXPECT_EQ(none.count, 0U);
-    EXPECT_FALSE(none.HasAnyUVE());
-    EXPECT_EQ(none.FirstUVE(), nullptr);
+    EXPECT_FALSE(none.HasAny());
+    EXPECT_EQ(none.First(), nullptr);
 
     query.name.clear();
-    const Marker3DQueryResultsUVE all = QueryMarkers3DUVE(entityManager, query);
+    const Marker3DQueryResults all = QueryMarkers3D(entityManager, query);
     ASSERT_EQ(all.count, 3U);
     EXPECT_EQ(all.results[0].entity, bossEntity);
     EXPECT_EQ(all.results[1].entity, defaultEntity);
 }
 
-TEST_F(Marker3DQueryUVETest, DuplicateNamesComeBackInContentOrderAndFindTakesTheFirst) {
-    Marker3DComponentUVE named;
+TEST_F(Marker3DQueryTest, DuplicateNamesComeBackInContentOrderAndFindTakesTheFirst) {
+    Marker3DComponent named;
     named.markerName = "cut";
-    const EntityUVE first = MakeMarkerUVE({0.0F, 0.0F, 0.0F}, named);
-    const EntityUVE second = MakeMarkerUVE({1.0F, 0.0F, 0.0F}, named);
+    const Entity first = MakeMarker({0.0F, 0.0F, 0.0F}, named);
+    const Entity second = MakeMarker({1.0F, 0.0F, 0.0F}, named);
 
-    Marker3DQueryUVE query;
+    Marker3DQuery query;
     query.name = "cut";
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, query);
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, query);
     ASSERT_EQ(results.count, 2U);
     EXPECT_EQ(results.results[0].entity, first);
     EXPECT_EQ(results.results[1].entity, second);
 
-    const std::optional<Marker3DQueryResultUVE> found = FindMarker3DUVE(entityManager, "cut");
+    const std::optional<Marker3DQueryResult> found = FindMarker3D(entityManager, "cut");
     ASSERT_TRUE(found.has_value());
     EXPECT_EQ(found->entity, first);
     EXPECT_EQ(found->name, "cut");
 }
 
-TEST_F(Marker3DQueryUVETest, FindNeedsANameAndYieldsNothingWhenNothingMatches) {
-    static_cast<void>(MakeMarkerUVE({0.0F, 0.0F, 0.0F}, Marker3DComponentUVE{}));
+TEST_F(Marker3DQueryTest, FindNeedsANameAndYieldsNothingWhenNothingMatches) {
+    static_cast<void>(MakeMarker({0.0F, 0.0F, 0.0F}, Marker3DComponent{}));
 
-    EXPECT_FALSE(FindMarker3DUVE(entityManager, "").has_value());
-    EXPECT_FALSE(FindMarker3DUVE(entityManager, "missing").has_value());
+    EXPECT_FALSE(FindMarker3D(entityManager, "").has_value());
+    EXPECT_FALSE(FindMarker3D(entityManager, "missing").has_value());
 
-    const std::optional<Marker3DQueryResultUVE> found = FindMarker3DUVE(entityManager, "Marker");
+    const std::optional<Marker3DQueryResult> found = FindMarker3D(entityManager, "Marker");
     ASSERT_TRUE(found.has_value());
     EXPECT_EQ(found->name, "Marker");
 }
 
-TEST_F(Marker3DQueryUVETest, ThePoseIsTheObjectsWorldPoseComposedWithTheAuthoredOffset) {
-    Math::QuaternionUVE quarterTurn{};
-    ASSERT_TRUE(Math::TryMakeEulerUVE(Math::Vector3UVE{0.0F, kHalfTurnUVE, 0.0F}, quarterTurn));
+TEST_F(Marker3DQueryTest, ThePoseIsTheObjectsWorldPoseComposedWithTheAuthoredOffset) {
+    Math::Quaternion quarterTurn{};
+    ASSERT_TRUE(Math::TryMakeEuler(Math::Vector3{0.0F, kHalfTurn, 0.0F}, quarterTurn));
 
-    Marker3DComponentUVE component;
-    component.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+    Marker3DComponent component;
+    component.localPosition = Math::Vector3{0.0F, 0.5F, 0.0F};
     component.localRotation = quarterTurn;
 
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{4.0F, 0.0F, 0.0F};
+    const Entity entity = entityManager.CreateEntity();
+    TransformComponent transform{};
+    transform.localPosition = Math::Vector3{4.0F, 0.0F, 0.0F};
     transform.localRotation = quarterTurn;
-    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-    entityManager.AddComponentUVE<Marker3DComponentUVE>(entity, component);
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.AttachTransform(entityManager, entity, transform);
+    entityManager.AddComponent<Marker3DComponent>(entity, component);
+    sceneGraph.Update(entityManager);
 
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, Marker3DQuery{});
     ASSERT_EQ(results.count, 1U);
-    const Marker3DPoseUVE& pose = results.results[0].pose;
-    EXPECT_NEAR(pose.position.x, 4.0F, kEpsilonUVE);
-    EXPECT_NEAR(pose.position.y, 0.5F, kEpsilonUVE);
-    EXPECT_NEAR(pose.position.z, 0.0F, kEpsilonUVE);
-    EXPECT_TRUE(SameRotationUVE(pose.rotation, Math::MultiplyUVE(quarterTurn, quarterTurn)));
+    const Marker3DPose& pose = results.results[0].pose;
+    EXPECT_NEAR(pose.position.x, 4.0F, kEpsilon);
+    EXPECT_NEAR(pose.position.y, 0.5F, kEpsilon);
+    EXPECT_NEAR(pose.position.z, 0.0F, kEpsilon);
+    EXPECT_TRUE(SameRotation(pose.rotation, Math::Multiply(quarterTurn, quarterTurn)));
 }
 
-TEST_F(Marker3DQueryUVETest, ADisabledMarkerIsNotAViewpointAndNeitherIsAnInvalidOne) {
-    Marker3DComponentUVE disabled;
+TEST_F(Marker3DQueryTest, ADisabledMarkerIsNotAViewpointAndNeitherIsAnInvalidOne) {
+    Marker3DComponent disabled;
     disabled.enabled = false;
-    static_cast<void>(MakeMarkerUVE({0.0F, 0.0F, 0.0F}, disabled));
+    static_cast<void>(MakeMarker({0.0F, 0.0F, 0.0F}, disabled));
 
-    Marker3DComponentUVE emptyName;
+    Marker3DComponent emptyName;
     emptyName.markerName.clear();
-    static_cast<void>(MakeMarkerUVE({1.0F, 0.0F, 0.0F}, emptyName));
+    static_cast<void>(MakeMarker({1.0F, 0.0F, 0.0F}, emptyName));
 
-    Marker3DComponentUVE notFinite;
+    Marker3DComponent notFinite;
     notFinite.localPosition.y = std::numeric_limits<float>::quiet_NaN();
-    static_cast<void>(MakeMarkerUVE({2.0F, 0.0F, 0.0F}, notFinite));
+    static_cast<void>(MakeMarker({2.0F, 0.0F, 0.0F}, notFinite));
 
-    Marker3DComponentUVE degenerate;
-    degenerate.localRotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
-    static_cast<void>(MakeMarkerUVE({3.0F, 0.0F, 0.0F}, degenerate));
+    Marker3DComponent degenerate;
+    degenerate.localRotation = Math::Quaternion{0.0F, 0.0F, 0.0F, 0.0F};
+    static_cast<void>(MakeMarker({3.0F, 0.0F, 0.0F}, degenerate));
 
-    const EntityUVE live = MakeMarkerUVE({4.0F, 0.0F, 0.0F}, Marker3DComponentUVE{});
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
+    const Entity live = MakeMarker({4.0F, 0.0F, 0.0F}, Marker3DComponent{});
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, Marker3DQuery{});
     ASSERT_EQ(results.count, 1U);
     EXPECT_EQ(results.results[0].entity, live);
 }
 
-TEST_F(Marker3DQueryUVETest, AMarkerWithoutAWorldTransformIsSkippedUntilTheSweepReachesIt) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Marker3DComponentUVE>(entity, Marker3DComponentUVE{});
-    EXPECT_EQ(QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{}).count, 0U);
+TEST_F(Marker3DQueryTest, AMarkerWithoutAWorldTransformIsSkippedUntilTheSweepReachesIt) {
+    const Entity entity = entityManager.CreateEntity();
+    entityManager.AddComponent<Marker3DComponent>(entity, Marker3DComponent{});
+    EXPECT_EQ(QueryMarkers3D(entityManager, Marker3DQuery{}).count, 0U);
 
-    sceneGraph.AttachTransformUVE(entityManager, entity, TransformComponentUVE{});
-    sceneGraph.UpdateUVE(entityManager);
-    EXPECT_EQ(QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{}).count, 1U);
+    sceneGraph.AttachTransform(entityManager, entity, TransformComponent{});
+    sceneGraph.Update(entityManager);
+    EXPECT_EQ(QueryMarkers3D(entityManager, Marker3DQuery{}).count, 1U);
 }
 
-TEST_F(Marker3DQueryUVETest, TheResultListIsBoundedAndKeepsTheFirstMarkersInContentOrder) {
-    std::vector<EntityUVE> created;
-    for (std::size_t index = 0U; index < kMaximumMarker3DQueryResultsUVE + 1U; ++index) {
+TEST_F(Marker3DQueryTest, TheResultListIsBoundedAndKeepsTheFirstMarkersInContentOrder) {
+    std::vector<Entity> created;
+    for (std::size_t index = 0U; index < kMaximumMarker3DQueryResults + 1U; ++index) {
         created.push_back(
-            MakeMarkerUVE({static_cast<float>(index), 0.0F, 0.0F}, Marker3DComponentUVE{}));
+            MakeMarker({static_cast<float>(index), 0.0F, 0.0F}, Marker3DComponent{}));
     }
 
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
-    ASSERT_EQ(results.count, kMaximumMarker3DQueryResultsUVE);
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, Marker3DQuery{});
+    ASSERT_EQ(results.count, kMaximumMarker3DQueryResults);
     EXPECT_TRUE(results.overflowed);
     for (std::size_t index = 0U; index < results.count; ++index) {
         EXPECT_EQ(results.results[index].entity, created[index]);
     }
 
-    const Marker3DQueryResultsUVE again = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
-    ASSERT_EQ(again.count, kMaximumMarker3DQueryResultsUVE);
+    const Marker3DQueryResults again = QueryMarkers3D(entityManager, Marker3DQuery{});
+    ASSERT_EQ(again.count, kMaximumMarker3DQueryResults);
     EXPECT_EQ(again.results[0].entity, created[0]);
-    EXPECT_EQ(again.results[again.count - 1U].entity, created[kMaximumMarker3DQueryResultsUVE - 1U]);
+    EXPECT_EQ(again.results[again.count - 1U].entity, created[kMaximumMarker3DQueryResults - 1U]);
 }
 
-TEST_F(Marker3DQueryUVETest, AnEmptyWorldAnswersWithAnEmptyListAndNoNullEntries) {
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, Marker3DQueryUVE{});
+TEST_F(Marker3DQueryTest, AnEmptyWorldAnswersWithAnEmptyListAndNoNullEntries) {
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, Marker3DQuery{});
     EXPECT_EQ(results.count, 0U);
     EXPECT_FALSE(results.overflowed);
-    EXPECT_FALSE(results.HasAnyUVE());
-    EXPECT_EQ(results.FirstUVE(), nullptr);
-    EXPECT_FALSE(FindMarker3DUVE(entityManager, "Marker").has_value());
+    EXPECT_FALSE(results.HasAny());
+    EXPECT_EQ(results.First(), nullptr);
+    EXPECT_FALSE(FindMarker3D(entityManager, "Marker").has_value());
 }
 
 } // namespace

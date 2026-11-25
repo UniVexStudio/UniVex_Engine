@@ -10,56 +10,56 @@
 
 namespace UVE::Scene {
 
-void ApplyUIExtendedButtonObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                              const EntityUVE entity,
-                                              const UIExtendedButtonObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UIExtendedButtonComponentUVE>(entity, value.button);
+void ApplyUIExtendedButtonObjectDefinition(IEntityManager& entityManager,
+                                              const Entity entity,
+                                              const UIExtendedButtonObjectDefinition& value) {
+    entityManager.AddComponent<UIExtendedButtonComponent>(entity, value.button);
 }
 
-void ApplyUIDisplayWidgetObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                             const EntityUVE entity,
-                                             const UIDisplayWidgetObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UIDisplayWidgetComponentUVE>(entity, value.display);
+void ApplyUIDisplayWidgetObjectDefinition(IEntityManager& entityManager,
+                                             const Entity entity,
+                                             const UIDisplayWidgetObjectDefinition& value) {
+    entityManager.AddComponent<UIDisplayWidgetComponent>(entity, value.display);
 }
 
-void ApplyUIRangeControlObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const UIRangeControlObjectDefinitionUVE& value) {
-    UIRangeControlComponentUVE out = value.range;
+void ApplyUIRangeControlObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const UIRangeControlObjectDefinition& value) {
+    UIRangeControlComponent out = value.range;
     if (out.maxValue < out.minValue) {
         out.maxValue = out.minValue;
     }
     out.value = std::clamp(out.value, out.minValue, out.maxValue);
-    entityManager.AddComponentUVE<UIRangeControlComponentUVE>(entity, out);
+    entityManager.AddComponent<UIRangeControlComponent>(entity, out);
 }
 
-void ApplyUISelectionWidgetObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                               const EntityUVE entity,
-                                               const UISelectionWidgetObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UISelectionWidgetComponentUVE>(entity, value.selection);
+void ApplyUISelectionWidgetObjectDefinition(IEntityManager& entityManager,
+                                               const Entity entity,
+                                               const UISelectionWidgetObjectDefinition& value) {
+    entityManager.AddComponent<UISelectionWidgetComponent>(entity, value.selection);
 }
 
-void ApplyUIDialogWindowObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const UIDialogWindowObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UIDialogWindowComponentUVE>(entity, value.dialog);
+void ApplyUIDialogWindowObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const UIDialogWindowObjectDefinition& value) {
+    entityManager.AddComponent<UIDialogWindowComponent>(entity, value.dialog);
 }
 
-void ApplyUISpecialInputObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const UISpecialInputObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UISpecialInputComponentUVE>(entity, value.input);
+void ApplyUISpecialInputObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const UISpecialInputObjectDefinition& value) {
+    entityManager.AddComponent<UISpecialInputComponent>(entity, value.input);
 }
 
-std::size_t UpdateUIExtendedObjectsUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdateUIExtendedObjects(IEntityManager& entityManager,
                                        const float deltaTimeSeconds) {
     std::size_t updatedCount = 0U;
     const float dt =
         (std::isfinite(deltaTimeSeconds) && deltaTimeSeconds > 0.0F) ? deltaTimeSeconds : 0.0F;
 
-    entityManager.ForEachUVE<UIRangeControlComponentUVE>(
-        [&](const EntityUVE entity, UIRangeControlComponentUVE& r) {
-            if (entityManager.HasComponentUVE<DisabledComponentUVE>(entity)) {
+    entityManager.ForEach<UIRangeControlComponent>(
+        [&](const Entity entity, UIRangeControlComponent& r) {
+            if (entityManager.HasComponent<DisabledComponent>(entity)) {
                 return;
             }
             if (r.maxValue < r.minValue) {
@@ -73,27 +73,27 @@ std::size_t UpdateUIExtendedObjectsUVE(IEntityManagerUVE& entityManager,
             ++updatedCount;
         });
 
-    entityManager.ForEachUVE<UIDisplayWidgetComponentUVE>(
-        [&](const EntityUVE entity, UIDisplayWidgetComponentUVE& d) {
-            if (entityManager.HasComponentUVE<DisabledComponentUVE>(entity)) {
+    entityManager.ForEach<UIDisplayWidgetComponent>(
+        [&](const Entity entity, UIDisplayWidgetComponent& d) {
+            if (entityManager.HasComponent<DisabledComponent>(entity)) {
                 return;
             }
-            if (d.kind == UIDisplayWidgetKindUVE::VideoStreamPlayer && d.playing && dt > 0.0F) {
+            if (d.kind == UIDisplayWidgetKind::VideoStreamPlayer && d.playing && dt > 0.0F) {
                 d.playbackPositionSeconds += dt;
                 ++updatedCount;
             }
         });
 
-    entityManager.ForEachUVE<UISpecialInputComponentUVE>(
-        [&](const EntityUVE entity, UISpecialInputComponentUVE& inp) {
-            if (entityManager.HasComponentUVE<DisabledComponentUVE>(entity)) {
+    entityManager.ForEach<UISpecialInputComponent>(
+        [&](const Entity entity, UISpecialInputComponent& inp) {
+            if (entityManager.HasComponent<DisabledComponent>(entity)) {
                 return;
             }
-            if (inp.kind == UISpecialInputKindUVE::VirtualJoystick) {
+            if (inp.kind == UISpecialInputKind::VirtualJoystick) {
                 const float len = std::sqrt(inp.joystickAxis.x * inp.joystickAxis.x +
                                             inp.joystickAxis.y * inp.joystickAxis.y);
                 if (!std::isfinite(len) || len < std::max(0.0F, inp.deadzone)) {
-                    inp.joystickAxis = Math::Vector2UVE{0.0F, 0.0F};
+                    inp.joystickAxis = Math::Vector2{0.0F, 0.0F};
                 } else if (len > 1.0F) {
                     inp.joystickAxis = inp.joystickAxis * (1.0F / len);
                 }

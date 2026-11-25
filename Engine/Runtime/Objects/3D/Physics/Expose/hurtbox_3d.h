@@ -13,54 +13,54 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumHurtbox3DHitsUVE = 16U;
-inline constexpr std::size_t kMaximumHurtbox3DReceivedUVE = 64U;
+inline constexpr std::size_t kMaximumHurtbox3DHits = 16U;
+inline constexpr std::size_t kMaximumHurtbox3DReceived = 64U;
 
-struct Hurtbox3DHitUVE final {
-    EntityUVE hitboxEntity{};
+struct Hurtbox3DHit final {
+    Entity hitboxEntity{};
     float penetrationDepth = 0.0F;
-    Math::Vector3UVE axis{};
+    Math::Vector3 axis{};
     bool received = false;
 
-    [[nodiscard]] bool operator==(const Hurtbox3DHitUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const Hurtbox3DHit&) const noexcept = default;
 };
 
-struct Hurtbox3DComponentUVE final {
-    Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+struct Hurtbox3DComponent final {
+    Math::Vector3 halfExtents{0.5F, 0.5F, 0.5F};
     std::uint32_t collisionLayer = 1U;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
     std::string damageChannel = "default";
     bool enabled = true;
-    EntityUVE ignoreEntity = kInvalidEntityUVE;
-    std::array<Hurtbox3DHitUVE, kMaximumHurtbox3DHitsUVE> hits{};
+    Entity ignoreEntity = kInvalidEntity;
+    std::array<Hurtbox3DHit, kMaximumHurtbox3DHits> hits{};
     std::uint8_t hitCount = 0U;
     bool hitsTruncated = false;
-    std::array<EntityUVE, kMaximumHurtbox3DReceivedUVE> receivedEntities =
-        MakeEmptyEntityReferencesUVE<kMaximumHurtbox3DReceivedUVE>();
+    std::array<Entity, kMaximumHurtbox3DReceived> receivedEntities =
+        MakeEmptyEntityReferences<kMaximumHurtbox3DReceived>();
     std::uint8_t receivedCount = 0U;
     bool receivedTruncated = false;
 };
 
-[[nodiscard]] bool IsHurtbox3DObjectComponentValidUVE(const Hurtbox3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsHurtbox3DObjectComponentValid(const Hurtbox3DComponent& value) noexcept;
 
-class Hurtbox3DUVE final {
+class Hurtbox3D final {
 public:
-    [[nodiscard]] static bool IsVulnerableUVE(const Hurtbox3DComponentUVE& hurtbox) noexcept;
+    [[nodiscard]] static bool IsVulnerable(const Hurtbox3DComponent& hurtbox) noexcept;
 
-    [[nodiscard]] static bool AcceptsAttackerUVE(EntityUVE hurtboxEntity, const Hurtbox3DComponentUVE& hurtbox,
-                                                 EntityUVE hitboxEntity, std::uint32_t hitboxLayer,
+    [[nodiscard]] static bool AcceptsAttacker(Entity hurtboxEntity, const Hurtbox3DComponent& hurtbox,
+                                                 Entity hitboxEntity, std::uint32_t hitboxLayer,
                                                  std::uint32_t hitboxMask,
                                                  std::string_view hitboxChannel) noexcept;
 
-    static void ClearHitsUVE(Hurtbox3DComponentUVE& hurtbox) noexcept;
-    static void ResetReceivedUVE(Hurtbox3DComponentUVE& hurtbox) noexcept;
-    static void CommitHitsUVE(Hurtbox3DComponentUVE& hurtbox, const Hurtbox3DHitUVE* incoming,
+    static void ClearHits(Hurtbox3DComponent& hurtbox) noexcept;
+    static void ResetReceived(Hurtbox3DComponent& hurtbox) noexcept;
+    static void CommitHits(Hurtbox3DComponent& hurtbox, const Hurtbox3DHit* incoming,
                               std::size_t incomingCount);
 
-    [[nodiscard]] static const Hurtbox3DHitUVE* GetHitUVE(const Hurtbox3DComponentUVE& hurtbox,
+    [[nodiscard]] static const Hurtbox3DHit* GetHit(const Hurtbox3DComponent& hurtbox,
                                                           std::size_t index) noexcept;
-    [[nodiscard]] static bool HasHitFromUVE(const Hurtbox3DComponentUVE& hurtbox, EntityUVE hitbox) noexcept;
-    [[nodiscard]] static bool HasReceivedUVE(const Hurtbox3DComponentUVE& hurtbox, EntityUVE hitbox) noexcept;
+    [[nodiscard]] static bool HasHitFrom(const Hurtbox3DComponent& hurtbox, Entity hitbox) noexcept;
+    [[nodiscard]] static bool HasReceived(const Hurtbox3DComponent& hurtbox, Entity hitbox) noexcept;
 };
 
 } // namespace UVE::Scene

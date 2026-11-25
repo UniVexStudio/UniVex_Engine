@@ -16,14 +16,14 @@
 namespace UVE::Scene {
 namespace {
 
-using Math::Vector3UVE;
+using Math::Vector3;
 
 /// A character conformed to the humanoid, `scale` times as big in every bone length.
-[[nodiscard]] Skeleton3DComponentUVE MakeCharacterUVE(const float scale) {
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    Skeleton3DComponentUVE skeleton;
-    for (const Retarget::RetargetBoneUVE& bone : reference.skeleton.bones) {
-        SkeletonBoneUVE out;
+[[nodiscard]] Skeleton3DComponent MakeCharacter(const float scale) {
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    Skeleton3DComponent skeleton;
+    for (const Retarget::RetargetBone& bone : reference.skeleton.bones) {
+        SkeletonBone out;
         out.name = bone.name;
         out.parentIndex = bone.parent;
         out.localPosition = bone.position * scale;
@@ -36,33 +36,33 @@ using Math::Vector3UVE;
 /// A conformed clip made on the reference-sized rig: the hips travel forward, an upper arm turns,
 /// and every track carries the rig's own translation (which is what must not stretch a bigger
 /// or smaller character).
-[[nodiscard]] Asset::AnimationClipAssetUVE MakeConformedClipUVE(const bool conformed) {
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    Asset::AnimationClipAssetUVE clip;
+[[nodiscard]] Asset::AnimationClipAsset MakeConformedClip(const bool conformed) {
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    Asset::AnimationClipAsset clip;
     clip.clipId = "walk";
     clip.durationSeconds = 1.0;
     clip.conformed = conformed;
-    for (const Retarget::RetargetBoneUVE& bone : reference.skeleton.bones) {
-        clip.rest.push_back(Asset::AnimationAssetRestBoneUVE{bone.name, bone.parent, bone.position, bone.rotation,
-                                                             Vector3UVE{1.0F, 1.0F, 1.0F}});
+    for (const Retarget::RetargetBone& bone : reference.skeleton.bones) {
+        clip.rest.push_back(Asset::AnimationAssetRestBone{bone.name, bone.parent, bone.position, bone.rotation,
+                                                             Vector3{1.0F, 1.0F, 1.0F}});
     }
     for (const char* name : {"Hips", "UpperArm_L", "ForeArm_L", "IKFoot_L", "Root"}) {
-        const std::int32_t index = Retarget::FindBoneUVE(reference.skeleton, name);
-        const Retarget::RetargetBoneUVE& bone = reference.skeleton.bones[static_cast<std::size_t>(index)];
-        Asset::AnimationAssetBoneTrackUVE track;
+        const std::int32_t index = Retarget::FindBone(reference.skeleton, name);
+        const Retarget::RetargetBone& bone = reference.skeleton.bones[static_cast<std::size_t>(index)];
+        Asset::AnimationAssetBoneTrack track;
         track.bone = name;
         for (int frame = 0; frame < 2; ++frame) {
-            Asset::AnimationAssetSampleUVE sample;
+            Asset::AnimationAssetSample sample;
             sample.timeSeconds = static_cast<double>(frame);
             sample.pose.position = bone.position;
             sample.pose.rotation = bone.rotation;
             if (std::string{name} == "Hips") {
-                sample.pose.position = sample.pose.position + Vector3UVE{0.0F, 0.0F, 0.5F * static_cast<float>(frame)};
+                sample.pose.position = sample.pose.position + Vector3{0.0F, 0.0F, 0.5F * static_cast<float>(frame)};
             }
             if (std::string{name} == "UpperArm_L") {
-                Math::QuaternionUVE turn{};
-                EXPECT_TRUE(Math::TryMakeAxisAngleUVE({0.0F, 0.0F, 1.0F}, 0.5F * static_cast<float>(frame), turn));
-                sample.pose.rotation = Math::MultiplyUVE(bone.rotation, turn);
+                Math::Quaternion turn{};
+                EXPECT_TRUE(Math::TryMakeAxisAngle({0.0F, 0.0F, 1.0F}, 0.5F * static_cast<float>(frame), turn));
+                sample.pose.rotation = Math::Multiply(bone.rotation, turn);
             }
             track.samples.push_back(sample);
         }
@@ -71,7 +71,7 @@ using Math::Vector3UVE;
     return clip;
 }
 
-[[nodiscard]] const SkeletonBonePoseUVE& PoseOfUVE(const Skeleton3DComponentUVE& skeleton, const char* name) {
+[[nodiscard]] const SkeletonBonePose& PoseOf(const Skeleton3DComponent& skeleton, const char* name) {
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
         if (skeleton.bones[index].name == name) {
             return skeleton.pose[index];
@@ -81,86 +81,86 @@ using Math::Vector3UVE;
     return skeleton.pose.front();
 }
 
-[[nodiscard]] Skeleton3DComponentUVE PlayUVE(Skeleton3DComponentUVE skeleton, const Asset::AnimationClipAssetUVE& clip) {
-    AnimationSequencerComponentUVE player;
-    player.loopMode = AnimationLoopModeUVE::Once;
+[[nodiscard]] Skeleton3DComponent Play(Skeleton3DComponent skeleton, const Asset::AnimationClipAsset& clip) {
+    AnimationSequencerComponent player;
+    player.loopMode = AnimationLoopMode::Once;
     player.isPlaying = true;
-    EXPECT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 1.0F, skeleton));
+    EXPECT_TRUE(StepSkeletalAnimationSequencer(player, clip, 1.0F, skeleton));
     return skeleton;
 }
 
-TEST(ConformedPlaybackUVETest, ABiggerCharacterKeepsItsOwnLimbsAndScalesOnlyWhatPlacesTheBody) {
-    const Asset::AnimationClipAssetUVE clip = MakeConformedClipUVE(true);
-    const Skeleton3DComponentUVE character = MakeCharacterUVE(1.2F);
-    const Skeleton3DComponentUVE played = PlayUVE(character, clip);
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+TEST(ConformedPlaybackTest, ABiggerCharacterKeepsItsOwnLimbsAndScalesOnlyWhatPlacesTheBody) {
+    const Asset::AnimationClipAsset clip = MakeConformedClip(true);
+    const Skeleton3DComponent character = MakeCharacter(1.2F);
+    const Skeleton3DComponent played = Play(character, clip);
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
     const auto restOf = [&](const char* name) {
-        return reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBoneUVE(reference.skeleton, name))].position;
+        return reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBone(reference.skeleton, name))].position;
     };
 
     // The hips travelled 0.5 forward in the clip; on a 1.2 times taller character, 0.6.
-    const SkeletonBonePoseUVE& hips = PoseOfUVE(played, "Hips");
+    const SkeletonBonePose& hips = PoseOf(played, "Hips");
     EXPECT_NEAR(hips.position.z, (restOf("Hips").z + 0.5F) * 1.2F, 1e-3F);
     EXPECT_NEAR(hips.position.y, restOf("Hips").y * 1.2F, 1e-3F);
     // The IK target follows the body's scale.
-    EXPECT_NEAR(PoseOfUVE(played, "IKFoot_L").position.x, restOf("IKFoot_L").x * 1.2F, 1e-3F);
+    EXPECT_NEAR(PoseOf(played, "IKFoot_L").position.x, restOf("IKFoot_L").x * 1.2F, 1e-3F);
     // A limb keeps the character's own length: the clip's translation for it is ignored.
-    const Vector3UVE ownForeArm = restOf("ForeArm_L") * 1.2F;
-    const Vector3UVE foreArm = PoseOfUVE(played, "ForeArm_L").position;
+    const Vector3 ownForeArm = restOf("ForeArm_L") * 1.2F;
+    const Vector3 foreArm = PoseOf(played, "ForeArm_L").position;
     EXPECT_NEAR(foreArm.x, ownForeArm.x, 1e-5F);
     EXPECT_NEAR(foreArm.y, ownForeArm.y, 1e-5F);
     EXPECT_NEAR(foreArm.z, ownForeArm.z, 1e-5F);
     // Rotation still comes from the clip.
-    const Math::QuaternionUVE& turned = PoseOfUVE(played, "UpperArm_L").rotation;
-    const Math::QuaternionUVE& rest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBoneUVE(reference.skeleton, "UpperArm_L"))].rotation;
+    const Math::Quaternion& turned = PoseOf(played, "UpperArm_L").rotation;
+    const Math::Quaternion& rest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBone(reference.skeleton, "UpperArm_L"))].rotation;
     EXPECT_GT(std::abs(turned.x - rest.x) + std::abs(turned.y - rest.y) + std::abs(turned.z - rest.z) + std::abs(turned.w - rest.w), 0.1F);
 }
 
-TEST(ConformedPlaybackUVETest, ACharacterTheSizeOfTheClipsRigIsPlayedAsAuthored) {
-    const Asset::AnimationClipAssetUVE clip = MakeConformedClipUVE(true);
-    const Skeleton3DComponentUVE played = PlayUVE(MakeCharacterUVE(1.0F), clip);
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    const Vector3UVE hipsRest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBoneUVE(reference.skeleton, "Hips"))].position;
-    EXPECT_NEAR(PoseOfUVE(played, "Hips").position.z, hipsRest.z + 0.5F, 1e-3F);
+TEST(ConformedPlaybackTest, ACharacterTheSizeOfTheClipsRigIsPlayedAsAuthored) {
+    const Asset::AnimationClipAsset clip = MakeConformedClip(true);
+    const Skeleton3DComponent played = Play(MakeCharacter(1.0F), clip);
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    const Vector3 hipsRest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBone(reference.skeleton, "Hips"))].position;
+    EXPECT_NEAR(PoseOf(played, "Hips").position.z, hipsRest.z + 0.5F, 1e-3F);
 }
 
-TEST(ConformedPlaybackUVETest, AClipThatIsNotConformedIsPlayedExactlyAsBefore) {
-    const Asset::AnimationClipAssetUVE clip = MakeConformedClipUVE(false);
-    const Skeleton3DComponentUVE played = PlayUVE(MakeCharacterUVE(1.2F), clip);
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    const Vector3UVE foreArmRest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBoneUVE(reference.skeleton, "ForeArm_L"))].position;
+TEST(ConformedPlaybackTest, AClipThatIsNotConformedIsPlayedExactlyAsBefore) {
+    const Asset::AnimationClipAsset clip = MakeConformedClip(false);
+    const Skeleton3DComponent played = Play(MakeCharacter(1.2F), clip);
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    const Vector3 foreArmRest = reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBone(reference.skeleton, "ForeArm_L"))].position;
     // The clip's own translation, unscaled, as it always was.
-    EXPECT_NEAR(PoseOfUVE(played, "ForeArm_L").position.x, foreArmRest.x, 1e-5F);
-    EXPECT_NEAR(PoseOfUVE(played, "Hips").position.z, reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBoneUVE(reference.skeleton, "Hips"))].position.z + 0.5F, 1e-3F);
+    EXPECT_NEAR(PoseOf(played, "ForeArm_L").position.x, foreArmRest.x, 1e-5F);
+    EXPECT_NEAR(PoseOf(played, "Hips").position.z, reference.skeleton.bones[static_cast<std::size_t>(Retarget::FindBone(reference.skeleton, "Hips"))].position.z + 0.5F, 1e-3F);
 }
 
-TEST(ConformedPlaybackUVETest, ScrubbingUsesTheSameRuleAsPlaying) {
-    const Asset::AnimationClipAssetUVE clip = MakeConformedClipUVE(true);
-    Skeleton3DComponentUVE scrubbed = MakeCharacterUVE(1.2F);
-    ASSERT_TRUE(PoseSkeletonAtTimeUVE(clip, 1.0, scrubbed));
-    const Skeleton3DComponentUVE played = PlayUVE(MakeCharacterUVE(1.2F), clip);
+TEST(ConformedPlaybackTest, ScrubbingUsesTheSameRuleAsPlaying) {
+    const Asset::AnimationClipAsset clip = MakeConformedClip(true);
+    Skeleton3DComponent scrubbed = MakeCharacter(1.2F);
+    ASSERT_TRUE(PoseSkeletonAtTime(clip, 1.0, scrubbed));
+    const Skeleton3DComponent played = Play(MakeCharacter(1.2F), clip);
     for (const char* name : {"Hips", "ForeArm_L", "IKFoot_L", "UpperArm_L"}) {
-        const Vector3UVE a = PoseOfUVE(scrubbed, name).position;
-        const Vector3UVE b = PoseOfUVE(played, name).position;
+        const Vector3 a = PoseOf(scrubbed, name).position;
+        const Vector3 b = PoseOf(played, name).position;
         EXPECT_NEAR(a.x, b.x, 1e-4F) << name;
         EXPECT_NEAR(a.y, b.y, 1e-4F) << name;
         EXPECT_NEAR(a.z, b.z, 1e-4F) << name;
     }
 }
 
-TEST(ConformedPlaybackUVETest, HipsHeightIsMeasuredAboveTheLowestFoot) {
-    const Skeleton3DComponentUVE character = MakeCharacterUVE(1.0F);
-    std::vector<Retarget::RestBoneViewUVE> view;
-    for (const SkeletonBoneUVE& bone : character.bones) {
-        view.push_back(Retarget::RestBoneViewUVE{bone.name, bone.parentIndex, bone.localPosition, bone.localRotation});
+TEST(ConformedPlaybackTest, HipsHeightIsMeasuredAboveTheLowestFoot) {
+    const Skeleton3DComponent character = MakeCharacter(1.0F);
+    std::vector<Retarget::RestBoneView> view;
+    for (const SkeletonBone& bone : character.bones) {
+        view.push_back(Retarget::RestBoneView{bone.name, bone.parentIndex, bone.localPosition, bone.localRotation});
     }
-    EXPECT_NEAR(Retarget::ConformedHipsHeightUVE(view), Retarget::GetHumanoidReferenceUVE().hipsHeight, 1e-3F);
-    EXPECT_FLOAT_EQ(Retarget::ConformedHipsHeightUVE({}), 0.0F);
-    EXPECT_TRUE(Retarget::ConformedPlaybackUVE::DrivesTranslationUVE("Hips"));
-    EXPECT_TRUE(Retarget::ConformedPlaybackUVE::DrivesTranslationUVE("IKHand_R"));
-    EXPECT_TRUE(Retarget::ConformedPlaybackUVE::DrivesTranslationUVE("Root"));
-    EXPECT_FALSE(Retarget::ConformedPlaybackUVE::DrivesTranslationUVE("ForeArm_L"));
-    EXPECT_FALSE(Retarget::ConformedPlaybackUVE::DrivesTranslationUVE("Prop_R"));
+    EXPECT_NEAR(Retarget::ConformedHipsHeight(view), Retarget::GetHumanoidReference().hipsHeight, 1e-3F);
+    EXPECT_FLOAT_EQ(Retarget::ConformedHipsHeight({}), 0.0F);
+    EXPECT_TRUE(Retarget::ConformedPlayback::DrivesTranslation("Hips"));
+    EXPECT_TRUE(Retarget::ConformedPlayback::DrivesTranslation("IKHand_R"));
+    EXPECT_TRUE(Retarget::ConformedPlayback::DrivesTranslation("Root"));
+    EXPECT_FALSE(Retarget::ConformedPlayback::DrivesTranslation("ForeArm_L"));
+    EXPECT_FALSE(Retarget::ConformedPlayback::DrivesTranslation("Prop_R"));
 }
 
 } // namespace

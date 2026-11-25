@@ -7,32 +7,32 @@
 
 namespace UVE::Scene {
 
-bool IsScriptObjectDefinitionValidUVE(const ScriptObjectDefinitionUVE& value) noexcept {
-    return IsScriptComponentValidUVE(value.script);
+bool IsScriptObjectDefinitionValid(const ScriptObjectDefinition& value) noexcept {
+    return IsScriptComponentValid(value.script);
 }
 
-void ApplyScriptObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                    const ScriptObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, ScriptObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ScriptComponentUVE>(entity, value.script);
+void ApplyScriptObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                    const ScriptObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, ScriptObjectDefinition::defaultName);
+    entityManager.AddComponent<ScriptComponent>(entity, value.script);
 }
 
-bool ScriptUVE::HasScriptPathUVE(const ScriptComponentUVE& script) noexcept {
-    return IsScriptComponentValidUVE(script) && !script.scriptAssetPath.empty();
+bool Script::HasScriptPath(const ScriptComponent& script) noexcept {
+    return IsScriptComponentValid(script) && !script.scriptAssetPath.empty();
 }
 
-bool ScriptUVE::IsUVScriptPathUVE(const std::string_view scriptAssetPath) noexcept {
+bool Script::IsUVScriptPath(const std::string_view scriptAssetPath) noexcept {
     // A Blueprint Class (.uvbp) runs as the UVScript it translates to.
-    return scriptAssetPath.ends_with(kUVScriptExtensionUVE) || scriptAssetPath.ends_with(".uvbp") ||
+    return scriptAssetPath.ends_with(kUVScriptExtension) || scriptAssetPath.ends_with(".uvbp") ||
            scriptAssetPath.ends_with(".uvwbp");
 }
 
-bool ScriptUVE::IsRunnableUVScriptUVE(const ScriptComponentUVE& script) noexcept {
-    return IsScriptComponentValidUVE(script) && IsUVScriptPathUVE(script.scriptAssetPath);
+bool Script::IsRunnableUVScript(const ScriptComponent& script) noexcept {
+    return IsScriptComponentValid(script) && IsUVScriptPath(script.scriptAssetPath);
 }
 
-const std::string* ScriptUVE::FindExportedPropertyUVE(
-    const ScriptComponentUVE& script, const std::string_view name) noexcept {
+const std::string* Script::FindExportedProperty(
+    const ScriptComponent& script, const std::string_view name) noexcept {
     const auto it = script.exportValues.find(std::string{name});
     if (it == script.exportValues.end()) {
         return nullptr;
@@ -40,11 +40,11 @@ const std::string* ScriptUVE::FindExportedPropertyUVE(
     return &it->second;
 }
 
-bool ScriptUVE::TrySetExportedPropertyUVE(
-    ScriptComponentUVE& script, const std::string_view name, const std::string_view value) {
-    if (name.empty() || name.size() > kMaximumScriptExportNameBytesUVE ||
+bool Script::TrySetExportedProperty(
+    ScriptComponent& script, const std::string_view name, const std::string_view value) {
+    if (name.empty() || name.size() > kMaximumScriptExportNameBytes ||
         name.find('\0') != std::string_view::npos ||
-        value.size() > kMaximumScriptExportValueBytesUVE ||
+        value.size() > kMaximumScriptExportValueBytes ||
         value.find('\0') != std::string_view::npos) {
         return false;
     }
@@ -54,15 +54,15 @@ bool ScriptUVE::TrySetExportedPropertyUVE(
         existing->second = std::string{value};
         return true;
     }
-    if (script.exportValues.size() >= kMaximumScriptExportValuesUVE) {
+    if (script.exportValues.size() >= kMaximumScriptExportValues) {
         return false;
     }
     script.exportValues.emplace(key, std::string{value});
     return true;
 }
 
-bool ScriptUVE::RemoveExportedPropertyUVE(
-    ScriptComponentUVE& script, const std::string_view name) noexcept {
+bool Script::RemoveExportedProperty(
+    ScriptComponent& script, const std::string_view name) noexcept {
     return script.exportValues.erase(std::string{name}) > 0U;
 }
 

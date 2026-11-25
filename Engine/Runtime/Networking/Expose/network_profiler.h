@@ -17,20 +17,20 @@
 
 namespace UVE::Network {
 
-/// Records every ReplicationStatsUVE field as `net.replication.*`. Answers the first
+/// Records every ReplicationStats field as `net.replication.*`. Answers the first
 /// failure (an inactive capture names NotActive) or Accepted when all 23 landed.
-[[nodiscard]] Core::DiagnosticCaptureResultUVE RecordReplicationCountersUVE(
-    Core::ProfilerCaptureUVE& capture, const ReplicationStatsUVE& stats,
+[[nodiscard]] Core::DiagnosticCaptureResult RecordReplicationCounters(
+    Core::ProfilerCapture& capture, const ReplicationStats& stats,
     std::uint64_t frameNumber, std::uint64_t timestampNanoseconds, std::uint64_t threadId);
 
-/// Records every InterestStatsUVE field as `net.interest.*` (6 counters).
-[[nodiscard]] Core::DiagnosticCaptureResultUVE RecordInterestCountersUVE(
-    Core::ProfilerCaptureUVE& capture, const InterestStatsUVE& stats, std::uint64_t frameNumber,
+/// Records every InterestStats field as `net.interest.*` (6 counters).
+[[nodiscard]] Core::DiagnosticCaptureResult RecordInterestCounters(
+    Core::ProfilerCapture& capture, const InterestStats& stats, std::uint64_t frameNumber,
     std::uint64_t timestampNanoseconds, std::uint64_t threadId);
 
-/// Records every FanoutStatsUVE field as `net.fanout.*` (3 counters).
-[[nodiscard]] Core::DiagnosticCaptureResultUVE RecordFanoutCountersUVE(
-    Core::ProfilerCaptureUVE& capture, const FanoutStatsUVE& stats, std::uint64_t frameNumber,
+/// Records every FanoutStats field as `net.fanout.*` (3 counters).
+[[nodiscard]] Core::DiagnosticCaptureResult RecordFanoutCounters(
+    Core::ProfilerCapture& capture, const FanoutStats& stats, std::uint64_t frameNumber,
     std::uint64_t timestampNanoseconds, std::uint64_t threadId);
 
 } // namespace UVE::Network

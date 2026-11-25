@@ -7,14 +7,14 @@
 
 namespace UVE::Render {
 
-/// Opaque handle to a GPU texture resource created via IRenderDeviceUVE::CreateTextureUVE().
-/// Instantiation of the shared ResourceHandleUVE template - see resource_handle_uve.h for the
+/// Opaque handle to a GPU texture resource created via IRenderDevice::CreateTexture().
+/// Instantiation of the shared ResourceHandle template - see resource_handle_uve.h for the
 /// shared wrapper/equality/hash semantics.
-struct TextureTagUVE {};
-using TextureHandleUVE = ResourceHandleUVE<TextureTagUVE>;
+struct TextureTag {};
+using TextureHandle = ResourceHandle<TextureTag>;
 
-/// The sentinel "no texture" value. Never returned by a successful CreateTextureUVE() call; also
-/// used as RenderPassDescUVE::depthAttachment for a color-only render pass.
-inline constexpr TextureHandleUVE kInvalidTextureHandleUVE{};
+/// The sentinel "no texture" value. Never returned by a successful CreateTexture() call; also
+/// used as RenderPassDesc::depthAttachment for a color-only render pass.
+inline constexpr TextureHandle kInvalidTextureHandle{};
 
 } // namespace UVE::Render

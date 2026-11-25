@@ -24,31 +24,31 @@ namespace UVE::Scene {
 /// anchors too, but the stack/grid pass then overwrites their positions - for those widgets the
 /// anchors contribute size and the container contributes position. Persistence rides the
 /// metadata-driven serializer alongside the layout container.
-struct UIAnchorComponentUVE final {
-    Math::Vector2UVE anchorMin{0.0F, 0.0F};
-    Math::Vector2UVE anchorMax{1.0F, 1.0F};
-    Math::Vector2UVE offsetMin{0.0F, 0.0F};
-    Math::Vector2UVE offsetMax{0.0F, 0.0F};
+struct UIAnchorComponent final {
+    Math::Vector2 anchorMin{0.0F, 0.0F};
+    Math::Vector2 anchorMax{1.0F, 1.0F};
+    Math::Vector2 offsetMin{0.0F, 0.0F};
+    Math::Vector2 offsetMax{0.0F, 0.0F};
 
-    [[nodiscard]] bool operator==(const UIAnchorComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIAnchorComponent&) const = default;
 };
 
 /// All four corners finite. Out-of-range anchors validate: overflow is a feature.
-[[nodiscard]] bool IsUIAnchorComponentValidUVE(const UIAnchorComponentUVE& value) noexcept;
+[[nodiscard]] bool IsUIAnchorComponentValid(const UIAnchorComponent& value) noexcept;
 
 /// Replaces non-finite anchor/offset fields with default full-stretch `(0,0)->(1,1)` values.
-[[nodiscard]] UIAnchorComponentUVE SanitizeUIAnchorComponentUVE(
-    const UIAnchorComponentUVE& value) noexcept;
+[[nodiscard]] UIAnchorComponent SanitizeUIAnchorComponent(
+    const UIAnchorComponent& value) noexcept;
 
 /// True when `anchorMin != anchorMax` along either X or Y (stretches with parent resize).
-[[nodiscard]] bool IsUIAnchorStretchingUVE(const UIAnchorComponentUVE& value) noexcept;
+[[nodiscard]] bool IsUIAnchorStretching(const UIAnchorComponent& value) noexcept;
 
 /// Resolves the anchored rectangle inside `parentRect` using `anchorMin/Max` and `offsetMin/Max`.
-[[nodiscard]] Math::RectUVE ResolveUIAnchoredRectUVE(const UIAnchorComponentUVE& value,
-                                                     const Math::RectUVE& parentRect) noexcept;
+[[nodiscard]] Math::Rect ResolveUIAnchoredRect(const UIAnchorComponent& value,
+                                                     const Math::Rect& parentRect) noexcept;
 
-/// Resolves the top-left anchored position (used by point-anchored widgets such as `UITextComponentUVE`).
-[[nodiscard]] Math::Vector2UVE ResolveUIAnchoredPositionUVE(
-    const UIAnchorComponentUVE& value, const Math::RectUVE& parentRect) noexcept;
+/// Resolves the top-left anchored position (used by point-anchored widgets such as `UITextComponent`).
+[[nodiscard]] Math::Vector2 ResolveUIAnchoredPosition(
+    const UIAnchorComponent& value, const Math::Rect& parentRect) noexcept;
 
 } // namespace UVE::Scene

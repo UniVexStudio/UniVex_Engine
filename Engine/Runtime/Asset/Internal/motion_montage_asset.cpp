@@ -17,78 +17,78 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool FiniteUVE(const double value) noexcept {
+[[nodiscard]] bool Finite(const double value) noexcept {
     return std::isfinite(value);
 }
 
-[[nodiscard]] bool NameOkUVE(const std::string& name) noexcept {
-    return !name.empty() && name.size() <= kMaximumMontageNameBytesUVE;
+[[nodiscard]] bool NameOk(const std::string& name) noexcept {
+    return !name.empty() && name.size() <= kMaximumMontageNameBytes;
 }
 
 } // namespace
 
-float MontageBlendCurveWeightUVE(const MontageBlendCurveUVE curve, const double t) noexcept {
+float MontageBlendCurveWeight(const MontageBlendCurve curve, const double t) noexcept {
     const float x = static_cast<float>(std::clamp(t, 0.0, 1.0));
     switch (curve) {
-        case MontageBlendCurveUVE::EaseIn: return x * x;
-        case MontageBlendCurveUVE::EaseOut: return 1.0F - (1.0F - x) * (1.0F - x);
-        case MontageBlendCurveUVE::EaseInOut: return x * x * (3.0F - 2.0F * x);
-        case MontageBlendCurveUVE::Linear: break;
+        case MontageBlendCurve::EaseIn: return x * x;
+        case MontageBlendCurve::EaseOut: return 1.0F - (1.0F - x) * (1.0F - x);
+        case MontageBlendCurve::EaseInOut: return x * x * (3.0F - 2.0F * x);
+        case MontageBlendCurve::Linear: break;
     }
     return x;
 }
 
-bool IsMotionMontageAssetValidUVE(const MotionMontageAssetUVE& montage) noexcept {
-    if (montage.slot.size() > kMaximumMontageNameBytesUVE || montage.segments.size() > kMaximumMontageSegmentsUVE ||
-        montage.sections.size() > kMaximumMontageSectionsUVE ||
-        montage.notifies.size() + montage.notifyStates.size() > kMaximumMontageNotifiesUVE ||
-        montage.curves.size() > kMaximumMontageCurvesUVE || montage.notifyTracks > 64U || montage.notifyTrackNames.size() > 64U) {
+bool IsMotionMontageAssetValid(const MotionMontageAsset& montage) noexcept {
+    if (montage.slot.size() > kMaximumMontageNameBytes || montage.segments.size() > kMaximumMontageSegments ||
+        montage.sections.size() > kMaximumMontageSections ||
+        montage.notifies.size() + montage.notifyStates.size() > kMaximumMontageNotifies ||
+        montage.curves.size() > kMaximumMontageCurves || montage.notifyTracks > 64U || montage.notifyTrackNames.size() > 64U) {
         return false;
     }
     for (const std::string& name : montage.notifyTrackNames) {
-        if (name.size() > kMaximumMontageNameBytesUVE) {
+        if (name.size() > kMaximumMontageNameBytes) {
             return false;
         }
     }
-    if (!FiniteUVE(montage.blendInSeconds) || montage.blendInSeconds < 0.0 || !FiniteUVE(montage.blendOutSeconds) ||
-        montage.blendOutSeconds < 0.0 || !FiniteUVE(montage.blendOutTriggerSeconds) || !FiniteUVE(montage.rateScale) ||
-        montage.rateScale <= 0.0 || montage.rootMotion > MontageRootMotionUVE::ApplyToTarget ||
-        montage.blendInCurve > MontageBlendCurveUVE::EaseInOut || montage.blendOutCurve > MontageBlendCurveUVE::EaseInOut) {
+    if (!Finite(montage.blendInSeconds) || montage.blendInSeconds < 0.0 || !Finite(montage.blendOutSeconds) ||
+        montage.blendOutSeconds < 0.0 || !Finite(montage.blendOutTriggerSeconds) || !Finite(montage.rateScale) ||
+        montage.rateScale <= 0.0 || montage.rootMotion > MontageRootMotion::ApplyToTarget ||
+        montage.blendInCurve > MontageBlendCurve::EaseInOut || montage.blendOutCurve > MontageBlendCurve::EaseInOut) {
         return false;
     }
-    for (const MontageSegmentUVE& segment : montage.segments) {
-        if (!FiniteUVE(segment.clipStart) || !FiniteUVE(segment.clipEnd) || !FiniteUVE(segment.rate) ||
-            !FiniteUVE(segment.clipLength) || segment.clipStart < 0.0 || segment.rate <= 0.0 || segment.loops == 0U ||
+    for (const MontageSegment& segment : montage.segments) {
+        if (!Finite(segment.clipStart) || !Finite(segment.clipEnd) || !Finite(segment.rate) ||
+            !Finite(segment.clipLength) || segment.clipStart < 0.0 || segment.rate <= 0.0 || segment.loops == 0U ||
             segment.loops > 1000U || segment.clipLength < 0.0) {
             return false;
         }
     }
     std::set<std::string> names;
-    for (const MontageSectionUVE& section : montage.sections) {
-        if (!NameOkUVE(section.name) || !FiniteUVE(section.time) || section.time < 0.0 ||
-            section.next.size() > kMaximumMontageNameBytesUVE || !names.insert(section.name).second) {
+    for (const MontageSection& section : montage.sections) {
+        if (!NameOk(section.name) || !Finite(section.time) || section.time < 0.0 ||
+            section.next.size() > kMaximumMontageNameBytes || !names.insert(section.name).second) {
             return false;
         }
     }
-    for (const MontageNotifyUVE& notify : montage.notifies) {
-        if (!NameOkUVE(notify.name) || !FiniteUVE(notify.time) || notify.time < 0.0 || !std::isfinite(notify.triggerChance) ||
+    for (const MontageNotify& notify : montage.notifies) {
+        if (!NameOk(notify.name) || !Finite(notify.time) || notify.time < 0.0 || !std::isfinite(notify.triggerChance) ||
             notify.triggerChance < 0.0F || notify.triggerChance > 1.0F || !std::isfinite(notify.minWeight) ||
             notify.minWeight < 0.0F || notify.minWeight > 1.0F || notify.colour > 0xFFFFFFU) {
             return false;
         }
     }
-    for (const MontageNotifyStateUVE& state : montage.notifyStates) {
-        if (!NameOkUVE(state.name) || !FiniteUVE(state.begin) || !FiniteUVE(state.end) || state.begin < 0.0 ||
+    for (const MontageNotifyState& state : montage.notifyStates) {
+        if (!NameOk(state.name) || !Finite(state.begin) || !Finite(state.end) || state.begin < 0.0 ||
             state.end < state.begin) {
             return false;
         }
     }
-    for (const MontageCurveUVE& curve : montage.curves) {
-        if (!NameOkUVE(curve.name) || curve.keys.size() > kMaximumMontageCurveKeysUVE) {
+    for (const MontageCurve& curve : montage.curves) {
+        if (!NameOk(curve.name) || curve.keys.size() > kMaximumMontageCurveKeys) {
             return false;
         }
-        for (const MontageCurveKeyUVE& key : curve.keys) {
-            if (!FiniteUVE(key.time) || !std::isfinite(key.value)) {
+        for (const MontageCurveKey& key : curve.keys) {
+            if (!Finite(key.time) || !std::isfinite(key.value)) {
                 return false;
             }
         }
@@ -96,22 +96,22 @@ bool IsMotionMontageAssetValidUVE(const MotionMontageAssetUVE& montage) noexcept
     return true;
 }
 
-bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::filesystem::path& path) {
-    if (!IsMotionMontageAssetValidUVE(montage)) {
-        UVE_ERROR("MotionMontageAssetUVE: rejected an invalid montage before writing {}", path.string());
+bool SaveMotionMontageAsset(const MotionMontageAsset& montage, const std::filesystem::path& path) {
+    if (!IsMotionMontageAssetValid(montage)) {
+        UVE_ERROR("MotionMontageAsset: rejected an invalid montage before writing {}", path.string());
         return false;
     }
-    const MotionMontageAssetUVE defaults{};
+    const MotionMontageAsset defaults{};
     nlohmann::json payload;
     payload["format"] = "uve-montage-v1";
     if (montage.slot != defaults.slot) {
         payload["slot"] = montage.slot;
     }
-    if (montage.previewEntity != kInvalidAssetGuidUVE) {
+    if (montage.previewEntity != kInvalidAssetGuid) {
         payload["previewEntity"] = montage.previewEntity.value;
     }
     nlohmann::json segments = nlohmann::json::array();
-    for (const MontageSegmentUVE& segment : montage.segments) {
+    for (const MontageSegment& segment : montage.segments) {
         nlohmann::json s{{"clip", segment.clip.value}, {"clipStart", segment.clipStart}, {"clipEnd", segment.clipEnd},
                          {"clipLength", segment.clipLength}};
         if (segment.rate != 1.0) {
@@ -124,12 +124,12 @@ bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::
     }
     payload["segments"] = std::move(segments);
     nlohmann::json sections = nlohmann::json::array();
-    for (const MontageSectionUVE& section : montage.sections) {
+    for (const MontageSection& section : montage.sections) {
         sections.push_back(nlohmann::json{{"name", section.name}, {"time", section.time}, {"next", section.next}});
     }
     payload["sections"] = std::move(sections);
     nlohmann::json notifies = nlohmann::json::array();
-    for (const MontageNotifyUVE& notify : montage.notifies) {
+    for (const MontageNotify& notify : montage.notifies) {
         nlohmann::json entry{{"name", notify.name}, {"time", notify.time}, {"track", notify.track}};
         if (notify.triggerChance != 1.0F) {
             entry["chance"] = notify.triggerChance;
@@ -144,15 +144,15 @@ bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::
     }
     payload["notifies"] = std::move(notifies);
     nlohmann::json states = nlohmann::json::array();
-    for (const MontageNotifyStateUVE& state : montage.notifyStates) {
+    for (const MontageNotifyState& state : montage.notifyStates) {
         states.push_back(nlohmann::json{{"name", state.name}, {"begin", state.begin}, {"end", state.end}, {"track", state.track}});
     }
     payload["notifyStates"] = std::move(states);
     if (!montage.curves.empty()) {
         nlohmann::json curves = nlohmann::json::array();
-        for (const MontageCurveUVE& curve : montage.curves) {
+        for (const MontageCurve& curve : montage.curves) {
             nlohmann::json keys = nlohmann::json::array();
-            for (const MontageCurveKeyUVE& key : curve.keys) {
+            for (const MontageCurveKey& key : curve.keys) {
                 keys.push_back(nlohmann::json::array({key.time, key.value}));
             }
             curves.push_back(nlohmann::json{{"name", curve.name}, {"keys", std::move(keys)}});
@@ -191,31 +191,31 @@ bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::
     }
     const std::string text = payload.dump();
     const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
-    return WriteUveFileUVE(path, AssetKindUVE::MotionMontage, std::vector<std::byte>(bytes, bytes + text.size()));
+    return WriteUveFile(path, AssetKind::MotionMontage, std::vector<std::byte>(bytes, bytes + text.size()));
 }
 
-bool LoadMotionMontageAssetUVE(const std::filesystem::path& path, MotionMontageAssetUVE& outMontage) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+bool LoadMotionMontageAsset(const std::filesystem::path& path, MotionMontageAsset& outMontage) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     if (!file.has_value()) {
         return false;
     }
-    if (file->first.assetType != AssetKindUVE::MotionMontage) {
-        UVE_ERROR("MotionMontageAssetUVE: \"{}\" is not a montage file", path.string());
+    if (file->first.assetType != AssetKind::MotionMontage) {
+        UVE_ERROR("MotionMontageAsset: \"{}\" is not a montage file", path.string());
         return false;
     }
     const std::string text(reinterpret_cast<const char*>(file->second.data()), file->second.size());
-    MotionMontageAssetUVE montage;
+    MotionMontageAsset montage;
     try {
         const nlohmann::json payload = nlohmann::json::parse(text);
         if (payload.value("format", std::string{}) != "uve-montage-v1") {
-            UVE_ERROR("MotionMontageAssetUVE: \"{}\" has an unknown format", path.string());
+            UVE_ERROR("MotionMontageAsset: \"{}\" has an unknown format", path.string());
             return false;
         }
         montage.slot = payload.value("slot", montage.slot);
-        montage.previewEntity = AssetGuidUVE{payload.value("previewEntity", std::uint64_t{0})};
+        montage.previewEntity = AssetGuid{payload.value("previewEntity", std::uint64_t{0})};
         for (const nlohmann::json& s : payload.value("segments", nlohmann::json::array())) {
-            MontageSegmentUVE segment;
-            segment.clip = AssetGuidUVE{s.at("clip").get<std::uint64_t>()};
+            MontageSegment segment;
+            segment.clip = AssetGuid{s.at("clip").get<std::uint64_t>()};
             segment.clipStart = s.value("clipStart", 0.0);
             segment.clipEnd = s.value("clipEnd", 0.0);
             segment.clipLength = s.value("clipLength", 0.0);
@@ -224,25 +224,25 @@ bool LoadMotionMontageAssetUVE(const std::filesystem::path& path, MotionMontageA
             montage.segments.push_back(segment);
         }
         for (const nlohmann::json& s : payload.value("sections", nlohmann::json::array())) {
-            montage.sections.push_back(MontageSectionUVE{s.at("name").get<std::string>(), s.value("time", 0.0),
+            montage.sections.push_back(MontageSection{s.at("name").get<std::string>(), s.value("time", 0.0),
                                                          s.value("next", std::string{})});
         }
         for (const nlohmann::json& n : payload.value("notifies", nlohmann::json::array())) {
-            MontageNotifyUVE notify{n.at("name").get<std::string>(), n.value("time", 0.0), n.value("track", 0U)};
+            MontageNotify notify{n.at("name").get<std::string>(), n.value("time", 0.0), n.value("track", 0U)};
             notify.triggerChance = n.value("chance", 1.0F);
             notify.minWeight = n.value("minWeight", 0.0F);
             notify.colour = n.value("colour", 0U);
             montage.notifies.push_back(std::move(notify));
         }
         for (const nlohmann::json& n : payload.value("notifyStates", nlohmann::json::array())) {
-            montage.notifyStates.push_back(MontageNotifyStateUVE{n.at("name").get<std::string>(), n.value("begin", 0.0),
+            montage.notifyStates.push_back(MontageNotifyState{n.at("name").get<std::string>(), n.value("begin", 0.0),
                                                                  n.value("end", 0.0), n.value("track", 0U)});
         }
         for (const nlohmann::json& c : payload.value("curves", nlohmann::json::array())) {
-            MontageCurveUVE curve;
+            MontageCurve curve;
             curve.name = c.at("name").get<std::string>();
             for (const nlohmann::json& key : c.value("keys", nlohmann::json::array())) {
-                curve.keys.push_back(MontageCurveKeyUVE{key.at(0).get<double>(), key.at(1).get<float>()});
+                curve.keys.push_back(MontageCurveKey{key.at(0).get<double>(), key.at(1).get<float>()});
             }
             montage.curves.push_back(std::move(curve));
         }
@@ -250,18 +250,18 @@ bool LoadMotionMontageAssetUVE(const std::filesystem::path& path, MotionMontageA
         montage.notifyTrackNames = payload.value("trackNames", std::vector<std::string>{});
         montage.blendInSeconds = payload.value("blendIn", montage.blendInSeconds);
         montage.blendOutSeconds = payload.value("blendOut", montage.blendOutSeconds);
-        montage.blendInCurve = static_cast<MontageBlendCurveUVE>(payload.value("blendInCurve", std::uint8_t{0}));
-        montage.blendOutCurve = static_cast<MontageBlendCurveUVE>(payload.value("blendOutCurve", std::uint8_t{0}));
+        montage.blendInCurve = static_cast<MontageBlendCurve>(payload.value("blendInCurve", std::uint8_t{0}));
+        montage.blendOutCurve = static_cast<MontageBlendCurve>(payload.value("blendOutCurve", std::uint8_t{0}));
         montage.blendOutTriggerSeconds = payload.value("blendOutTrigger", montage.blendOutTriggerSeconds);
         montage.autoBlendOut = payload.value("autoBlendOut", montage.autoBlendOut);
         montage.rateScale = payload.value("rateScale", montage.rateScale);
-        montage.rootMotion = static_cast<MontageRootMotionUVE>(payload.value("rootMotion", std::uint8_t{0}));
+        montage.rootMotion = static_cast<MontageRootMotion>(payload.value("rootMotion", std::uint8_t{0}));
     } catch (const nlohmann::json::exception& error) {
-        UVE_ERROR("MotionMontageAssetUVE: failed to read \"{}\": {}", path.string(), error.what());
+        UVE_ERROR("MotionMontageAsset: failed to read \"{}\": {}", path.string(), error.what());
         return false;
     }
-    if (!IsMotionMontageAssetValidUVE(montage)) {
-        UVE_ERROR("MotionMontageAssetUVE: \"{}\" holds out-of-range values", path.string());
+    if (!IsMotionMontageAssetValid(montage)) {
+        UVE_ERROR("MotionMontageAsset: \"{}\" holds out-of-range values", path.string());
         return false;
     }
     outMontage = std::move(montage);

@@ -14,28 +14,28 @@ class Label;
 
 namespace UVE::Editor {
 
-class EditorUVE;
-class EditorHostUVE;
+class Editor;
+class EditorHost;
 
 /// Network Capture, drawn with PRISM in a window of its own: the captured packets (filtered by
 /// direction, channel, malformed and text), the picked one's line, size and hex dump below.
-class EditorNetworkCaptureWindowUVE final {
+class EditorNetworkCaptureWindow final {
 public:
-    EditorNetworkCaptureWindowUVE(EditorUVE& editor, EditorHostUVE& host);
-    ~EditorNetworkCaptureWindowUVE();
-    EditorNetworkCaptureWindowUVE(const EditorNetworkCaptureWindowUVE&) = delete;
-    EditorNetworkCaptureWindowUVE& operator=(const EditorNetworkCaptureWindowUVE&) = delete;
+    EditorNetworkCaptureWindow(Editor& editor, EditorHost& host);
+    ~EditorNetworkCaptureWindow();
+    EditorNetworkCaptureWindow(const EditorNetworkCaptureWindow&) = delete;
+    EditorNetworkCaptureWindow& operator=(const EditorNetworkCaptureWindow&) = delete;
 
-    void FrameUVE();
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
-    [[nodiscard]] EditorUVE& EditorRefUVE() noexcept { return m_editor; }
-    [[nodiscard]] const std::vector<std::size_t>& RowsUVE() const noexcept { return m_rows; }
+    void Frame();
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
+    [[nodiscard]] Editor& EditorRef() noexcept { return m_editor; }
+    [[nodiscard]] const std::vector<std::size_t>& Rows() const noexcept { return m_rows; }
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
+    Editor& m_editor;
+    EditorHost& m_host;
     int m_window = 0;
     bool m_closePending = false;
     std::vector<std::size_t> m_rows;
@@ -47,21 +47,21 @@ private:
 /// The Audio Mixer, drawn with PRISM in a window of its own: every bus of the mix as a row - its
 /// name (indented under its parent), Mute and Solo, its volume (drag; kept in the project's audio
 /// settings when the bus has one) and its live level meter.
-class EditorAudioMixerWindowUVE final {
+class EditorAudioMixerWindow final {
 public:
-    EditorAudioMixerWindowUVE(EditorUVE& editor, EditorHostUVE& host);
-    ~EditorAudioMixerWindowUVE();
-    EditorAudioMixerWindowUVE(const EditorAudioMixerWindowUVE&) = delete;
-    EditorAudioMixerWindowUVE& operator=(const EditorAudioMixerWindowUVE&) = delete;
+    EditorAudioMixerWindow(Editor& editor, EditorHost& host);
+    ~EditorAudioMixerWindow();
+    EditorAudioMixerWindow(const EditorAudioMixerWindow&) = delete;
+    EditorAudioMixerWindow& operator=(const EditorAudioMixerWindow&) = delete;
 
-    void FrameUVE();
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
+    void Frame();
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
+    Editor& m_editor;
+    EditorHost& m_host;
     int m_window = 0;
     bool m_closePending = false;
     std::shared_ptr<prism::Widget> m_table;

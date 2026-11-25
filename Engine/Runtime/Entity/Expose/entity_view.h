@@ -15,18 +15,18 @@
 namespace UVE::Scene {
 
 /// An iterable snapshot of the entities currently carrying every one of `TComponents...` — the
-/// range-for answer to `ForEachUVE`'s callback.
+/// range-for answer to `ForEach`'s callback.
 ///
-/// WHAT IT IS. `manager.ViewUVE<A, B>()` collects the matching entities once and iterates the
-/// snapshot: `for (auto entry : view)` with `entry.entity` plus `entry.GetUVE<A>()` /
-/// `entry.GetUVE<B>()`. Components resolve to live references (not copies), so the view stays
+/// WHAT IT IS. `manager.View<A, B>()` collects the matching entities once and iterates the
+/// snapshot: `for (auto entry : view)` with `entry.entity` plus `entry.Get<A>()` /
+/// `entry.Get<B>()`. Components resolve to live references (not copies), so the view stays
 /// cheap no matter how wide the components are, and mutations through the entry hit the live
 /// archetype storage.
 ///
 /// WHAT IT IS NOT. It is not a cached query: no incremental update, no change detection — a new
-/// `ViewUVE()` call re-snapshots. It is also not iteration insurance: the snapshot holds raw
-/// component pointers with exactly `ForEachUVE`'s lifetime rule, so a structural change to a
-/// matching entity mid-iteration invalidates (record those through `EntityCommandBufferUVE`
+/// `View()` call re-snapshots. It is also not iteration insurance: the snapshot holds raw
+/// component pointers with exactly `ForEach`'s lifetime rule, so a structural change to a
+/// matching entity mid-iteration invalidates (record those through `EntityCommandBuffer`
 /// instead). Iteration order is the manager's, unspecified beyond "every match exactly once".
 ///
 /// At least one component is required: an empty pack would mean "every entity", which deserves
@@ -34,112 +34,112 @@ namespace UVE::Scene {
 ///
 /// Thread-safety: not thread-safe — build and iterate on the scene thread, like the manager.
 template <typename... TComponents>
-class EntityViewUVE final {
-    static_assert(sizeof...(TComponents) > 0U, "EntityViewUVE needs at least one component type.");
+class EntityView final {
+    static_assert(sizeof...(TComponents) > 0U, "EntityView needs at least one component type.");
 
 public:
     /// One matched row as the manager hands it over: the entity plus its component pointers in
-    /// `TComponents...` order. Built by `ViewUVE()`; callers never construct one directly.
-    struct RowUVE final {
-        EntityUVE entity = kInvalidEntityUVE;
+    /// `TComponents...` order. Built by `View()`; callers never construct one directly.
+    struct Row final {
+        Entity entity = kInvalidEntity;
         std::array<void*, sizeof...(TComponents)> pointers{};
     };
 
     /// One iterated match: the entity plus live references to its matched components.
-    struct EntryUVE final {
-        EntityUVE entity = kInvalidEntityUVE;
-        std::tuple<PublicComponentUVE<TComponents>&...> components;
+    struct Entry final {
+        Entity entity = kInvalidEntity;
+        std::tuple<PublicComponent<TComponents>&...> components;
 
         /// The live `T` for this entry. `T` must be one of the view's component types.
         template <typename T>
-        [[nodiscard]] PublicComponentUVE<T>& GetUVE() {
-            return std::get<PublicComponentUVE<T>&>(components);
+        [[nodiscard]] PublicComponent<T>& Get() {
+            return std::get<PublicComponent<T>&>(components);
         }
     };
 
     /// Forward iterator over the snapshot. Dereferencing retypes the row's pointers.
-    class IteratorUVE final {
+    class Iterator final {
     public:
         using iterator_category = std::forward_iterator_tag;
-        using value_type = EntryUVE;
+        using value_type = Entry;
         using difference_type = std::ptrdiff_t;
         using pointer = void;
-        using reference = EntryUVE;
+        using reference = Entry;
 
-        IteratorUVE() = default;
+        Iterator() = default;
 
-        [[nodiscard]] EntryUVE operator*() const {
-            return MakeEntryUVE(m_view->m_rows[m_index], std::index_sequence_for<TComponents...>{});
+        [[nodiscard]] Entry operator*() const {
+            return MakeEntry(m_view->m_rows[m_index], std::index_sequence_for<TComponents...>{});
         }
 
-        IteratorUVE& operator++() {
+        Iterator& operator++() {
             ++m_index;
             return *this;
         }
 
-        IteratorUVE operator++(int) {
-            IteratorUVE copy = *this;
+        Iterator operator++(int) {
+            Iterator copy = *this;
             ++m_index;
             return copy;
         }
 
-        [[nodiscard]] bool operator==(const IteratorUVE& other) const noexcept {
+        [[nodiscard]] bool operator==(const Iterator& other) const noexcept {
             return m_view == other.m_view && m_index == other.m_index;
         }
 
-        [[nodiscard]] bool operator!=(const IteratorUVE& other) const noexcept {
+        [[nodiscard]] bool operator!=(const Iterator& other) const noexcept {
             return !(*this == other);
         }
 
     private:
-        friend class EntityViewUVE;
+        friend class EntityView;
 
-        IteratorUVE(const EntityViewUVE* view, const std::size_t index) : m_view(view), m_index(index) {
+        Iterator(const EntityView* view, const std::size_t index) : m_view(view), m_index(index) {
         }
 
         template <std::size_t... Is>
-        [[nodiscard]] static EntryUVE MakeEntryUVE(const RowUVE& row, std::index_sequence<Is...>) {
-            return EntryUVE{row.entity, std::tie(*static_cast<PublicComponentUVE<TComponents>*>(row.pointers[Is])...)};
+        [[nodiscard]] static Entry MakeEntry(const Row& row, std::index_sequence<Is...>) {
+            return Entry{row.entity, std::tie(*static_cast<PublicComponent<TComponents>*>(row.pointers[Is])...)};
         }
 
-        const EntityViewUVE* m_view = nullptr;
+        const EntityView* m_view = nullptr;
         std::size_t m_index = 0U;
     };
 
-    /// Builds a view over already-matched `rows`. Callers use `ViewUVE()` on the manager.
-    explicit EntityViewUVE(std::vector<RowUVE> rows) : m_rows(std::move(rows)) {
+    /// Builds a view over already-matched `rows`. Callers use `View()` on the manager.
+    explicit EntityView(std::vector<Row> rows) : m_rows(std::move(rows)) {
     }
 
-    [[nodiscard]] IteratorUVE begin() const {
-        return IteratorUVE{this, 0U};
+    [[nodiscard]] Iterator begin() const {
+        return Iterator{this, 0U};
     }
 
-    [[nodiscard]] IteratorUVE end() const {
-        return IteratorUVE{this, m_rows.size()};
+    [[nodiscard]] Iterator end() const {
+        return Iterator{this, m_rows.size()};
     }
 
     /// Rows in the snapshot.
-    [[nodiscard]] std::size_t SizeUVE() const noexcept {
+    [[nodiscard]] std::size_t Size() const noexcept {
         return m_rows.size();
     }
 
     /// True when the snapshot matched nothing.
-    [[nodiscard]] bool IsEmptyUVE() const noexcept {
+    [[nodiscard]] bool IsEmpty() const noexcept {
         return m_rows.empty();
     }
 
 private:
-    std::vector<RowUVE> m_rows;
+    std::vector<Row> m_rows;
 };
 
 namespace Detail {
 
 /// Copies one `ForEachErased` callback's pointer vector into a view row's fixed array, in order.
 template <typename... TComponents, std::size_t... Is>
-typename EntityViewUVE<TComponents...>::RowUVE MakeViewRowUVE(const EntityUVE entity,
+typename EntityView<TComponents...>::Row MakeViewRow(const Entity entity,
                                                               const std::vector<void*>& pointers,
                                                               std::index_sequence<Is...>) {
-    typename EntityViewUVE<TComponents...>::RowUVE row;
+    typename EntityView<TComponents...>::Row row;
     row.entity = entity;
     ((row.pointers[Is] = pointers[Is]), ...);
     return row;

@@ -26,49 +26,49 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
 /// Every problem in the document's text. Checked against the object while it exists - its
 /// components decide which properties are in scope - and only parsed once it is gone.
-void RecheckUVScriptUVE(EditorUVE::UVScriptDocumentUVE& document, Scene::IEntityManagerUVE& entityManager) {
-    if (entityManager.IsAliveUVE(document.entity)) {
-        Core::BlueprintObjectHostUVE host(entityManager, nullptr, document.entity);
-        document.diagnostics = Blueprint::CompileUVScriptSourceUVE(document.text, host).diagnostics;
+void RecheckUVScript(Editor::UVScriptDocument& document, Scene::IEntityManager& entityManager) {
+    if (entityManager.IsAlive(document.entity)) {
+        Core::BlueprintObjectHost host(entityManager, nullptr, document.entity);
+        document.diagnostics = Blueprint::CompileUVScriptSource(document.text, host).diagnostics;
     } else {
-        document.diagnostics = Blueprint::ParseUVScriptUVE(document.text).diagnostics;
+        document.diagnostics = Blueprint::ParseUVScript(document.text).diagnostics;
     }
 }
 
 }
 
-bool EditorUVE::OpenUVScriptForEntityUVE(const Scene::EntityUVE entity) {
-    if (m_state != EditorStateUVE::Running || m_services == nullptr) {
+bool Editor::OpenUVScriptForEntity(const Scene::Entity entity) {
+    if (m_state != EditorState::Running || m_services == nullptr) {
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.IsAliveUVE(entity) || !entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
         return false;
     }
-    const std::string& path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-    if (!IsUVScriptPathUVE(path)) {
+    const std::string& path = entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath;
+    if (!IsUVScriptPath(path)) {
         return false;
     }
     // The same file already open keeps its unsaved text; only the object it is checked against moves.
     if (!m_openUVScript.has_value() || m_openUVScript->path != path) {
-        UVScriptDocumentUVE document;
+        UVScriptDocument document;
         document.path = path;
-        document.text = ReadProjectTextFileUVE(path).value_or(std::string{});
+        document.text = ReadProjectTextFile(path).value_or(std::string{});
         document.savedText = document.text;
         m_openUVScript = std::move(document);
     }
     m_openUVScript->entity = entity;
-    RecheckUVScriptUVE(*m_openUVScript, entityManager);
-    m_activeWorkspace = EditorWorkspaceUVE::Scripting;
+    RecheckUVScript(*m_openUVScript, entityManager);
+    m_activeWorkspace = EditorWorkspace::Scripting;
     return true;
 }
 
-bool EditorUVE::OpenUVScriptPathUVE(const std::filesystem::path& path) {
-    if (m_state != EditorStateUVE::Running || m_services == nullptr) {
+bool Editor::OpenUVScriptPath(const std::filesystem::path& path) {
+    if (m_state != EditorState::Running || m_services == nullptr) {
         return false;
     }
     const std::string pathStr = path.generic_string();
@@ -76,49 +76,49 @@ bool EditorUVE::OpenUVScriptPathUVE(const std::filesystem::path& path) {
         return false;
     }
     if (!m_openUVScript.has_value() || m_openUVScript->path != pathStr) {
-        UVScriptDocumentUVE document;
+        UVScriptDocument document;
         document.path = pathStr;
-        document.text = ReadProjectTextFileUVE(path).value_or(std::string{});
+        document.text = ReadProjectTextFile(path).value_or(std::string{});
         document.savedText = document.text;
         m_openUVScript = std::move(document);
     }
-    m_openUVScript->entity = Scene::kInvalidEntityUVE;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    entityManager.ForEachUVE<Scene::ScriptComponentUVE>([&](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& script) {
-        if (m_openUVScript->entity == Scene::kInvalidEntityUVE &&
+    m_openUVScript->entity = Scene::kInvalidEntity;
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    entityManager.ForEach<Scene::ScriptComponent>([&](const Scene::Entity entity, const Scene::ScriptComponent& script) {
+        if (m_openUVScript->entity == Scene::kInvalidEntity &&
             (script.scriptAssetPath == pathStr || pathStr.ends_with(script.scriptAssetPath))) {
             m_openUVScript->entity = entity;
         }
     });
-    RecheckUVScriptUVE(*m_openUVScript, entityManager);
-    m_activeWorkspace = EditorWorkspaceUVE::Scripting;
+    RecheckUVScript(*m_openUVScript, entityManager);
+    m_activeWorkspace = EditorWorkspace::Scripting;
     return true;
 }
 
-const std::optional<EditorUVE::UVScriptDocumentUVE>& EditorUVE::GetOpenUVScriptUVE() const noexcept {
+const std::optional<Editor::UVScriptDocument>& Editor::GetOpenUVScript() const noexcept {
     return m_openUVScript;
 }
 
-void EditorUVE::SetOpenUVScriptTextUVE(std::string text) {
+void Editor::SetOpenUVScriptText(std::string text) {
     if (!m_openUVScript.has_value() || m_services == nullptr) {
         return;
     }
     m_openUVScript->text = std::move(text);
-    RecheckUVScriptUVE(*m_openUVScript, m_services->GetEntityManagerUVE());
+    RecheckUVScript(*m_openUVScript, m_services->GetEntityManager());
 }
 
-bool EditorUVE::SaveOpenUVScriptUVE() {
-    if (!m_openUVScript.has_value() || !WriteProjectTextFileUVE(m_openUVScript->path, m_openUVScript->text)) {
+bool Editor::SaveOpenUVScript() {
+    if (!m_openUVScript.has_value() || !WriteProjectTextFile(m_openUVScript->path, m_openUVScript->text)) {
         return false;
     }
     m_openUVScript->savedText = m_openUVScript->text;
     return true;
 }
 
-void EditorUVE::CloseOpenUVScriptUVE() {
+void Editor::CloseOpenUVScript() {
     m_openUVScript.reset();
-    if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
-        m_activeWorkspace = EditorWorkspaceUVE::Library;
+    if (m_activeWorkspace == EditorWorkspace::Scripting) {
+        m_activeWorkspace = EditorWorkspace::Library;
     }
 }
 

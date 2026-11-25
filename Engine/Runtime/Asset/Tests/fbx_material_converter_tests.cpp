@@ -20,7 +20,7 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] std::string MakeFbxUVE(const std::string_view objects, const std::string_view connections) {
+[[nodiscard]] std::string MakeFbx(const std::string_view objects, const std::string_view connections) {
     std::string text = R"(; FBX 7.4.0 project file
 FBXHeaderExtension:  {
 	FBXHeaderVersion: 1003
@@ -47,11 +47,11 @@ Objects:  {
     return text;
 }
 
-[[nodiscard]] std::span<const std::byte> BytesUVE(const std::string& text) {
+[[nodiscard]] std::span<const std::byte> Bytes(const std::string& text) {
     return std::as_bytes(std::span<const char>(text.data(), text.size()));
 }
 
-constexpr std::string_view kLambertMaterialUVE = R"(	Material: 3000, "Material::PaintedMetal", "" {
+constexpr std::string_view kLambertMaterial = R"(	Material: 3000, "Material::PaintedMetal", "" {
 		Version: 102
 		ShadingModel: "lambert"
 		MultiLayer: 0
@@ -65,8 +65,8 @@ constexpr std::string_view kLambertMaterialUVE = R"(	Material: 3000, "Material::
 // A classic phong material, the shape most DCC tools write: PBR factors come out of the FBX
 // properties ufbx maps for this shading model (DiffuseColor, Shininess, EmissiveColor), while a
 // base-color map is referenced by file and a normal map is a texture the file does not name.
-[[nodiscard]] std::string MakeTexturedPhongMaterialFbxUVE() {
-    return MakeFbxUVE(R"(	Material: 3100, "Material::BrushedSteel", "" {
+[[nodiscard]] std::string MakeTexturedPhongMaterialFbx() {
+    return MakeFbx(R"(	Material: 3100, "Material::BrushedSteel", "" {
 		Version: 102
 		ShadingModel: "phong"
 		MultiLayer: 0
@@ -90,29 +90,29 @@ constexpr std::string_view kLambertMaterialUVE = R"(	Material: 3000, "Material::
 }
 
 
-TEST(FbxMaterialConverterUVETest, AnEmptyOrMalformedFileFailsWithoutPublishingMaterials) {
-    EXPECT_FALSE(ReadFbxMaterialsUVE({}).has_value());
+TEST(FbxMaterialConverterTest, AnEmptyOrMalformedFileFailsWithoutPublishingMaterials) {
+    EXPECT_FALSE(ReadFbxMaterials({}).has_value());
     const std::string garbage = "not an fbx file at all";
-    EXPECT_FALSE(ReadFbxMaterialsUVE(BytesUVE(garbage)).has_value());
+    EXPECT_FALSE(ReadFbxMaterials(Bytes(garbage)).has_value());
 }
 
-TEST(FbxMaterialConverterUVETest, AFileWithoutMaterialsIsAnEmptyListNotAFailure) {
-    const std::string text = MakeFbxUVE(R"(	Model: 2000, "Model::Bare", "Mesh" {
+TEST(FbxMaterialConverterTest, AFileWithoutMaterialsIsAnEmptyListNotAFailure) {
+    const std::string text = MakeFbx(R"(	Model: 2000, "Model::Bare", "Mesh" {
 		Version: 232
 	}
 )",
                                         "\tC: \"OO\",2000,0\n");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     EXPECT_TRUE(materials->empty());
 }
 
-TEST(FbxMaterialConverterUVETest, ClassicDiffuseAndTransparencyMapToThePbrMaterial) {
-    const std::string text = MakeFbxUVE(kLambertMaterialUVE, "");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+TEST(FbxMaterialConverterTest, ClassicDiffuseAndTransparencyMapToThePbrMaterial) {
+    const std::string text = MakeFbx(kLambertMaterial, "");
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
+    const FbxMaterial& material = materials->front();
     EXPECT_EQ(material.name, "PaintedMetal");
     EXPECT_FLOAT_EQ(material.material.albedoColor.r, 0.25F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.g, 0.5F);
@@ -124,15 +124,15 @@ TEST(FbxMaterialConverterUVETest, ClassicDiffuseAndTransparencyMapToThePbrMateri
     EXPECT_FALSE(material.albedo.procedural);
     EXPECT_TRUE(material.normal.file.empty());
     EXPECT_FALSE(material.normal.procedural);
-    EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
+    EXPECT_TRUE(IsMaterialAssetValid(material.material));
 }
 
-TEST(FbxMaterialConverterUVETest, PbrFactorsAndFileTextureReferencesSurviveTheConversion) {
-    const std::string text = MakeTexturedPhongMaterialFbxUVE();
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+TEST(FbxMaterialConverterTest, PbrFactorsAndFileTextureReferencesSurviveTheConversion) {
+    const std::string text = MakeTexturedPhongMaterialFbx();
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
+    const FbxMaterial& material = materials->front();
     EXPECT_EQ(material.name, "BrushedSteel");
     EXPECT_FLOAT_EQ(material.material.albedoColor.r, 0.1F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.g, 0.2F);
@@ -147,16 +147,16 @@ TEST(FbxMaterialConverterUVETest, PbrFactorsAndFileTextureReferencesSurviveTheCo
     EXPECT_FALSE(material.material.isTransparent);
     // The reference is the file's own relative filename; no GUID is invented here.
     EXPECT_EQ(material.albedo.file, "textures/steel_diffuse.png");
-    EXPECT_FALSE(material.albedo.HasImageUVE()) << "a file reference carries no bytes of its own";
+    EXPECT_FALSE(material.albedo.HasImage()) << "a file reference carries no bytes of its own";
     EXPECT_TRUE(material.normal.file.empty());
     EXPECT_TRUE(material.normal.procedural) << "the procedural texture has neither a name nor bytes";
-    EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.material.normalTexture, kInvalidAssetGuidUVE);
-    EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
+    EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuid);
+    EXPECT_EQ(material.material.normalTexture, kInvalidAssetGuid);
+    EXPECT_TRUE(IsMaterialAssetValid(material.material));
 }
 
-TEST(FbxMaterialConverterUVETest, AlbedoChannelsOutsideTheValidatedRangeAreClampedAndReported) {
-    const std::string text = MakeFbxUVE(R"(	Material: 3400, "Material::Overbright", "" {
+TEST(FbxMaterialConverterTest, AlbedoChannelsOutsideTheValidatedRangeAreClampedAndReported) {
+    const std::string text = MakeFbx(R"(	Material: 3400, "Material::Overbright", "" {
 		Version: 102
 		ShadingModel: "lambert"
 		Properties70:  {
@@ -165,18 +165,18 @@ TEST(FbxMaterialConverterUVETest, AlbedoChannelsOutsideTheValidatedRangeAreClamp
 	}
 )",
                                         "");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
+    const FbxMaterial& material = materials->front();
     EXPECT_TRUE(material.albedoClamped);
     EXPECT_FLOAT_EQ(material.material.albedoColor.r, 0.0F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.g, 1.0F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.b, 0.25F);
-    EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
+    EXPECT_TRUE(IsMaterialAssetValid(material.material));
 }
 
-TEST(FbxMaterialConverterUVETest, SeveralMaterialsKeepFileOrderAndIndependentValues) {
+TEST(FbxMaterialConverterTest, SeveralMaterialsKeepFileOrderAndIndependentValues) {
     std::string objects;
     objects += R"(	Material: 3500, "Material::Red", "" {
 		Version: 102
@@ -195,8 +195,8 @@ TEST(FbxMaterialConverterUVETest, SeveralMaterialsKeepFileOrderAndIndependentVal
 		}
 	}
 )";
-    const std::string text = MakeFbxUVE(objects, "");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const std::string text = MakeFbx(objects, "");
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 2U);
     EXPECT_EQ((*materials)[0].name, "Red");
@@ -208,7 +208,7 @@ TEST(FbxMaterialConverterUVETest, SeveralMaterialsKeepFileOrderAndIndependentVal
         << "TransparencyFactor 1 is fully transparent in FBX, so the material blends";
 }
 
-TEST(FbxMaterialConverterUVETest, TransparencyFactorOneBesideABlackTransparentColorIsOpaque) {
+TEST(FbxMaterialConverterTest, TransparencyFactorOneBesideABlackTransparentColorIsOpaque) {
     // What Maya, 3ds Max and Mixamo write for a solid character: the factor is 1 but the transparent
     // colour is black, so TransparentColor * TransparencyFactor is 0. Reading the factor alone made the
     // whole soldier a blended, depth-write-off material.
@@ -233,8 +233,8 @@ TEST(FbxMaterialConverterUVETest, TransparencyFactorOneBesideABlackTransparentCo
 		}
 	}
 )";
-    const std::string text = MakeFbxUVE(objects, "");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const std::string text = MakeFbx(objects, "");
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 2U);
     EXPECT_FALSE((*materials)[0].material.isTransparent)
@@ -247,7 +247,7 @@ TEST(FbxMaterialConverterUVETest, TransparencyFactorOneBesideABlackTransparentCo
 /// `Video` element whose `Content` is the base64 image, connected to the `Texture` the material
 /// names. Nothing outside the bytes handed in is opened, so a test that sees the image come back out
 /// proves the whole embedded path rather than a file lookup.
-[[nodiscard]] std::string MakeEmbeddedTextureFbxUVE(const std::string& base64Image) {
+[[nodiscard]] std::string MakeEmbeddedTextureFbx(const std::string& base64Image) {
     std::string objects = R"(	Material: 3100, "Material::Agent", "" {
 		Version: 102
 		ShadingModel: "phong"
@@ -270,32 +270,32 @@ TEST(FbxMaterialConverterUVETest, TransparencyFactorOneBesideABlackTransparentCo
 		RelativeFilename: "agent_diffuse.png"
 	}
 )";
-    return MakeFbxUVE(objects, "\tC: \"OO\",4000,4001\n"
+    return MakeFbx(objects, "\tC: \"OO\",4000,4001\n"
                                "\tC: \"OP\",4001,3100,\"DiffuseColor\"\n");
 }
 
-TEST(FbxMaterialConverterUVETest, AnImageEmbeddedInTheFileComesOutAsTheBytesItCarried) {
+TEST(FbxMaterialConverterTest, AnImageEmbeddedInTheFileComesOutAsTheBytesItCarried) {
     // The bytes are a real PNG and the assertion is byte-for-byte: the importer is going to decode
     // exactly these, so anything that re-encodes, truncates or reinterprets them would publish a
     // texture that is not the one the model was made with.
-    const std::vector<std::byte> png = UVE::Tests::MakePngTwoByOneRgba8UVE();
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(MakeEmbeddedTextureFbxUVE(UVE::Tests::Base64EncodeUVE(png))));
+    const std::vector<std::byte> png = UVE::Tests::MakePngTwoByOneRgba8();
+    const auto materials = ReadFbxMaterials(Bytes(MakeEmbeddedTextureFbx(UVE::Tests::Base64Encode(png))));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
-    ASSERT_TRUE(material.albedo.HasImageUVE()) << "the file embeds this map";
+    const FbxMaterial& material = materials->front();
+    ASSERT_TRUE(material.albedo.HasImage()) << "the file embeds this map";
     EXPECT_EQ(material.albedo.embedded, png);
     EXPECT_EQ(material.albedo.file, "agent_diffuse.png") << "the authored name survives alongside the bytes";
     EXPECT_FALSE(material.albedo.procedural);
     // Still side-effect free: reading the image does not invent an asset identity for it.
-    EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuidUVE);
-    EXPECT_TRUE(IsMaterialAssetValidUVE(material.material));
+    EXPECT_EQ(material.material.albedoTexture, kInvalidAssetGuid);
+    EXPECT_TRUE(IsMaterialAssetValid(material.material));
 }
 
-TEST(FbxMaterialConverterUVETest, AMapWithoutEmbeddedBytesAndWithoutANameIsProcedural) {
+TEST(FbxMaterialConverterTest, AMapWithoutEmbeddedBytesAndWithoutANameIsProcedural) {
     // A file texture the FBX neither names nor embeds cannot be followed anywhere, so it must be
     // reported as procedural rather than looking like a reference that merely failed to resolve.
-    const std::string text = MakeFbxUVE(R"(	Material: 3600, "Material::Nameless", "" {
+    const std::string text = MakeFbx(R"(	Material: 3600, "Material::Nameless", "" {
 		Version: 102
 		ShadingModel: "phong"
 	}
@@ -304,17 +304,17 @@ TEST(FbxMaterialConverterUVETest, AMapWithoutEmbeddedBytesAndWithoutANameIsProce
 	}
 )",
                                         "\tC: \"OP\",3601,3600,\"DiffuseColor\"\n");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
-    EXPECT_FALSE(material.albedo.HasImageUVE());
+    const FbxMaterial& material = materials->front();
+    EXPECT_FALSE(material.albedo.HasImage());
     EXPECT_TRUE(material.albedo.file.empty());
     EXPECT_TRUE(material.albedo.procedural);
 }
 
-TEST(FbxMaterialConverterUVETest, ExplicitlyAuthoredUntexturedBlackAlbedoIsPreserved) {
-    const std::string text = MakeFbxUVE(R"(	Material: 3700, "Material::Obsidian", "" {
+TEST(FbxMaterialConverterTest, ExplicitlyAuthoredUntexturedBlackAlbedoIsPreserved) {
+    const std::string text = MakeFbx(R"(	Material: 3700, "Material::Obsidian", "" {
 		Version: 102
 		ShadingModel: "lambert"
 		Properties70:  {
@@ -323,10 +323,10 @@ TEST(FbxMaterialConverterUVETest, ExplicitlyAuthoredUntexturedBlackAlbedoIsPrese
 	}
 )",
                                         "");
-    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    const auto materials = ReadFbxMaterials(Bytes(text));
     ASSERT_TRUE(materials.has_value());
     ASSERT_EQ(materials->size(), 1U);
-    const FbxMaterialUVE& material = materials->front();
+    const FbxMaterial& material = materials->front();
     EXPECT_FLOAT_EQ(material.material.albedoColor.r, 0.0F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.g, 0.0F);
     EXPECT_FLOAT_EQ(material.material.albedoColor.b, 0.0F);

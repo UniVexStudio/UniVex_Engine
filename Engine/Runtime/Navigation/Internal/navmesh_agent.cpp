@@ -14,15 +14,15 @@ namespace {
 /// True when two points are the same place for the purpose of "did the route change". Heights are
 /// compared too: a route that moved from one floor to another is a different route even where the
 /// plan view is identical.
-[[nodiscard]] bool SamePointUVE(const Math::Vector3UVE& left, const Math::Vector3UVE& right) noexcept {
-    constexpr float kToleranceUVE = 1.0e-3F;
-    return std::fabs(left.x - right.x) <= kToleranceUVE && std::fabs(left.y - right.y) <= kToleranceUVE &&
-           std::fabs(left.z - right.z) <= kToleranceUVE;
+[[nodiscard]] bool SamePoint(const Math::Vector3& left, const Math::Vector3& right) noexcept {
+    constexpr float kTolerance = 1.0e-3F;
+    return std::fabs(left.x - right.x) <= kTolerance && std::fabs(left.y - right.y) <= kTolerance &&
+           std::fabs(left.z - right.z) <= kTolerance;
 }
 
 /// Distance in the plane the agents walk on: a path length that grew because the floor rose under
 /// the agent would be a length no mover could act on.
-[[nodiscard]] float PlanarDistanceUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to) noexcept {
+[[nodiscard]] float PlanarDistance(const Math::Vector3& from, const Math::Vector3& to) noexcept {
     const float deltaX = to.x - from.x;
     const float deltaZ = to.z - from.z;
     return std::sqrt(deltaX * deltaX + deltaZ * deltaZ);
@@ -32,14 +32,14 @@ namespace {
 /// avoidance radius, stronger the closer it is, summed and then scaled to fit the agent's top speed
 /// by the caller. Agents at the same spot contribute nothing - that is this agent's own entry in the
 /// list, and two bodies truly standing inside each other is for the mover to untangle.
-[[nodiscard]] Math::Vector3UVE SeparationVelocityUVE(const Math::Vector3UVE& position,
-                                                     const NavAgentSettingsUVE& settings,
-                                                     const std::span<const NavAgentObstacleUVE> neighbours) noexcept {
+[[nodiscard]] Math::Vector3 SeparationVelocity(const Math::Vector3& position,
+                                                     const NavAgentSettings& settings,
+                                                     const std::span<const NavAgentObstacle> neighbours) noexcept {
     if (settings.avoidanceRadiusMetres <= 0.0F || neighbours.empty()) {
-        return Math::Vector3UVE{};
+        return Math::Vector3{};
     }
-    Math::Vector3UVE push{};
-    for (const NavAgentObstacleUVE& neighbour : neighbours) {
+    Math::Vector3 push{};
+    for (const NavAgentObstacle& neighbour : neighbours) {
         const float awayX = position.x - neighbour.position.x;
         const float awayZ = position.z - neighbour.position.z;
         const float distanceSquared = awayX * awayX + awayZ * awayZ;
@@ -60,15 +60,15 @@ namespace {
 
 /// Whether two routes differ in any way a follower would notice: their waypoints, or whether they
 /// reach the goal at all.
-[[nodiscard]] bool RoutesDifferUVE(const NavPathUVE& previous, const NavPathUVE& current) noexcept {
-    if (previous.IsUsableUVE() != current.IsUsableUVE() || previous.status != current.status) {
+[[nodiscard]] bool RoutesDiffer(const NavPath& previous, const NavPath& current) noexcept {
+    if (previous.IsUsable() != current.IsUsable() || previous.status != current.status) {
         return true;
     }
     if (previous.waypoints.size() != current.waypoints.size()) {
         return true;
     }
     for (std::size_t index = 0U; index < current.waypoints.size(); ++index) {
-        if (!SamePointUVE(previous.waypoints[index], current.waypoints[index])) {
+        if (!SamePoint(previous.waypoints[index], current.waypoints[index])) {
             return true;
         }
     }
@@ -77,8 +77,8 @@ namespace {
 
 } // namespace
 
-void NavAgentUVE::SetTargetUVE(const Math::Vector3UVE& target) noexcept {
-    if (m_hasTarget && SamePointUVE(m_target, target)) {
+void NavAgent::SetTarget(const Math::Vector3& target) noexcept {
+    if (m_hasTarget && SamePoint(m_target, target)) {
         return;
     }
     m_target = target;
@@ -89,23 +89,23 @@ void NavAgentUVE::SetTargetUVE(const Math::Vector3UVE& target) noexcept {
     m_timeUntilReplan = 0.0F;
 }
 
-void NavAgentUVE::ClearTargetUVE() noexcept {
+void NavAgent::ClearTarget() noexcept {
     m_hasTarget = false;
-    m_path.ClearUVE();
-    m_desiredVelocity = Math::Vector3UVE{};
+    m_path.Clear();
+    m_desiredVelocity = Math::Vector3{};
     m_nextPathPosition = m_position;
     m_remainingDistance = 0.0F;
     m_waypointIndex = 0U;
     m_timeUntilReplan = 0.0F;
     m_replanRequested = false;
-    m_status = NavAgentStatusUVE::Idle;
+    m_status = NavAgentStatus::Idle;
 }
 
-void NavAgentUVE::SetPositionUVE(const Math::Vector3UVE& position) noexcept {
+void NavAgent::SetPosition(const Math::Vector3& position) noexcept {
     m_position = position;
 }
 
-void NavAgentUVE::SetEnabledUVE(const bool enabled) noexcept {
+void NavAgent::SetEnabled(const bool enabled) noexcept {
     if (m_enabled == enabled) {
         return;
     }
@@ -113,19 +113,19 @@ void NavAgentUVE::SetEnabledUVE(const bool enabled) noexcept {
     if (!enabled) {
         // Switching an agent off is a decision about it, not a pause of its step: it stops being
         // driven, so nothing should read a velocity out of it and walk the body anyway.
-        m_desiredVelocity = Math::Vector3UVE{};
+        m_desiredVelocity = Math::Vector3{};
         m_nextPathPosition = m_position;
-        m_path.ClearUVE();
+        m_path.Clear();
         m_remainingDistance = 0.0F;
         m_waypointIndex = 0U;
-        m_status = NavAgentStatusUVE::Idle;
+        m_status = NavAgentStatus::Idle;
         return;
     }
     m_replanRequested = true;
     m_timeUntilReplan = 0.0F;
 }
 
-void NavAgentUVE::SetNavigationLayersUVE(const std::uint32_t navigationLayers) noexcept {
+void NavAgent::SetNavigationLayers(const std::uint32_t navigationLayers) noexcept {
     if (m_settings.navigationLayers == navigationLayers) {
         return;
     }
@@ -133,104 +133,104 @@ void NavAgentUVE::SetNavigationLayersUVE(const std::uint32_t navigationLayers) n
     // The route in hand was found for the old layers and may cross ground this agent may not use.
     // The status is left for the next step to write: it is a report about a step, and the step that
     // follows this change is the one that searched under the new layers.
-    m_path.ClearUVE();
+    m_path.Clear();
     m_replanRequested = true;
     m_timeUntilReplan = 0.0F;
 }
 
-void NavAgentUVE::ResetUVE() noexcept {
-    m_path.ClearUVE();
-    m_position = Math::Vector3UVE{};
-    m_target = Math::Vector3UVE{};
-    m_desiredVelocity = Math::Vector3UVE{};
-    m_nextPathPosition = Math::Vector3UVE{};
+void NavAgent::Reset() noexcept {
+    m_path.Clear();
+    m_position = Math::Vector3{};
+    m_target = Math::Vector3{};
+    m_desiredVelocity = Math::Vector3{};
+    m_nextPathPosition = Math::Vector3{};
     m_timeUntilReplan = 0.0F;
     m_remainingDistance = 0.0F;
     m_waypointIndex = 0U;
-    m_status = NavAgentStatusUVE::Idle;
+    m_status = NavAgentStatus::Idle;
     m_enabled = true;
     m_hasTarget = false;
     m_pathChanged = false;
     m_replanRequested = false;
 }
 
-void NavAgentUVE::StepUVE(const NavmeshUVE& mesh, const float deltaTimeSeconds) noexcept {
-    StepUVE(mesh, std::span<const NavAgentObstacleUVE>{}, deltaTimeSeconds);
+void NavAgent::Step(const Navmesh& mesh, const float deltaTimeSeconds) noexcept {
+    Step(mesh, std::span<const NavAgentObstacle>{}, deltaTimeSeconds);
 }
 
-void NavAgentUVE::StepUVE(const NavmeshUVE& mesh, const std::span<const NavAgentObstacleUVE> neighbours,
+void NavAgent::Step(const Navmesh& mesh, const std::span<const NavAgentObstacle> neighbours,
                           const float deltaTimeSeconds) noexcept {
     m_pathChanged = false;
     const float stepSeconds = deltaTimeSeconds > 0.0F ? deltaTimeSeconds : 0.0F;
 
     if (!m_enabled || !m_hasTarget) {
-        m_desiredVelocity = Math::Vector3UVE{};
+        m_desiredVelocity = Math::Vector3{};
         m_nextPathPosition = m_position;
         m_remainingDistance = 0.0F;
-        m_status = NavAgentStatusUVE::Idle;
+        m_status = NavAgentStatus::Idle;
         return;
     }
 
     m_timeUntilReplan -= stepSeconds;
     if (m_replanRequested || m_timeUntilReplan <= 0.0F) {
-        ReplanUVE(mesh);
+        Replan(mesh);
         m_timeUntilReplan = m_settings.pathUpdateInterval;
     }
 
-    if (!m_path.IsUsableUVE()) {
-        m_desiredVelocity = Math::Vector3UVE{};
+    if (!m_path.IsUsable()) {
+        m_desiredVelocity = Math::Vector3{};
         m_nextPathPosition = m_position;
         m_remainingDistance = 0.0F;
-        m_status = NavAgentStatusUVE::Failed;
+        m_status = NavAgentStatus::Failed;
         return;
     }
 
-    FollowUVE(neighbours, stepSeconds);
+    Follow(neighbours, stepSeconds);
 }
 
-void NavAgentUVE::ReplanUVE(const NavmeshUVE& mesh) noexcept {
-    NavPathRequestUVE request{};
+void NavAgent::Replan(const Navmesh& mesh) noexcept {
+    NavPathRequest request{};
     request.start = m_position;
     request.target = m_target;
     request.navigationLayers = m_settings.navigationLayers;
     request.offMeshToleranceMetres = m_settings.offMeshToleranceMetres;
     request.maximumExpandedNodes = m_settings.maximumExpandedNodes;
-    const NavPathUVE path = FindNavPathUVE(mesh, request);
+    const NavPath path = FindNavPath(mesh, request);
     m_replanRequested = false;
 
     // The flag a script watches: a route that changed is an agent that changed its mind, and the
     // case that matters most is the one where there was no route and now there is.
-    m_pathChanged = RoutesDifferUVE(m_path, path);
+    m_pathChanged = RoutesDiffer(m_path, path);
     m_path = path;
     m_waypointIndex = 0U;
-    if (!m_path.IsUsableUVE()) {
-        m_status = NavAgentStatusUVE::Failed;
+    if (!m_path.IsUsable()) {
+        m_status = NavAgentStatus::Failed;
         return;
     }
     // Search is over; where the agent is on the route is what the follower below decides, including
     // whether it is already standing on the target and this route is one it never has to walk.
-    m_status = NavAgentStatusUVE::Following;
+    m_status = NavAgentStatus::Following;
     m_remainingDistance = m_path.lengthMetres;
 }
 
-void NavAgentUVE::FollowUVE(const std::span<const NavAgentObstacleUVE> neighbours,
+void NavAgent::Follow(const std::span<const NavAgentObstacle> neighbours,
                             const float deltaTimeSeconds) noexcept {
     if (m_path.waypoints.empty()) {
         // A usable route always ends at the goal, so an empty one means the search stopped exactly on
         // it. Standing there is the whole of the agent's job.
-        m_status = NavAgentStatusUVE::Finished;
-        m_desiredVelocity = Math::Vector3UVE{};
+        m_status = NavAgentStatus::Finished;
+        m_desiredVelocity = Math::Vector3{};
         m_nextPathPosition = m_target;
         m_remainingDistance = 0.0F;
         return;
     }
 
-    const float distanceToTarget = PlanarDistanceUVE(m_position, m_target);
+    const float distanceToTarget = PlanarDistance(m_position, m_target);
     if (distanceToTarget <= m_settings.targetToleranceMetres) {
         // Close enough is arrived: the agent stops where it stands rather than walking into the
         // target's own position, which for a moving target is a chase it would never win.
-        m_status = NavAgentStatusUVE::Finished;
-        m_desiredVelocity = Math::Vector3UVE{};
+        m_status = NavAgentStatus::Finished;
+        m_desiredVelocity = Math::Vector3{};
         m_nextPathPosition = m_target;
         m_remainingDistance = distanceToTarget;
         m_waypointIndex = m_path.waypoints.size();
@@ -240,7 +240,7 @@ void NavAgentUVE::FollowUVE(const std::span<const NavAgentObstacleUVE> neighbour
     // Waypoints already reached are walked past without steering, which is what keeps an agent from
     // turning back for a corner it has rounded.
     while (m_waypointIndex < m_path.waypoints.size() &&
-           PlanarDistanceUVE(m_position, m_path.waypoints[m_waypointIndex]) <= m_settings.waypointRadiusMetres) {
+           PlanarDistance(m_position, m_path.waypoints[m_waypointIndex]) <= m_settings.waypointRadiusMetres) {
         ++m_waypointIndex;
     }
     if (m_waypointIndex >= m_path.waypoints.size()) {
@@ -250,36 +250,36 @@ void NavAgentUVE::FollowUVE(const std::span<const NavAgentObstacleUVE> neighbour
         m_waypointIndex = m_path.waypoints.size() - 1U;
     }
 
-    const Math::Vector3UVE& waypoint = m_path.waypoints[m_waypointIndex];
+    const Math::Vector3& waypoint = m_path.waypoints[m_waypointIndex];
     m_nextPathPosition = waypoint;
 
     // What is left of the route, measured from where the agent stands through the waypoints it has
     // not reached yet.
-    float remaining = PlanarDistanceUVE(m_position, waypoint);
+    float remaining = PlanarDistance(m_position, waypoint);
     for (std::size_t index = m_waypointIndex + 1U; index < m_path.waypoints.size(); ++index) {
-        remaining += PlanarDistanceUVE(m_path.waypoints[index - 1U], m_path.waypoints[index]);
+        remaining += PlanarDistance(m_path.waypoints[index - 1U], m_path.waypoints[index]);
     }
     m_remainingDistance = remaining;
 
-    Math::Vector3UVE direction = waypoint - m_position;
+    Math::Vector3 direction = waypoint - m_position;
     direction.y = 0.0F;
     const float directionLengthSquared = direction.x * direction.x + direction.z * direction.z;
     if (directionLengthSquared <= 1.0e-8F) {
         // Standing exactly on the waypoint with the target still out of tolerance: nothing to steer
         // at this step, and the next search will replace the route that led here.
-        m_desiredVelocity = Math::Vector3UVE{};
+        m_desiredVelocity = Math::Vector3{};
         return;
     }
     const float inverseLength = 1.0F / std::sqrt(directionLengthSquared);
-    direction = Math::Vector3UVE{direction.x * inverseLength, 0.0F, direction.z * inverseLength};
+    direction = Math::Vector3{direction.x * inverseLength, 0.0F, direction.z * inverseLength};
 
     float speed = m_settings.maxSpeed;
     if (m_settings.slowDownRadiusMetres > 0.0F && distanceToTarget < m_settings.slowDownRadiusMetres) {
         speed *= distanceToTarget / m_settings.slowDownRadiusMetres;
     }
-    Math::Vector3UVE wanted{direction.x * speed, 0.0F, direction.z * speed};
+    Math::Vector3 wanted{direction.x * speed, 0.0F, direction.z * speed};
     if (m_settings.avoidanceRadiusMetres > 0.0F) {
-        const Math::Vector3UVE push = SeparationVelocityUVE(m_position, m_settings, neighbours);
+        const Math::Vector3 push = SeparationVelocity(m_position, m_settings, neighbours);
         wanted.x += push.x;
         wanted.z += push.z;
         // The push may not make the agent faster than it can walk: a neighbour is something to walk
@@ -297,14 +297,14 @@ void NavAgentUVE::FollowUVE(const std::span<const NavAgentObstacleUVE> neighbour
     } else {
         // A step change in the published velocity is a step change in whatever moves the body, which
         // is felt through the whole chain as a jolt; the limit is what turns a replan into a turn.
-        const Math::Vector3UVE change = wanted - m_desiredVelocity;
+        const Math::Vector3 change = wanted - m_desiredVelocity;
         const float changeLength = std::sqrt(change.x * change.x + change.z * change.z);
         const float maximumChange = m_settings.accelerationMetresPerSecondSquared * deltaTimeSeconds;
         m_desiredVelocity = changeLength <= maximumChange || changeLength <= 1.0e-8F
                                 ? wanted
                                 : m_desiredVelocity + change * (maximumChange / changeLength);
     }
-    m_status = NavAgentStatusUVE::Following;
+    m_status = NavAgentStatus::Following;
 }
 
 } // namespace UVE::Navigation

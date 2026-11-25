@@ -9,7 +9,7 @@
 #include "viewport_surface.h"
 
 namespace UVE::Core {
-class EngineServicesUVE;
+class EngineServices;
 }
 
 namespace UVE::App::Viewports {
@@ -20,36 +20,36 @@ namespace UVE::App::Viewports {
 /// (`y = 0`) with 3-point studio lighting, full 360-degree interactive orbit / pan / dolly / reset
 /// camera controls centered on the elevated emitter, optional fixed-bounds wireframe overlay,
 /// and zero grid clutter.
-class VfxViewportUVE final {
+class VfxViewport final {
 public:
-    VfxViewportUVE(Editor::EditorUVE& editor, Core::EngineServicesUVE& services);
-    ~VfxViewportUVE() = default;
+    VfxViewport(Editor::Editor& editor, Core::EngineServices& services);
+    ~VfxViewport() = default;
 
-    VfxViewportUVE(const VfxViewportUVE&) = delete;
-    VfxViewportUVE& operator=(const VfxViewportUVE&) = delete;
-    VfxViewportUVE(VfxViewportUVE&&) = delete;
-    VfxViewportUVE& operator=(VfxViewportUVE&&) = delete;
+    VfxViewport(const VfxViewport&) = delete;
+    VfxViewport& operator=(const VfxViewport&) = delete;
+    VfxViewport(VfxViewport&&) = delete;
+    VfxViewport& operator=(VfxViewport&&) = delete;
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return m_surface.ServicesUVE(); }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return m_surface.Services(); }
 
-    [[nodiscard]] std::uint64_t RenderUVE(const Math::Vector2UVE& availableSize,
-                                          Math::Vector2UVE& outUsedSize,
-                                          const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    [[nodiscard]] std::uint64_t Render(const Math::Vector2& availableSize,
+                                          Math::Vector2& outUsedSize,
+                                          const Editor::Editor::ViewportOverlayState& overlayState);
 
 private:
-    void ApplyStudioFramingAndInputUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ApplyStudioFramingAndInput(const Editor::Editor::ViewportOverlayState& overlayState,
                                        int viewportHeight);
-    void ClampCameraAboveStudioFloorUVE();
+    void ClampCameraAboveStudioFloor();
 
-    Editor::EditorUVE& m_editor;
-    ViewportSurfaceUVE m_surface;
-    ViewportStudioCameraUVE m_studioCamera;
+    Editor::Editor& m_editor;
+    ViewportSurface m_surface;
+    ViewportStudioCamera m_studioCamera;
     std::uint32_t m_appliedFramingSerial = 0U;
     bool m_orbitDragging = false;
     bool m_panDragging = false;
     bool m_dollyDragging = false;
-    Editor::EditorViewportInputUVE::ButtonUVE m_activeDragButton =
-        Editor::EditorViewportInputUVE::ButtonUVE::Left;
+    Editor::EditorViewportInput::Button m_activeDragButton =
+        Editor::EditorViewportInput::Button::Left;
 };
 
 } // namespace UVE::App::Viewports

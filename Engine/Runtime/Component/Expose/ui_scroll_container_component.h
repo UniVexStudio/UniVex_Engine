@@ -9,8 +9,8 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUIScrollSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUIScrollSizePixelsUVE = 8192.0F;
+inline constexpr float kMinimumUIScrollSizePixels = 1.0F;
+inline constexpr float kMaximumUIScrollSizePixels = 8192.0F;
 
 /// A clipped vertical stack: children lay out top-down inside `rect` (padding around, gap between)
 /// and content past the box scrolls under the mouse wheel (`wheelStep` pixels per wheel unit,
@@ -24,35 +24,35 @@ inline constexpr float kMaximumUIScrollSizePixelsUVE = 8192.0F;
 /// widgets still interact - only the pixels (and hover outside the clip) are cut. A scroll
 /// container stacks its children itself, so a layout container on the same entity is overridden;
 /// scroll containers do not nest (an inner one stacks without ever scrolling). An optional
-/// `UIScrollbarComponentUVE` on the same entity adds a draggable thumb over the wheel input.
+/// `UIScrollbarComponent` on the same entity adds a draggable thumb over the wheel input.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UIScrollContainerComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{200.0F, 200.0F}};
+struct UIScrollContainerComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{200.0F, 200.0F}};
     float padding = 8.0F;
     float gap = 4.0F;
     float wheelStep = 24.0F;
-    Math::Vector2UVE scrollOffset{0.0F, 0.0F};
+    Math::Vector2 scrollOffset{0.0F, 0.0F};
     /// Runtime state, never persisted: last frame's full content box including padding.
-    Math::Vector2UVE contentSize{0.0F, 0.0F};
+    Math::Vector2 contentSize{0.0F, 0.0F};
 };
 
-[[nodiscard]] bool IsUIScrollContainerComponentValidUVE(const UIScrollContainerComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUIScrollContainerComponentValid(const UIScrollContainerComponent& component) noexcept;
 
 /// Computes the maximum valid scroll offset (`max(0, contentSize - rect.size)` per axis).
-[[nodiscard]] Math::Vector2UVE ResolveUIScrollMaxOffsetUVE(
-    const UIScrollContainerComponentUVE& component) noexcept;
+[[nodiscard]] Math::Vector2 ResolveUIScrollMaxOffset(
+    const UIScrollContainerComponent& component) noexcept;
 
-/// Clamps `desiredScrollOffset` into `[0, ResolveUIScrollMaxOffsetUVE(component)]` per axis.
-[[nodiscard]] Math::Vector2UVE ClampUIScrollOffsetUVE(
-    const UIScrollContainerComponentUVE& component,
-    const Math::Vector2UVE& desiredScrollOffset) noexcept;
+/// Clamps `desiredScrollOffset` into `[0, ResolveUIScrollMaxOffset(component)]` per axis.
+[[nodiscard]] Math::Vector2 ClampUIScrollOffset(
+    const UIScrollContainerComponent& component,
+    const Math::Vector2& desiredScrollOffset) noexcept;
 
 /// True when `contentSize.y > rect.size.y` (vertical content overflows the viewport).
-[[nodiscard]] bool HasUIScrollVerticalOverflowUVE(
-    const UIScrollContainerComponentUVE& component) noexcept;
+[[nodiscard]] bool HasUIScrollVerticalOverflow(
+    const UIScrollContainerComponent& component) noexcept;
 
 /// Applies a mouse-wheel delta (`wheelDeltaUnits`) along Y (or X when `horizontalWheel` is true) and clamps `scrollOffset`.
-Math::Vector2UVE ApplyUIScrollWheelDeltaUVE(UIScrollContainerComponentUVE& component,
+Math::Vector2 ApplyUIScrollWheelDelta(UIScrollContainerComponent& component,
                                             float wheelDeltaUnits,
                                             bool horizontalWheel = false) noexcept;
 

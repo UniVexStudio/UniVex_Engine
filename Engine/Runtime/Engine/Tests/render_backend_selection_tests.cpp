@@ -7,43 +7,43 @@
 namespace UVE::Core::Tests {
 namespace {
 
-TEST(RenderBackendSelectionUVETest, AutoAndOpenGlPreferencesKeepOpenGlAsTheDefault) {
-    constexpr RenderBackendAttemptOrderUVE autoOrder =
-        ResolveRenderBackendAttemptOrderUVE(RenderBackendPreferenceUVE::AutoUVE);
-    constexpr RenderBackendAttemptOrderUVE openGlOrder =
-        ResolveRenderBackendAttemptOrderUVE(RenderBackendPreferenceUVE::OpenGLUVE);
-    constexpr RenderBackendAttemptOrderUVE expected{{RenderBackendKindUVE::OpenGL,
-                                                      RenderBackendKindUVE::Null,
-                                                      RenderBackendKindUVE::Vulkan},
+TEST(RenderBackendSelectionTest, AutoAndOpenGlPreferencesKeepOpenGlAsTheDefault) {
+    constexpr RenderBackendAttemptOrder autoOrder =
+        ResolveRenderBackendAttemptOrder(RenderBackendPreference::Auto);
+    constexpr RenderBackendAttemptOrder openGlOrder =
+        ResolveRenderBackendAttemptOrder(RenderBackendPreference::OpenGL);
+    constexpr RenderBackendAttemptOrder expected{{RenderBackendKind::OpenGL,
+                                                      RenderBackendKind::Null,
+                                                      RenderBackendKind::Vulkan},
                                                      2U};
     EXPECT_EQ(autoOrder, expected);
     EXPECT_EQ(openGlOrder, expected);
 }
 
-TEST(RenderBackendSelectionUVETest, VulkanFallsBackThroughOpenGlBeforeNull) {
-    constexpr RenderBackendAttemptOrderUVE order =
-        ResolveRenderBackendAttemptOrderUVE(RenderBackendPreferenceUVE::VulkanUVE);
-    EXPECT_EQ(order.backends[0], RenderBackendKindUVE::Vulkan);
-    EXPECT_EQ(order.backends[1], RenderBackendKindUVE::OpenGL);
-    EXPECT_EQ(order.backends[2], RenderBackendKindUVE::Null);
+TEST(RenderBackendSelectionTest, VulkanFallsBackThroughOpenGlBeforeNull) {
+    constexpr RenderBackendAttemptOrder order =
+        ResolveRenderBackendAttemptOrder(RenderBackendPreference::Vulkan);
+    EXPECT_EQ(order.backends[0], RenderBackendKind::Vulkan);
+    EXPECT_EQ(order.backends[1], RenderBackendKind::OpenGL);
+    EXPECT_EQ(order.backends[2], RenderBackendKind::Null);
     EXPECT_EQ(order.count, 3U);
 }
 
-TEST(RenderBackendSelectionUVETest, NullPreferenceSkipsRealBackends) {
-    constexpr RenderBackendAttemptOrderUVE order =
-        ResolveRenderBackendAttemptOrderUVE(RenderBackendPreferenceUVE::NullUVE);
-    EXPECT_EQ(order.backends[0], RenderBackendKindUVE::Null);
+TEST(RenderBackendSelectionTest, NullPreferenceSkipsRealBackends) {
+    constexpr RenderBackendAttemptOrder order =
+        ResolveRenderBackendAttemptOrder(RenderBackendPreference::Null);
+    EXPECT_EQ(order.backends[0], RenderBackendKind::Null);
     EXPECT_EQ(order.count, 1U);
-    EXPECT_TRUE(order.Contains(RenderBackendKindUVE::Null));
-    EXPECT_FALSE(order.Contains(RenderBackendKindUVE::OpenGL));
-    EXPECT_FALSE(order.Contains(RenderBackendKindUVE::Vulkan));
+    EXPECT_TRUE(order.Contains(RenderBackendKind::Null));
+    EXPECT_FALSE(order.Contains(RenderBackendKind::OpenGL));
+    EXPECT_FALSE(order.Contains(RenderBackendKind::Vulkan));
 }
 
-TEST(RenderBackendSelectionUVETest, InvalidPreferenceUsesSafeOpenGlFallbackOrder) {
-    constexpr RenderBackendAttemptOrderUVE order = ResolveRenderBackendAttemptOrderUVE(
-        static_cast<RenderBackendPreferenceUVE>(255U));
-    EXPECT_EQ(order.backends[0], RenderBackendKindUVE::OpenGL);
-    EXPECT_EQ(order.backends[1], RenderBackendKindUVE::Null);
+TEST(RenderBackendSelectionTest, InvalidPreferenceUsesSafeOpenGlFallbackOrder) {
+    constexpr RenderBackendAttemptOrder order = ResolveRenderBackendAttemptOrder(
+        static_cast<RenderBackendPreference>(255U));
+    EXPECT_EQ(order.backends[0], RenderBackendKind::OpenGL);
+    EXPECT_EQ(order.backends[1], RenderBackendKind::Null);
     EXPECT_EQ(order.count, 2U);
 }
 

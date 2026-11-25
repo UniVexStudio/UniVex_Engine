@@ -16,11 +16,11 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kGraphKeyUVE = "widgetGraph";
+constexpr const char* kGraphKey = "widgetGraph";
 
-[[nodiscard]] std::optional<nlohmann::json> ReadPrefabPayloadUVE(const std::vector<std::byte>& file) {
-    const auto envelope = DecodeUveFileEnvelopeUVE(file, "widget blueprint");
-    if (!envelope.has_value() || envelope->first.assetType != AssetKindUVE::Prefab) {
+[[nodiscard]] std::optional<nlohmann::json> ReadPrefabPayload(const std::vector<std::byte>& file) {
+    const auto envelope = DecodeUveFileEnvelope(file, "widget blueprint");
+    if (!envelope.has_value() || envelope->first.assetType != AssetKind::Prefab) {
         return std::nullopt;
     }
     const std::vector<std::byte>& payload = envelope->second;
@@ -32,35 +32,35 @@ constexpr const char* kGraphKeyUVE = "widgetGraph";
     return json;
 }
 
-[[nodiscard]] BlueprintAssetUVE EmptyWidgetGraphUVE() {
-    BlueprintAssetUVE graph;
+[[nodiscard]] BlueprintAsset EmptyWidgetGraph() {
+    BlueprintAsset graph;
     graph.parentKind = "Canvas";
     return graph;
 }
 
 } // namespace
 
-bool IsWidgetBlueprintPathUVE(const std::string_view path) noexcept {
-    return path.ends_with(kWidgetBlueprintExtensionUVE);
+bool IsWidgetBlueprintPath(const std::string_view path) noexcept {
+    return path.ends_with(kWidgetBlueprintExtension);
 }
 
-std::optional<BlueprintAssetUVE> ReadWidgetBlueprintGraphUVE(const std::vector<std::byte>& file) {
-    const std::optional<nlohmann::json> json = ReadPrefabPayloadUVE(file);
+std::optional<BlueprintAsset> ReadWidgetBlueprintGraph(const std::vector<std::byte>& file) {
+    const std::optional<nlohmann::json> json = ReadPrefabPayload(file);
     if (!json.has_value()) {
         return std::nullopt;
     }
-    const auto it = json->find(kGraphKeyUVE);
+    const auto it = json->find(kGraphKey);
     if (it == json->end() || !it->is_string()) {
-        return EmptyWidgetGraphUVE();
+        return EmptyWidgetGraph();
     }
-    std::optional<BlueprintAssetUVE> graph = ParseBlueprintAssetUVE(it->get<std::string>());
+    std::optional<BlueprintAsset> graph = ParseBlueprintAsset(it->get<std::string>());
     if (graph.has_value() && graph->parentKind.empty()) {
         graph->parentKind = "Canvas";
     }
     return graph;
 }
 
-std::optional<BlueprintAssetUVE> LoadWidgetBlueprintGraphUVE(const std::filesystem::path& path) {
+std::optional<BlueprintAsset> LoadWidgetBlueprintGraph(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return std::nullopt;
@@ -68,29 +68,29 @@ std::optional<BlueprintAssetUVE> LoadWidgetBlueprintGraphUVE(const std::filesyst
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     std::vector<std::byte> bytes(text.size());
     std::memcpy(bytes.data(), text.data(), text.size());
-    return ReadWidgetBlueprintGraphUVE(bytes);
+    return ReadWidgetBlueprintGraph(bytes);
 }
 
-std::optional<std::vector<std::byte>> WithWidgetBlueprintGraphUVE(const std::vector<std::byte>& file,
-                                                                  const BlueprintAssetUVE& graph) {
-    std::optional<nlohmann::json> json = ReadPrefabPayloadUVE(file);
+std::optional<std::vector<std::byte>> WithWidgetBlueprintGraph(const std::vector<std::byte>& file,
+                                                                  const BlueprintAsset& graph) {
+    std::optional<nlohmann::json> json = ReadPrefabPayload(file);
     if (!json.has_value()) {
         return std::nullopt;
     }
-    (*json)[kGraphKeyUVE] = SerializeBlueprintAssetUVE(graph);
+    (*json)[kGraphKey] = SerializeBlueprintAsset(graph);
     const std::string text = json->dump(2);
     std::vector<std::byte> payload(text.size());
     std::memcpy(payload.data(), text.data(), text.size());
-    return EncodeUveFileEnvelopeUVE(AssetKindUVE::Prefab, payload);
+    return EncodeUveFileEnvelope(AssetKind::Prefab, payload);
 }
 
-bool SaveWidgetBlueprintGraphUVE(const std::filesystem::path& path, const BlueprintAssetUVE& graph) {
-    const auto file = ReadUveFileUVE(path);
+bool SaveWidgetBlueprintGraph(const std::filesystem::path& path, const BlueprintAsset& graph) {
+    const auto file = ReadUveFile(path);
     if (!file.has_value()) {
         return false;
     }
-    std::vector<std::byte> bytes = EncodeUveFileEnvelopeUVE(file->first.assetType, file->second);
-    const std::optional<std::vector<std::byte>> updated = WithWidgetBlueprintGraphUVE(bytes, graph);
+    std::vector<std::byte> bytes = EncodeUveFileEnvelope(file->first.assetType, file->second);
+    const std::optional<std::vector<std::byte>> updated = WithWidgetBlueprintGraph(bytes, graph);
     if (!updated.has_value()) {
         UVE_ERROR("Widget Blueprint: \"{}\" is not a widget file", path.string());
         return false;

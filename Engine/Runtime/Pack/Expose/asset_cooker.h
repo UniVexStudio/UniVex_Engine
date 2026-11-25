@@ -5,8 +5,8 @@
 #include <string>
 #include <cstdint>
 namespace UVE::Pack {
-enum class CookTargetUVE { Windows, Android };
-struct AssetCookResultUVE {
+enum class CookTarget { Windows, Android };
+struct AssetCookResult {
     bool success = false;
     std::string message;
     std::uintmax_t sourceBytes = 0;
@@ -15,6 +15,6 @@ struct AssetCookResultUVE {
 };
 /// Consumes imported native assets; never mutates the authoring project. Publishes to a fresh
 /// directory only after every file/catalog validates. Native paths and GUIDs stay stable.
-[[nodiscard]] AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile,
-    const std::filesystem::path& output, CookTargetUVE target);
+[[nodiscard]] AssetCookResult CookProjectAssets(const std::filesystem::path& projectFile,
+    const std::filesystem::path& output, CookTarget target);
 } // namespace UVE::Pack

@@ -18,11 +18,11 @@ namespace UVE::Asset {
 
 namespace {
 
-enum class MountKindUVE { Directory, Bundle };
+enum class MountKind { Directory, Bundle };
 
-struct MountRecordUVE {
-    MountHandleUVE handle{};
-    MountKindUVE kind{};
+struct MountRecord {
+    MountHandle handle{};
+    MountKind kind{};
     std::string prefix;
     std::filesystem::path realPathOrBundlePath;
     int priority = 0;
@@ -30,7 +30,7 @@ struct MountRecordUVE {
 
 /// True iff `virtualPath` matches `prefix` on a whole-segment boundary: either exactly equal, or
 /// `virtualPath` starts with `prefix + "/"`. An empty `prefix` (root mount) matches everything.
-[[nodiscard]] bool MatchesPrefixUVE(std::string_view virtualPath, std::string_view prefix) {
+[[nodiscard]] bool MatchesPrefix(std::string_view virtualPath, std::string_view prefix) {
     if (virtualPath.contains('\\') || prefix.contains('\\')) {
         return false;
     }
@@ -44,7 +44,7 @@ struct MountRecordUVE {
 }
 
 /// Returns `virtualPath` with `prefix` (and any single separating '/') removed from the front.
-[[nodiscard]] std::string_view StripPrefixUVE(std::string_view virtualPath, std::string_view prefix) {
+[[nodiscard]] std::string_view StripPrefix(std::string_view virtualPath, std::string_view prefix) {
     if (prefix.empty()) {
         return virtualPath;
     }
@@ -55,7 +55,7 @@ struct MountRecordUVE {
     return remainder;
 }
 
-[[nodiscard]] bool IsSafeVirtualRemainderUVE(std::string_view remainder) {
+[[nodiscard]] bool IsSafeVirtualRemainder(std::string_view remainder) {
     const std::filesystem::path path{std::string(remainder)};
     if (remainder.empty() || remainder.contains('\\') || path.is_absolute() ||
         path.has_root_name() || path.has_root_directory()) {
@@ -68,19 +68,19 @@ struct MountRecordUVE {
 
 /// Every mount whose prefix matches `virtualPath` (optionally restricted to `kindFilter`),
 /// copied out and sorted by descending priority (ties broken by most-recently-mounted first).
-[[nodiscard]] std::vector<MountRecordUVE> FindMatchingMountsUVE(const std::vector<MountRecordUVE>& mounts,
+[[nodiscard]] std::vector<MountRecord> FindMatchingMounts(const std::vector<MountRecord>& mounts,
                                                                  std::string_view virtualPath,
-                                                                 std::optional<MountKindUVE> kindFilter = {}) {
-    std::vector<MountRecordUVE> matches;
-    for (const MountRecordUVE& record : mounts) {
+                                                                 std::optional<MountKind> kindFilter = {}) {
+    std::vector<MountRecord> matches;
+    for (const MountRecord& record : mounts) {
         if (kindFilter.has_value() && record.kind != *kindFilter) {
             continue;
         }
-        if (MatchesPrefixUVE(virtualPath, record.prefix)) {
+        if (MatchesPrefix(virtualPath, record.prefix)) {
             matches.push_back(record);
         }
     }
-    std::sort(matches.begin(), matches.end(), [](const MountRecordUVE& lhs, const MountRecordUVE& rhs) {
+    std::sort(matches.begin(), matches.end(), [](const MountRecord& lhs, const MountRecord& rhs) {
         if (lhs.priority != rhs.priority) {
             return lhs.priority > rhs.priority;
         }
@@ -91,7 +91,7 @@ struct MountRecordUVE {
 
 /// Reads `path`'s full contents into a byte buffer. Returns `std::nullopt` if the file can't be
 /// opened or a read error occurs partway through — never throws.
-[[nodiscard]] std::optional<std::vector<std::byte>> ReadRealFileUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::optional<std::vector<std::byte>> ReadRealFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
         return std::nullopt;
@@ -118,110 +118,110 @@ struct MountRecordUVE {
 
 } // namespace
 
-struct FileSystemUVE::ImplUVE {
-    IAssetBundleUVE& assetBundle;
+struct FileSystem::Impl {
+    IAssetBundle& assetBundle;
     mutable std::mutex mutex;
-    std::vector<MountRecordUVE> mounts;
-    MountHandleUVE nextHandle = 1;
+    std::vector<MountRecord> mounts;
+    MountHandle nextHandle = 1;
 };
 
-FileSystemUVE::FileSystemUVE(IAssetBundleUVE& assetBundle) : m_impl(std::make_unique<ImplUVE>(assetBundle)) {}
+FileSystem::FileSystem(IAssetBundle& assetBundle) : m_impl(std::make_unique<Impl>(assetBundle)) {}
 
-FileSystemUVE::~FileSystemUVE() = default;
+FileSystem::~FileSystem() = default;
 
-MountHandleUVE FileSystemUVE::MountDirectoryUVE(std::string virtualPrefix, std::filesystem::path realDirectory,
+MountHandle FileSystem::MountDirectory(std::string virtualPrefix, std::filesystem::path realDirectory,
                                                  int priority) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
-    const MountHandleUVE handle = m_impl->nextHandle++;
-    m_impl->mounts.push_back(MountRecordUVE{handle, MountKindUVE::Directory, std::move(virtualPrefix),
+    const MountHandle handle = m_impl->nextHandle++;
+    m_impl->mounts.push_back(MountRecord{handle, MountKind::Directory, std::move(virtualPrefix),
                                              std::move(realDirectory), priority});
     return handle;
 }
 
-MountHandleUVE FileSystemUVE::MountBundleUVE(std::string virtualPrefix, std::filesystem::path bundlePath,
+MountHandle FileSystem::MountBundle(std::string virtualPrefix, std::filesystem::path bundlePath,
                                               int priority) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
-    const MountHandleUVE handle = m_impl->nextHandle++;
+    const MountHandle handle = m_impl->nextHandle++;
     m_impl->mounts.push_back(
-        MountRecordUVE{handle, MountKindUVE::Bundle, std::move(virtualPrefix), std::move(bundlePath), priority});
+        MountRecord{handle, MountKind::Bundle, std::move(virtualPrefix), std::move(bundlePath), priority});
     return handle;
 }
 
-void FileSystemUVE::UnmountUVE(MountHandleUVE handle) {
+void FileSystem::Unmount(MountHandle handle) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
-    std::erase_if(m_impl->mounts, [handle](const MountRecordUVE& record) { return record.handle == handle; });
+    std::erase_if(m_impl->mounts, [handle](const MountRecord& record) { return record.handle == handle; });
 }
 
-bool FileSystemUVE::HasFileUVE(std::string_view virtualPath) const {
-    std::vector<MountRecordUVE> matches;
+bool FileSystem::HasFile(std::string_view virtualPath) const {
+    std::vector<MountRecord> matches;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
-        matches = FindMatchingMountsUVE(m_impl->mounts, virtualPath);
+        matches = FindMatchingMounts(m_impl->mounts, virtualPath);
     }
 
-    for (const MountRecordUVE& record : matches) {
-        const std::string_view remainder = StripPrefixUVE(virtualPath, record.prefix);
-        if (!IsSafeVirtualRemainderUVE(remainder)) {
+    for (const MountRecord& record : matches) {
+        const std::string_view remainder = StripPrefix(virtualPath, record.prefix);
+        if (!IsSafeVirtualRemainder(remainder)) {
             continue;
         }
-        if (record.kind == MountKindUVE::Directory) {
+        if (record.kind == MountKind::Directory) {
             const std::filesystem::path realPath = record.realPathOrBundlePath / std::string(remainder);
             if (std::filesystem::exists(realPath)) {
                 return true;
             }
-        } else if (m_impl->assetBundle.HasEntryUVE(record.realPathOrBundlePath, remainder)) {
+        } else if (m_impl->assetBundle.HasEntry(record.realPathOrBundlePath, remainder)) {
             return true;
         }
     }
     return false;
 }
 
-std::optional<std::vector<std::byte>> FileSystemUVE::ReadFileUVE(std::string_view virtualPath) const {
-    std::vector<MountRecordUVE> matches;
+std::optional<std::vector<std::byte>> FileSystem::ReadFile(std::string_view virtualPath) const {
+    std::vector<MountRecord> matches;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
-        matches = FindMatchingMountsUVE(m_impl->mounts, virtualPath);
+        matches = FindMatchingMounts(m_impl->mounts, virtualPath);
     }
 
-    for (const MountRecordUVE& record : matches) {
-        const std::string_view remainder = StripPrefixUVE(virtualPath, record.prefix);
-        if (!IsSafeVirtualRemainderUVE(remainder)) {
+    for (const MountRecord& record : matches) {
+        const std::string_view remainder = StripPrefix(virtualPath, record.prefix);
+        if (!IsSafeVirtualRemainder(remainder)) {
             continue;
         }
-        if (record.kind == MountKindUVE::Directory) {
+        if (record.kind == MountKind::Directory) {
             const std::filesystem::path realPath = record.realPathOrBundlePath / std::string(remainder);
-            std::optional<std::vector<std::byte>> data = ReadRealFileUVE(realPath);
+            std::optional<std::vector<std::byte>> data = ReadRealFile(realPath);
             if (data.has_value()) {
                 return data;
             }
         } else {
             std::optional<std::vector<std::byte>> data =
-                m_impl->assetBundle.ReadEntryUVE(record.realPathOrBundlePath, remainder);
+                m_impl->assetBundle.ReadEntry(record.realPathOrBundlePath, remainder);
             if (data.has_value()) {
                 return data;
             }
         }
     }
 
-    UVE_ERROR("FileSystemUVE: no mount resolves virtual path \"{}\"", virtualPath);
+    UVE_ERROR("FileSystem: no mount resolves virtual path \"{}\"", virtualPath);
     return std::nullopt;
 }
 
-bool FileSystemUVE::WriteFileUVE(std::string_view virtualPath, const std::vector<std::byte>& data) {
-    std::vector<MountRecordUVE> matches;
+bool FileSystem::WriteFile(std::string_view virtualPath, const std::vector<std::byte>& data) {
+    std::vector<MountRecord> matches;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
-        matches = FindMatchingMountsUVE(m_impl->mounts, virtualPath, MountKindUVE::Directory);
+        matches = FindMatchingMounts(m_impl->mounts, virtualPath, MountKind::Directory);
     }
     if (matches.empty()) {
-        UVE_ERROR("FileSystemUVE: no writable (directory) mount for virtual path \"{}\"", virtualPath);
+        UVE_ERROR("FileSystem: no writable (directory) mount for virtual path \"{}\"", virtualPath);
         return false;
     }
 
-    const MountRecordUVE& target = matches.front();
-    const std::string_view remainder = StripPrefixUVE(virtualPath, target.prefix);
-    if (!IsSafeVirtualRemainderUVE(remainder)) {
-        UVE_ERROR("FileSystemUVE: virtual path \"{}\" escapes its mount", virtualPath);
+    const MountRecord& target = matches.front();
+    const std::string_view remainder = StripPrefix(virtualPath, target.prefix);
+    if (!IsSafeVirtualRemainder(remainder)) {
+        UVE_ERROR("FileSystem: virtual path \"{}\" escapes its mount", virtualPath);
         return false;
     }
     const std::filesystem::path realPath = target.realPathOrBundlePath / std::string(remainder);
@@ -230,7 +230,7 @@ bool FileSystemUVE::WriteFileUVE(std::string_view virtualPath, const std::vector
         std::error_code errorCode;
         std::filesystem::create_directories(realPath.parent_path(), errorCode);
         if (errorCode && !std::filesystem::exists(realPath.parent_path())) {
-            UVE_ERROR("FileSystemUVE: failed to create directory \"{}\": {}", realPath.parent_path().string(),
+            UVE_ERROR("FileSystem: failed to create directory \"{}\": {}", realPath.parent_path().string(),
                        errorCode.message());
             return false;
         }
@@ -238,29 +238,29 @@ bool FileSystemUVE::WriteFileUVE(std::string_view virtualPath, const std::vector
 
     std::ofstream file(realPath, std::ios::binary);
     if (!file.is_open()) {
-        UVE_ERROR("FileSystemUVE: failed to open \"{}\" for writing", realPath.string());
+        UVE_ERROR("FileSystem: failed to open \"{}\" for writing", realPath.string());
         return false;
     }
     if (!data.empty()) {
         file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
     }
     if (!file.good()) {
-        UVE_ERROR("FileSystemUVE: failed to write \"{}\"", realPath.string());
+        UVE_ERROR("FileSystem: failed to write \"{}\"", realPath.string());
         return false;
     }
     return true;
 }
 
-std::filesystem::path FileSystemUVE::ResolveRealPathUVE(std::string_view virtualPath) const {
-    std::vector<MountRecordUVE> matches;
+std::filesystem::path FileSystem::ResolveRealPath(std::string_view virtualPath) const {
+    std::vector<MountRecord> matches;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
-        matches = FindMatchingMountsUVE(m_impl->mounts, virtualPath, MountKindUVE::Directory);
+        matches = FindMatchingMounts(m_impl->mounts, virtualPath, MountKind::Directory);
     }
 
-    for (const MountRecordUVE& record : matches) {
-        const std::string_view remainder = StripPrefixUVE(virtualPath, record.prefix);
-        if (!IsSafeVirtualRemainderUVE(remainder)) {
+    for (const MountRecord& record : matches) {
+        const std::string_view remainder = StripPrefix(virtualPath, record.prefix);
+        if (!IsSafeVirtualRemainder(remainder)) {
             continue;
         }
         const std::filesystem::path realPath = record.realPathOrBundlePath / std::string(remainder);

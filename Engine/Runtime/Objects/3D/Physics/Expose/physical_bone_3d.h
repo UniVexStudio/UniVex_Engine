@@ -12,44 +12,44 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Ragdoll physics bone component (`skeletonEntity`, `boneIndex`, `mass`, `linearDamping`,
-/// `simulatePhysics`) driven by or driving a bone on a `Skeleton3DComponentUVE`.
-struct PhysicalBone3DComponentUVE final {
-    EntityUVE skeletonEntity = kInvalidEntityUVE;
+/// `simulatePhysics`) driven by or driving a bone on a `Skeleton3DComponent`.
+struct PhysicalBone3DComponent final {
+    Entity skeletonEntity = kInvalidEntity;
     std::int32_t boneIndex = 0;
     float mass = 5.0F;
     float linearDamping = 0.1F;
     bool simulatePhysics = false;
-    Math::Vector3UVE linearVelocity{0.0F, 0.0F, 0.0F};
+    Math::Vector3 linearVelocity{0.0F, 0.0F, 0.0F};
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const PhysicalBone3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const PhysicalBone3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsPhysicalBone3DComponentValidUVE(
-    const PhysicalBone3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsPhysicalBone3DComponentValid(
+    const PhysicalBone3DComponent& value) noexcept;
 
-[[nodiscard]] PhysicalBone3DComponentUVE SanitizePhysicalBone3DComponentUVE(
-    const PhysicalBone3DComponentUVE& value) noexcept;
+[[nodiscard]] PhysicalBone3DComponent SanitizePhysicalBone3DComponent(
+    const PhysicalBone3DComponent& value) noexcept;
 
-struct PhysicalBone3DObjectDefinitionUVE final {
+struct PhysicalBone3DObjectDefinition final {
     static constexpr std::string_view defaultName = "PhysicalBone3D";
-    PhysicalBone3DComponentUVE physicalBone{};
+    PhysicalBone3DComponent physicalBone{};
 };
 
-[[nodiscard]] bool IsPhysicalBone3DObjectDefinitionValidUVE(
-    const PhysicalBone3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsPhysicalBone3DObjectDefinitionValid(
+    const PhysicalBone3DObjectDefinition& value) noexcept;
 
-void ApplyPhysicalBone3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                            const PhysicalBone3DObjectDefinitionUVE& value);
+void ApplyPhysicalBone3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                            const PhysicalBone3DObjectDefinition& value);
 
-/// Steps all enabled `PhysicalBone3DComponentUVE` entities by `deltaTimeSeconds` under `gravity`.
+/// Steps all enabled `PhysicalBone3DComponent` entities by `deltaTimeSeconds` under `gravity`.
 /// When `simulatePhysics` is false, snaps the bone entity's local position to the target skeleton
 /// bone's pose; when `simulatePhysics` is true, integrates `linearVelocity` and writes the pose
 /// back to the skeleton bone.
-std::size_t UpdatePhysicalBone3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                           const Math::Vector3UVE& gravity, float deltaTimeSeconds);
+std::size_t UpdatePhysicalBone3DObjects(IEntityManager& entityManager,
+                                           const Math::Vector3& gravity, float deltaTimeSeconds);
 
 } // namespace UVE::Scene

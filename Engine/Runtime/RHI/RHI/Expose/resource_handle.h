@@ -7,9 +7,9 @@
 // buffer_handle_uve.h / texture_handle_uve.h / shader_handle_uve.h / pipeline_handle_uve.h.
 // Behavior is unchanged: the alias names are the same types consumers already used.
 //
-// Why a small wrapper struct rather than a bare std::uint32_t alias: a ResourceHandleUVE<BufferTag>
-// can never be silently passed where a ResourceHandleUVE<TextureTag> was meant — matching
-// AssetGuidUVE's precedent for opaque ids that must not be confused with each other, which
+// Why a small wrapper struct rather than a bare std::uint32_t alias: a ResourceHandle<BufferTag>
+// can never be silently passed where a ResourceHandle<TextureTag> was meant — matching
+// AssetGuid's precedent for opaque ids that must not be confused with each other, which
 // matters here since the RHI has five distinct resource kinds.
 // Thread-safety: value type; safe to copy/compare/hash freely, no shared state.
 
@@ -21,31 +21,31 @@
 
 namespace UVE::Render {
 
-/// Opaque handle to a GPU resource created via IRenderDeviceUVE. The Tag parameter is a
+/// Opaque handle to a GPU resource created via IRenderDevice. The Tag parameter is a
 /// per-kind empty struct; see the four sibling headers for the concrete aliases and their
-/// kInvalid*HandleUVE sentinels.
+/// kInvalid*Handle sentinels.
 template <typename Tag>
-struct ResourceHandleUVE {
+struct ResourceHandle {
     std::uint32_t value = 0;
 };
 
 template <typename Tag>
-[[nodiscard]] constexpr bool operator==(const ResourceHandleUVE<Tag>& lhs,
-                                        const ResourceHandleUVE<Tag>& rhs) noexcept {
+[[nodiscard]] constexpr bool operator==(const ResourceHandle<Tag>& lhs,
+                                        const ResourceHandle<Tag>& rhs) noexcept {
     return lhs.value == rhs.value;
 }
 
 template <typename Tag>
-[[nodiscard]] constexpr bool operator!=(const ResourceHandleUVE<Tag>& lhs,
-                                        const ResourceHandleUVE<Tag>& rhs) noexcept {
+[[nodiscard]] constexpr bool operator!=(const ResourceHandle<Tag>& lhs,
+                                        const ResourceHandle<Tag>& rhs) noexcept {
     return !(lhs == rhs);
 }
 
 } // namespace UVE::Render
 
 template <typename Tag>
-struct std::hash<UVE::Render::ResourceHandleUVE<Tag>> {
-    [[nodiscard]] std::size_t operator()(const UVE::Render::ResourceHandleUVE<Tag>& handle) const noexcept {
+struct std::hash<UVE::Render::ResourceHandle<Tag>> {
+    [[nodiscard]] std::size_t operator()(const UVE::Render::ResourceHandle<Tag>& handle) const noexcept {
         return std::hash<std::uint32_t>{}(handle.value);
     }
 };

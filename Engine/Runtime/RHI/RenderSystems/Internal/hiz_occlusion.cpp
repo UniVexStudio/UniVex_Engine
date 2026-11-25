@@ -9,7 +9,7 @@
 
 namespace UVE::Render {
 
-bool HiZDepthPyramidUVE::BuildFromDepthBufferUVE(const std::span<const float> depth01,
+bool HiZDepthPyramid::BuildFromDepthBuffer(const std::span<const float> depth01,
                                                  const std::uint32_t width, const std::uint32_t height) {
     m_mips.clear();
     if (width == 0U || height == 0U ||
@@ -17,15 +17,15 @@ bool HiZDepthPyramidUVE::BuildFromDepthBufferUVE(const std::span<const float> de
         return false;
     }
 
-    MipLevelUVE base{};
+    MipLevel base{};
     base.width = width;
     base.height = height;
     base.maxDepth.assign(depth01.begin(), depth01.end());
     m_mips.push_back(std::move(base));
 
     while (m_mips.back().width > 1U || m_mips.back().height > 1U) {
-        const MipLevelUVE& prev = m_mips.back();
-        MipLevelUVE next{};
+        const MipLevel& prev = m_mips.back();
+        MipLevel next{};
         next.width = std::max(prev.width / 2U, 1U);
         next.height = std::max(prev.height / 2U, 1U);
         next.maxDepth.resize(static_cast<std::size_t>(next.width) * next.height, 1.0F);
@@ -57,13 +57,13 @@ bool HiZDepthPyramidUVE::BuildFromDepthBufferUVE(const std::span<const float> de
     return true;
 }
 
-bool HiZDepthPyramidUVE::TestWorldAabbVisibleUVE(const Math::AabbUVE& worldBounds,
-                                                 const Math::Matrix4x4UVE& prevViewProjection,
+bool HiZDepthPyramid::TestWorldAabbVisible(const Math::Aabb& worldBounds,
+                                                 const Math::Matrix4x4& prevViewProjection,
                                                  const float depthEpsilon) const noexcept {
     if (m_mips.empty()) {
         return true;
     }
-    const std::array<Math::Vector3UVE, 8U> corners{{
+    const std::array<Math::Vector3, 8U> corners{{
         {worldBounds.min.x, worldBounds.min.y, worldBounds.min.z},
         {worldBounds.max.x, worldBounds.min.y, worldBounds.min.z},
         {worldBounds.min.x, worldBounds.max.y, worldBounds.min.z},
@@ -80,7 +80,7 @@ bool HiZDepthPyramidUVE::TestWorldAabbVisibleUVE(const Math::AabbUVE& worldBound
     float maxV = 0.0F;
     float nearestDepth01 = 1.0F;
 
-    for (const Math::Vector3UVE& c : corners) {
+    for (const Math::Vector3& c : corners) {
         const float cx = prevViewProjection.m[0][0] * c.x + prevViewProjection.m[0][1] * c.y +
                          prevViewProjection.m[0][2] * c.z + prevViewProjection.m[0][3];
         const float cy = prevViewProjection.m[1][0] * c.x + prevViewProjection.m[1][1] * c.y +
@@ -96,7 +96,7 @@ bool HiZDepthPyramidUVE::TestWorldAabbVisibleUVE(const Math::AabbUVE& worldBound
         const float invW = 1.0F / cw;
         const float u = cx * invW * 0.5F + 0.5F;
         const float v = cy * invW * 0.5F + 0.5F;
-        // Matrix4x4UVE::PerspectiveUVE and OrthographicUVE already map [near, far] -> [0, 1].
+        // Matrix4x4::Perspective and Orthographic already map [near, far] -> [0, 1].
         const float depth01 = cz * invW;
         if (depth01 <= 0.0F) {
             return true;
@@ -122,7 +122,7 @@ bool HiZDepthPyramidUVE::TestWorldAabbVisibleUVE(const Math::AabbUVE& worldBound
     const std::uint32_t desiredMip =
         spanPx <= 1.0F ? 0U : static_cast<std::uint32_t>(std::ceil(std::log2(spanPx)));
     const std::uint32_t mipIndex = std::min(desiredMip, static_cast<std::uint32_t>(m_mips.size() - 1U));
-    const MipLevelUVE& mip = m_mips[mipIndex];
+    const MipLevel& mip = m_mips[mipIndex];
 
     const std::uint32_t x0 = std::min(static_cast<std::uint32_t>(minU * static_cast<float>(mip.width)), mip.width - 1U);
     const std::uint32_t x1 = std::min(static_cast<std::uint32_t>(maxU * static_cast<float>(mip.width)), mip.width - 1U);

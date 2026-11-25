@@ -6,17 +6,17 @@
 
 namespace UVE::Editor {
 
-class EditorUVE;
+class Editor;
 
 /// One editor setting: its description, and how to read it from and apply it to a live editor.
 /// Loading, saving and the preferences window all go through these, so a setting is wired up in
 /// exactly one place (editor_settings_uve.cpp).
-struct EditorSettingBindingUVE final {
-    Config::SettingDescriptorUVE descriptor;
+struct EditorSettingBinding final {
+    Config::SettingDescriptor descriptor;
     /// The value the editor is using now.
-    Config::SettingValueUVE (*get)(const EditorUVE& editor) = nullptr;
+    Config::SettingValue (*get)(const Editor& editor) = nullptr;
     /// Applies `value`, which is already legal for `descriptor`. False if the editor refused it.
-    bool (*set)(EditorUVE& editor, const Config::SettingValueUVE& value) = nullptr;
+    bool (*set)(Editor& editor, const Config::SettingValue& value) = nullptr;
 };
 
 } // namespace UVE::Editor

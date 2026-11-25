@@ -23,18 +23,18 @@ namespace UVE::Editor {
 // ---------------------------------------------------------------------------
 // 1. Content Browser Asset Dependency Index (forward & reverse references)
 // ---------------------------------------------------------------------------
-class EditorAssetDependencyIndexUVE final {
+class EditorAssetDependencyIndex final {
 public:
     /// Scans `projectRoot` for project assets (`.uvscene`, `.uvmaterial`, `.uvprefab`,
     /// `.uvmatgraph`, `.uvanim`, `.uvfx`, `.json`) and indexes forward + reverse references.
-    void RebuildFromProjectUVE(const std::filesystem::path& projectRoot);
+    void RebuildFromProject(const std::filesystem::path& projectRoot);
 
-    void RegisterEdgeUVE(const std::string& fromAsset, const std::string& toAsset);
-    void ClearUVE() noexcept;
+    void RegisterEdge(const std::string& fromAsset, const std::string& toAsset);
+    void Clear() noexcept;
 
-    [[nodiscard]] std::vector<std::string> GetDependenciesUVE(const std::string& assetPath) const;
-    [[nodiscard]] std::vector<std::string> GetReferencersUVE(const std::string& assetPath) const;
-    [[nodiscard]] std::vector<std::string> FindUnusedAssetsUVE(
+    [[nodiscard]] std::vector<std::string> GetDependencies(const std::string& assetPath) const;
+    [[nodiscard]] std::vector<std::string> GetReferencers(const std::string& assetPath) const;
+    [[nodiscard]] std::vector<std::string> FindUnusedAssets(
         const std::vector<std::string>& allAssets) const;
 
 private:
@@ -45,7 +45,7 @@ private:
 // ---------------------------------------------------------------------------
 // 2. Multi-Scene / Additive Sub-Scene Editing Session
 // ---------------------------------------------------------------------------
-struct EditorSubSceneEntryUVE final {
+struct EditorSubSceneEntry final {
     std::string scenePath;
     bool loaded = true;
     bool visible = true;
@@ -53,56 +53,56 @@ struct EditorSubSceneEntryUVE final {
     bool activeForEdit = false;
 };
 
-class EditorMultiSceneSessionUVE final {
+class EditorMultiSceneSession final {
 public:
-    void SetPrimarySceneUVE(std::string scenePath);
-    [[nodiscard]] const std::string& PrimarySceneUVE() const noexcept { return m_primaryScene; }
+    void SetPrimaryScene(std::string scenePath);
+    [[nodiscard]] const std::string& PrimaryScene() const noexcept { return m_primaryScene; }
 
-    bool AddSubSceneUVE(std::string scenePath);
-    bool RemoveSubSceneUVE(std::string_view scenePath);
-    bool SetSubSceneLoadedUVE(std::string_view scenePath, bool loaded);
-    bool SetSubSceneVisibleUVE(std::string_view scenePath, bool visible);
-    bool SetActiveEditSceneUVE(std::string_view scenePath);
+    bool AddSubScene(std::string scenePath);
+    bool RemoveSubScene(std::string_view scenePath);
+    bool SetSubSceneLoaded(std::string_view scenePath, bool loaded);
+    bool SetSubSceneVisible(std::string_view scenePath, bool visible);
+    bool SetActiveEditScene(std::string_view scenePath);
 
-    [[nodiscard]] const std::string& ActiveEditSceneUVE() const noexcept { return m_activeScene; }
-    [[nodiscard]] const std::vector<EditorSubSceneEntryUVE>& SubScenesUVE() const noexcept {
+    [[nodiscard]] const std::string& ActiveEditScene() const noexcept { return m_activeScene; }
+    [[nodiscard]] const std::vector<EditorSubSceneEntry>& SubScenes() const noexcept {
         return m_subScenes;
     }
 
 private:
     std::string m_primaryScene;
     std::string m_activeScene;
-    std::vector<EditorSubSceneEntryUVE> m_subScenes;
+    std::vector<EditorSubSceneEntry> m_subScenes;
 };
 
 // ---------------------------------------------------------------------------
 // 3. Prefab Override Diff / Apply / Revert Workflow
 // ---------------------------------------------------------------------------
-struct EditorPrefabPropertyDiffUVE final {
+struct EditorPrefabPropertyDiff final {
     std::string propertyName;
     std::string prefabValue;
     std::string instanceValue;
 };
 
-struct EditorPrefabTransformSnapshotUVE final {
+struct EditorPrefabTransformSnapshot final {
     std::string name;
-    Scene::TransformComponentUVE transform{};
+    Scene::TransformComponent transform{};
 };
 
-[[nodiscard]] std::vector<EditorPrefabPropertyDiffUVE> DiffPrefabInstanceUVE(
-    const EditorPrefabTransformSnapshotUVE& prefabSource,
-    const EditorPrefabTransformSnapshotUVE& liveInstance);
+[[nodiscard]] std::vector<EditorPrefabPropertyDiff> DiffPrefabInstance(
+    const EditorPrefabTransformSnapshot& prefabSource,
+    const EditorPrefabTransformSnapshot& liveInstance);
 
-void ApplyInstanceOverridesToPrefabUVE(const EditorPrefabTransformSnapshotUVE& liveInstance,
-                                       EditorPrefabTransformSnapshotUVE& prefabSource);
+void ApplyInstanceOverridesToPrefab(const EditorPrefabTransformSnapshot& liveInstance,
+                                       EditorPrefabTransformSnapshot& prefabSource);
 
-void RevertInstanceToPrefabUVE(const EditorPrefabTransformSnapshotUVE& prefabSource,
-                               EditorPrefabTransformSnapshotUVE& liveInstance);
+void RevertInstanceToPrefab(const EditorPrefabTransformSnapshot& prefabSource,
+                               EditorPrefabTransformSnapshot& liveInstance);
 
 // ---------------------------------------------------------------------------
 // 4. GPU Profiler, Render-Graph Pass & Memory Breakdown Snapshot
 // ---------------------------------------------------------------------------
-struct EditorGpuPassTimingUVE final {
+struct EditorGpuPassTiming final {
     std::string passName;
     float gpuMs = 0.0F;
     std::uint32_t drawCalls = 0U;
@@ -111,26 +111,26 @@ struct EditorGpuPassTimingUVE final {
     std::vector<std::string> writes;
 };
 
-struct EditorMemorySubsystemUVE final {
+struct EditorMemorySubsystem final {
     std::string subsystemName;
     std::uint64_t allocatedBytes = 0U;
     std::uint32_t resourceCount = 0U;
 };
 
-struct EditorFrameDebugSnapshotUVE final {
+struct EditorFrameDebugSnapshot final {
     std::uint64_t frameIndex = 0U;
     float totalCpuMs = 0.0F;
     float totalGpuMs = 0.0F;
-    std::vector<EditorGpuPassTimingUVE> gpuPasses;
-    std::vector<EditorMemorySubsystemUVE> memorySubsystems;
+    std::vector<EditorGpuPassTiming> gpuPasses;
+    std::vector<EditorMemorySubsystem> memorySubsystems;
 
-    [[nodiscard]] std::uint64_t TotalTrackedMemoryBytesUVE() const noexcept;
+    [[nodiscard]] std::uint64_t TotalTrackedMemoryBytes() const noexcept;
 };
 
 // ---------------------------------------------------------------------------
 // 5. Terrain Sculpting & Splat Painting Brush Tool
 // ---------------------------------------------------------------------------
-enum class EditorTerrainBrushModeUVE : std::uint8_t {
+enum class EditorTerrainBrushMode : std::uint8_t {
     Raise = 0,
     Lower = 1,
     Smooth = 2,
@@ -138,22 +138,22 @@ enum class EditorTerrainBrushModeUVE : std::uint8_t {
     PaintSplat = 4,
 };
 
-struct EditorTerrainBrushSettingsUVE final {
-    EditorTerrainBrushModeUVE mode = EditorTerrainBrushModeUVE::Raise;
+struct EditorTerrainBrushSettings final {
+    EditorTerrainBrushMode mode = EditorTerrainBrushMode::Raise;
     float radiusMetres = 4.0F;
     float strength = 1.0F;
     float flattenTargetHeight = 0.5F;
     std::uint8_t splatLayerIndex = 0U;
 };
 
-void ApplyEditorTerrainBrushStrokeUVE(Scene::Terrain3DComponentUVE& terrain, float localX,
-                                      float localZ, const EditorTerrainBrushSettingsUVE& brush,
+void ApplyEditorTerrainBrushStroke(Scene::Terrain3DComponent& terrain, float localX,
+                                      float localZ, const EditorTerrainBrushSettings& brush,
                                       float deltaTimeSeconds);
 
 // ---------------------------------------------------------------------------
 // 6. Git Source-Control Integration
 // ---------------------------------------------------------------------------
-enum class EditorVcsFileStatusUVE : std::uint8_t {
+enum class EditorVcsFileStatus : std::uint8_t {
     Clean = 0,
     Modified = 1,
     Added = 2,
@@ -162,99 +162,99 @@ enum class EditorVcsFileStatusUVE : std::uint8_t {
     Conflicted = 5,
 };
 
-class EditorGitVcsProviderUVE final {
+class EditorGitVcsProvider final {
 public:
     /// Parses `git status --porcelain` output into per-path VCS status badges.
-    void ParsePorcelainOutputUVE(std::string_view porcelainText);
+    void ParsePorcelainOutput(std::string_view porcelainText);
 
-    [[nodiscard]] EditorVcsFileStatusUVE GetFileStatusUVE(const std::string& relativePath) const noexcept;
-    [[nodiscard]] std::size_t TrackedChangeCountUVE() const noexcept { return m_statuses.size(); }
-    [[nodiscard]] const std::map<std::string, EditorVcsFileStatusUVE>& AllStatusesUVE() const noexcept {
+    [[nodiscard]] EditorVcsFileStatus GetFileStatus(const std::string& relativePath) const noexcept;
+    [[nodiscard]] std::size_t TrackedChangeCount() const noexcept { return m_statuses.size(); }
+    [[nodiscard]] const std::map<std::string, EditorVcsFileStatus>& AllStatuses() const noexcept {
         return m_statuses;
     }
 
 private:
-    std::map<std::string, EditorVcsFileStatusUVE> m_statuses;
+    std::map<std::string, EditorVcsFileStatus> m_statuses;
 };
 
 // ---------------------------------------------------------------------------
 // 7. Find-in-Project Search Service
 // ---------------------------------------------------------------------------
-struct EditorProjectSearchHitUVE final {
+struct EditorProjectSearchHit final {
     std::string relativePath;
     std::uint32_t lineNumber = 0U;
     std::string previewLine;
 };
 
-[[nodiscard]] std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(
+[[nodiscard]] std::vector<EditorProjectSearchHit> SearchProjectContent(
     const std::filesystem::path& projectRoot, std::string_view query,
     std::size_t maxResults = 200U);
 
 // ---------------------------------------------------------------------------
 // 8. Editor Plugin / Extension Registry API
 // ---------------------------------------------------------------------------
-struct EditorMenuExtensionUVE final {
+struct EditorMenuExtension final {
     std::string menuPath;
     std::string label;
     std::function<void()> onInvoke;
 };
 
-struct EditorPanelExtensionUVE final {
+struct EditorPanelExtension final {
     std::string panelId;
     std::string title;
 };
 
-struct EditorImporterExtensionUVE final {
+struct EditorImporterExtension final {
     std::string fileExtension;
     std::string importerName;
     std::function<bool(const std::filesystem::path&)> onImport;
 };
 
-class EditorExtensionRegistryUVE final {
+class EditorExtensionRegistry final {
 public:
-    void RegisterMenuItemUVE(EditorMenuExtensionUVE item);
-    void RegisterPanelUVE(EditorPanelExtensionUVE panel);
-    void RegisterImporterUVE(EditorImporterExtensionUVE importer);
+    void RegisterMenuItem(EditorMenuExtension item);
+    void RegisterPanel(EditorPanelExtension panel);
+    void RegisterImporter(EditorImporterExtension importer);
 
-    [[nodiscard]] bool InvokeMenuItemUVE(std::string_view menuPath, std::string_view label) const;
-    [[nodiscard]] bool TryImportFileUVE(const std::filesystem::path& filePath) const;
+    [[nodiscard]] bool InvokeMenuItem(std::string_view menuPath, std::string_view label) const;
+    [[nodiscard]] bool TryImportFile(const std::filesystem::path& filePath) const;
 
-    [[nodiscard]] const std::vector<EditorMenuExtensionUVE>& MenuItemsUVE() const noexcept {
+    [[nodiscard]] const std::vector<EditorMenuExtension>& MenuItems() const noexcept {
         return m_menuItems;
     }
-    [[nodiscard]] const std::vector<EditorPanelExtensionUVE>& PanelsUVE() const noexcept {
+    [[nodiscard]] const std::vector<EditorPanelExtension>& Panels() const noexcept {
         return m_panels;
     }
-    [[nodiscard]] const std::vector<EditorImporterExtensionUVE>& ImportersUVE() const noexcept {
+    [[nodiscard]] const std::vector<EditorImporterExtension>& Importers() const noexcept {
         return m_importers;
     }
 
 private:
-    std::vector<EditorMenuExtensionUVE> m_menuItems;
-    std::vector<EditorPanelExtensionUVE> m_panels;
-    std::vector<EditorImporterExtensionUVE> m_importers;
+    std::vector<EditorMenuExtension> m_menuItems;
+    std::vector<EditorPanelExtension> m_panels;
+    std::vector<EditorImporterExtension> m_importers;
 };
 
 // ---------------------------------------------------------------------------
 // 9. Automated In-Editor Project & Scene Validator
 // ---------------------------------------------------------------------------
-enum class EditorValidationSeverityUVE : std::uint8_t {
+enum class EditorValidationSeverity : std::uint8_t {
     Info = 0,
     Warning = 1,
     Error = 2,
 };
 
-struct EditorValidationIssueUVE final {
-    EditorValidationSeverityUVE severity = EditorValidationSeverityUVE::Warning;
+struct EditorValidationIssue final {
+    EditorValidationSeverity severity = EditorValidationSeverity::Warning;
     std::string category;
     std::string message;
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::string assetPath;
 };
 
-[[nodiscard]] std::vector<EditorValidationIssueUVE> RunEditorSceneValidationUVE(
-    Scene::IEntityManagerUVE& entityManager,
-    const EditorAssetDependencyIndexUVE* dependencyIndex = nullptr,
+[[nodiscard]] std::vector<EditorValidationIssue> RunEditorSceneValidation(
+    Scene::IEntityManager& entityManager,
+    const EditorAssetDependencyIndex* dependencyIndex = nullptr,
     const std::vector<std::string>& projectAssets = {});
 
 } // namespace UVE::Editor

@@ -12,59 +12,59 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] int RedAtUVE(const TextureAssetUVE& texture, const std::uint32_t x, const std::uint32_t y) {
+[[nodiscard]] int RedAt(const TextureAsset& texture, const std::uint32_t x, const std::uint32_t y) {
     return static_cast<int>(texture.pixels[(static_cast<std::size_t>(y) * texture.width + x) * 4U]);
 }
 
-TEST(TextureProceduralUVETest, TheSameSettingsGiveTheSamePixelsAndAnotherSeedOthers) {
-    NoiseTextureSettingsUVE settings;
+TEST(TextureProceduralTest, TheSameSettingsGiveTheSamePixelsAndAnotherSeedOthers) {
+    NoiseTextureSettings settings;
     settings.width = 64U;
     settings.height = 64U;
-    TextureAssetUVE a;
-    TextureAssetUVE b;
-    ASSERT_TRUE(GenerateNoiseTextureUVE(settings, a));
-    ASSERT_TRUE(GenerateNoiseTextureUVE(settings, b));
+    TextureAsset a;
+    TextureAsset b;
+    ASSERT_TRUE(GenerateNoiseTexture(settings, a));
+    ASSERT_TRUE(GenerateNoiseTexture(settings, b));
     EXPECT_EQ(a.pixels, b.pixels);
     EXPECT_EQ(a.mipLevels.size(), 6U);
     settings.seed = 2U;
-    TextureAssetUVE c;
-    ASSERT_TRUE(GenerateNoiseTextureUVE(settings, c));
+    TextureAsset c;
+    ASSERT_TRUE(GenerateNoiseTexture(settings, c));
     EXPECT_NE(a.pixels, c.pixels);
 }
 
-TEST(TextureProceduralUVETest, NoiseTilesWithoutASeam) {
-    for (const NoiseTextureTypeUVE type : {NoiseTextureTypeUVE::Perlin, NoiseTextureTypeUVE::Value, NoiseTextureTypeUVE::Cellular}) {
-        NoiseTextureSettingsUVE settings;
+TEST(TextureProceduralTest, NoiseTilesWithoutASeam) {
+    for (const NoiseTextureType type : {NoiseTextureType::Perlin, NoiseTextureType::Value, NoiseTextureType::Cellular}) {
+        NoiseTextureSettings settings;
         settings.width = 128U;
         settings.height = 128U;
         settings.type = type;
-        TextureAssetUVE noise;
-        ASSERT_TRUE(GenerateNoiseTextureUVE(settings, noise));
+        TextureAsset noise;
+        ASSERT_TRUE(GenerateNoiseTexture(settings, noise));
         // Across the wrap, neighbours differ no more than neighbours inside do.
         int worstInside = 0;
         int worstAcross = 0;
         for (std::uint32_t y = 0U; y < noise.height; ++y) {
             for (std::uint32_t x = 1U; x < noise.width; ++x) {
-                worstInside = std::max(worstInside, std::abs(RedAtUVE(noise, x, y) - RedAtUVE(noise, x - 1U, y)));
+                worstInside = std::max(worstInside, std::abs(RedAt(noise, x, y) - RedAt(noise, x - 1U, y)));
             }
-            worstAcross = std::max(worstAcross, std::abs(RedAtUVE(noise, 0U, y) - RedAtUVE(noise, noise.width - 1U, y)));
+            worstAcross = std::max(worstAcross, std::abs(RedAt(noise, 0U, y) - RedAt(noise, noise.width - 1U, y)));
         }
         EXPECT_LE(worstAcross, worstInside + 2) << static_cast<int>(type);
     }
 }
 
-TEST(TextureProceduralUVETest, AGradientRunsFromItsFirstColourToItsSecond) {
-    GradientTextureSettingsUVE settings;
+TEST(TextureProceduralTest, AGradientRunsFromItsFirstColourToItsSecond) {
+    GradientTextureSettings settings;
     settings.width = 100U;
     settings.height = 4U;
-    TextureAssetUVE gradient;
-    ASSERT_TRUE(GenerateGradientTextureUVE(settings, gradient));
-    EXPECT_LT(RedAtUVE(gradient, 0U, 0U), 5);
-    EXPECT_GT(RedAtUVE(gradient, 99U, 0U), 250);
-    NoiseTextureSettingsUVE tooBig;
+    TextureAsset gradient;
+    ASSERT_TRUE(GenerateGradientTexture(settings, gradient));
+    EXPECT_LT(RedAt(gradient, 0U, 0U), 5);
+    EXPECT_GT(RedAt(gradient, 99U, 0U), 250);
+    NoiseTextureSettings tooBig;
     tooBig.width = 5000U;
-    TextureAssetUVE refused;
-    EXPECT_FALSE(GenerateNoiseTextureUVE(tooBig, refused));
+    TextureAsset refused;
+    EXPECT_FALSE(GenerateNoiseTexture(tooBig, refused));
 }
 
 } // namespace

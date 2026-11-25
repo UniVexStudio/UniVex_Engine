@@ -15,7 +15,7 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] std::uint32_t NextHashUVE(std::uint32_t x) noexcept {
+[[nodiscard]] std::uint32_t NextHash(std::uint32_t x) noexcept {
     x ^= x >> 16U;
     x *= 0x7FEB352DU;
     x ^= x >> 15U;
@@ -24,12 +24,12 @@ namespace {
     return x;
 }
 
-[[nodiscard]] float UnitSignedUVE(const std::uint32_t h) noexcept {
+[[nodiscard]] float UnitSigned(const std::uint32_t h) noexcept {
     return (static_cast<float>(h & 0x00FFFFFFU) / static_cast<float>(0x00800000U)) - 1.0F;
 }
 
-void BuildBoxChunkGeometryUVE(const Math::Vector3UVE& halfExtents,
-                              std::vector<Math::Vector3UVE>& outVerts,
+void BuildBoxChunkGeometry(const Math::Vector3& halfExtents,
+                              std::vector<Math::Vector3>& outVerts,
                               std::vector<std::uint32_t>& outIndices) {
     const float hx = halfExtents.x;
     const float hy = halfExtents.y;
@@ -50,19 +50,19 @@ void BuildBoxChunkGeometryUVE(const Math::Vector3UVE& halfExtents,
 
 } // namespace
 
-std::vector<DestructibleChunkUVE> FractureBoundsIntoChunksUVE(
-    const Math::AabbUVE& localBounds, const std::uint32_t chunkCount, const float totalMass,
-    const std::uint32_t seed, const Math::Vector3UVE& impactPointLocal,
+std::vector<DestructibleChunk> FractureBoundsIntoChunks(
+    const Math::Aabb& localBounds, const std::uint32_t chunkCount, const float totalMass,
+    const std::uint32_t seed, const Math::Vector3& impactPointLocal,
     const float explosionImpulse) {
     const std::uint32_t targetCount = std::clamp(chunkCount, 2U, 64U);
-    const Math::Vector3UVE fullSize = localBounds.max - localBounds.min;
+    const Math::Vector3 fullSize = localBounds.max - localBounds.min;
     if (fullSize.x <= 1.0e-5F || fullSize.y <= 1.0e-5F || fullSize.z <= 1.0e-5F) {
         return {};
     }
 
     // Deterministic binary space partitioning along the longest axis of each box cell until we
     // reach `targetCount` airtight convex cells conserving 100% of total bounds volume.
-    std::vector<Math::AabbUVE> cells;
+    std::vector<Math::Aabb> cells;
     cells.reserve(targetCount);
     cells.push_back(localBounds);
 
@@ -71,20 +71,20 @@ std::vector<DestructibleChunkUVE> FractureBoundsIntoChunksUVE(
         std::size_t bestIdx = 0U;
         float bestVol = -1.0F;
         for (std::size_t i = 0U; i < cells.size(); ++i) {
-            const Math::Vector3UVE s = cells[i].max - cells[i].min;
+            const Math::Vector3 s = cells[i].max - cells[i].min;
             const float vol = s.x * s.y * s.z;
             if (vol > bestVol) {
                 bestVol = vol;
                 bestIdx = i;
             }
         }
-        const Math::AabbUVE box = cells[bestIdx];
-        const Math::Vector3UVE s = box.max - box.min;
-        rng = NextHashUVE(rng + static_cast<std::uint32_t>(cells.size()));
-        const float splitT = 0.35F + 0.30F * (0.5F + 0.5F * UnitSignedUVE(rng));
+        const Math::Aabb box = cells[bestIdx];
+        const Math::Vector3 s = box.max - box.min;
+        rng = NextHash(rng + static_cast<std::uint32_t>(cells.size()));
+        const float splitT = 0.35F + 0.30F * (0.5F + 0.5F * UnitSigned(rng));
 
-        Math::AabbUVE left = box;
-        Math::AabbUVE right = box;
+        Math::Aabb left = box;
+        Math::Aabb right = box;
         if (s.x >= s.y && s.x >= s.z) {
             const float mid = box.min.x + s.x * splitT;
             left.max.x = mid;
@@ -104,51 +104,51 @@ std::vector<DestructibleChunkUVE> FractureBoundsIntoChunksUVE(
 
     const float totalVolume = fullSize.x * fullSize.y * fullSize.z;
     const float safeMass = std::max(totalMass, 0.1F);
-    std::vector<DestructibleChunkUVE> chunks;
+    std::vector<DestructibleChunk> chunks;
     chunks.reserve(cells.size());
 
     for (std::size_t i = 0U; i < cells.size(); ++i) {
-        const Math::AabbUVE& cell = cells[i];
-        const Math::Vector3UVE size = cell.max - cell.min;
+        const Math::Aabb& cell = cells[i];
+        const Math::Vector3 size = cell.max - cell.min;
         const float vol = std::max(size.x * size.y * size.z, 1.0e-6F);
-        DestructibleChunkUVE chunk{};
+        DestructibleChunk chunk{};
         chunk.localCentroid = (cell.min + cell.max) * 0.5F;
         chunk.halfExtents = size * 0.5F;
         chunk.mass = std::max(safeMass * (vol / totalVolume), 0.05F);
-        BuildBoxChunkGeometryUVE(chunk.halfExtents, chunk.vertices, chunk.indices);
+        BuildBoxChunkGeometry(chunk.halfExtents, chunk.vertices, chunk.indices);
 
-        Math::Vector3UVE radial = chunk.localCentroid - impactPointLocal;
-        const float radialLen = Math::LengthUVE(radial);
+        Math::Vector3 radial = chunk.localCentroid - impactPointLocal;
+        const float radialLen = Math::Length(radial);
         if (radialLen > 1.0e-4F) {
             radial = radial * (1.0F / radialLen);
         } else {
-            radial = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+            radial = Math::Vector3{0.0F, 1.0F, 0.0F};
         }
         const float speed = std::max(explosionImpulse, 0.0F) / std::sqrt(chunk.mass);
-        chunk.initialLinearVelocity = radial * speed + Math::Vector3UVE{0.0F, speed * 0.25F, 0.0F};
+        chunk.initialLinearVelocity = radial * speed + Math::Vector3{0.0F, speed * 0.25F, 0.0F};
 
-        const std::uint32_t h1 = NextHashUVE(seed ^ static_cast<std::uint32_t>(i * 31U + 1U));
-        const std::uint32_t h2 = NextHashUVE(h1 + 17U);
-        const std::uint32_t h3 = NextHashUVE(h2 + 29U);
-        chunk.initialAngularVelocity = Math::Vector3UVE{
-            UnitSignedUVE(h1) * 4.0F,
-            UnitSignedUVE(h2) * 4.0F,
-            UnitSignedUVE(h3) * 4.0F,
+        const std::uint32_t h1 = NextHash(seed ^ static_cast<std::uint32_t>(i * 31U + 1U));
+        const std::uint32_t h2 = NextHash(h1 + 17U);
+        const std::uint32_t h3 = NextHash(h2 + 29U);
+        chunk.initialAngularVelocity = Math::Vector3{
+            UnitSigned(h1) * 4.0F,
+            UnitSigned(h2) * 4.0F,
+            UnitSigned(h3) * 4.0F,
         };
         chunks.push_back(std::move(chunk));
     }
     return chunks;
 }
 
-bool ApplyDestructibleImpactUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                const float impulse, const Math::Vector3UVE& impactPointWorld,
-                                std::vector<EntityUVE>* const outDebrisEntities) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<Destructible3DComponentUVE>(entity) ||
+bool ApplyDestructibleImpact(IEntityManager& entityManager, const Entity entity,
+                                const float impulse, const Math::Vector3& impactPointWorld,
+                                std::vector<Entity>* const outDebrisEntities) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<Destructible3DComponent>(entity) ||
         !std::isfinite(impulse) || impulse <= 0.0F) {
         return false;
     }
-    auto& dest = entityManager.GetComponentUVE<Destructible3DComponentUVE>(entity);
+    auto& dest = entityManager.GetComponent<Destructible3DComponent>(entity);
     if (!dest.enabled || dest.fractured) {
         return false;
     }
@@ -157,41 +157,41 @@ bool ApplyDestructibleImpactUVE(IEntityManagerUVE& entityManager, const EntityUV
         return false;
     }
 
-    Math::Vector3UVE originWorld{0.0F, 0.0F, 0.0F};
-    if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
-        originWorld = entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).worldPosition;
-    } else if (entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
-        originWorld = entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition;
+    Math::Vector3 originWorld{0.0F, 0.0F, 0.0F};
+    if (entityManager.HasComponent<WorldTransformComponent>(entity)) {
+        originWorld = entityManager.GetComponent<WorldTransformComponent>(entity).worldPosition;
+    } else if (entityManager.HasComponent<TransformComponent>(entity)) {
+        originWorld = entityManager.GetComponent<TransformComponent>(entity).localPosition;
     }
 
-    const Math::Vector3UVE impactLocal = impactPointWorld - originWorld;
-    const auto chunks = FractureBoundsIntoChunksUVE(dest.localBounds, dest.chunkCount, dest.totalMass,
+    const Math::Vector3 impactLocal = impactPointWorld - originWorld;
+    const auto chunks = FractureBoundsIntoChunks(dest.localBounds, dest.chunkCount, dest.totalMass,
                                                     dest.fractureSeed, impactLocal, dest.explosionImpulse);
     dest.fractured = true;
-    if (entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
-        auto& vis = entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+    if (entityManager.HasComponent<VisibilityComponent>(entity)) {
+        auto& vis = entityManager.GetComponent<VisibilityComponent>(entity);
         vis.visible = false;
         vis.visibleInHierarchy = false;
     }
 
-    for (const DestructibleChunkUVE& chunk : chunks) {
-        const EntityUVE debrisEntity = entityManager.CreateEntityUVE();
-        TransformComponentUVE tr{};
+    for (const DestructibleChunk& chunk : chunks) {
+        const Entity debrisEntity = entityManager.CreateEntity();
+        TransformComponent tr{};
         tr.localPosition = originWorld + chunk.localCentroid;
-        entityManager.AddComponentUVE<TransformComponentUVE>(debrisEntity, tr);
-        WorldTransformComponentUVE wt{};
+        entityManager.AddComponent<TransformComponent>(debrisEntity, tr);
+        WorldTransformComponent wt{};
         wt.worldPosition = tr.localPosition;
         wt.dirty = false;
-        entityManager.AddComponentUVE<WorldTransformComponentUVE>(debrisEntity, wt);
+        entityManager.AddComponent<WorldTransformComponent>(debrisEntity, wt);
 
-        DestructibleDebrisComponentUVE debris{};
+        DestructibleDebrisComponent debris{};
         debris.sourceEntity = entity;
         debris.halfExtents = chunk.halfExtents;
         debris.linearVelocity = chunk.initialLinearVelocity;
         debris.angularVelocity = chunk.initialAngularVelocity;
         debris.mass = chunk.mass;
         debris.remainingLifetimeSeconds = std::max(dest.debrisLifetimeSeconds, 0.1F);
-        entityManager.AddComponentUVE<DestructibleDebrisComponentUVE>(debrisEntity, debris);
+        entityManager.AddComponent<DestructibleDebrisComponent>(debrisEntity, debris);
         if (outDebrisEntities != nullptr) {
             outDebrisEntities->push_back(debrisEntity);
         }
@@ -199,18 +199,18 @@ bool ApplyDestructibleImpactUVE(IEntityManagerUVE& entityManager, const EntityUV
     return true;
 }
 
-std::size_t UpdateDestructibleDebrisUVE(IEntityManagerUVE& entityManager,
-                                        const Math::Vector3UVE& gravity,
+std::size_t UpdateDestructibleDebris(IEntityManager& entityManager,
+                                        const Math::Vector3& gravity,
                                         const float deltaTimeSeconds) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
         return 0U;
     }
-    std::vector<EntityUVE> expired;
+    std::vector<Entity> expired;
     std::size_t aliveCount = 0U;
 
-    entityManager.ForEachUVE<DestructibleDebrisComponentUVE, TransformComponentUVE>(
-        [&](const EntityUVE entity, DestructibleDebrisComponentUVE& debris,
-            TransformComponentUVE& tr) {
+    entityManager.ForEach<DestructibleDebrisComponent, TransformComponent>(
+        [&](const Entity entity, DestructibleDebrisComponent& debris,
+            TransformComponent& tr) {
             debris.remainingLifetimeSeconds -= deltaTimeSeconds;
             if (debris.remainingLifetimeSeconds <= 0.0F) {
                 expired.push_back(entity);
@@ -218,26 +218,26 @@ std::size_t UpdateDestructibleDebrisUVE(IEntityManagerUVE& entityManager,
             }
             debris.linearVelocity = debris.linearVelocity + gravity * deltaTimeSeconds;
             tr.localPosition = tr.localPosition + debris.linearVelocity * deltaTimeSeconds;
-            const float angSpeed = Math::LengthUVE(debris.angularVelocity);
+            const float angSpeed = Math::Length(debris.angularVelocity);
             if (angSpeed > 1.0e-5F) {
-                const Math::Vector3UVE axis = debris.angularVelocity * (1.0F / angSpeed);
-                Math::QuaternionUVE dq{};
-                if (Math::TryMakeAxisAngleUVE(axis, angSpeed * deltaTimeSeconds, dq)) {
-                    Math::QuaternionUVE nextRot{};
-                    if (Math::TryNormalizeUVE(Math::MultiplyUVE(dq, tr.localRotation), nextRot)) {
+                const Math::Vector3 axis = debris.angularVelocity * (1.0F / angSpeed);
+                Math::Quaternion dq{};
+                if (Math::TryMakeAxisAngle(axis, angSpeed * deltaTimeSeconds, dq)) {
+                    Math::Quaternion nextRot{};
+                    if (Math::TryNormalize(Math::Multiply(dq, tr.localRotation), nextRot)) {
                         tr.localRotation = nextRot;
                     }
                 }
             }
-            if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).dirty = true;
+            if (entityManager.HasComponent<WorldTransformComponent>(entity)) {
+                entityManager.GetComponent<WorldTransformComponent>(entity).dirty = true;
             }
             ++aliveCount;
         });
 
-    for (const EntityUVE e : expired) {
-        if (entityManager.IsAliveUVE(e)) {
-            entityManager.DestroyEntityUVE(e);
+    for (const Entity e : expired) {
+        if (entityManager.IsAlive(e)) {
+            entityManager.DestroyEntity(e);
         }
     }
     return aliveCount;

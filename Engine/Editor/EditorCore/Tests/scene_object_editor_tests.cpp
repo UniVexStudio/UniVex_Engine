@@ -32,496 +32,496 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-[[nodiscard]] Core::EngineConfigUVE MakeSceneObjectEditorTestConfigUVE() {
-    Core::EngineConfigUVE config{};
-    config.headlessUVE = true;
+[[nodiscard]] Core::EngineConfig MakeSceneObjectEditorTestConfig() {
+    Core::EngineConfig config{};
+    config.headless = true;
     config.logFilePath = "uve_scene_object_editor_tests.log";
     config.settingsFilePath = "uve_scene_object_editor_tests_settings.json";
     config.assetDatabaseFilePath = "uve_scene_object_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_scene_object_editor_tests_saves";
     config.shaderCachePath = "uve_scene_object_editor_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
-    config.shaderSourceMountPrefixUVE = "shaders";
+    config.shaderSourceRealDirectory = ::UVE::Tests::RepositoryRoot() / "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceMountPrefix = "shaders";
     return config;
 }
 
-TEST(SceneObjectEditorUVETest, CentralizedRegistryCreationUVE_AttachesExpectedAuthoredComponents) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, CentralizedRegistryCreation_AttachesExpectedAuthoredComponents) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
 
-        const Scene::EntityUVE camera =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
-        ASSERT_NE(camera, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CameraComponentUVE>(camera));
+        const Scene::Entity camera =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Camera3D);
+        ASSERT_NE(camera, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::CameraComponent>(camera));
 
-        const Scene::EntityUVE mesh =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::MeshInstance3D);
-        ASSERT_NE(mesh, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::MeshComponentUVE>(mesh));
+        const Scene::Entity mesh =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::MeshInstance3D);
+        ASSERT_NE(mesh, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::MeshComponent>(mesh));
 
-        const Scene::EntityUVE character =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Character3D);
-        ASSERT_NE(character, Scene::kInvalidEntityUVE);
+        const Scene::Entity character =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Character3D);
+        ASSERT_NE(character, Scene::kInvalidEntity);
         // A Character3D is a controller and no shape: the collider is the author's to add, so
         // adding one is the body's first shape instead of a second one in the same place.
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(character));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(character));
+        EXPECT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(character));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::CharacterControllerComponent>(character));
         // The controller owns all of its motion: no rigid body for gravity to fight over.
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(character));
+        EXPECT_FALSE(entityManager.HasComponent<Scene::Rigid3DComponent>(character));
 
-        const Scene::EntityUVE player =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Player3D);
-        ASSERT_NE(player, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PlayerComponentUVE>(player));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(player));
-        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, player), Scene::Objects::SceneObjectKindUVE::Player3D);
+        const Scene::Entity player =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Player3D);
+        ASSERT_NE(player, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::PlayerComponent>(player));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::CharacterControllerComponent>(player));
+        EXPECT_EQ(Scene::ResolveSceneObjectKind(entityManager, player), Scene::Objects::SceneObjectKind::Player3D);
 
-        const Scene::EntityUVE animationPlayer =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationSequencer);
-        ASSERT_NE(animationPlayer, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(animationPlayer));
+        const Scene::Entity animationPlayer =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::AnimationSequencer);
+        ASSERT_NE(animationPlayer, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::AnimationSequencerComponent>(animationPlayer));
 
-        const Scene::EntityUVE audio =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AudioSource3D);
-        ASSERT_NE(audio, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(audio));
+        const Scene::Entity audio =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::AudioSource3D);
+        ASSERT_NE(audio, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::AudioSourceComponent>(audio));
 
-        const Scene::EntityUVE particles =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D);
-        ASSERT_NE(particles, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(particles));
+        const Scene::Entity particles =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::ParticleEmitter3D);
+        ASSERT_NE(particles, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::ParticleEmitterComponent>(particles));
 
-        const Scene::EntityUVE script =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Script);
-        ASSERT_NE(script, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(script));
+        const Scene::Entity script =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Script);
+        ASSERT_NE(script, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::ScriptComponent>(script));
 
-        const Scene::EntityUVE rigidBody =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Rigid3D);
-        ASSERT_NE(rigidBody, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(rigidBody));
+        const Scene::Entity rigidBody =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Rigid3D);
+        ASSERT_NE(rigidBody, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::Rigid3DComponent>(rigidBody));
 
-        const Scene::EntityUVE animationTree =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::AnimationGraph);
-        ASSERT_NE(animationTree, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(animationTree));
+        const Scene::Entity animationTree =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::AnimationGraph);
+        ASSERT_NE(animationTree, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::AnimationGraphComponent>(animationTree));
         // Both animation objects are pure Objects: no transform of their own.
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationTree));
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(animationPlayer));
-        editor.ShutdownUVE();
+        EXPECT_FALSE(entityManager.HasComponent<Scene::TransformComponent>(animationTree));
+        EXPECT_FALSE(entityManager.HasComponent<Scene::TransformComponent>(animationPlayer));
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, CentralizedCreationUVE_CreatesEveryExpandedObjectKind) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, CentralizedCreation_CreatesEveryExpandedObjectKind) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_expanded_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        constexpr std::array<Scene::Objects::SceneObjectKindUVE, 27U> expandedKinds{
-            Scene::Objects::SceneObjectKindUVE::Area3D,
-            Scene::Objects::SceneObjectKindUVE::RayCast3D,
-            Scene::Objects::SceneObjectKindUVE::Static3D,
-            Scene::Objects::SceneObjectKindUVE::Kinematic3D,
-            Scene::Objects::SceneObjectKindUVE::NavMeshVolume3D,
-            Scene::Objects::SceneObjectKindUVE::NavSeeker3D,
-            Scene::Objects::SceneObjectKindUVE::Skeleton3D,
-            Scene::Objects::SceneObjectKindUVE::BoneAttachment3D,
-            Scene::Objects::SceneObjectKindUVE::SpringArm3D,
-            Scene::Objects::SceneObjectKindUVE::Marker3D,
-            Scene::Objects::SceneObjectKindUVE::Hitbox3D,
-            Scene::Objects::SceneObjectKindUVE::Hurtbox3D,
-            Scene::Objects::SceneObjectKindUVE::Projectile3D,
-            Scene::Objects::SceneObjectKindUVE::InteractionArea3D,
-            Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D,
-            Scene::Objects::SceneObjectKindUVE::Decal3D,
-            Scene::Objects::SceneObjectKindUVE::LODGroup3D,
-            Scene::Objects::SceneObjectKindUVE::Occluder3D,
-            Scene::Objects::SceneObjectKindUVE::VisibilityRegion3D,
-            Scene::Objects::SceneObjectKindUVE::SpawnPoint3D,
-            Scene::Objects::SceneObjectKindUVE::LevelStreamer3D,
-            Scene::Objects::SceneObjectKindUVE::WorldPartition3D,
-            Scene::Objects::SceneObjectKindUVE::Canvas,
-            Scene::Objects::SceneObjectKindUVE::UIText,
-            Scene::Objects::SceneObjectKindUVE::UIImage,
-            Scene::Objects::SceneObjectKindUVE::UIButton,
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_expanded_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        constexpr std::array<Scene::Objects::SceneObjectKind, 27U> expandedKinds{
+            Scene::Objects::SceneObjectKind::Area3D,
+            Scene::Objects::SceneObjectKind::RayCast3D,
+            Scene::Objects::SceneObjectKind::Static3D,
+            Scene::Objects::SceneObjectKind::Kinematic3D,
+            Scene::Objects::SceneObjectKind::NavMeshVolume3D,
+            Scene::Objects::SceneObjectKind::NavSeeker3D,
+            Scene::Objects::SceneObjectKind::Skeleton3D,
+            Scene::Objects::SceneObjectKind::BoneAttachment3D,
+            Scene::Objects::SceneObjectKind::SpringArm3D,
+            Scene::Objects::SceneObjectKind::Marker3D,
+            Scene::Objects::SceneObjectKind::Hitbox3D,
+            Scene::Objects::SceneObjectKind::Hurtbox3D,
+            Scene::Objects::SceneObjectKind::Projectile3D,
+            Scene::Objects::SceneObjectKind::InteractionArea3D,
+            Scene::Objects::SceneObjectKind::ReflectionProbe3D,
+            Scene::Objects::SceneObjectKind::Decal3D,
+            Scene::Objects::SceneObjectKind::LODGroup3D,
+            Scene::Objects::SceneObjectKind::Occluder3D,
+            Scene::Objects::SceneObjectKind::VisibilityRegion3D,
+            Scene::Objects::SceneObjectKind::SpawnPoint3D,
+            Scene::Objects::SceneObjectKind::LevelStreamer3D,
+            Scene::Objects::SceneObjectKind::WorldPartition3D,
+            Scene::Objects::SceneObjectKind::Canvas,
+            Scene::Objects::SceneObjectKind::UIText,
+            Scene::Objects::SceneObjectKind::UIImage,
+            Scene::Objects::SceneObjectKind::UIButton,
         };
-        for (const Scene::Objects::SceneObjectKindUVE kind : expandedKinds) {
-            const Scene::EntityUVE entity = editor.CreateDocumentSceneObjectUVE(kind);
-            ASSERT_NE(entity, Scene::kInvalidEntityUVE);
-            EXPECT_TRUE(entityManager.IsAliveUVE(entity));
-            EXPECT_TRUE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity));
-            EXPECT_TRUE(entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity));
-            EXPECT_GE(entityManager.GetComponentTypesUVE(entity).size(), 4U);
+        for (const Scene::Objects::SceneObjectKind kind : expandedKinds) {
+            const Scene::Entity entity = editor.CreateDocumentSceneObject(kind);
+            ASSERT_NE(entity, Scene::kInvalidEntity);
+            EXPECT_TRUE(entityManager.IsAlive(entity));
+            EXPECT_TRUE(entityManager.HasComponent<Scene::TransformComponent>(entity));
+            EXPECT_TRUE(entityManager.HasComponent<Scene::NameComponent>(entity));
+            EXPECT_GE(entityManager.GetComponentTypes(entity).size(), 4U);
         }
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, CharacterBodyCreationUVE_IsOneAtomicUndoRedoTransaction) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, CharacterBodyCreation_IsOneAtomicUndoRedoTransaction) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_history_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_history_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
 
-        const Scene::EntityUVE created =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Character3D);
-        ASSERT_NE(created, Scene::kInvalidEntityUVE);
-        ASSERT_TRUE(editor.CanUndoUVE());
-        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+        const Scene::Entity created =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Character3D);
+        ASSERT_NE(created, Scene::kInvalidEntity);
+        ASSERT_TRUE(editor.CanUndo());
+        EXPECT_TRUE(editor.IsSceneDirty());
 
-        ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_FALSE(entityManager.IsAliveUVE(created));
-        EXPECT_EQ(editor.GetSelectedEntityUVE(), Scene::kInvalidEntityUVE);
-        EXPECT_FALSE(editor.IsSceneDirtyUVE());
-        EXPECT_TRUE(editor.CanRedoUVE());
+        ASSERT_TRUE(editor.Undo());
+        EXPECT_FALSE(entityManager.IsAlive(created));
+        EXPECT_EQ(editor.GetSelectedEntity(), Scene::kInvalidEntity);
+        EXPECT_FALSE(editor.IsSceneDirty());
+        EXPECT_TRUE(editor.CanRedo());
 
-        ASSERT_TRUE(editor.RedoUVE());
-        const Scene::EntityUVE restored = editor.GetSelectedEntityUVE();
-        ASSERT_NE(restored, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.Redo());
+        const Scene::Entity restored = editor.GetSelectedEntity();
+        ASSERT_NE(restored, Scene::kInvalidEntity);
         EXPECT_NE(restored, created);
         // Redo rebuilds the same object the creation built: a controller and no collider.
-        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(restored));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(restored));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(restored));
-        EXPECT_TRUE(editor.IsSceneDirtyUVE());
-        editor.ShutdownUVE();
+        EXPECT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(restored));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::CharacterControllerComponent>(restored));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::SolidBodyComponent>(restored));
+        EXPECT_TRUE(editor.IsSceneDirty());
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, CentralizedCreationUVE_RejectsMultiSelectionAndPlayModeWithoutMutation) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, CentralizedCreation_RejectsMultiSelectionAndPlayModeWithoutMutation) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_safety_tests.uvscene", 100U, &engine);
-        editor.InitUVE();
-        const Scene::EntityUVE first =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
-        const Scene::EntityUVE second =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
-        ASSERT_NE(first, Scene::kInvalidEntityUVE);
-        ASSERT_NE(second, Scene::kInvalidEntityUVE);
-        editor.SelectEntityUVE(first);
-        editor.ToggleEntitySelectionUVE(second);
-        ASSERT_FALSE(editor.HasSingleDocumentSelectionUVE());
-        const std::vector<Scene::EntityUVE> rootsBefore = editor.GetDocumentRootsUVE();
-        EXPECT_EQ(editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D),
-                  Scene::kInvalidEntityUVE);
-        EXPECT_EQ(editor.GetDocumentRootsUVE(), rootsBefore);
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_safety_tests.uvscene", 100U, &engine);
+        editor.Init();
+        const Scene::Entity first =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Object3D);
+        const Scene::Entity second =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Object3D);
+        ASSERT_NE(first, Scene::kInvalidEntity);
+        ASSERT_NE(second, Scene::kInvalidEntity);
+        editor.SelectEntity(first);
+        editor.ToggleEntitySelection(second);
+        ASSERT_FALSE(editor.HasSingleDocumentSelection());
+        const std::vector<Scene::Entity> rootsBefore = editor.GetDocumentRoots();
+        EXPECT_EQ(editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Camera3D),
+                  Scene::kInvalidEntity);
+        EXPECT_EQ(editor.GetDocumentRoots(), rootsBefore);
 
-        ASSERT_TRUE(editor.EnterPlayModeUVE());
-        EXPECT_EQ(editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Light3D),
-                  Scene::kInvalidEntityUVE);
-        ASSERT_TRUE(editor.StopPlayModeUVE());
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), rootsBefore.size());
-        editor.ShutdownUVE();
+        ASSERT_TRUE(editor.EnterPlayMode());
+        EXPECT_EQ(editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Light3D),
+                  Scene::kInvalidEntity);
+        ASSERT_TRUE(editor.StopPlayMode());
+        EXPECT_EQ(editor.GetDocumentRoots().size(), rootsBefore.size());
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-[[nodiscard]] bool ContainsEntityUVE(const std::vector<Scene::EntityUVE>& entities,
-                                    const Scene::EntityUVE entity) {
+[[nodiscard]] bool ContainsEntity(const std::vector<Scene::Entity>& entities,
+                                    const Scene::Entity entity) {
     return std::find(entities.begin(), entities.end(), entity) != entities.end();
 }
 
-TEST(SceneObjectEditorUVETest, SceneRootUVE_FreshDocumentHasExactlyOneNamedRoot) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, SceneRoot_FreshDocumentHasExactlyOneNamedRoot) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_scene_root_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_scene_root_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
 
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-        ASSERT_NE(root, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(root));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name, "SceneRoot");
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
+        const Scene::Entity root = editor.GetDocumentSceneRoot();
+        ASSERT_NE(root, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::SceneRootComponent>(root));
+        EXPECT_EQ(entityManager.GetComponent<Scene::NameComponent>(root).name, "SceneRoot");
+        EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRoots()[0U], root);
 
         // The root is a library kind but never library-creatable: the Add-Object path refuses it.
-        EXPECT_EQ(editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::SceneRoot),
-                  Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::SceneRoot),
+                  Scene::kInvalidEntity);
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, SceneRootUVE_NewObjectsJoinHierarchyUnderSelectionOrRoot) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, SceneRoot_NewObjectsJoinHierarchyUnderSelectionOrRoot) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_scene_root_join_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_scene_root_join_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+        const Scene::Entity root = editor.GetDocumentSceneRoot();
+        ASSERT_NE(root, Scene::kInvalidEntity);
 
         // No selection: a new object joins the level's object folder (a level object always lives in a
         // folder inside the Viewport), not a new document root.
-        const Scene::EntityUVE first =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
-        ASSERT_NE(first, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(first).parent;
-        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(folder).name, "World");
-        const Scene::EntityUVE viewport = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(folder).parent;
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport));
-        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, root), std::vector<Scene::EntityUVE>{viewport});
+        const Scene::Entity first =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Object3D);
+        ASSERT_NE(first, Scene::kInvalidEntity);
+        EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
+        const Scene::Entity folder = entityManager.GetComponent<Scene::HierarchyComponent>(first).parent;
+        ASSERT_TRUE(entityManager.HasComponent<Scene::FolderComponent>(folder));
+        EXPECT_EQ(entityManager.GetComponent<Scene::NameComponent>(folder).name, "World");
+        const Scene::Entity viewport = entityManager.GetComponent<Scene::HierarchyComponent>(folder).parent;
+        EXPECT_TRUE(entityManager.HasComponent<Scene::OutlinerViewport3DComponent>(viewport));
+        EXPECT_EQ(sceneGraph.GetChildren(entityManager, root), std::vector<Scene::Entity>{viewport});
 
         // With a single selection: the new object becomes that selection's child.
-        editor.SelectEntityUVE(first);
-        const Scene::EntityUVE second =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Camera3D);
-        ASSERT_NE(second, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, first), second));
-        EXPECT_FALSE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, folder), second));
+        editor.SelectEntity(first);
+        const Scene::Entity second =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Camera3D);
+        ASSERT_NE(second, Scene::kInvalidEntity);
+        EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
+        EXPECT_TRUE(ContainsEntity(sceneGraph.GetChildren(entityManager, first), second));
+        EXPECT_FALSE(ContainsEntity(sceneGraph.GetChildren(entityManager, folder), second));
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, OutlinerLayoutUVE_LevelTopIsViewportSunAndEnvironmentWithObjectsOnlyInFolders) {
-    using Kind = Scene::Objects::SceneObjectKindUVE;
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, OutlinerLayout_LevelTopIsViewportSunAndEnvironmentWithObjectsOnlyInFolders) {
+    using Kind = Scene::Objects::SceneObjectKind;
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_outliner_layout_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-        const auto parentOf = [&entityManager](const Scene::EntityUVE entity) {
-            return entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_outliner_layout_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+        const auto parentOf = [&entityManager](const Scene::Entity entity) {
+            return entityManager.GetComponent<Scene::HierarchyComponent>(entity).parent;
         };
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
+        const Scene::Entity root = editor.GetDocumentSceneRoot();
 
         // A fresh level: the Viewport at the top, holding nothing, and nothing to undo or save.
         // It used to hold an empty "World" folder made for it at open; a folder now appears only
         // when an object is placed and needs somewhere to live.
-        const std::vector<Scene::EntityUVE> top = sceneGraph.GetChildrenUVE(entityManager, root);
+        const std::vector<Scene::Entity> top = sceneGraph.GetChildren(entityManager, root);
         ASSERT_EQ(top.size(), 1U);
-        const Scene::EntityUVE viewport = top[0U];
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(viewport).name, "uve_scene_object_editor_outliner_layout_tests"); // its asset's name
-        EXPECT_TRUE(sceneGraph.GetChildrenUVE(entityManager, viewport).empty());
-        EXPECT_FALSE(editor.IsSceneDirtyUVE());
-        EXPECT_FALSE(editor.CanUndoUVE());
+        const Scene::Entity viewport = top[0U];
+        EXPECT_TRUE(entityManager.HasComponent<Scene::OutlinerViewport3DComponent>(viewport));
+        EXPECT_EQ(entityManager.GetComponent<Scene::NameComponent>(viewport).name, "uve_scene_object_editor_outliner_layout_tests"); // its asset's name
+        EXPECT_TRUE(sceneGraph.GetChildren(entityManager, viewport).empty());
+        EXPECT_FALSE(editor.IsSceneDirty());
+        EXPECT_FALSE(editor.CanUndo());
 
         // The sun and the environment sit beside the Viewport, one of each, in the order added.
-        const Scene::EntityUVE sun = editor.CreateDocumentSceneObjectUVE(Kind::DirectionalLight3D);
-        ASSERT_NE(sun, Scene::kInvalidEntityUVE);
-        const Scene::EntityUVE environment = editor.CreateDocumentSceneObjectUVE(Kind::WorldEnvironment3D);
-        ASSERT_NE(environment, Scene::kInvalidEntityUVE);
-        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, root),
-                  (std::vector<Scene::EntityUVE>{viewport, sun, environment}));
-        EXPECT_EQ(editor.CreateDocumentSceneObjectUVE(Kind::DirectionalLight3D), Scene::kInvalidEntityUVE);
-        EXPECT_EQ(editor.CreateDocumentSceneObjectUVE(Kind::WorldEnvironment3D), Scene::kInvalidEntityUVE);
+        const Scene::Entity sun = editor.CreateDocumentSceneObject(Kind::DirectionalLight3D);
+        ASSERT_NE(sun, Scene::kInvalidEntity);
+        const Scene::Entity environment = editor.CreateDocumentSceneObject(Kind::WorldEnvironment3D);
+        ASSERT_NE(environment, Scene::kInvalidEntity);
+        EXPECT_EQ(sceneGraph.GetChildren(entityManager, root),
+                  (std::vector<Scene::Entity>{viewport, sun, environment}));
+        EXPECT_EQ(editor.CreateDocumentSceneObject(Kind::DirectionalLight3D), Scene::kInvalidEntity);
+        EXPECT_EQ(editor.CreateDocumentSceneObject(Kind::WorldEnvironment3D), Scene::kInvalidEntity);
         // Undoing one frees its place again.
-        ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_FALSE(entityManager.IsAliveUVE(environment));
-        ASSERT_NE(editor.CreateDocumentSceneObjectUVE(Kind::WorldEnvironment3D), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.Undo());
+        EXPECT_FALSE(entityManager.IsAlive(environment));
+        ASSERT_NE(editor.CreateDocumentSceneObject(Kind::WorldEnvironment3D), Scene::kInvalidEntity);
 
         // Any other object goes into a folder, even with the sun selected - and that placement is
         // what makes the level's folder: it is created for the object, not left waiting empty.
-        editor.SelectEntityUVE(sun);
-        const Scene::EntityUVE mesh = editor.CreateDocumentSceneObjectUVE(Kind::BoxMesh3D);
-        ASSERT_NE(mesh, Scene::kInvalidEntityUVE);
-        const Scene::EntityUVE world = parentOf(mesh);
-        ASSERT_NE(world, Scene::kInvalidEntityUVE);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(world));
-        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(world).name, "World");
+        editor.SelectEntity(sun);
+        const Scene::Entity mesh = editor.CreateDocumentSceneObject(Kind::BoxMesh3D);
+        ASSERT_NE(mesh, Scene::kInvalidEntity);
+        const Scene::Entity world = parentOf(mesh);
+        ASSERT_NE(world, Scene::kInvalidEntity);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::FolderComponent>(world));
+        EXPECT_EQ(entityManager.GetComponent<Scene::NameComponent>(world).name, "World");
         EXPECT_EQ(parentOf(world), viewport);
         // A new folder with nothing selected goes into the Viewport.
-        editor.ClearSelectionUVE();
-        const Scene::EntityUVE props = editor.CreateDocumentSceneObjectUVE(Kind::Folder);
-        ASSERT_NE(props, Scene::kInvalidEntityUVE);
+        editor.ClearSelection();
+        const Scene::Entity props = editor.CreateDocumentSceneObject(Kind::Folder);
+        ASSERT_NE(props, Scene::kInvalidEntity);
         EXPECT_EQ(parentOf(props), viewport);
 
         // Objects never leave the folders: not to the top, not straight into the Viewport.
-        editor.SelectEntityUVE(mesh);
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(viewport));
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(sun));
-        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(props));
+        editor.SelectEntity(mesh);
+        EXPECT_FALSE(editor.ReparentSelectedEntity(root));
+        EXPECT_FALSE(editor.ReparentSelectedEntity(viewport));
+        EXPECT_FALSE(editor.ReparentSelectedEntity(sun));
+        EXPECT_TRUE(editor.ReparentSelectedEntity(props));
         EXPECT_EQ(parentOf(mesh), props);
         // "Move to top" keeps an object in a folder, and a folder in the Viewport.
-        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(parentOf(mesh)));
-        editor.SelectEntityUVE(props);
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(root));
-        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(world)); // a folder may nest in a folder
-        EXPECT_TRUE(editor.ReparentSelectedEntityUVE(Scene::kInvalidEntityUVE));
+        EXPECT_TRUE(editor.ReparentSelectedEntity(Scene::kInvalidEntity));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::FolderComponent>(parentOf(mesh)));
+        editor.SelectEntity(props);
+        EXPECT_FALSE(editor.ReparentSelectedEntity(root));
+        EXPECT_TRUE(editor.ReparentSelectedEntity(world)); // a folder may nest in a folder
+        EXPECT_TRUE(editor.ReparentSelectedEntity(Scene::kInvalidEntity));
         EXPECT_EQ(parentOf(props), viewport);
 
         // The Viewport is structure: it cannot be removed, copied or moved.
-        editor.SelectEntityUVE(viewport);
-        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
-        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(world));
-        EXPECT_TRUE(entityManager.IsAliveUVE(viewport));
+        editor.SelectEntity(viewport);
+        EXPECT_FALSE(editor.DeleteSelectedEntity());
+        EXPECT_EQ(editor.DuplicateSelectedEntity(), Scene::kInvalidEntity);
+        EXPECT_FALSE(editor.ReparentSelectedEntity(world));
+        EXPECT_TRUE(entityManager.IsAlive(viewport));
 
         // The layout survives a save and load as it is: no second Viewport or folder appears.
-        ASSERT_TRUE(editor.SaveSceneUVE());
-        ASSERT_TRUE(editor.LoadSceneUVE());
-        EXPECT_FALSE(editor.IsSceneDirtyUVE());
-        const std::vector<Scene::EntityUVE> loadedTop =
-            sceneGraph.GetChildrenUVE(entityManager, editor.GetDocumentSceneRootUVE());
+        ASSERT_TRUE(editor.SaveScene());
+        ASSERT_TRUE(editor.LoadScene());
+        EXPECT_FALSE(editor.IsSceneDirty());
+        const std::vector<Scene::Entity> loadedTop =
+            sceneGraph.GetChildren(entityManager, editor.GetDocumentSceneRoot());
         ASSERT_EQ(loadedTop.size(), 3U);
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(loadedTop[0U]));
-        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, loadedTop[1U]), Kind::DirectionalLight3D);
-        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, loadedTop[2U]), Kind::WorldEnvironment3D);
-        EXPECT_EQ(sceneGraph.GetChildrenUVE(entityManager, loadedTop[0U]).size(), 2U);
+        EXPECT_TRUE(entityManager.HasComponent<Scene::OutlinerViewport3DComponent>(loadedTop[0U]));
+        EXPECT_EQ(Scene::ResolveSceneObjectKind(entityManager, loadedTop[1U]), Kind::DirectionalLight3D);
+        EXPECT_EQ(Scene::ResolveSceneObjectKind(entityManager, loadedTop[2U]), Kind::WorldEnvironment3D);
+        EXPECT_EQ(sceneGraph.GetChildren(entityManager, loadedTop[0U]).size(), 2U);
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
         std::filesystem::remove("uve_scene_object_editor_outliner_layout_tests.uvscene");
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, SceneRootUVE_RootCannotBeDeletedReparentedOrDuplicated) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, SceneRoot_RootCannotBeDeletedReparentedOrDuplicated) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_scene_root_guard_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_scene_root_guard_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
 
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-        ASSERT_NE(root, Scene::kInvalidEntityUVE);
-        const Scene::EntityUVE other =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
-        ASSERT_NE(other, Scene::kInvalidEntityUVE);
+        const Scene::Entity root = editor.GetDocumentSceneRoot();
+        ASSERT_NE(root, Scene::kInvalidEntity);
+        const Scene::Entity other =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Object3D);
+        ASSERT_NE(other, Scene::kInvalidEntity);
 
-        editor.SelectEntityUVE(root);
-        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
-        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
-        EXPECT_FALSE(editor.ReparentSelectedEntityUVE(other));
-        EXPECT_TRUE(entityManager.IsAliveUVE(root));
-        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::SceneRootComponentUVE>(root));
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-        EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
+        editor.SelectEntity(root);
+        EXPECT_FALSE(editor.DeleteSelectedEntity());
+        EXPECT_EQ(editor.DuplicateSelectedEntity(), Scene::kInvalidEntity);
+        EXPECT_FALSE(editor.ReparentSelectedEntity(other));
+        EXPECT_TRUE(entityManager.IsAlive(root));
+        EXPECT_TRUE(entityManager.HasComponent<Scene::SceneRootComponent>(root));
+        EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
+        EXPECT_EQ(editor.GetDocumentRoots()[0U], root);
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, SceneRootUVE_UndoRedoKeepsCreatedObjectUnderItsParent) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, SceneRoot_UndoRedoKeepsCreatedObjectUnderItsParent) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_scene_object_editor_scene_root_history_tests.uvscene");
-        editor.InitUVE();
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-        const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-        ASSERT_NE(root, Scene::kInvalidEntityUVE);
+        Editor editor(engine.GetServices(), "uve_scene_object_editor_scene_root_history_tests.uvscene");
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+        const Scene::Entity root = editor.GetDocumentSceneRoot();
+        ASSERT_NE(root, Scene::kInvalidEntity);
 
-        const Scene::EntityUVE parent =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
-        ASSERT_NE(parent, Scene::kInvalidEntityUVE);
-        editor.SelectEntityUVE(parent);
-        const Scene::EntityUVE child =
-            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Light3D);
-        ASSERT_NE(child, Scene::kInvalidEntityUVE);
-        ASSERT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, parent), child));
+        const Scene::Entity parent =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Object3D);
+        ASSERT_NE(parent, Scene::kInvalidEntity);
+        editor.SelectEntity(parent);
+        const Scene::Entity child =
+            editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Light3D);
+        ASSERT_NE(child, Scene::kInvalidEntity);
+        ASSERT_TRUE(ContainsEntity(sceneGraph.GetChildren(entityManager, parent), child));
 
-        ASSERT_TRUE(editor.UndoUVE());
-        EXPECT_FALSE(entityManager.IsAliveUVE(child));
-        ASSERT_TRUE(editor.RedoUVE());
-        const Scene::EntityUVE restored = editor.GetSelectedEntityUVE();
-        ASSERT_NE(restored, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.Undo());
+        EXPECT_FALSE(entityManager.IsAlive(child));
+        ASSERT_TRUE(editor.Redo());
+        const Scene::Entity restored = editor.GetSelectedEntity();
+        ASSERT_NE(restored, Scene::kInvalidEntity);
         // Redo must re-home the object under its ORIGINAL parent, not drop it to document top
         // level now that documents have a single scene root.
-        EXPECT_TRUE(ContainsEntityUVE(sceneGraph.GetChildrenUVE(entityManager, parent), restored));
-        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+        EXPECT_TRUE(ContainsEntity(sceneGraph.GetChildren(entityManager, parent), restored));
+        EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
 }
 
-TEST(SceneObjectEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigratesUnderOneRoot) {
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+TEST(SceneObjectEditorTest, SceneRoot_LegacyMultiRootSceneFileAutoMigratesUnderOneRoot) {
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
         // Author a legacy-style file by hand: two top-level entities, NO scene-root marker -
         // exactly what every .uvscene saved before the root existed looks like.
-        const Scene::EntityUVE legacyA = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, legacyA, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyA, Scene::NameComponentUVE{"LegacyA"});
-        const Scene::EntityUVE legacyB = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, legacyB, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(legacyB, Scene::NameComponentUVE{"LegacyB"});
+        const Scene::Entity legacyA = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, legacyA, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::NameComponent>(legacyA, Scene::NameComponent{"LegacyA"});
+        const Scene::Entity legacyB = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, legacyB, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::NameComponent>(legacyB, Scene::NameComponent{"LegacyB"});
 
         const std::string path = "uve_scene_object_editor_scene_root_migrate_tests.uvscene";
         std::filesystem::remove(path);
-        ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
-            entityManager, {legacyA, legacyB}, path, Asset::AssetKindUVE::Scene));
+        ASSERT_TRUE(engine.GetServices().GetSceneSerializer().Save(
+            entityManager, {legacyA, legacyB}, path, Asset::AssetKind::Scene));
 
         {
-            EditorUVE editor(engine.GetServicesUVE(), path);
-            editor.InitUVE();
-            ASSERT_TRUE(editor.LoadSceneUVE());
+            Editor editor(engine.GetServices(), path);
+            editor.Init();
+            ASSERT_TRUE(editor.LoadScene());
 
             // The loaded document must hold the one-root invariant: a single SceneRoot at the
             // top with both legacy top-level entities re-parented under it.
-            const Scene::EntityUVE root = editor.GetDocumentSceneRootUVE();
-            ASSERT_NE(root, Scene::kInvalidEntityUVE);
-            EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
-            EXPECT_EQ(editor.GetDocumentRootsUVE()[0U], root);
-            EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name, "SceneRoot");
+            const Scene::Entity root = editor.GetDocumentSceneRoot();
+            ASSERT_NE(root, Scene::kInvalidEntity);
+            EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
+            EXPECT_EQ(editor.GetDocumentRoots()[0U], root);
+            EXPECT_EQ(entityManager.GetComponent<Scene::NameComponent>(root).name, "SceneRoot");
             // The restored entities are FRESH handles (load recreates entities from the
             // file), so identity is checked by name, not by handle.
             // Then the Outliner layout gave it a Viewport, and moved them into its object folder.
-            const std::vector<Scene::EntityUVE> topRows = sceneGraph.GetChildrenUVE(entityManager, root);
+            const std::vector<Scene::Entity> topRows = sceneGraph.GetChildren(entityManager, root);
             ASSERT_EQ(topRows.size(), 1U);
-            EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(topRows[0U]));
-            const std::vector<Scene::EntityUVE> folders = sceneGraph.GetChildrenUVE(entityManager, topRows[0U]);
+            EXPECT_TRUE(entityManager.HasComponent<Scene::OutlinerViewport3DComponent>(topRows[0U]));
+            const std::vector<Scene::Entity> folders = sceneGraph.GetChildren(entityManager, topRows[0U]);
             ASSERT_EQ(folders.size(), 1U);
-            const std::vector<Scene::EntityUVE> rootChildren = sceneGraph.GetChildrenUVE(entityManager, folders[0U]);
+            const std::vector<Scene::Entity> rootChildren = sceneGraph.GetChildren(entityManager, folders[0U]);
             ASSERT_EQ(rootChildren.size(), 2U);
             std::size_t matchedNames = 0U;
-            for (const Scene::EntityUVE child : rootChildren) {
+            for (const Scene::Entity child : rootChildren) {
                 const std::string& name =
-                    entityManager.GetComponentUVE<Scene::NameComponentUVE>(child).name;
+                    entityManager.GetComponent<Scene::NameComponent>(child).name;
                 if (name == "LegacyA" || name == "LegacyB") {
                     ++matchedNames;
                 }
             }
             EXPECT_EQ(matchedNames, 2U);
             // Migration is a real document change: the in-memory doc no longer matches the file.
-            EXPECT_TRUE(editor.IsSceneDirtyUVE());
+            EXPECT_TRUE(editor.IsSceneDirty());
 
-            editor.ShutdownUVE();
+            editor.Shutdown();
         }
         std::filesystem::remove(path);
     }
@@ -529,7 +529,7 @@ TEST(SceneObjectEditorUVETest, SceneRootUVE_LegacyMultiRootSceneFileAutoMigrates
 }
 
 } // namespace
-TEST(SceneObjectEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoadsWithOneRoot) {
+TEST(SceneObjectEditorTest, SceneRoot_FileCarryingTwoRootMarkersStillLoadsWithOneRoot) {
     // The migration test above covers a LEGACY file - no marker at all. This covers the other
     // direction: a file that carries two SceneRoot markers. That is not a file the editor can
     // currently produce, but .uvscene is plain JSON on disk, so it is a file the editor can be
@@ -538,57 +538,57 @@ TEST(SceneObjectEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoads
     // It matters more than it looks. The editor forbids deleting or reparenting a scene root, so
     // a second root that survives load is not a cosmetic wart: it is an entity the user is
     // structurally unable to remove.
-    Core::EngineCoreUVE engine(MakeSceneObjectEditorTestConfigUVE());
+    Core::EngineCore engine(MakeSceneObjectEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+        Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
         // Two independently-marked roots, as a badly merged file would hold.
-        const Scene::EntityUVE firstRoot = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, firstRoot, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(firstRoot, Scene::NameComponentUVE{"SceneRoot"});
-        entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(firstRoot, Scene::SceneRootComponentUVE{});
-        const Scene::EntityUVE secondRoot = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, secondRoot, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(secondRoot, Scene::NameComponentUVE{"SurplusRoot"});
-        entityManager.AddComponentUVE<Scene::SceneRootComponentUVE>(secondRoot, Scene::SceneRootComponentUVE{});
+        const Scene::Entity firstRoot = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, firstRoot, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::NameComponent>(firstRoot, Scene::NameComponent{"SceneRoot"});
+        entityManager.AddComponent<Scene::SceneRootComponent>(firstRoot, Scene::SceneRootComponent{});
+        const Scene::Entity secondRoot = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, secondRoot, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::NameComponent>(secondRoot, Scene::NameComponent{"SurplusRoot"});
+        entityManager.AddComponent<Scene::SceneRootComponent>(secondRoot, Scene::SceneRootComponent{});
         // The surplus root owns authored content. Repairing the structure must not discard it -
         // that would be trading the user's work for tidiness.
-        const Scene::EntityUVE surplusChild = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, surplusChild, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::NameComponentUVE>(surplusChild, Scene::NameComponentUVE{"KeepMe"});
-        sceneGraph.SetParentUVE(entityManager, surplusChild, secondRoot);
+        const Scene::Entity surplusChild = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, surplusChild, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::NameComponent>(surplusChild, Scene::NameComponent{"KeepMe"});
+        sceneGraph.SetParent(entityManager, surplusChild, secondRoot);
 
         const std::string path = "uve_scene_object_editor_two_root_markers_tests.uvscene";
         std::filesystem::remove(path);
-        ASSERT_TRUE(engine.GetServicesUVE().GetSceneSerializerUVE().SaveUVE(
-            entityManager, {firstRoot, secondRoot}, path, Asset::AssetKindUVE::Scene));
+        ASSERT_TRUE(engine.GetServices().GetSceneSerializer().Save(
+            entityManager, {firstRoot, secondRoot}, path, Asset::AssetKind::Scene));
 
         {
-            EditorUVE editor(engine.GetServicesUVE(), path);
-            editor.InitUVE();
-            ASSERT_TRUE(editor.LoadSceneUVE());
+            Editor editor(engine.GetServices(), path);
+            editor.Init();
+            ASSERT_TRUE(editor.LoadScene());
 
             // Exactly one entity may carry the marker afterwards. Counted directly rather than
-            // through GetDocumentSceneRootUVE, which returns the first hit and would report
+            // through GetDocumentSceneRoot, which returns the first hit and would report
             // success even with a second marker buried in the hierarchy.
             std::size_t markerCount = 0U;
-            entityManager.ForEachUVE<Scene::SceneRootComponentUVE>(
-                [&markerCount](const Scene::EntityUVE, const Scene::SceneRootComponentUVE&) { ++markerCount; });
+            entityManager.ForEach<Scene::SceneRootComponent>(
+                [&markerCount](const Scene::Entity, const Scene::SceneRootComponent&) { ++markerCount; });
             EXPECT_EQ(markerCount, 1U)
                 << "a second scene-root marker survived load - the editor refuses to delete or "
                    "reparent a root, so the user cannot remove it by hand";
 
-            EXPECT_EQ(editor.GetDocumentRootsUVE().size(), 1U);
+            EXPECT_EQ(editor.GetDocumentRoots().size(), 1U);
 
             // The demoted root and its child both survive, as ordinary objects. Names are used for
             // identity because loading recreates entities with fresh handles.
             bool foundDemoted = false;
             bool foundGrandchild = false;
-            entityManager.ForEachUVE<Scene::NameComponentUVE>(
-                [&](const Scene::EntityUVE, const Scene::NameComponentUVE& nameComponent) {
+            entityManager.ForEach<Scene::NameComponent>(
+                [&](const Scene::Entity, const Scene::NameComponent& nameComponent) {
                     if (nameComponent.name == "SurplusRoot") {
                         foundDemoted = true;
                     }
@@ -601,8 +601,8 @@ TEST(SceneObjectEditorUVETest, SceneRootUVE_FileCarryingTwoRootMarkersStillLoads
 
             // Repairing the file is a real document change, so the in-memory doc no longer
             // matches its bytes - same contract the legacy-migration path holds.
-            EXPECT_TRUE(editor.IsSceneDirtyUVE());
-            editor.ShutdownUVE();
+            EXPECT_TRUE(editor.IsSceneDirty());
+            editor.Shutdown();
         }
         std::filesystem::remove(path);
     }

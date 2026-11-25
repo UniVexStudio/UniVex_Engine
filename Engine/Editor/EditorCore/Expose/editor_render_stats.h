@@ -23,7 +23,7 @@ namespace UVE::Editor {
 /// for the placement caches, the visibility clustering and the shadow batcher, all of which are
 /// invisible from inside the editor today: a regression that doubles the frame's draw calls while
 /// producing a pixel-identical image is exactly the kind this reports and nothing else does.
-struct EditorRenderStatRowUVE final {
+struct EditorRenderStatRow final {
     /// Group heading this row belongs under, e.g. "Culling". Rows sharing a label are contiguous.
     std::string section;
     std::string label;
@@ -41,16 +41,16 @@ struct EditorRenderStatRowUVE final {
 /// Rows are ordered so the pipeline reads top to bottom - what the scene contained, what culling
 /// removed, what survived to be drawn - because a stat panel read out of order invites the wrong
 /// conclusion about which stage is responsible for a number.
-[[nodiscard]] std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
-    const Render::Renderer3DFrameDiagnosticsUVE& diagnostics);
+[[nodiscard]] std::vector<EditorRenderStatRow> BuildEditorRenderStatRows(
+    const Render::Renderer3DFrameDiagnostics& diagnostics);
 
 /// Percentage helper shared by the rows, exposed because it has one edge case worth pinning: a
 /// zero total returns 0, not a division by zero, and that case is reached constantly (an empty
 /// scene, a frame before the first cull) rather than being a theoretical concern.
 /// One line summarising a capture's runtime snapshot (frame, allocations, workers, animation,
 /// ECS, VM and render pass counts), shared by every Profiler panel.
-[[nodiscard]] std::string FormatProfilerRuntimeLineUVE(const Core::DiagnosticRuntimeSnapshotUVE& runtime);
+[[nodiscard]] std::string FormatProfilerRuntimeLine(const Core::DiagnosticRuntimeSnapshot& runtime);
 
-[[nodiscard]] float ComputeEditorStatPercentageUVE(std::size_t part, std::size_t total) noexcept;
+[[nodiscard]] float ComputeEditorStatPercentage(std::size_t part, std::size_t total) noexcept;
 
 } // namespace UVE::Editor

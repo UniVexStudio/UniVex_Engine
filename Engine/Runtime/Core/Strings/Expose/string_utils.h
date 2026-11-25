@@ -12,21 +12,21 @@ namespace UVE::Strings {
 /// Small string vocabulary over `string_view`: trim/split/join/case. All ASCII-only by design —
 /// these are for identifiers, commands, paths and config keys, where Unicode case-folding would
 /// be wrong anyway (see the localization service for human text). Views never allocate; the
-/// owning functions (`JoinUVE`, `ToLowerUVE`, `ToUpperUVE`) return `std::string`.
+/// owning functions (`Join`, `ToLower`, `ToUpper`) return `std::string`.
 
-/// True for the ASCII whitespace `TrimUVE` strips (space, tab, CR, LF, vertical tab, form feed).
-[[nodiscard]] inline bool IsAsciiWhitespaceUVE(const char c) noexcept {
+/// True for the ASCII whitespace `Trim` strips (space, tab, CR, LF, vertical tab, form feed).
+[[nodiscard]] inline bool IsAsciiWhitespace(const char c) noexcept {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f';
 }
 
 /// `text` with leading and trailing ASCII whitespace removed. A view into the input.
-[[nodiscard]] inline std::string_view TrimUVE(const std::string_view text) noexcept {
+[[nodiscard]] inline std::string_view Trim(const std::string_view text) noexcept {
     std::size_t begin = 0U;
-    while (begin < text.size() && IsAsciiWhitespaceUVE(text[begin])) {
+    while (begin < text.size() && IsAsciiWhitespace(text[begin])) {
         ++begin;
     }
     std::size_t end = text.size();
-    while (end > begin && IsAsciiWhitespaceUVE(text[end - 1U])) {
+    while (end > begin && IsAsciiWhitespace(text[end - 1U])) {
         --end;
     }
     return text.substr(begin, end - begin);
@@ -36,7 +36,7 @@ namespace UVE::Strings {
 /// between them; a trailing delimiter yields a trailing empty view). Keeping empties is the
 /// no-data-loss rule: `"a,,b"` is three fields, and the caller filters when it wants words.
 /// Views into the input; never empty (no delimiter means one part: the whole text).
-[[nodiscard]] inline std::vector<std::string_view> SplitUVE(const std::string_view text,
+[[nodiscard]] inline std::vector<std::string_view> Split(const std::string_view text,
                                                             const char delimiter) {
     std::vector<std::string_view> parts;
     std::size_t begin = 0U;
@@ -51,7 +51,7 @@ namespace UVE::Strings {
 
 /// Joins `parts` with `delimiter` between (none after the last). The span follows the
 /// `std::span<const T>` read-path convention — any contiguous view of views qualifies.
-[[nodiscard]] inline std::string JoinUVE(const std::span<const std::string_view> parts,
+[[nodiscard]] inline std::string Join(const std::span<const std::string_view> parts,
                                          const std::string_view delimiter) {
     std::string joined;
     bool first = true;
@@ -66,7 +66,7 @@ namespace UVE::Strings {
 }
 
 /// ASCII-lowercased copy (`A`-`Z` only; every other byte passes through untouched).
-[[nodiscard]] inline std::string ToLowerUVE(const std::string_view text) {
+[[nodiscard]] inline std::string ToLower(const std::string_view text) {
     std::string lowered{text};
     for (char& c : lowered) {
         if (c >= 'A' && c <= 'Z') {
@@ -77,7 +77,7 @@ namespace UVE::Strings {
 }
 
 /// ASCII-uppercased copy (`a`-`z` only; every other byte passes through untouched).
-[[nodiscard]] inline std::string ToUpperUVE(const std::string_view text) {
+[[nodiscard]] inline std::string ToUpper(const std::string_view text) {
     std::string uppered{text};
     for (char& c : uppered) {
         if (c >= 'a' && c <= 'z') {

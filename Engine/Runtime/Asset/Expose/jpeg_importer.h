@@ -8,10 +8,10 @@
 namespace UVE::Asset {
 
 /// Registers the bounded raw JPEG source importer for `.jpg` and `.jpeg`. The importer reads capped
-/// source bytes, decodes supported baseline/progressive JPEG through DecodeJpegRgba8ImageUVE, and
-/// persists one validated RGBA8 TextureAssetUVE as a `.uvtex` destination. It leaves AssetImporterUVE
+/// source bytes, decodes supported baseline/progressive JPEG through DecodeJpegRgba8Image, and
+/// persists one validated RGBA8 TextureAsset as a `.uvtex` destination. It leaves AssetImporter
 /// responsible for database registration and owns no VFS mounts, GPU resources, background work, or
 /// texture compression/streaming policy.
-void RegisterJpegImporterUVE(IAssetImporterUVE& importer);
+void RegisterJpegImporter(IAssetImporter& importer);
 
 } // namespace UVE::Asset

@@ -11,16 +11,16 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// A light from infinitely far away that falls on everything along the object's -Z: the sun, the
 /// moon. Its colour, energy and shadow switch come from LightEmitter3D; what is its own is how far
 /// its shadow reaches and how the shadow's cascades are shared out over that distance.
-struct DirectionalLight3DComponentUVE final {
+struct DirectionalLight3DComponent final {
     /// Shadows are drawn up to this far from the camera, in metres; 0 follows the camera's far plane.
     float shadowMaxDistance = 100.0F;
     /// How the cascades are spread over that distance: 0 evenly, 1 packed near the camera.
-    /// A negative value inherits EngineConfigUVE::shadowCascadeSplitLambda / the project shadow default.
+    /// A negative value inherits EngineConfig::shadowCascadeSplitLambda / the project shadow default.
     float shadowSplitBlend = -1.0F;
     /// Width, in metres, over which shadows fade to fully lit at the end of the final cascade. 0 disables it.
     float shadowDistanceFadeRange = 10.0F;
@@ -43,17 +43,17 @@ struct DirectionalLight3DComponentUVE final {
     /// around 0.6 at visible wavelengths; a moon is close to 0.85.
     float discLimbDarkening = 0.0F;
 
-    [[nodiscard]] bool operator==(const DirectionalLight3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const DirectionalLight3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsDirectionalLight3DComponentValidUVE(const DirectionalLight3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsDirectionalLight3DComponentValid(const DirectionalLight3DComponent& value) noexcept;
 
-struct DirectionalLight3DObjectDefinitionUVE final {
+struct DirectionalLight3DObjectDefinition final {
     static constexpr std::string_view defaultName = "DirectionalLight3D";
-    DirectionalLight3DComponentUVE light{};
+    DirectionalLight3DComponent light{};
     /// A sun casts shadows unless told otherwise.
-    LightEmitterComponentUVE emitter = [] {
-        LightEmitterComponentUVE value{};
+    LightEmitterComponent emitter = [] {
+        LightEmitterComponent value{};
         value.shadowEnabled = true;
         return value;
     }();
@@ -61,15 +61,15 @@ struct DirectionalLight3DObjectDefinitionUVE final {
 
 /// LightEmitter3D's recipe (RenderInstance3D, Object3D, Object), then this object's own component.
 /// Components already on the entity keep their values.
-void ApplyDirectionalLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                              const DirectionalLight3DObjectDefinitionUVE& value);
+void ApplyDirectionalLight3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                              const DirectionalLight3DObjectDefinition& value);
 
-struct LightDirectionGizmoUVE final {
-    Math::Vector3UVE origin{};
-    Math::Vector3UVE direction{0.0F, 0.0F, -1.0F};
-    Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
+struct LightDirectionGizmo final {
+    Math::Vector3 origin{};
+    Math::Vector3 direction{0.0F, 0.0F, -1.0F};
+    Math::Vector3 color{1.0F, 1.0F, 1.0F};
 };
 
-void CollectLightDirectionGizmosUVE(IEntityManagerUVE& entityManager, std::vector<LightDirectionGizmoUVE>& out);
+void CollectLightDirectionGizmos(IEntityManager& entityManager, std::vector<LightDirectionGizmo>& out);
 
 } // namespace UVE::Scene

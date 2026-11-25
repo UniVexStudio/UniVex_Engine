@@ -4,9 +4,9 @@
 // overlay pass needs, expressed as DATA instead of as raw glDepthFunc /
 // glDepthMask calls scattered through the renderers. The GL target applies a
 // value through one table-driven function (OverlayRasterStateGl.h); the
-// engine bridge maps the same value onto an RHI PipelineDescUVE
+// engine bridge maps the same value onto an RHI PipelineDesc
 // (integration/OverlayRasterStateToPipeline.h) so a host that renders
-// overlays through IRenderDeviceUVE gets identical depth semantics.
+// overlays through IRenderDevice gets identical depth semantics.
 //
 // Pure data: no GL, no engine dependency (univex_viewport_core rules).
 // -----------------------------------------------------------------------

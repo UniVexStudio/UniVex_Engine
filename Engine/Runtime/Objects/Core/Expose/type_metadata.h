@@ -19,12 +19,12 @@
 
 namespace UVE::Core {
 
-/// `TypeIdUVE` is the strong type id: an interned name, so reflected lookups and name-keyed
+/// `TypeId` is the strong type id: an interned name, so reflected lookups and name-keyed
 /// maps compare integers instead of strings. Type ids were raw `std::string` before the
-/// `StringIdUVE` migration; this alias names the resolution at the type that owns it.
-using TypeIdUVE = Strings::StringIdUVE;
+/// `StringId` migration; this alias names the resolution at the type that owns it.
+using TypeId = Strings::StringId;
 
-enum class TypeMetadataKindUVE : std::uint8_t {
+enum class TypeMetadataKind : std::uint8_t {
     Component = 0,
     Resource,
     InspectorTarget,
@@ -34,7 +34,7 @@ enum class TypeMetadataKindUVE : std::uint8_t {
 /// Declared traits a generic consumer (the inspector, the serializer) needs in order to treat a
 /// property correctly without knowing its concrete type. Every one of these previously had to be
 /// re-derived by a hand-written per-type branch at each consumer.
-enum class TypeMetadataPropertyFlagsUVE : std::uint32_t {
+enum class TypeMetadataPropertyFlags : std::uint32_t {
     None = 0U,
     /// Never writable, even though the type exposes a setter (e.g. a derived cache).
     ReadOnly = 1U << 0U,
@@ -47,38 +47,38 @@ enum class TypeMetadataPropertyFlagsUVE : std::uint32_t {
     Advanced = 1U << 3U,
     /// Not shown in the inspector at all (still serialized unless RuntimeState).
     Hidden = 1U << 4U,
-    /// Holds a Scene::EntityUVE that must be remapped through the serializer's local-id table.
+    /// Holds a Scene::Entity that must be remapped through the serializer's local-id table.
     EntityReference = 1U << 5U,
 };
 
 /// Bounds for a numeric property, so the inspector picks a slider/step without a per-type branch.
 /// `enabled` distinguishes "no range declared" from a legitimate [0, 0] range.
-struct TypeMetadataNumericRangeUVE final {
+struct TypeMetadataNumericRange final {
     bool enabled = false;
     double minimum = 0.0;
     double maximum = 0.0;
     double step = 0.0;
 
-    [[nodiscard]] bool operator==(const TypeMetadataNumericRangeUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataNumericRange&) const = default;
 };
 
 /// One selectable value of an enum property. The inspector renders these as a collapsed dropdown;
 /// the underlying value is carried explicitly so label order never has to match enumerator order.
-struct TypeMetadataEnumEntryUVE final {
+struct TypeMetadataEnumEntry final {
     std::int64_t value = 0;
     std::string label;
 
-    [[nodiscard]] bool operator==(const TypeMetadataEnumEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataEnumEntry&) const = default;
 };
 
-struct TypeMetadataPropertyUVE final {
+struct TypeMetadataProperty final {
     /// A property's identity is its name, label, type and writability; everything below is opt-in
     /// metadata a declaration adds only when it has something to say. Spelling that as a
     /// constructor rather than leaving the struct an aggregate means adding a new trait never
     /// forces every existing declaration to brace-initialize it.
-    TypeMetadataPropertyUVE() = default;
-    TypeMetadataPropertyUVE(std::string propertyName, std::string propertyDisplayName,
-                            TypeIdUVE propertyTypeId, const bool isEditable)
+    TypeMetadataProperty() = default;
+    TypeMetadataProperty(std::string propertyName, std::string propertyDisplayName,
+                            TypeId propertyTypeId, const bool isEditable)
         : name(std::move(propertyName)),
           displayName(std::move(propertyDisplayName)),
           typeId(std::move(propertyTypeId)),
@@ -86,13 +86,13 @@ struct TypeMetadataPropertyUVE final {
 
     std::string name;
     std::string displayName;
-    TypeIdUVE typeId;
+    TypeId typeId;
     bool editable = false;
 
-    /// Type-erased accessors bound to a specific member by MakePropertyUVE() below - null for a
+    /// Type-erased accessors bound to a specific member by MakeProperty() below - null for a
     /// property built by hand (e.g. in existing tests/data that only describe a property without
     /// needing to read/write it). `instance`/`value` are always `OwnerT*`/`ValueT*` respectively;
-    /// callers use GetPropertyValueUVE()/SetPropertyValueUVE() rather than calling these directly
+    /// callers use GetPropertyValue()/SetPropertyValue() rather than calling these directly
     /// to keep that contract type-safe at the call site.
     void (*getValue)(const void* instance, void* outValue) = nullptr;
     void (*setValue)(void* instance, const void* inValue) = nullptr;
@@ -102,11 +102,11 @@ struct TypeMetadataPropertyUVE final {
     /// collapsible header, so declare a group's properties together and after the ungrouped ones.
     std::string section;
     std::int32_t order = 0;
-    Utilities::FlagsUVE<TypeMetadataPropertyFlagsUVE> flags;
-    TypeMetadataNumericRangeUVE range;
-    std::vector<TypeMetadataEnumEntryUVE> enumEntries;
+    Utilities::Flags<TypeMetadataPropertyFlags> flags;
+    TypeMetadataNumericRange range;
+    std::vector<TypeMetadataEnumEntry> enumEntries;
     std::string tooltip;
-    /// How many elements a fixed-capacity list value holds (kPropertyTypeEntityListUVE); zero for
+    /// How many elements a fixed-capacity list value holds (kPropertyTypeEntityList); zero for
     /// every value that is not a list. The accessor reads and writes the whole list, so a consumer
     /// needs the length to size its buffer - the value type's own size says nothing about it.
     std::size_t elementCount = 0U;
@@ -125,14 +125,14 @@ struct TypeMetadataPropertyUVE final {
     /// type has no equality operator.
     bool (*areEqual)(const void* leftInstance, const void* rightInstance) = nullptr;
 
-    [[nodiscard]] bool operator==(const TypeMetadataPropertyUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataProperty&) const = default;
 
     /// True when authoring must not write this property, whether declared read-only outright or
     /// because a runtime system owns it. Both consumers ask this rather than re-deriving it.
-    [[nodiscard]] bool IsAuthoringWritableUVE() const noexcept {
+    [[nodiscard]] bool IsAuthoringWritable() const noexcept {
         return editable && setValue != nullptr &&
-               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::ReadOnly) &&
-               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState);
+               !flags.Has(TypeMetadataPropertyFlags::ReadOnly) &&
+               !flags.Has(TypeMetadataPropertyFlags::RuntimeState);
     }
 
     /// True when the property belongs in persisted scene data. Excluded: runtime-derived
@@ -140,37 +140,37 @@ struct TypeMetadataPropertyUVE final {
     /// editor-only authoring (never shipped in runtime data, per the flag's contract), and
     /// describe-only properties with no accessor to read/write through. The metadata-driven
     /// serializer's skip rule is exactly this predicate.
-    [[nodiscard]] bool IsSerializedUVE() const noexcept {
+    [[nodiscard]] bool IsSerialized() const noexcept {
         return getValue != nullptr && setValue != nullptr &&
-               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::RuntimeState) &&
-               !flags.HasUVE(TypeMetadataPropertyFlagsUVE::EditorOnly);
+               !flags.Has(TypeMetadataPropertyFlags::RuntimeState) &&
+               !flags.Has(TypeMetadataPropertyFlags::EditorOnly);
     }
 };
 
 namespace Detail {
 template <typename MemberPointerT>
-struct MemberPointerTraitsUVE;
+struct MemberPointerTraits;
 
 template <typename OwnerT, typename ValueT>
-struct MemberPointerTraitsUVE<ValueT OwnerT::*> {
+struct MemberPointerTraits<ValueT OwnerT::*> {
     using Owner = OwnerT;
     using Value = ValueT;
 };
 } // namespace Detail
 
-/// Builds a TypeMetadataPropertyUVE bound to `MemberPointer` via GetPropertyValueUVE()/
-/// SetPropertyValueUVE() below, so reflection callers (an inspector, a serializer) can read/write
+/// Builds a TypeMetadataProperty bound to `MemberPointer` via GetPropertyValue()/
+/// SetPropertyValue() below, so reflection callers (an inspector, a serializer) can read/write
 /// a registered type's property generically without knowing its concrete type ahead of time.
-/// This is the genuine capability gap TypeMetadataPropertyUVE previously had - it could only
+/// This is the genuine capability gap TypeMetadataProperty previously had - it could only
 /// describe a property's existence, never actually get or set one.
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE MakePropertyUVE(std::string name, std::string displayName,
-                                                       TypeIdUVE typeId, bool editable) {
-    using Traits = Detail::MemberPointerTraitsUVE<decltype(MemberPointer)>;
+[[nodiscard]] TypeMetadataProperty MakeProperty(std::string name, std::string displayName,
+                                                       TypeId typeId, bool editable) {
+    using Traits = Detail::MemberPointerTraits<decltype(MemberPointer)>;
     using OwnerT = typename Traits::Owner;
     using ValueT = typename Traits::Value;
 
-    TypeMetadataPropertyUVE property{std::move(name), std::move(displayName), std::move(typeId), editable};
+    TypeMetadataProperty property{std::move(name), std::move(displayName), std::move(typeId), editable};
     property.getValue = +[](const void* instance, void* outValue) {
         *static_cast<ValueT*>(outValue) = static_cast<const OwnerT*>(instance)->*MemberPointer;
     };
@@ -192,20 +192,20 @@ template <auto MemberPointer>
 }
 
 /// Builds a property for an enum member whose accessors speak std::int64_t rather than the
-/// concrete enumeration. A generic consumer cannot name LightTypeUVE or ColliderShapeTypeUVE, so
+/// concrete enumeration. A generic consumer cannot name LightType or ColliderShapeType, so
 /// without this every enum would force exactly the per-type branch this registry exists to remove.
 /// `options` carries each selectable value with its label, so the dropdown round-trips a selection
 /// back to a real enumerator instead of relying on label order matching declaration order.
 template <auto MemberPointer>
-[[nodiscard]] TypeMetadataPropertyUVE MakeEnumPropertyUVE(std::string name, std::string displayName,
-                                                          TypeIdUVE typeId, const bool editable,
-                                                          std::vector<TypeMetadataEnumEntryUVE> options) {
-    using Traits = Detail::MemberPointerTraitsUVE<decltype(MemberPointer)>;
+[[nodiscard]] TypeMetadataProperty MakeEnumProperty(std::string name, std::string displayName,
+                                                          TypeId typeId, const bool editable,
+                                                          std::vector<TypeMetadataEnumEntry> options) {
+    using Traits = Detail::MemberPointerTraits<decltype(MemberPointer)>;
     using OwnerT = typename Traits::Owner;
     using ValueT = typename Traits::Value;
-    static_assert(std::is_enum_v<ValueT>, "MakeEnumPropertyUVE requires an enumeration member.");
+    static_assert(std::is_enum_v<ValueT>, "MakeEnumProperty requires an enumeration member.");
 
-    TypeMetadataPropertyUVE property{std::move(name), std::move(displayName), std::move(typeId), editable};
+    TypeMetadataProperty property{std::move(name), std::move(displayName), std::move(typeId), editable};
     property.enumEntries = std::move(options);
     property.getValue = +[](const void* instance, void* outValue) {
         *static_cast<std::int64_t*>(outValue) =
@@ -223,11 +223,11 @@ template <auto MemberPointer>
 }
 
 /// Reads a property's current value off `instance` (which must actually be a pointer to the
-/// concrete owning type MakePropertyUVE<MemberPointer> was instantiated with). Returns a
+/// concrete owning type MakeProperty<MemberPointer> was instantiated with). Returns a
 /// value-initialized ValueT and does nothing if `property` was never bound to an accessor (a
 /// hand-built, describe-only property).
 template <typename ValueT, typename OwnerT>
-[[nodiscard]] ValueT GetPropertyValueUVE(const TypeMetadataPropertyUVE& property, const OwnerT& instance) {
+[[nodiscard]] ValueT GetPropertyValue(const TypeMetadataProperty& property, const OwnerT& instance) {
     ValueT value{};
     if (property.getValue != nullptr) {
         property.getValue(&instance, &value);
@@ -238,28 +238,28 @@ template <typename ValueT, typename OwnerT>
 /// Writes `value` onto `instance` through `property`'s bound accessor. Does nothing if
 /// `property` was never bound to an accessor.
 template <typename ValueT, typename OwnerT>
-void SetPropertyValueUVE(const TypeMetadataPropertyUVE& property, OwnerT& instance, const ValueT& value) {
+void SetPropertyValue(const TypeMetadataProperty& property, OwnerT& instance, const ValueT& value) {
     if (property.setValue != nullptr) {
         property.setValue(&instance, &value);
     }
 }
 
-struct TypeMetadataMethodUVE final {
+struct TypeMetadataMethod final {
     std::string name;
     std::string displayName;
     std::uint32_t flags = 0U;
 
-    [[nodiscard]] bool operator==(const TypeMetadataMethodUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataMethod&) const = default;
 };
 
-struct TypeMetadataEntryUVE final {
-    /// As with TypeMetadataPropertyUVE: kind/id/name/version/members are the entry's identity,
-    /// and the native-type binding below is attached separately by BindTypeUVE().
-    TypeMetadataEntryUVE() = default;
-    TypeMetadataEntryUVE(const TypeMetadataKindUVE entryKind, TypeIdUVE entryTypeId,
+struct TypeMetadataEntry final {
+    /// As with TypeMetadataProperty: kind/id/name/version/members are the entry's identity,
+    /// and the native-type binding below is attached separately by BindType().
+    TypeMetadataEntry() = default;
+    TypeMetadataEntry(const TypeMetadataKind entryKind, TypeId entryTypeId,
                          std::string entryDisplayName, const std::uint32_t entryVersion,
-                         std::vector<TypeMetadataPropertyUVE> entryProperties,
-                         std::vector<TypeMetadataMethodUVE> entryMethods)
+                         std::vector<TypeMetadataProperty> entryProperties,
+                         std::vector<TypeMetadataMethod> entryMethods)
         : kind(entryKind),
           typeId(std::move(entryTypeId)),
           displayName(std::move(entryDisplayName)),
@@ -267,18 +267,18 @@ struct TypeMetadataEntryUVE final {
           properties(std::move(entryProperties)),
           methods(std::move(entryMethods)) {}
 
-    TypeMetadataKindUVE kind = TypeMetadataKindUVE::Other;
-    TypeIdUVE typeId;
+    TypeMetadataKind kind = TypeMetadataKind::Other;
+    TypeId typeId;
     std::string displayName;
     std::uint32_t version = 1U;
-    std::vector<TypeMetadataPropertyUVE> properties;
-    std::vector<TypeMetadataMethodUVE> methods;
+    std::vector<TypeMetadataProperty> properties;
+    std::vector<TypeMetadataMethod> methods;
 
     /// The bridge. The ECS keys components by std::type_index; this registry keyed them by string
     /// only, so nothing could join an entity's live components to their metadata. Defaults to
     /// typeid(void) for a hand-built, describe-only entry that owns no C++ type.
     std::type_index typeIndex{typeid(void)};
-    /// The reflected type's C++ name ("CanvasComponentUVE"), joining the registry's string
+    /// The reflected type's C++ name ("CanvasComponent"), joining the registry's string
     /// type id to the names the serializer's component table and scene files use. Empty for a
     /// hand-built, describe-only entry that owns no C++ type; every declared component entry
     /// sets it, and the scene serializer auto-discovers generic registrations from it.
@@ -294,10 +294,10 @@ struct TypeMetadataEntryUVE final {
     void* (*cloneInstance)(const void* source) = nullptr;
     void (*assignInstance)(void* destination, const void* source) = nullptr;
     /// Archetype-slot construction for the reflected type: its size/alignment plus the
-    /// construct-default/move-construct/destroy trio `IEntityManagerUVE::AddComponentErased`
-    /// needs. A Core-native mirror of `Scene::ComponentTypeInfoUVE` (which Core must not
+    /// construct-default/move-construct/destroy trio `IEntityManager::AddComponentErased`
+    /// needs. A Core-native mirror of `Scene::ComponentTypeInfo` (which Core must not
     /// include); consumers adapt these into one at the attach call site. Zero/null for a
-    /// describe-only entry. Set together with the heap factory by `BindTypeUVE()`.
+    /// describe-only entry. Set together with the heap factory by `BindType()`.
     std::size_t instanceSize = 0;
     std::size_t instanceAlignment = 0;
     void (*constructDefaultInPlace)(void* destination) = nullptr;
@@ -313,7 +313,7 @@ struct TypeMetadataEntryUVE final {
     /// on its own, so nothing ever becomes unreachable. A host may also keep the type's rows in its
     /// own shape rather than draw the section - Character3D authors a collider's Layer and Mask as
     /// the body's own rows, because a body's collision identity is not a separate part of it.
-    std::vector<TypeIdUVE> nestedUnderTypeIds;
+    std::vector<TypeId> nestedUnderTypeIds;
     /// Inspector presentation: draw the properties as rows in place, with no collapsible header,
     /// for a type that is conceptually one property of the object rather than a feature of it - a
     /// object has a script and has metadata, it does not have a "Script section".
@@ -327,9 +327,9 @@ struct TypeMetadataEntryUVE final {
     /// can never leave a component that its systems assert against. Null means any value is valid.
     bool (*isInstanceValid)(const void* instance) = nullptr;
 
-    [[nodiscard]] bool operator==(const TypeMetadataEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataEntry&) const = default;
 
-    [[nodiscard]] bool HasFactoryUVE() const noexcept {
+    [[nodiscard]] bool HasFactory() const noexcept {
         return createDefaultInstance != nullptr && destroyInstance != nullptr &&
                cloneInstance != nullptr && assignInstance != nullptr;
     }
@@ -338,9 +338,9 @@ struct TypeMetadataEntryUVE final {
 /// Binds `entry` to the concrete C++ type it describes: its std::type_index (the ECS bridge),
 /// its heap factory (default-construct/destroy/clone/assign), and its archetype-slot
 /// construction trio (size/alignment plus in-place construct/move/destroy). Kept separate from
-/// MakePropertyUVE so an entry's identity and its property list stay independently declarable.
+/// MakeProperty so an entry's identity and its property list stay independently declarable.
 template <typename TypeT>
-void BindTypeUVE(TypeMetadataEntryUVE& entry) {
+void BindType(TypeMetadataEntry& entry) {
     entry.typeIndex = std::type_index(typeid(TypeT));
     entry.createDefaultInstance = +[]() -> void* { return new TypeT{}; };
     entry.destroyInstance = +[](void* instance) { delete static_cast<TypeT*>(instance); };
@@ -362,53 +362,53 @@ void BindTypeUVE(TypeMetadataEntryUVE& entry) {
 }
 
 /// Owns one instance of a reflected type without the owner naming that type. Used to answer "what
-/// is this property's default value" (MakeDefaultUVE) and to hold a component's prior value for an
-/// undo entry (CloneUVE).
-class TypeInstanceUVE final {
+/// is this property's default value" (MakeDefault) and to hold a component's prior value for an
+/// undo entry (Clone).
+class TypeInstance final {
 public:
-    TypeInstanceUVE() = default;
+    TypeInstance() = default;
 
     /// A default-constructed instance, or an invalid holder when `entry` declares no factory.
-    [[nodiscard]] static TypeInstanceUVE MakeDefaultUVE(const TypeMetadataEntryUVE& entry) {
-        return entry.HasFactoryUVE() ? TypeInstanceUVE{entry.createDefaultInstance(), entry.destroyInstance}
-                                     : TypeInstanceUVE{};
+    [[nodiscard]] static TypeInstance MakeDefault(const TypeMetadataEntry& entry) {
+        return entry.HasFactory() ? TypeInstance{entry.createDefaultInstance(), entry.destroyInstance}
+                                     : TypeInstance{};
     }
 
     /// A copy of `source`, which must point at an instance of `entry`'s type. An invalid holder
     /// when `entry` declares no factory or `source` is null.
-    [[nodiscard]] static TypeInstanceUVE CloneUVE(const TypeMetadataEntryUVE& entry, const void* source) {
-        return (entry.HasFactoryUVE() && source != nullptr)
-                   ? TypeInstanceUVE{entry.cloneInstance(source), entry.destroyInstance}
-                   : TypeInstanceUVE{};
+    [[nodiscard]] static TypeInstance Clone(const TypeMetadataEntry& entry, const void* source) {
+        return (entry.HasFactory() && source != nullptr)
+                   ? TypeInstance{entry.cloneInstance(source), entry.destroyInstance}
+                   : TypeInstance{};
     }
 
-    TypeInstanceUVE(const TypeInstanceUVE&) = delete;
-    TypeInstanceUVE& operator=(const TypeInstanceUVE&) = delete;
+    TypeInstance(const TypeInstance&) = delete;
+    TypeInstance& operator=(const TypeInstance&) = delete;
 
-    TypeInstanceUVE(TypeInstanceUVE&& other) noexcept
+    TypeInstance(TypeInstance&& other) noexcept
         : m_destroy(std::exchange(other.m_destroy, nullptr)),
           m_instance(std::exchange(other.m_instance, nullptr)) {}
 
-    TypeInstanceUVE& operator=(TypeInstanceUVE&& other) noexcept {
+    TypeInstance& operator=(TypeInstance&& other) noexcept {
         if (this != &other) {
-            ResetUVE();
+            Reset();
             m_destroy = std::exchange(other.m_destroy, nullptr);
             m_instance = std::exchange(other.m_instance, nullptr);
         }
         return *this;
     }
 
-    ~TypeInstanceUVE() { ResetUVE(); }
+    ~TypeInstance() { Reset(); }
 
-    [[nodiscard]] const void* GetUVE() const noexcept { return m_instance; }
-    [[nodiscard]] void* GetMutableUVE() noexcept { return m_instance; }
-    [[nodiscard]] bool IsValidUVE() const noexcept { return m_instance != nullptr; }
+    [[nodiscard]] const void* Get() const noexcept { return m_instance; }
+    [[nodiscard]] void* GetMutable() noexcept { return m_instance; }
+    [[nodiscard]] bool IsValid() const noexcept { return m_instance != nullptr; }
 
 private:
-    TypeInstanceUVE(void* instance, void (*destroy)(void*)) noexcept
+    TypeInstance(void* instance, void (*destroy)(void*)) noexcept
         : m_destroy(destroy), m_instance(instance) {}
 
-    void ResetUVE() noexcept {
+    void Reset() noexcept {
         if (m_instance != nullptr && m_destroy != nullptr) {
             m_destroy(m_instance);
         }
@@ -419,59 +419,59 @@ private:
     void* m_instance = nullptr;
 };
 
-struct TypeMetadataSnapshotUVE final {
+struct TypeMetadataSnapshot final {
     std::uint64_t generation = 0U;
     bool entriesTruncated = false;
-    std::vector<TypeMetadataEntryUVE> entries;
+    std::vector<TypeMetadataEntry> entries;
 
-    [[nodiscard]] bool operator==(const TypeMetadataSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const TypeMetadataSnapshot&) const = default;
 };
 
-enum class TypeMetadataRegistrationCodeUVE : std::uint8_t {
+enum class TypeMetadataRegistrationCode : std::uint8_t {
     Registered = 0,
     InvalidEntry,
     DuplicateType,
     CapacityExceeded,
 };
 
-struct TypeMetadataRegistrationResultUVE final {
-    TypeMetadataRegistrationCodeUVE code = TypeMetadataRegistrationCodeUVE::InvalidEntry;
+struct TypeMetadataRegistrationResult final {
+    TypeMetadataRegistrationCode code = TypeMetadataRegistrationCode::InvalidEntry;
     std::string message;
 
-    [[nodiscard]] bool IsRegisteredUVE() const noexcept {
-        return code == TypeMetadataRegistrationCodeUVE::Registered;
+    [[nodiscard]] bool IsRegistered() const noexcept {
+        return code == TypeMetadataRegistrationCode::Registered;
     }
 };
 
-class TypeMetadataRegistryUVE final {
+class TypeMetadataRegistry final {
 public:
-    static constexpr std::size_t kMaximumTypesUVE = 4096U;
-    static constexpr std::size_t kMaximumMembersPerTypeUVE = 128U;
-    static constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
-    static constexpr std::size_t kMaximumDisplayNameBytesUVE = 256U;
+    static constexpr std::size_t kMaximumTypes = 4096U;
+    static constexpr std::size_t kMaximumMembersPerType = 128U;
+    static constexpr std::size_t kMaximumIdentifierBytes = 128U;
+    static constexpr std::size_t kMaximumDisplayNameBytes = 256U;
 
-    TypeMetadataRegistryUVE() = default;
+    TypeMetadataRegistry() = default;
     /// Copying stays deleted: a registry is authoritative, and a silent duplicate would let two
     /// consumers disagree about what is registered. Moving is allowed, so a registry can be built
     /// completely and then handed over - which is how a populated one reaches a function-local
     /// static without being assembled in place.
-    TypeMetadataRegistryUVE(const TypeMetadataRegistryUVE&) = delete;
-    TypeMetadataRegistryUVE& operator=(const TypeMetadataRegistryUVE&) = delete;
-    TypeMetadataRegistryUVE(TypeMetadataRegistryUVE&&) noexcept = default;
-    TypeMetadataRegistryUVE& operator=(TypeMetadataRegistryUVE&&) noexcept = default;
+    TypeMetadataRegistry(const TypeMetadataRegistry&) = delete;
+    TypeMetadataRegistry& operator=(const TypeMetadataRegistry&) = delete;
+    TypeMetadataRegistry(TypeMetadataRegistry&&) noexcept = default;
+    TypeMetadataRegistry& operator=(TypeMetadataRegistry&&) noexcept = default;
 
-    [[nodiscard]] TypeMetadataRegistrationResultUVE RegisterTypeUVE(TypeMetadataEntryUVE entry);
-    [[nodiscard]] const TypeMetadataEntryUVE* FindTypeUVE(TypeIdUVE typeId) const noexcept;
+    [[nodiscard]] TypeMetadataRegistrationResult RegisterType(TypeMetadataEntry entry);
+    [[nodiscard]] const TypeMetadataEntry* FindType(TypeId typeId) const noexcept;
     /// The ECS-side lookup: resolves a live component's std::type_index to its metadata. Entries
     /// left at typeid(void) (describe-only) are never matched, so they cannot collide with each
     /// other on the void index.
-    [[nodiscard]] const TypeMetadataEntryUVE* FindTypeByIndexUVE(std::type_index typeIndex) const noexcept;
-    [[nodiscard]] TypeMetadataSnapshotUVE GetSnapshotUVE() const;
-    [[nodiscard]] std::size_t GetTypeCountUVE() const noexcept;
-    [[nodiscard]] std::uint64_t GetGenerationUVE() const noexcept;
+    [[nodiscard]] const TypeMetadataEntry* FindTypeByIndex(std::type_index typeIndex) const noexcept;
+    [[nodiscard]] TypeMetadataSnapshot GetSnapshot() const;
+    [[nodiscard]] std::size_t GetTypeCount() const noexcept;
+    [[nodiscard]] std::uint64_t GetGeneration() const noexcept;
 
 private:
-    std::vector<TypeMetadataEntryUVE> m_entries;
+    std::vector<TypeMetadataEntry> m_entries;
     std::uint64_t m_generation = 0U;
 };
 

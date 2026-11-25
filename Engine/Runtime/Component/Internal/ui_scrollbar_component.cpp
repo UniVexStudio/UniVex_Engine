@@ -7,22 +7,22 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUIScrollbarComponentValidUVE(const UIScrollbarComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUIScrollbarSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUIScrollbarSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUIScrollbarSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUIScrollbarSizePixelsUVE &&
+[[nodiscard]] bool IsUIScrollbarComponentValid(const UIScrollbarComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUIScrollbarSizePixels &&
+           component.rect.size.x <= kMaximumUIScrollbarSizePixels &&
+           component.rect.size.y >= kMinimumUIScrollbarSizePixels &&
+           component.rect.size.y <= kMaximumUIScrollbarSizePixels &&
            std::isfinite(component.minThumbHeight) && component.minThumbHeight >= 0.0F &&
            std::isfinite(component.trackColor.x) && std::isfinite(component.trackColor.y) &&
            std::isfinite(component.trackColor.z) && std::isfinite(component.thumbColor.x) &&
            std::isfinite(component.thumbColor.y) && std::isfinite(component.thumbColor.z);
 }
 
-float ResolveUIScrollbarThumbHeightUVE(const UIScrollbarComponentUVE& component,
+float ResolveUIScrollbarThumbHeight(const UIScrollbarComponent& component,
                                        const float viewportHeight,
                                        const float contentHeight) noexcept {
-    if (!IsUIScrollbarComponentValidUVE(component)) {
+    if (!IsUIScrollbarComponentValid(component)) {
         return 0.0F;
     }
     const float trackHeight = component.rect.size.y;
@@ -35,15 +35,15 @@ float ResolveUIScrollbarThumbHeightUVE(const UIScrollbarComponentUVE& component,
     return std::clamp(rawHeight, minThumb, trackHeight);
 }
 
-Math::RectUVE ResolveUIScrollbarThumbRectUVE(const UIScrollbarComponentUVE& component,
+Math::Rect ResolveUIScrollbarThumbRect(const UIScrollbarComponent& component,
                                              const float scrollOffsetY,
                                              const float viewportHeight,
                                              const float contentHeight) noexcept {
-    if (!IsUIScrollbarComponentValidUVE(component)) {
-        return Math::RectUVE{};
+    if (!IsUIScrollbarComponentValid(component)) {
+        return Math::Rect{};
     }
     const float thumbHeight =
-        ResolveUIScrollbarThumbHeightUVE(component, viewportHeight, contentHeight);
+        ResolveUIScrollbarThumbHeight(component, viewportHeight, contentHeight);
     const float maxScrollY =
         (std::isfinite(contentHeight) && std::isfinite(viewportHeight))
             ? std::max(0.0F, contentHeight - viewportHeight)
@@ -53,27 +53,27 @@ Math::RectUVE ResolveUIScrollbarThumbRectUVE(const UIScrollbarComponentUVE& comp
         (maxScrollY > 1e-5F && std::isfinite(scrollOffsetY))
             ? std::clamp(scrollOffsetY / maxScrollY, 0.0F, 1.0F)
             : 0.0F;
-    return Math::RectUVE{
-        .position = Math::Vector2UVE{
+    return Math::Rect{
+        .position = Math::Vector2{
             component.rect.position.x,
             component.rect.position.y + travel * ratio,
         },
-        .size = Math::Vector2UVE{component.rect.size.x, thumbHeight},
+        .size = Math::Vector2{component.rect.size.x, thumbHeight},
     };
 }
 
-float ResolveUIScrollbarOffsetFromPointerYUVE(const UIScrollbarComponentUVE& component,
+float ResolveUIScrollbarOffsetFromPointerY(const UIScrollbarComponent& component,
                                               const float pointerYPixels,
                                               const float viewportHeight,
                                               const float contentHeight) noexcept {
-    if (!IsUIScrollbarComponentValidUVE(component) || !std::isfinite(pointerYPixels) ||
+    if (!IsUIScrollbarComponentValid(component) || !std::isfinite(pointerYPixels) ||
         !std::isfinite(viewportHeight) || !std::isfinite(contentHeight) ||
         contentHeight <= viewportHeight) {
         return 0.0F;
     }
     const float maxScrollY = contentHeight - viewportHeight;
     const float thumbHeight =
-        ResolveUIScrollbarThumbHeightUVE(component, viewportHeight, contentHeight);
+        ResolveUIScrollbarThumbHeight(component, viewportHeight, contentHeight);
     const float travel = component.rect.size.y - thumbHeight;
     if (travel <= 1e-5F) {
         return 0.0F;
@@ -83,7 +83,7 @@ float ResolveUIScrollbarOffsetFromPointerYUVE(const UIScrollbarComponentUVE& com
     return ratio * maxScrollY;
 }
 
-void ResetUIScrollbarRuntimeStateUVE(UIScrollbarComponentUVE& component) noexcept {
+void ResetUIScrollbarRuntimeState(UIScrollbarComponent& component) noexcept {
     component.isHovered = false;
     component.isDragging = false;
     component.wasChangedThisFrame = false;

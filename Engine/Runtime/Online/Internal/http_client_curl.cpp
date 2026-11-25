@@ -14,34 +14,34 @@ namespace UVE::Online {
 namespace {
 
 /// The most redirects a request follows (release downloads redirect once, to storage).
-inline constexpr long kMaximumRedirectsUVE = 5L;
+inline constexpr long kMaximumRedirects = 5L;
 /// Below this many bytes per second for the stall timeout, a transfer counts as stalled.
-inline constexpr long kStallBytesPerSecondUVE = 1L;
-inline constexpr long kConnectTimeoutSecondsUVE = 15L;
+inline constexpr long kStallBytesPerSecond = 1L;
+inline constexpr long kConnectTimeoutSeconds = 15L;
 
-void EnsureGlobalInitUVE() {
+void EnsureGlobalInit() {
     static std::once_flag once;
     std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
-struct DownloadSinkUVE final {
+struct DownloadSink final {
     std::ofstream* file = nullptr;
     std::string* errorBody = nullptr;
     CURL* handle = nullptr;
     bool failed = false;
 };
 
-std::size_t AppendToStringUVE(char* data, const std::size_t size, const std::size_t count, void* user) {
+std::size_t AppendToString(char* data, const std::size_t size, const std::size_t count, void* user) {
     static_cast<std::string*>(user)->append(data, size * count);
     return size * count;
 }
 
-std::size_t WriteDownloadUVE(char* data, const std::size_t size, const std::size_t count, void* user) {
-    auto* sink = static_cast<DownloadSinkUVE*>(user);
+std::size_t WriteDownload(char* data, const std::size_t size, const std::size_t count, void* user) {
+    auto* sink = static_cast<DownloadSink*>(user);
     long status = 0;
     curl_easy_getinfo(sink->handle, CURLINFO_RESPONSE_CODE, &status);
     // An error page is kept for the message rather than written as the file.
-    if (!IsHttpSuccessStatusUVE(status)) {
+    if (!IsHttpSuccessStatus(status)) {
         sink->errorBody->append(data, size * count);
         return size * count;
     }
@@ -53,8 +53,8 @@ std::size_t WriteDownloadUVE(char* data, const std::size_t size, const std::size
     return size * count;
 }
 
-int ReportProgressUVE(void* user, const curl_off_t total, const curl_off_t received, curl_off_t, curl_off_t) {
-    const auto* progress = static_cast<const HttpProgressUVE*>(user);
+int ReportProgress(void* user, const curl_off_t total, const curl_off_t received, curl_off_t, curl_off_t) {
+    const auto* progress = static_cast<const HttpProgress*>(user);
     if (progress != nullptr && *progress &&
         !(*progress)(static_cast<std::uint64_t>(received), static_cast<std::uint64_t>(total))) {
         return 1; // non-zero aborts the transfer
@@ -63,42 +63,42 @@ int ReportProgressUVE(void* user, const curl_off_t total, const curl_off_t recei
 }
 
 /// One configured easy handle with its header list, released together.
-class CurlRequestUVE final {
+class CurlRequest final {
 public:
-    explicit CurlRequestUVE(const HttpRequestUVE& request) : m_handle(curl_easy_init()) {
+    explicit CurlRequest(const HttpRequest& request) : m_handle(curl_easy_init()) {
         if (m_handle == nullptr) {
             return;
         }
-        for (const HttpHeaderUVE& header : request.headers) {
+        for (const HttpHeader& header : request.headers) {
             m_headers = curl_slist_append(m_headers, (header.name + ": " + header.value).c_str());
         }
         curl_easy_setopt(m_handle, CURLOPT_URL, request.url.c_str());
         curl_easy_setopt(m_handle, CURLOPT_HTTPHEADER, m_headers);
         curl_easy_setopt(m_handle, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(m_handle, CURLOPT_MAXREDIRS, kMaximumRedirectsUVE);
+        curl_easy_setopt(m_handle, CURLOPT_MAXREDIRS, kMaximumRedirects);
         // Never hand credentials to the host a redirect points at.
         curl_easy_setopt(m_handle, CURLOPT_UNRESTRICTED_AUTH, 0L);
         curl_easy_setopt(m_handle, CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(m_handle, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-        curl_easy_setopt(m_handle, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSecondsUVE);
-        curl_easy_setopt(m_handle, CURLOPT_LOW_SPEED_LIMIT, kStallBytesPerSecondUVE);
+        curl_easy_setopt(m_handle, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
+        curl_easy_setopt(m_handle, CURLOPT_LOW_SPEED_LIMIT, kStallBytesPerSecond);
         curl_easy_setopt(m_handle, CURLOPT_LOW_SPEED_TIME, static_cast<long>(request.stallTimeout.count()));
         curl_easy_setopt(m_handle, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(m_handle, CURLOPT_ERRORBUFFER, m_error);
     }
-    CurlRequestUVE(const CurlRequestUVE&) = delete;
-    CurlRequestUVE& operator=(const CurlRequestUVE&) = delete;
-    ~CurlRequestUVE() {
+    CurlRequest(const CurlRequest&) = delete;
+    CurlRequest& operator=(const CurlRequest&) = delete;
+    ~CurlRequest() {
         curl_slist_free_all(m_headers);
         if (m_handle != nullptr) {
             curl_easy_cleanup(m_handle);
         }
     }
 
-    [[nodiscard]] CURL* HandleUVE() const noexcept { return m_handle; }
+    [[nodiscard]] CURL* Handle() const noexcept { return m_handle; }
 
-    [[nodiscard]] HttpResponseUVE PerformUVE() {
-        HttpResponseUVE response;
+    [[nodiscard]] HttpResponse Perform() {
+        HttpResponse response;
         const CURLcode code = curl_easy_perform(m_handle);
         if (code != CURLE_OK) {
             response.error = m_error[0] != '\0' ? std::string(m_error) : std::string(curl_easy_strerror(code));
@@ -115,27 +115,27 @@ private:
     char m_error[CURL_ERROR_SIZE] = {};
 };
 
-class CurlHttpClientUVE final : public IHttpClientUVE {
+class CurlHttpClient final : public IHttpClient {
 public:
-    CurlHttpClientUVE() { EnsureGlobalInitUVE(); }
+    CurlHttpClient() { EnsureGlobalInit(); }
 
-    HttpResponseUVE GetUVE(const HttpRequestUVE& request) override {
-        CurlRequestUVE curl(request);
-        if (curl.HandleUVE() == nullptr) {
+    HttpResponse Get(const HttpRequest& request) override {
+        CurlRequest curl(request);
+        if (curl.Handle() == nullptr) {
             return {false, 0, {}, "Unable to start an HTTPS request."};
         }
         std::string body;
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_WRITEFUNCTION, &AppendToStringUVE);
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_WRITEDATA, &body);
-        HttpResponseUVE response = curl.PerformUVE();
+        curl_easy_setopt(curl.Handle(), CURLOPT_WRITEFUNCTION, &AppendToString);
+        curl_easy_setopt(curl.Handle(), CURLOPT_WRITEDATA, &body);
+        HttpResponse response = curl.Perform();
         response.body = std::move(body);
         return response;
     }
 
-    HttpResponseUVE DownloadUVE(const HttpRequestUVE& request, const std::filesystem::path& file,
-                                const HttpProgressUVE& progress) override {
-        CurlRequestUVE curl(request);
-        if (curl.HandleUVE() == nullptr) {
+    HttpResponse Download(const HttpRequest& request, const std::filesystem::path& file,
+                                const HttpProgress& progress) override {
+        CurlRequest curl(request);
+        if (curl.Handle() == nullptr) {
             return {false, 0, {}, "Unable to start an HTTPS request."};
         }
         std::ofstream output(file, std::ios::binary | std::ios::trunc);
@@ -143,13 +143,13 @@ public:
             return {false, 0, {}, "Unable to write " + file.string()};
         }
         std::string errorBody;
-        DownloadSinkUVE sink{&output, &errorBody, curl.HandleUVE(), false};
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_WRITEFUNCTION, &WriteDownloadUVE);
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_WRITEDATA, &sink);
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_XFERINFOFUNCTION, &ReportProgressUVE);
-        curl_easy_setopt(curl.HandleUVE(), CURLOPT_XFERINFODATA, &progress);
-        HttpResponseUVE response = curl.PerformUVE();
+        DownloadSink sink{&output, &errorBody, curl.Handle(), false};
+        curl_easy_setopt(curl.Handle(), CURLOPT_WRITEFUNCTION, &WriteDownload);
+        curl_easy_setopt(curl.Handle(), CURLOPT_WRITEDATA, &sink);
+        curl_easy_setopt(curl.Handle(), CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl.Handle(), CURLOPT_XFERINFOFUNCTION, &ReportProgress);
+        curl_easy_setopt(curl.Handle(), CURLOPT_XFERINFODATA, &progress);
+        HttpResponse response = curl.Perform();
         output.close();
         if (sink.failed) {
             response.reached = false;
@@ -162,8 +162,8 @@ public:
 
 } // namespace
 
-std::unique_ptr<IHttpClientUVE> CreatePlatformHttpClientUVE() {
-    return std::make_unique<CurlHttpClientUVE>();
+std::unique_ptr<IHttpClient> CreatePlatformHttpClient() {
+    return std::make_unique<CurlHttpClient>();
 }
 
 } // namespace UVE::Online

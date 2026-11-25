@@ -13,28 +13,28 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class PawnUVETest : public ::testing::Test {
+class PawnTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 
-    EntityUVE MakeControllerUVE(const ControllerKindUVE kind = ControllerKindUVE::Player) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        ControllerComponentUVE controller;
+    Entity MakeController(const ControllerKind kind = ControllerKind::Player) {
+        const Entity entity = entityManager.CreateEntity();
+        ControllerComponent controller;
         controller.kind = kind;
-        entityManager.AddComponentUVE<ControllerComponentUVE>(entity, controller);
+        entityManager.AddComponent<ControllerComponent>(entity, controller);
         return entity;
     }
 
-    EntityUVE MakePawnUVE() {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<PawnComponentUVE>(entity, PawnComponentUVE{});
+    Entity MakePawn() {
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<PawnComponent>(entity, PawnComponent{});
         return entity;
     }
 
-    Gameplay::GameplayInputUVE SnapshotUVE() {
-        Gameplay::GameplayInputUVE snapshot;
+    Gameplay::GameplayInput Snapshot() {
+        Gameplay::GameplayInput snapshot;
         snapshot.move = {1.0F, 2.0F, 3.0F};
         snapshot.rise = 4.0F;
         snapshot.jumpPressed = true;
@@ -45,260 +45,260 @@ protected:
     }
 };
 
-TEST_F(PawnUVETest, Possess_LinksBothSidesAndStealsExclusively) {
-    const EntityUVE firstController = MakeControllerUVE();
-    const EntityUVE secondController = MakeControllerUVE(ControllerKindUVE::AI);
-    const EntityUVE firstPawn = MakePawnUVE();
-    const EntityUVE secondPawn = MakePawnUVE();
+TEST_F(PawnTest, Possess_LinksBothSidesAndStealsExclusively) {
+    const Entity firstController = MakeController();
+    const Entity secondController = MakeController(ControllerKind::AI);
+    const Entity firstPawn = MakePawn();
+    const Entity secondPawn = MakePawn();
 
-    ASSERT_TRUE(PossessControllerUVE(entityManager, firstController, firstPawn));
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, firstController), firstPawn);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, firstPawn), firstController);
-    RouteGameplayInputUVE(entityManager, SnapshotUVE());
-    ASSERT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(firstPawn).input, SnapshotUVE());
+    ASSERT_TRUE(PossessController(entityManager, firstController, firstPawn));
+    EXPECT_EQ(FindPossessedPawn(entityManager, firstController), firstPawn);
+    EXPECT_EQ(FindPawnController(entityManager, firstPawn), firstController);
+    RouteGameplayInput(entityManager, Snapshot());
+    ASSERT_EQ(entityManager.GetComponent<PawnComponent>(firstPawn).input, Snapshot());
 
     // Stealing from the controller side unlinks the previous pawn and purges its input.
-    ASSERT_TRUE(PossessControllerUVE(entityManager, firstController, secondPawn));
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, firstController), secondPawn);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, firstPawn), kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(firstPawn).input,
-              Gameplay::GameplayInputUVE{});
+    ASSERT_TRUE(PossessController(entityManager, firstController, secondPawn));
+    EXPECT_EQ(FindPossessedPawn(entityManager, firstController), secondPawn);
+    EXPECT_EQ(FindPawnController(entityManager, firstPawn), kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(firstPawn).input,
+              Gameplay::GameplayInput{});
 
     // Stealing from the pawn side unlinks the previous controller.
-    ASSERT_TRUE(PossessControllerUVE(entityManager, secondController, secondPawn));
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, firstController), kInvalidEntityUVE);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, secondPawn), secondController);
+    ASSERT_TRUE(PossessController(entityManager, secondController, secondPawn));
+    EXPECT_EQ(FindPossessedPawn(entityManager, firstController), kInvalidEntity);
+    EXPECT_EQ(FindPawnController(entityManager, secondPawn), secondController);
 
     // Re-possessing a mutual pair is a no-op success.
-    EXPECT_TRUE(PossessControllerUVE(entityManager, secondController, secondPawn));
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, secondPawn), secondController);
+    EXPECT_TRUE(PossessController(entityManager, secondController, secondPawn));
+    EXPECT_EQ(FindPawnController(entityManager, secondPawn), secondController);
 
     // A self-driven entity (both components, possessing itself) is allowed.
-    const EntityUVE self = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ControllerComponentUVE>(self, ControllerComponentUVE{});
-    entityManager.AddComponentUVE<PawnComponentUVE>(self, PawnComponentUVE{});
-    EXPECT_TRUE(PossessControllerUVE(entityManager, self, self));
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, self), self);
+    const Entity self = entityManager.CreateEntity();
+    entityManager.AddComponent<ControllerComponent>(self, ControllerComponent{});
+    entityManager.AddComponent<PawnComponent>(self, PawnComponent{});
+    EXPECT_TRUE(PossessController(entityManager, self, self));
+    EXPECT_EQ(FindPossessedPawn(entityManager, self), self);
 }
 
-TEST_F(PawnUVETest, Possess_FailsClosedWithoutBothComponents) {
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    const EntityUVE bare = entityManager.CreateEntityUVE();
+TEST_F(PawnTest, Possess_FailsClosedWithoutBothComponents) {
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    const Entity bare = entityManager.CreateEntity();
 
-    EXPECT_FALSE(PossessControllerUVE(entityManager, controller, bare));
-    EXPECT_FALSE(PossessControllerUVE(entityManager, bare, pawn));
-    EXPECT_FALSE(PossessControllerUVE(entityManager, bare, bare));
-    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(controller).pawn,
-              kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(pawn).controller, kInvalidEntityUVE);
+    EXPECT_FALSE(PossessController(entityManager, controller, bare));
+    EXPECT_FALSE(PossessController(entityManager, bare, pawn));
+    EXPECT_FALSE(PossessController(entityManager, bare, bare));
+    EXPECT_EQ(entityManager.GetComponent<ControllerComponent>(controller).pawn,
+              kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(pawn).controller, kInvalidEntity);
 }
 
-TEST_F(PawnUVETest, Unpossess_ClearsBothSidesAndPurgesInput) {
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, controller, pawn));
-    RouteGameplayInputUVE(entityManager, SnapshotUVE());
+TEST_F(PawnTest, Unpossess_ClearsBothSidesAndPurgesInput) {
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, controller, pawn));
+    RouteGameplayInput(entityManager, Snapshot());
 
-    EXPECT_TRUE(UnpossessControllerUVE(entityManager, controller));
-    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(controller).pawn,
-              kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(pawn).controller, kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(pawn).input,
-              Gameplay::GameplayInputUVE{});
+    EXPECT_TRUE(UnpossessController(entityManager, controller));
+    EXPECT_EQ(entityManager.GetComponent<ControllerComponent>(controller).pawn,
+              kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(pawn).controller, kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(pawn).input,
+              Gameplay::GameplayInput{});
 
-    EXPECT_FALSE(UnpossessControllerUVE(entityManager, controller));
-    EXPECT_FALSE(UnpossessControllerUVE(entityManager, entityManager.CreateEntityUVE()));
+    EXPECT_FALSE(UnpossessController(entityManager, controller));
+    EXPECT_FALSE(UnpossessController(entityManager, entityManager.CreateEntity()));
 }
 
-TEST_F(PawnUVETest, Route_DeliversToPlayerPawnsOnlyAndRepairsDanglingLinks) {
-    const EntityUVE playerController = MakeControllerUVE(ControllerKindUVE::Player);
-    const EntityUVE playerPawn = MakePawnUVE();
-    const EntityUVE aiController = MakeControllerUVE(ControllerKindUVE::AI);
-    const EntityUVE aiPawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, playerController, playerPawn));
-    ASSERT_TRUE(PossessControllerUVE(entityManager, aiController, aiPawn));
+TEST_F(PawnTest, Route_DeliversToPlayerPawnsOnlyAndRepairsDanglingLinks) {
+    const Entity playerController = MakeController(ControllerKind::Player);
+    const Entity playerPawn = MakePawn();
+    const Entity aiController = MakeController(ControllerKind::AI);
+    const Entity aiPawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, playerController, playerPawn));
+    ASSERT_TRUE(PossessController(entityManager, aiController, aiPawn));
 
-    RouteGameplayInputUVE(entityManager, SnapshotUVE());
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(playerPawn).input, SnapshotUVE());
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(aiPawn).input,
-              Gameplay::GameplayInputUVE{});
+    RouteGameplayInput(entityManager, Snapshot());
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(playerPawn).input, Snapshot());
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(aiPawn).input,
+              Gameplay::GameplayInput{});
 
     // A destroyed controller is repaired on the next route: link cleared, input purged.
-    entityManager.DestroyEntityUVE(playerController);
-    RouteGameplayInputUVE(entityManager, SnapshotUVE());
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(playerPawn).controller,
-              kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(playerPawn).input,
-              Gameplay::GameplayInputUVE{});
+    entityManager.DestroyEntity(playerController);
+    RouteGameplayInput(entityManager, Snapshot());
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(playerPawn).controller,
+              kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(playerPawn).input,
+              Gameplay::GameplayInput{});
 
     // A removed pawn component is repaired from the controller side just the same.
-    entityManager.RemoveComponentUVE<PawnComponentUVE>(aiPawn);
-    RouteGameplayInputUVE(entityManager, SnapshotUVE());
-    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(aiController).pawn,
-              kInvalidEntityUVE);
+    entityManager.RemoveComponent<PawnComponent>(aiPawn);
+    RouteGameplayInput(entityManager, Snapshot());
+    EXPECT_EQ(entityManager.GetComponent<ControllerComponent>(aiController).pawn,
+              kInvalidEntity);
 
     // A non-finite snapshot still repairs but never writes.
-    const EntityUVE freshController = MakeControllerUVE();
-    const EntityUVE freshPawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, freshController, freshPawn));
-    Gameplay::GameplayInputUVE broken = SnapshotUVE();
+    const Entity freshController = MakeController();
+    const Entity freshPawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, freshController, freshPawn));
+    Gameplay::GameplayInput broken = Snapshot();
     broken.move.x = std::numeric_limits<float>::quiet_NaN();
-    RouteGameplayInputUVE(entityManager, broken);
-    EXPECT_EQ(entityManager.GetComponentUVE<PawnComponentUVE>(freshPawn).input,
-              Gameplay::GameplayInputUVE{});
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, freshController), freshPawn);
+    RouteGameplayInput(entityManager, broken);
+    EXPECT_EQ(entityManager.GetComponent<PawnComponent>(freshPawn).input,
+              Gameplay::GameplayInput{});
+    EXPECT_EQ(FindPossessedPawn(entityManager, freshController), freshPawn);
 }
 
-TEST_F(PawnUVETest, Finders_ReturnInvalidForAnythingButAMutualLink) {
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, controller), kInvalidEntityUVE);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, pawn), kInvalidEntityUVE);
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, entityManager.CreateEntityUVE()),
-              kInvalidEntityUVE);
+TEST_F(PawnTest, Finders_ReturnInvalidForAnythingButAMutualLink) {
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    EXPECT_EQ(FindPossessedPawn(entityManager, controller), kInvalidEntity);
+    EXPECT_EQ(FindPawnController(entityManager, pawn), kInvalidEntity);
+    EXPECT_EQ(FindPossessedPawn(entityManager, entityManager.CreateEntity()),
+              kInvalidEntity);
 
-    ASSERT_TRUE(PossessControllerUVE(entityManager, controller, pawn));
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, controller), pawn);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, pawn), controller);
+    ASSERT_TRUE(PossessController(entityManager, controller, pawn));
+    EXPECT_EQ(FindPossessedPawn(entityManager, controller), pawn);
+    EXPECT_EQ(FindPawnController(entityManager, pawn), controller);
 
     // A hand-broken one-sided link reads as no link at all.
-    entityManager.GetComponentUVE<ControllerComponentUVE>(controller).pawn = MakePawnUVE();
-    EXPECT_EQ(FindPossessedPawnUVE(entityManager, controller), kInvalidEntityUVE);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, pawn), kInvalidEntityUVE);
+    entityManager.GetComponent<ControllerComponent>(controller).pawn = MakePawn();
+    EXPECT_EQ(FindPossessedPawn(entityManager, controller), kInvalidEntity);
+    EXPECT_EQ(FindPawnController(entityManager, pawn), kInvalidEntity);
 }
 
-TEST_F(PawnUVETest, Validity_RejectsBadKindsAndNonFiniteInput) {
-    EXPECT_TRUE(IsControllerComponentValidUVE(ControllerComponentUVE{}));
-    EXPECT_TRUE(IsPawnComponentValidUVE(PawnComponentUVE{}));
+TEST_F(PawnTest, Validity_RejectsBadKindsAndNonFiniteInput) {
+    EXPECT_TRUE(IsControllerComponentValid(ControllerComponent{}));
+    EXPECT_TRUE(IsPawnComponentValid(PawnComponent{}));
 
-    ControllerComponentUVE badKind;
-    badKind.kind = static_cast<ControllerKindUVE>(7U);
-    EXPECT_FALSE(IsControllerComponentValidUVE(badKind));
+    ControllerComponent badKind;
+    badKind.kind = static_cast<ControllerKind>(7U);
+    EXPECT_FALSE(IsControllerComponentValid(badKind));
 
-    PawnComponentUVE bad;
+    PawnComponent bad;
     bad.input.move.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsPawnComponentValidUVE(bad));
+    EXPECT_FALSE(IsPawnComponentValid(bad));
     bad.input = {};
     bad.input.move.y = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(IsPawnComponentValidUVE(bad));
+    EXPECT_FALSE(IsPawnComponentValid(bad));
     bad.input = {};
     bad.input.rise = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsPawnComponentValidUVE(bad));
+    EXPECT_FALSE(IsPawnComponentValid(bad));
     bad.input = {};
     bad.input.lookPointer.x = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(IsPawnComponentValidUVE(bad));
+    EXPECT_FALSE(IsPawnComponentValid(bad));
     bad.input = {};
     bad.input.lookStick.y = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsPawnComponentValidUVE(bad));
+    EXPECT_FALSE(IsPawnComponentValid(bad));
 }
 
-TEST_F(PawnUVETest, Tracker_ReportsPossessAndUnpossessEdgesOnce) {
-    PossessionLifecycleTrackerUVE tracker;
-    EXPECT_EQ(tracker.GetActiveCountUVE(), 0U);
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
+TEST_F(PawnTest, Tracker_ReportsPossessAndUnpossessEdgesOnce) {
+    PossessionLifecycleTracker tracker;
+    EXPECT_EQ(tracker.GetActiveCount(), 0U);
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
 
-    ASSERT_TRUE(PossessControllerUVE(entityManager, controller, pawn));
-    const PossessionLifecycleReportUVE formed = tracker.UpdateUVE(entityManager);
+    ASSERT_TRUE(PossessController(entityManager, controller, pawn));
+    const PossessionLifecycleReport formed = tracker.Update(entityManager);
     EXPECT_EQ(formed.previousLinkCount, 0U);
     EXPECT_EQ(formed.currentLinkCount, 1U);
     ASSERT_EQ(formed.transitions.size(), 1U);
-    EXPECT_EQ(formed.transitions.front().kind, PossessionTransitionKindUVE::Possessed);
+    EXPECT_EQ(formed.transitions.front().kind, PossessionTransitionKind::Possessed);
     EXPECT_EQ(formed.transitions.front().controller, controller);
     EXPECT_EQ(formed.transitions.front().pawn, pawn);
-    EXPECT_EQ(tracker.GetActiveCountUVE(), 1U);
+    EXPECT_EQ(tracker.GetActiveCount(), 1U);
 
-    EXPECT_TRUE(tracker.UpdateUVE(entityManager).transitions.empty());
+    EXPECT_TRUE(tracker.Update(entityManager).transitions.empty());
 
-    ASSERT_TRUE(UnpossessControllerUVE(entityManager, controller));
-    const PossessionLifecycleReportUVE broken = tracker.UpdateUVE(entityManager);
+    ASSERT_TRUE(UnpossessController(entityManager, controller));
+    const PossessionLifecycleReport broken = tracker.Update(entityManager);
     EXPECT_EQ(broken.previousLinkCount, 1U);
     EXPECT_EQ(broken.currentLinkCount, 0U);
     ASSERT_EQ(broken.transitions.size(), 1U);
-    EXPECT_EQ(broken.transitions.front().kind, PossessionTransitionKindUVE::Unpossessed);
+    EXPECT_EQ(broken.transitions.front().kind, PossessionTransitionKind::Unpossessed);
     EXPECT_EQ(broken.transitions.front().controller, controller);
     EXPECT_EQ(broken.transitions.front().pawn, pawn);
 }
 
-TEST_F(PawnUVETest, Tracker_OrdersFormedBeforeBrokenInLinkOrder) {
-    PossessionLifecycleTrackerUVE tracker;
-    const EntityUVE firstController = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    const EntityUVE secondController = MakeControllerUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, firstController, pawn));
-    ASSERT_EQ(tracker.UpdateUVE(entityManager).transitions.size(), 1U);
+TEST_F(PawnTest, Tracker_OrdersFormedBeforeBrokenInLinkOrder) {
+    PossessionLifecycleTracker tracker;
+    const Entity firstController = MakeController();
+    const Entity pawn = MakePawn();
+    const Entity secondController = MakeController();
+    ASSERT_TRUE(PossessController(entityManager, firstController, pawn));
+    ASSERT_EQ(tracker.Update(entityManager).transitions.size(), 1U);
 
-    ASSERT_TRUE(PossessControllerUVE(entityManager, secondController, pawn));
-    const PossessionLifecycleReportUVE stolen = tracker.UpdateUVE(entityManager);
+    ASSERT_TRUE(PossessController(entityManager, secondController, pawn));
+    const PossessionLifecycleReport stolen = tracker.Update(entityManager);
     ASSERT_EQ(stolen.transitions.size(), 2U);
-    EXPECT_EQ(stolen.transitions[0].kind, PossessionTransitionKindUVE::Possessed);
+    EXPECT_EQ(stolen.transitions[0].kind, PossessionTransitionKind::Possessed);
     EXPECT_EQ(stolen.transitions[0].controller, secondController);
-    EXPECT_EQ(stolen.transitions[1].kind, PossessionTransitionKindUVE::Unpossessed);
+    EXPECT_EQ(stolen.transitions[1].kind, PossessionTransitionKind::Unpossessed);
     EXPECT_EQ(stolen.transitions[1].controller, firstController);
 }
 
-TEST_F(PawnUVETest, Tracker_ReportsUnpossessedWithLastKnownIdsWhenADriverDies) {
-    PossessionLifecycleTrackerUVE tracker;
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, controller, pawn));
-    ASSERT_EQ(tracker.UpdateUVE(entityManager).transitions.size(), 1U);
+TEST_F(PawnTest, Tracker_ReportsUnpossessedWithLastKnownIdsWhenADriverDies) {
+    PossessionLifecycleTracker tracker;
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, controller, pawn));
+    ASSERT_EQ(tracker.Update(entityManager).transitions.size(), 1U);
 
-    entityManager.DestroyEntityUVE(controller);
-    const PossessionLifecycleReportUVE report = tracker.UpdateUVE(entityManager);
+    entityManager.DestroyEntity(controller);
+    const PossessionLifecycleReport report = tracker.Update(entityManager);
     EXPECT_EQ(report.currentLinkCount, 0U);
     ASSERT_EQ(report.transitions.size(), 1U);
-    EXPECT_EQ(report.transitions.front().kind, PossessionTransitionKindUVE::Unpossessed);
+    EXPECT_EQ(report.transitions.front().kind, PossessionTransitionKind::Unpossessed);
     EXPECT_EQ(report.transitions.front().controller, controller);
     EXPECT_EQ(report.transitions.front().pawn, pawn);
-    EXPECT_EQ(tracker.GetActiveCountUVE(), 0U);
+    EXPECT_EQ(tracker.GetActiveCount(), 0U);
 }
 
-TEST_F(PawnUVETest, Tracker_ResetDiscardsTheBaselineWithoutTransitions) {
-    PossessionLifecycleTrackerUVE tracker;
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, controller, pawn));
-    ASSERT_EQ(tracker.UpdateUVE(entityManager).transitions.size(), 1U);
+TEST_F(PawnTest, Tracker_ResetDiscardsTheBaselineWithoutTransitions) {
+    PossessionLifecycleTracker tracker;
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, controller, pawn));
+    ASSERT_EQ(tracker.Update(entityManager).transitions.size(), 1U);
 
-    tracker.ResetUVE();
-    EXPECT_EQ(tracker.GetActiveCountUVE(), 0U);
+    tracker.Reset();
+    EXPECT_EQ(tracker.GetActiveCount(), 0U);
 
     // Reset itself emits nothing, so the still-live link is new to the empty baseline.
-    const PossessionLifecycleReportUVE rediscovered = tracker.UpdateUVE(entityManager);
+    const PossessionLifecycleReport rediscovered = tracker.Update(entityManager);
     ASSERT_EQ(rediscovered.transitions.size(), 1U);
-    EXPECT_EQ(rediscovered.transitions.front().kind, PossessionTransitionKindUVE::Possessed);
+    EXPECT_EQ(rediscovered.transitions.front().kind, PossessionTransitionKind::Possessed);
     EXPECT_EQ(rediscovered.transitions.front().controller, controller);
 
-    ASSERT_TRUE(UnpossessControllerUVE(entityManager, controller));
-    const PossessionLifecycleReportUVE broken = tracker.UpdateUVE(entityManager);
+    ASSERT_TRUE(UnpossessController(entityManager, controller));
+    const PossessionLifecycleReport broken = tracker.Update(entityManager);
     ASSERT_EQ(broken.transitions.size(), 1U);
-    EXPECT_EQ(broken.transitions.front().kind, PossessionTransitionKindUVE::Unpossessed);
+    EXPECT_EQ(broken.transitions.front().kind, PossessionTransitionKind::Unpossessed);
 }
 
-TEST_F(PawnUVETest, Tracker_IgnoresOneSidedLinks) {
-    PossessionLifecycleTrackerUVE tracker;
-    const EntityUVE controller = MakeControllerUVE();
-    const EntityUVE pawn = MakePawnUVE();
-    entityManager.GetComponentUVE<PawnComponentUVE>(pawn).controller = controller;
-    const PossessionLifecycleReportUVE report = tracker.UpdateUVE(entityManager);
+TEST_F(PawnTest, Tracker_IgnoresOneSidedLinks) {
+    PossessionLifecycleTracker tracker;
+    const Entity controller = MakeController();
+    const Entity pawn = MakePawn();
+    entityManager.GetComponent<PawnComponent>(pawn).controller = controller;
+    const PossessionLifecycleReport report = tracker.Update(entityManager);
     EXPECT_EQ(report.currentLinkCount, 0U);
     EXPECT_TRUE(report.transitions.empty());
 }
 
-TEST_F(PawnUVETest, Tracker_OrdersMultipleLinksByControllerThenPawn) {
-    PossessionLifecycleTrackerUVE tracker;
+TEST_F(PawnTest, Tracker_OrdersMultipleLinksByControllerThenPawn) {
+    PossessionLifecycleTracker tracker;
     // Entities created second-first on purpose (lower ids), but possessed first-link-first:
     // the report order must follow the (controller, pawn) sort, not possession history.
-    const EntityUVE secondController = MakeControllerUVE();
-    const EntityUVE secondPawn = MakePawnUVE();
-    const EntityUVE firstController = MakeControllerUVE();
-    const EntityUVE firstPawn = MakePawnUVE();
-    ASSERT_TRUE(PossessControllerUVE(entityManager, firstController, firstPawn));
-    ASSERT_TRUE(PossessControllerUVE(entityManager, secondController, secondPawn));
+    const Entity secondController = MakeController();
+    const Entity secondPawn = MakePawn();
+    const Entity firstController = MakeController();
+    const Entity firstPawn = MakePawn();
+    ASSERT_TRUE(PossessController(entityManager, firstController, firstPawn));
+    ASSERT_TRUE(PossessController(entityManager, secondController, secondPawn));
 
-    const PossessionLifecycleReportUVE report = tracker.UpdateUVE(entityManager);
+    const PossessionLifecycleReport report = tracker.Update(entityManager);
     EXPECT_EQ(report.currentLinkCount, 2U);
     ASSERT_EQ(report.transitions.size(), 2U);
     EXPECT_EQ(report.transitions[0].controller, secondController);

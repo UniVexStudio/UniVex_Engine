@@ -16,91 +16,91 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] std::filesystem::path TestPathUVE(const std::string& suffix) {
-    return ::UVE::Tests::ScratchRootUVE() / ("uve_data_table_asset_" + suffix + ".uvtable");
+[[nodiscard]] std::filesystem::path TestPath(const std::string& suffix) {
+    return ::UVE::Tests::ScratchRoot() / ("uve_data_table_asset_" + suffix + ".uvtable");
 }
 
-[[nodiscard]] DataTableUVE MakeTableUVE(const std::string& name, const std::string& rowId,
+[[nodiscard]] DataTable MakeTable(const std::string& name, const std::string& rowId,
                                         const std::int64_t value) {
-    DataTableUVE table(name);
-    static_cast<void>(table.DefineColumnUVE("damage", DataTableColumnTypeUVE::Integer));
-    static_cast<void>(table.DefineColumnUVE("label", DataTableColumnTypeUVE::String));
-    static_cast<void>(table.AddRowUVE(rowId, {value, std::string{"pistol"}}));
+    DataTable table(name);
+    static_cast<void>(table.DefineColumn("damage", DataTableColumnType::Integer));
+    static_cast<void>(table.DefineColumn("label", DataTableColumnType::String));
+    static_cast<void>(table.AddRow(rowId, {value, std::string{"pistol"}}));
     return table;
 }
 
-class TemporaryAssetPathUVE final {
+class TemporaryAssetPath final {
 public:
-    explicit TemporaryAssetPathUVE(std::filesystem::path path) : m_path(std::move(path)) {
+    explicit TemporaryAssetPath(std::filesystem::path path) : m_path(std::move(path)) {
         static_cast<void>(std::filesystem::remove(m_path));
     }
-    TemporaryAssetPathUVE(const TemporaryAssetPathUVE&) = delete;
-    TemporaryAssetPathUVE& operator=(const TemporaryAssetPathUVE&) = delete;
-    ~TemporaryAssetPathUVE() { static_cast<void>(std::filesystem::remove(m_path)); }
+    TemporaryAssetPath(const TemporaryAssetPath&) = delete;
+    TemporaryAssetPath& operator=(const TemporaryAssetPath&) = delete;
+    ~TemporaryAssetPath() { static_cast<void>(std::filesystem::remove(m_path)); }
 
-    [[nodiscard]] const std::filesystem::path& GetUVE() const noexcept { return m_path; }
+    [[nodiscard]] const std::filesystem::path& Get() const noexcept { return m_path; }
 
 private:
     std::filesystem::path m_path;
 };
 
-TEST(DataTableAssetUVE, SaveAndLoadRoundTripUsesUniversalDataTableAssetKind) {
-    const TemporaryAssetPathUVE path(TestPathUVE("round_trip"));
-    const DataTableUVE source = MakeTableUVE("weapons", "pistol", 25);
-    ASSERT_TRUE(SaveDataTableAssetUVE(source, path.GetUVE()));
+TEST(DataTableAsset, SaveAndLoadRoundTripUsesUniversalDataTableAssetKind) {
+    const TemporaryAssetPath path(TestPath("round_trip"));
+    const DataTable source = MakeTable("weapons", "pistol", 25);
+    ASSERT_TRUE(SaveDataTableAsset(source, path.Get()));
 
-    const auto file = ReadUveFileUVE(path.GetUVE());
+    const auto file = ReadUveFile(path.Get());
     ASSERT_TRUE(file.has_value());
-    EXPECT_EQ(file->first.assetType, AssetKindUVE::DataTable);
+    EXPECT_EQ(file->first.assetType, AssetKind::DataTable);
 
-    DataTableUVE loaded("replacement");
-    ASSERT_TRUE(loaded.DefineColumnUVE("old", DataTableColumnTypeUVE::String));
-    ASSERT_TRUE(LoadDataTableAssetUVE(path.GetUVE(), loaded));
-    EXPECT_EQ(loaded.GetSnapshotUVE(), source.GetSnapshotUVE());
+    DataTable loaded("replacement");
+    ASSERT_TRUE(loaded.DefineColumn("old", DataTableColumnType::String));
+    ASSERT_TRUE(LoadDataTableAsset(path.Get(), loaded));
+    EXPECT_EQ(loaded.GetSnapshot(), source.GetSnapshot());
 }
 
-TEST(DataTableAssetUVE, RejectsWrongKindAndMalformedPayloadWithoutChangingDestination) {
-    const TemporaryAssetPathUVE wrongKindPath(TestPathUVE("wrong_kind"));
-    const TemporaryAssetPathUVE malformedPath(TestPathUVE("malformed"));
-    const DataTableUVE original = MakeTableUVE("original", "row", 1);
-    DataTableUVE destination = MakeTableUVE("destination", "keep", 7);
-    const DataTableSnapshotUVE before = destination.GetSnapshotUVE();
+TEST(DataTableAsset, RejectsWrongKindAndMalformedPayloadWithoutChangingDestination) {
+    const TemporaryAssetPath wrongKindPath(TestPath("wrong_kind"));
+    const TemporaryAssetPath malformedPath(TestPath("malformed"));
+    const DataTable original = MakeTable("original", "row", 1);
+    DataTable destination = MakeTable("destination", "keep", 7);
+    const DataTableSnapshot before = destination.GetSnapshot();
 
     const std::vector<std::byte> wrongKindPayload{std::byte{'x'}};
-    ASSERT_TRUE(WriteUveFileUVE(wrongKindPath.GetUVE(), AssetKindUVE::Blob, wrongKindPayload));
-    EXPECT_FALSE(LoadDataTableAssetUVE(wrongKindPath.GetUVE(), destination));
-    EXPECT_EQ(destination.GetSnapshotUVE(), before);
+    ASSERT_TRUE(WriteUveFile(wrongKindPath.Get(), AssetKind::Blob, wrongKindPayload));
+    EXPECT_FALSE(LoadDataTableAsset(wrongKindPath.Get(), destination));
+    EXPECT_EQ(destination.GetSnapshot(), before);
 
-    ASSERT_TRUE(WriteUveFileUVE(malformedPath.GetUVE(), AssetKindUVE::DataTable,
+    ASSERT_TRUE(WriteUveFile(malformedPath.Get(), AssetKind::DataTable,
                                 std::vector<std::byte>{std::byte{'n'}, std::byte{'o'}, std::byte{'t'}}));
-    EXPECT_FALSE(LoadDataTableAssetUVE(malformedPath.GetUVE(), destination));
-    EXPECT_EQ(destination.GetSnapshotUVE(), before);
-    EXPECT_NE(destination.GetSnapshotUVE(), original.GetSnapshotUVE());
+    EXPECT_FALSE(LoadDataTableAsset(malformedPath.Get(), destination));
+    EXPECT_EQ(destination.GetSnapshot(), before);
+    EXPECT_NE(destination.GetSnapshot(), original.GetSnapshot());
 }
 
-TEST(DataTableAssetUVE, RejectsOversizedEnvelopeBeforeDocumentConstruction) {
-    const TemporaryAssetPathUVE path(TestPathUVE("oversized_envelope"));
-    std::vector<std::byte> oversizedPayload(DataTableUVE::kMaximumDocumentBytesUVE + 1U, std::byte{'x'});
-    ASSERT_TRUE(WriteUveFileUVE(path.GetUVE(), AssetKindUVE::DataTable, oversizedPayload));
+TEST(DataTableAsset, RejectsOversizedEnvelopeBeforeDocumentConstruction) {
+    const TemporaryAssetPath path(TestPath("oversized_envelope"));
+    std::vector<std::byte> oversizedPayload(DataTable::kMaximumDocumentBytes + 1U, std::byte{'x'});
+    ASSERT_TRUE(WriteUveFile(path.Get(), AssetKind::DataTable, oversizedPayload));
 
-    DataTableUVE destination = MakeTableUVE("destination", "keep", 7);
-    const DataTableSnapshotUVE before = destination.GetSnapshotUVE();
-    EXPECT_FALSE(LoadDataTableAssetUVE(path.GetUVE(), destination));
-    EXPECT_EQ(destination.GetSnapshotUVE(), before);
+    DataTable destination = MakeTable("destination", "keep", 7);
+    const DataTableSnapshot before = destination.GetSnapshot();
+    EXPECT_FALSE(LoadDataTableAsset(path.Get(), destination));
+    EXPECT_EQ(destination.GetSnapshot(), before);
 }
 
-TEST(DataTableAssetUVE, RejectsInvalidSourceAndMissingFile) {
-    const TemporaryAssetPathUVE invalidPath(TestPathUVE("invalid_source"));
-    DataTableUVE invalid("contains space");
-    ASSERT_TRUE(invalid.DefineColumnUVE("value", DataTableColumnTypeUVE::Integer));
-    ASSERT_TRUE(invalid.AddRowUVE("row", {std::int64_t{1}}));
-    EXPECT_FALSE(SaveDataTableAssetUVE(invalid, invalidPath.GetUVE()));
-    EXPECT_FALSE(std::filesystem::exists(invalidPath.GetUVE()));
+TEST(DataTableAsset, RejectsInvalidSourceAndMissingFile) {
+    const TemporaryAssetPath invalidPath(TestPath("invalid_source"));
+    DataTable invalid("contains space");
+    ASSERT_TRUE(invalid.DefineColumn("value", DataTableColumnType::Integer));
+    ASSERT_TRUE(invalid.AddRow("row", {std::int64_t{1}}));
+    EXPECT_FALSE(SaveDataTableAsset(invalid, invalidPath.Get()));
+    EXPECT_FALSE(std::filesystem::exists(invalidPath.Get()));
 
-    DataTableUVE unchanged = MakeTableUVE("unchanged", "row", 3);
-    const DataTableSnapshotUVE before = unchanged.GetSnapshotUVE();
-    EXPECT_FALSE(LoadDataTableAssetUVE(TestPathUVE("does_not_exist"), unchanged));
-    EXPECT_EQ(unchanged.GetSnapshotUVE(), before);
+    DataTable unchanged = MakeTable("unchanged", "row", 3);
+    const DataTableSnapshot before = unchanged.GetSnapshot();
+    EXPECT_FALSE(LoadDataTableAsset(TestPath("does_not_exist"), unchanged));
+    EXPECT_EQ(unchanged.GetSnapshot(), before);
 }
 
 } // namespace

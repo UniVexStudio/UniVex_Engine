@@ -7,7 +7,7 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsRigid3DComponentValidUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
+[[nodiscard]] bool IsRigid3DComponentValid(const Rigid3DComponent& rigidBody) noexcept {
     return std::isfinite(rigidBody.mass) && rigidBody.mass >= 0.0F && std::isfinite(rigidBody.velocity.x) &&
            std::isfinite(rigidBody.velocity.y) && std::isfinite(rigidBody.velocity.z) &&
            std::isfinite(rigidBody.force.x) && std::isfinite(rigidBody.force.y) &&
@@ -21,22 +21,22 @@ namespace UVE::Scene {
            rigidBody.gravityScale >= 0.0F;
 }
 
-Rigid3DComponentUVE SanitizeRigid3DComponentUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
-    Rigid3DComponentUVE out = rigidBody;
+Rigid3DComponent SanitizeRigid3DComponent(const Rigid3DComponent& rigidBody) noexcept {
+    Rigid3DComponent out = rigidBody;
     out.mass = (std::isfinite(out.mass) && out.mass >= 0.0F) ? out.mass : 1.0F;
-    if (!Math::IsFiniteUVE(out.velocity)) {
-        out.velocity = Math::Vector3UVE{};
+    if (!Math::IsFinite(out.velocity)) {
+        out.velocity = Math::Vector3{};
     }
-    if (!Math::IsFiniteUVE(out.force)) {
-        out.force = Math::Vector3UVE{};
+    if (!Math::IsFinite(out.force)) {
+        out.force = Math::Vector3{};
     }
-    if (!Math::IsFiniteUVE(out.angularVelocity)) {
-        out.angularVelocity = Math::Vector3UVE{};
+    if (!Math::IsFinite(out.angularVelocity)) {
+        out.angularVelocity = Math::Vector3{};
     }
-    if (!Math::IsFiniteUVE(out.torque)) {
-        out.torque = Math::Vector3UVE{};
+    if (!Math::IsFinite(out.torque)) {
+        out.torque = Math::Vector3{};
     }
-    out.inverseInertia = Math::Vector3UVE{
+    out.inverseInertia = Math::Vector3{
         (std::isfinite(out.inverseInertia.x) && out.inverseInertia.x >= 0.0F)
             ? out.inverseInertia.x
             : 0.0F,
@@ -53,25 +53,25 @@ Rigid3DComponentUVE SanitizeRigid3DComponentUVE(const Rigid3DComponentUVE& rigid
     return out;
 }
 
-float ResolveRigid3DInverseMassUVE(const Rigid3DComponentUVE& rigidBody) noexcept {
+float ResolveRigid3DInverseMass(const Rigid3DComponent& rigidBody) noexcept {
     if (rigidBody.isKinematic || !std::isfinite(rigidBody.mass) || rigidBody.mass <= 0.0F) {
         return 0.0F;
     }
     return 1.0F / rigidBody.mass;
 }
 
-void ApplyRigid3DLinearImpulseUVE(Rigid3DComponentUVE& rigidBody,
-                                  const Math::Vector3UVE& impulseNs) noexcept {
-    const float invMass = ResolveRigid3DInverseMassUVE(rigidBody);
-    if (invMass <= 0.0F || !Math::IsFiniteUVE(impulseNs)) {
+void ApplyRigid3DLinearImpulse(Rigid3DComponent& rigidBody,
+                                  const Math::Vector3& impulseNs) noexcept {
+    const float invMass = ResolveRigid3DInverseMass(rigidBody);
+    if (invMass <= 0.0F || !Math::IsFinite(impulseNs)) {
         return;
     }
     rigidBody.velocity = rigidBody.velocity + impulseNs * invMass;
 }
 
-void ClearRigid3DForcesAndTorquesUVE(Rigid3DComponentUVE& rigidBody) noexcept {
-    rigidBody.force = Math::Vector3UVE{};
-    rigidBody.torque = Math::Vector3UVE{};
+void ClearRigid3DForcesAndTorques(Rigid3DComponent& rigidBody) noexcept {
+    rigidBody.force = Math::Vector3{};
+    rigidBody.torque = Math::Vector3{};
 }
 
 } // namespace UVE::Scene

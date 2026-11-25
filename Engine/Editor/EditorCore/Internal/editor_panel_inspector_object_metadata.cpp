@@ -30,17 +30,17 @@
 namespace UVE::Editor {
 namespace {
 
-using Core::VariantTypeUVE;
-using Core::VariantUVE;
+using Core::VariantType;
+using Core::Variant;
 
-struct MetadataPropertyUVE final {
-    const Core::TypeMetadataEntryUVE* entry = nullptr;
-    const Core::TypeMetadataPropertyUVE* property = nullptr;
+struct MetadataProperty final {
+    const Core::TypeMetadataEntry* entry = nullptr;
+    const Core::TypeMetadataProperty* property = nullptr;
 };
 
-[[nodiscard]] MetadataPropertyUVE FindMetadataPropertyUVE() {
-    const Core::TypeMetadataEntryUVE* const entry =
-        Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::ObjectMetadataComponentUVE)));
+[[nodiscard]] MetadataProperty FindMetadataProperty() {
+    const Core::TypeMetadataEntry* const entry =
+        Scene::FindSceneComponentMetadata(std::type_index(typeid(Scene::ObjectMetadataComponent)));
     if (entry == nullptr || entry->properties.empty()) {
         return {};
     }
@@ -49,129 +49,129 @@ struct MetadataPropertyUVE final {
 
 }
 
-bool EditorUVE::CommitSelectedObjectMetadataUVE(std::vector<Scene::ObjectMetadataEntryUVE> entries, const bool preview) {
-    Scene::ObjectMetadataComponentUVE candidate{std::move(entries)};
-    if (!Scene::IsObjectMetadataComponentValidUVE(candidate)) {
+bool Editor::CommitSelectedObjectMetadata(std::vector<Scene::ObjectMetadataEntry> entries, const bool preview) {
+    Scene::ObjectMetadataComponent candidate{std::move(entries)};
+    if (!Scene::IsObjectMetadataComponentValid(candidate)) {
         return false;
     }
-    const MetadataPropertyUVE target = FindMetadataPropertyUVE();
+    const MetadataProperty target = FindMetadataProperty();
     if (target.entry == nullptr) {
         return false;
     }
-    return preview ? PreviewSelectedComponentPropertyUVE(*target.entry, *target.property, &candidate.entries)
-                   : SetSelectedComponentPropertyUVE(*target.entry, *target.property, &candidate.entries);
+    return preview ? PreviewSelectedComponentProperty(*target.entry, *target.property, &candidate.entries)
+                   : SetSelectedComponentProperty(*target.entry, *target.property, &candidate.entries);
 }
 
 namespace {
 
-[[nodiscard]] const Scene::ObjectMetadataComponentUVE* SelectedMetadataUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                         const Scene::EntityUVE entity) {
-    return entityManager.HasComponentUVE<Scene::ObjectMetadataComponentUVE>(entity)
-               ? &entityManager.GetComponentUVE<Scene::ObjectMetadataComponentUVE>(entity)
+[[nodiscard]] const Scene::ObjectMetadataComponent* SelectedMetadata(Scene::IEntityManager& entityManager,
+                                                                         const Scene::Entity entity) {
+    return entityManager.HasComponent<Scene::ObjectMetadataComponent>(entity)
+               ? &entityManager.GetComponent<Scene::ObjectMetadataComponent>(entity)
                : nullptr;
 }
 
 } // namespace
 
-bool EditorUVE::AddSelectedObjectMetadataUVE(const std::string& key, const VariantUVE& value) {
-    if (!HasSingleDocumentSelectionUVE()) {
+bool Editor::AddSelectedObjectMetadata(const std::string& key, const Variant& value) {
+    if (!HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::ObjectMetadataComponentUVE* const metadata =
-        SelectedMetadataUVE(m_services->GetEntityManagerUVE(), m_selectedEntity);
-    if (metadata == nullptr || Scene::ValidateObjectMetadataKeyUVE(key, *metadata) != Scene::ObjectMetadataKeyIssueUVE::None) {
+    const Scene::ObjectMetadataComponent* const metadata =
+        SelectedMetadata(m_services->GetEntityManager(), m_selectedEntity);
+    if (metadata == nullptr || Scene::ValidateObjectMetadataKey(key, *metadata) != Scene::ObjectMetadataKeyIssue::None) {
         return false;
     }
-    std::vector<Scene::ObjectMetadataEntryUVE> entries = metadata->entries;
+    std::vector<Scene::ObjectMetadataEntry> entries = metadata->entries;
     entries.push_back({key, value});
-    return CommitSelectedObjectMetadataUVE(std::move(entries));
+    return CommitSelectedObjectMetadata(std::move(entries));
 }
 
-bool EditorUVE::SetSelectedObjectMetadataValueUVE(const std::string& key, const VariantUVE& value) {
-    return WriteSelectedObjectMetadataValueUVE(key, value, false);
+bool Editor::SetSelectedObjectMetadataValue(const std::string& key, const Variant& value) {
+    return WriteSelectedObjectMetadataValue(key, value, false);
 }
 
-bool EditorUVE::PreviewSelectedObjectMetadataValueUVE(const std::string& key, const VariantUVE& value) {
-    return WriteSelectedObjectMetadataValueUVE(key, value, true);
+bool Editor::PreviewSelectedObjectMetadataValue(const std::string& key, const Variant& value) {
+    return WriteSelectedObjectMetadataValue(key, value, true);
 }
 
-bool EditorUVE::WriteSelectedObjectMetadataValueUVE(const std::string& key, const VariantUVE& value,
+bool Editor::WriteSelectedObjectMetadataValue(const std::string& key, const Variant& value,
                                                   const bool preview) {
-    if (!HasSingleDocumentSelectionUVE()) {
+    if (!HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::ObjectMetadataComponentUVE* const metadata =
-        SelectedMetadataUVE(m_services->GetEntityManagerUVE(), m_selectedEntity);
+    const Scene::ObjectMetadataComponent* const metadata =
+        SelectedMetadata(m_services->GetEntityManager(), m_selectedEntity);
     if (metadata == nullptr) {
         return false;
     }
-    std::vector<Scene::ObjectMetadataEntryUVE> entries = metadata->entries;
+    std::vector<Scene::ObjectMetadataEntry> entries = metadata->entries;
     const auto found = std::find_if(entries.begin(), entries.end(), [&key](const auto& entry) { return entry.key == key; });
     if (found == entries.end()) {
         return false;
     }
     found->value = value;
-    return CommitSelectedObjectMetadataUVE(std::move(entries), preview);
+    return CommitSelectedObjectMetadata(std::move(entries), preview);
 }
 
-bool EditorUVE::RenameSelectedObjectMetadataUVE(const std::string& key, const std::string& newKey) {
-    if (!HasSingleDocumentSelectionUVE()) {
+bool Editor::RenameSelectedObjectMetadata(const std::string& key, const std::string& newKey) {
+    if (!HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::ObjectMetadataComponentUVE* const metadata =
-        SelectedMetadataUVE(m_services->GetEntityManagerUVE(), m_selectedEntity);
+    const Scene::ObjectMetadataComponent* const metadata =
+        SelectedMetadata(m_services->GetEntityManager(), m_selectedEntity);
     if (metadata == nullptr ||
-        Scene::ValidateObjectMetadataKeyUVE(newKey, *metadata, key) != Scene::ObjectMetadataKeyIssueUVE::None) {
+        Scene::ValidateObjectMetadataKey(newKey, *metadata, key) != Scene::ObjectMetadataKeyIssue::None) {
         return false;
     }
-    std::vector<Scene::ObjectMetadataEntryUVE> entries = metadata->entries;
+    std::vector<Scene::ObjectMetadataEntry> entries = metadata->entries;
     const auto found = std::find_if(entries.begin(), entries.end(), [&key](const auto& entry) { return entry.key == key; });
     if (found == entries.end()) {
         return false;
     }
     found->key = newKey;
-    return CommitSelectedObjectMetadataUVE(std::move(entries));
+    return CommitSelectedObjectMetadata(std::move(entries));
 }
 
-bool EditorUVE::ChangeSelectedObjectMetadataTypeUVE(const std::string& key, const VariantTypeUVE type,
+bool Editor::ChangeSelectedObjectMetadataType(const std::string& key, const VariantType type,
                                                   const bool allowLoss) {
-    if (!HasSingleDocumentSelectionUVE()) {
+    if (!HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::ObjectMetadataComponentUVE* const metadata =
-        SelectedMetadataUVE(m_services->GetEntityManagerUVE(), m_selectedEntity);
+    const Scene::ObjectMetadataComponent* const metadata =
+        SelectedMetadata(m_services->GetEntityManager(), m_selectedEntity);
     if (metadata == nullptr) {
         return false;
     }
-    std::vector<Scene::ObjectMetadataEntryUVE> entries = metadata->entries;
+    std::vector<Scene::ObjectMetadataEntry> entries = metadata->entries;
     const auto found = std::find_if(entries.begin(), entries.end(), [&key](const auto& entry) { return entry.key == key; });
     if (found == entries.end()) {
         return false;
     }
-    const std::optional<Core::VariantConversionUVE> converted = Core::TryConvertVariantUVE(found->value, type);
+    const std::optional<Core::VariantConversion> converted = Core::TryConvertVariant(found->value, type);
     if (!converted.has_value() || (!converted->lossless && !allowLoss)) {
         return false;
     }
     found->value = converted->value;
-    return CommitSelectedObjectMetadataUVE(std::move(entries));
+    return CommitSelectedObjectMetadata(std::move(entries));
 }
 
-bool EditorUVE::RemoveSelectedObjectMetadataUVE(const std::string& key) {
-    if (!HasSingleDocumentSelectionUVE()) {
+bool Editor::RemoveSelectedObjectMetadata(const std::string& key) {
+    if (!HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::ObjectMetadataComponentUVE* const metadata =
-        SelectedMetadataUVE(m_services->GetEntityManagerUVE(), m_selectedEntity);
+    const Scene::ObjectMetadataComponent* const metadata =
+        SelectedMetadata(m_services->GetEntityManager(), m_selectedEntity);
     if (metadata == nullptr) {
         return false;
     }
-    std::vector<Scene::ObjectMetadataEntryUVE> entries = metadata->entries;
+    std::vector<Scene::ObjectMetadataEntry> entries = metadata->entries;
     const auto removed = std::remove_if(entries.begin(), entries.end(), [&key](const auto& entry) { return entry.key == key; });
     if (removed == entries.end()) {
         return false;
     }
     entries.erase(removed, entries.end());
-    return CommitSelectedObjectMetadataUVE(std::move(entries));
+    return CommitSelectedObjectMetadata(std::move(entries));
 }
 
 } // namespace UVE::Editor

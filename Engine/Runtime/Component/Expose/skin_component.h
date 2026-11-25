@@ -10,25 +10,25 @@
 
 namespace UVE::Scene {
 
-/// A single bone bind entry in a Skin resource / SkinComponentUVE.
-struct SkinBoneBindUVE final {
+/// A single bone bind entry in a Skin resource / SkinComponent.
+struct SkinBoneBind final {
     std::string boneName;
     std::int32_t boneIndex = -1;
-    Math::Matrix4x4UVE inverseBindPose = Math::Matrix4x4UVE::IdentityUVE();
+    Math::Matrix4x4 inverseBindPose = Math::Matrix4x4::Identity();
 
-    [[nodiscard]] bool operator==(const SkinBoneBindUVE&) const = default;
+    [[nodiscard]] bool operator==(const SkinBoneBind&) const = default;
 };
 
 /// Represents the Skin resource attached to a MeshInstance3D / mesh entity.
 /// Defines the bind count and per-bone inverse bind poses for skeleton skinning.
-struct SkinComponentUVE final {
+struct SkinComponent final {
     std::uint32_t bindCount = 0;
-    std::vector<SkinBoneBindUVE> boneBinds;
+    std::vector<SkinBoneBind> boneBinds;
 
-    [[nodiscard]] bool operator==(const SkinComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const SkinComponent&) const = default;
 };
 
 /// Validates that bindCount is consistent and valid.
-[[nodiscard]] bool IsSkinComponentValidUVE(const SkinComponentUVE& skin) noexcept;
+[[nodiscard]] bool IsSkinComponentValid(const SkinComponent& skin) noexcept;
 
 } // namespace UVE::Scene

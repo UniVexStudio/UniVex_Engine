@@ -7,32 +7,32 @@
 
 namespace UVE::Scene {
 
-bool IsPhysicsObjectDisableModeValidUVE(const PhysicsObjectDisableModeUVE mode) noexcept {
+bool IsPhysicsObjectDisableModeValid(const PhysicsObjectDisableMode mode) noexcept {
     switch (mode) {
-        case PhysicsObjectDisableModeUVE::Remove:
-        case PhysicsObjectDisableModeUVE::MakeStatic:
-        case PhysicsObjectDisableModeUVE::KeepActive:
+        case PhysicsObjectDisableMode::Remove:
+        case PhysicsObjectDisableMode::MakeStatic:
+        case PhysicsObjectDisableMode::KeepActive:
             return true;
     }
     return false;
 }
 
-bool IsPhysicsObjectComponentValidUVE(const PhysicsObjectComponentUVE& component) noexcept {
-    return IsPhysicsObjectDisableModeValidUVE(component.disableMode) &&
+bool IsPhysicsObjectComponentValid(const PhysicsObjectComponent& component) noexcept {
+    return IsPhysicsObjectDisableModeValid(component.disableMode) &&
            std::isfinite(component.collisionPriority) && component.collisionPriority >= 0.0F;
 }
 
-PhysicsObjectComponentUVE SanitizePhysicsObjectComponentUVE(
-    const PhysicsObjectComponentUVE& component) noexcept {
-    const PhysicsObjectDisableModeUVE safeMode =
-        IsPhysicsObjectDisableModeValidUVE(component.disableMode)
+PhysicsObjectComponent SanitizePhysicsObjectComponent(
+    const PhysicsObjectComponent& component) noexcept {
+    const PhysicsObjectDisableMode safeMode =
+        IsPhysicsObjectDisableModeValid(component.disableMode)
             ? component.disableMode
-            : PhysicsObjectDisableModeUVE::Remove;
+            : PhysicsObjectDisableMode::Remove;
     const float safePriority =
         (std::isfinite(component.collisionPriority) && component.collisionPriority >= 0.0F)
             ? component.collisionPriority
-            : kDefaultPhysicsCollisionPriorityUVE;
-    return PhysicsObjectComponentUVE{
+            : kDefaultPhysicsCollisionPriority;
+    return PhysicsObjectComponent{
         .disableMode = safeMode,
         .collisionPriority = safePriority,
         .inputRayPickable = component.inputRayPickable,
@@ -40,27 +40,27 @@ PhysicsObjectComponentUVE SanitizePhysicsObjectComponentUVE(
     };
 }
 
-bool ShouldKeepPhysicsBodyInWorldWhenDisabledUVE(
-    const PhysicsObjectComponentUVE& component) noexcept {
-    return component.disableMode == PhysicsObjectDisableModeUVE::MakeStatic ||
-           component.disableMode == PhysicsObjectDisableModeUVE::KeepActive;
+bool ShouldKeepPhysicsBodyInWorldWhenDisabled(
+    const PhysicsObjectComponent& component) noexcept {
+    return component.disableMode == PhysicsObjectDisableMode::MakeStatic ||
+           component.disableMode == PhysicsObjectDisableMode::KeepActive;
 }
 
-bool ShouldSimulatePhysicsBodyWhenDisabledUVE(
-    const PhysicsObjectComponentUVE& component) noexcept {
-    return component.disableMode == PhysicsObjectDisableModeUVE::KeepActive;
+bool ShouldSimulatePhysicsBodyWhenDisabled(
+    const PhysicsObjectComponent& component) noexcept {
+    return component.disableMode == PhysicsObjectDisableMode::KeepActive;
 }
 
-bool CanPickPhysicsObjectWithRayUVE(const PhysicsObjectComponentUVE& component,
+bool CanPickPhysicsObjectWithRay(const PhysicsObjectComponent& component,
                                     const bool entityEnabled) noexcept {
     if (!component.inputRayPickable) {
         return false;
     }
-    return entityEnabled || ShouldKeepPhysicsBodyInWorldWhenDisabledUVE(component);
+    return entityEnabled || ShouldKeepPhysicsBodyInWorldWhenDisabled(component);
 }
 
-float ResolvePairDepenetrationShareUVE(const PhysicsObjectComponentUVE& self,
-                                       const PhysicsObjectComponentUVE& other) noexcept {
+float ResolvePairDepenetrationShare(const PhysicsObjectComponent& self,
+                                       const PhysicsObjectComponent& other) noexcept {
     const float selfPriority =
         (std::isfinite(self.collisionPriority) && self.collisionPriority >= 0.0F)
             ? self.collisionPriority

@@ -12,10 +12,10 @@
 namespace UVE::Physics::Detail {
 namespace {
 
-constexpr std::size_t kBvhLeafSizeUVE = 4U;
-constexpr std::size_t kBvhMaximumTraversalStackUVE = 128U;
+constexpr std::size_t kBvhLeafSize = 4U;
+constexpr std::size_t kBvhMaximumTraversalStack = 128U;
 
-[[nodiscard]] bool IsValidAabbUVE(const Math::AabbUVE& aabb) noexcept {
+[[nodiscard]] bool IsValidAabb(const Math::Aabb& aabb) noexcept {
     return std::isfinite(aabb.min.x) && std::isfinite(aabb.min.y) && std::isfinite(aabb.min.z) &&
            std::isfinite(aabb.max.x) && std::isfinite(aabb.max.y) && std::isfinite(aabb.max.z) &&
            aabb.min.x <= aabb.max.x && aabb.min.y <= aabb.max.y && aabb.min.z <= aabb.max.z;
@@ -23,12 +23,12 @@ constexpr std::size_t kBvhMaximumTraversalStackUVE = 128U;
 
 } // namespace
 
-DynamicAabbBvhUVE::DynamicAabbBvhUVE(std::vector<ColliderWorldAabbUVE> colliders)
+DynamicAabbBvh::DynamicAabbBvh(std::vector<ColliderWorldAabb> colliders)
     : m_colliders(std::move(colliders)), m_indices(m_colliders.size()),
-      m_leafObjectByCacheIndex(m_colliders.size(), kInvalidObjectIndexUVE) {
-    if (m_colliders.size() > kMaximumProxiesUVE ||
-        !std::all_of(m_colliders.begin(), m_colliders.end(), [](const ColliderWorldAabbUVE& collider) {
-            return collider.entity != Scene::kInvalidEntityUVE && IsValidAabbUVE(collider.worldAabb);
+      m_leafObjectByCacheIndex(m_colliders.size(), kInvalidObjectIndex) {
+    if (m_colliders.size() > kMaximumProxies ||
+        !std::all_of(m_colliders.begin(), m_colliders.end(), [](const ColliderWorldAabb& collider) {
+            return collider.entity != Scene::kInvalidEntity && IsValidAabb(collider.worldAabb);
         })) {
         m_isValid = false;
         return;
@@ -44,26 +44,26 @@ DynamicAabbBvhUVE::DynamicAabbBvhUVE(std::vector<ColliderWorldAabbUVE> colliders
     std::iota(m_indices.begin(), m_indices.end(), 0U);
     if (!m_indices.empty()) {
         m_objects.reserve(m_indices.size() * 2U);
-        m_root = BuildObjectUVE(0U, m_indices.size(), kInvalidObjectIndexUVE);
+        m_root = BuildObject(0U, m_indices.size(), kInvalidObjectIndex);
     }
 }
 
-std::size_t DynamicAabbBvhUVE::BuildObjectUVE(const std::size_t begin, const std::size_t end,
+std::size_t DynamicAabbBvh::BuildObject(const std::size_t begin, const std::size_t end,
                                             const std::size_t parent) {
     const std::size_t objectIndex = m_objects.size();
-    m_objects.push_back(ObjectUVE{});
+    m_objects.push_back(Object{});
 
-    Math::AabbUVE bounds = m_colliders[m_indices[begin]].worldAabb;
+    Math::Aabb bounds = m_colliders[m_indices[begin]].worldAabb;
     for (std::size_t index = begin + 1U; index < end; ++index) {
-        bounds = bounds.UnionUVE(m_colliders[m_indices[index]].worldAabb);
+        bounds = bounds.Union(m_colliders[m_indices[index]].worldAabb);
     }
 
-    ObjectUVE& object = m_objects[objectIndex];
+    Object& object = m_objects[objectIndex];
     object.bounds = bounds;
     object.begin = begin;
     object.end = end;
     object.parent = parent;
-    if (end - begin <= kBvhLeafSizeUVE) {
+    if (end - begin <= kBvhLeafSize) {
         object.isLeaf = true;
         for (std::size_t index = begin; index < end; ++index) {
             m_leafObjectByCacheIndex[m_indices[index]] = objectIndex;
@@ -71,101 +71,101 @@ std::size_t DynamicAabbBvhUVE::BuildObjectUVE(const std::size_t begin, const std
         return objectIndex;
     }
 
-    const Math::Vector3UVE extents = bounds.GetExtentsUVE();
+    const Math::Vector3 extents = bounds.GetExtents();
     std::size_t splitAxis = 0U;
     if (extents.y > extents.x && extents.y >= extents.z) {
         splitAxis = 1U;
     } else if (extents.z > extents.x && extents.z > extents.y) {
         splitAxis = 2U;
     }
-    const auto CenterOnAxisUVE = [&](const std::size_t cacheIndex) noexcept {
-        const Math::Vector3UVE center = m_colliders[cacheIndex].worldAabb.GetCenterUVE();
+    const auto CenterOnAxis = [&](const std::size_t cacheIndex) noexcept {
+        const Math::Vector3 center = m_colliders[cacheIndex].worldAabb.GetCenter();
         return splitAxis == 0U ? center.x : (splitAxis == 1U ? center.y : center.z);
     };
     std::stable_sort(m_indices.begin() + static_cast<std::ptrdiff_t>(begin),
                      m_indices.begin() + static_cast<std::ptrdiff_t>(end),
                      [&](const std::size_t lhs, const std::size_t rhs) {
-                         const float leftCenter = CenterOnAxisUVE(lhs);
-                         const float rightCenter = CenterOnAxisUVE(rhs);
+                         const float leftCenter = CenterOnAxis(lhs);
+                         const float rightCenter = CenterOnAxis(rhs);
                          return leftCenter < rightCenter ||
                                 (leftCenter == rightCenter && lhs < rhs);
                      });
 
     const std::size_t middle = begin + (end - begin) / 2U;
-    const std::size_t left = BuildObjectUVE(begin, middle, objectIndex);
-    const std::size_t right = BuildObjectUVE(middle, end, objectIndex);
+    const std::size_t left = BuildObject(begin, middle, objectIndex);
+    const std::size_t right = BuildObject(middle, end, objectIndex);
     m_objects[objectIndex].left = left;
     m_objects[objectIndex].right = right;
     return objectIndex;
 }
 
-void DynamicAabbBvhUVE::RefitFromLeafUVE(const std::size_t leafObjectIndex) noexcept {
+void DynamicAabbBvh::RefitFromLeaf(const std::size_t leafObjectIndex) noexcept {
     std::size_t objectIndex = leafObjectIndex;
-    while (objectIndex != kInvalidObjectIndexUVE) {
-        ObjectUVE& object = m_objects[objectIndex];
+    while (objectIndex != kInvalidObjectIndex) {
+        Object& object = m_objects[objectIndex];
         if (object.isLeaf) {
             object.bounds = m_colliders[m_indices[object.begin]].worldAabb;
             for (std::size_t index = object.begin + 1U; index < object.end; ++index) {
-                object.bounds = object.bounds.UnionUVE(m_colliders[m_indices[index]].worldAabb);
+                object.bounds = object.bounds.Union(m_colliders[m_indices[index]].worldAabb);
             }
         } else {
-            object.bounds = m_objects[object.left].bounds.UnionUVE(m_objects[object.right].bounds);
+            object.bounds = m_objects[object.left].bounds.Union(m_objects[object.right].bounds);
         }
         objectIndex = object.parent;
     }
 }
 
-DynamicColliderWorldAabbUpdateResultUVE DynamicAabbBvhUVE::UpdateAabbUVE(
-    const Scene::EntityUVE entity, const Math::AabbUVE& worldAabb) noexcept {
-    if (entity == Scene::kInvalidEntityUVE) {
-        return {DynamicColliderWorldAabbUpdateCodeUVE::InvalidEntity,
+DynamicColliderWorldAabbUpdateResult DynamicAabbBvh::UpdateAabb(
+    const Scene::Entity entity, const Math::Aabb& worldAabb) noexcept {
+    if (entity == Scene::kInvalidEntity) {
+        return {DynamicColliderWorldAabbUpdateCode::InvalidEntity,
                 "Dynamic BVH update rejected because the entity handle is invalid."};
     }
-    if (!IsValidAabbUVE(worldAabb)) {
-        return {DynamicColliderWorldAabbUpdateCodeUVE::InvalidAabb,
+    if (!IsValidAabb(worldAabb)) {
+        return {DynamicColliderWorldAabbUpdateCode::InvalidAabb,
                 "Dynamic BVH update rejected because the world AABB is invalid."};
     }
     if (!m_isValid) {
-        return {DynamicColliderWorldAabbUpdateCodeUVE::UnknownProxy,
+        return {DynamicColliderWorldAabbUpdateCode::UnknownProxy,
                 "Dynamic BVH update rejected because the copied proxy topology is invalid."};
     }
 
     const auto iterator = std::find_if(m_colliders.begin(), m_colliders.end(),
-                                       [entity](const ColliderWorldAabbUVE& collider) {
+                                       [entity](const ColliderWorldAabb& collider) {
                                            return collider.entity == entity;
                                        });
     if (iterator == m_colliders.end()) {
         const bool sameIndex = std::any_of(m_colliders.begin(), m_colliders.end(), [entity](const auto& collider) {
             return collider.entity.index == entity.index;
         });
-        return {sameIndex ? DynamicColliderWorldAabbUpdateCodeUVE::StaleGeneration
-                          : DynamicColliderWorldAabbUpdateCodeUVE::UnknownProxy,
+        return {sameIndex ? DynamicColliderWorldAabbUpdateCode::StaleGeneration
+                          : DynamicColliderWorldAabbUpdateCode::UnknownProxy,
                 sameIndex ? "Dynamic BVH update rejected because the entity generation is stale."
                           : "Dynamic BVH update rejected because the entity is not a BVH proxy."};
     }
 
     const std::size_t cacheIndex = static_cast<std::size_t>(iterator - m_colliders.begin());
     iterator->worldAabb = worldAabb;
-    RefitFromLeafUVE(m_leafObjectByCacheIndex[cacheIndex]);
-    return {DynamicColliderWorldAabbUpdateCodeUVE::Applied, "Dynamic BVH AABB update applied."};
+    RefitFromLeaf(m_leafObjectByCacheIndex[cacheIndex]);
+    return {DynamicColliderWorldAabbUpdateCode::Applied, "Dynamic BVH AABB update applied."};
 }
 
-bool DynamicAabbBvhUVE::QueryUVE(const Math::AabbUVE& bounds,
+bool DynamicAabbBvh::Query(const Math::Aabb& bounds,
                                  std::vector<std::size_t>& candidates) const {
     candidates.clear();
-    if (!m_isValid || !IsValidAabbUVE(bounds)) {
+    if (!m_isValid || !IsValidAabb(bounds)) {
         return false;
     }
     if (m_indices.empty()) {
         return true;
     }
 
-    std::array<std::size_t, kBvhMaximumTraversalStackUVE> stack{};
+    std::array<std::size_t, kBvhMaximumTraversalStack> stack{};
     std::size_t stackSize = 0U;
     stack[stackSize++] = m_root;
     while (stackSize > 0U) {
-        const ObjectUVE& object = m_objects[stack[--stackSize]];
-        if (!bounds.IntersectsUVE(object.bounds)) {
+        const Object& object = m_objects[stack[--stackSize]];
+        if (!bounds.Intersects(object.bounds)) {
             continue;
         }
         if (object.isLeaf) {

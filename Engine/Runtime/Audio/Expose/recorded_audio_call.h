@@ -10,26 +10,26 @@
 
 namespace UVE::Audio {
 
-/// One order-sensitive call recorded by NullAudioDeviceUVE — deliberately only the three calls a
+/// One order-sensitive call recorded by NullAudioDevice — deliberately only the three calls a
 /// real backend would need to receive in exact sequence to reproduce this voice's behavior
-/// (Play/Stop/SetVoiceParams). CreateVoiceUVE/DestroyVoiceUVE are pure resource-lifecycle
-/// bookkeeping (tested via NullAudioDeviceUVE::GetLiveVoiceCountUVE(), like
-/// Render::NullRenderDeviceUVE's own Create/Destroy calls) and are deliberately NOT part of this
+/// (Play/Stop/SetVoiceParams). CreateVoice/DestroyVoice are pure resource-lifecycle
+/// bookkeeping (tested via NullAudioDevice::GetLiveVoiceCount(), like
+/// Render::NullRenderDevice's own Create/Destroy calls) and are deliberately NOT part of this
 /// sequence — audio has no command-buffer/submission concept at all (a real backend issues
 /// alSourcePlay/alSourcefv-style calls directly, not via a batched command list), so calls
 /// accumulate for the device's whole lifetime instead of being grouped by a "submit" boundary.
-struct PlayVoiceCallUVE {
-    VoiceHandleUVE voice;
+struct PlayVoiceCall {
+    VoiceHandle voice;
 };
-struct StopVoiceCallUVE {
-    VoiceHandleUVE voice;
+struct StopVoiceCall {
+    VoiceHandle voice;
 };
-struct SetVoiceParamsCallUVE {
-    VoiceHandleUVE voice;
-    AudioVoiceParamsUVE params;
+struct SetVoiceParamsCall {
+    VoiceHandle voice;
+    AudioVoiceParams params;
 };
 
-/// A single recorded IAudioDeviceUVE call, tagged by which method it came from.
-using RecordedAudioCallUVE = std::variant<PlayVoiceCallUVE, StopVoiceCallUVE, SetVoiceParamsCallUVE>;
+/// A single recorded IAudioDevice call, tagged by which method it came from.
+using RecordedAudioCall = std::variant<PlayVoiceCall, StopVoiceCall, SetVoiceParamsCall>;
 
 } // namespace UVE::Audio

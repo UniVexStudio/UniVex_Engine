@@ -16,114 +16,114 @@
 
 namespace UVE::App::Viewports {
 
-struct EditorViewportHostUVE::ImplUVE final {
-    ImplUVE(Editor::EditorUVE& editorRef, Core::EngineCoreUVE& engineRef)
+struct EditorViewportHost::Impl final {
+    Impl(Editor::Editor& editorRef, Core::EngineCore& engineRef)
         : editor(editorRef), engine(engineRef) {}
 
-    Editor::EditorUVE& editor;
-    Core::EngineCoreUVE& engine;
-    std::unique_ptr<LevelViewportUVE> level;
-    std::unique_ptr<CameraPreviewViewportUVE> cameraPreview;
-    std::unique_ptr<EntityViewportUVE> entity;
-    std::unique_ptr<WidgetPreviewViewportUVE> widgetPreview;
-    std::unique_ptr<RetargetViewportUVE> retarget;
-    std::unique_ptr<MontageViewportUVE> montage;
-    std::unique_ptr<VfxViewportUVE> vfx;
+    Editor::Editor& editor;
+    Core::EngineCore& engine;
+    std::unique_ptr<LevelViewport> level;
+    std::unique_ptr<CameraPreviewViewport> cameraPreview;
+    std::unique_ptr<EntityViewport> entity;
+    std::unique_ptr<WidgetPreviewViewport> widgetPreview;
+    std::unique_ptr<RetargetViewport> retarget;
+    std::unique_ptr<MontageViewport> montage;
+    std::unique_ptr<VfxViewport> vfx;
 };
 
-EditorViewportHostUVE::EditorViewportHostUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine)
-    : m_impl(std::make_unique<ImplUVE>(editor, engine)) {}
+EditorViewportHost::EditorViewportHost(Editor::Editor& editor, Core::EngineCore& engine)
+    : m_impl(std::make_unique<Impl>(editor, engine)) {}
 
-EditorViewportHostUVE::~EditorViewportHostUVE() {
+EditorViewportHost::~EditorViewportHost() {
     if (m_impl != nullptr) {
-        m_impl->editor.ClearEditorViewportsUVE();
+        m_impl->editor.ClearEditorViewports();
     }
 }
 
-void EditorViewportHostUVE::BindToEditorUVE(Editor::EditorUVE& editor) {
-    ImplUVE* const impl = m_impl.get();
-    Editor::EditorUVE::EditorViewportsUVE viewports{};
+void EditorViewportHost::BindToEditor(Editor::Editor& editor) {
+    Impl* const impl = m_impl.get();
+    Editor::Editor::EditorViewports viewports{};
 
-    viewports.level = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                             const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->level == nullptr || impl->level->ServicesUVE() != &services) {
+    viewports.level = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                             const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->level == nullptr || impl->level->Services() != &services) {
             impl->level.reset();
-            impl->level = std::make_unique<LevelViewportUVE>(impl->editor, impl->engine, services);
+            impl->level = std::make_unique<LevelViewport>(impl->editor, impl->engine, services);
         }
-        return impl->level->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->level->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.cameraPreview = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                                     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->cameraPreview == nullptr || impl->cameraPreview->ServicesUVE() != &services) {
+    viewports.cameraPreview = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                                     const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->cameraPreview == nullptr || impl->cameraPreview->Services() != &services) {
             impl->cameraPreview.reset();
-            impl->cameraPreview = std::make_unique<CameraPreviewViewportUVE>(impl->editor, services);
+            impl->cameraPreview = std::make_unique<CameraPreviewViewport>(impl->editor, services);
         }
-        return impl->cameraPreview->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->cameraPreview->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.entity = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                              const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->entity == nullptr || impl->entity->ServicesUVE() != &services) {
+    viewports.entity = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                              const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->entity == nullptr || impl->entity->Services() != &services) {
             impl->entity.reset();
-            impl->entity = std::make_unique<EntityViewportUVE>(impl->editor, services);
+            impl->entity = std::make_unique<EntityViewport>(impl->editor, services);
         }
-        return impl->entity->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->entity->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.widgetPreview = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                                     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->widgetPreview == nullptr || impl->widgetPreview->ServicesUVE() != &services) {
+    viewports.widgetPreview = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                                     const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->widgetPreview == nullptr || impl->widgetPreview->Services() != &services) {
             impl->widgetPreview.reset();
-            impl->widgetPreview = std::make_unique<WidgetPreviewViewportUVE>(impl->editor, services);
+            impl->widgetPreview = std::make_unique<WidgetPreviewViewport>(impl->editor, services);
         }
-        return impl->widgetPreview->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->widgetPreview->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.retarget = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                                const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->retarget == nullptr || impl->retarget->ServicesUVE() != &services) {
+    viewports.retarget = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                                const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->retarget == nullptr || impl->retarget->Services() != &services) {
             impl->retarget.reset();
-            impl->retarget = std::make_unique<RetargetViewportUVE>(impl->editor, services);
+            impl->retarget = std::make_unique<RetargetViewport>(impl->editor, services);
         }
-        return impl->retarget->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->retarget->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.montage = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                               const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->montage == nullptr || impl->montage->ServicesUVE() != &services) {
+    viewports.montage = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                               const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->montage == nullptr || impl->montage->Services() != &services) {
             impl->montage.reset();
-            impl->montage = std::make_unique<MontageViewportUVE>(impl->editor, services);
+            impl->montage = std::make_unique<MontageViewport>(impl->editor, services);
         }
-        return impl->montage->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->montage->Render(availableSize, outUsedSize, overlayState);
     };
 
-    viewports.vfx = [impl](const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
-                           const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) -> std::uint64_t {
-        Core::EngineServicesUVE& services = impl->editor.GetActiveServicesUVE();
-        if (impl->vfx == nullptr || impl->vfx->ServicesUVE() != &services) {
+    viewports.vfx = [impl](const Math::Vector2& availableSize, Math::Vector2& outUsedSize,
+                           const Editor::Editor::ViewportOverlayState& overlayState) -> std::uint64_t {
+        Core::EngineServices& services = impl->editor.GetActiveServices();
+        if (impl->vfx == nullptr || impl->vfx->Services() != &services) {
             impl->vfx.reset();
-            impl->vfx = std::make_unique<VfxViewportUVE>(impl->editor, services);
+            impl->vfx = std::make_unique<VfxViewport>(impl->editor, services);
         }
-        return impl->vfx->RenderUVE(availableSize, outUsedSize, overlayState);
+        return impl->vfx->Render(availableSize, outUsedSize, overlayState);
     };
 
-    editor.SetEditorViewportsUVE(std::move(viewports));
+    editor.SetEditorViewports(std::move(viewports));
 }
 
-void EditorViewportHostUVE::UnbindFromEditorUVE(Editor::EditorUVE& editor) {
-    editor.ClearEditorViewportsUVE();
+void EditorViewportHost::UnbindFromEditor(Editor::Editor& editor) {
+    editor.ClearEditorViewports();
 }
 
-void EditorViewportHostUVE::ForgetServicesUVE(const Core::EngineServicesUVE& services) {
+void EditorViewportHost::ForgetServices(const Core::EngineServices& services) {
     const auto forget = [&services](auto& viewport) {
-        if (viewport != nullptr && viewport->ServicesUVE() == &services) {
+        if (viewport != nullptr && viewport->Services() == &services) {
             viewport.reset();
         }
     };

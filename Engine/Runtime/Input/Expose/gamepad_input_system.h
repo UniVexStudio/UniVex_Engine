@@ -10,40 +10,40 @@
 
 namespace UVE::Input {
 
-class GamepadInputSystemUVE final : public IGamepadInputSystemUVE {
+class GamepadInputSystem final : public IGamepadInputSystem {
 public:
-    explicit GamepadInputSystemUVE(float deadZone = 0.15F) noexcept;
+    explicit GamepadInputSystem(float deadZone = 0.15F) noexcept;
 
-    void SetConnectedUVE(std::size_t gamepadIndex, bool connected) override;
-    void SetAxisStateUVE(std::size_t gamepadIndex, GamepadAxisUVE axis, float value) override;
-    void SetButtonStateUVE(std::size_t gamepadIndex, GamepadButtonUVE button, bool isDown) override;
-    void UpdateUVE() override;
+    void SetConnected(std::size_t gamepadIndex, bool connected) override;
+    void SetAxisState(std::size_t gamepadIndex, GamepadAxis axis, float value) override;
+    void SetButtonState(std::size_t gamepadIndex, GamepadButton button, bool isDown) override;
+    void Update() override;
 
-    [[nodiscard]] GamepadStateSnapshotUVE GetSnapshotUVE(std::size_t gamepadIndex) const override;
-    [[nodiscard]] GamepadStateSnapshotUVE GetPreviousSnapshotUVE(std::size_t gamepadIndex) const override;
-    [[nodiscard]] float GetAxisValueUVE(std::size_t gamepadIndex, GamepadAxisUVE axis) const override;
-    [[nodiscard]] bool IsButtonDownUVE(std::size_t gamepadIndex, GamepadButtonUVE button) const override;
-    [[nodiscard]] bool WasButtonPressedThisFrameUVE(std::size_t gamepadIndex,
-                                                     GamepadButtonUVE button) const override;
-    [[nodiscard]] bool WasButtonReleasedThisFrameUVE(std::size_t gamepadIndex,
-                                                      GamepadButtonUVE button) const override;
-    [[nodiscard]] float GetDeadZoneUVE() const noexcept override { return m_deadZone; }
-    void SetDeadZoneUVE(float deadZone) noexcept override;
+    [[nodiscard]] GamepadStateSnapshot GetSnapshot(std::size_t gamepadIndex) const override;
+    [[nodiscard]] GamepadStateSnapshot GetPreviousSnapshot(std::size_t gamepadIndex) const override;
+    [[nodiscard]] float GetAxisValue(std::size_t gamepadIndex, GamepadAxis axis) const override;
+    [[nodiscard]] bool IsButtonDown(std::size_t gamepadIndex, GamepadButton button) const override;
+    [[nodiscard]] bool WasButtonPressedThisFrame(std::size_t gamepadIndex,
+                                                     GamepadButton button) const override;
+    [[nodiscard]] bool WasButtonReleasedThisFrame(std::size_t gamepadIndex,
+                                                      GamepadButton button) const override;
+    [[nodiscard]] float GetDeadZone() const noexcept override { return m_deadZone; }
+    void SetDeadZone(float deadZone) noexcept override;
 
 private:
-    using SnapshotArrayUVE = std::array<GamepadStateSnapshotUVE, kMaximumGamepadCountUVE>;
+    using SnapshotArray = std::array<GamepadStateSnapshot, kMaximumGamepadCount>;
 
-    [[nodiscard]] static bool IsValidGamepadIndexUVE(std::size_t gamepadIndex) noexcept;
-    [[nodiscard]] static bool IsValidAxisUVE(GamepadAxisUVE axis) noexcept;
-    [[nodiscard]] static bool IsValidButtonUVE(GamepadButtonUVE button) noexcept;
-    [[nodiscard]] float NormalizeAxisValueUVE(float value) const noexcept;
+    [[nodiscard]] static bool IsValidGamepadIndex(std::size_t gamepadIndex) noexcept;
+    [[nodiscard]] static bool IsValidAxis(GamepadAxis axis) noexcept;
+    [[nodiscard]] static bool IsValidButton(GamepadButton button) noexcept;
+    [[nodiscard]] float NormalizeAxisValue(float value) const noexcept;
 
     float m_deadZone;
 
     mutable std::mutex m_liveStateMutex;
-    SnapshotArrayUVE m_liveState{};
-    SnapshotArrayUVE m_currentState{};
-    SnapshotArrayUVE m_previousState{};
+    SnapshotArray m_liveState{};
+    SnapshotArray m_currentState{};
+    SnapshotArray m_previousState{};
     std::uint64_t m_frameNumber = 0U;
 };
 

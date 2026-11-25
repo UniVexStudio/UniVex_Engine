@@ -18,61 +18,61 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr std::uint64_t kMaximumPrimitiveIndicesUVE = kMaximumGltfAccessorElementsUVE * 3U;
-constexpr float kMinimumNormalLengthSquaredUVE = 1.0e-12F;
+constexpr std::uint64_t kMaximumPrimitiveIndices = kMaximumGltfAccessorElements * 3U;
+constexpr float kMinimumNormalLengthSquared = 1.0e-12F;
 
-[[nodiscard]] UVE::Math::Vector3UVE ReadVector3UVE(const GltfAccessorViewUVE& accessor,
+[[nodiscard]] UVE::Math::Vector3 ReadVector3(const GltfAccessorView& accessor,
                                                    const std::size_t index) noexcept {
-    const std::byte* const bytes = Detail::GltfAccessorElementUVE(accessor, index, 12U);
-    return UVE::Math::Vector3UVE{Detail::ReadGltfFloatLEUVE(bytes), Detail::ReadGltfFloatLEUVE(bytes + 4U),
-                                 Detail::ReadGltfFloatLEUVE(bytes + 8U)};
+    const std::byte* const bytes = Detail::GltfAccessorElement(accessor, index, 12U);
+    return UVE::Math::Vector3{Detail::ReadGltfFloatLE(bytes), Detail::ReadGltfFloatLE(bytes + 4U),
+                                 Detail::ReadGltfFloatLE(bytes + 8U)};
 }
 
-[[nodiscard]] std::uint32_t ReadIndexUVE(const GltfAccessorViewUVE& accessor,
+[[nodiscard]] std::uint32_t ReadIndex(const GltfAccessorView& accessor,
                                          const std::size_t index) noexcept {
-    const std::byte* const bytes = Detail::GltfAccessorElementUVE(
-        accessor, index, Detail::GltfComponentSizeUVE(accessor.componentType));
+    const std::byte* const bytes = Detail::GltfAccessorElement(
+        accessor, index, Detail::GltfComponentSize(accessor.componentType));
     switch (accessor.componentType) {
-    case GltfComponentTypeUVE::UnsignedByte:
+    case GltfComponentType::UnsignedByte:
         return std::to_integer<std::uint8_t>(bytes[0]);
-    case GltfComponentTypeUVE::UnsignedShort:
-        return Detail::ReadGltfU16LEUVE(bytes);
-    case GltfComponentTypeUVE::UnsignedInt:
-        return Detail::ReadGltfU32LEUVE(bytes);
-    case GltfComponentTypeUVE::Float:
+    case GltfComponentType::UnsignedShort:
+        return Detail::ReadGltfU16LE(bytes);
+    case GltfComponentType::UnsignedInt:
+        return Detail::ReadGltfU32LE(bytes);
+    case GltfComponentType::Float:
         return 0U;
     }
     return 0U;
 }
 
-[[nodiscard]] bool HasUsableNormalLengthUVE(const UVE::Math::Vector3UVE& value) noexcept {
-    const float lengthSquared = UVE::Math::LengthSquaredUVE(value);
-    return std::isfinite(lengthSquared) && lengthSquared > kMinimumNormalLengthSquaredUVE;
+[[nodiscard]] bool HasUsableNormalLength(const UVE::Math::Vector3& value) noexcept {
+    const float lengthSquared = UVE::Math::LengthSquared(value);
+    return std::isfinite(lengthSquared) && lengthSquared > kMinimumNormalLengthSquared;
 }
 
-[[nodiscard]] UVE::Math::Vector3UVE NormalizeOrFallbackUVE(const UVE::Math::Vector3UVE& value) noexcept {
-    if (!HasUsableNormalLengthUVE(value)) {
-        return UVE::Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+[[nodiscard]] UVE::Math::Vector3 NormalizeOrFallback(const UVE::Math::Vector3& value) noexcept {
+    if (!HasUsableNormalLength(value)) {
+        return UVE::Math::Vector3{0.0F, 1.0F, 0.0F};
     }
-    return UVE::Math::NormalizeUVE(value);
+    return UVE::Math::Normalize(value);
 }
 
 /// Every displacement stream of one morph target shares the base mesh's vertex count; glTF says so
 /// and an exporter that disagrees has produced data no eval pass can index safely.
-[[nodiscard]] bool ValidateMorphStreamUVE(const GltfAccessorViewUVE& stream,
+[[nodiscard]] bool ValidateMorphStream(const GltfAccessorView& stream,
                                           const std::uint64_t vertexCount,
                                           const std::uint64_t elementSize) noexcept {
-    return stream.componentType == GltfComponentTypeUVE::Float && stream.elementCount == vertexCount &&
-           Detail::ValidateGltfAccessorViewUVE(stream, elementSize, kMaximumGltfAccessorElementsUVE);
+    return stream.componentType == GltfComponentType::Float && stream.elementCount == vertexCount &&
+           Detail::ValidateGltfAccessorView(stream, elementSize, kMaximumGltfAccessorElements);
 }
 
-[[nodiscard]] bool IsZeroVectorUVE(const UVE::Math::Vector3UVE& value) noexcept {
+[[nodiscard]] bool IsZeroVector(const UVE::Math::Vector3& value) noexcept {
     return value.x == 0.0F && value.y == 0.0F && value.z == 0.0F;
 }
 
 /// glTF carries morph target names out-of-band in `mesh.extras.targetNames`. A missing or short
 /// array is not an error - it just means those targets need the deterministic fallback name.
-[[nodiscard]] std::string MorphTargetNameUVE(const std::vector<std::string>& names, const std::size_t index) {
+[[nodiscard]] std::string MorphTargetName(const std::vector<std::string>& names, const std::size_t index) {
     if (index < names.size() && !names[index].empty()) {
         return names[index];
     }
@@ -83,68 +83,68 @@ constexpr float kMinimumNormalLengthSquaredUVE = 1.0e-12F;
 
 namespace {
 
-[[nodiscard]] bool ConvertGltfPrimitiveIntoUVE(const GltfPrimitiveSourceUVE& source,
-                                              const GltfMorphTargetSetUVE* const morphTargets,
-                                              MeshAssetUVE& outMesh) {
+[[nodiscard]] bool ConvertGltfPrimitiveInto(const GltfPrimitiveSource& source,
+                                              const GltfMorphTargetSet* const morphTargets,
+                                              MeshAsset& outMesh) {
     try {
-        if (source.mode != 4U || source.positions.componentType != GltfComponentTypeUVE::Float ||
-        source.positions.elementCount == 0U || source.positions.elementCount > kMaximumGltfAccessorElementsUVE ||
-        !Detail::ValidateGltfAccessorViewUVE(source.positions, 12U, kMaximumGltfAccessorElementsUVE)) {
+        if (source.mode != 4U || source.positions.componentType != GltfComponentType::Float ||
+        source.positions.elementCount == 0U || source.positions.elementCount > kMaximumGltfAccessorElements ||
+        !Detail::ValidateGltfAccessorView(source.positions, 12U, kMaximumGltfAccessorElements)) {
         return false;
     }
 
     const std::size_t vertexCount = static_cast<std::size_t>(source.positions.elementCount);
     if (source.normals.has_value()) {
-        if (source.normals->componentType != GltfComponentTypeUVE::Float ||
+        if (source.normals->componentType != GltfComponentType::Float ||
             source.normals->elementCount != source.positions.elementCount ||
-            !Detail::ValidateGltfAccessorViewUVE(*source.normals, 12U, kMaximumGltfAccessorElementsUVE)) {
+            !Detail::ValidateGltfAccessorView(*source.normals, 12U, kMaximumGltfAccessorElements)) {
             return false;
         }
     }
     if (source.texcoords0.has_value()) {
-        if (source.texcoords0->componentType != GltfComponentTypeUVE::Float ||
+        if (source.texcoords0->componentType != GltfComponentType::Float ||
             source.texcoords0->elementCount != source.positions.elementCount ||
-            !Detail::ValidateGltfAccessorViewUVE(*source.texcoords0, 8U, kMaximumGltfAccessorElementsUVE)) {
+            !Detail::ValidateGltfAccessorView(*source.texcoords0, 8U, kMaximumGltfAccessorElements)) {
             return false;
         }
     }
 
     const std::uint64_t indexCount = source.indices.has_value() ? source.indices->elementCount
                                                                   : source.positions.elementCount;
-    if (indexCount == 0U || indexCount % 3U != 0U || indexCount > kMaximumPrimitiveIndicesUVE) {
+    if (indexCount == 0U || indexCount % 3U != 0U || indexCount > kMaximumPrimitiveIndices) {
         return false;
     }
     if (source.indices.has_value()) {
-        const std::uint64_t indexElementSize = Detail::GltfComponentSizeUVE(source.indices->componentType);
-        if ((source.indices->componentType != GltfComponentTypeUVE::UnsignedByte &&
-             source.indices->componentType != GltfComponentTypeUVE::UnsignedShort &&
-             source.indices->componentType != GltfComponentTypeUVE::UnsignedInt) ||
-            !Detail::ValidateGltfAccessorViewUVE(*source.indices, indexElementSize, kMaximumPrimitiveIndicesUVE)) {
+        const std::uint64_t indexElementSize = Detail::GltfComponentSize(source.indices->componentType);
+        if ((source.indices->componentType != GltfComponentType::UnsignedByte &&
+             source.indices->componentType != GltfComponentType::UnsignedShort &&
+             source.indices->componentType != GltfComponentType::UnsignedInt) ||
+            !Detail::ValidateGltfAccessorView(*source.indices, indexElementSize, kMaximumPrimitiveIndices)) {
             return false;
         }
     }
 
-    MeshAssetUVE candidate;
+    MeshAsset candidate;
     candidate.vertices.resize(vertexCount);
     candidate.indices.resize(static_cast<std::size_t>(indexCount));
     bool hasBounds = false;
     for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
-        const UVE::Math::Vector3UVE position = ReadVector3UVE(source.positions, vertexIndex);
-        if (!Math::IsFiniteUVE(position)) {
+        const UVE::Math::Vector3 position = ReadVector3(source.positions, vertexIndex);
+        if (!Math::IsFinite(position)) {
             return false;
         }
         candidate.vertices[vertexIndex].position = position;
         if (source.normals.has_value()) {
-            const UVE::Math::Vector3UVE normal = ReadVector3UVE(*source.normals, vertexIndex);
-            if (!Math::IsFiniteUVE(normal) || !HasUsableNormalLengthUVE(normal)) {
+            const UVE::Math::Vector3 normal = ReadVector3(*source.normals, vertexIndex);
+            if (!Math::IsFinite(normal) || !HasUsableNormalLength(normal)) {
                 return false;
             }
-            candidate.vertices[vertexIndex].normal = UVE::Math::NormalizeUVE(normal);
+            candidate.vertices[vertexIndex].normal = UVE::Math::Normalize(normal);
         }
         if (source.texcoords0.has_value()) {
-            const std::byte* const bytes = Detail::GltfAccessorElementUVE(*source.texcoords0, vertexIndex, 8U);
-            candidate.vertices[vertexIndex].u = Detail::ReadGltfFloatLEUVE(bytes);
-            candidate.vertices[vertexIndex].v = Detail::ReadGltfFloatLEUVE(bytes + 4U);
+            const std::byte* const bytes = Detail::GltfAccessorElement(*source.texcoords0, vertexIndex, 8U);
+            candidate.vertices[vertexIndex].u = Detail::ReadGltfFloatLE(bytes);
+            candidate.vertices[vertexIndex].v = Detail::ReadGltfFloatLE(bytes + 4U);
             if (!std::isfinite(candidate.vertices[vertexIndex].u) ||
                 !std::isfinite(candidate.vertices[vertexIndex].v)) {
                 return false;
@@ -166,7 +166,7 @@ namespace {
 
     for (std::size_t index = 0U; index < candidate.indices.size(); ++index) {
         const std::uint32_t value = source.indices.has_value()
-                                        ? ReadIndexUVE(*source.indices, index)
+                                        ? ReadIndex(*source.indices, index)
                                         : static_cast<std::uint32_t>(index);
         if (value >= vertexCount) {
             return false;
@@ -174,80 +174,80 @@ namespace {
         candidate.indices[index] = value;
     }
 
-    std::vector<UVE::Math::Vector3UVE> normalAccumulation;
+    std::vector<UVE::Math::Vector3> normalAccumulation;
     if (!source.normals.has_value()) {
         normalAccumulation.resize(vertexCount);
         for (std::size_t triangle = 0U; triangle < candidate.indices.size(); triangle += 3U) {
             const auto& a = candidate.vertices[candidate.indices[triangle]].position;
             const auto& b = candidate.vertices[candidate.indices[triangle + 1U]].position;
             const auto& c = candidate.vertices[candidate.indices[triangle + 2U]].position;
-            const UVE::Math::Vector3UVE faceNormal = UVE::Math::CrossUVE(b - a, c - a);
-            if (!Math::IsFiniteUVE(faceNormal) || !HasUsableNormalLengthUVE(faceNormal)) {
+            const UVE::Math::Vector3 faceNormal = UVE::Math::Cross(b - a, c - a);
+            if (!Math::IsFinite(faceNormal) || !HasUsableNormalLength(faceNormal)) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle]] += faceNormal;
-            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle]])) {
+            if (!Math::IsFinite(normalAccumulation[candidate.indices[triangle]])) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle + 1U]] += faceNormal;
-            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle + 1U]])) {
+            if (!Math::IsFinite(normalAccumulation[candidate.indices[triangle + 1U]])) {
                 return false;
             }
             normalAccumulation[candidate.indices[triangle + 2U]] += faceNormal;
-            if (!Math::IsFiniteUVE(normalAccumulation[candidate.indices[triangle + 2U]])) {
+            if (!Math::IsFinite(normalAccumulation[candidate.indices[triangle + 2U]])) {
                 return false;
             }
         }
         for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
-            candidate.vertices[vertexIndex].normal = NormalizeOrFallbackUVE(normalAccumulation[vertexIndex]);
+            candidate.vertices[vertexIndex].normal = NormalizeOrFallback(normalAccumulation[vertexIndex]);
         }
     }
 
-    if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
+    if (!TryGenerateMeshTangents(candidate.vertices, candidate.indices)) {
         return false;
     }
 
     // Morph targets, in declaration order - that order IS the weight index space, so it is never
     // sorted or deduplicated here.
-    if (morphTargets != nullptr && morphTargets->targets.size() > kMaximumMeshMorphTargetsUVE) {
+    if (morphTargets != nullptr && morphTargets->targets.size() > kMaximumMeshMorphTargets) {
         return false;
     }
     const std::size_t targetCount = morphTargets == nullptr ? 0U : morphTargets->targets.size();
     candidate.morphTargets.reserve(targetCount);
     for (std::size_t targetIndex = 0U; targetIndex < targetCount; ++targetIndex) {
-        const GltfMorphTargetSourceUVE& targetSource = morphTargets->targets[targetIndex];
-        if (!ValidateMorphStreamUVE(targetSource.positions, source.positions.elementCount, 12U) ||
+        const GltfMorphTargetSource& targetSource = morphTargets->targets[targetIndex];
+        if (!ValidateMorphStream(targetSource.positions, source.positions.elementCount, 12U) ||
             (targetSource.normals.has_value() &&
-             !ValidateMorphStreamUVE(*targetSource.normals, source.positions.elementCount, 12U)) ||
+             !ValidateMorphStream(*targetSource.normals, source.positions.elementCount, 12U)) ||
             (targetSource.tangents.has_value() &&
-             !ValidateMorphStreamUVE(*targetSource.tangents, source.positions.elementCount, 12U))) {
+             !ValidateMorphStream(*targetSource.tangents, source.positions.elementCount, 12U))) {
             return false;
         }
-        MeshMorphTargetUVE target;
-        target.name = MorphTargetNameUVE(morphTargets->names, targetIndex);
+        MeshMorphTarget target;
+        target.name = MorphTargetName(morphTargets->names, targetIndex);
         // A delta whose three streams are all exactly zero moves nothing. Exporters emit these by
         // the thousand for the vertices a shape leaves alone, and dropping them is what makes the
         // sparse representation pay for itself: it is lossless because a missing delta IS a zero
         // delta, and the accumulator skips zeroes anyway.
         for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
-            const UVE::Math::Vector3UVE positionDelta = ReadVector3UVE(targetSource.positions, vertexIndex);
-            const UVE::Math::Vector3UVE normalDelta =
-                targetSource.normals.has_value() ? ReadVector3UVE(*targetSource.normals, vertexIndex)
-                                                 : UVE::Math::Vector3UVE{};
-            const UVE::Math::Vector3UVE tangentDelta =
-                targetSource.tangents.has_value() ? ReadVector3UVE(*targetSource.tangents, vertexIndex)
-                                                  : UVE::Math::Vector3UVE{};
-            if (!Math::IsFiniteUVE(positionDelta) || !Math::IsFiniteUVE(normalDelta) ||
-                !Math::IsFiniteUVE(tangentDelta)) {
+            const UVE::Math::Vector3 positionDelta = ReadVector3(targetSource.positions, vertexIndex);
+            const UVE::Math::Vector3 normalDelta =
+                targetSource.normals.has_value() ? ReadVector3(*targetSource.normals, vertexIndex)
+                                                 : UVE::Math::Vector3{};
+            const UVE::Math::Vector3 tangentDelta =
+                targetSource.tangents.has_value() ? ReadVector3(*targetSource.tangents, vertexIndex)
+                                                  : UVE::Math::Vector3{};
+            if (!Math::IsFinite(positionDelta) || !Math::IsFinite(normalDelta) ||
+                !Math::IsFinite(tangentDelta)) {
                 return false;
             }
-            if (IsZeroVectorUVE(positionDelta) && IsZeroVectorUVE(normalDelta) && IsZeroVectorUVE(tangentDelta)) {
+            if (IsZeroVector(positionDelta) && IsZeroVector(normalDelta) && IsZeroVector(tangentDelta)) {
                 continue;
             }
-            if (target.deltas.size() >= kMaximumMeshMorphTargetDeltasUVE) {
+            if (target.deltas.size() >= kMaximumMeshMorphTargetDeltas) {
                 return false;
             }
-            target.deltas.push_back(MeshMorphTargetDeltaUVE{
+            target.deltas.push_back(MeshMorphTargetDelta{
                 static_cast<std::uint32_t>(vertexIndex), positionDelta, normalDelta, tangentDelta});
         }
         candidate.morphTargets.push_back(std::move(target));
@@ -263,7 +263,7 @@ namespace {
         }
         candidate.defaultMorphWeights = morphTargets->defaultWeights;
     }
-    if (!IsMeshMorphTargetDataValidUVE(candidate)) {
+    if (!IsMeshMorphTargetDataValid(candidate)) {
         return false;
     }
 
@@ -276,13 +276,13 @@ namespace {
 
 } // namespace
 
-bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, MeshAssetUVE& outMesh) {
-    return ConvertGltfPrimitiveIntoUVE(source, nullptr, outMesh);
+bool ConvertGltfPrimitive(const GltfPrimitiveSource& source, MeshAsset& outMesh) {
+    return ConvertGltfPrimitiveInto(source, nullptr, outMesh);
 }
 
-bool ConvertGltfPrimitiveUVE(const GltfPrimitiveSourceUVE& source, const GltfMorphTargetSetUVE& morphTargets,
-                             MeshAssetUVE& outMesh) {
-    return ConvertGltfPrimitiveIntoUVE(source, &morphTargets, outMesh);
+bool ConvertGltfPrimitive(const GltfPrimitiveSource& source, const GltfMorphTargetSet& morphTargets,
+                             MeshAsset& outMesh) {
+    return ConvertGltfPrimitiveInto(source, &morphTargets, outMesh);
 }
 
 } // namespace UVE::Asset

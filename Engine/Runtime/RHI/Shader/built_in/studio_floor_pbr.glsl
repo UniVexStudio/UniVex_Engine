@@ -82,9 +82,9 @@ uniform float uLightRanges[4];
 
 out vec4 FragColor;
 
-const float kPiUVE = 3.14159265359;
+const float kPi = 3.14159265359;
 
-vec2 EnvBrdfApproxUVE(float roughness, float NoV) {
+vec2 EnvBrdfApprox(float roughness, float NoV) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
     vec4 r = roughness * c0 + c1;
@@ -92,13 +92,13 @@ vec2 EnvBrdfApproxUVE(float roughness, float NoV) {
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
-float DistributionGGXUVE(float NoH, float alpha) {
+float DistributionGGX(float NoH, float alpha) {
     float a2 = alpha * alpha;
     float denom = NoH * NoH * (a2 - 1.0) + 1.0;
-    return a2 / max(kPiUVE * denom * denom, 1.0e-7);
+    return a2 / max(kPi * denom * denom, 1.0e-7);
 }
 
-float VisibilitySmithGGXCorrelatedUVE(float NoV, float NoL, float alpha) {
+float VisibilitySmithGGXCorrelated(float NoV, float NoL, float alpha) {
     float a2 = alpha * alpha;
     float ggxV = NoL * sqrt(NoV * NoV * (1.0 - a2) + a2);
     float ggxL = NoV * sqrt(NoL * NoL * (1.0 - a2) + a2);
@@ -139,7 +139,7 @@ void main() {
     float NoV = max(dot(N, V), 1.0e-4);
 
     vec3 f0 = mix(vec3(0.04 * clamp(uSpecularStrength / 0.5, 0.0, 2.0)), albedoSample, metallic);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, NoV);
+    vec2 envBrdf = EnvBrdfApprox(roughness, NoV);
     vec3 envSpecularColor = f0 * envBrdf.x + envBrdf.y;
     vec3 energyCompensation = 1.0 + f0 * (1.0 / max(envBrdf.x + envBrdf.y, 1.0e-4) - 1.0);
 
@@ -180,11 +180,11 @@ void main() {
         float v1 = 1.0 - VoH;
         float v2 = v1 * v1;
         vec3 F = f0 + (1.0 - f0) * (v2 * v2 * v1);
-        float D = DistributionGGXUVE(NoH, alpha);
-        float Vis = VisibilitySmithGGXCorrelatedUVE(NoV, NoL, alpha);
+        float D = DistributionGGX(NoH, alpha);
+        float Vis = VisibilitySmithGGXCorrelated(NoV, NoL, alpha);
 
         vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-        vec3 diffuseTerm = kD * albedoSample / kPiUVE;
+        vec3 diffuseTerm = kD * albedoSample / kPi;
         vec3 specularTerm = (D * Vis) * F * energyCompensation;
 
         vec3 radiance = uLightColors[i] * attenuation * NoL;

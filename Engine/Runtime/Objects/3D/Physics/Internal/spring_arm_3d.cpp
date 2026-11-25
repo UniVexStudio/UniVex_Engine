@@ -10,41 +10,41 @@
 
 namespace UVE::Scene {
 
-bool IsSpringArm3DObjectComponentValidUVE(const SpringArm3DComponentUVE& value) noexcept {
+bool IsSpringArm3DObjectComponentValid(const SpringArm3DComponent& value) noexcept {
     return std::isfinite(value.armLength) && value.armLength > 0.0F && std::isfinite(value.margin) &&
            value.margin >= 0.0F && std::isfinite(value.smoothing) && value.smoothing >= 0.0F &&
            std::isfinite(value.currentLength) && value.currentLength >= 0.0F && value.currentLength <= value.armLength;
 }
 
-bool IsSpringArm3DObjectDefinitionValidUVE(const SpringArm3DObjectDefinitionUVE& value) noexcept {
-    return IsSpringArm3DObjectComponentValidUVE(value.springArm);
+bool IsSpringArm3DObjectDefinitionValid(const SpringArm3DObjectDefinition& value) noexcept {
+    return IsSpringArm3DObjectComponentValid(value.springArm);
 }
 
-void ApplySpringArm3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const SpringArm3DObjectDefinitionUVE& value) {
+void ApplySpringArm3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                       const SpringArm3DObjectDefinition& value) {
     // SpringArm3D is Object3D plus its own component: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureObject3DBaselineUVE(entityManager, entity, SpringArm3DObjectDefinitionUVE::defaultName);
-    SpringArm3DComponentUVE springArm = value.springArm;
+    EnsureObject3DBaseline(entityManager, entity, SpringArm3DObjectDefinition::defaultName);
+    SpringArm3DComponent springArm = value.springArm;
     // Armed at full reach on day one, the same seeding the deserializer applies on load: the
     // first simulation step resolves the truth, everything before that must still be valid.
     springArm.currentLength = springArm.armLength;
-    entityManager.AddComponentUVE<SpringArm3DComponentUVE>(entity, springArm);
+    entityManager.AddComponent<SpringArm3DComponent>(entity, springArm);
 }
 
-bool SpringArm3DUVE::IsCastingUVE(const SpringArm3DComponentUVE& springArm) noexcept {
+bool SpringArm3D::IsCasting(const SpringArm3DComponent& springArm) noexcept {
     return springArm.enabled;
 }
 
-Math::Vector3UVE SpringArm3DUVE::ResolveWorldAxisUVE(const Math::QuaternionUVE& worldRotation) noexcept {
-    Math::QuaternionUVE rotation{};
-    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+Math::Vector3 SpringArm3D::ResolveWorldAxis(const Math::Quaternion& worldRotation) noexcept {
+    Math::Quaternion rotation{};
+    if (!Math::TryNormalize(worldRotation, rotation)) {
         rotation = {};
     }
-    return Math::RotateVectorUVE(rotation, kArmAxisUVE);
+    return Math::RotateVector(rotation, kArmAxis);
 }
 
-float SpringArm3DUVE::ResolveTargetUVE(const std::optional<float> hitDistance, const float margin,
+float SpringArm3D::ResolveTarget(const std::optional<float> hitDistance, const float margin,
                                        const float armLength) noexcept {
     if (!hitDistance.has_value() || !std::isfinite(*hitDistance) || !std::isfinite(armLength) ||
         armLength <= 0.0F || !std::isfinite(margin) || margin < 0.0F) {
@@ -53,7 +53,7 @@ float SpringArm3DUVE::ResolveTargetUVE(const std::optional<float> hitDistance, c
     return std::clamp(*hitDistance - margin, 0.0F, armLength);
 }
 
-float SpringArm3DUVE::ResolveLengthUVE(const float currentLength, const float targetLength,
+float SpringArm3D::ResolveLength(const float currentLength, const float targetLength,
                                        const float smoothing, const float dtSeconds) noexcept {
     if (!std::isfinite(currentLength) || !std::isfinite(targetLength) || !std::isfinite(smoothing) ||
         !std::isfinite(dtSeconds) || dtSeconds <= 0.0F) {
@@ -64,20 +64,20 @@ float SpringArm3DUVE::ResolveLengthUVE(const float currentLength, const float ta
     }
     const float blend = 1.0F - std::exp(-smoothing * dtSeconds);
     const float resolved = currentLength + (targetLength - currentLength) * blend;
-    if (std::fabs(targetLength - resolved) <= kSpringArm3DCompletionToleranceUVE) {
+    if (std::fabs(targetLength - resolved) <= kSpringArm3DCompletionTolerance) {
         return targetLength;
     }
     return resolved;
 }
 
-float ResolveSpringArm3DTargetUVE(const std::optional<float> hitDistance, const float margin,
+float ResolveSpringArm3DTarget(const std::optional<float> hitDistance, const float margin,
                                   const float armLength) noexcept {
-    return SpringArm3DUVE::ResolveTargetUVE(hitDistance, margin, armLength);
+    return SpringArm3D::ResolveTarget(hitDistance, margin, armLength);
 }
 
-float ResolveSpringArm3DLengthUVE(const float currentLength, const float targetLength,
+float ResolveSpringArm3DLength(const float currentLength, const float targetLength,
                                   const float smoothing, const float dtSeconds) noexcept {
-    return SpringArm3DUVE::ResolveLengthUVE(currentLength, targetLength, smoothing, dtSeconds);
+    return SpringArm3D::ResolveLength(currentLength, targetLength, smoothing, dtSeconds);
 }
 
 } // namespace UVE::Scene

@@ -16,54 +16,54 @@
 namespace UVE::Memory::Tests {
 namespace {
 
-TEST(MemoryManagerUVETest, RecordAllocationAndDeallocation_UpdateActiveStats) {
-    MemoryManagerUVE manager;
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 0U);
-    EXPECT_EQ(manager.GetActiveBytesUVE(), 0U);
+TEST(MemoryManagerTest, RecordAllocationAndDeallocation_UpdateActiveStats) {
+    MemoryManager manager;
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 0U);
+    EXPECT_EQ(manager.GetActiveBytes(), 0U);
 
     int dummyA = 0;
     int dummyB = 0;
-    manager.RecordAllocationUVE(&dummyA, 100, 8, "Test", __FILE__, __LINE__);
-    manager.RecordAllocationUVE(&dummyB, 50, 8, "Test", __FILE__, __LINE__);
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 2U);
-    EXPECT_EQ(manager.GetActiveBytesUVE(), 150U);
+    manager.RecordAllocation(&dummyA, 100, 8, "Test", __FILE__, __LINE__);
+    manager.RecordAllocation(&dummyB, 50, 8, "Test", __FILE__, __LINE__);
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 2U);
+    EXPECT_EQ(manager.GetActiveBytes(), 150U);
 
-    manager.RecordDeallocationUVE(&dummyA);
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 1U);
-    EXPECT_EQ(manager.GetActiveBytesUVE(), 50U);
+    manager.RecordDeallocation(&dummyA);
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 1U);
+    EXPECT_EQ(manager.GetActiveBytes(), 50U);
 
-    manager.RecordDeallocationUVE(&dummyB);
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 0U);
+    manager.RecordDeallocation(&dummyB);
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 0U);
 }
 
-TEST(MemoryManagerUVETest, PeakBytes_TracksHighWaterMarkAndNeverDecreases) {
-    MemoryManagerUVE manager;
+TEST(MemoryManagerTest, PeakBytes_TracksHighWaterMarkAndNeverDecreases) {
+    MemoryManager manager;
     int dummyA = 0;
     int dummyB = 0;
-    manager.RecordAllocationUVE(&dummyA, 100, 8, "Test", __FILE__, __LINE__);
-    manager.RecordAllocationUVE(&dummyB, 100, 8, "Test", __FILE__, __LINE__);
-    EXPECT_EQ(manager.GetPeakBytesUVE(), 200U);
+    manager.RecordAllocation(&dummyA, 100, 8, "Test", __FILE__, __LINE__);
+    manager.RecordAllocation(&dummyB, 100, 8, "Test", __FILE__, __LINE__);
+    EXPECT_EQ(manager.GetPeakBytes(), 200U);
 
-    manager.RecordDeallocationUVE(&dummyA);
-    EXPECT_EQ(manager.GetPeakBytesUVE(), 200U);
-    EXPECT_EQ(manager.GetActiveBytesUVE(), 100U);
+    manager.RecordDeallocation(&dummyA);
+    EXPECT_EQ(manager.GetPeakBytes(), 200U);
+    EXPECT_EQ(manager.GetActiveBytes(), 100U);
 
-    manager.RecordDeallocationUVE(&dummyB);
+    manager.RecordDeallocation(&dummyB);
 }
 
-TEST(MemoryManagerUVETest, AllocationId_IsUniqueAndMonotonicallyIncreasing) {
-    MemoryManagerUVE manager;
+TEST(MemoryManagerTest, AllocationId_IsUniqueAndMonotonicallyIncreasing) {
+    MemoryManager manager;
     int dummyA = 0;
     int dummyB = 0;
-    manager.RecordAllocationUVE(&dummyA, 8, 8, "Test", __FILE__, __LINE__);
-    manager.RecordAllocationUVE(&dummyB, 8, 8, "Test", __FILE__, __LINE__);
+    manager.RecordAllocation(&dummyA, 8, 8, "Test", __FILE__, __LINE__);
+    manager.RecordAllocation(&dummyB, 8, 8, "Test", __FILE__, __LINE__);
 
-    const std::vector<AllocationRecordUVE> leaks = manager.GetLeakedAllocationsUVE();
+    const std::vector<AllocationRecord> leaks = manager.GetLeakedAllocations();
     ASSERT_EQ(leaks.size(), 2U);
 
-    const AllocationRecordUVE* recordA = nullptr;
-    const AllocationRecordUVE* recordB = nullptr;
-    for (const AllocationRecordUVE& record : leaks) {
+    const AllocationRecord* recordA = nullptr;
+    const AllocationRecord* recordB = nullptr;
+    for (const AllocationRecord& record : leaks) {
         if (record.pointer == &dummyA) {
             recordA = &record;
         } else if (record.pointer == &dummyB) {
@@ -75,32 +75,32 @@ TEST(MemoryManagerUVETest, AllocationId_IsUniqueAndMonotonicallyIncreasing) {
     EXPECT_GT(recordA->allocationId, 0U);
     EXPECT_EQ(recordB->allocationId, recordA->allocationId + 1);
 
-    manager.RecordDeallocationUVE(&dummyA);
-    manager.RecordDeallocationUVE(&dummyB);
+    manager.RecordDeallocation(&dummyA);
+    manager.RecordDeallocation(&dummyB);
 }
 
-TEST(MemoryManagerUVETest, GetDefaultAllocatorUVE_ReturnsWorkingSelfTrackedAllocator) {
-    MemoryManagerUVE manager;
-    IAllocatorUVE& allocator = manager.GetDefaultAllocatorUVE();
+TEST(MemoryManagerTest, GetDefaultAllocator_ReturnsWorkingSelfTrackedAllocator) {
+    MemoryManager manager;
+    IAllocator& allocator = manager.GetDefaultAllocator();
 
-    void* const pointer = allocator.AllocateUVE(64, 8, __FILE__, __LINE__);
+    void* const pointer = allocator.Allocate(64, 8, __FILE__, __LINE__);
     ASSERT_NE(pointer, nullptr);
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 1U);
-    EXPECT_EQ(manager.GetActiveBytesUVE(), 64U);
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 1U);
+    EXPECT_EQ(manager.GetActiveBytes(), 64U);
 
-    allocator.DeallocateUVE(pointer);
-    EXPECT_EQ(manager.GetActiveAllocationCountUVE(), 0U);
+    allocator.Deallocate(pointer);
+    EXPECT_EQ(manager.GetActiveAllocationCount(), 0U);
 }
 
-TEST(MemoryManagerUVETest, HasLeaksAndGetLeakedAllocations_FlagIntentionallyUnfreedAllocation) {
-    MemoryManagerUVE manager;
-    EXPECT_FALSE(manager.HasLeaksUVE());
+TEST(MemoryManagerTest, HasLeaksAndGetLeakedAllocations_FlagIntentionallyUnfreedAllocation) {
+    MemoryManager manager;
+    EXPECT_FALSE(manager.HasLeaks());
 
     int leaked = 0;
-    manager.RecordAllocationUVE(&leaked, 42, 8, "LeakyAllocator", __FILE__, 12345);
+    manager.RecordAllocation(&leaked, 42, 8, "LeakyAllocator", __FILE__, 12345);
 
-    EXPECT_TRUE(manager.HasLeaksUVE());
-    const std::vector<AllocationRecordUVE> leaks = manager.GetLeakedAllocationsUVE();
+    EXPECT_TRUE(manager.HasLeaks());
+    const std::vector<AllocationRecord> leaks = manager.GetLeakedAllocations();
     ASSERT_EQ(leaks.size(), 1U);
     EXPECT_EQ(leaks[0].pointer, &leaked);
     EXPECT_EQ(leaks[0].sizeBytes, 42U);
@@ -108,31 +108,31 @@ TEST(MemoryManagerUVETest, HasLeaksAndGetLeakedAllocations_FlagIntentionallyUnfr
     EXPECT_EQ(leaks[0].sourceLine, 12345);
     EXPECT_GT(leaks[0].allocationId, 0U);
 
-    manager.RecordDeallocationUVE(&leaked); // clean up so the test doesn't itself "leak"
+    manager.RecordDeallocation(&leaked); // clean up so the test doesn't itself "leak"
 }
 
-TEST(MemoryManagerUVETest, LogLeakReportUVE_EmitsErrorPerLeak) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(MemoryManagerTest, LogLeakReport_EmitsErrorPerLeak) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    MemoryManagerUVE manager;
+    MemoryManager manager;
     int leaked = 0;
-    manager.RecordAllocationUVE(&leaked, 16, 8, "LeakyAllocator", __FILE__, __LINE__);
+    manager.RecordAllocation(&leaked, 16, 8, "LeakyAllocator", __FILE__, __LINE__);
 
-    manager.LogLeakReportUVE();
+    manager.LogLeakReport();
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundLeakError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("Memory leak");
         });
     EXPECT_TRUE(foundLeakError);
 
-    manager.RecordDeallocationUVE(&leaked);
+    manager.RecordDeallocation(&leaked);
     logger.Shutdown();
 }
 

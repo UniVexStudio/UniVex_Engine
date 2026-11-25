@@ -29,7 +29,7 @@ namespace UVE::Build {
 
 /// The profile this binary was built as. Values are stable so they can be logged, displayed in a
 /// crash report, or written into a save header without a string table.
-enum class ProfileUVE : unsigned char {
+enum class Profile : unsigned char {
     Debug = 0,
     Development = 1,
     Release = 2,
@@ -37,37 +37,37 @@ enum class ProfileUVE : unsigned char {
 };
 
 #if defined(UVE_BUILD_CONFIGURATION_SHIPPING)
-inline constexpr ProfileUVE kProfileUVE = ProfileUVE::Shipping;
+inline constexpr Profile kProfile = Profile::Shipping;
 #elif defined(UVE_BUILD_CONFIGURATION_RELEASE)
-inline constexpr ProfileUVE kProfileUVE = ProfileUVE::Release;
+inline constexpr Profile kProfile = Profile::Release;
 #elif defined(UVE_BUILD_CONFIGURATION_DEVELOPMENT)
-inline constexpr ProfileUVE kProfileUVE = ProfileUVE::Development;
+inline constexpr Profile kProfile = Profile::Development;
 #else
-inline constexpr ProfileUVE kProfileUVE = ProfileUVE::Debug;
+inline constexpr Profile kProfile = Profile::Debug;
 #endif
 
 /// True when `UVE_ASSERT` evaluates its condition. A shipping binary must report false here; code
 /// that would otherwise rely on an assertion firing has to handle the condition instead.
-inline constexpr bool kAssertionsEnabledUVE = UVE_PROFILE_ASSERTIONS_ENABLED != 0;
+inline constexpr bool kAssertionsEnabled = UVE_PROFILE_ASSERTIONS_ENABLED != 0;
 
 /// True when this profile strips log statements at compile time instead of filtering them at
 /// runtime. Only shipping does; every other profile keeps the statements and filters by level.
-inline constexpr bool kCompiledOutLoggingUVE = UVE_COMPILED_LOG_LEVEL > 0;
+inline constexpr bool kCompiledOutLogging = UVE_COMPILED_LOG_LEVEL > 0;
 
 /// Lowest severity this binary can emit, whether the filtering happened at compile time or will
 /// happen at runtime. Exposed so diagnostics tooling can say "this build cannot print that" rather
 /// than leaving a developer wondering why a message never appears.
-inline constexpr int kCompiledLogLevelUVE = UVE_COMPILED_LOG_LEVEL;
+inline constexpr int kCompiledLogLevel = UVE_COMPILED_LOG_LEVEL;
 
-[[nodiscard]] constexpr const char* ToStringUVE(const ProfileUVE profile) noexcept {
+[[nodiscard]] constexpr const char* ToString(const Profile profile) noexcept {
     switch (profile) {
-        case ProfileUVE::Debug:
+        case Profile::Debug:
             return "Debug";
-        case ProfileUVE::Development:
+        case Profile::Development:
             return "Development";
-        case ProfileUVE::Release:
+        case Profile::Release:
             return "Release";
-        case ProfileUVE::Shipping:
+        case Profile::Shipping:
             return "Shipping";
     }
     return "Unknown";
@@ -75,7 +75,7 @@ inline constexpr int kCompiledLogLevelUVE = UVE_COMPILED_LOG_LEVEL;
 
 /// Exactly one profile must be selected. Two would mean the CMake module published contradictory
 /// definitions and every `#if` downstream would silently take whichever branch came first.
-inline constexpr int kSelectedProfileCountUVE =
+inline constexpr int kSelectedProfileCount =
 #if defined(UVE_BUILD_CONFIGURATION_DEBUG)
     1
 #else
@@ -98,7 +98,7 @@ inline constexpr int kSelectedProfileCountUVE =
 #endif
     ;
 
-static_assert(kSelectedProfileCountUVE == 1, "Exactly one UVE build profile must be defined.");
+static_assert(kSelectedProfileCount == 1, "Exactly one UVE build profile must be defined.");
 
 // The invariant worth a compile error: a shipping product must not carry assertion machinery.
 static_assert(!(UVE_SHIPPING != 0) || UVE_PROFILE_ASSERTIONS_ENABLED == 0,
@@ -112,6 +112,6 @@ static_assert(UVE_COMPILED_LOG_LEVEL == 0 || UVE_COMPILED_LOG_LEVEL == UVE_PROFI
               "runtime default; anything else makes the two disagree about what this binary emits.");
 
 static_assert(UVE_PROFILE_DEFAULT_LOG_LEVEL >= 0 && UVE_PROFILE_DEFAULT_LOG_LEVEL <= 5,
-              "UVE_PROFILE_DEFAULT_LOG_LEVEL must name a LogLevelUVE severity (0..5).");
+              "UVE_PROFILE_DEFAULT_LOG_LEVEL must name a LogLevel severity (0..5).");
 
 } // namespace UVE::Build

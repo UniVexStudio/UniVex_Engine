@@ -14,17 +14,17 @@
 namespace UVE::Asset {
 namespace {
 
-using T = BlueprintPinTypeUVE;
-using Role = BlueprintNodeRoleUVE;
-using Pin = BlueprintPinSpecUVE;
+using T = BlueprintPinType;
+using Role = BlueprintNodeRole;
+using Pin = BlueprintPinSpec;
 
 [[nodiscard]] Pin Exec(std::string name = "") { return Pin{std::move(name), T::Exec, ""}; }
 
 /// Where each node belongs: an object's graph or a widget's, and the component it needs.
-void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
-    constexpr auto object = static_cast<std::uint8_t>(BlueprintGraphKindUVE::Object);
-    constexpr auto widget = static_cast<std::uint8_t>(BlueprintGraphKindUVE::Widget);
-    for (BlueprintNodeTypeUVE& n : all) {
+void AssignScopes(std::vector<BlueprintNodeType>& all) {
+    constexpr auto object = static_cast<std::uint8_t>(BlueprintGraphKind::Object);
+    constexpr auto widget = static_cast<std::uint8_t>(BlueprintGraphKind::Widget);
+    for (BlueprintNodeType& n : all) {
         const std::string& c = n.category;
         if (n.event == "custom_event" || n.event == "timer" || c.starts_with("Utilities") || c == "Game" || c.starts_with("Game|")) {
             n.graphs = object | widget;
@@ -64,11 +64,11 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     }
 }
 
-[[nodiscard]] std::vector<BlueprintNodeTypeUVE> BuildCatalogueUVE() {
-    std::vector<BlueprintNodeTypeUVE> all;
+[[nodiscard]] std::vector<BlueprintNodeType> BuildCatalogue() {
+    std::vector<BlueprintNodeType> all;
     const auto event = [&all](std::string key, std::string title, std::string ev, std::vector<Pin> data, std::string keywords,
                               std::string tip) {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = "Events";
@@ -84,7 +84,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     };
     const auto action = [&all](std::string key, std::string title, std::string category, std::vector<Pin> data, std::string code,
                                std::string keywords = "", std::string tip = "") {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = std::move(category);
@@ -101,7 +101,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     };
     const auto pure = [&all](std::string key, std::string title, std::string category, std::vector<Pin> inputs, std::vector<Pin> outputs,
                              std::vector<std::string> codes, std::string keywords = "", std::string tip = "") {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = std::move(category);
@@ -115,7 +115,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     };
     const auto flow = [&all](std::string key, std::string title, Role role, std::vector<Pin> inputs, std::vector<Pin> outputs,
                              std::string keywords, std::string tip) {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = "Flow Control";
@@ -143,7 +143,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     // Named events: the node names which one (empty: any), like a widget event.
     const auto namedEvent = [&all](std::string key, std::string title, std::string category, std::string ev, std::string field,
                                    std::string fieldDefault, std::vector<Pin> data, std::string keywords, std::string tip) {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = std::move(category);
@@ -313,7 +313,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     const auto valued = [&all](std::string key, std::string title, std::string category, std::vector<Pin> data, std::vector<Pin> values,
                                std::vector<std::string> codes, std::string keywords, std::string tip) {
         // An action with values, kept in fields for the nodes after it.
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = std::move(category);
@@ -467,7 +467,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     const std::vector<std::pair<T, std::string>> arrays = {
         {T::ObjectArray, "Object"}, {T::IntArray, "Int"}, {T::FloatArray, "Float"}, {T::StringArray, "String"}};
     for (const auto& [arrayType, word] : arrays) {
-        const T item = BlueprintArrayItemTypeUVE(arrayType);
+        const T item = BlueprintArrayItemType(arrayType);
         // "(Float Array)": never the same title as a scalar node ("Add (Float)" is the maths one).
         const std::string suffix = " (" + word + " Array)";
         const std::string key = "_" + word;
@@ -568,7 +568,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     // they belong to, and the graph of every object above it.
     const auto widgetEvent = [&all](std::string key, std::string title, std::string ev, std::string widget, std::vector<Pin> data,
                                     std::string keywords, std::string tip) {
-        BlueprintNodeTypeUVE n;
+        BlueprintNodeType n;
         n.key = std::move(key);
         n.title = std::move(title);
         n.category = "User Interface|Events";
@@ -594,7 +594,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     widgetEvent("ui_on_unhovered", "On Unhovered", "ui_unhovered", "Button", {Pin{"Button", T::String, ""}}, "hover mouse leave exit",
                 "The pointer left a button of the widget");
     {
-        BlueprintNodeTypeUVE construct;
+        BlueprintNodeType construct;
         construct.key = "ui_on_construct";
         construct.title = "Event Construct";
         construct.category = "User Interface|Events";
@@ -637,7 +637,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
            "Takes this widget off the screen");
     {
         // Returns the widget it made: an action with a value, kept for the nodes after it.
-        BlueprintNodeTypeUVE create;
+        BlueprintNodeType create;
         create.key = "ui_create_widget";
         create.title = "Create Widget";
         create.category = "User Interface";
@@ -772,14 +772,14 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
          {"({0}.x * {1}.x + {0}.y * {1}.y + {0}.z * {1}.z)"}, "dot");
 
     // ---- variables (their pins come from the variable)
-    BlueprintNodeTypeUVE get;
+    BlueprintNodeType get;
     get.key = "get_variable";
     get.title = "Get";
     get.category = "Variables";
     get.role = Role::GetVariable;
     get.outputs = {Pin{"Value", T::Float, ""}};
     all.push_back(get);
-    BlueprintNodeTypeUVE set;
+    BlueprintNodeType set;
     set.key = "set_variable";
     set.title = "Set";
     set.category = "Variables";
@@ -789,8 +789,8 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     all.push_back(set);
     // ---- networking (delegates exclusively to Engine/Runtime/Networking/ host bindings)
     {
-        const auto toPinType = [](const Blueprint::Nodes::Networking::NetworkingPinTypeUVE t) {
-            using NT = Blueprint::Nodes::Networking::NetworkingPinTypeUVE;
+        const auto toPinType = [](const Blueprint::Nodes::Networking::NetworkingPinType t) {
+            using NT = Blueprint::Nodes::Networking::NetworkingPinType;
             switch (t) {
                 case NT::Bool: return T::Bool;
                 case NT::Int: return T::Int;
@@ -800,12 +800,12 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
             }
             return T::Int;
         };
-        for (const auto& spec : Blueprint::Nodes::Networking::GetNetworkingBlueprintNodesUVE()) {
+        for (const auto& spec : Blueprint::Nodes::Networking::GetNetworkingBlueprintNodes()) {
             std::vector<Pin> inPins;
             for (const auto& p : spec.inputs) {
                 inPins.push_back(Pin{std::string(p.name), toPinType(p.type), std::string(p.defaultText)});
             }
-            if (spec.kind == Blueprint::Nodes::Networking::NetworkingNodeKindUVE::Action) {
+            if (spec.kind == Blueprint::Nodes::Networking::NetworkingNodeKind::Action) {
                 action(std::string(spec.key), std::string(spec.title), std::string(spec.category),
                        std::move(inPins), std::string(spec.expression), std::string(spec.keywords),
                        std::string(spec.tooltip));
@@ -820,11 +820,11 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
             }
         }
     }
-    AssignScopesUVE(all);
+    AssignScopes(all);
     return all;
 }
 
-[[nodiscard]] std::string IdentifierUVE(std::string_view text) {
+[[nodiscard]] std::string Identifier(std::string_view text) {
     std::string out;
     for (const char c : text) {
         out.push_back(std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' ? c : '_');
@@ -836,7 +836,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
 }
 
 /// An unwired input's typed value as UVScript.
-[[nodiscard]] std::string LiteralUVE(const T type, const std::string& text) {
+[[nodiscard]] std::string Literal(const T type, const std::string& text) {
     switch (type) {
         case T::Bool: return text == "true" || text == "1" ? "true" : "false";
         case T::Int: {
@@ -874,7 +874,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
                 parts.push_back(part);
             }
             parts.resize(3U);
-            return "vec3(" + LiteralUVE(T::Float, parts[0]) + ", " + LiteralUVE(T::Float, parts[1]) + ", " + LiteralUVE(T::Float, parts[2]) + ")";
+            return "vec3(" + Literal(T::Float, parts[0]) + ", " + Literal(T::Float, parts[1]) + ", " + Literal(T::Float, parts[2]) + ")";
         }
         case T::String: {
             std::string out = "\"";
@@ -901,7 +901,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
 }
 
 /// Fills `{n}` in `pattern` with `args[n]`.
-[[nodiscard]] std::string FormatUVE(const std::string& pattern, const std::vector<std::string>& args) {
+[[nodiscard]] std::string Format(const std::string& pattern, const std::vector<std::string>& args) {
     std::string out;
     for (std::size_t i = 0U; i < pattern.size(); ++i) {
         if (pattern[i] == '{') {
@@ -922,29 +922,29 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
 }
 
 /// The timer a Retriggerable Delay node waits on.
-[[nodiscard]] std::string RetriggerTimerUVE(const std::uint32_t id) { return "__delay" + std::to_string(id); }
+[[nodiscard]] std::string RetriggerTimer(const std::uint32_t id) { return "__delay" + std::to_string(id); }
 
-class TranslatorUVE final {
+class Translator final {
 public:
-    explicit TranslatorUVE(const BlueprintAssetUVE& blueprint) : m_bp(blueprint) {
-        for (const BlueprintNodeUVE& node : m_bp.nodes) {
+    explicit Translator(const BlueprintAsset& blueprint) : m_bp(blueprint) {
+        for (const BlueprintNode& node : m_bp.nodes) {
             m_nodes[node.id] = &node;
         }
     }
 
-    BlueprintTranslationUVE Run(const std::string_view objectName, const std::string_view objectKind) {
-        Line("entity " + IdentifierUVE(objectName.empty() ? std::string_view{"Object"} : objectName) + " : " + std::string(objectKind), 0U);
+    BlueprintTranslation Run(const std::string_view objectName, const std::string_view objectKind) {
+        Line("entity " + Identifier(objectName.empty() ? std::string_view{"Object"} : objectName) + " : " + std::string(objectKind), 0U);
         Line("", 0U);
-        for (const BlueprintVariableUVE& variable : m_bp.variables) {
+        for (const BlueprintVariable& variable : m_bp.variables) {
             const std::string keyword = variable.exposed ? "export" : "var";
-            const std::string init = variable.type == T::Object ? std::string{} : " = " + LiteralUVE(variable.type, variable.defaultText);
-            Line(keyword + " " + IdentifierUVE(variable.name) + ": " + std::string(BlueprintPinTypeScriptNameUVE(variable.type)) + init, 0U);
+            const std::string init = variable.type == T::Object ? std::string{} : " = " + Literal(variable.type, variable.defaultText);
+            Line(keyword + " " + Identifier(variable.name) + ": " + std::string(BlueprintPinTypeScriptName(variable.type)) + init, 0U);
         }
         // Event chains, grouped by event so two Event Tick nodes run one after the other.
-        std::map<std::string, std::vector<const BlueprintNodeUVE*>> byEvent;
+        std::map<std::string, std::vector<const BlueprintNode*>> byEvent;
         std::vector<std::string> order;
-        for (const BlueprintNodeUVE& node : m_bp.nodes) {
-            const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+        for (const BlueprintNode& node : m_bp.nodes) {
+            const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
             if (type == nullptr) {
                 m_out.problems.emplace_back(node.id, "unknown node \"" + node.type + "\"");
                 continue;
@@ -969,8 +969,8 @@ public:
         std::swap(body, m_lines);
         for (const std::string& event : order) {
             const auto& nodes = byEvent[event];
-            const BlueprintNodeTypeUVE* const type =
-                nodes.empty() ? FindBlueprintNodeTypeUVE("event_timer") : FindBlueprintNodeTypeUVE(nodes.front()->type);
+            const BlueprintNodeType* const type =
+                nodes.empty() ? FindBlueprintNodeType("event_timer") : FindBlueprintNodeType(nodes.front()->type);
             const std::uint32_t at = nodes.empty() ? m_delays.front() : nodes.front()->id;
             std::string params;
             for (std::size_t i = 1U; i < type->outputs.size(); ++i) {
@@ -979,11 +979,11 @@ public:
             Line("", 0U);
             Line("on " + event + (params.empty() ? std::string{} : "(" + params + ")") + ":", at);
             const std::size_t before = m_lines.size();
-            for (const BlueprintNodeUVE* node : nodes) {
+            for (const BlueprintNode* node : nodes) {
                 // A widget event names its widget: only that one's (empty: every widget's).
                 const std::string widget = !type->inputs.empty() && !node->inputValues.empty() ? node->inputValues[0] : std::string{};
                 if (!widget.empty() && type->outputs.size() > 1U) {
-                    Line("    if arg1 == " + LiteralUVE(T::String, widget) + ":", node->id);
+                    Line("    if arg1 == " + Literal(T::String, widget) + ":", node->id);
                     EmitBlock(node->id, 0U, 2);
                 } else {
                     EmitFrom(node->id, 0U, 1);
@@ -991,7 +991,7 @@ public:
             }
             if (event == "timer") {
                 for (const std::uint32_t delay : m_delays) {
-                    Line("    if arg1 == \"" + RetriggerTimerUVE(delay) + "\":", delay);
+                    Line("    if arg1 == \"" + RetriggerTimer(delay) + "\":", delay);
                     EmitBlock(delay, 0U, 2);
                 }
             }
@@ -1018,36 +1018,36 @@ public:
 private:
     void Line(std::string text, const std::uint32_t node) { m_lines.emplace_back(std::move(text), node); }
     /// The field an action's value output `pin` is kept in (`ret7`, then `ret7_2` ...).
-    static std::string ReturnFieldUVE(const std::string& tag, const std::uint32_t pin) {
+    static std::string ReturnField(const std::string& tag, const std::uint32_t pin) {
         return pin <= 1U ? "ret" + tag : "ret" + tag + "_" + std::to_string(pin);
     }
     /// A field once per node, however many exec wires lead into it.
-    void FieldOnceUVE(const std::string& name, const std::string& declaration) {
+    void FieldOnce(const std::string& name, const std::string& declaration) {
         if (m_declared.insert(name).second) {
             m_fields.push_back(declaration);
         }
     }
     /// An unwired input's typed value (a field's starting value cannot be an expression).
-    [[nodiscard]] std::string TypedValueUVE(const BlueprintNodeUVE& node, const std::uint32_t pin) const {
-        const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+    [[nodiscard]] std::string TypedValue(const BlueprintNode& node, const std::uint32_t pin) const {
+        const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
         if (type == nullptr || pin >= type->inputs.size()) {
             return "none";
         }
         const std::string& typed = pin < node.inputValues.size() && !node.inputValues[pin].empty() ? node.inputValues[pin] : type->inputs[pin].defaultText;
-        return LiteralUVE(type->inputs[pin].type, typed);
+        return Literal(type->inputs[pin].type, typed);
     }
     static std::string Indent(const int depth) { return std::string(static_cast<std::size_t>(depth) * 4U, ' '); }
 
-    [[nodiscard]] const BlueprintWireUVE* WireFromOutput(const std::uint32_t node, const std::uint32_t pin) const {
-        for (const BlueprintWireUVE& wire : m_bp.wires) {
+    [[nodiscard]] const BlueprintWire* WireFromOutput(const std::uint32_t node, const std::uint32_t pin) const {
+        for (const BlueprintWire& wire : m_bp.wires) {
             if (wire.fromNode == node && wire.fromPin == pin) {
                 return &wire;
             }
         }
         return nullptr;
     }
-    [[nodiscard]] const BlueprintWireUVE* WireToInput(const std::uint32_t node, const std::uint32_t pin) const {
-        for (const BlueprintWireUVE& wire : m_bp.wires) {
+    [[nodiscard]] const BlueprintWire* WireToInput(const std::uint32_t node, const std::uint32_t pin) const {
+        for (const BlueprintWire& wire : m_bp.wires) {
             if (wire.toNode == node && wire.toPin == pin) {
                 return &wire;
             }
@@ -1057,7 +1057,7 @@ private:
 
     /// Follows the exec wire out of `node`'s output `pin` and writes what it leads to.
     void EmitFrom(const std::uint32_t node, const std::uint32_t pin, const int depth) {
-        if (const BlueprintWireUVE* wire = WireFromOutput(node, pin)) {
+        if (const BlueprintWire* wire = WireFromOutput(node, pin)) {
             EmitNode(wire->toNode, depth, wire->toPin);
         }
     }
@@ -1080,8 +1080,8 @@ private:
             m_out.problems.emplace_back(id, "its exec wires lead back into themselves");
             return;
         }
-        const BlueprintNodeUVE& node = *found->second;
-        const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+        const BlueprintNode& node = *found->second;
+        const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
         if (type == nullptr) {
             return;
         }
@@ -1099,21 +1099,21 @@ private:
                     // first from the call itself and the rest read right after it.
                     for (std::uint32_t out = 1U; out < type->outputs.size() && out - 1U < type->outputCode.size(); ++out) {
                         const T valueType = type->outputs[out].type;
-                        const std::string field = ReturnFieldUVE(tag, out);
+                        const std::string field = ReturnField(tag, out);
                         if (m_declared.insert(field).second) {
-                            m_fields.push_back("var " + field + ": " + std::string(BlueprintPinTypeScriptNameUVE(valueType)) +
-                                               (valueType == T::Object ? std::string{} : " = " + LiteralUVE(valueType, "")));
+                            m_fields.push_back("var " + field + ": " + std::string(BlueprintPinTypeScriptName(valueType)) +
+                                               (valueType == T::Object ? std::string{} : " = " + Literal(valueType, "")));
                         }
-                        Line(pad + field + " = " + FormatUVE(type->outputCode[out - 1U], args), id);
+                        Line(pad + field + " = " + Format(type->outputCode[out - 1U], args), id);
                     }
                 } else {
-                    Line(pad + FormatUVE(type->code, args), id);
+                    Line(pad + Format(type->code, args), id);
                 }
                 EmitFrom(id, 0U, depth);
                 break;
             }
             case Role::SetVariable: {
-                Line(pad + IdentifierUVE(node.variable) + " = " + InputExpr(node, 1U), id);
+                Line(pad + Identifier(node.variable) + " = " + InputExpr(node, 1U), id);
                 EmitFrom(id, 0U, depth);
                 break;
             }
@@ -1142,13 +1142,13 @@ private:
                 EmitFrom(id, 1U, depth);
                 break;
             case Role::DoOnce:
-                FieldOnceUVE("once" + tag, "var once" + tag + " = false");
+                FieldOnce("once" + tag, "var once" + tag + " = false");
                 Line(pad + "if not once" + tag + ":", id);
                 Line(pad + "    once" + tag + " = true", id);
                 EmitFrom(id, 0U, depth + 1);
                 break;
             case Role::FlipFlop:
-                FieldOnceUVE("flip" + tag, "var flip" + tag + " = false");
+                FieldOnce("flip" + tag, "var flip" + tag + " = false");
                 Line(pad + "flip" + tag + " = not flip" + tag, id);
                 Line(pad + "if flip" + tag + ":", id);
                 EmitBlock(id, 0U, depth + 1);
@@ -1171,7 +1171,7 @@ private:
                 break;
             case Role::Gate: {
                 // Open unless "Start Closed": Enter passes only while open.
-                FieldOnceUVE("gate" + tag, std::string("var gate") + tag + " = " + (TypedValueUVE(node, 4U) == "true" ? "false" : "true"));
+                FieldOnce("gate" + tag, std::string("var gate") + tag + " = " + (TypedValue(node, 4U) == "true" ? "false" : "true"));
                 if (entry == 1U) {
                     Line(pad + "gate" + tag + " = true", id);
                 } else if (entry == 2U) {
@@ -1185,7 +1185,7 @@ private:
                 break;
             }
             case Role::DoN: {
-                FieldOnceUVE("count" + tag, "var count" + tag + ": int = 0");
+                FieldOnce("count" + tag, "var count" + tag + ": int = 0");
                 if (entry == 2U) {
                     Line(pad + "count" + tag + " = 0", id);
                 } else {
@@ -1196,7 +1196,7 @@ private:
                 break;
             }
             case Role::MultiGate: {
-                FieldOnceUVE("step" + tag, "var step" + tag + ": int = 0");
+                FieldOnce("step" + tag, "var step" + tag + ": int = 0");
                 const std::uint32_t outs = static_cast<std::uint32_t>(type->outputs.size());
                 if (entry == 1U) {
                     Line(pad + "step" + tag + " = 0", id);
@@ -1220,7 +1220,7 @@ private:
             }
             case Role::RetriggerableDelay:
                 // A timer of its own: entering again starts it over; what follows runs in `on timer`.
-                Line(pad + "timers.set(\"" + RetriggerTimerUVE(id) + "\", " + InputExpr(node, 1U) + ", false)", id);
+                Line(pad + "timers.set(\"" + RetriggerTimer(id) + "\", " + InputExpr(node, 1U) + ", false)", id);
                 break;
             case Role::SwitchInt:
             case Role::SwitchString: {
@@ -1250,7 +1250,7 @@ private:
             case Role::ForEach: {
                 // Over a copy taken once, so the body may change the array it walks.
                 const std::string items = "items" + tag;
-                FieldOnceUVE(items, "var " + items + ": " + std::string(BlueprintPinTypeScriptNameUVE(type->inputs[1].type)) + " = []");
+                FieldOnce(items, "var " + items + ": " + std::string(BlueprintPinTypeScriptName(type->inputs[1].type)) + " = []");
                 Line(pad + items + " = " + InputExpr(node, 1U), id);
                 Line(pad + "for i" + tag + " in 0.." + items + ".length():", id);
                 Line(pad + "    let e" + tag + " = " + items + "[i" + tag + "]", id);
@@ -1270,16 +1270,16 @@ private:
     }
 
     /// The expression for input `pin` of `node`: the wired output's, else the typed value.
-    [[nodiscard]] std::string InputExpr(const BlueprintNodeUVE& node, const std::uint32_t pin) {
-        const BlueprintNodePinsUVE pins = ResolveBlueprintNodePinsUVE(m_bp, node);
-        if (const BlueprintWireUVE* wire = WireToInput(node.id, pin)) {
+    [[nodiscard]] std::string InputExpr(const BlueprintNode& node, const std::uint32_t pin) {
+        const BlueprintNodePins pins = ResolveBlueprintNodePins(m_bp, node);
+        if (const BlueprintWire* wire = WireToInput(node.id, pin)) {
             return OutputExpr(wire->fromNode, wire->fromPin);
         }
         if (pin >= pins.inputs.size()) {
             return "none";
         }
         const std::string& typed = pin < node.inputValues.size() && !node.inputValues[pin].empty() ? node.inputValues[pin] : pins.inputs[pin].defaultText;
-        return LiteralUVE(pins.inputs[pin].type, typed);
+        return Literal(pins.inputs[pin].type, typed);
     }
 
     [[nodiscard]] std::string OutputExpr(const std::uint32_t id, const std::uint32_t pin) {
@@ -1287,19 +1287,19 @@ private:
         if (found == m_nodes.end()) {
             return "none";
         }
-        const BlueprintNodeUVE& node = *found->second;
-        const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+        const BlueprintNode& node = *found->second;
+        const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
         if (type == nullptr) {
             return "none";
         }
         const std::string tag = std::to_string(id);
         switch (type->role) {
             case Role::Event: return "arg" + std::to_string(pin);
-            case Role::Action: return type->outputCode.empty() ? std::string{"none"} : ReturnFieldUVE(tag, pin);
+            case Role::Action: return type->outputCode.empty() ? std::string{"none"} : ReturnField(tag, pin);
             case Role::DoN: return "count" + tag;
             case Role::ForEach: return pin == 1U ? "e" + tag : "i" + tag;
             case Role::GetVariable:
-            case Role::SetVariable: return IdentifierUVE(node.variable);
+            case Role::SetVariable: return Identifier(node.variable);
             case Role::ForLoop: return "i" + tag;
             case Role::FlipFlop: return "flip" + tag;
             case Role::Pure: {
@@ -1313,32 +1313,32 @@ private:
                     args.push_back(InputExpr(node, i));
                 }
                 --m_pureDepth;
-                return "(" + FormatUVE(type->outputCode[pin], args) + ")";
+                return "(" + Format(type->outputCode[pin], args) + ")";
             }
             default: return "none";
         }
     }
 
-    const BlueprintAssetUVE& m_bp;
-    std::map<std::uint32_t, const BlueprintNodeUVE*> m_nodes;
+    const BlueprintAsset& m_bp;
+    std::map<std::uint32_t, const BlueprintNode*> m_nodes;
     std::vector<std::pair<std::string, std::uint32_t>> m_lines;
     std::vector<std::string> m_fields;
     std::set<std::uint32_t> m_active;
     std::set<std::string> m_declared;
     std::vector<std::uint32_t> m_delays;
     int m_pureDepth = 0;
-    BlueprintTranslationUVE m_out;
+    BlueprintTranslation m_out;
 };
 
 } // namespace
 
-const std::vector<BlueprintNodeTypeUVE>& GetBlueprintNodeTypesUVE() {
-    static const std::vector<BlueprintNodeTypeUVE> all = BuildCatalogueUVE();
+const std::vector<BlueprintNodeType>& GetBlueprintNodeTypes() {
+    static const std::vector<BlueprintNodeType> all = BuildCatalogue();
     return all;
 }
 
-const BlueprintNodeTypeUVE* FindBlueprintNodeTypeUVE(const std::string_view key) {
-    for (const BlueprintNodeTypeUVE& type : GetBlueprintNodeTypesUVE()) {
+const BlueprintNodeType* FindBlueprintNodeType(const std::string_view key) {
+    for (const BlueprintNodeType& type : GetBlueprintNodeTypes()) {
         if (type.key == key) {
             return &type;
         }
@@ -1346,7 +1346,7 @@ const BlueprintNodeTypeUVE* FindBlueprintNodeTypeUVE(const std::string_view key)
     return nullptr;
 }
 
-std::string_view BlueprintPinTypeScriptNameUVE(const BlueprintPinTypeUVE type) noexcept {
+std::string_view BlueprintPinTypeScriptName(const BlueprintPinType type) noexcept {
     switch (type) {
         case T::Bool: return "bool";
         case T::Int: return "int";
@@ -1363,9 +1363,9 @@ std::string_view BlueprintPinTypeScriptNameUVE(const BlueprintPinTypeUVE type) n
     return "none";
 }
 
-BlueprintNodePinsUVE ResolveBlueprintNodePinsUVE(const BlueprintAssetUVE& blueprint, const BlueprintNodeUVE& node) {
-    BlueprintNodePinsUVE pins;
-    const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+BlueprintNodePins ResolveBlueprintNodePins(const BlueprintAsset& blueprint, const BlueprintNode& node) {
+    BlueprintNodePins pins;
+    const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
     if (type == nullptr) {
         return pins;
     }
@@ -1373,7 +1373,7 @@ BlueprintNodePinsUVE ResolveBlueprintNodePinsUVE(const BlueprintAssetUVE& bluepr
     pins.outputs = type->outputs;
     if (type->role == Role::GetVariable || type->role == Role::SetVariable) {
         const auto variable = std::find_if(blueprint.variables.begin(), blueprint.variables.end(),
-                                           [&node](const BlueprintVariableUVE& v) { return v.name == node.variable; });
+                                           [&node](const BlueprintVariable& v) { return v.name == node.variable; });
         const T value = variable != blueprint.variables.end() ? variable->type : T::Float;
         const std::string name = variable != blueprint.variables.end() ? variable->name : node.variable;
         for (Pin& pin : pins.inputs) {
@@ -1393,9 +1393,9 @@ BlueprintNodePinsUVE ResolveBlueprintNodePinsUVE(const BlueprintAssetUVE& bluepr
     return pins;
 }
 
-BlueprintTranslationUVE TranslateBlueprintToUVScriptUVE(const BlueprintAssetUVE& blueprint, const std::string_view objectName,
+BlueprintTranslation TranslateBlueprintToUVScript(const BlueprintAsset& blueprint, const std::string_view objectName,
                                                        const std::string_view objectKind) {
-    TranslatorUVE translator(blueprint);
+    Translator translator(blueprint);
     return translator.Run(objectName, objectKind);
 }
 

@@ -6,7 +6,7 @@
 
 namespace UVE::Physics {
 
-struct HingeMotorLimitInputUVE final {
+struct HingeMotorLimitInput final {
     float currentAngleRadians = 0.0F;
     float currentRelativeSpeedRadians = 0.0F;
     float deltaTimeSeconds = 0.0F;
@@ -19,7 +19,7 @@ struct HingeMotorLimitInputUVE final {
     float maximumAngleRadians = 0.0F;
 };
 
-struct HingeMotorLimitResultUVE final {
+struct HingeMotorLimitResult final {
     float angularSpeedDeltaRadians = 0.0F;
     float angleCorrectionRadians = 0.0F;
     bool motorApplied = false;
@@ -29,7 +29,7 @@ struct HingeMotorLimitResultUVE final {
 /// Evaluates one bounded hinge motor/limit policy step over copied scalar state.
 /// The caller owns all state and applies the returned speed/angle corrections to a body or
 /// constraint backend; this helper does not mutate ECS, transforms, constraints, or rotations.
-[[nodiscard]] bool EvaluateHingeMotorLimitUVE(
-    const HingeMotorLimitInputUVE& input, HingeMotorLimitResultUVE& outResult) noexcept;
+[[nodiscard]] bool EvaluateHingeMotorLimit(
+    const HingeMotorLimitInput& input, HingeMotorLimitResult& outResult) noexcept;
 
 } // namespace UVE::Physics

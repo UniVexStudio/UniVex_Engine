@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // Opening, changing and saving the project's input map (drawn by the PRISM shell's
-// EditorInputMapWindowUVE).
+// EditorInputMapWindow).
 
 #include "editor.h"
 
@@ -10,22 +10,22 @@
 
 namespace UVE::Editor {
 
-using Input::InputActionUVE;
+using Input::InputAction;
 
-void EditorUVE::OpenInputMapUVE() noexcept {
+void Editor::OpenInputMap() noexcept {
     m_inputMapWindow.visible = true;
     m_inputMapWindow.focusPending = true;
 }
 
-bool EditorUVE::SaveInputMapUVE() {
-    Core::InputMapDocumentUVE& map = m_services->GetInputMapUVE();
-    return !map.IsDirtyUVE() || map.SaveUVE();
+bool Editor::SaveInputMap() {
+    Core::InputMapDocument& map = m_services->GetInputMap();
+    return !map.IsDirty() || map.Save();
 }
 
-void EditorUVE::CommitInputMapUVE(std::vector<InputActionUVE> actions) {
-    Core::InputMapDocumentUVE& map = m_services->GetInputMapUVE();
-    map.SetActionsUVE(std::move(actions));
-    map.ApplyUVE(m_services->GetInputSystemUVE());
+void Editor::CommitInputMap(std::vector<InputAction> actions) {
+    Core::InputMapDocument& map = m_services->GetInputMap();
+    map.SetActions(std::move(actions));
+    map.Apply(m_services->GetInputSystem());
 }
 
 } // namespace UVE::Editor

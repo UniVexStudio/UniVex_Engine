@@ -10,8 +10,8 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUISliderSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUISliderSizePixelsUVE = 8192.0F;
+inline constexpr float kMinimumUISliderSizePixels = 1.0F;
+inline constexpr float kMaximumUISliderSizePixels = 8192.0F;
 
 /// A horizontal pointer-dragged value widget: `rect` is the full track, `value` ranges from
 /// `minValue` to `maxValue` (`step` snaps it to increments, 0 means continuous), and the thumb -
@@ -29,15 +29,15 @@ inline constexpr float kMaximumUISliderSizePixelsUVE = 8192.0F;
 /// non-finite field fails validation, and an invalid slider is skipped entirely - no quads, state
 /// reset. Draws three solid quads (track, fill-to-thumb-center, thumb) on the button layer.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UISliderComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{200.0F, 24.0F}};
+struct UISliderComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{200.0F, 24.0F}};
     float value = 0.0F;
     float minValue = 0.0F;
     float maxValue = 1.0F;
     float step = 0.0F;
-    Math::Vector3UVE trackColor{0.16F, 0.16F, 0.18F};
-    Math::Vector3UVE fillColor{0.25F, 0.50F, 0.90F};
-    Math::Vector3UVE thumbColor{0.85F, 0.85F, 0.90F};
+    Math::Vector3 trackColor{0.16F, 0.16F, 0.18F};
+    Math::Vector3 fillColor{0.25F, 0.50F, 0.90F};
+    Math::Vector3 thumbColor{0.85F, 0.85F, 0.90F};
     float thumbWidth = 12.0F;
     /// Runtime state, never persisted: true while the mouse cursor is over this slider's track rect.
     bool isHovered = false;
@@ -48,25 +48,25 @@ struct UISliderComponentUVE final {
     bool wasChangedThisFrame = false;
 };
 
-[[nodiscard]] bool IsUISliderComponentValidUVE(const UISliderComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUISliderComponentValid(const UISliderComponent& component) noexcept;
 
 /// Sanitizes `component` so `rect`, `minValue <= maxValue`, `step >= 0`, `thumbWidth >= 0`, and `value` are valid.
-[[nodiscard]] UISliderComponentUVE SanitizeUISliderComponentUVE(
-    const UISliderComponentUVE& component) noexcept;
+[[nodiscard]] UISliderComponent SanitizeUISliderComponent(
+    const UISliderComponent& component) noexcept;
 
 /// Returns the normalized slider ratio `(clampedValue - minValue) / (maxValue - minValue)` in `[0, 1]`.
-[[nodiscard]] float ResolveUISliderNormalizedRatioUVE(
-    const UISliderComponentUVE& component) noexcept;
+[[nodiscard]] float ResolveUISliderNormalizedRatio(
+    const UISliderComponent& component) noexcept;
 
 /// Snaps and clamps `rawValue` into `[minValue, maxValue]` using `component.step` (when `step > 0`).
-[[nodiscard]] float SnapAndClampUISliderValueUVE(const UISliderComponentUVE& component,
+[[nodiscard]] float SnapAndClampUISliderValue(const UISliderComponent& component,
                                                  float rawValue) noexcept;
 
 /// Maps a screen-space pointer X coordinate onto `[minValue, maxValue]` (with `step` snapping).
-[[nodiscard]] float ResolveUISliderValueFromPointerXUVE(const UISliderComponentUVE& component,
+[[nodiscard]] float ResolveUISliderValueFromPointerX(const UISliderComponent& component,
                                                         float pointerXPixels) noexcept;
 
 /// Resets runtime flags (`isHovered = false`, `isDragging = false`, `wasChangedThisFrame = false`).
-void ResetUISliderRuntimeStateUVE(UISliderComponentUVE& component) noexcept;
+void ResetUISliderRuntimeState(UISliderComponent& component) noexcept;
 
 } // namespace UVE::Scene

@@ -14,40 +14,40 @@ namespace {
 
 /// How many parents a chain may have before it is treated as malformed. Bounded rather than trusting
 /// the hierarchy to be acyclic: a corrupted parent link must end the walk, not hang the frame.
-inline constexpr int kMaximumHierarchyDepthUVE = 1024;
+inline constexpr int kMaximumHierarchyDepth = 1024;
 
 } // namespace
 
-ObjectWorldFrameUVE ComposeSceneObjectWorldFrameUVE(IEntityManagerUVE& entityManager,
-                                                    EntityUVE entity) {
-    std::vector<const TransformComponentUVE*> chain;
-    for (int depth = 0; depth < kMaximumHierarchyDepthUVE && entityManager.IsAliveUVE(entity); ++depth) {
-        if (!entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+ObjectWorldFrame ComposeSceneObjectWorldFrame(IEntityManager& entityManager,
+                                                    Entity entity) {
+    std::vector<const TransformComponent*> chain;
+    for (int depth = 0; depth < kMaximumHierarchyDepth && entityManager.IsAlive(entity); ++depth) {
+        if (!entityManager.HasComponent<TransformComponent>(entity)) {
             break;
         }
-        const TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
+        const TransformComponent& local = entityManager.GetComponent<TransformComponent>(entity);
         chain.push_back(&local);
         if (local.topLevel) {
             break;
         }
-        const EntityUVE parent = entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)
-                                     ? entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent
-                                     : kInvalidEntityUVE;
-        if (parent == kInvalidEntityUVE || !entityManager.HasComponentUVE<TransformComponentUVE>(parent)) {
+        const Entity parent = entityManager.HasComponent<HierarchyComponent>(entity)
+                                     ? entityManager.GetComponent<HierarchyComponent>(entity).parent
+                                     : kInvalidEntity;
+        if (parent == kInvalidEntity || !entityManager.HasComponent<TransformComponent>(parent)) {
             break;
         }
         entity = parent;
     }
 
-    ObjectWorldFrameUVE frame{};
+    ObjectWorldFrame frame{};
     for (std::size_t index = chain.size(); index > 0U; --index) {
-        const TransformComponentUVE& local = *chain[index - 1U];
-        const Math::Vector3UVE scaled{local.localPosition.x * frame.scale.x,
+        const TransformComponent& local = *chain[index - 1U];
+        const Math::Vector3 scaled{local.localPosition.x * frame.scale.x,
                                       local.localPosition.y * frame.scale.y,
                                       local.localPosition.z * frame.scale.z};
-        frame.position = frame.position + Math::RotateVectorUVE(frame.rotation, scaled);
-        frame.rotation = Math::MultiplyUVE(frame.rotation, local.localRotation);
-        frame.scale = Math::Vector3UVE{frame.scale.x * local.localScale.x, frame.scale.y * local.localScale.y,
+        frame.position = frame.position + Math::RotateVector(frame.rotation, scaled);
+        frame.rotation = Math::Multiply(frame.rotation, local.localRotation);
+        frame.scale = Math::Vector3{frame.scale.x * local.localScale.x, frame.scale.y * local.localScale.y,
                                        frame.scale.z * local.localScale.z};
     }
     return frame;

@@ -10,54 +10,54 @@
 namespace UVE::Memory::Tests {
 namespace {
 
-struct DestructionCounterUVE final {
-    explicit DestructionCounterUVE(int* counterOut) : counter(counterOut) {}
-    ~DestructionCounterUVE() { ++(*counter); }
+struct DestructionCounter final {
+    explicit DestructionCounter(int* counterOut) : counter(counterOut) {}
+    ~DestructionCounter() { ++(*counter); }
     int value = 0;
     int* counter;
 };
 
-TEST(UniquePtrUVETest, MakeUnique_ConstructsAndDestroysThroughTheAllocator) {
-    HeapAllocatorUVE heap;
+TEST(UniquePtrTest, MakeUnique_ConstructsAndDestroysThroughTheAllocator) {
+    HeapAllocator heap;
     int destructions = 0;
     {
-        UniquePtrUVE<DestructionCounterUVE> owned =
-            UVE_MAKE_UNIQUE(DestructionCounterUVE, heap, &destructions);
+        UniquePtr<DestructionCounter> owned =
+            UVE_MAKE_UNIQUE(DestructionCounter, heap, &destructions);
         ASSERT_TRUE(static_cast<bool>(owned));
-        EXPECT_EQ(heap.GetAllocatedBytesUVE(), sizeof(DestructionCounterUVE));
+        EXPECT_EQ(heap.GetAllocatedBytes(), sizeof(DestructionCounter));
         owned->value = 42;
         EXPECT_EQ((*owned).value, 42);
     }
     EXPECT_EQ(destructions, 1);
-    EXPECT_EQ(heap.GetAllocatedBytesUVE(), 0U);
+    EXPECT_EQ(heap.GetAllocatedBytes(), 0U);
 }
 
-TEST(UniquePtrUVETest, Move_TransfersOwnershipAndAllocatorTogether) {
-    HeapAllocatorUVE heap;
+TEST(UniquePtrTest, Move_TransfersOwnershipAndAllocatorTogether) {
+    HeapAllocator heap;
     int destructions = 0;
-    UniquePtrUVE<DestructionCounterUVE> moved;
+    UniquePtr<DestructionCounter> moved;
     {
-        UniquePtrUVE<DestructionCounterUVE> owned =
-            UVE_MAKE_UNIQUE(DestructionCounterUVE, heap, &destructions);
+        UniquePtr<DestructionCounter> owned =
+            UVE_MAKE_UNIQUE(DestructionCounter, heap, &destructions);
         moved = std::move(owned);
         EXPECT_FALSE(static_cast<bool>(owned));
     }
     EXPECT_EQ(destructions, 0); // Still alive under the moved-to pointer.
     EXPECT_TRUE(static_cast<bool>(moved));
-    moved.ResetUVE();
+    moved.Reset();
     EXPECT_EQ(destructions, 1);
-    EXPECT_EQ(heap.GetAllocatedBytesUVE(), 0U);
+    EXPECT_EQ(heap.GetAllocatedBytes(), 0U);
 }
 
-TEST(UniquePtrUVETest, Release_DetachesWithoutDestroying) {
-    HeapAllocatorUVE heap;
+TEST(UniquePtrTest, Release_DetachesWithoutDestroying) {
+    HeapAllocator heap;
     int destructions = 0;
-    UniquePtrUVE<DestructionCounterUVE> owned =
-        UVE_MAKE_UNIQUE(DestructionCounterUVE, heap, &destructions);
-    DestructionCounterUVE* const raw = owned.ReleaseUVE();
+    UniquePtr<DestructionCounter> owned =
+        UVE_MAKE_UNIQUE(DestructionCounter, heap, &destructions);
+    DestructionCounter* const raw = owned.Release();
     EXPECT_FALSE(static_cast<bool>(owned));
     EXPECT_EQ(destructions, 0);
-    DestroyUVE(heap, raw); // The caller took the hand-pairing back.
+    Destroy(heap, raw); // The caller took the hand-pairing back.
     EXPECT_EQ(destructions, 1);
 }
 

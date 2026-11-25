@@ -8,16 +8,16 @@
 
 namespace UVE::Math {
 
-AabbUVE OrientedBoxUVE::ToAabbUVE() const noexcept {
-    const Vector3UVE one{1.0F, 1.0F, 1.0F};
-    const AabbUVE local{Vector3UVE{-halfExtents.x, -halfExtents.y, -halfExtents.z}, halfExtents};
-    return local.TransformUVE(Matrix4x4UVE::ComposeTrsUVE(center, rotation, one));
+Aabb OrientedBox::ToAabb() const noexcept {
+    const Vector3 one{1.0F, 1.0F, 1.0F};
+    const Aabb local{Vector3{-halfExtents.x, -halfExtents.y, -halfExtents.z}, halfExtents};
+    return local.Transform(Matrix4x4::ComposeTrs(center, rotation, one));
 }
 
-std::string ToStringUVE(const OrientedBoxUVE& box) {
-    return "OrientedBoxUVE(center=" + ToStringUVE(box.center) +
-           ", halfExtents=" + ToStringUVE(box.halfExtents) +
-           ", rotation=" + ToStringUVE(box.rotation) + ")";
+std::string ToString(const OrientedBox& box) {
+    return "OrientedBox(center=" + ToString(box.center) +
+           ", halfExtents=" + ToString(box.halfExtents) +
+           ", rotation=" + ToString(box.rotation) + ")";
 }
 
 } // namespace UVE::Math

@@ -20,80 +20,80 @@
 namespace UVE::Debug::Tests {
 namespace {
 
-class LoggerUVETest : public ::testing::Test {
+class LoggerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        logger.Init(LogLevelUVE::Trace);
-        auto memorySink = std::make_unique<MemorySinkUVE>();
+        logger.Init(LogLevel::Trace);
+        auto memorySink = std::make_unique<MemorySink>();
         memorySinkPtr = memorySink.get();
         logger.AddSink(std::move(memorySink));
     }
 
     void TearDown() override { logger.Shutdown(); }
 
-    LoggerUVE logger;
-    MemorySinkUVE* memorySinkPtr = nullptr;
+    Logger logger;
+    MemorySink* memorySinkPtr = nullptr;
 };
 
-TEST_F(LoggerUVETest, ActiveInstance_SetDuringInit) {
-    EXPECT_EQ(LoggerUVE::GetActiveInstanceUVE(), &logger);
+TEST_F(LoggerTest, ActiveInstance_SetDuringInit) {
+    EXPECT_EQ(Logger::GetActiveInstance(), &logger);
 }
 
-TEST_F(LoggerUVETest, ActiveInstance_ClearedAfterShutdown) {
+TEST_F(LoggerTest, ActiveInstance_ClearedAfterShutdown) {
     logger.Shutdown();
-    EXPECT_EQ(LoggerUVE::GetActiveInstanceUVE(), nullptr);
+    EXPECT_EQ(Logger::GetActiveInstance(), nullptr);
 }
 
-TEST_F(LoggerUVETest, MinLevel_FiltersLowerSeverity) {
-    logger.SetMinLevel(LogLevelUVE::Warning);
-    logger.LogFormatted(LogLevelUVE::Info, "", __FILE__, __LINE__, "info message");
-    EXPECT_TRUE(memorySinkPtr->GetMessagesUVE().empty());
+TEST_F(LoggerTest, MinLevel_FiltersLowerSeverity) {
+    logger.SetMinLevel(LogLevel::Warning);
+    logger.LogFormatted(LogLevel::Info, "", __FILE__, __LINE__, "info message");
+    EXPECT_TRUE(memorySinkPtr->GetMessages().empty());
 
-    logger.LogFormatted(LogLevelUVE::Error, "", __FILE__, __LINE__, "error message");
-    EXPECT_EQ(memorySinkPtr->GetMessagesUVE().size(), 1U);
+    logger.LogFormatted(LogLevel::Error, "", __FILE__, __LINE__, "error message");
+    EXPECT_EQ(memorySinkPtr->GetMessages().size(), 1U);
 }
 
-TEST_F(LoggerUVETest, AllLevels_RoundTripCorrectly) {
-    constexpr LogLevelUVE kLevels[] = {LogLevelUVE::Trace,   LogLevelUVE::Debug, LogLevelUVE::Info,
-                                        LogLevelUVE::Warning, LogLevelUVE::Error, LogLevelUVE::Fatal};
-    for (const LogLevelUVE level : kLevels) {
+TEST_F(LoggerTest, AllLevels_RoundTripCorrectly) {
+    constexpr LogLevel kLevels[] = {LogLevel::Trace,   LogLevel::Debug, LogLevel::Info,
+                                        LogLevel::Warning, LogLevel::Error, LogLevel::Fatal};
+    for (const LogLevel level : kLevels) {
         memorySinkPtr->Clear();
         logger.LogFormatted(level, "", __FILE__, __LINE__, "message");
-        ASSERT_EQ(memorySinkPtr->GetMessagesUVE().size(), 1U);
-        EXPECT_EQ(memorySinkPtr->GetMessagesUVE().front().level, level);
+        ASSERT_EQ(memorySinkPtr->GetMessages().size(), 1U);
+        EXPECT_EQ(memorySinkPtr->GetMessages().front().level, level);
     }
 }
 
-TEST_F(LoggerUVETest, MultipleSinks_AllReceiveSameMessage) {
-    auto secondSink = std::make_unique<MemorySinkUVE>();
-    MemorySinkUVE* secondSinkPtr = secondSink.get();
+TEST_F(LoggerTest, MultipleSinks_AllReceiveSameMessage) {
+    auto secondSink = std::make_unique<MemorySink>();
+    MemorySink* secondSinkPtr = secondSink.get();
     logger.AddSink(std::move(secondSink));
 
-    logger.LogFormatted(LogLevelUVE::Info, "", __FILE__, __LINE__, "hello");
+    logger.LogFormatted(LogLevel::Info, "", __FILE__, __LINE__, "hello");
 
-    ASSERT_EQ(memorySinkPtr->GetMessagesUVE().size(), 1U);
-    ASSERT_EQ(secondSinkPtr->GetMessagesUVE().size(), 1U);
-    EXPECT_EQ(memorySinkPtr->GetMessagesUVE().front().message, "hello");
-    EXPECT_EQ(secondSinkPtr->GetMessagesUVE().front().message, "hello");
+    ASSERT_EQ(memorySinkPtr->GetMessages().size(), 1U);
+    ASSERT_EQ(secondSinkPtr->GetMessages().size(), 1U);
+    EXPECT_EQ(memorySinkPtr->GetMessages().front().message, "hello");
+    EXPECT_EQ(secondSinkPtr->GetMessages().front().message, "hello");
 }
 
-TEST_F(LoggerUVETest, MemorySink_ClearRemovesMessages) {
-    logger.LogFormatted(LogLevelUVE::Info, "", __FILE__, __LINE__, "hello");
-    ASSERT_FALSE(memorySinkPtr->GetMessagesUVE().empty());
+TEST_F(LoggerTest, MemorySink_ClearRemovesMessages) {
+    logger.LogFormatted(LogLevel::Info, "", __FILE__, __LINE__, "hello");
+    ASSERT_FALSE(memorySinkPtr->GetMessages().empty());
     memorySinkPtr->Clear();
-    EXPECT_TRUE(memorySinkPtr->GetMessagesUVE().empty());
+    EXPECT_TRUE(memorySinkPtr->GetMessages().empty());
 }
 
-TEST_F(LoggerUVETest, FileSink_WritesLineToFile) {
+TEST_F(LoggerTest, FileSink_WritesLineToFile) {
     const std::filesystem::path tempPath =
-        ::UVE::Tests::ScratchRootUVE() / "uve_logger_test_file_sink.log";
+        ::UVE::Tests::ScratchRoot() / "uve_logger_test_file_sink.log";
     std::filesystem::remove(tempPath);
 
     {
-        LoggerUVE fileLogger;
-        fileLogger.Init(LogLevelUVE::Trace);
-        fileLogger.AddSink(std::make_unique<FileSinkUVE>(tempPath));
-        fileLogger.LogFormatted(LogLevelUVE::Info, "", __FILE__, __LINE__, "file sink message");
+        Logger fileLogger;
+        fileLogger.Init(LogLevel::Trace);
+        fileLogger.AddSink(std::make_unique<FileSink>(tempPath));
+        fileLogger.LogFormatted(LogLevel::Info, "", __FILE__, __LINE__, "file sink message");
         fileLogger.Shutdown();
     }
 
@@ -106,44 +106,44 @@ TEST_F(LoggerUVETest, FileSink_WritesLineToFile) {
     std::filesystem::remove(tempPath);
 }
 
-TEST_F(LoggerUVETest, FatalLevel_FlushesAllSinks) {
-    class FlushCountingSinkUVE final : public ILogSinkUVE {
+TEST_F(LoggerTest, FatalLevel_FlushesAllSinks) {
+    class FlushCountingSink final : public ILogSink {
     public:
-        void Write(const LogMessageUVE&) override {}
+        void Write(const LogMessage&) override {}
         void Flush() override { ++flushCount; }
         int flushCount = 0;
     };
 
-    auto flushSink = std::make_unique<FlushCountingSinkUVE>();
-    FlushCountingSinkUVE* flushSinkPtr = flushSink.get();
+    auto flushSink = std::make_unique<FlushCountingSink>();
+    FlushCountingSink* flushSinkPtr = flushSink.get();
     logger.AddSink(std::move(flushSink));
 
-    logger.LogFormatted(LogLevelUVE::Fatal, "", __FILE__, __LINE__, "fatal message");
+    logger.LogFormatted(LogLevel::Fatal, "", __FILE__, __LINE__, "fatal message");
     EXPECT_GT(flushSinkPtr->flushCount, 0);
 }
 
-TEST_F(LoggerUVETest, MacroFamily_ProducesCorrectLevelsAndMessages) {
+TEST_F(LoggerTest, MacroFamily_ProducesCorrectLevelsAndMessages) {
     UVE_TRACE("trace {}", 1);
     UVE_INFO("info {}", 2);
     UVE_WARNING("warning {}", 3);
     UVE_ERROR("error {}", 4);
     UVE_FATAL("fatal {}", 5);
 
-    const std::vector<LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<LogMessage> messages = memorySinkPtr->GetMessages();
     ASSERT_EQ(messages.size(), 5U);
-    EXPECT_EQ(messages[0].level, LogLevelUVE::Trace);
-    EXPECT_EQ(messages[1].level, LogLevelUVE::Info);
-    EXPECT_EQ(messages[2].level, LogLevelUVE::Warning);
-    EXPECT_EQ(messages[3].level, LogLevelUVE::Error);
-    EXPECT_EQ(messages[4].level, LogLevelUVE::Fatal);
+    EXPECT_EQ(messages[0].level, LogLevel::Trace);
+    EXPECT_EQ(messages[1].level, LogLevel::Info);
+    EXPECT_EQ(messages[2].level, LogLevel::Warning);
+    EXPECT_EQ(messages[3].level, LogLevel::Error);
+    EXPECT_EQ(messages[4].level, LogLevel::Fatal);
     EXPECT_EQ(messages[0].message, "trace 1");
     EXPECT_EQ(messages[4].message, "fatal 5");
 }
 
-TEST_F(LoggerUVETest, FormattedMessage_SubstitutesArgumentsCorrectly) {
+TEST_F(LoggerTest, FormattedMessage_SubstitutesArgumentsCorrectly) {
     UVE_INFO("value={} name={}", 42, "abc");
-    ASSERT_EQ(memorySinkPtr->GetMessagesUVE().size(), 1U);
-    EXPECT_EQ(memorySinkPtr->GetMessagesUVE().front().message, "value=42 name=abc");
+    ASSERT_EQ(memorySinkPtr->GetMessages().size(), 1U);
+    EXPECT_EQ(memorySinkPtr->GetMessages().front().message, "value=42 name=abc");
 }
 
 } // namespace

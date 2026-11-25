@@ -11,23 +11,23 @@
 
 namespace UVE::Scene {
 
-bool IsSmartObject3DComponentValidUVE(const SmartObject3DComponentUVE& value) noexcept {
-    return !value.interactionTag.empty() && IsBounded3DObjectStringUVE(value.interactionTag) &&
-           IsFinite3DObjectVectorUVE(value.interactionOffset) && value.maxSimultaneousUsers >= 1U &&
+bool IsSmartObject3DComponentValid(const SmartObject3DComponent& value) noexcept {
+    return !value.interactionTag.empty() && IsBounded3DObjectString(value.interactionTag) &&
+           IsFinite3DObjectVector(value.interactionOffset) && value.maxSimultaneousUsers >= 1U &&
            value.maxSimultaneousUsers <= 64U && std::isfinite(value.cooldownSeconds) &&
            value.cooldownSeconds >= 0.0F;
 }
 
-SmartObject3DComponentUVE SanitizeSmartObject3DComponentUVE(
-    const SmartObject3DComponentUVE& value) {
-    SmartObject3DComponentUVE out = value;
+SmartObject3DComponent SanitizeSmartObject3DComponent(
+    const SmartObject3DComponent& value) {
+    SmartObject3DComponent out = value;
     if (out.interactionTag.empty()) {
         out.interactionTag = "Interact";
-    } else if (!IsBounded3DObjectStringUVE(out.interactionTag)) {
-        out.interactionTag.resize(kMaximum3DObjectStringLengthUVE);
+    } else if (!IsBounded3DObjectString(out.interactionTag)) {
+        out.interactionTag.resize(kMaximum3DObjectStringLength);
     }
-    if (!IsFinite3DObjectVectorUVE(out.interactionOffset)) {
-        out.interactionOffset = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+    if (!IsFinite3DObjectVector(out.interactionOffset)) {
+        out.interactionOffset = Math::Vector3{0.0F, 0.0F, 1.0F};
     }
     out.maxSimultaneousUsers = std::clamp(out.maxSimultaneousUsers, 1U, 64U);
     if (!std::isfinite(out.cooldownSeconds) || out.cooldownSeconds < 0.0F) {
@@ -36,21 +36,21 @@ SmartObject3DComponentUVE SanitizeSmartObject3DComponentUVE(
     return out;
 }
 
-bool IsSmartObject3DObjectDefinitionValidUVE(
-    const SmartObject3DObjectDefinitionUVE& value) noexcept {
-    return IsSmartObject3DComponentValidUVE(value.smartObject);
+bool IsSmartObject3DObjectDefinitionValid(
+    const SmartObject3DObjectDefinition& value) noexcept {
+    return IsSmartObject3DComponentValid(value.smartObject);
 }
 
-void ApplySmartObject3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const SmartObject3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, SmartObject3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<SmartObject3DComponentUVE>(
-        entity, SanitizeSmartObject3DComponentUVE(value.smartObject));
+void ApplySmartObject3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                           const SmartObject3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, SmartObject3DObjectDefinition::defaultName);
+    entityManager.AddComponent<SmartObject3DComponent>(
+        entity, SanitizeSmartObject3DComponent(value.smartObject));
 }
 
-bool SmartObject3DUVE::CanClaimUVE(const SmartObject3DComponentUVE& smartObject,
-                                   const EntityUVE agent) noexcept {
-    if (!smartObject.enabled || agent == kInvalidEntityUVE ||
+bool SmartObject3D::CanClaim(const SmartObject3DComponent& smartObject,
+                                   const Entity agent) noexcept {
+    if (!smartObject.enabled || agent == kInvalidEntity ||
         smartObject.remainingCooldownSeconds > 0.0F) {
         return false;
     }
@@ -61,8 +61,8 @@ bool SmartObject3DUVE::CanClaimUVE(const SmartObject3DComponentUVE& smartObject,
     return smartObject.activeUsers.size() < smartObject.maxSimultaneousUsers;
 }
 
-bool SmartObject3DUVE::TryClaimUVE(SmartObject3DComponentUVE& smartObject, const EntityUVE agent) {
-    if (!CanClaimUVE(smartObject, agent)) {
+bool SmartObject3D::TryClaim(SmartObject3DComponent& smartObject, const Entity agent) {
+    if (!CanClaim(smartObject, agent)) {
         return false;
     }
     if (std::find(smartObject.activeUsers.begin(), smartObject.activeUsers.end(), agent) ==
@@ -72,8 +72,8 @@ bool SmartObject3DUVE::TryClaimUVE(SmartObject3DComponentUVE& smartObject, const
     return true;
 }
 
-bool SmartObject3DUVE::ReleaseUVE(SmartObject3DComponentUVE& smartObject,
-                                  const EntityUVE agent) noexcept {
+bool SmartObject3D::Release(SmartObject3DComponent& smartObject,
+                                  const Entity agent) noexcept {
     const auto it =
         std::find(smartObject.activeUsers.begin(), smartObject.activeUsers.end(), agent);
     if (it == smartObject.activeUsers.end()) {
@@ -86,23 +86,23 @@ bool SmartObject3DUVE::ReleaseUVE(SmartObject3DComponentUVE& smartObject,
     return true;
 }
 
-Math::Vector3UVE SmartObject3DUVE::ResolveWorldInteractionPointUVE(
-    const SmartObject3DComponentUVE& smartObject,
-    const WorldTransformComponentUVE& worldTransform) noexcept {
-    return TransformWorldPointUVE(worldTransform, smartObject.interactionOffset);
+Math::Vector3 SmartObject3D::ResolveWorldInteractionPoint(
+    const SmartObject3DComponent& smartObject,
+    const WorldTransformComponent& worldTransform) noexcept {
+    return TransformWorldPoint(worldTransform, smartObject.interactionOffset);
 }
 
-bool IsWorldQuery3DComponentValidUVE(const WorldQuery3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.requiredTag) &&
+bool IsWorldQuery3DComponentValid(const WorldQuery3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.requiredTag) &&
            std::isfinite(value.searchRadiusMetres) && value.searchRadiusMetres > 0.0F &&
            std::isfinite(value.optimalDistanceMetres) && value.optimalDistanceMetres >= 0.0F &&
            value.optimalDistanceMetres <= value.searchRadiusMetres;
 }
 
-WorldQuery3DComponentUVE SanitizeWorldQuery3DComponentUVE(const WorldQuery3DComponentUVE& value) {
-    WorldQuery3DComponentUVE out = value;
-    if (!IsBounded3DObjectStringUVE(out.requiredTag)) {
-        out.requiredTag.resize(kMaximum3DObjectStringLengthUVE);
+WorldQuery3DComponent SanitizeWorldQuery3DComponent(const WorldQuery3DComponent& value) {
+    WorldQuery3DComponent out = value;
+    if (!IsBounded3DObjectString(out.requiredTag)) {
+        out.requiredTag.resize(kMaximum3DObjectStringLength);
     }
     if (!std::isfinite(out.searchRadiusMetres) || out.searchRadiusMetres <= 0.0F) {
         out.searchRadiusMetres = 25.0F;
@@ -114,25 +114,25 @@ WorldQuery3DComponentUVE SanitizeWorldQuery3DComponentUVE(const WorldQuery3DComp
     return out;
 }
 
-bool IsWorldQuery3DObjectDefinitionValidUVE(const WorldQuery3DObjectDefinitionUVE& value) noexcept {
-    return IsWorldQuery3DComponentValidUVE(value.query);
+bool IsWorldQuery3DObjectDefinitionValid(const WorldQuery3DObjectDefinition& value) noexcept {
+    return IsWorldQuery3DComponentValid(value.query);
 }
 
-void ApplyWorldQuery3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                          const WorldQuery3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, WorldQuery3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<WorldQuery3DComponentUVE>(
-        entity, SanitizeWorldQuery3DComponentUVE(value.query));
+void ApplyWorldQuery3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                          const WorldQuery3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, WorldQuery3DObjectDefinition::defaultName);
+    entityManager.AddComponent<WorldQuery3DComponent>(
+        entity, SanitizeWorldQuery3DComponent(value.query));
 }
 
-std::size_t UpdateSmartObjectAndWorldQuery3DUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdateSmartObjectAndWorldQuery3D(IEntityManager& entityManager,
                                                 const float deltaTimeSeconds) {
     const float dt =
         (std::isfinite(deltaTimeSeconds) && deltaTimeSeconds > 0.0F) ? deltaTimeSeconds : 0.0F;
-    entityManager.ForEachUVE<SmartObject3DComponentUVE>(
-        [&](const EntityUVE, SmartObject3DComponentUVE& smart) {
-            std::erase_if(smart.activeUsers, [&](const EntityUVE user) {
-                return !entityManager.IsAliveUVE(user);
+    entityManager.ForEach<SmartObject3DComponent>(
+        [&](const Entity, SmartObject3DComponent& smart) {
+            std::erase_if(smart.activeUsers, [&](const Entity user) {
+                return !entityManager.IsAlive(user);
             });
             if (smart.remainingCooldownSeconds > 0.0F && dt > 0.0F) {
                 smart.remainingCooldownSeconds =
@@ -141,37 +141,37 @@ std::size_t UpdateSmartObjectAndWorldQuery3DUVE(IEntityManagerUVE& entityManager
         });
 
     std::size_t matchedQueries = 0U;
-    entityManager.ForEachUVE<WorldQuery3DComponentUVE, WorldTransformComponentUVE>(
-        [&](const EntityUVE querierEntity, WorldQuery3DComponentUVE& query,
-            const WorldTransformComponentUVE& querierWorld) {
-            query.bestEntity = kInvalidEntityUVE;
-            query.bestWorldPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    entityManager.ForEach<WorldQuery3DComponent, WorldTransformComponent>(
+        [&](const Entity querierEntity, WorldQuery3DComponent& query,
+            const WorldTransformComponent& querierWorld) {
+            query.bestEntity = kInvalidEntity;
+            query.bestWorldPosition = Math::Vector3{0.0F, 0.0F, 0.0F};
             query.bestScore = 0.0F;
             if (!query.enabled ||
-                entityManager.HasComponentUVE<DisabledComponentUVE>(querierEntity) ||
-                !IsWorldQuery3DComponentValidUVE(query) ||
-                !IsWorldTransformComponentValidUVE(querierWorld)) {
+                entityManager.HasComponent<DisabledComponent>(querierEntity) ||
+                !IsWorldQuery3DComponentValid(query) ||
+                !IsWorldTransformComponentValid(querierWorld)) {
                 return;
             }
-            entityManager.ForEachUVE<SmartObject3DComponentUVE, WorldTransformComponentUVE>(
-                [&](const EntityUVE candidateEntity, const SmartObject3DComponentUVE& smart,
-                    const WorldTransformComponentUVE& candidateWorld) {
+            entityManager.ForEach<SmartObject3DComponent, WorldTransformComponent>(
+                [&](const Entity candidateEntity, const SmartObject3DComponent& smart,
+                    const WorldTransformComponent& candidateWorld) {
                     if (candidateEntity == querierEntity || !smart.enabled ||
-                        entityManager.HasComponentUVE<DisabledComponentUVE>(candidateEntity) ||
-                        !IsWorldTransformComponentValidUVE(candidateWorld)) {
+                        entityManager.HasComponent<DisabledComponent>(candidateEntity) ||
+                        !IsWorldTransformComponentValid(candidateWorld)) {
                         return;
                     }
                     if (!query.requiredTag.empty() && smart.interactionTag != query.requiredTag) {
                         return;
                     }
                     if (query.preferUnclaimedSmartObjects &&
-                        !SmartObject3DUVE::CanClaimUVE(smart, querierEntity)) {
+                        !SmartObject3D::CanClaim(smart, querierEntity)) {
                         return;
                     }
-                    const Math::Vector3UVE interactPos =
-                        SmartObject3DUVE::ResolveWorldInteractionPointUVE(smart, candidateWorld);
+                    const Math::Vector3 interactPos =
+                        SmartObject3D::ResolveWorldInteractionPoint(smart, candidateWorld);
                     const float dist = std::sqrt(
-                        Math::LengthSquaredUVE(interactPos - querierWorld.worldPosition));
+                        Math::LengthSquared(interactPos - querierWorld.worldPosition));
                     if (dist > query.searchRadiusMetres) {
                         return;
                     }
@@ -184,7 +184,7 @@ std::size_t UpdateSmartObjectAndWorldQuery3DUVE(IEntityManagerUVE& entityManager
                         query.bestWorldPosition = interactPos;
                     }
                 });
-            if (query.bestEntity != kInvalidEntityUVE) {
+            if (query.bestEntity != kInvalidEntity) {
                 ++matchedQueries;
             }
         });

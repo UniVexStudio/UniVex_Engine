@@ -18,25 +18,25 @@ namespace UVE::Editor {
 
 namespace {
 
-constexpr int kLogoWidthUVE = 24;
-constexpr int kLogoHeightUVE = 24;
-constexpr int kEditorIconWidthUVE = 20;
-constexpr int kEditorIconHeightUVE = 20;
+constexpr int kLogoWidth = 24;
+constexpr int kLogoHeight = 24;
+constexpr int kEditorIconWidth = 20;
+constexpr int kEditorIconHeight = 20;
 
 #include "univex_logo_display_bytes.inc"
 #include "uve_general_icon_bytes.inc"
 
-struct IconSourceUVE final {
+struct IconSource final {
     std::string_view key;
     const std::uint8_t* pixels = nullptr;
 };
 
-constexpr std::array<IconSourceUVE, 2U> kGeneralIconSourcesUVE{{
+constexpr std::array<IconSource, 2U> kGeneralIconSources{{
     {"plugin", uve_general_icon_plugin_rgba.data()},
     {"snap", uve_general_icon_snap_rgba.data()},
 }};
 
-[[nodiscard]] std::uintptr_t UploadTextureUVE(const std::uint8_t* const pixels, const int width,
+[[nodiscard]] std::uintptr_t UploadTexture(const std::uint8_t* const pixels, const int width,
                                               const int height) noexcept {
     if (pixels == nullptr || width <= 0 || height <= 0) {
         return 0U;
@@ -76,10 +76,10 @@ constexpr std::array<IconSourceUVE, 2U> kGeneralIconSourcesUVE{{
 // every mip level: sampled at 16 px from a 64 px texture, it reads the 16 px level built by
 // averaging rather than skipping three pixels in four. The chain runs down to 1x1, which makes the
 // texture complete without GL_TEXTURE_MAX_LEVEL (not in every platform's GL 1.1 header).
-[[nodiscard]] std::uintptr_t UploadIconTextureUVE(const std::span<const std::uint8_t> png) noexcept {
-    std::vector<EditorIconLevelUVE> levels;
+[[nodiscard]] std::uintptr_t UploadIconTexture(const std::span<const std::uint8_t> png) noexcept {
+    std::vector<EditorIconLevel> levels;
     try {
-        levels = DecodeEditorIconUVE(png);
+        levels = DecodeEditorIcon(png);
     } catch (...) {
         return 0U;
     }
@@ -118,18 +118,18 @@ constexpr std::array<IconSourceUVE, 2U> kGeneralIconSourcesUVE{{
     return static_cast<std::uintptr_t>(texture);
 }
 
-[[nodiscard]] std::uintptr_t FindIconTextureIdUVE(const std::vector<std::uintptr_t>& textureIds,
-                                                  const EditorIconGroupUVE group,
+[[nodiscard]] std::uintptr_t FindIconTextureId(const std::vector<std::uintptr_t>& textureIds,
+                                                  const EditorIconGroup group,
                                                   const std::string_view name) noexcept {
-    const EditorIconSourceUVE* const source = FindEditorIconSourceUVE(group, name);
+    const EditorIconSource* const source = FindEditorIconSource(group, name);
     if (source == nullptr) {
         return 0U;
     }
-    const auto index = static_cast<std::size_t>(source - GetEditorIconSourcesUVE().data());
+    const auto index = static_cast<std::size_t>(source - GetEditorIconSources().data());
     return index < textureIds.size() ? textureIds[index] : 0U;
 }
 
-void DeleteTextureUVE(std::uintptr_t& textureId) noexcept {
+void DeleteTexture(std::uintptr_t& textureId) noexcept {
     if (textureId == 0U) {
         return;
     }
@@ -139,14 +139,14 @@ void DeleteTextureUVE(std::uintptr_t& textureId) noexcept {
 }
 
 template <std::size_t Size>
-void DeleteTextureSetUVE(std::array<std::uintptr_t, Size>& textureIds) noexcept {
+void DeleteTextureSet(std::array<std::uintptr_t, Size>& textureIds) noexcept {
     for (std::uintptr_t& textureId : textureIds) {
-        DeleteTextureUVE(textureId);
+        DeleteTexture(textureId);
     }
 }
 
 template <std::size_t Size>
-[[nodiscard]] std::uintptr_t FindTextureIdUVE(const std::array<IconSourceUVE, Size>& sources,
+[[nodiscard]] std::uintptr_t FindTextureId(const std::array<IconSource, Size>& sources,
                                                const std::array<std::uintptr_t, Size>& textureIds,
                                                const std::string_view key) noexcept {
     for (std::size_t index = 0U; index < sources.size(); ++index) {
@@ -159,56 +159,56 @@ template <std::size_t Size>
 
 } // namespace
 
-bool EditorUiAssetsUVE::InitializeUVE() noexcept {
-    if (IsReadyUVE()) {
+bool EditorUiAssets::Initialize() noexcept {
+    if (IsReady()) {
         return true;
     }
 
-    m_logoTextureId = UploadTextureUVE(univex_logo_uve_display_rgba.data(), kLogoWidthUVE, kLogoHeightUVE);
-    for (std::size_t index = 0U; index < kGeneralIconSourcesUVE.size(); ++index) {
-        m_generalIconTextureIds[index] = UploadTextureUVE(kGeneralIconSourcesUVE[index].pixels,
-                                                           kEditorIconWidthUVE, kEditorIconHeightUVE);
+    m_logoTextureId = UploadTexture(univex_logo_uve_display_rgba.data(), kLogoWidth, kLogoHeight);
+    for (std::size_t index = 0U; index < kGeneralIconSources.size(); ++index) {
+        m_generalIconTextureIds[index] = UploadTexture(kGeneralIconSources[index].pixels,
+                                                           kEditorIconWidth, kEditorIconHeight);
     }
-    const std::span<const EditorIconSourceUVE> icons = GetEditorIconSourcesUVE();
+    const std::span<const EditorIconSource> icons = GetEditorIconSources();
     try {
         m_iconTextureIds.assign(icons.size(), 0U);
     } catch (...) {
-        ShutdownUVE();
+        Shutdown();
         return false;
     }
     for (std::size_t index = 0U; index < icons.size(); ++index) {
-        m_iconTextureIds[index] = UploadIconTextureUVE(icons[index].png);
+        m_iconTextureIds[index] = UploadIconTexture(icons[index].png);
     }
-    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+    for (const Scene::Objects::SceneObjectDescriptor& descriptor : Scene::Objects::GetSceneObjectDescriptors()) {
         const auto kind = static_cast<std::size_t>(descriptor.kind);
         if (kind < m_objectIconTextureIds.size()) {
             // A Folder in the Scene panel looks like the folders in the Asset Table.
             m_objectIconTextureIds[kind] =
-                descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
-                    ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "folder")
-                    : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Object, descriptor.typeId);
+                descriptor.kind == Scene::Objects::SceneObjectKind::Folder
+                    ? FindIconTextureId(m_iconTextureIds, EditorIconGroup::ContentType, "folder")
+                    : FindIconTextureId(m_iconTextureIds, EditorIconGroup::Object, descriptor.typeId);
 
         }
     }
 
-    if (!IsReadyUVE()) {
-        ShutdownUVE();
+    if (!IsReady()) {
+        Shutdown();
         return false;
     }
     return true;
 }
 
-void EditorUiAssetsUVE::ShutdownUVE() noexcept {
-    DeleteTextureUVE(m_logoTextureId);
-    DeleteTextureSetUVE(m_generalIconTextureIds);
+void EditorUiAssets::Shutdown() noexcept {
+    DeleteTexture(m_logoTextureId);
+    DeleteTextureSet(m_generalIconTextureIds);
     for (std::uintptr_t& textureId : m_iconTextureIds) {
-        DeleteTextureUVE(textureId);
+        DeleteTexture(textureId);
     }
     m_iconTextureIds.clear();
     m_objectIconTextureIds.fill(0U);
 }
 
-bool EditorUiAssetsUVE::IsReadyUVE() const noexcept {
+bool EditorUiAssets::IsReady() const noexcept {
     return m_logoTextureId != 0U &&
            std::all_of(m_generalIconTextureIds.cbegin(), m_generalIconTextureIds.cend(),
                        [](const std::uintptr_t textureId) { return textureId != 0U; }) &&
@@ -217,64 +217,64 @@ bool EditorUiAssetsUVE::IsReadyUVE() const noexcept {
                        [](const std::uintptr_t textureId) { return textureId != 0U; });
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetLogoTextureIdUVE() const noexcept {
+std::uintptr_t EditorUiAssets::GetLogoTextureId() const noexcept {
     return m_logoTextureId;
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetGeneralIconTextureIdUVE(const std::string_view iconId) const noexcept {
-    const std::uintptr_t toolbarIcon = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Toolbar, iconId);
+std::uintptr_t EditorUiAssets::GetGeneralIconTextureId(const std::string_view iconId) const noexcept {
+    const std::uintptr_t toolbarIcon = FindIconTextureId(m_iconTextureIds, EditorIconGroup::Toolbar, iconId);
     if (toolbarIcon != 0U) {
         return toolbarIcon;
     }
-    return FindTextureIdUVE(kGeneralIconSourcesUVE, m_generalIconTextureIds, iconId);
+    return FindTextureId(kGeneralIconSources, m_generalIconTextureIds, iconId);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetObjectIconTextureIdUVE(const Scene::Objects::SceneObjectKindUVE kind) const noexcept {
+std::uintptr_t EditorUiAssets::GetObjectIconTextureId(const Scene::Objects::SceneObjectKind kind) const noexcept {
     const auto index = static_cast<std::size_t>(kind);
     return index < m_objectIconTextureIds.size() ? m_objectIconTextureIds[index] : 0U;
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetObjectCardIconTextureIdUVE(const Scene::Objects::SceneObjectKindUVE kind) const noexcept {
-    return GetObjectIconTextureIdUVE(kind);
+std::uintptr_t EditorUiAssets::GetObjectCardIconTextureId(const Scene::Objects::SceneObjectKind kind) const noexcept {
+    return GetObjectIconTextureId(kind);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetObjectCategoryIconTextureIdUVE(const std::string_view category) const noexcept {
-    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ObjectCategory, category);
+std::uintptr_t EditorUiAssets::GetObjectCategoryIconTextureId(const std::string_view category) const noexcept {
+    return FindIconTextureId(m_iconTextureIds, EditorIconGroup::ObjectCategory, category);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetContentTypeIconTextureIdUVE(const std::string_view typeId) const noexcept {
+std::uintptr_t EditorUiAssets::GetContentTypeIconTextureId(const std::string_view typeId) const noexcept {
     // Viewport3D is the user-facing label for a scene asset, while icon source names use the
     // stable identifier spelling shared by the catalogue and asset filenames.
     if (typeId == "Viewport3D") {
-        return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "viewport_3d");
+        return FindIconTextureId(m_iconTextureIds, EditorIconGroup::ContentType, "viewport_3d");
     }
-    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, typeId);
+    return FindIconTextureId(m_iconTextureIds, EditorIconGroup::ContentType, typeId);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetContentTypeCardIconTextureIdUVE(const std::string_view typeId) const noexcept {
-    return GetContentTypeIconTextureIdUVE(typeId);
+std::uintptr_t EditorUiAssets::GetContentTypeCardIconTextureId(const std::string_view typeId) const noexcept {
+    return GetContentTypeIconTextureId(typeId);
 }
 
-std::uintptr_t EditorUiAssetsUVE::GetComponentIconTextureIdUVE(const std::string_view componentId) const noexcept {
+std::uintptr_t EditorUiAssets::GetComponentIconTextureId(const std::string_view componentId) const noexcept {
     std::string key{componentId};
     std::replace(key.begin(), key.end(), '.', '_');
     if (key.starts_with("component_")) {
-        return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, key);
+        return FindIconTextureId(m_iconTextureIds, EditorIconGroup::Component, key);
     }
-    const std::uintptr_t direct = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, "component_" + key);
+    const std::uintptr_t direct = FindIconTextureId(m_iconTextureIds, EditorIconGroup::Component, "component_" + key);
     if (direct != 0U) {
         return direct;
     }
-    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, key);
+    return FindIconTextureId(m_iconTextureIds, EditorIconGroup::Component, key);
 }
 
-std::uintptr_t EditorUiAssetsUVE::UploadDynamicTextureUVE(const std::uint8_t* const pixels, const int width,
+std::uintptr_t EditorUiAssets::UploadDynamicTexture(const std::uint8_t* const pixels, const int width,
                                                            const int height) noexcept {
-    return UploadTextureUVE(pixels, width, height);
+    return UploadTexture(pixels, width, height);
 }
 
-void EditorUiAssetsUVE::DeleteDynamicTextureUVE(std::uintptr_t& textureId) noexcept {
-    DeleteTextureUVE(textureId);
+void EditorUiAssets::DeleteDynamicTexture(std::uintptr_t& textureId) noexcept {
+    DeleteTexture(textureId);
 }
 
 } // namespace UVE::Editor

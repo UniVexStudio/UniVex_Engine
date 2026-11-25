@@ -7,11 +7,11 @@
 
 namespace UVE::Asset {
 
-/// Queued (via IEventSystemUVE::QueueEvent(), safe to call from the IThreadPoolUVE worker that
-/// ran the load) once AssetManagerUVE finishes loading `guid`, whether it succeeded or failed —
-/// lets interested systems react without polling AssetHandleUVE::IsReadyUVE() every frame.
-struct AssetLoadCompletedEventUVE final {
-    AssetGuidUVE guid;
+/// Queued (via IEventSystem::QueueEvent(), safe to call from the IThreadPool worker that
+/// ran the load) once AssetManager finishes loading `guid`, whether it succeeded or failed —
+/// lets interested systems react without polling AssetHandle::IsReady() every frame.
+struct AssetLoadCompletedEvent final {
+    AssetGuid guid;
     bool success = false;
 };
 

@@ -30,29 +30,29 @@ namespace {
 /// How many nodes this parser will name. Node names exist only for weights channels, and naming
 /// runs over the whole array so one node keeps one track name across every animation of a file; a
 /// hostile document is bounded before that pass rather than after it.
-inline constexpr std::size_t kMaximumNamedNodesUVE = 65536U;
+inline constexpr std::size_t kMaximumNamedNodes = 65536U;
 
 /// One channel decoded to CPU keys: rotation fills `quatValues`, translation and scale fill
 /// `vecValues`, and weights fill `weightValues` flat, key `i` at `[i * morphTargetCount, ...)`.
-struct ChannelKeysUVE final {
+struct ChannelKeys final {
     std::string bone;
     std::string node;
     std::size_t morphTargetCount = 0U;
-    GltfAnimationPathUVE path = GltfAnimationPathUVE::Translation;
-    GltfAnimationInterpolationUVE interpolation = GltfAnimationInterpolationUVE::Linear;
+    GltfAnimationPath path = GltfAnimationPath::Translation;
+    GltfAnimationInterpolation interpolation = GltfAnimationInterpolation::Linear;
     std::vector<float> times;
-    std::vector<Math::Vector3UVE> vecValues;
-    std::vector<Math::QuaternionUVE> quatValues;
+    std::vector<Math::Vector3> vecValues;
+    std::vector<Math::Quaternion> quatValues;
     std::vector<float> weightValues;
 };
 
 /// Key times shared by every path: float SCALAR, bounded, finite, non-negative and strictly
 /// increasing. Extracted so the transform and weights decoders cannot disagree about what a valid
 /// time stream is.
-[[nodiscard]] bool ReadChannelTimesUVE(const GltfAnimationChannelSourceUVE& channel,
+[[nodiscard]] bool ReadChannelTimes(const GltfAnimationChannelSource& channel,
                                        std::vector<float>& outTimes) {
-    if (channel.times.componentType != GltfComponentTypeUVE::Float ||
-        !Detail::ValidateGltfAccessorViewUVE(channel.times, 4U, kMaximumAnimationAssetSamplesUVE)) {
+    if (channel.times.componentType != GltfComponentType::Float ||
+        !Detail::ValidateGltfAccessorView(channel.times, 4U, kMaximumAnimationAssetSamples)) {
         return false;
     }
     const std::size_t count = static_cast<std::size_t>(channel.times.elementCount);
@@ -60,11 +60,11 @@ struct ChannelKeysUVE final {
     times.reserve(count);
     float previousTime = -std::numeric_limits<float>::infinity();
     for (std::size_t index = 0U; index < count; ++index) {
-        const std::byte* const timeBytes = Detail::GltfAccessorElementUVE(channel.times, index, 4U);
+        const std::byte* const timeBytes = Detail::GltfAccessorElement(channel.times, index, 4U);
         if (timeBytes == nullptr) {
             return false;
         }
-        const float time = Detail::ReadGltfFloatLEUVE(timeBytes);
+        const float time = Detail::ReadGltfFloatLE(timeBytes);
         if (!std::isfinite(time) || time < 0.0F || time <= previousTime) {
             return false;
         }
@@ -76,43 +76,43 @@ struct ChannelKeysUVE final {
 }
 
 /// A translation/rotation/scale channel: one VEC3 or VEC4 per key time.
-[[nodiscard]] bool ReadTransformKeysUVE(const GltfAnimationChannelSourceUVE& channel,
-                                        ChannelKeysUVE& outKeys) {
-    const std::uint64_t valueSize = channel.path == GltfAnimationPathUVE::Rotation ? 16U : 12U;
-    if (channel.values.componentType != GltfComponentTypeUVE::Float ||
-        !Detail::ValidateGltfAccessorViewUVE(channel.values, valueSize,
-                                             kMaximumAnimationAssetSamplesUVE) ||
+[[nodiscard]] bool ReadTransformKeys(const GltfAnimationChannelSource& channel,
+                                        ChannelKeys& outKeys) {
+    const std::uint64_t valueSize = channel.path == GltfAnimationPath::Rotation ? 16U : 12U;
+    if (channel.values.componentType != GltfComponentType::Float ||
+        !Detail::ValidateGltfAccessorView(channel.values, valueSize,
+                                             kMaximumAnimationAssetSamples) ||
         channel.values.elementCount != channel.times.elementCount) {
         return false;
     }
     std::vector<float> times;
-    if (!ReadChannelTimesUVE(channel, times)) {
+    if (!ReadChannelTimes(channel, times)) {
         return false;
     }
-    ChannelKeysUVE keys;
+    ChannelKeys keys;
     keys.bone = channel.bone;
     keys.path = channel.path;
     keys.interpolation = channel.interpolation;
     for (std::size_t index = 0U; index < times.size(); ++index) {
-        const std::byte* const valueBytes = Detail::GltfAccessorElementUVE(channel.values, index, valueSize);
+        const std::byte* const valueBytes = Detail::GltfAccessorElement(channel.values, index, valueSize);
         if (valueBytes == nullptr) {
             return false;
         }
-        if (channel.path == GltfAnimationPathUVE::Rotation) {
-            const Math::QuaternionUVE value{Detail::ReadGltfFloatLEUVE(valueBytes),
-                                            Detail::ReadGltfFloatLEUVE(valueBytes + 4U),
-                                            Detail::ReadGltfFloatLEUVE(valueBytes + 8U),
-                                            Detail::ReadGltfFloatLEUVE(valueBytes + 12U)};
-            Math::QuaternionUVE normalized;
-            if (!Math::IsFiniteUVE(value) || !Math::TryNormalizeUVE(value, normalized)) {
+        if (channel.path == GltfAnimationPath::Rotation) {
+            const Math::Quaternion value{Detail::ReadGltfFloatLE(valueBytes),
+                                            Detail::ReadGltfFloatLE(valueBytes + 4U),
+                                            Detail::ReadGltfFloatLE(valueBytes + 8U),
+                                            Detail::ReadGltfFloatLE(valueBytes + 12U)};
+            Math::Quaternion normalized;
+            if (!Math::IsFinite(value) || !Math::TryNormalize(value, normalized)) {
                 return false;
             }
             keys.quatValues.push_back(normalized);
         } else {
-            const Math::Vector3UVE value{Detail::ReadGltfFloatLEUVE(valueBytes),
-                                         Detail::ReadGltfFloatLEUVE(valueBytes + 4U),
-                                         Detail::ReadGltfFloatLEUVE(valueBytes + 8U)};
-            if (!Math::IsFiniteUVE(value)) {
+            const Math::Vector3 value{Detail::ReadGltfFloatLE(valueBytes),
+                                         Detail::ReadGltfFloatLE(valueBytes + 4U),
+                                         Detail::ReadGltfFloatLE(valueBytes + 8U)};
+            if (!Math::IsFinite(value)) {
                 return false;
             }
             keys.vecValues.push_back(value);
@@ -131,42 +131,42 @@ struct ChannelKeysUVE final {
 /// duplicate keys at every boundary - and silently lerping instead would change the performance the
 /// animator authored. A loud failure is the only honest answer; every DCC exporter that writes
 /// facial keys writes LINEAR.
-[[nodiscard]] bool ReadWeightKeysUVE(const GltfAnimationChannelSourceUVE& channel,
-                                     ChannelKeysUVE& outKeys) {
-    if (channel.interpolation != GltfAnimationInterpolationUVE::Linear ||
-        channel.morphTargetCount == 0U || channel.morphTargetCount > kMaximumMeshMorphTargetsUVE) {
+[[nodiscard]] bool ReadWeightKeys(const GltfAnimationChannelSource& channel,
+                                     ChannelKeys& outKeys) {
+    if (channel.interpolation != GltfAnimationInterpolation::Linear ||
+        channel.morphTargetCount == 0U || channel.morphTargetCount > kMaximumMeshMorphTargets) {
         return false;
     }
     // Bounded by the product, not by the sample cap: one key legitimately holds one float per
     // shape, so a 52-shape take uses 52x the elements a single float track would.
-    const std::uint64_t maximumValues = static_cast<std::uint64_t>(kMaximumAnimationAssetSamplesUVE) *
+    const std::uint64_t maximumValues = static_cast<std::uint64_t>(kMaximumAnimationAssetSamples) *
                                         static_cast<std::uint64_t>(channel.morphTargetCount);
-    if (channel.values.componentType != GltfComponentTypeUVE::Float ||
-        !Detail::ValidateGltfAccessorViewUVE(channel.values, 4U, maximumValues)) {
+    if (channel.values.componentType != GltfComponentType::Float ||
+        !Detail::ValidateGltfAccessorView(channel.values, 4U, maximumValues)) {
         return false;
     }
     std::vector<float> times;
-    if (!ReadChannelTimesUVE(channel, times)) {
+    if (!ReadChannelTimes(channel, times)) {
         return false;
     }
     if (channel.values.elementCount !=
         static_cast<std::uint64_t>(times.size()) * static_cast<std::uint64_t>(channel.morphTargetCount)) {
         return false;
     }
-    ChannelKeysUVE keys;
+    ChannelKeys keys;
     keys.node = channel.node;
     keys.morphTargetCount = channel.morphTargetCount;
-    keys.path = GltfAnimationPathUVE::Weights;
+    keys.path = GltfAnimationPath::Weights;
     keys.interpolation = channel.interpolation;
     keys.weightValues.reserve(times.size() * channel.morphTargetCount);
     for (std::size_t key = 0U; key < times.size(); ++key) {
         for (std::size_t target = 0U; target < channel.morphTargetCount; ++target) {
             const std::byte* const weightBytes =
-                Detail::GltfAccessorElementUVE(channel.values, key * channel.morphTargetCount + target, 4U);
+                Detail::GltfAccessorElement(channel.values, key * channel.morphTargetCount + target, 4U);
             if (weightBytes == nullptr) {
                 return false;
             }
-            const float weight = Detail::ReadGltfFloatLEUVE(weightBytes);
+            const float weight = Detail::ReadGltfFloatLE(weightBytes);
             if (!std::isfinite(weight)) {
                 return false;
             }
@@ -178,16 +178,16 @@ struct ChannelKeysUVE final {
     return true;
 }
 
-[[nodiscard]] bool ReadChannelKeysUVE(const GltfAnimationChannelSourceUVE& channel,
-                                      ChannelKeysUVE& outKeys) {
-    return channel.path == GltfAnimationPathUVE::Weights ? ReadWeightKeysUVE(channel, outKeys)
-                                                         : ReadTransformKeysUVE(channel, outKeys);
+[[nodiscard]] bool ReadChannelKeys(const GltfAnimationChannelSource& channel,
+                                      ChannelKeys& outKeys) {
+    return channel.path == GltfAnimationPath::Weights ? ReadWeightKeys(channel, outKeys)
+                                                         : ReadTransformKeys(channel, outKeys);
 }
 
 /// Segment search shared by both evaluators: `times` is strictly increasing and non-empty, and
 /// `time` is strictly between its ends, so the segment below the first key above `time` always
 /// exists. Returns the segment end index, or 0 when `time` is exactly a key (value at `outIndex`).
-[[nodiscard]] std::size_t FindKeySegmentUVE(const std::vector<float>& times, const float time,
+[[nodiscard]] std::size_t FindKeySegment(const std::vector<float>& times, const float time,
                                             std::size_t& outIndex) {
     const auto above = std::upper_bound(times.begin(), times.end(), time);
     const std::size_t i = static_cast<std::size_t>(above - times.begin());
@@ -199,8 +199,8 @@ struct ChannelKeysUVE final {
     return i;
 }
 
-[[nodiscard]] bool TryEvaluateVec3UVE(const ChannelKeysUVE& keys, const float time,
-                                      Math::Vector3UVE& outValue) {
+[[nodiscard]] bool TryEvaluateVec3(const ChannelKeys& keys, const float time,
+                                      Math::Vector3& outValue) {
     if (time <= keys.times.front()) {
         outValue = keys.vecValues.front();
         return true;
@@ -210,21 +210,21 @@ struct ChannelKeysUVE final {
         return true;
     }
     std::size_t index = 0U;
-    if (FindKeySegmentUVE(keys.times, time, index) == 0U) {
+    if (FindKeySegment(keys.times, time, index) == 0U) {
         outValue = keys.vecValues[index];
         return true;
     }
-    if (keys.interpolation == GltfAnimationInterpolationUVE::Step) {
+    if (keys.interpolation == GltfAnimationInterpolation::Step) {
         outValue = keys.vecValues[index - 1U];
         return true;
     }
     const float alpha = (time - keys.times[index - 1U]) / (keys.times[index] - keys.times[index - 1U]);
     outValue = keys.vecValues[index - 1U] + (keys.vecValues[index] - keys.vecValues[index - 1U]) * alpha;
-    return Math::IsFiniteUVE(outValue);
+    return Math::IsFinite(outValue);
 }
 
-[[nodiscard]] bool TryEvaluateQuatUVE(const ChannelKeysUVE& keys, const float time,
-                                      Math::QuaternionUVE& outValue) {
+[[nodiscard]] bool TryEvaluateQuat(const ChannelKeys& keys, const float time,
+                                      Math::Quaternion& outValue) {
     if (time <= keys.times.front()) {
         outValue = keys.quatValues.front();
         return true;
@@ -234,38 +234,38 @@ struct ChannelKeysUVE final {
         return true;
     }
     std::size_t index = 0U;
-    if (FindKeySegmentUVE(keys.times, time, index) == 0U) {
+    if (FindKeySegment(keys.times, time, index) == 0U) {
         outValue = keys.quatValues[index];
         return true;
     }
-    if (keys.interpolation == GltfAnimationInterpolationUVE::Step) {
+    if (keys.interpolation == GltfAnimationInterpolation::Step) {
         outValue = keys.quatValues[index - 1U];
         return true;
     }
     const float alpha = (time - keys.times[index - 1U]) / (keys.times[index] - keys.times[index - 1U]);
-    return Math::TrySlerpUVE(keys.quatValues[index - 1U], keys.quatValues[index], alpha, outValue);
+    return Math::TrySlerp(keys.quatValues[index - 1U], keys.quatValues[index], alpha, outValue);
 }
 
-[[nodiscard]] std::optional<GltfAnimationInterpolationUVE> ParseInterpolationUVE(
+[[nodiscard]] std::optional<GltfAnimationInterpolation> ParseInterpolation(
     const nlohmann::json& sampler) {
     const auto it = sampler.find("interpolation");
     if (it == sampler.end()) {
-        return GltfAnimationInterpolationUVE::Linear;
+        return GltfAnimationInterpolation::Linear;
     }
     if (!it->is_string()) {
         return std::nullopt;
     }
     const std::string& name = it->get_ref<const std::string&>();
     if (name == "LINEAR") {
-        return GltfAnimationInterpolationUVE::Linear;
+        return GltfAnimationInterpolation::Linear;
     }
     if (name == "STEP") {
-        return GltfAnimationInterpolationUVE::Step;
+        return GltfAnimationInterpolation::Step;
     }
     return std::nullopt;
 }
 
-[[nodiscard]] bool ReadUintFieldUVE(const nlohmann::json& object, const char* key, std::size_t& outValue) {
+[[nodiscard]] bool ReadUintField(const nlohmann::json& object, const char* key, std::size_t& outValue) {
     const auto it = object.find(key);
     if (it == object.end() || !it->is_number_unsigned()) {
         return false;
@@ -279,7 +279,7 @@ struct ChannelKeysUVE final {
 /// per animation) is what makes a node resolve to ONE name across every animation of a file: the
 /// runtime addresses a morph track by that name, so a name that shifted per animation would make
 /// half a character's takes drive the wrong mesh.
-[[nodiscard]] std::vector<std::string> BuildNodeNamesUVE(const nlohmann::json& nodes) {
+[[nodiscard]] std::vector<std::string> BuildNodeNames(const nlohmann::json& nodes) {
     std::vector<std::string> names;
     names.reserve(nodes.size());
     std::unordered_set<std::string> used;
@@ -308,14 +308,14 @@ struct ChannelKeysUVE final {
 /// mesh index is out of range, a primitive is malformed, or the primitives disagree. glTF requires
 /// every primitive of a mesh to declare the same number of targets, because one weights channel
 /// drives all of them; a mesh that disagrees cannot be steered by one track.
-[[nodiscard]] std::optional<std::size_t> ReadMeshMorphTargetCountUVE(const nlohmann::json& document,
+[[nodiscard]] std::optional<std::size_t> ReadMeshMorphTargetCount(const nlohmann::json& document,
                                                                     const std::size_t nodeIndex) {
     const auto nodesIt = document.find("nodes");
     if (nodesIt == document.end() || !nodesIt->is_array() || nodeIndex >= nodesIt->size() ||
         !nodesIt->at(nodeIndex).is_object()) {
         return std::nullopt;
     }
-    const auto meshIndex = Detail::ReadJsonUintUVE(nodesIt->at(nodeIndex), "mesh", true);
+    const auto meshIndex = Detail::ReadJsonUint(nodesIt->at(nodeIndex), "mesh", true);
     const auto meshesIt = document.find("meshes");
     if (!meshIndex.has_value() || meshesIt == document.end() || !meshesIt->is_array() ||
         *meshIndex >= meshesIt->size() || !meshesIt->at(*meshIndex).is_object()) {
@@ -355,23 +355,23 @@ struct ChannelKeysUVE final {
 
 } // namespace
 
-bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const SkeletonAssetUVE& skeleton,
-                             AnimationClipAssetUVE& outClip) {
+bool ConvertGltfAnimation(const GltfAnimationSource& source, const SkeletonAsset& skeleton,
+                             AnimationClipAsset& outClip) {
     const bool hasTransformChannels =
         std::any_of(source.channels.begin(), source.channels.end(),
-                    [](const GltfAnimationChannelSourceUVE& channel) {
-                        return channel.path != GltfAnimationPathUVE::Weights;
+                    [](const GltfAnimationChannelSource& channel) {
+                        return channel.path != GltfAnimationPath::Weights;
                     });
     // A lip-sync take exported from a bare head has no skin, and the clip format has carried
     // bone-free clips since weight tracks landed; only a channel that names a bone needs a skeleton
     // to resolve it against, and a caller that passes one anyway must still pass a valid one.
-    if (skeleton.joints.empty() ? hasTransformChannels : !IsSkeletonAssetValidUVE(skeleton)) {
+    if (skeleton.joints.empty() ? hasTransformChannels : !IsSkeletonAssetValid(skeleton)) {
         return false;
     }
-    if (source.clipId.empty() || source.clipId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+    if (source.clipId.empty() || source.clipId.size() > kMaximumAnimationAssetIdentifierBytes ||
         source.channels.empty() ||
         source.channels.size() >
-            kMaximumAnimationAssetBonesUVE * 3U + kMaximumAnimationAssetMorphTracksUVE) {
+            kMaximumAnimationAssetBones * 3U + kMaximumAnimationAssetMorphTracks) {
         return false;
     }
     // A valid input holds at most one channel per target per path, so anything past bones*3 paths
@@ -382,28 +382,28 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
     for (std::size_t i = 0U; i < skeleton.joints.size(); ++i) {
         boneToRest.emplace(skeleton.joints[i].name, i);
     }
-    std::set<std::pair<std::string_view, GltfAnimationPathUVE>> seenPaths;
+    std::set<std::pair<std::string_view, GltfAnimationPath>> seenPaths;
     std::size_t morphTrackCount = 0U;
-    std::vector<ChannelKeysUVE> keys;
+    std::vector<ChannelKeys> keys;
     keys.reserve(source.channels.size());
     float duration = 0.0F;
-    for (const GltfAnimationChannelSourceUVE& channel : source.channels) {
-        const bool isWeights = channel.path == GltfAnimationPathUVE::Weights;
+    for (const GltfAnimationChannelSource& channel : source.channels) {
+        const bool isWeights = channel.path == GltfAnimationPath::Weights;
         const std::string& target = isWeights ? channel.node : channel.bone;
         // Both identities are mutually exclusive by path: a weights channel that also names a bone
         // (or a transform channel that also names a node) is a caller that mixed the two up.
         const bool mixedIdentity = isWeights ? !channel.bone.empty() : channel.morphTargetCount != 0U;
-        if (target.empty() || target.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+        if (target.empty() || target.size() > kMaximumAnimationAssetIdentifierBytes ||
             target.contains('\0') || mixedIdentity ||
             (!isWeights && !boneToRest.contains(std::string_view{target})) ||
             !seenPaths.emplace(std::string_view{target}, channel.path).second) {
             return false;
         }
-        if (isWeights && ++morphTrackCount > kMaximumAnimationAssetMorphTracksUVE) {
+        if (isWeights && ++morphTrackCount > kMaximumAnimationAssetMorphTracks) {
             return false;
         }
-        ChannelKeysUVE decoded;
-        if (!ReadChannelKeysUVE(channel, decoded)) {
+        ChannelKeys decoded;
+        if (!ReadChannelKeys(channel, decoded)) {
             return false;
         }
         duration = std::max(duration, decoded.times.back());
@@ -413,12 +413,12 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
         return false;
     }
 
-    AnimationClipAssetUVE clip;
+    AnimationClipAsset clip;
     clip.clipId = source.clipId;
     clip.durationSeconds = static_cast<double>(duration);
     clip.rest.reserve(skeleton.joints.size());
-    for (const SkeletonJointUVE& joint : skeleton.joints) {
-        AnimationAssetRestBoneUVE rest;
+    for (const SkeletonJoint& joint : skeleton.joints) {
+        AnimationAssetRestBone rest;
         rest.bone = joint.name;
         rest.parent = joint.parent;
         rest.position = joint.position;
@@ -426,25 +426,25 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
         rest.scale = joint.scale;
         clip.rest.push_back(std::move(rest));
     }
-    for (const SkeletonJointUVE& joint : skeleton.joints) {
-        const ChannelKeysUVE* translation = nullptr;
-        const ChannelKeysUVE* rotation = nullptr;
-        const ChannelKeysUVE* scale = nullptr;
-        for (const ChannelKeysUVE& decoded : keys) {
+    for (const SkeletonJoint& joint : skeleton.joints) {
+        const ChannelKeys* translation = nullptr;
+        const ChannelKeys* rotation = nullptr;
+        const ChannelKeys* scale = nullptr;
+        for (const ChannelKeys& decoded : keys) {
             if (decoded.bone != joint.name) {
                 continue;
             }
             switch (decoded.path) {
-            case GltfAnimationPathUVE::Translation:
+            case GltfAnimationPath::Translation:
                 translation = &decoded;
                 break;
-            case GltfAnimationPathUVE::Rotation:
+            case GltfAnimationPath::Rotation:
                 rotation = &decoded;
                 break;
-            case GltfAnimationPathUVE::Scale:
+            case GltfAnimationPath::Scale:
                 scale = &decoded;
                 break;
-            case GltfAnimationPathUVE::Weights:
+            case GltfAnimationPath::Weights:
                 break; // weights never carry a bone, so this cannot be a joint's channel
             }
         }
@@ -463,41 +463,41 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
         }
         std::sort(unionTimes.begin(), unionTimes.end());
         unionTimes.erase(std::unique(unionTimes.begin(), unionTimes.end()), unionTimes.end());
-        if (unionTimes.size() > kMaximumAnimationAssetSamplesUVE) {
+        if (unionTimes.size() > kMaximumAnimationAssetSamples) {
             return false;
         }
-        AnimationAssetBoneTrackUVE track;
+        AnimationAssetBoneTrack track;
         track.bone = joint.name;
         track.samples.reserve(unionTimes.size());
         for (const float time : unionTimes) {
-            AnimationAssetPoseUVE pose{joint.position, joint.rotation, joint.scale};
-            if (translation != nullptr && !TryEvaluateVec3UVE(*translation, time, pose.position)) {
+            AnimationAssetPose pose{joint.position, joint.rotation, joint.scale};
+            if (translation != nullptr && !TryEvaluateVec3(*translation, time, pose.position)) {
                 return false;
             }
-            if (rotation != nullptr && !TryEvaluateQuatUVE(*rotation, time, pose.rotation)) {
+            if (rotation != nullptr && !TryEvaluateQuat(*rotation, time, pose.rotation)) {
                 return false;
             }
-            if (scale != nullptr && !TryEvaluateVec3UVE(*scale, time, pose.scale)) {
+            if (scale != nullptr && !TryEvaluateVec3(*scale, time, pose.scale)) {
                 return false;
             }
-            track.samples.push_back(AnimationAssetSampleUVE{static_cast<double>(time), pose});
+            track.samples.push_back(AnimationAssetSample{static_cast<double>(time), pose});
         }
         clip.bones.push_back(std::move(track));
     }
     // Weights tracks are copied, not baked: the file's keys are already what the runtime sampler
     // evaluates, so resampling them onto any other grid could only lose what the animator authored.
-    for (const ChannelKeysUVE& decoded : keys) {
-        if (decoded.path != GltfAnimationPathUVE::Weights) {
+    for (const ChannelKeys& decoded : keys) {
+        if (decoded.path != GltfAnimationPath::Weights) {
             continue;
         }
-        AnimationAssetMorphTrackUVE track;
+        AnimationAssetMorphTrack track;
         track.node = decoded.node;
         track.samples.reserve(decoded.times.size());
         for (std::size_t key = 0U; key < decoded.times.size(); ++key) {
             const auto first =
                 decoded.weightValues.begin() +
                 static_cast<std::ptrdiff_t>(key * decoded.morphTargetCount);
-            AnimationAssetMorphWeightSampleUVE sample;
+            AnimationAssetMorphWeightSample sample;
             sample.timeSeconds = static_cast<double>(decoded.times[key]);
             sample.weights.assign(first, first + static_cast<std::ptrdiff_t>(decoded.morphTargetCount));
             track.samples.push_back(std::move(sample));
@@ -505,14 +505,14 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
         clip.morphWeights.push_back(std::move(track));
     }
 
-    if (!IsAnimationClipAssetValidUVE(clip)) {
+    if (!IsAnimationClipAssetValid(clip)) {
         return false;
     }
     outClip = std::move(clip);
     return true;
 }
 
-std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_view json,
+std::optional<GltfAnimationSource> ParseGltfAnimationSource(std::string_view json,
                                                                   const std::vector<std::byte>& buffer) {
     nlohmann::json document;
     try {
@@ -540,22 +540,22 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
     // The same bound the converter enforces, applied before the decode so an oversized channel list
     // costs nothing: one channel per target per path, plus one weights channel per morph track.
     if (channelsIt->size() >
-        kMaximumAnimationAssetBonesUVE * 3U + kMaximumAnimationAssetMorphTracksUVE) {
+        kMaximumAnimationAssetBones * 3U + kMaximumAnimationAssetMorphTracks) {
         return std::nullopt;
     }
     // Channels resolve through the skin's skeleton: a transform channel targeting a node outside it
     // is a non-skeletal track this converter cannot carry. A document with no skin at all is where
     // a lip-sync-only export lands, so that alone is not an error - it becomes one below, when the
     // animation turns out to hold no weights channel either.
-    const std::optional<GltfSkeletonUVE> skeleton =
-        ParseGltfSkeletonUVE(json, kMaximumSkeletonAssetJointsUVE);
+    const std::optional<GltfSkeleton> skeleton =
+        ParseGltfSkeleton(json, kMaximumSkeletonAssetJoints);
     if (!skeleton.has_value() && document.contains("skins")) {
         return std::nullopt;
     }
     std::unordered_map<std::size_t, std::string_view> nodeToBone;
     if (skeleton.has_value()) {
         nodeToBone.reserve(skeleton->joints.size() * 2U);
-        for (const GltfJointUVE& joint : skeleton->joints) {
+        for (const GltfJoint& joint : skeleton->joints) {
             nodeToBone.emplace(joint.sourceNodeIndex, std::string_view{joint.name});
         }
     }
@@ -581,13 +581,13 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
     if (hasWeightsChannel) {
         const auto nodesIt = document.find("nodes");
         if (nodesIt == document.end() || !nodesIt->is_array() ||
-            nodesIt->size() > kMaximumNamedNodesUVE) {
+            nodesIt->size() > kMaximumNamedNodes) {
             return std::nullopt;
         }
-        nodeNames = BuildNodeNamesUVE(*nodesIt);
+        nodeNames = BuildNodeNames(*nodesIt);
     }
 
-    GltfAnimationSourceUVE source;
+    GltfAnimationSource source;
     {
         std::string clipId = "clip";
         const auto nameIt = animation.find("name");
@@ -609,7 +609,7 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
             return std::nullopt;
         }
         std::size_t samplerIndex = 0U;
-        if (!ReadUintFieldUVE(channel, "sampler", samplerIndex) || samplerIndex >= samplersIt->size()) {
+        if (!ReadUintField(channel, "sampler", samplerIndex) || samplerIndex >= samplersIt->size()) {
             return std::nullopt;
         }
         const auto targetIt = channel.find("target");
@@ -617,7 +617,7 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
             return std::nullopt;
         }
         std::size_t nodeIndex = 0U;
-        if (!ReadUintFieldUVE(*targetIt, "node", nodeIndex)) {
+        if (!ReadUintField(*targetIt, "node", nodeIndex)) {
             return std::nullopt;
         }
         const auto pathIt = targetIt->find("path");
@@ -625,31 +625,31 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
             return std::nullopt;
         }
         const std::string& pathName = pathIt->get_ref<const std::string&>();
-        GltfAnimationChannelSourceUVE sourceChannel;
+        GltfAnimationChannelSource sourceChannel;
         const char* expectedType = "VEC3";
         if (pathName == "weights") {
             const std::optional<std::size_t> morphTargetCount =
-                ReadMeshMorphTargetCountUVE(document, nodeIndex);
+                ReadMeshMorphTargetCount(document, nodeIndex);
             if (nodeIndex >= nodeNames.size() || !morphTargetCount.has_value() ||
-                *morphTargetCount > kMaximumMeshMorphTargetsUVE ||
-                nodeNames[nodeIndex].size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+                *morphTargetCount > kMaximumMeshMorphTargets ||
+                nodeNames[nodeIndex].size() > kMaximumAnimationAssetIdentifierBytes ||
                 nodeNames[nodeIndex].contains('\0')) {
                 return std::nullopt;
             }
-            sourceChannel.path = GltfAnimationPathUVE::Weights;
+            sourceChannel.path = GltfAnimationPath::Weights;
             sourceChannel.node = nodeNames[nodeIndex];
             sourceChannel.morphTargetCount = *morphTargetCount;
             expectedType = "SCALAR";
             sawWeightsChannel = true;
         } else {
-            GltfAnimationPathUVE path = GltfAnimationPathUVE::Translation;
+            GltfAnimationPath path = GltfAnimationPath::Translation;
             if (pathName == "translation") {
-                path = GltfAnimationPathUVE::Translation;
+                path = GltfAnimationPath::Translation;
             } else if (pathName == "rotation") {
-                path = GltfAnimationPathUVE::Rotation;
+                path = GltfAnimationPath::Rotation;
                 expectedType = "VEC4";
             } else if (pathName == "scale") {
-                path = GltfAnimationPathUVE::Scale;
+                path = GltfAnimationPath::Scale;
             } else {
                 return std::nullopt;
             }
@@ -666,26 +666,26 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
         }
         std::size_t inputIndex = 0U;
         std::size_t outputIndex = 0U;
-        if (!ReadUintFieldUVE(sampler, "input", inputIndex) ||
-            !ReadUintFieldUVE(sampler, "output", outputIndex)) {
+        if (!ReadUintField(sampler, "input", inputIndex) ||
+            !ReadUintField(sampler, "output", outputIndex)) {
             return std::nullopt;
         }
-        const std::optional<GltfAnimationInterpolationUVE> interpolation = ParseInterpolationUVE(sampler);
+        const std::optional<GltfAnimationInterpolation> interpolation = ParseInterpolation(sampler);
         if (!interpolation.has_value()) {
             return std::nullopt;
         }
-        const std::optional<GltfAccessorViewUVE> times = Detail::BuildAccessorViewUVE(
+        const std::optional<GltfAccessorView> times = Detail::BuildAccessorView(
             document, buffer, static_cast<std::uint64_t>(inputIndex), "SCALAR", false);
-        const std::optional<GltfAccessorViewUVE> values = Detail::BuildAccessorViewUVE(
+        const std::optional<GltfAccessorView> values = Detail::BuildAccessorView(
             document, buffer, static_cast<std::uint64_t>(outputIndex), expectedType, false);
         if (!times.has_value() || !values.has_value()) {
             return std::nullopt;
         }
         sourceChannel.interpolation = *interpolation;
-        if (sourceChannel.path == GltfAnimationPathUVE::Weights) {
+        if (sourceChannel.path == GltfAnimationPath::Weights) {
             // Both rejections happen here as well as in the decoder so a file fails at import with
             // the reason visible, not later at conversion with a nameless false.
-            if (*interpolation != GltfAnimationInterpolationUVE::Linear) {
+            if (*interpolation != GltfAnimationInterpolation::Linear) {
                 return std::nullopt;
             }
             if (values->elementCount !=

@@ -12,15 +12,15 @@ namespace UVE::Scene {
 
 namespace {
 
-/// Bounded, ordered insertion. The array always holds the first `kMaximumSpawnPointQueryResultsUVE`
+/// Bounded, ordered insertion. The array always holds the first `kMaximumSpawnPointQueryResults`
 /// candidates in stable content order no matter what order the pool hands them over in: a
 /// candidate that sorts before the current last one displaces it, and whatever falls off the end
 /// sets `overflowed` - which is exactly "there were more points than this list can carry", without
 /// the query ever needing to know its iteration order in advance.
-void InsertOrderedUVE(SpawnPoint3DQueryResultsUVE& results, SpawnPoint3DQueryResultUVE candidate) {
+void InsertOrdered(SpawnPoint3DQueryResults& results, SpawnPoint3DQueryResult candidate) {
     std::size_t slot = results.count;
-    if (results.count == kMaximumSpawnPointQueryResultsUVE) {
-        if (!SortsBeforeSpawnPointUVE(candidate.entity, results.results[results.count - 1U].entity)) {
+    if (results.count == kMaximumSpawnPointQueryResults) {
+        if (!SortsBeforeSpawnPoint(candidate.entity, results.results[results.count - 1U].entity)) {
             results.overflowed = true;
             return;
         }
@@ -30,7 +30,7 @@ void InsertOrderedUVE(SpawnPoint3DQueryResultsUVE& results, SpawnPoint3DQueryRes
         ++results.count;
     }
 
-    while (slot > 0U && SortsBeforeSpawnPointUVE(candidate.entity, results.results[slot - 1U].entity)) {
+    while (slot > 0U && SortsBeforeSpawnPoint(candidate.entity, results.results[slot - 1U].entity)) {
         results.results[slot] = std::move(results.results[slot - 1U]);
         --slot;
     }
@@ -39,33 +39,33 @@ void InsertOrderedUVE(SpawnPoint3DQueryResultsUVE& results, SpawnPoint3DQueryRes
 
 } // namespace
 
-SpawnPoint3DQueryResultsUVE QuerySpawnPointsUVE(IEntityManagerUVE& entityManager,
-                                                const SpawnPoint3DQueryUVE& query) {
-    SpawnPoint3DQueryResultsUVE results;
+SpawnPoint3DQueryResults QuerySpawnPoints(IEntityManager& entityManager,
+                                                const SpawnPoint3DQuery& query) {
+    SpawnPoint3DQueryResults results;
 
-    entityManager.ForEachUVE<SpawnPoint3DComponentUVE>(
-        [&entityManager, &query, &results](const EntityUVE entity,
-                                           SpawnPoint3DComponentUVE& spawnPoint) {
-            if (!spawnPoint.enabled || !IsSpawnPoint3DObjectComponentValidUVE(spawnPoint)) {
+    entityManager.ForEach<SpawnPoint3DComponent>(
+        [&entityManager, &query, &results](const Entity entity,
+                                           SpawnPoint3DComponent& spawnPoint) {
+            if (!spawnPoint.enabled || !IsSpawnPoint3DObjectComponentValid(spawnPoint)) {
                 return;
             }
             if (!query.tag.empty() && spawnPoint.spawnTag != query.tag) {
                 return;
             }
-            if (!entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+            if (!entityManager.HasComponent<WorldTransformComponent>(entity)) {
                 return;
             }
 
-            const WorldTransformComponentUVE& world =
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-            const std::optional<SpawnPoint3DPoseUVE> pose = ComposeSpawnPointPoseUVE(
+            const WorldTransformComponent& world =
+                entityManager.GetComponent<WorldTransformComponent>(entity);
+            const std::optional<SpawnPoint3DPose> pose = ComposeSpawnPointPose(
                 world.worldPosition, world.worldRotation, spawnPoint.localPosition,
                 spawnPoint.localRotation);
             if (!pose.has_value()) {
                 return;
             }
 
-            InsertOrderedUVE(results, SpawnPoint3DQueryResultUVE{entity, spawnPoint.spawnTag,
+            InsertOrdered(results, SpawnPoint3DQueryResult{entity, spawnPoint.spawnTag,
                                                                 *pose, spawnPoint.oneShot, false});
         });
 
@@ -73,25 +73,25 @@ SpawnPoint3DQueryResultsUVE QuerySpawnPointsUVE(IEntityManagerUVE& entityManager
     // component set it is walking, and a point that overflowed out of the list is not spent.
     if (query.consumeOneShot) {
         for (std::size_t index = 0U; index < results.count; ++index) {
-            SpawnPoint3DQueryResultUVE& result = results.results[index];
+            SpawnPoint3DQueryResult& result = results.results[index];
             if (!result.oneShot ||
-                !entityManager.HasComponentUVE<SpawnPoint3DComponentUVE>(result.entity)) {
+                !entityManager.HasComponent<SpawnPoint3DComponent>(result.entity)) {
                 continue;
             }
-            entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(result.entity).enabled = false;
+            entityManager.GetComponent<SpawnPoint3DComponent>(result.entity).enabled = false;
             result.consumed = true;
         }
     }
     return results;
 }
 
-bool ConsumeSpawnPointUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (entity == kInvalidEntityUVE ||
-        !entityManager.HasComponentUVE<SpawnPoint3DComponentUVE>(entity)) {
+bool ConsumeSpawnPoint(IEntityManager& entityManager, const Entity entity) {
+    if (entity == kInvalidEntity ||
+        !entityManager.HasComponent<SpawnPoint3DComponent>(entity)) {
         return false;
     }
-    SpawnPoint3DComponentUVE& spawnPoint =
-        entityManager.GetComponentUVE<SpawnPoint3DComponentUVE>(entity);
+    SpawnPoint3DComponent& spawnPoint =
+        entityManager.GetComponent<SpawnPoint3DComponent>(entity);
     if (!spawnPoint.oneShot || !spawnPoint.enabled) {
         return false;
     }

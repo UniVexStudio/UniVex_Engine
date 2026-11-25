@@ -25,46 +25,46 @@ namespace {
 // otherwise have to take on trust.
 // ---------------------------------------------------------------------------
 
-constexpr std::uint32_t kSpirvMagicUVE = 0x07230203U;
+constexpr std::uint32_t kSpirvMagic = 0x07230203U;
 /// SPIR-V's header is five words: magic, version, generator, id bound, reserved schema.
-constexpr std::size_t kSpirvHeaderWordsUVE = 5U;
+constexpr std::size_t kSpirvHeaderWords = 5U;
 
-[[nodiscard]] std::vector<std::uint32_t> ToWordsUVE(const char* const bytes, const std::size_t size) {
+[[nodiscard]] std::vector<std::uint32_t> ToWords(const char* const bytes, const std::size_t size) {
     std::vector<std::uint32_t> words(size / sizeof(std::uint32_t));
     std::memcpy(words.data(), bytes, words.size() * sizeof(std::uint32_t));
     return words;
 }
 
-struct KernelUVE {
+struct Kernel {
     std::string_view name;
     std::string_view glsl;
     const char* spirvBytes;
     std::size_t spirvSize;
 };
 
-[[nodiscard]] std::array<KernelUVE, 4U> AllComputeKernelsUVE() {
+[[nodiscard]] std::array<Kernel, 4U> AllComputeKernels() {
     return {
-        KernelUVE{"particle_simulate", Shader::BuiltIn::kParticleSimulateSource,
-                  BuiltInSpirv::kParticleSimulateSpirvBytesUVE, BuiltInSpirv::kParticleSimulateSpirvSizeUVE},
-        KernelUVE{"frustum_cull", Shader::BuiltIn::kFrustumCullSource,
-                  BuiltInSpirv::kFrustumCullSpirvBytesUVE, BuiltInSpirv::kFrustumCullSpirvSizeUVE},
-        KernelUVE{"frustum_cull_indirect", Shader::BuiltIn::kFrustumCullIndirectSource,
-                  BuiltInSpirv::kFrustumCullIndirectSpirvBytesUVE,
-                  BuiltInSpirv::kFrustumCullIndirectSpirvSizeUVE},
-        KernelUVE{"mesh_skin", Shader::BuiltIn::kMeshSkinSource,
-                  BuiltInSpirv::kMeshSkinSpirvBytesUVE, BuiltInSpirv::kMeshSkinSpirvSizeUVE},
+        Kernel{"particle_simulate", Shader::BuiltIn::kParticleSimulateSource,
+                  BuiltInSpirv::kParticleSimulateSpirvBytes, BuiltInSpirv::kParticleSimulateSpirvSize},
+        Kernel{"frustum_cull", Shader::BuiltIn::kFrustumCullSource,
+                  BuiltInSpirv::kFrustumCullSpirvBytes, BuiltInSpirv::kFrustumCullSpirvSize},
+        Kernel{"frustum_cull_indirect", Shader::BuiltIn::kFrustumCullIndirectSource,
+                  BuiltInSpirv::kFrustumCullIndirectSpirvBytes,
+                  BuiltInSpirv::kFrustumCullIndirectSpirvSize},
+        Kernel{"mesh_skin", Shader::BuiltIn::kMeshSkinSource,
+                  BuiltInSpirv::kMeshSkinSpirvBytes, BuiltInSpirv::kMeshSkinSpirvSize},
     };
 }
 
-TEST(ComputeKernelPortabilityUVETest, BakedSpirv_IsWellFormedAndSurvivedItsNulBytes) {
-    for (const KernelUVE& kernel : AllComputeKernelsUVE()) {
+TEST(ComputeKernelPortabilityTest, BakedSpirv_IsWellFormedAndSurvivedItsNulBytes) {
+    for (const Kernel& kernel : AllComputeKernels()) {
         SCOPED_TRACE(kernel.name);
 
-        ASSERT_GT(kernel.spirvSize, kSpirvHeaderWordsUVE * sizeof(std::uint32_t));
+        ASSERT_GT(kernel.spirvSize, kSpirvHeaderWords * sizeof(std::uint32_t));
         ASSERT_EQ(kernel.spirvSize % sizeof(std::uint32_t), 0U) << "SPIR-V must be word aligned";
 
-        const std::vector<std::uint32_t> words = ToWordsUVE(kernel.spirvBytes, kernel.spirvSize);
-        EXPECT_EQ(words[0], kSpirvMagicUVE)
+        const std::vector<std::uint32_t> words = ToWords(kernel.spirvBytes, kernel.spirvSize);
+        EXPECT_EQ(words[0], kSpirvMagic)
             << "the Vulkan backend rejects any module whose first word is not the SPIR-V magic";
         EXPECT_GT(words[3], 0U) << "the id bound must be non-zero in a module that declares anything";
 
@@ -79,7 +79,7 @@ TEST(ComputeKernelPortabilityUVETest, BakedSpirv_IsWellFormedAndSurvivedItsNulBy
     }
 }
 
-TEST(ComputeKernelPortabilityUVETest, GlslKernels_AvoidTheConstructsSpirvCannotExpress) {
+TEST(ComputeKernelPortabilityTest, GlslKernels_AvoidTheConstructsSpirvCannotExpress) {
     // The reason this file exists. GLSL allows non-opaque uniforms at global scope and the GL
     // backend resolves them by name, but SPIR-V has no such concept: glslang rejects
     // `uniform float uDeltaSeconds` outright with "non-opaque uniform variables need a
@@ -87,7 +87,7 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_AvoidTheConstructsSpirvCannotE
     // Vulkan - a capability gap that looks like a working feature. Both kernels therefore pass
     // their parameters in std430 storage blocks, and this test fails the moment someone
     // reintroduces the convenient form.
-    for (const KernelUVE& kernel : AllComputeKernelsUVE()) {
+    for (const Kernel& kernel : AllComputeKernels()) {
         SCOPED_TRACE(kernel.name);
 
         std::size_t searchPosition = kernel.glsl.find("uniform");
@@ -112,10 +112,10 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_AvoidTheConstructsSpirvCannotE
     }
 }
 
-TEST(ComputeKernelPortabilityUVETest, GlslKernels_DeclareTheBindingsTheirHostsBind) {
+TEST(ComputeKernelPortabilityTest, GlslKernels_DeclareTheBindingsTheirHostsBind) {
     // A binding-index typo between kernel and host is invisible at compile time on both backends
     // and produces wrong numbers at runtime, so the declarations are asserted literally here
-    // against what ParticleComputeSimulationUVE and FrustumCullComputeUVE bind.
+    // against what ParticleComputeSimulation and FrustumCullCompute bind.
     const std::string_view particle = Shader::BuiltIn::kParticleSimulateSource;
     EXPECT_NE(particle.find("binding = 0) buffer ParticleBlock"), std::string_view::npos);
     EXPECT_NE(particle.find("binding = 1) readonly buffer ParticleSimulateParams"),
@@ -153,13 +153,13 @@ TEST(ComputeKernelPortabilityUVETest, GlslKernels_DeclareTheBindingsTheirHostsBi
     EXPECT_NE(skin.find("precise mat4 blended"), std::string_view::npos);
 }
 
-TEST(ComputeKernelPortabilityUVETest, GlslKernels_KeepTheirFmaBarrier) {
+TEST(ComputeKernelPortabilityTest, GlslKernels_KeepTheirFmaBarrier) {
     // CS4 and CS5 both promise results that match the CPU bit for bit, and `precise` is what makes
     // that promise keepable - without it the compiler may contract a + b*c into a fused
     // multiply-add, which carries MORE intermediate precision and therefore produces a DIFFERENT
     // float than the CPU's separate operations. Losing these qualifiers would not fail to compile;
     // it would quietly turn an exact guarantee into an approximate one.
-    for (const KernelUVE& kernel : AllComputeKernelsUVE()) {
+    for (const Kernel& kernel : AllComputeKernels()) {
         SCOPED_TRACE(kernel.name);
         EXPECT_NE(kernel.glsl.find("precise float"), std::string_view::npos)
             << "this kernel's bit-for-bit guarantee depends on `precise` forbidding FMA contraction";

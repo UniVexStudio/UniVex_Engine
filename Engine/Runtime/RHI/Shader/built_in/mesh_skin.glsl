@@ -1,6 +1,6 @@
 #version 430 core
 
-// GPU twin of Asset::TrySkinMeshUVE (CS9) - linear blend skinning over many vertices at once.
+// GPU twin of Asset::TrySkinMesh (CS9) - linear blend skinning over many vertices at once.
 //
 // The CPU side was written first, deliberately: a GPU kernel with no CPU authority to compare
 // against cannot be shown to be right. Everything below mirrors that implementation step for step,
@@ -20,16 +20,16 @@
 //      and therefore produces a DIFFERENT float than the CPU's separate operations. Same rule as
 //      the particle and cull kernels.
 //
-// Note on precision: the CPU's own general-purpose Math::TransformPointUVE accumulates in double,
+// Note on precision: the CPU's own general-purpose Math::TransformPoint accumulates in double,
 // which GLSL has no portable equivalent for (float64 is an optional Vulkan feature absent from
 // whole classes of hardware). Rather than accept a permanent ~1 ULP disagreement on roughly one
 // vertex in six, the CPU skinning path uses a float-accumulating transform of its own - see
-// TransformPointFloatUVE in mesh_skinning_uve.cpp. That is what makes an exact comparison possible
+// TransformPointFloat in mesh_skinning_uve.cpp. That is what makes an exact comparison possible
 // here at all.
 
 layout(local_size_x = 64) in;
 
-// Mirrored by MeshSkinVertexGpuUVE on the host: position, normal, tangent, handedness. Scalars
+// Mirrored by MeshSkinVertexGpu on the host: position, normal, tangent, handedness. Scalars
 // rather than vec3s because a vec3 in std430 is 16-byte aligned and would silently introduce
 // padding the host struct does not have.
 struct SkinVertex {
@@ -45,7 +45,7 @@ struct SkinVertex {
     float handedness;
 };
 
-// Four joint indices and four weights per vertex, matching MeshSkinningInfluenceUVE.
+// Four joint indices and four weights per vertex, matching MeshSkinningInfluence.
 struct SkinInfluence {
     uint joints[4];
     float weights[4];
@@ -62,10 +62,10 @@ layout(std430, binding = 1) readonly buffer InfluenceBlock {
 // The resolved skinning matrices, one per joint - already composed with each joint's inverse bind
 // matrix on the CPU. Pose resolution stays there on purpose: it is a walk down a parent chain over
 // a handful of joints, which is serial work a dispatch cannot help with, and keeping
-// TryResolvePoseUVE the single authority means there is one implementation to be correct.
+// TryResolvePose the single authority means there is one implementation to be correct.
 //
 // mat4 in std430 is column-major with a 16-byte column stride, which is exactly a dense float[16];
-// the host uploads Matrix4x4UVE::m transposed into that order. See MeshSkinComputeUVE for why the
+// the host uploads Matrix4x4::m transposed into that order. See MeshSkinCompute for why the
 // transpose happens on the host rather than here.
 layout(std430, binding = 2) readonly buffer SkinningMatrixBlock {
     mat4 skinningMatrices[];
@@ -110,7 +110,7 @@ void main() {
     // the accumulation order to the compiler.
     //
     // mat4 indexing in GLSL is [column][row], which is why these read transposed relative to the
-    // host's row-major Matrix4x4UVE - the host uploads them transposed to make exactly this work.
+    // host's row-major Matrix4x4 - the host uploads them transposed to make exactly this work.
     precise float positionX = blended[0][0] * source.positionX + blended[1][0] * source.positionY +
                               blended[2][0] * source.positionZ + blended[3][0];
     precise float positionY = blended[0][1] * source.positionX + blended[1][1] * source.positionY +

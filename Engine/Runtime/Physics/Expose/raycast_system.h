@@ -7,12 +7,12 @@
 
 namespace UVE::Physics {
 
-/// RaycastSystemUVE is the concrete, engine-standard implementation of IRaycastSystemUVE.
-/// Deliberately stateless (no members) — matches CollisionSystemUVE's precedent exactly.
-class RaycastSystemUVE final : public IRaycastSystemUVE {
+/// RaycastSystem is the concrete, engine-standard implementation of IRaycastSystem.
+/// Deliberately stateless (no members) — matches CollisionSystem's precedent exactly.
+class RaycastSystem final : public IRaycastSystem {
 public:
-    [[nodiscard]] std::optional<RaycastHitUVE> RaycastUVE(Scene::IEntityManagerUVE& entityManager,
-                                                             const RaycastQueryUVE& query) const override;
+    [[nodiscard]] std::optional<RaycastHit> Raycast(Scene::IEntityManager& entityManager,
+                                                             const RaycastQuery& query) const override;
 };
 
 } // namespace UVE::Physics

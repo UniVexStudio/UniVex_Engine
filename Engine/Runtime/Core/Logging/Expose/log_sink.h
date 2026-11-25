@@ -15,7 +15,7 @@
 
 namespace UVE::Debug {
 
-/// A single formatted log record, passed to every ILogSinkUVE::Write() call.
+/// A single formatted log record, passed to every ILogSink::Write() call.
 /// `sourceFile` points at a string literal (always the __FILE__ expansion
 /// at a UVE_LOG-family call site) and is therefore valid for the lifetime
 /// of the program without needing to be copied; `sourceLine` is 0 and
@@ -23,8 +23,8 @@ namespace UVE::Debug {
 /// source-location-aware macro.
 /// Thread-safety: value type. Safe to copy/move freely; holds no shared
 /// mutable state.
-struct LogMessageUVE {
-    LogLevelUVE level = LogLevelUVE::Trace;
+struct LogMessage {
+    LogLevel level = LogLevel::Trace;
     std::string category;
     std::string message;
     const char* sourceFile = nullptr;
@@ -33,17 +33,17 @@ struct LogMessageUVE {
     std::thread::id threadId{};
 };
 
-/// ILogSinkUVE is the destination interface for formatted log records.
-/// LoggerUVE fans every accepted message out to every registered sink.
+/// ILogSink is the destination interface for formatted log records.
+/// Logger fans every accepted message out to every registered sink.
 /// Thread-safety: implementations must make Write()/Flush() safe to call
-/// concurrently from multiple threads, since LoggerUVE may be logged to
+/// concurrently from multiple threads, since Logger may be logged to
 /// from any thread.
-class ILogSinkUVE {
+class ILogSink {
 public:
-    virtual ~ILogSinkUVE() = default;
+    virtual ~ILogSink() = default;
 
     /// Records one log message. Must not throw.
-    virtual void Write(const LogMessageUVE& message) = 0;
+    virtual void Write(const LogMessage& message) = 0;
 
     /// Forces any buffered output to be written out immediately.
     virtual void Flush() = 0;
@@ -60,9 +60,9 @@ public:
 ///
 /// Thread-safety: thread-safe. Writes are serialized by an internal mutex
 /// so concurrent log calls never interleave mid-line.
-class ConsoleSinkUVE final : public ILogSinkUVE {
+class ConsoleSink final : public ILogSink {
 public:
-    void Write(const LogMessageUVE& message) override;
+    void Write(const LogMessage& message) override;
     void Flush() override;
 
 private:
@@ -78,15 +78,15 @@ private:
 /// documented trade-off for this increment rather than introducing an
 /// exception-based failure path this early in the engine.
 /// Thread-safety: thread-safe. Writes are serialized by an internal mutex.
-class FileSinkUVE final : public ILogSinkUVE {
+class FileSink final : public ILogSink {
 public:
-    explicit FileSinkUVE(const std::filesystem::path& filePath);
-    ~FileSinkUVE() override;
+    explicit FileSink(const std::filesystem::path& filePath);
+    ~FileSink() override;
 
-    FileSinkUVE(const FileSinkUVE&) = delete;
-    FileSinkUVE& operator=(const FileSinkUVE&) = delete;
+    FileSink(const FileSink&) = delete;
+    FileSink& operator=(const FileSink&) = delete;
 
-    void Write(const LogMessageUVE& message) override;
+    void Write(const LogMessage& message) override;
     void Flush() override;
 
 private:
@@ -99,22 +99,22 @@ private:
 /// instead of parsing stdout/files) and as the foundation for a future
 /// in-editor console window that needs recent history in memory.
 /// Thread-safety: thread-safe. Writes and reads are serialized by an
-/// internal mutex; GetMessagesUVE() returns a snapshot copy so callers
+/// internal mutex; GetMessages() returns a snapshot copy so callers
 /// never observe the message list being mutated concurrently.
-class MemorySinkUVE final : public ILogSinkUVE {
+class MemorySink final : public ILogSink {
 public:
-    void Write(const LogMessageUVE& message) override;
+    void Write(const LogMessage& message) override;
     void Flush() override;
 
     /// Returns a copy of every message captured so far, in write order.
-    [[nodiscard]] std::vector<LogMessageUVE> GetMessagesUVE() const;
+    [[nodiscard]] std::vector<LogMessage> GetMessages() const;
 
     /// Removes all captured messages.
     void Clear();
 
 private:
     mutable std::mutex m_mutex;
-    std::vector<LogMessageUVE> m_messages;
+    std::vector<LogMessage> m_messages;
 };
 
 } // namespace UVE::Debug

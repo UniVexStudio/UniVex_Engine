@@ -11,13 +11,13 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Which colliders a debug view draws, and how finely.
 ///
 /// Every field has a default that means "show everything", because the common case is an author
 /// turning the view on to look at their level, not an engineer narrowing a bug report.
-struct ColliderDebugSceneSettingsUVE final {
+struct ColliderDebugSceneSettings final {
     /// Only colliders with at least one of these layer bits are drawn; `0xFFFFFFFF` means every
     /// layer. This is the same one-sided test the layer-mask field already uses, so "show me the
     /// trigger volumes" is a bit, not a special case.
@@ -31,13 +31,13 @@ struct ColliderDebugSceneSettingsUVE final {
     /// Leave this collider out of the bulk pass. A viewport that wants to draw one collider
     /// differently - the selected one, in its own colour and width - builds it on the side and
     /// names it here, so the shape is never drawn twice into the same pixels.
-    EntityUVE excludedEntity = kInvalidEntityUVE;
-    Physics::ColliderDebugStyleUVE style{};
+    Entity excludedEntity = kInvalidEntity;
+    Physics::ColliderDebugStyle style{};
 
-    [[nodiscard]] bool operator==(const ColliderDebugSceneSettingsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ColliderDebugSceneSettings&) const noexcept = default;
 };
 
-struct ColliderDebugSceneStatsUVE final {
+struct ColliderDebugSceneStats final {
     /// Colliders that passed every filter and contributed geometry.
     std::size_t colliderCount = 0U;
     /// Lines actually written.
@@ -54,16 +54,16 @@ struct ColliderDebugSceneStatsUVE final {
 /// Collects the world-space wireframes of every collider the settings accept.
 ///
 /// Answers the same participation question the collision system does, through the same helpers -
-/// `Collider3DUVE::IsParticipatingUVE` for the collider's own enabled state and
-/// `IsPhysicsObjectInWorldUVE` for whether its Process mode has taken it out of the world - so a
+/// `Collider3D::IsParticipating` for the collider's own enabled state and
+/// `IsPhysicsObjectInWorld` for whether its Process mode has taken it out of the world - so a
 /// shape that is drawn is a shape that can actually be hit. A debug view that disagreed with the
 /// simulation about which shapes exist would be worse than none.
 ///
-/// Reads `WorldTransformComponentUVE` for the pose; a collider without one has no world position
-/// and is skipped. Deterministic: one `ForEachUVE` pass in storage order, no unordered container
+/// Reads `WorldTransformComponent` for the pose; a collider without one has no world position
+/// and is skipped. Deterministic: one `ForEach` pass in storage order, no unordered container
 /// anywhere, and the same world always produces the same lines in the same order.
-[[nodiscard]] ColliderDebugSceneStatsUVE BuildColliderDebugSceneUVE(
-    IEntityManagerUVE& entityManager, const ColliderDebugSceneSettingsUVE& settings,
-    std::span<Physics::ColliderDebugLineUVE> outLines);
+[[nodiscard]] ColliderDebugSceneStats BuildColliderDebugScene(
+    IEntityManager& entityManager, const ColliderDebugSceneSettings& settings,
+    std::span<Physics::ColliderDebugLine> outLines);
 
 } // namespace UVE::Scene

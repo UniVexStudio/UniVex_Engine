@@ -17,14 +17,14 @@ namespace {
 /// id always names the empty string. Strings live in a deque (references never invalidate on
 /// growth), keyed by views into that same deque. Never shrinks: every index, view and C string
 /// handed out stays valid until process exit.
-class InternTableUVE final {
+class InternTable final {
 public:
-    InternTableUVE() {
+    InternTable() {
         m_strings.emplace_back("");
         m_indexByText.emplace(std::string_view(m_strings.back()), 0U);
     }
 
-    std::uint32_t InternUVE(std::string_view text) {
+    std::uint32_t Intern(std::string_view text) {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (const auto existing = m_indexByText.find(text); existing != m_indexByText.end()) {
             return existing->second;
@@ -35,7 +35,7 @@ public:
         return index;
     }
 
-    const std::string& LookupUVE(std::uint32_t index) const {
+    const std::string& Lookup(std::uint32_t index) const {
         std::lock_guard<std::mutex> lock(m_mutex);
         UVE_ASSERT(index < m_strings.size());
         return m_strings[index];
@@ -47,31 +47,31 @@ private:
     std::unordered_map<std::string_view, std::uint32_t> m_indexByText;
 };
 
-InternTableUVE& GetInternTableUVE() {
-    static InternTableUVE table;
+InternTable& GetInternTable() {
+    static InternTable table;
     return table;
 }
 
 }  // namespace
 
-StringIdUVE::StringIdUVE(std::string_view text) : m_index(GetInternTableUVE().InternUVE(text)) {}
+StringId::StringId(std::string_view text) : m_index(GetInternTable().Intern(text)) {}
 
-StringIdUVE::StringIdUVE(const char* text)
-    : m_index(GetInternTableUVE().InternUVE(std::string_view(text))) {}
+StringId::StringId(const char* text)
+    : m_index(GetInternTable().Intern(std::string_view(text))) {}
 
-StringIdUVE::StringIdUVE(const std::string& text)
-    : m_index(GetInternTableUVE().InternUVE(std::string_view(text))) {}
+StringId::StringId(const std::string& text)
+    : m_index(GetInternTable().Intern(std::string_view(text))) {}
 
-std::string_view StringIdUVE::ToStringUVE() const {
-    return std::string_view(GetInternTableUVE().LookupUVE(m_index));
+std::string_view StringId::ToString() const {
+    return std::string_view(GetInternTable().Lookup(m_index));
 }
 
-const char* StringIdUVE::ToCStringUVE() const {
-    return GetInternTableUVE().LookupUVE(m_index).c_str();
+const char* StringId::ToCString() const {
+    return GetInternTable().Lookup(m_index).c_str();
 }
 
-std::ostream& operator<<(std::ostream& stream, const StringIdUVE& id) {
-    return stream << id.ToStringUVE();
+std::ostream& operator<<(std::ostream& stream, const StringId& id) {
+    return stream << id.ToString();
 }
 
 }  // namespace UVE::Strings

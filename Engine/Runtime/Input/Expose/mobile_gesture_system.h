@@ -5,19 +5,19 @@
 
 namespace UVE::Input {
 
-class MobileGestureSystemUVE final : public IMobileGestureSystemUVE {
+class MobileGestureSystem final : public IMobileGestureSystem {
 public:
-    explicit MobileGestureSystemUVE(IMobileInputSystemUVE& mobileInput,
-                                    MobileGestureRecognizerConfigUVE config = {}) noexcept;
+    explicit MobileGestureSystem(IMobileInputSystem& mobileInput,
+                                    MobileGestureRecognizerConfig config = {}) noexcept;
 
-    void UpdateUVE(float frameDeltaSeconds) override;
-    [[nodiscard]] MobileGestureReportUVE GetLastReportUVE() const noexcept override;
-    void ResetUVE() noexcept override;
+    void Update(float frameDeltaSeconds) override;
+    [[nodiscard]] MobileGestureReport GetLastReport() const noexcept override;
+    void Reset() noexcept override;
 
 private:
-    IMobileInputSystemUVE& m_mobileInput;
-    MobileGestureRecognizerUVE m_recognizer;
-    MobileGestureReportUVE m_lastReport{};
+    IMobileInputSystem& m_mobileInput;
+    MobileGestureRecognizer m_recognizer;
+    MobileGestureReport m_lastReport{};
 };
 
 } // namespace UVE::Input

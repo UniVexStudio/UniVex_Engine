@@ -13,33 +13,33 @@
 
 namespace UVE::Render::Shader::Detail {
 
-/// The result of one PreprocessShaderSourceUVE() call — pure text/dependency-graph resolution,
+/// The result of one PreprocessShaderSource() call — pure text/dependency-graph resolution,
 /// no GL/threading involved, so this whole module is independently unit-testable against a fake
-/// IFileSystemUVE.
-struct PreprocessResultUVE {
+/// IFileSystem.
+struct PreprocessResult {
     bool success = false;
     std::string errorMessage;
 
     /// The fully #include-expanded, #ifdef/#define-resolved GLSL text, ready to hand to
-    /// IRenderDeviceUVE::CreateShaderUVE() — contains no UVE-preprocessor directives anymore
+    /// IRenderDevice::CreateShader() — contains no UVE-preprocessor directives anymore
     /// (only #version/#extension/#line, which are native GLSL/GL preprocessor syntax, pass
     /// through untouched).
     std::string resolvedSource;
 
     /// Every virtual path actually read while resolving this source (the root file, plus every
-    /// transitively #include'd file) — what ShaderManagerUVE's hot-reload polling watches for
+    /// transitively #include'd file) — what ShaderManager's hot-reload polling watches for
     /// on-disk changes. Empty if the root was resolved from an embedded fallback string (no file
     /// was ever read).
     std::vector<std::string> dependencyClosure;
 
     /// index -> virtual path, in the order each file was first encountered (root is always index
     /// 0). Matches the `source-string-number` GL's own #line directive (emitted into
-    /// `resolvedSource`) uses, so Detail::ParseGlInfoLogUVE() can resolve a driver diagnostic's
+    /// `resolvedSource`) uses, so Detail::ParseGlInfoLog() can resolve a driver diagnostic's
     /// line back to the file that actually contains it.
     std::vector<std::string> fileIndexTable;
 };
 
-/// Resolves `virtualFilePath` (or, if it doesn't exist per `fileSystem.HasFileUVE()`,
+/// Resolves `virtualFilePath` (or, if it doesn't exist per `fileSystem.HasFile()`,
 /// `embeddedFallbackSourceCode`) into final GLSL text: recursively expands `#include "path"`
 /// directives (absolute virtual paths only, resolved via `fileSystem` — see this function's .cpp
 /// doc comment for the full algorithm), and resolves `#define`/`#undef`/`#ifdef`/`#ifndef`/
@@ -47,8 +47,8 @@ struct PreprocessResultUVE {
 /// like macros only — no function-like macros, no line continuation). Never throws; a malformed
 /// input (unmatched #endif, a missing #include target, an #include cycle) produces
 /// `success = false` with a human-readable `errorMessage`, never a crash or an infinite loop.
-[[nodiscard]] PreprocessResultUVE PreprocessShaderSourceUVE(
-    Asset::IFileSystemUVE& fileSystem, const std::string& virtualFilePath,
+[[nodiscard]] PreprocessResult PreprocessShaderSource(
+    Asset::IFileSystem& fileSystem, const std::string& virtualFilePath,
     const std::string& embeddedFallbackSourceCode, const std::vector<std::pair<std::string, std::string>>& defines);
 
 } // namespace UVE::Render::Shader::Detail

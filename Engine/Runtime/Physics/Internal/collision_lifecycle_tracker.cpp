@@ -11,24 +11,24 @@ namespace UVE::Physics {
 namespace {
 
 /// Reorders a pair so the lower-index (or, on an index tie, lower-generation) entity is always
-/// `first` - CollisionPairUVE has no fixed role the way AreaOverlapPairUVE's area/other does, so
+/// `first` - CollisionPair has no fixed role the way AreaOverlapPair's area/other does, so
 /// without this the same physical contact could be reported as {A,B} one frame and {B,A} the
 /// next, which the diff below would otherwise misread as an exit-then-enter. `separationAxis` is
 /// negated on a swap since it is documented to point from `first` toward `second`.
-[[nodiscard]] CollisionPairUVE NormalizePairUVE(const CollisionPairUVE& pair) noexcept {
+[[nodiscard]] CollisionPair NormalizePair(const CollisionPair& pair) noexcept {
     const bool firstIsSmaller = pair.first.index < pair.second.index ||
                                  (pair.first.index == pair.second.index && pair.first.generation <= pair.second.generation);
     if (firstIsSmaller) {
         return pair;
     }
-    CollisionPairUVE swapped = pair;
+    CollisionPair swapped = pair;
     swapped.first = pair.second;
     swapped.second = pair.first;
     swapped.separationAxis = -pair.separationAxis;
     return swapped;
 }
 
-[[nodiscard]] bool PairLessUVE(const CollisionPairUVE& lhs, const CollisionPairUVE& rhs) noexcept {
+[[nodiscard]] bool PairLess(const CollisionPair& lhs, const CollisionPair& rhs) noexcept {
     if (lhs.first.index != rhs.first.index) {
         return lhs.first.index < rhs.first.index;
     }
@@ -41,16 +41,16 @@ namespace {
     return lhs.second.generation < rhs.second.generation;
 }
 
-[[nodiscard]] bool PairIdentityEqualUVE(const CollisionPairUVE& lhs, const CollisionPairUVE& rhs) noexcept {
+[[nodiscard]] bool PairIdentityEqual(const CollisionPair& lhs, const CollisionPair& rhs) noexcept {
     return lhs.first == rhs.first && lhs.second == rhs.second;
 }
 
 } // namespace
 
-CollisionLifecycleReportUVE CollisionLifecycleTrackerUVE::UpdateUVE(const std::vector<CollisionPairUVE>& pairs,
+CollisionLifecycleReport CollisionLifecycleTracker::Update(const std::vector<CollisionPair>& pairs,
                                                                      const std::size_t maximumPairs,
                                                                      const std::size_t maximumTransitions) {
-    CollisionLifecycleReportUVE report;
+    CollisionLifecycleReport report;
     report.previousActiveCount = m_activePairs.size();
     report.inputSnapshotTruncated = pairs.size() > maximumPairs;
     if (report.inputSnapshotTruncated) {
@@ -58,43 +58,43 @@ CollisionLifecycleReportUVE CollisionLifecycleTrackerUVE::UpdateUVE(const std::v
         return report;
     }
 
-    std::vector<CollisionPairUVE> currentPairs;
+    std::vector<CollisionPair> currentPairs;
     currentPairs.reserve(pairs.size());
-    for (const CollisionPairUVE& pair : pairs) {
-        currentPairs.push_back(NormalizePairUVE(pair));
+    for (const CollisionPair& pair : pairs) {
+        currentPairs.push_back(NormalizePair(pair));
     }
-    std::sort(currentPairs.begin(), currentPairs.end(), PairLessUVE);
-    currentPairs.erase(std::unique(currentPairs.begin(), currentPairs.end(), PairIdentityEqualUVE), currentPairs.end());
+    std::sort(currentPairs.begin(), currentPairs.end(), PairLess);
+    currentPairs.erase(std::unique(currentPairs.begin(), currentPairs.end(), PairIdentityEqual), currentPairs.end());
 
     report.currentActiveCount = currentPairs.size();
-    const std::size_t transitionCap = std::min(maximumTransitions, kMaximumCollisionLifecycleResultsUVE);
+    const std::size_t transitionCap = std::min(maximumTransitions, kMaximumCollisionLifecycleResults);
     report.transitions.reserve(std::min(transitionCap, m_activePairs.size() + currentPairs.size()));
 
-    for (const CollisionPairUVE& previous : m_activePairs) {
-        if (!std::binary_search(currentPairs.begin(), currentPairs.end(), previous, PairLessUVE)) {
+    for (const CollisionPair& previous : m_activePairs) {
+        if (!std::binary_search(currentPairs.begin(), currentPairs.end(), previous, PairLess)) {
             if (report.transitions.size() >= transitionCap) {
                 report.transitionsTruncated = true;
                 continue;
             }
-            report.transitions.push_back({CollisionTransitionKindUVE::Exited, previous});
+            report.transitions.push_back({CollisionTransitionKind::Exited, previous});
         }
     }
-    for (const CollisionPairUVE& current : currentPairs) {
-        if (!std::binary_search(m_activePairs.begin(), m_activePairs.end(), current, PairLessUVE)) {
+    for (const CollisionPair& current : currentPairs) {
+        if (!std::binary_search(m_activePairs.begin(), m_activePairs.end(), current, PairLess)) {
             if (report.transitions.size() >= transitionCap) {
                 report.transitionsTruncated = true;
                 continue;
             }
-            report.transitions.push_back({CollisionTransitionKindUVE::Entered, current});
+            report.transitions.push_back({CollisionTransitionKind::Entered, current});
         }
     }
 
     std::sort(report.transitions.begin(), report.transitions.end(),
-              [](const CollisionTransitionUVE& lhs, const CollisionTransitionUVE& rhs) {
-                  if (PairLessUVE(lhs.pair, rhs.pair)) {
+              [](const CollisionTransition& lhs, const CollisionTransition& rhs) {
+                  if (PairLess(lhs.pair, rhs.pair)) {
                       return true;
                   }
-                  if (PairLessUVE(rhs.pair, lhs.pair)) {
+                  if (PairLess(rhs.pair, lhs.pair)) {
                       return false;
                   }
                   return lhs.kind < rhs.kind;
@@ -103,6 +103,6 @@ CollisionLifecycleReportUVE CollisionLifecycleTrackerUVE::UpdateUVE(const std::v
     return report;
 }
 
-void CollisionLifecycleTrackerUVE::ResetUVE() noexcept { m_activePairs.clear(); }
+void CollisionLifecycleTracker::Reset() noexcept { m_activePairs.clear(); }
 
 } // namespace UVE::Physics

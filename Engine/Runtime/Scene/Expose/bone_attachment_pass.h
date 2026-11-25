@@ -8,12 +8,12 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
-class ISceneGraphUVE;
+class IEntityManager;
+class ISceneGraph;
 
 /// What one run of the bone-attachment pass did. Counts rather than a log: a caller that only wants
 /// the work done ignores them, and a test can pin them without reaching into the scene.
-struct BoneAttachmentPassReportUVE final {
+struct BoneAttachmentPassReport final {
     /// Ticking attachments the pass looked at. An entity whose resolved process mode says it does not
     /// run is not looked at - and so is not counted - because nothing else about the scene moves for
     /// it either.
@@ -39,7 +39,7 @@ struct BoneAttachmentPassReportUVE final {
 ///
 /// It reads the authored local transforms up each chain rather than the cached world transforms, so a
 /// parent that moved earlier in the same frame still counts, and it is meant to be called after the
-/// animation step that posed the skeleton and before SceneGraphUVE::UpdateUVE() propagates world
+/// animation step that posed the skeleton and before SceneGraph::Update() propagates world
 /// transforms - then an attachment is on the bone in the same frame the pose arrives.
 ///
 /// Attachments resolve parents-first, so one that rides another (a scope on a rifle that is itself in
@@ -49,7 +49,7 @@ struct BoneAttachmentPassReportUVE final {
 ///
 /// Writes nothing for an attachment that cannot resolve: the object keeps the transform it was
 /// authored with, `bound` is cleared, and `resolvedBoneIndex` stays the sentinel.
-[[nodiscard]] BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                                                         const ISceneGraphUVE& sceneGraph);
+[[nodiscard]] BoneAttachmentPassReport SyncBoneAttachment3DObjects(IEntityManager& entityManager,
+                                                                         const ISceneGraph& sceneGraph);
 
 } // namespace UVE::Scene

@@ -6,44 +6,44 @@
 
 namespace UVE::Window::Tests {
 
-TEST(MonitorInfoValidationUVETest, ValidatesSignedDimensionsBeforeUnsignedConversionAtomically) {
+TEST(MonitorInfoValidationTest, ValidatesSignedDimensionsBeforeUnsignedConversionAtomically) {
     std::uint32_t width = 77U;
     std::uint32_t height = 88U;
-    EXPECT_FALSE(ValidateMonitorDimensionsUVE(0, 1080, width, height));
+    EXPECT_FALSE(ValidateMonitorDimensions(0, 1080, width, height));
     EXPECT_EQ(width, 77U);
     EXPECT_EQ(height, 88U);
-    EXPECT_FALSE(ValidateMonitorDimensionsUVE(1920, -1, width, height));
+    EXPECT_FALSE(ValidateMonitorDimensions(1920, -1, width, height));
     EXPECT_EQ(width, 77U);
     EXPECT_EQ(height, 88U);
-    EXPECT_TRUE(ValidateMonitorDimensionsUVE(std::numeric_limits<int>::max(),
+    EXPECT_TRUE(ValidateMonitorDimensions(std::numeric_limits<int>::max(),
                                              std::numeric_limits<int>::max(), width, height));
     EXPECT_EQ(width, static_cast<std::uint32_t>(std::numeric_limits<int>::max()));
     EXPECT_EQ(height, static_cast<std::uint32_t>(std::numeric_limits<int>::max()));
 }
 
-TEST(MonitorInfoValidationUVETest, AcceptsValidSnapshotWithAtMostOnePrimary) {
-    EXPECT_TRUE(ValidateMonitorInfoUVE({"Primary", 1920U, 1080U, true}));
-    EXPECT_TRUE(ValidateMonitorSnapshotUVE({
+TEST(MonitorInfoValidationTest, AcceptsValidSnapshotWithAtMostOnePrimary) {
+    EXPECT_TRUE(ValidateMonitorInfo({"Primary", 1920U, 1080U, true}));
+    EXPECT_TRUE(ValidateMonitorSnapshot({
         {"Primary", 1920U, 1080U, true}, {"Secondary", 1280U, 1024U, false}}));
-    EXPECT_TRUE(ValidateMonitorSnapshotUVE({}));
+    EXPECT_TRUE(ValidateMonitorSnapshot({}));
 }
 
-TEST(MonitorInfoValidationUVETest, RejectsEmbeddedNulMonitorName) {
+TEST(MonitorInfoValidationTest, RejectsEmbeddedNulMonitorName) {
     const std::string nameWithNul{"Monitor\0Name", 12U};
-    EXPECT_FALSE(ValidateMonitorInfoUVE({nameWithNul, 1920U, 1080U, false}));
+    EXPECT_FALSE(ValidateMonitorInfo({nameWithNul, 1920U, 1080U, false}));
 }
 
-TEST(MonitorInfoValidationUVETest, RejectsMonitorSnapshotBeyondBoundedEntryCap) {
-    std::vector<MonitorInfoUVE> monitors;
-    monitors.resize(kMaximumMonitorSnapshotEntriesUVE + 1U,
-                    MonitorInfoUVE{"Monitor", 1920U, 1080U, false});
-    EXPECT_FALSE(ValidateMonitorSnapshotUVE(monitors));
+TEST(MonitorInfoValidationTest, RejectsMonitorSnapshotBeyondBoundedEntryCap) {
+    std::vector<MonitorInfo> monitors;
+    monitors.resize(kMaximumMonitorSnapshotEntries + 1U,
+                    MonitorInfo{"Monitor", 1920U, 1080U, false});
+    EXPECT_FALSE(ValidateMonitorSnapshot(monitors));
 }
 
-TEST(MonitorInfoValidationUVETest, RejectsInvalidEntryAndDuplicatePrimary) {
-    EXPECT_FALSE(ValidateMonitorInfoUVE({"", 1920U, 1080U, true}));
-    EXPECT_FALSE(ValidateMonitorInfoUVE({"Primary", 0U, 1080U, true}));
-    EXPECT_FALSE(ValidateMonitorSnapshotUVE({
+TEST(MonitorInfoValidationTest, RejectsInvalidEntryAndDuplicatePrimary) {
+    EXPECT_FALSE(ValidateMonitorInfo({"", 1920U, 1080U, true}));
+    EXPECT_FALSE(ValidateMonitorInfo({"Primary", 0U, 1080U, true}));
+    EXPECT_FALSE(ValidateMonitorSnapshot({
         {"Primary", 1920U, 1080U, true}, {"Secondary", 1280U, 720U, true}}));
 }
 

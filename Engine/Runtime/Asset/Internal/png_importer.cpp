@@ -21,60 +21,60 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kPngImporterNameUVE = "PngImporterUVE";
-constexpr std::uint64_t kMaximumPngImporterSourceBytesUVE = 64ULL * 1024ULL * 1024ULL;
-constexpr std::string_view kPngTemporarySuffixUVE = ".uve_png_tmp";
+constexpr const char* kPngImporterName = "PngImporter";
+constexpr std::uint64_t kMaximumPngImporterSourceBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr std::string_view kPngTemporarySuffix = ".uve_png_tmp";
 
-[[nodiscard]] bool ImportPngSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportPngSource(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
-                                      const AssetImportSettingsUVE& settings) {
+                                      const AssetImportSettings& settings) {
     if (destinationPath.extension() != ".uvtex") {
-        UVE_ERROR("PngImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
+        UVE_ERROR("PngImporter: destination \"{}\" must use the .uvtex extension", destinationPath.string());
         return false;
     }
 
     std::vector<std::byte> sourceBytes;
-    if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kPngImporterNameUVE, kMaximumPngImporterSourceBytesUVE,
+    if (!Detail::ReadBoundedSourceBytes(sourcePath, kPngImporterName, kMaximumPngImporterSourceBytes,
                                            sourceBytes)) {
         return false;
     }
 
-    PngRgba8ImageUVE decoded;
-    if (!DecodePngRgba8ImageUVE(sourceBytes, decoded)) {
-        UVE_ERROR("PngImporterUVE: source \"{}\" failed bounded PNG RGBA8 decoding", sourcePath.string());
+    PngRgba8Image decoded;
+    if (!DecodePngRgba8Image(sourceBytes, decoded)) {
+        UVE_ERROR("PngImporter: source \"{}\" failed bounded PNG RGBA8 decoding", sourcePath.string());
         return false;
     }
 
     const std::uint64_t expectedPixelBytes = static_cast<std::uint64_t>(decoded.width) *
                                                static_cast<std::uint64_t>(decoded.height) * 4ULL;
     if (expectedPixelBytes != decoded.pixels.size()) {
-        UVE_ERROR("PngImporterUVE: decoder published inconsistent RGBA8 pixel bytes for \"{}\"",
+        UVE_ERROR("PngImporter: decoder published inconsistent RGBA8 pixel bytes for \"{}\"",
                   sourcePath.string());
         return false;
     }
 
-    TextureAssetUVE texture;
+    TextureAsset texture;
     texture.width = decoded.width;
     texture.height = decoded.height;
-    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
-    const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
+    texture.format = TextureAssetFormat::RGBA8Unorm;
+    const TextureImportSettings importSettings = ResolveTextureImportSettings(settings);
     texture.colorSpace = importSettings.colorSpace;
     texture.usage = importSettings.usage;
     texture.pixels = std::move(decoded.pixels);
-    if (!Detail::PrepareTextureForImportUVE(texture, importSettings)) {
-        UVE_ERROR("PngImporterUVE: failed to prepare mip chain or compress texture for \"{}\"",
+    if (!Detail::PrepareTextureForImport(texture, importSettings)) {
+        UVE_ERROR("PngImporter: failed to prepare mip chain or compress texture for \"{}\"",
                   sourcePath.string());
         return false;
     }
-    return Detail::PublishAssetAtomicallyUVE(
-        destinationPath, kPngImporterNameUVE, kPngTemporarySuffixUVE,
-        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });
+    return Detail::PublishAssetAtomically(
+        destinationPath, kPngImporterName, kPngTemporarySuffix,
+        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAsset(texture, temporaryPath); });
 }
 
 } // namespace
 
-void RegisterPngImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("png", &ImportPngSourceUVE);
+void RegisterPngImporter(IAssetImporter& importer) {
+    importer.RegisterImporter("png", &ImportPngSource);
 }
 
 } // namespace UVE::Asset

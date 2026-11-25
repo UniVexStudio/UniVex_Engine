@@ -11,28 +11,28 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsUnitIntervalUVE(const float value) noexcept {
+[[nodiscard]] bool IsUnitInterval(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
 }
 
-[[nodiscard]] bool IsNonNegativeUVE(const float value) noexcept {
+[[nodiscard]] bool IsNonNegative(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F;
 }
 
 } // namespace
 
-bool IsDecal3DObjectComponentValidUVE(const Decal3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.materialAssetPath) && IsFinite3DObjectVectorUVE(value.size) &&
-           value.size.x > 0.0F && value.size.y > 0.0F && value.size.z > 0.0F && IsNonNegativeUVE(value.lifetime) &&
-           value.projection <= DecalProjectionModeUVE::Cylinder && IsNonNegativeUVE(value.modulate.x) &&
-           IsNonNegativeUVE(value.modulate.y) && IsNonNegativeUVE(value.modulate.z) &&
-           IsNonNegativeUVE(value.emissionEnergy) && IsUnitIntervalUVE(value.albedoMix) &&
-           IsUnitIntervalUVE(value.normalFade) && IsNonNegativeUVE(value.upperFade) &&
-           IsNonNegativeUVE(value.lowerFade) && IsNonNegativeUVE(value.distanceFadeBegin) &&
-           IsNonNegativeUVE(value.distanceFadeLength);
+bool IsDecal3DObjectComponentValid(const Decal3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.materialAssetPath) && IsFinite3DObjectVector(value.size) &&
+           value.size.x > 0.0F && value.size.y > 0.0F && value.size.z > 0.0F && IsNonNegative(value.lifetime) &&
+           value.projection <= DecalProjectionMode::Cylinder && IsNonNegative(value.modulate.x) &&
+           IsNonNegative(value.modulate.y) && IsNonNegative(value.modulate.z) &&
+           IsNonNegative(value.emissionEnergy) && IsUnitInterval(value.albedoMix) &&
+           IsUnitInterval(value.normalFade) && IsNonNegative(value.upperFade) &&
+           IsNonNegative(value.lowerFade) && IsNonNegative(value.distanceFadeBegin) &&
+           IsNonNegative(value.distanceFadeLength);
 }
 
-bool IsDecal3DPaintingUVE(const Decal3DComponentUVE& value) noexcept {
+bool IsDecal3DPainting(const Decal3DComponent& value) noexcept {
     return value.enabled && !value.expired && value.size.x > 0.0F && value.size.y > 0.0F &&
            value.size.z > 0.0F;
 }
@@ -41,7 +41,7 @@ namespace {
 
 /// One authored fade evaluated against where a sample sits along the projection axis. Positive
 /// `band` fades the outer `band` of the half-volume: 0 is off, 1 fades the whole half.
-[[nodiscard]] float AxisFadeWeightUVE(const float unitCoordinate, const float band) noexcept {
+[[nodiscard]] float AxisFadeWeight(const float unitCoordinate, const float band) noexcept {
     if (!(band > 0.0F)) {
         return 1.0F;
     }
@@ -53,18 +53,18 @@ namespace {
     return 1.0F - std::min(travelled, 1.0F);
 }
 
-[[nodiscard]] float ClampUnitUVE(const float value) noexcept {
+[[nodiscard]] float ClampUnit(const float value) noexcept {
     return std::min(std::max(value, 0.0F), 1.0F);
 }
 
 } // namespace
 
-bool TryMakeDecal3DProjectionUVE(const Decal3DComponentUVE& value, const Math::Vector3UVE& worldPosition,
-                                 const Math::QuaternionUVE& worldRotation, const Math::Vector3UVE& worldScale,
-                                 Decal3DProjectionUVE& outProjection) noexcept {
-    outProjection = Decal3DProjectionUVE{};
-    if (!IsFinite3DObjectVectorUVE(worldPosition) || !IsFinite3DObjectVectorUVE(worldScale) ||
-        !IsFinite3DObjectVectorUVE(value.size)) {
+bool TryMakeDecal3DProjection(const Decal3DComponent& value, const Math::Vector3& worldPosition,
+                                 const Math::Quaternion& worldRotation, const Math::Vector3& worldScale,
+                                 Decal3DProjection& outProjection) noexcept {
+    outProjection = Decal3DProjection{};
+    if (!IsFinite3DObjectVector(worldPosition) || !IsFinite3DObjectVector(worldScale) ||
+        !IsFinite3DObjectVector(value.size)) {
         return false;
     }
     if (!(value.size.x > 0.0F) || !(value.size.y > 0.0F) || !(value.size.z > 0.0F) ||
@@ -72,21 +72,21 @@ bool TryMakeDecal3DProjectionUVE(const Decal3DComponentUVE& value, const Math::V
         return false;
     }
 
-    Math::QuaternionUVE inverseRotation{};
-    if (!Math::TryInverseUVE(worldRotation, inverseRotation)) {
+    Math::Quaternion inverseRotation{};
+    if (!Math::TryInverse(worldRotation, inverseRotation)) {
         return false;
     }
 
     outProjection.worldPosition = worldPosition;
     outProjection.worldRotation = worldRotation;
     outProjection.inverseWorldRotation = inverseRotation;
-    outProjection.halfExtents = Math::Vector3UVE{value.size.x * worldScale.x, value.size.y * worldScale.y,
+    outProjection.halfExtents = Math::Vector3{value.size.x * worldScale.x, value.size.y * worldScale.y,
                                                  value.size.z * worldScale.z} *
                                 0.5F;
     // The volume projects along the object's local -Y, so the direction it travels is that axis
     // rotated into the world - the same rotation every other local axis in the engine goes through.
     outProjection.projectionDirection =
-        Math::NormalizeUVE(Math::RotateVectorUVE(worldRotation, Math::Vector3UVE{0.0F, -1.0F, 0.0F}));
+        Math::Normalize(Math::RotateVector(worldRotation, Math::Vector3{0.0F, -1.0F, 0.0F}));
     outProjection.mode = value.projection;
     outProjection.normalFade = value.normalFade;
     outProjection.upperFade = value.upperFade;
@@ -97,26 +97,26 @@ bool TryMakeDecal3DProjectionUVE(const Decal3DComponentUVE& value, const Math::V
     return true;
 }
 
-Math::Vector3UVE Decal3DWorldToUnitUVE(const Decal3DProjectionUVE& projection,
-                                       const Math::Vector3UVE& worldPoint) noexcept {
-    const Math::Vector3UVE offset = worldPoint - projection.worldPosition;
-    const Math::Vector3UVE local = Math::RotateVectorUVE(projection.inverseWorldRotation, offset);
-    return Math::Vector3UVE{local.x / projection.halfExtents.x, local.y / projection.halfExtents.y,
+Math::Vector3 Decal3DWorldToUnit(const Decal3DProjection& projection,
+                                       const Math::Vector3& worldPoint) noexcept {
+    const Math::Vector3 offset = worldPoint - projection.worldPosition;
+    const Math::Vector3 local = Math::RotateVector(projection.inverseWorldRotation, offset);
+    return Math::Vector3{local.x / projection.halfExtents.x, local.y / projection.halfExtents.y,
                             local.z / projection.halfExtents.z};
 }
 
-Math::Vector3UVE Decal3DUnitToWorldUVE(const Decal3DProjectionUVE& projection,
-                                       const Math::Vector3UVE& unitPoint) noexcept {
-    const Math::Vector3UVE local{unitPoint.x * projection.halfExtents.x,
+Math::Vector3 Decal3DUnitToWorld(const Decal3DProjection& projection,
+                                       const Math::Vector3& unitPoint) noexcept {
+    const Math::Vector3 local{unitPoint.x * projection.halfExtents.x,
                                  unitPoint.y * projection.halfExtents.y,
                                  unitPoint.z * projection.halfExtents.z};
-    return projection.worldPosition + Math::RotateVectorUVE(projection.worldRotation, local);
+    return projection.worldPosition + Math::RotateVector(projection.worldRotation, local);
 }
 
-Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const Math::Vector3UVE& worldPoint,
-                                  const Math::Vector3UVE& worldNormal, const float distanceToCamera) noexcept {
-    Decal3DSampleUVE sample{};
-    if (!IsFinite3DObjectVectorUVE(worldPoint) || !IsFinite3DObjectVectorUVE(worldNormal) ||
+Decal3DSample SampleDecal3D(const Decal3DProjection& projection, const Math::Vector3& worldPoint,
+                                  const Math::Vector3& worldNormal, const float distanceToCamera) noexcept {
+    Decal3DSample sample{};
+    if (!IsFinite3DObjectVector(worldPoint) || !IsFinite3DObjectVector(worldNormal) ||
         !std::isfinite(distanceToCamera)) {
         // Nothing painted for a point or a distance that is not a number: a NaN weight would spread
         // through the blend and take the whole frame with it.
@@ -128,16 +128,16 @@ Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const 
     // Unit coordinates: the world offset rotated into the volume's frame, divided by the half
     // extents, so "inside" is |component| <= 1 for every mode and the box-to-cylinder difference
     // is one footprint test rather than two coordinate systems.
-    sample.local = Decal3DWorldToUnitUVE(projection, worldPoint);
+    sample.local = Decal3DWorldToUnit(projection, worldPoint);
 
     switch (projection.mode) {
-        case DecalProjectionModeUVE::Cylinder:
+        case DecalProjectionMode::Cylinder:
             // The cylinder runs along the projection axis (local Y): a radial footprint, bounded
             // the same way along the axis.
             sample.insideVolume = (sample.local.x * sample.local.x + sample.local.z * sample.local.z) <= 1.0F &&
                                   std::fabs(sample.local.y) <= 1.0F;
             break;
-        case DecalProjectionModeUVE::Box:
+        case DecalProjectionMode::Box:
         default:
             sample.insideVolume = std::fabs(sample.local.x) <= 1.0F && std::fabs(sample.local.y) <= 1.0F &&
                                   std::fabs(sample.local.z) <= 1.0F;
@@ -149,20 +149,20 @@ Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const 
     // 0 on the authored field paints every facing inside the volume and 1 paints only those facing
     // back at the decal.
     // surface squarely under the decal does; a backface or an edge-on sliver scores zero.
-    const float facingTowardsDecal = ClampUnitUVE(Math::DotUVE(worldNormal, -projection.projectionDirection));
-    sample.normalFadeWeight = 1.0F - ClampUnitUVE(projection.normalFade) * (1.0F - facingTowardsDecal);
+    const float facingTowardsDecal = ClampUnit(Math::Dot(worldNormal, -projection.projectionDirection));
+    sample.normalFadeWeight = 1.0F - ClampUnit(projection.normalFade) * (1.0F - facingTowardsDecal);
 
     // Vertical (along the projection axis) fades: the volume's +Y end is the far end of the
     // projection, and each authored band fades the outer part of the corresponding half.
-    sample.depthFadeWeight = AxisFadeWeightUVE(sample.local.y, projection.upperFade) *
-                             AxisFadeWeightUVE(-sample.local.y, projection.lowerFade);
+    sample.depthFadeWeight = AxisFadeWeight(sample.local.y, projection.upperFade) *
+                             AxisFadeWeight(-sample.local.y, projection.lowerFade);
 
     // Distance fade: the same authored begin/length the Inspector shows. A zero length is a hard
     // cut at `begin` rather than a division by zero.
     if (projection.distanceFadeEnabled) {
         if (projection.distanceFadeLength > 0.0F) {
             sample.distanceFadeWeight =
-                1.0F - ClampUnitUVE((distanceToCamera - projection.distanceFadeBegin) / projection.distanceFadeLength);
+                1.0F - ClampUnit((distanceToCamera - projection.distanceFadeBegin) / projection.distanceFadeLength);
         } else {
             sample.distanceFadeWeight = distanceToCamera <= projection.distanceFadeBegin ? 1.0F : 0.0F;
         }
@@ -178,7 +178,7 @@ Decal3DSampleUVE SampleDecal3DUVE(const Decal3DProjectionUVE& projection, const 
     return sample;
 }
 
-bool AdvanceDecal3DLifetimeUVE(Decal3DComponentUVE& value, const float deltaSeconds) noexcept {
+bool AdvanceDecal3DLifetime(Decal3DComponent& value, const float deltaSeconds) noexcept {
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0F || value.expired) {
         return false;
     }
@@ -204,11 +204,11 @@ bool AdvanceDecal3DLifetimeUVE(Decal3DComponentUVE& value, const float deltaSeco
     return true;
 }
 
-void ApplyDecal3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                   const Decal3DObjectDefinitionUVE& value) {
-    ApplyRenderInstance3DBaseUVE(entityManager, entity, Decal3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Decal3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<Decal3DComponentUVE>(entity, value.decal);
+void ApplyDecal3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                   const Decal3DObjectDefinition& value) {
+    ApplyRenderInstance3DBase(entityManager, entity, Decal3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<Decal3DComponent>(entity)) {
+        entityManager.AddComponent<Decal3DComponent>(entity, value.decal);
     }
 }
 

@@ -9,33 +9,33 @@ namespace UVE::Physics {
 namespace {
 
 // The coyote clock stops here: past any sensible window, and still finite for the validator.
-constexpr float kMaximumTimeSinceOnFloorUVE = 3600.0F;
-constexpr float kMinimumNormalizableLengthUVE = 1.0e-12F;
+constexpr float kMaximumTimeSinceOnFloor = 3600.0F;
+constexpr float kMinimumNormalizableLength = 1.0e-12F;
 
-[[nodiscard]] Math::Vector3UVE CharacterUpUVE(const Scene::CharacterControllerComponentUVE& c) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(c.upDirection);
-    if (!Math::IsFiniteUVE(c.upDirection) || !std::isfinite(lengthSquared) ||
-        lengthSquared <= kMinimumNormalizableLengthUVE) {
-        return Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+[[nodiscard]] Math::Vector3 CharacterUp(const Scene::CharacterControllerComponent& c) noexcept {
+    const float lengthSquared = Math::LengthSquared(c.upDirection);
+    if (!Math::IsFinite(c.upDirection) || !std::isfinite(lengthSquared) ||
+        lengthSquared <= kMinimumNormalizableLength) {
+        return Math::Vector3{0.0F, 1.0F, 0.0F};
     }
     return c.upDirection * (1.0F / std::sqrt(lengthSquared));
 }
 
-[[nodiscard]] float AlongUpUVE(const Math::Vector3UVE& value, const Math::Vector3UVE& up) noexcept {
-    const float along = Math::DotUVE(value, up);
+[[nodiscard]] float AlongUp(const Math::Vector3& value, const Math::Vector3& up) noexcept {
+    const float along = Math::Dot(value, up);
     return std::isfinite(along) ? along : 0.0F;
 }
 
-void SetAlongUpUVE(Math::Vector3UVE& velocity, const Math::Vector3UVE& up, const float along) noexcept {
-    velocity = velocity - up * AlongUpUVE(velocity, up) + up * along;
+void SetAlongUp(Math::Vector3& velocity, const Math::Vector3& up, const float along) noexcept {
+    velocity = velocity - up * AlongUp(velocity, up) + up * along;
 }
 
 } // namespace
 
-bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const CharacterMotionInputUVE& input,
+bool StepCharacterIntent(Scene::CharacterControllerComponent& c, const CharacterMotionInput& input,
                             const float gravityY, const float deltaTimeSeconds) noexcept {
-    const bool floating = c.motionMode == Scene::CharacterMotionModeUVE::Floating;
-    const Math::Vector3UVE up = CharacterUpUVE(c);
+    const bool floating = c.motionMode == Scene::CharacterMotionMode::Floating;
+    const Math::Vector3 up = CharacterUp(c);
     const float gravity = floating ? 0.0F : gravityY * c.gravityScale;
     bool jumped = false;
     if (c.builtInMovement) {
@@ -53,7 +53,7 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
         c.velocity.x += (targetX - c.velocity.x) * alpha;
         c.velocity.z += (targetZ - c.velocity.z) * alpha;
         if (floating) {
-            SetAlongUpUVE(c.velocity, up, std::clamp(input.rise, -1.0F, 1.0F) * c.moveSpeed);
+            SetAlongUp(c.velocity, up, std::clamp(input.rise, -1.0F, 1.0F) * c.moveSpeed);
         } else {
             // A press is remembered for Jump Buffer seconds, and a jump is still allowed for Coyote
             // Time seconds after leaving the floor, so it happens when the player meant it rather
@@ -63,7 +63,7 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
             }
             const bool canJump = c.grounded || c.timeSinceOnFloor <= c.coyoteTimeSeconds;
             if (c.jumpBufferRemaining > 0.0F && canJump && gravity < 0.0F) {
-                SetAlongUpUVE(c.velocity, up, std::sqrt(2.0F * -gravity * c.jumpHeight));
+                SetAlongUp(c.velocity, up, std::sqrt(2.0F * -gravity * c.jumpHeight));
                 jumped = true;
                 c.jumpBufferRemaining = 0.0F;
                 c.grounded = false;
@@ -76,8 +76,8 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     }
     // Standing on the floor cancels gravity rather than pressing into the floor every step.
     if (!floating && !jumped) {
-        if (c.grounded && AlongUpUVE(c.velocity, up) <= 0.0F) {
-            SetAlongUpUVE(c.velocity, up, 0.0F);
+        if (c.grounded && AlongUp(c.velocity, up) <= 0.0F) {
+            SetAlongUp(c.velocity, up, 0.0F);
         } else {
             c.velocity += up * (gravity * deltaTimeSeconds);
         }
@@ -85,27 +85,27 @@ bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const Cha
     return jumped;
 }
 
-void FinishCharacterStepUVE(Scene::CharacterControllerComponentUVE& c, const CharacterMoveOutcomeUVE& outcome,
+void FinishCharacterStep(Scene::CharacterControllerComponent& c, const CharacterMoveOutcome& outcome,
                             const bool jumped, const float deltaTimeSeconds) noexcept {
-    const Math::Vector3UVE up = CharacterUpUVE(c);
+    const Math::Vector3 up = CharacterUp(c);
     c.isOnCeiling = outcome.hitCeiling;
     if (outcome.hitCeiling) {
-        if (AlongUpUVE(c.velocity, up) > 0.0F) {
-            SetAlongUpUVE(c.velocity, up, 0.0F);
+        if (AlongUp(c.velocity, up) > 0.0F) {
+            SetAlongUp(c.velocity, up, 0.0F);
         }
         if (!c.slideOnCeiling) {
-            c.velocity = up * std::min(AlongUpUVE(c.velocity, up), 0.0F);
+            c.velocity = up * std::min(AlongUp(c.velocity, up), 0.0F);
         }
     }
     c.grounded = outcome.onFloor;
     c.floorNormal = outcome.onFloor ? outcome.floorNormal : up;
     if (outcome.onFloor) {
         c.timeSinceOnFloor = 0.0F;
-        if (AlongUpUVE(c.velocity, up) < 0.0F) {
-            SetAlongUpUVE(c.velocity, up, 0.0F);
+        if (AlongUp(c.velocity, up) < 0.0F) {
+            SetAlongUp(c.velocity, up, 0.0F);
         }
     } else if (!jumped) {
-        c.timeSinceOnFloor = std::min(c.timeSinceOnFloor + deltaTimeSeconds, kMaximumTimeSinceOnFloorUVE);
+        c.timeSinceOnFloor = std::min(c.timeSinceOnFloor + deltaTimeSeconds, kMaximumTimeSinceOnFloor);
     }
 }
 

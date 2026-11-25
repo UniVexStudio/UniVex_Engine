@@ -8,31 +8,31 @@
 
 namespace UVE::Scene::Detail {
 
-ArchetypeSignatureUVE::ArchetypeSignatureUVE(std::vector<std::type_index> componentTypes)
+ArchetypeSignature::ArchetypeSignature(std::vector<std::type_index> componentTypes)
     : m_sortedTypes(std::move(componentTypes)) {
     std::sort(m_sortedTypes.begin(), m_sortedTypes.end());
 }
 
-bool ArchetypeSignatureUVE::ContainsUVE(std::type_index type) const {
+bool ArchetypeSignature::Contains(std::type_index type) const {
     return std::find(m_sortedTypes.begin(), m_sortedTypes.end(), type) != m_sortedTypes.end();
 }
 
-bool ArchetypeSignatureUVE::IsSupersetOfUVE(const ArchetypeSignatureUVE& other) const {
+bool ArchetypeSignature::IsSupersetOf(const ArchetypeSignature& other) const {
     for (const std::type_index& type : other.m_sortedTypes) {
-        if (!ContainsUVE(type)) {
+        if (!Contains(type)) {
             return false;
         }
     }
     return true;
 }
 
-ArchetypeSignatureUVE ArchetypeSignatureUVE::WithUVE(std::type_index type) const {
+ArchetypeSignature ArchetypeSignature::With(std::type_index type) const {
     std::vector<std::type_index> types = m_sortedTypes;
     types.push_back(type);
-    return ArchetypeSignatureUVE(std::move(types));
+    return ArchetypeSignature(std::move(types));
 }
 
-ArchetypeSignatureUVE ArchetypeSignatureUVE::WithoutUVE(std::type_index type) const {
+ArchetypeSignature ArchetypeSignature::Without(std::type_index type) const {
     std::vector<std::type_index> types;
     types.reserve(m_sortedTypes.size());
     for (const std::type_index& existingType : m_sortedTypes) {
@@ -40,10 +40,10 @@ ArchetypeSignatureUVE ArchetypeSignatureUVE::WithoutUVE(std::type_index type) co
             types.push_back(existingType);
         }
     }
-    return ArchetypeSignatureUVE(std::move(types));
+    return ArchetypeSignature(std::move(types));
 }
 
-const std::vector<std::type_index>& ArchetypeSignatureUVE::GetTypesUVE() const noexcept {
+const std::vector<std::type_index>& ArchetypeSignature::GetTypes() const noexcept {
     return m_sortedTypes;
 }
 

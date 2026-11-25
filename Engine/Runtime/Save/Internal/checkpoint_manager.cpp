@@ -9,25 +9,25 @@
 namespace UVE::Save {
 namespace {
 
-constexpr double kDefaultAutoSaveIntervalSecondsUVE = 300.0;
+constexpr double kDefaultAutoSaveIntervalSeconds = 300.0;
 
-[[nodiscard]] bool IsValidAutoSaveIntervalUVE(const double intervalSeconds) noexcept {
+[[nodiscard]] bool IsValidAutoSaveInterval(const double intervalSeconds) noexcept {
     return std::isfinite(intervalSeconds) && intervalSeconds > 0.0;
 }
 
 } // namespace
 
-CheckpointManagerUVE::CheckpointManagerUVE(ISaveGameSystemUVE& saveGameSystem,
+CheckpointManager::CheckpointManager(ISaveGameSystem& saveGameSystem,
                                              double autoSaveIntervalSeconds,
-                                             GameStateMetadataUVE metadataTemplate)
+                                             GameStateMetadata metadataTemplate)
     : m_saveGameSystem(&saveGameSystem),
       m_metadataTemplate(std::move(metadataTemplate)),
-      m_autoSaveIntervalSeconds(IsValidAutoSaveIntervalUVE(autoSaveIntervalSeconds)
+      m_autoSaveIntervalSeconds(IsValidAutoSaveInterval(autoSaveIntervalSeconds)
                                     ? autoSaveIntervalSeconds
-                                    : kDefaultAutoSaveIntervalSecondsUVE) {}
+                                    : kDefaultAutoSaveIntervalSeconds) {}
 
-void CheckpointManagerUVE::UpdateUVE(double deltaTimeSeconds, Scene::IEntityManagerUVE& entityManager,
-                                      const std::vector<Scene::EntityUVE>& rootEntities) {
+void CheckpointManager::Update(double deltaTimeSeconds, Scene::IEntityManager& entityManager,
+                                      const std::vector<Scene::Entity>& rootEntities) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0) {
         return;
     }
@@ -35,39 +35,39 @@ void CheckpointManagerUVE::UpdateUVE(double deltaTimeSeconds, Scene::IEntityMana
     m_elapsedSinceLastSaveSeconds += deltaTimeSeconds;
 
     if (m_elapsedSinceLastSaveSeconds >= m_autoSaveIntervalSeconds) {
-        static_cast<void>(SaveCheckpointUVE(kAutoSaveSlotIndexUVE, entityManager, rootEntities));
+        static_cast<void>(SaveCheckpoint(kAutoSaveSlotIndex, entityManager, rootEntities));
     }
 }
 
-bool CheckpointManagerUVE::CheckpointUVE(Scene::IEntityManagerUVE& entityManager,
-                                          const std::vector<Scene::EntityUVE>& rootEntities) {
-    return SaveCheckpointUVE(kManualCheckpointSlotIndexUVE, entityManager, rootEntities);
+bool CheckpointManager::Checkpoint(Scene::IEntityManager& entityManager,
+                                          const std::vector<Scene::Entity>& rootEntities) {
+    return SaveCheckpoint(kManualCheckpointSlotIndex, entityManager, rootEntities);
 }
 
-void CheckpointManagerUVE::SetAutoSaveIntervalSecondsUVE(const double intervalSeconds) noexcept {
-    if (IsValidAutoSaveIntervalUVE(intervalSeconds)) {
+void CheckpointManager::SetAutoSaveIntervalSeconds(const double intervalSeconds) noexcept {
+    if (IsValidAutoSaveInterval(intervalSeconds)) {
         m_autoSaveIntervalSeconds = intervalSeconds;
     }
 }
 
-double CheckpointManagerUVE::GetAutoSaveIntervalSecondsUVE() const noexcept {
+double CheckpointManager::GetAutoSaveIntervalSeconds() const noexcept {
     return m_autoSaveIntervalSeconds;
 }
 
-double CheckpointManagerUVE::GetElapsedSinceLastSaveSecondsUVE() const noexcept {
+double CheckpointManager::GetElapsedSinceLastSaveSeconds() const noexcept {
     return m_elapsedSinceLastSaveSeconds;
 }
 
-double CheckpointManagerUVE::GetTotalPlaytimeSecondsUVE() const noexcept {
+double CheckpointManager::GetTotalPlaytimeSeconds() const noexcept {
     return m_totalPlaytimeSeconds;
 }
 
-bool CheckpointManagerUVE::SaveCheckpointUVE(const int slotIndex, Scene::IEntityManagerUVE& entityManager,
-                                              const std::vector<Scene::EntityUVE>& rootEntities) {
-    GameStateMetadataUVE metadata = m_metadataTemplate;
+bool CheckpointManager::SaveCheckpoint(const int slotIndex, Scene::IEntityManager& entityManager,
+                                              const std::vector<Scene::Entity>& rootEntities) {
+    GameStateMetadata metadata = m_metadataTemplate;
     metadata.playtimeSeconds = m_totalPlaytimeSeconds;
 
-    const bool saved = m_saveGameSystem->SaveUVE(slotIndex, entityManager, rootEntities, metadata);
+    const bool saved = m_saveGameSystem->Save(slotIndex, entityManager, rootEntities, metadata);
     if (saved) {
         m_elapsedSinceLastSaveSeconds = 0.0;
     }

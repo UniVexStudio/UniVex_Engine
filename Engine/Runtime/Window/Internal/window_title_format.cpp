@@ -7,7 +7,7 @@
 namespace UVE::Window {
 namespace {
 
-void ReplaceAllUVE(std::string& value, const std::string_view token, const std::string_view replacement) {
+void ReplaceAll(std::string& value, const std::string_view token, const std::string_view replacement) {
     std::size_t position = 0U;
     while ((position = value.find(token, position)) != std::string::npos) {
         value.replace(position, token.size(), replacement);
@@ -15,45 +15,45 @@ void ReplaceAllUVE(std::string& value, const std::string_view token, const std::
     }
 }
 
-[[nodiscard]] bool IsWhitespaceUVE(const char value) noexcept {
+[[nodiscard]] bool IsWhitespace(const char value) noexcept {
     return std::isspace(static_cast<unsigned char>(value)) != 0;
 }
 
-[[nodiscard]] bool IsSceneSeparatorUVE(const char value) noexcept {
+[[nodiscard]] bool IsSceneSeparator(const char value) noexcept {
     return value == '-' || value == '|' || value == '/' || value == ':' || value == '(' || value == ')' ||
            value == '[' || value == ']';
 }
 
-void TrimWindowTitleUVE(std::string& title) {
+void TrimWindowTitle(std::string& title) {
     std::size_t first = 0U;
-    while (first < title.size() && IsWhitespaceUVE(title[first])) {
+    while (first < title.size() && IsWhitespace(title[first])) {
         ++first;
     }
     std::size_t last = title.size();
-    while (last > first && IsWhitespaceUVE(title[last - 1U])) {
+    while (last > first && IsWhitespace(title[last - 1U])) {
         --last;
     }
     title = title.substr(first, last - first);
 }
 
-void RemoveSceneNameTokensUVE(std::string& title) {
+void RemoveSceneNameTokens(std::string& title) {
     constexpr std::string_view kSceneToken = "{sceneName}";
     std::size_t position = 0U;
     while ((position = title.find(kSceneToken, position)) != std::string::npos) {
         const std::size_t tokenEnd = position + kSceneToken.size();
         std::size_t left = position;
-        while (left > 0U && IsWhitespaceUVE(title[left - 1U])) {
+        while (left > 0U && IsWhitespace(title[left - 1U])) {
             --left;
         }
         std::size_t right = tokenEnd;
-        while (right < title.size() && IsWhitespaceUVE(title[right])) {
+        while (right < title.size() && IsWhitespace(title[right])) {
             ++right;
         }
 
         std::size_t eraseStart = position;
         std::size_t eraseEnd = tokenEnd;
-        const bool hasLeftSeparator = left > 0U && IsSceneSeparatorUVE(title[left - 1U]);
-        const bool hasRightSeparator = right < title.size() && IsSceneSeparatorUVE(title[right]);
+        const bool hasLeftSeparator = left > 0U && IsSceneSeparator(title[left - 1U]);
+        const bool hasRightSeparator = right < title.size() && IsSceneSeparator(title[right]);
         if (hasLeftSeparator && hasRightSeparator &&
             ((title[left - 1U] == '(' && title[right] == ')') ||
              (title[left - 1U] == '[' && title[right] == ']'))) {
@@ -63,18 +63,18 @@ void RemoveSceneNameTokensUVE(std::string& title) {
             eraseStart = left - 1U;
         } else if (hasRightSeparator) {
             eraseEnd = right + 1U;
-            while (eraseEnd < title.size() && IsWhitespaceUVE(title[eraseEnd])) {
+            while (eraseEnd < title.size() && IsWhitespace(title[eraseEnd])) {
                 ++eraseEnd;
             }
         }
 
         title.erase(eraseStart, eraseEnd - eraseStart);
-        TrimWindowTitleUVE(title);
+        TrimWindowTitle(title);
         position = eraseStart;
     }
 }
 
-void TruncateUtf8UVE(std::string& value, const std::size_t maximumBytes) {
+void TruncateUtf8(std::string& value, const std::size_t maximumBytes) {
     if (value.size() <= maximumBytes) {
         return;
     }
@@ -87,7 +87,7 @@ void TruncateUtf8UVE(std::string& value, const std::size_t maximumBytes) {
 
 } // namespace
 
-std::string FormatWindowTitleUVE(
+std::string FormatWindowTitle(
     const std::string_view format, const std::string_view productName, const std::string_view projectName,
     const std::string_view sceneName, const bool editorPlayMode, const bool appendSceneNameInEditorPlayMode) {
     const std::string_view safeProductName = productName.empty() ? std::string_view{"UniVex Engine"} : productName;
@@ -96,12 +96,12 @@ std::string FormatWindowTitleUVE(
     const bool appendScene = editorPlayMode && appendSceneNameInEditorPlayMode && !sceneName.empty();
     const bool containsSceneToken = title.find("{sceneName}") != std::string::npos;
 
-    ReplaceAllUVE(title, "{productName}", safeProductName);
-    ReplaceAllUVE(title, "{projectName}", safeProjectName);
+    ReplaceAll(title, "{productName}", safeProductName);
+    ReplaceAll(title, "{projectName}", safeProjectName);
     if (appendScene) {
-        ReplaceAllUVE(title, "{sceneName}", sceneName);
+        ReplaceAll(title, "{sceneName}", sceneName);
     } else {
-        RemoveSceneNameTokensUVE(title);
+        RemoveSceneNameTokens(title);
     }
 
     if (appendScene && !containsSceneToken) {
@@ -111,7 +111,7 @@ std::string FormatWindowTitleUVE(
     if (title.empty()) {
         title.assign(safeProductName);
     }
-    TruncateUtf8UVE(title, kMaximumWindowTitleBytesUVE);
+    TruncateUtf8(title, kMaximumWindowTitleBytes);
     return title;
 }
 

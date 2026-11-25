@@ -16,11 +16,11 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr std::uint32_t kGlbMagicUVE = 0x46546C67U;
-constexpr std::uint32_t kGlbJsonChunkUVE = 0x4E4F534AU;
-constexpr std::uint32_t kMaximumJsonBytesUVE = 64U * 1024U * 1024U;
+constexpr std::uint32_t kGlbMagic = 0x46546C67U;
+constexpr std::uint32_t kGlbJsonChunk = 0x4E4F534AU;
+constexpr std::uint32_t kMaximumJsonBytes = 64U * 1024U * 1024U;
 
-[[nodiscard]] bool ReadFloatsUVE(const nlohmann::json& object, const char* const key, float* const out,
+[[nodiscard]] bool ReadFloats(const nlohmann::json& object, const char* const key, float* const out,
                                  const std::size_t count) {
     if (!object.contains(key)) {
         return true;
@@ -43,7 +43,7 @@ constexpr std::uint32_t kMaximumJsonBytesUVE = 64U * 1024U * 1024U;
 
 /// Splits a column-major affine matrix into translation, rotation and scale. Shear is not
 /// representable in TRS and is dropped, as every engine that stores bones as TRS does.
-void DecomposeMatrixUVE(const std::array<float, 16>& m, GltfJointUVE& joint) {
+void DecomposeMatrix(const std::array<float, 16>& m, GltfJoint& joint) {
     joint.translation = {m[12], m[13], m[14]};
     const float sx = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
     const float sy = std::sqrt(m[4] * m[4] + m[5] * m[5] + m[6] * m[6]);
@@ -56,7 +56,7 @@ void DecomposeMatrixUVE(const std::array<float, 16>& m, GltfJointUVE& joint) {
     const float r01 = m[4] / sy, r11 = m[5] / sy, r21 = m[6] / sy;
     const float r02 = m[8] / sz, r12 = m[9] / sz, r22 = m[10] / sz;
     const float trace = r00 + r11 + r22;
-    Math::QuaternionUVE q;
+    Math::Quaternion q;
     if (trace > 0.0F) {
         const float s = std::sqrt(trace + 1.0F) * 2.0F;
         q = {(r21 - r12) / s, (r02 - r20) / s, (r10 - r01) / s, 0.25F * s};
@@ -75,7 +75,7 @@ void DecomposeMatrixUVE(const std::array<float, 16>& m, GltfJointUVE& joint) {
 
 } // namespace
 
-std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json, const std::size_t maximumJoints) {
+std::optional<GltfSkeleton> ParseGltfSkeleton(const std::string_view json, const std::size_t maximumJoints) {
     try {
         const nlohmann::json document = nlohmann::json::parse(json);
         if (!document.is_object() || !document.contains("skins") || !document.at("skins").is_array() ||
@@ -139,14 +139,14 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
                 children[static_cast<std::size_t>(parent)].push_back(object);
             }
         }
-        GltfSkeletonUVE skeleton;
+        GltfSkeleton skeleton;
         skeleton.skinCount = document.at("skins").size();
         std::unordered_map<std::size_t, std::int32_t> jointIndex;
         std::unordered_set<std::string> usedNames;
         const std::function<bool(std::size_t, std::int32_t)> emit = [&](const std::size_t object,
                                                                         const std::int32_t parent) {
             const nlohmann::json& source = objects[object];
-            GltfJointUVE joint;
+            GltfJoint joint;
             std::string name = source.value("name", std::string{"Bone"});
             if (name.empty()) {
                 name = "Bone";
@@ -161,15 +161,15 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
             joint.parentIndex = parent;
             if (source.contains("matrix")) {
                 std::array<float, 16> matrix{};
-                if (!ReadFloatsUVE(source, "matrix", matrix.data(), matrix.size())) {
+                if (!ReadFloats(source, "matrix", matrix.data(), matrix.size())) {
                     return false;
                 }
-                DecomposeMatrixUVE(matrix, joint);
+                DecomposeMatrix(matrix, joint);
             } else {
                 std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};
-                if (!ReadFloatsUVE(source, "translation", &joint.translation.x, 3U) ||
-                    !ReadFloatsUVE(source, "rotation", rotation.data(), 4U) ||
-                    !ReadFloatsUVE(source, "scale", &joint.scale.x, 3U)) {
+                if (!ReadFloats(source, "translation", &joint.translation.x, 3U) ||
+                    !ReadFloats(source, "rotation", rotation.data(), 4U) ||
+                    !ReadFloats(source, "scale", &joint.scale.x, 3U)) {
                     return false;
                 }
                 joint.rotation = {rotation[0], rotation[1], rotation[2], rotation[3]};
@@ -199,7 +199,7 @@ std::optional<GltfSkeletonUVE> ParseGltfSkeletonUVE(const std::string_view json,
     }
 }
 
-std::optional<GltfSkeletonUVE> ReadGltfSkeletonUVE(const std::filesystem::path& path, const std::size_t maximumJoints) {
+std::optional<GltfSkeleton> ReadGltfSkeleton(const std::filesystem::path& path, const std::size_t maximumJoints) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         return std::nullopt;
@@ -210,8 +210,8 @@ std::optional<GltfSkeletonUVE> ReadGltfSkeletonUVE(const std::filesystem::path& 
     std::string json;
     if (extension == ".glb") {
         std::array<std::uint32_t, 5> header{};
-        if (!file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != kGlbMagicUVE ||
-            header[4] != kGlbJsonChunkUVE || header[3] > kMaximumJsonBytesUVE) {
+        if (!file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != kGlbMagic ||
+            header[4] != kGlbJsonChunk || header[3] > kMaximumJsonBytes) {
             return std::nullopt;
         }
         json.resize(header[3]);
@@ -223,7 +223,7 @@ std::optional<GltfSkeletonUVE> ReadGltfSkeletonUVE(const std::filesystem::path& 
     } else {
         return std::nullopt;
     }
-    return ParseGltfSkeletonUVE(json, maximumJoints);
+    return ParseGltfSkeleton(json, maximumJoints);
 }
 
 } // namespace UVE::Asset

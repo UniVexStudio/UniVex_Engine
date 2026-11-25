@@ -13,136 +13,136 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-void ExpectColorNear(const EditorColorUVE& actual, const EditorColorUVE& expected, const float tolerance = 1e-5F) {
+void ExpectColorNear(const EditorColor& actual, const EditorColor& expected, const float tolerance = 1e-5F) {
     EXPECT_NEAR(actual.r, expected.r, tolerance);
     EXPECT_NEAR(actual.g, expected.g, tolerance);
     EXPECT_NEAR(actual.b, expected.b, tolerance);
     EXPECT_NEAR(actual.a, expected.a, tolerance);
 }
 
-TEST(EditorColorUVETest, ParseColorHex_AcceptsThreeSixAndEightDigitForms) {
+TEST(EditorColorTest, ParseColorHex_AcceptsThreeSixAndEightDigitForms) {
     // Six digits, with and without the marker, either case, spaces around it ignored.
     for (const char* text : {"#FF8000", "FF8000", "ff8000", "  #Ff8000 \t"}) {
-        const std::optional<EditorColorUVE> color = ParseColorHexUVE(text);
+        const std::optional<EditorColor> color = ParseColorHex(text);
         ASSERT_TRUE(color.has_value()) << text;
-        ExpectColorNear(*color, EditorColorUVE{1.0F, 128.0F / 255.0F, 0.0F, 1.0F});
+        ExpectColorNear(*color, EditorColor{1.0F, 128.0F / 255.0F, 0.0F, 1.0F});
     }
     // Three digits double each one: F is FF, not F0.
-    const std::optional<EditorColorUVE> shorthand = ParseColorHexUVE("#F80");
+    const std::optional<EditorColor> shorthand = ParseColorHex("#F80");
     ASSERT_TRUE(shorthand.has_value());
-    ExpectColorNear(*shorthand, EditorColorUVE{1.0F, 136.0F / 255.0F, 0.0F, 1.0F});
+    ExpectColorNear(*shorthand, EditorColor{1.0F, 136.0F / 255.0F, 0.0F, 1.0F});
     // Eight digits carry alpha.
-    const std::optional<EditorColorUVE> withAlpha = ParseColorHexUVE("#00E07580");
+    const std::optional<EditorColor> withAlpha = ParseColorHex("#00E07580");
     ASSERT_TRUE(withAlpha.has_value());
-    ExpectColorNear(*withAlpha, EditorColorUVE{0.0F, 224.0F / 255.0F, 117.0F / 255.0F, 128.0F / 255.0F});
+    ExpectColorNear(*withAlpha, EditorColor{0.0F, 224.0F / 255.0F, 117.0F / 255.0F, 128.0F / 255.0F});
 }
 
-TEST(EditorColorUVETest, ParseColorHex_RefusesAnythingElseWhole) {
+TEST(EditorColorTest, ParseColorHex_RefusesAnythingElseWhole) {
     for (const char* text : {"", "#", "#FF", "#FFFF", "#FFFFF", "#FFFFFFF", "#FFFFFFFFF", "#GG0000", "#FF 000",
                              "##FF0000", "FF0000#", "0xFF0000"}) {
-        EXPECT_FALSE(ParseColorHexUVE(text).has_value()) << "'" << text << "'";
+        EXPECT_FALSE(ParseColorHex(text).has_value()) << "'" << text << "'";
     }
 }
 
-TEST(EditorColorUVETest, FormatColorHex_RoundsClampsAndRoundTrips) {
-    EXPECT_EQ(FormatColorHexUVE(EditorColorUVE{1.0F, 0.5F, 0.0F, 1.0F}, false), "#FF8000");
-    EXPECT_EQ(FormatColorHexUVE(EditorColorUVE{1.0F, 0.5F, 0.0F, 0.25F}, true), "#FF800040");
+TEST(EditorColorTest, FormatColorHex_RoundsClampsAndRoundTrips) {
+    EXPECT_EQ(FormatColorHex(EditorColor{1.0F, 0.5F, 0.0F, 1.0F}, false), "#FF8000");
+    EXPECT_EQ(FormatColorHex(EditorColor{1.0F, 0.5F, 0.0F, 0.25F}, true), "#FF800040");
     // Out of range and not-a-number channels are clamped, never printed as garbage.
-    EXPECT_EQ(FormatColorHexUVE(EditorColorUVE{2.0F, -1.0F, std::numeric_limits<float>::quiet_NaN(), 1.0F}, false),
+    EXPECT_EQ(FormatColorHex(EditorColor{2.0F, -1.0F, std::numeric_limits<float>::quiet_NaN(), 1.0F}, false),
               "#FF0000");
 
     // Every 8-bit value survives format -> parse -> format unchanged.
     for (int byte = 0; byte <= 255; ++byte) {
         const float channel = static_cast<float>(byte) / 255.0F;
-        const EditorColorUVE color{channel, 1.0F - channel, channel * 0.5F, channel};
-        const std::string hex = FormatColorHexUVE(color, true);
-        const std::optional<EditorColorUVE> parsed = ParseColorHexUVE(hex);
+        const EditorColor color{channel, 1.0F - channel, channel * 0.5F, channel};
+        const std::string hex = FormatColorHex(color, true);
+        const std::optional<EditorColor> parsed = ParseColorHex(hex);
         ASSERT_TRUE(parsed.has_value()) << hex;
-        EXPECT_EQ(FormatColorHexUVE(*parsed, true), hex);
+        EXPECT_EQ(FormatColorHex(*parsed, true), hex);
     }
 }
 
-TEST(EditorColorUVETest, RecentColors_NewestFirstNoDuplicatesCapped) {
-    std::vector<EditorColorUVE> recents;
-    const EditorColorUVE red{1.0F, 0.0F, 0.0F, 1.0F};
-    const EditorColorUVE green{0.0F, 1.0F, 0.0F, 1.0F};
-    PushRecentColorUVE(recents, red);
-    PushRecentColorUVE(recents, green);
+TEST(EditorColorTest, RecentColors_NewestFirstNoDuplicatesCapped) {
+    std::vector<EditorColor> recents;
+    const EditorColor red{1.0F, 0.0F, 0.0F, 1.0F};
+    const EditorColor green{0.0F, 1.0F, 0.0F, 1.0F};
+    PushRecentColor(recents, red);
+    PushRecentColor(recents, green);
     // Picking red again moves it to the front instead of listing it twice.
-    PushRecentColorUVE(recents, EditorColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
+    PushRecentColor(recents, EditorColor{1.0F, 0.0F, 0.0F, 1.0F});
     ASSERT_EQ(recents.size(), 2U);
     EXPECT_EQ(recents[0], red);
     EXPECT_EQ(recents[1], green);
 
     for (int index = 0; index < 20; ++index) {
-        PushRecentColorUVE(recents, EditorColorUVE{static_cast<float>(index) / 20.0F, 0.5F, 0.5F, 1.0F});
+        PushRecentColor(recents, EditorColor{static_cast<float>(index) / 20.0F, 0.5F, 0.5F, 1.0F});
     }
-    ASSERT_EQ(recents.size(), kMaxRecentColorsUVE);
+    ASSERT_EQ(recents.size(), kMaxRecentColors);
     // The newest is first and the oldest ones fell off the end.
-    EXPECT_EQ(FormatColorHexUVE(recents.front(), true), FormatColorHexUVE(EditorColorUVE{19.0F / 20.0F, 0.5F, 0.5F, 1.0F}, true));
+    EXPECT_EQ(FormatColorHex(recents.front(), true), FormatColorHex(EditorColor{19.0F / 20.0F, 0.5F, 0.5F, 1.0F}, true));
 }
 
-TEST(EditorColorUVETest, SavedColors_RefuseDuplicatesAndStopWhenFull) {
-    std::vector<EditorColorUVE> saved;
-    EXPECT_TRUE(AddSavedColorUVE(saved, EditorColorUVE{0.2F, 0.4F, 0.6F, 1.0F}));
-    EXPECT_FALSE(AddSavedColorUVE(saved, EditorColorUVE{0.2F, 0.4F, 0.6F, 1.0F}));
+TEST(EditorColorTest, SavedColors_RefuseDuplicatesAndStopWhenFull) {
+    std::vector<EditorColor> saved;
+    EXPECT_TRUE(AddSavedColor(saved, EditorColor{0.2F, 0.4F, 0.6F, 1.0F}));
+    EXPECT_FALSE(AddSavedColor(saved, EditorColor{0.2F, 0.4F, 0.6F, 1.0F}));
     ASSERT_EQ(saved.size(), 1U);
-    for (std::size_t index = 1; index < kMaxSavedColorsUVE; ++index) {
-        EXPECT_TRUE(AddSavedColorUVE(saved, EditorColorUVE{static_cast<float>(index) / 64.0F, 0.0F, 0.0F, 1.0F}));
+    for (std::size_t index = 1; index < kMaxSavedColors; ++index) {
+        EXPECT_TRUE(AddSavedColor(saved, EditorColor{static_cast<float>(index) / 64.0F, 0.0F, 0.0F, 1.0F}));
     }
-    ASSERT_EQ(saved.size(), kMaxSavedColorsUVE);
+    ASSERT_EQ(saved.size(), kMaxSavedColors);
     // A full palette takes no more, and keeps its order.
-    EXPECT_FALSE(AddSavedColorUVE(saved, EditorColorUVE{0.9F, 0.9F, 0.9F, 1.0F}));
-    EXPECT_EQ(saved.size(), kMaxSavedColorsUVE);
-    ExpectColorNear(saved.front(), EditorColorUVE{0.2F, 0.4F, 0.6F, 1.0F});
+    EXPECT_FALSE(AddSavedColor(saved, EditorColor{0.9F, 0.9F, 0.9F, 1.0F}));
+    EXPECT_EQ(saved.size(), kMaxSavedColors);
+    ExpectColorNear(saved.front(), EditorColor{0.2F, 0.4F, 0.6F, 1.0F});
 }
 
-TEST(EditorColorUVETest, HsvConversion_RoundTripsAndKeepsHueThroughGreyAndBlack) {
-    const std::vector<EditorColorUVE> colors{
+TEST(EditorColorTest, HsvConversion_RoundTripsAndKeepsHueThroughGreyAndBlack) {
+    const std::vector<EditorColor> colors{
         {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F, 1.0F},  {1.0F, 1.0F, 0.0F, 1.0F},
         {0.0F, 1.0F, 1.0F, 1.0F}, {1.0F, 0.0F, 1.0F, 1.0F}, {0.0F, 0.745F, 0.178F, 0.5F}, {0.3F, 0.2F, 0.9F, 1.0F},
     };
-    for (const EditorColorUVE& color : colors) {
-        const EditorHsvUVE hsv = RgbToHsvUVE(color, EditorHsvUVE{});
-        ExpectColorNear(HsvToRgbUVE(hsv, color.a), color, 1e-5F);
+    for (const EditorColor& color : colors) {
+        const EditorHsv hsv = RgbToHsv(color, EditorHsv{});
+        ExpectColorNear(HsvToRgb(hsv, color.a), color, 1e-5F);
     }
     // Pure green is a third of the way round.
-    EXPECT_NEAR(RgbToHsvUVE(EditorColorUVE{0.0F, 1.0F, 0.0F, 1.0F}, EditorHsvUVE{}).h, 1.0F / 3.0F, 1e-6F);
+    EXPECT_NEAR(RgbToHsv(EditorColor{0.0F, 1.0F, 0.0F, 1.0F}, EditorHsv{}).h, 1.0F / 3.0F, 1e-6F);
 
     // A grey has no hue and black no saturation: both are carried over from before, so the
     // picker's marker stays where the author left it.
-    const EditorHsvUVE previous{0.6F, 0.8F, 0.5F};
-    const EditorHsvUVE grey = RgbToHsvUVE(EditorColorUVE{0.4F, 0.4F, 0.4F, 1.0F}, previous);
+    const EditorHsv previous{0.6F, 0.8F, 0.5F};
+    const EditorHsv grey = RgbToHsv(EditorColor{0.4F, 0.4F, 0.4F, 1.0F}, previous);
     EXPECT_FLOAT_EQ(grey.h, 0.6F);
     EXPECT_FLOAT_EQ(grey.s, 0.0F);
     EXPECT_FLOAT_EQ(grey.v, 0.4F);
-    const EditorHsvUVE black = RgbToHsvUVE(EditorColorUVE{0.0F, 0.0F, 0.0F, 1.0F}, previous);
+    const EditorHsv black = RgbToHsv(EditorColor{0.0F, 0.0F, 0.0F, 1.0F}, previous);
     EXPECT_FLOAT_EQ(black.h, 0.6F);
     EXPECT_FLOAT_EQ(black.s, 0.8F);
     EXPECT_FLOAT_EQ(black.v, 0.0F);
 
     // A hue of exactly 1 is the same red as 0.
-    ExpectColorNear(HsvToRgbUVE(EditorHsvUVE{1.0F, 1.0F, 1.0F}, 1.0F), EditorColorUVE{1.0F, 0.0F, 0.0F, 1.0F});
+    ExpectColorNear(HsvToRgb(EditorHsv{1.0F, 1.0F, 1.0F}, 1.0F), EditorColor{1.0F, 0.0F, 0.0F, 1.0F});
 }
 
-TEST(EditorColorUVETest, LinearSrgbHdrExposureAndChannelNudgeWorkDeterministically) {
-    const EditorColorUVE linear{0.214041F, 0.5F, 0.01F, 0.75F};
-    const EditorColorUVE srgb = LinearToSrgbColorUVE(linear);
-    const EditorColorUVE roundTripped = SrgbToLinearColorUVE(srgb);
+TEST(EditorColorTest, LinearSrgbHdrExposureAndChannelNudgeWorkDeterministically) {
+    const EditorColor linear{0.214041F, 0.5F, 0.01F, 0.75F};
+    const EditorColor srgb = LinearToSrgbColor(linear);
+    const EditorColor roundTripped = SrgbToLinearColor(srgb);
     ExpectColorNear(roundTripped, linear, 1e-5F);
 
-    const EditorColorUVE hdr = ApplyHdrExposureToColorUVE(EditorColorUVE{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, false);
+    const EditorColor hdr = ApplyHdrExposureToColor(EditorColor{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, false);
     EXPECT_FLOAT_EQ(hdr.r, 2.0F);
     EXPECT_FLOAT_EQ(hdr.g, 1.0F);
     EXPECT_FLOAT_EQ(hdr.a, 0.8F);
 
-    const EditorColorUVE ldrClamped = ApplyHdrExposureToColorUVE(EditorColorUVE{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, true);
+    const EditorColor ldrClamped = ApplyHdrExposureToColor(EditorColor{0.5F, 0.25F, 0.1F, 0.8F}, 2.0F, true);
     EXPECT_FLOAT_EQ(ldrClamped.r, 1.0F);
 
-    EditorColorUVE nudged{0.95F, 0.5F, 0.2F, 1.0F};
-    NudgeColorChannelUVE(nudged, 0U, 0.2F, true);
+    EditorColor nudged{0.95F, 0.5F, 0.2F, 1.0F};
+    NudgeColorChannel(nudged, 0U, 0.2F, true);
     EXPECT_FLOAT_EQ(nudged.r, 1.0F);
-    NudgeColorChannelUVE(nudged, 0U, 0.5F, false);
+    NudgeColorChannel(nudged, 0U, 0.5F, false);
     EXPECT_FLOAT_EQ(nudged.r, 1.5F);
 }
 

@@ -15,60 +15,60 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteBytesUVE(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
+void WriteBytes(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(output.is_open());
     output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     ASSERT_TRUE(output.good());
 }
 
-void RemoveFilesUVE(const std::initializer_list<std::filesystem::path>& paths) {
+void RemoveFiles(const std::initializer_list<std::filesystem::path>& paths) {
     for (const auto& path : paths) {
         std::filesystem::remove(path);
     }
 }
 
-TEST(TtfImporterUVETest, ImportUVE_ValidTtfPublishesUvfontAndRegistersGuid) {
+TEST(TtfImporterTest, Import_ValidTtfPublishesUvfontAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_ttf_importer_tests_face.ttf";
     const std::filesystem::path destinationPath = "uve_ttf_importer_tests_face.uvfont";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, {std::byte{0x00}, std::byte{0x01}, std::byte{0x00}, std::byte{0x00},
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, {std::byte{0x00}, std::byte{0x01}, std::byte{0x00}, std::byte{0x00},
                                        std::byte{0xAA}, std::byte{0xBB}});
 
-    AssetImporterUVE importer;
-    RegisterTtfImporterUVE(importer);
-    AssetDatabaseUVE database;
-    const AssetImportSourceClassificationUVE classification = importer.ClassifySourceUVE(sourcePath);
-    EXPECT_EQ(classification.kind, AssetImportSourceKindUVE::RawFont);
+    AssetImporter importer;
+    RegisterTtfImporter(importer);
+    AssetDatabase database;
+    const AssetImportSourceClassification classification = importer.ClassifySource(sourcePath);
+    EXPECT_EQ(classification.kind, AssetImportSourceKind::RawFont);
     EXPECT_TRUE(classification.importerRegistered);
     EXPECT_TRUE(classification.requiresFormatSpecificParser);
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(guid), destinationPath);
-    FontAssetUVE font;
-    ASSERT_TRUE(LoadFontAssetUVE(destinationPath, font));
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(guid), destinationPath);
+    FontAsset font;
+    ASSERT_TRUE(LoadFontAsset(destinationPath, font));
     EXPECT_EQ(font.familyName, "uve_ttf_importer_tests_face");
     ASSERT_EQ(font.fontData.size(), 6U);
     EXPECT_EQ(font.fontData[4U], std::byte{0xAA});
-    RemoveFilesUVE({sourcePath, destinationPath});
+    RemoveFiles({sourcePath, destinationPath});
 }
 
-TEST(TtfImporterUVETest, ImportUVE_NonFontSourceFailsClosedWithoutRegistering) {
+TEST(TtfImporterTest, Import_NonFontSourceFailsClosedWithoutRegistering) {
     const std::filesystem::path sourcePath = "uve_ttf_importer_tests_text.ttf";
     const std::filesystem::path destinationPath = "uve_ttf_importer_tests_text.uvfont";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, {std::byte{'n'}, std::byte{'o'}, std::byte{'t'}, std::byte{'a'},
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, {std::byte{'n'}, std::byte{'o'}, std::byte{'t'}, std::byte{'a'},
                                        std::byte{'f'}, std::byte{'o'}, std::byte{'n'}, std::byte{'t'}});
 
-    AssetImporterUVE importer;
-    RegisterTtfImporterUVE(importer);
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    AssetImporter importer;
+    RegisterTtfImporter(importer);
+    AssetDatabase database;
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
-    EXPECT_TRUE(database.ResolveUVE(guid).empty());
-    RemoveFilesUVE({sourcePath, destinationPath});
+    EXPECT_EQ(guid, kInvalidAssetGuid);
+    EXPECT_TRUE(database.Resolve(guid).empty());
+    RemoveFiles({sourcePath, destinationPath});
 }
 
 } // namespace

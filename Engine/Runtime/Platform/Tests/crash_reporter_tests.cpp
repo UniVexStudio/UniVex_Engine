@@ -20,36 +20,36 @@
 namespace UVE::Platform::Tests {
 namespace {
 
-TEST(CrashReporterUVETest, InstallAndRelease_RemovesTheUnusedReservedReport) {
-    const std::filesystem::path dumpDirectory = ::UVE::Tests::MakeTestCaseDirectoryUVE("crash-reports");
+TEST(CrashReporterTest, InstallAndRelease_RemovesTheUnusedReservedReport) {
+    const std::filesystem::path dumpDirectory = ::UVE::Tests::MakeTestCaseDirectory("crash-reports");
     std::filesystem::path reportPath;
     {
-        CrashReporterUVE reporter;
-        const CrashReporterResultUVE result = reporter.InstallUVE(dumpDirectory, "com.example.crash-test");
-        ASSERT_TRUE(result.IsInstalledUVE()) << result.message;
+        CrashReporter reporter;
+        const CrashReporterResult result = reporter.Install(dumpDirectory, "com.example.crash-test");
+        ASSERT_TRUE(result.IsInstalled()) << result.message;
         reportPath = result.reportPath;
         EXPECT_TRUE(std::filesystem::is_regular_file(reportPath));
 
-        CrashReporterUVE duplicate;
-        const CrashReporterResultUVE duplicateResult =
-            duplicate.InstallUVE(dumpDirectory, "com.example.crash-test");
-        EXPECT_EQ(duplicateResult.code, CrashReporterCodeUVE::AlreadyInstalled);
+        CrashReporter duplicate;
+        const CrashReporterResult duplicateResult =
+            duplicate.Install(dumpDirectory, "com.example.crash-test");
+        EXPECT_EQ(duplicateResult.code, CrashReporterCode::AlreadyInstalled);
     }
     EXPECT_FALSE(std::filesystem::exists(reportPath));
 
-    CrashReporterUVE afterRelease;
-    EXPECT_TRUE(afterRelease.InstallUVE(dumpDirectory, "com.example.crash-test").IsInstalledUVE());
+    CrashReporter afterRelease;
+    EXPECT_TRUE(afterRelease.Install(dumpDirectory, "com.example.crash-test").IsInstalled());
 }
 
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
-TEST(CrashReporterUVETest, FatalSignalInChild_LeavesAnAsyncSafeReport) {
-    const std::filesystem::path dumpDirectory = ::UVE::Tests::MakeTestCaseDirectoryUVE("fatal-signal");
+TEST(CrashReporterTest, FatalSignalInChild_LeavesAnAsyncSafeReport) {
+    const std::filesystem::path dumpDirectory = ::UVE::Tests::MakeTestCaseDirectory("fatal-signal");
     const pid_t child = fork();
     ASSERT_NE(child, static_cast<pid_t>(-1));
     if (child == 0) {
-        CrashReporterUVE reporter;
-        const CrashReporterResultUVE result = reporter.InstallUVE(dumpDirectory, "com.example.signal-test");
-        if (!result.IsInstalledUVE()) {
+        CrashReporter reporter;
+        const CrashReporterResult result = reporter.Install(dumpDirectory, "com.example.signal-test");
+        if (!result.IsInstalled()) {
             _exit(20);
         }
         static_cast<void>(raise(SIGABRT));

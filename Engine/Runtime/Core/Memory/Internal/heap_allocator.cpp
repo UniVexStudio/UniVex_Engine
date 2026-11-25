@@ -10,25 +10,25 @@
 
 namespace UVE::Memory {
 
-HeapAllocatorUVE::HeapAllocatorUVE(IMemoryTrackerUVE* tracker, std::string_view allocatorTag)
+HeapAllocator::HeapAllocator(IMemoryTracker* tracker, std::string_view allocatorTag)
     : m_tracker(tracker), m_allocatorTag(allocatorTag) {}
 
-void* HeapAllocatorUVE::AllocateUVE(std::size_t sizeBytes, std::size_t alignment,
+void* HeapAllocator::Allocate(std::size_t sizeBytes, std::size_t alignment,
                                      const char* sourceFile, int sourceLine) {
-    UVE_ASSERT(IsValidAlignmentUVE(alignment));
+    UVE_ASSERT(IsValidAlignment(alignment));
 
     void* const pointer = ::operator new(sizeBytes, std::align_val_t{alignment});
-    m_outstandingAllocations.emplace(pointer, OutstandingAllocationUVE{sizeBytes, alignment});
+    m_outstandingAllocations.emplace(pointer, OutstandingAllocation{sizeBytes, alignment});
     m_allocatedBytes += sizeBytes;
 
     if (m_tracker != nullptr) {
-        m_tracker->RecordAllocationUVE(pointer, sizeBytes, alignment, m_allocatorTag, sourceFile,
+        m_tracker->RecordAllocation(pointer, sizeBytes, alignment, m_allocatorTag, sourceFile,
                                         sourceLine);
     }
     return pointer;
 }
 
-void HeapAllocatorUVE::DeallocateUVE(void* pointer) {
+void HeapAllocator::Deallocate(void* pointer) {
     if (pointer == nullptr) {
         return;
     }
@@ -36,27 +36,27 @@ void HeapAllocatorUVE::DeallocateUVE(void* pointer) {
     const auto outstandingIt = m_outstandingAllocations.find(pointer);
     UVE_ASSERT(outstandingIt != m_outstandingAllocations.end());
     if (outstandingIt == m_outstandingAllocations.end()) {
-        UVE_ERROR("HeapAllocatorUVE: DeallocateUVE called with a pointer this allocator never allocated "
+        UVE_ERROR("HeapAllocator: Deallocate called with a pointer this allocator never allocated "
                    "(double-free or wrong-allocator bug)");
         return;
     }
 
-    const OutstandingAllocationUVE metadata = outstandingIt->second;
+    const OutstandingAllocation metadata = outstandingIt->second;
     m_outstandingAllocations.erase(outstandingIt);
     m_allocatedBytes -= metadata.sizeBytes;
 
     // Report the deallocation to the tracker before actually freeing the memory: passing
-    // `pointer` to RecordDeallocationUVE() after ::operator delete() has run trips
+    // `pointer` to RecordDeallocation() after ::operator delete() has run trips
     // -Wuse-after-free under optimization, even though only the address value (never the
     // pointee) is used past that point.
     if (m_tracker != nullptr) {
-        m_tracker->RecordDeallocationUVE(pointer);
+        m_tracker->RecordDeallocation(pointer);
     }
 
     ::operator delete(pointer, std::align_val_t{metadata.alignment});
 }
 
-std::size_t HeapAllocatorUVE::GetAllocatedBytesUVE() const {
+std::size_t HeapAllocator::GetAllocatedBytes() const {
     return m_allocatedBytes;
 }
 

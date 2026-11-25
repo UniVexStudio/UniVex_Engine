@@ -3051,10 +3051,10 @@ static void testHostGizmos() {
 // A dialog button acts on what was typed: the action runs while the dialog is still open (it used
 // to run after the dialog was closed and freed, so a field read through a weak reference was gone and
 // OK did nothing - only Enter worked).
-static Button* findButtonUVE(Widget* w, const std::string& label) {
+static Button* findButton(Widget* w, const std::string& label) {
   if (auto* b = dynamic_cast<Button*>(w); b && b->text() == label) return b;
   for (const Ref<Widget>& c : w->children()) {
-    if (Button* found = findButtonUVE(c.get(), label)) return found;
+    if (Button* found = findButton(c.get(), label)) return found;
   }
   return nullptr;
 }
@@ -3074,7 +3074,7 @@ static void testDialogButtonsReadFields(Application& app) {
   Widget* root = field.get();
   while (root->parent() != nullptr) root = root->parent();
   field.reset();   // the dialog holds the only reference now, as in the editor
-  Button* ok = findButtonUVE(root, "OK");
+  Button* ok = findButton(root, "OK");
   CHECK(ok != nullptr);
   if (ok != nullptr) {
     const Vec2 p = ok->rect().center();

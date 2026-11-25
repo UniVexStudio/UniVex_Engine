@@ -18,22 +18,22 @@
 namespace UVE::Save::Tests {
 namespace {
 
-using Scene::EntityManagerUVE;
-using Scene::EntityUVE;
-using Scene::SceneSerializerUVE;
+using Scene::EntityManager;
+using Scene::Entity;
+using Scene::SceneSerializer;
 
-class CheckpointManagerUVETest : public ::testing::Test {
+class CheckpointManagerTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneSerializerUVE sceneSerializer;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneSerializer sceneSerializer;
     std::filesystem::path saveDirectory = "uve_checkpoint_manager_tests_saves";
-    SaveGameSystemUVE saveGameSystem{sceneSerializer, saveDirectory};
-    CheckpointManagerUVE checkpointManager{saveGameSystem, 2.0};
+    SaveGameSystem saveGameSystem{sceneSerializer, saveDirectory};
+    CheckpointManager checkpointManager{saveGameSystem, 2.0};
 
-    [[nodiscard]] std::vector<EntityUVE> MakeRootEntitiesUVE() {
-        return {entityManager.CreateEntityUVE()};
+    [[nodiscard]] std::vector<Entity> MakeRootEntities() {
+        return {entityManager.CreateEntity()};
     }
 
     void TearDown() override {
@@ -42,147 +42,147 @@ protected:
     }
 };
 
-TEST_F(CheckpointManagerUVETest, UpdateUVE_BeforeIntervalElapses_NoSaveWritten) {
-    checkpointManager.UpdateUVE(1.0, entityManager, MakeRootEntitiesUVE());
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+TEST_F(CheckpointManagerTest, Update_BeforeIntervalElapses_NoSaveWritten) {
+    checkpointManager.Update(1.0, entityManager, MakeRootEntities());
+    EXPECT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 }
 
-TEST_F(CheckpointManagerUVETest, CheckpointUVE_FailedSavePreservesElapsedTime) {
-    checkpointManager.UpdateUVE(0.5, entityManager, MakeRootEntitiesUVE());
-    ASSERT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.5);
+TEST_F(CheckpointManagerTest, Checkpoint_FailedSavePreservesElapsedTime) {
+    checkpointManager.Update(0.5, entityManager, MakeRootEntities());
+    ASSERT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.5);
 
-    EXPECT_FALSE(checkpointManager.CheckpointUVE(entityManager, {Scene::kInvalidEntityUVE}));
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.5);
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kManualCheckpointSlotIndexUVE));
+    EXPECT_FALSE(checkpointManager.Checkpoint(entityManager, {Scene::kInvalidEntity}));
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.5);
+    EXPECT_FALSE(saveGameSystem.HasSave(kManualCheckpointSlotIndex));
 }
 
-TEST_F(CheckpointManagerUVETest, UpdateUVE_AtOrAfterIntervalElapses_WritesAutoSaveAndResetsElapsed) {
-    checkpointManager.UpdateUVE(1.0, entityManager, MakeRootEntitiesUVE());
-    checkpointManager.UpdateUVE(1.5, entityManager, MakeRootEntitiesUVE());
+TEST_F(CheckpointManagerTest, Update_AtOrAfterIntervalElapses_WritesAutoSaveAndResetsElapsed) {
+    checkpointManager.Update(1.0, entityManager, MakeRootEntities());
+    checkpointManager.Update(1.5, entityManager, MakeRootEntities());
 
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
-    EXPECT_LT(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 2.0);
+    EXPECT_TRUE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
+    EXPECT_LT(checkpointManager.GetElapsedSinceLastSaveSeconds(), 2.0);
 }
 
-TEST_F(CheckpointManagerUVETest, UpdateUVE_RejectsInvalidDeltaWithoutChangingCounters) {
-    checkpointManager.UpdateUVE(0.5, entityManager, MakeRootEntitiesUVE());
-    ASSERT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.5);
-    ASSERT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSecondsUVE(), 0.5);
+TEST_F(CheckpointManagerTest, Update_RejectsInvalidDeltaWithoutChangingCounters) {
+    checkpointManager.Update(0.5, entityManager, MakeRootEntities());
+    ASSERT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.5);
+    ASSERT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSeconds(), 0.5);
 
-    checkpointManager.UpdateUVE(-1.0, entityManager, MakeRootEntitiesUVE());
-    checkpointManager.UpdateUVE(std::numeric_limits<double>::quiet_NaN(), entityManager,
-                                MakeRootEntitiesUVE());
-    checkpointManager.UpdateUVE(std::numeric_limits<double>::infinity(), entityManager,
-                                MakeRootEntitiesUVE());
+    checkpointManager.Update(-1.0, entityManager, MakeRootEntities());
+    checkpointManager.Update(std::numeric_limits<double>::quiet_NaN(), entityManager,
+                                MakeRootEntities());
+    checkpointManager.Update(std::numeric_limits<double>::infinity(), entityManager,
+                                MakeRootEntities());
 
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.5);
-    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSecondsUVE(), 0.5);
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.5);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSeconds(), 0.5);
+    EXPECT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 
-    checkpointManager.UpdateUVE(1.5, entityManager, MakeRootEntitiesUVE());
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+    checkpointManager.Update(1.5, entityManager, MakeRootEntities());
+    EXPECT_TRUE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 }
 
-TEST_F(CheckpointManagerUVETest, UpdateUVE_AccumulatesTotalPlaytimeAcrossCalls) {
-    checkpointManager.UpdateUVE(1.0, entityManager, MakeRootEntitiesUVE());
-    checkpointManager.UpdateUVE(0.5, entityManager, MakeRootEntitiesUVE());
-    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSecondsUVE(), 1.5);
+TEST_F(CheckpointManagerTest, Update_AccumulatesTotalPlaytimeAcrossCalls) {
+    checkpointManager.Update(1.0, entityManager, MakeRootEntities());
+    checkpointManager.Update(0.5, entityManager, MakeRootEntities());
+    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSeconds(), 1.5);
 }
 
-TEST_F(CheckpointManagerUVETest, CheckpointUVE_WritesImmediately_RegardlessOfElapsedTime) {
-    checkpointManager.UpdateUVE(0.1, entityManager, MakeRootEntitiesUVE());
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+TEST_F(CheckpointManagerTest, Checkpoint_WritesImmediately_RegardlessOfElapsedTime) {
+    checkpointManager.Update(0.1, entityManager, MakeRootEntities());
+    EXPECT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 
-    EXPECT_TRUE(checkpointManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kManualCheckpointSlotIndexUVE));
+    EXPECT_TRUE(checkpointManager.Checkpoint(entityManager, MakeRootEntities()));
+    EXPECT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
+    EXPECT_TRUE(saveGameSystem.HasSave(kManualCheckpointSlotIndex));
 }
 
-TEST_F(CheckpointManagerUVETest, CheckpointUVE_ResetsElapsedTimer_DefersNextAutoSave) {
-    ASSERT_TRUE(checkpointManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kManualCheckpointSlotIndexUVE));
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.0);
+TEST_F(CheckpointManagerTest, Checkpoint_ResetsElapsedTimer_DefersNextAutoSave) {
+    ASSERT_TRUE(checkpointManager.Checkpoint(entityManager, MakeRootEntities()));
+    EXPECT_TRUE(saveGameSystem.HasSave(kManualCheckpointSlotIndex));
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.0);
 
-    checkpointManager.UpdateUVE(1.9, entityManager, MakeRootEntitiesUVE());
+    checkpointManager.Update(1.9, entityManager, MakeRootEntities());
     // Still under the 2.0s interval since the checkpoint reset the timer - no second auto-save.
-    EXPECT_LT(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 2.0);
+    EXPECT_LT(checkpointManager.GetElapsedSinceLastSaveSeconds(), 2.0);
 }
 
-TEST_F(CheckpointManagerUVETest, AutoSaveNeverCollidesWithNumberedSlots) {
-    const EntityUVE numberedEntity = entityManager.CreateEntityUVE();
-    ASSERT_TRUE(saveGameSystem.SaveUVE(7, entityManager, {numberedEntity}, GameStateMetadataUVE{}));
+TEST_F(CheckpointManagerTest, AutoSaveNeverCollidesWithNumberedSlots) {
+    const Entity numberedEntity = entityManager.CreateEntity();
+    ASSERT_TRUE(saveGameSystem.Save(7, entityManager, {numberedEntity}, GameStateMetadata{}));
 
-    ASSERT_TRUE(checkpointManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
+    ASSERT_TRUE(checkpointManager.Checkpoint(entityManager, MakeRootEntities()));
 
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(7));
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kManualCheckpointSlotIndexUVE));
-    EXPECT_EQ(saveGameSystem.ListUsedSlotsUVE(), (std::vector<int>{7}));
+    EXPECT_TRUE(saveGameSystem.HasSave(7));
+    EXPECT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
+    EXPECT_TRUE(saveGameSystem.HasSave(kManualCheckpointSlotIndex));
+    EXPECT_EQ(saveGameSystem.ListUsedSlots(), (std::vector<int>{7}));
 }
 
-TEST_F(CheckpointManagerUVETest, InvalidAutoSaveIntervalsPreserveLastValidConfiguration) {
-    CheckpointManagerUVE invalidConstructionManager{
+TEST_F(CheckpointManagerTest, InvalidAutoSaveIntervalsPreserveLastValidConfiguration) {
+    CheckpointManager invalidConstructionManager{
         saveGameSystem, std::numeric_limits<double>::quiet_NaN()};
-    EXPECT_DOUBLE_EQ(invalidConstructionManager.GetAutoSaveIntervalSecondsUVE(), 300.0);
+    EXPECT_DOUBLE_EQ(invalidConstructionManager.GetAutoSaveIntervalSeconds(), 300.0);
 
-    checkpointManager.UpdateUVE(0.5, entityManager, MakeRootEntitiesUVE());
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(0.0);
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(-1.0);
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(std::numeric_limits<double>::quiet_NaN());
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(std::numeric_limits<double>::infinity());
+    checkpointManager.Update(0.5, entityManager, MakeRootEntities());
+    checkpointManager.SetAutoSaveIntervalSeconds(0.0);
+    checkpointManager.SetAutoSaveIntervalSeconds(-1.0);
+    checkpointManager.SetAutoSaveIntervalSeconds(std::numeric_limits<double>::quiet_NaN());
+    checkpointManager.SetAutoSaveIntervalSeconds(std::numeric_limits<double>::infinity());
 
-    EXPECT_DOUBLE_EQ(checkpointManager.GetAutoSaveIntervalSecondsUVE(), 2.0);
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.5);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetAutoSaveIntervalSeconds(), 2.0);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.5);
 
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(1.0);
-    EXPECT_DOUBLE_EQ(checkpointManager.GetAutoSaveIntervalSecondsUVE(), 1.0);
+    checkpointManager.SetAutoSaveIntervalSeconds(1.0);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetAutoSaveIntervalSeconds(), 1.0);
 }
 
-TEST_F(CheckpointManagerUVETest, SetAutoSaveIntervalSecondsUVE_TakesEffectWithoutResettingElapsed) {
-    checkpointManager.UpdateUVE(1.5, entityManager, MakeRootEntitiesUVE());
-    ASSERT_FALSE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+TEST_F(CheckpointManagerTest, SetAutoSaveIntervalSeconds_TakesEffectWithoutResettingElapsed) {
+    checkpointManager.Update(1.5, entityManager, MakeRootEntities());
+    ASSERT_FALSE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 
-    checkpointManager.SetAutoSaveIntervalSecondsUVE(1.0);
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 1.5);
+    checkpointManager.SetAutoSaveIntervalSeconds(1.0);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 1.5);
 
-    // The next UpdateUVE() call should fire immediately since 1.5s already exceeds the new 1.0s
+    // The next Update() call should fire immediately since 1.5s already exceeds the new 1.0s
     // interval, even with a tiny additional delta.
-    checkpointManager.UpdateUVE(0.01, entityManager, MakeRootEntitiesUVE());
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
+    checkpointManager.Update(0.01, entityManager, MakeRootEntities());
+    EXPECT_TRUE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
 }
 
-TEST_F(CheckpointManagerUVETest, AutoSaveAndManualCheckpoint_UseIndependentReservedSlots) {
-    checkpointManager.UpdateUVE(2.0, entityManager, MakeRootEntitiesUVE());
-    ASSERT_TRUE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
-    ASSERT_TRUE(checkpointManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kAutoSaveSlotIndexUVE));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(kManualCheckpointSlotIndexUVE));
-    EXPECT_EQ(saveGameSystem.GetSaveMetadataUVE(kAutoSaveSlotIndexUVE)->slotIndex, kAutoSaveSlotIndexUVE);
-    EXPECT_EQ(saveGameSystem.GetSaveMetadataUVE(kManualCheckpointSlotIndexUVE)->slotIndex,
-              kManualCheckpointSlotIndexUVE);
+TEST_F(CheckpointManagerTest, AutoSaveAndManualCheckpoint_UseIndependentReservedSlots) {
+    checkpointManager.Update(2.0, entityManager, MakeRootEntities());
+    ASSERT_TRUE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
+    ASSERT_TRUE(checkpointManager.Checkpoint(entityManager, MakeRootEntities()));
+    EXPECT_TRUE(saveGameSystem.HasSave(kAutoSaveSlotIndex));
+    EXPECT_TRUE(saveGameSystem.HasSave(kManualCheckpointSlotIndex));
+    EXPECT_EQ(saveGameSystem.GetSaveMetadata(kAutoSaveSlotIndex)->slotIndex, kAutoSaveSlotIndex);
+    EXPECT_EQ(saveGameSystem.GetSaveMetadata(kManualCheckpointSlotIndex)->slotIndex,
+              kManualCheckpointSlotIndex);
 }
 
-TEST_F(CheckpointManagerUVETest, GetTotalPlaytimeSecondsUVE_FeedsIntoSavedMetadata) {
-    checkpointManager.UpdateUVE(1.0, entityManager, MakeRootEntitiesUVE());
-    ASSERT_TRUE(checkpointManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
+TEST_F(CheckpointManagerTest, GetTotalPlaytimeSeconds_FeedsIntoSavedMetadata) {
+    checkpointManager.Update(1.0, entityManager, MakeRootEntities());
+    ASSERT_TRUE(checkpointManager.Checkpoint(entityManager, MakeRootEntities()));
 
-    const std::optional<GameStateMetadataUVE> metadata = saveGameSystem.GetSaveMetadataUVE(kManualCheckpointSlotIndexUVE);
+    const std::optional<GameStateMetadata> metadata = saveGameSystem.GetSaveMetadata(kManualCheckpointSlotIndex);
     ASSERT_TRUE(metadata.has_value());
-    EXPECT_DOUBLE_EQ(metadata->playtimeSeconds, checkpointManager.GetTotalPlaytimeSecondsUVE());
+    EXPECT_DOUBLE_EQ(metadata->playtimeSeconds, checkpointManager.GetTotalPlaytimeSeconds());
 }
 
-TEST_F(CheckpointManagerUVETest, CheckpointUVE_PreservesMetadataTemplateFields) {
-    GameStateMetadataUVE metadataTemplate;
+TEST_F(CheckpointManagerTest, Checkpoint_PreservesMetadataTemplateFields) {
+    GameStateMetadata metadataTemplate;
     metadataTemplate.engineVersionMajor = 4;
     metadataTemplate.engineVersionMinor = 2;
     metadataTemplate.engineVersionPatch = 7;
     metadataTemplate.engineVersionBuild = 19;
     metadataTemplate.saveName = "checkpoint-template";
-    CheckpointManagerUVE templatedManager{saveGameSystem, 2.0, metadataTemplate};
+    CheckpointManager templatedManager{saveGameSystem, 2.0, metadataTemplate};
 
-    ASSERT_TRUE(templatedManager.CheckpointUVE(entityManager, MakeRootEntitiesUVE()));
-    const std::optional<GameStateMetadataUVE> metadata =
-        saveGameSystem.GetSaveMetadataUVE(kManualCheckpointSlotIndexUVE);
+    ASSERT_TRUE(templatedManager.Checkpoint(entityManager, MakeRootEntities()));
+    const std::optional<GameStateMetadata> metadata =
+        saveGameSystem.GetSaveMetadata(kManualCheckpointSlotIndex);
     ASSERT_TRUE(metadata.has_value());
     EXPECT_EQ(metadata->engineVersionMajor, metadataTemplate.engineVersionMajor);
     EXPECT_EQ(metadata->engineVersionMinor, metadataTemplate.engineVersionMinor);

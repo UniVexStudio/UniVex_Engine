@@ -14,15 +14,15 @@
 namespace UVE::Debug::Detail {
 
 /// Formats `formatString`/`args` and routes the result to the currently
-/// active LoggerUVE (see LoggerUVE::GetActiveInstanceUVE()), tagged with the
+/// active Logger (see Logger::GetActiveInstance()), tagged with the
 /// given severity level and source location. Safely does nothing if no
 /// logger is currently active (before engine Init() or after Shutdown()).
 /// Not intended to be called directly — use the UVE_LOG-family macros below.
 /// Thread-safety: safe to call from any thread; delegates entirely to
-/// LoggerUVE, which is itself thread-safe.
+/// Logger, which is itself thread-safe.
 template <typename... TArgs>
-UVE_INLINE void LogToActiveInstanceUVE(
-    LogLevelUVE level,
+UVE_INLINE void LogToActiveInstance(
+    LogLevel level,
     const char* sourceFile,
     int sourceLine,
 #if UVE_HAS_STD_FORMAT
@@ -31,22 +31,22 @@ UVE_INLINE void LogToActiveInstanceUVE(
     fmt::format_string<TArgs...> formatString,
 #endif
     TArgs&&... args) {
-    LoggerUVE* const activeLogger = LoggerUVE::GetActiveInstanceUVE();
+    Logger* const activeLogger = Logger::GetActiveInstance();
     if (activeLogger == nullptr) {
         return;
     }
     activeLogger->LogFormatted(level, std::string_view{}, sourceFile, sourceLine,
-                                FormatLogMessageUVE(formatString, std::forward<TArgs>(args)...));
+                                FormatLogMessage(formatString, std::forward<TArgs>(args)...));
 }
 
 } // namespace UVE::Debug::Detail
 
-/// Logs a formatted message at an explicit LogLevelUVE. `fmt` is a
+/// Logs a formatted message at an explicit LogLevel. `fmt` is a
 /// std::format/{fmt}-style format string (compile-time validated against
 /// `...`); prefer the UVE_TRACE/INFO/WARNING/ERROR/FATAL convenience macros
 /// below unless the level is only known at runtime as a variable.
 #define UVE_LOG(level, fmt, ...) \
-    ::UVE::Debug::Detail::LogToActiveInstanceUVE((level), __FILE__, __LINE__, fmt __VA_OPT__(, ) __VA_ARGS__)
+    ::UVE::Debug::Detail::LogToActiveInstance((level), __FILE__, __LINE__, fmt __VA_OPT__(, ) __VA_ARGS__)
 
 /// Compile-time log stripping.
 ///
@@ -69,30 +69,30 @@ UVE_INLINE void LogToActiveInstanceUVE(
 #define UVE_COMPILED_LOG_LEVEL 0
 #endif
 
-/// Logs a formatted message at LogLevelUVE::Trace.
+/// Logs a formatted message at LogLevel::Trace.
 #if UVE_COMPILED_LOG_LEVEL > 0
 #define UVE_TRACE(fmt, ...) ((void)0)
 #else
-#define UVE_TRACE(fmt, ...) UVE_LOG(::UVE::Debug::LogLevelUVE::Trace, fmt __VA_OPT__(, ) __VA_ARGS__)
+#define UVE_TRACE(fmt, ...) UVE_LOG(::UVE::Debug::LogLevel::Trace, fmt __VA_OPT__(, ) __VA_ARGS__)
 #endif
-/// Logs a formatted message at LogLevelUVE::Info.
+/// Logs a formatted message at LogLevel::Info.
 #if UVE_COMPILED_LOG_LEVEL > 2
 #define UVE_INFO(fmt, ...) ((void)0)
 #else
-#define UVE_INFO(fmt, ...) UVE_LOG(::UVE::Debug::LogLevelUVE::Info, fmt __VA_OPT__(, ) __VA_ARGS__)
+#define UVE_INFO(fmt, ...) UVE_LOG(::UVE::Debug::LogLevel::Info, fmt __VA_OPT__(, ) __VA_ARGS__)
 #endif
-/// Logs a formatted message at LogLevelUVE::Warning.
+/// Logs a formatted message at LogLevel::Warning.
 #if UVE_COMPILED_LOG_LEVEL > 3
 #define UVE_WARNING(fmt, ...) ((void)0)
 #else
-#define UVE_WARNING(fmt, ...) UVE_LOG(::UVE::Debug::LogLevelUVE::Warning, fmt __VA_OPT__(, ) __VA_ARGS__)
+#define UVE_WARNING(fmt, ...) UVE_LOG(::UVE::Debug::LogLevel::Warning, fmt __VA_OPT__(, ) __VA_ARGS__)
 #endif
-/// Logs a formatted message at LogLevelUVE::Error.
+/// Logs a formatted message at LogLevel::Error.
 #if UVE_COMPILED_LOG_LEVEL > 4
 #define UVE_ERROR(fmt, ...) ((void)0)
 #else
-#define UVE_ERROR(fmt, ...) UVE_LOG(::UVE::Debug::LogLevelUVE::Error, fmt __VA_OPT__(, ) __VA_ARGS__)
+#define UVE_ERROR(fmt, ...) UVE_LOG(::UVE::Debug::LogLevel::Error, fmt __VA_OPT__(, ) __VA_ARGS__)
 #endif
-/// Logs a formatted message at LogLevelUVE::Fatal. Fatal messages are
+/// Logs a formatted message at LogLevel::Fatal. Fatal messages are
 /// guaranteed to be flushed to every sink before LogFormatted() returns.
-#define UVE_FATAL(fmt, ...) UVE_LOG(::UVE::Debug::LogLevelUVE::Fatal, fmt __VA_OPT__(, ) __VA_ARGS__)
+#define UVE_FATAL(fmt, ...) UVE_LOG(::UVE::Debug::LogLevel::Fatal, fmt __VA_OPT__(, ) __VA_ARGS__)

@@ -36,19 +36,19 @@
 namespace UVE::App::Viewports {
 namespace {
 
-using VpInputUVE = Editor::EditorViewportInputUVE;
-using VpBtnUVE = VpInputUVE::ButtonUVE;
-using VpKeyUVE = VpInputUVE::KeyUVE;
+using VpInput = Editor::EditorViewportInput;
+using VpBtn = VpInput::Button;
+using VpKey = VpInput::Key;
 
 // How far the pointer may travel (in view pixels) and still count as a click rather than a drag.
-constexpr float kNavClickSlopPixelsUVE = 4.0F;
+constexpr float kNavClickSlopPixels = 4.0F;
 
 // Scene depth for the PRISM shell's overlays: each output texel is the nearest surface of a 2x2
 // block of the renderer's depth target, as the distance along the editor view's forward axis from
 // its eye (world units), or 1e30 where nothing was drawn.
 #if defined(UNIVEX_GL_ES)
-constexpr float kHostDepthMaxRangeMetersUVE = 10000.0F;
-constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
+constexpr float kHostDepthMaxRangeMeters = 10000.0F;
+constexpr std::string_view kHostDepthFragmentShader = R"(#version 330 core
 uniform sampler2D uDepth;
 uniform mat4 uInvViewProj;
 uniform vec3 uEye;
@@ -88,7 +88,7 @@ void main() {
 }
 )";
 #else
-constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
+constexpr std::string_view kHostDepthFragmentShader = R"(#version 330 core
 uniform sampler2D uDepth;
 uniform mat4 uInvViewProj;
 uniform vec3 uEye;
@@ -126,16 +126,16 @@ void main() {
 
 } // namespace
 
-ViewportSceneInteractionUVE::ViewportSceneInteractionUVE(Editor::EditorUVE& editor,
-                                                         Scene::IEntityManagerUVE& entityManager)
+ViewportSceneInteraction::ViewportSceneInteraction(Editor::Editor& editor,
+                                                         Scene::IEntityManager& entityManager)
     : m_editor(editor), m_entityManager(entityManager) {
     m_camera.Settings().allowFullOrbit = true;
-    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    const auto& prefs = m_editor.GetExtendedPreferences();
     m_camera.Settings().fovYRadians = static_cast<float>(prefs.defaultCameraFovDegrees) * 3.14159265F / 180.0F;
     m_flySpeed = static_cast<float>(prefs.freelookBaseSpeed);
 }
 
-ViewportSceneInteractionUVE::~ViewportSceneInteractionUVE() {
+ViewportSceneInteraction::~ViewportSceneInteraction() {
     if (m_hostDepthPbo[0] != 0U || m_hostDepthPbo[1] != 0U) {
         glDeleteBuffers(2, m_hostDepthPbo.data());
         m_hostDepthPbo = {};
@@ -156,12 +156,12 @@ ViewportSceneInteractionUVE::~ViewportSceneInteractionUVE() {
     }
 }
 
-ViewportCameraPoseUVE ViewportSceneInteractionUVE::CapturePoseUVE() const noexcept {
-    return ViewportCameraPoseUVE{m_camera.Target(), m_camera.Yaw(), m_camera.Pitch(), m_camera.Distance(),
+ViewportCameraPose ViewportSceneInteraction::CapturePose() const noexcept {
+    return ViewportCameraPose{m_camera.Target(), m_camera.Yaw(), m_camera.Pitch(), m_camera.Distance(),
                                  m_camera.IsOrthographic()};
 }
 
-void ViewportSceneInteractionUVE::RestorePoseUVE(const ViewportCameraPoseUVE& pose) {
+void ViewportSceneInteraction::RestorePose(const ViewportCameraPose& pose) {
     m_camera.CancelAnimation();
     m_camera.SetTarget(pose.target);
     m_camera.SetYawPitch(pose.yaw, pose.pitch);
@@ -169,51 +169,51 @@ void ViewportSceneInteractionUVE::RestorePoseUVE(const ViewportCameraPoseUVE& po
     m_camera.SetOrthographic(pose.orthographic);
 }
 
-univex::math::Vec3 ViewportSceneInteractionUVE::NamedViewDirectionUVE(const Editor::EditorUVE::ViewportViewUVE view) {
-    using ViewportViewUVE = Editor::EditorUVE::ViewportViewUVE;
+univex::math::Vec3 ViewportSceneInteraction::NamedViewDirection(const Editor::Editor::ViewportView view) {
+    using ViewportView = Editor::Editor::ViewportView;
     switch (view) {
-        case ViewportViewUVE::Top: return {0.0F, 1.0F, 0.0F};
-        case ViewportViewUVE::Bottom: return {0.0F, -1.0F, 0.0F};
-        case ViewportViewUVE::Front: return {0.0F, 0.0F, 1.0F};
-        case ViewportViewUVE::Back: return {0.0F, 0.0F, -1.0F};
-        case ViewportViewUVE::Right: return {1.0F, 0.0F, 0.0F};
-        case ViewportViewUVE::Left: return {-1.0F, 0.0F, 0.0F};
-        case ViewportViewUVE::User: break;
+        case ViewportView::Top: return {0.0F, 1.0F, 0.0F};
+        case ViewportView::Bottom: return {0.0F, -1.0F, 0.0F};
+        case ViewportView::Front: return {0.0F, 0.0F, 1.0F};
+        case ViewportView::Back: return {0.0F, 0.0F, -1.0F};
+        case ViewportView::Right: return {1.0F, 0.0F, 0.0F};
+        case ViewportView::Left: return {-1.0F, 0.0F, 0.0F};
+        case ViewportView::User: break;
     }
     return {0.0F, 0.0F, 0.0F};
 }
 
-void ViewportSceneInteractionUVE::ApplyNamedViewUVE(const Editor::EditorUVE::ViewportViewUVE view) {
-    using ViewportViewUVE = Editor::EditorUVE::ViewportViewUVE;
+void ViewportSceneInteraction::ApplyNamedView(const Editor::Editor::ViewportView view) {
+    using ViewportView = Editor::Editor::ViewportView;
     constexpr float kHalfPi = 1.5707963F;
     const auto& limits = m_camera.Settings();
     switch (view) {
-        case ViewportViewUVE::Top: m_camera.SnapToYawPitch(kHalfPi, limits.pitchMax); return;
-        case ViewportViewUVE::Bottom: m_camera.SnapToYawPitch(kHalfPi, limits.pitchMin); return;
-        case ViewportViewUVE::User: return;
-        default: m_camera.SnapToDirection(NamedViewDirectionUVE(view)); return;
+        case ViewportView::Top: m_camera.SnapToYawPitch(kHalfPi, limits.pitchMax); return;
+        case ViewportView::Bottom: m_camera.SnapToYawPitch(kHalfPi, limits.pitchMin); return;
+        case ViewportView::User: return;
+        default: m_camera.SnapToDirection(NamedViewDirection(view)); return;
     }
 }
 
-void ViewportSceneInteractionUVE::FocusCameraOnEntityUVE(const Scene::EntityUVE entity) {
-    if (const std::optional<Editor::EditorViewportBookmarkUVE> markerView =
-            m_editor.ComposeMarker3DFocusBookmarkUVE(entity)) {
-        m_editor.NotifyViewportOrbitedUVE();
+void ViewportSceneInteraction::FocusCameraOnEntity(const Scene::Entity entity) {
+    if (const std::optional<Editor::EditorViewportBookmark> markerView =
+            m_editor.ComposeMarker3DFocusBookmark(entity)) {
+        m_editor.NotifyViewportOrbited();
         m_camera.CancelAnimation();
-        m_camera.SetTarget(univex::integration::FromUveVector3UVE(markerView->target));
+        m_camera.SetTarget(univex::integration::FromUveVector3(markerView->target));
         m_camera.SetYawPitch(markerView->yawRadians, markerView->pitchRadians);
         m_camera.SetDistance(markerView->distance);
-    } else if (const std::optional<Math::Vector3UVE> focusTarget = m_editor.ResolveEntityFocusTargetUVE(entity)) {
+    } else if (const std::optional<Math::Vector3> focusTarget = m_editor.ResolveEntityFocusTarget(entity)) {
         m_camera.CancelAnimation();
-        m_camera.SetTarget(univex::integration::FromUveVector3UVE(*focusTarget));
+        m_camera.SetTarget(univex::integration::FromUveVector3(*focusTarget));
     }
 }
 
-void ViewportSceneInteractionUVE::ApplyOverlayStateUVE(ViewportSurfaceUVE& surface,
-                                                       const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::ApplyOverlayState(ViewportSurface& surface,
+                                                       const Editor::Editor::ViewportOverlayState& overlayState,
                                                        const bool suppressGrid) {
-    surface.SetShadingModeUVE(overlayState.shadingMode);
-    auto& renderPass = surface.RenderPassUVE();
+    surface.SetShadingMode(overlayState.shadingMode);
+    auto& renderPass = surface.RenderPass();
     auto& settings = renderPass.Settings();
     settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                     : univex::viewport::ProjectionMode::Perspective;
@@ -222,100 +222,100 @@ void ViewportSceneInteractionUVE::ApplyOverlayStateUVE(ViewportSurfaceUVE& surfa
 
     if (overlayState.viewRequestSerial != m_appliedViewRequestSerial) {
         m_appliedViewRequestSerial = overlayState.viewRequestSerial;
-        ApplyNamedViewUVE(overlayState.view);
+        ApplyNamedView(overlayState.view);
     }
     if (overlayState.focusRequestSerial != m_appliedFocusRequestSerial) {
         m_appliedFocusRequestSerial = overlayState.focusRequestSerial;
-        FocusCameraOnEntityUVE(overlayState.focusEntity);
+        FocusCameraOnEntity(overlayState.focusEntity);
     }
 
-    const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
-    surface.ApplyGridAppearanceUVE(m_editor, overlayState, overlayState.gridVisible && !suppressGrid,
+    const univex::math::Vec3 viewAxis = NamedViewDirection(overlayState.view);
+    surface.ApplyGridAppearance(m_editor, overlayState, overlayState.gridVisible && !suppressGrid,
                                    univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
 
-    constexpr float kSelectionOutlineVisualScaleUVE = 0.20F;
-    renderPass.SetSelectionOutlineUVE(univex::render::SelectionOutlineSettings{
+    constexpr float kSelectionOutlineVisualScale = 0.20F;
+    renderPass.SetSelectionOutline(univex::render::SelectionOutlineSettings{
         overlayState.selectionOutlineVisible, overlayState.selectionOutlineColor.r, overlayState.selectionOutlineColor.g,
         overlayState.selectionOutlineColor.b,
-        overlayState.selectionOutlineThickness * kSelectionOutlineVisualScaleUVE});
+        overlayState.selectionOutlineThickness * kSelectionOutlineVisualScale});
 
     m_pointerOverOverlay = overlayState.pointerOverOverlay;
-    surface.ApplyAxisPaletteUVE(m_editor, overlayState);
+    surface.ApplyAxisPalette(m_editor, overlayState);
 
     const auto toVec3 = [](const std::array<float, 3>& value) {
         return univex::math::Vec3{value[0], value[1], value[2]};
     };
 
-    std::vector<univex::gizmo::BoneOverlayUVE> bones;
+    std::vector<univex::gizmo::BoneOverlay> bones;
     bones.reserve(overlayState.bones.size());
     for (const auto& bone : overlayState.bones) {
-        bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
+        bones.push_back(univex::gizmo::BoneOverlay{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
                                                       bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
                                                       bone.boneSelected, bone.hasColour, toVec3(bone.colour),
                                                       bone.jointOnly, bone.helper});
     }
     if (overlayState.hostDrawsGizmos) {
         const univex::math::Vec3 view = univex::math::Normalize(m_camera.Target() - m_camera.Eye());
-        m_hostBonesMesh = univex::gizmo::BuildBoneMeshUVE(bones, view);
-        renderPass.SetBonesUVE({});
+        m_hostBonesMesh = univex::gizmo::BuildBoneMesh(bones, view);
+        renderPass.SetBones({});
     } else {
         m_hostBonesMesh.Clear();
-        renderPass.SetBonesUVE(std::move(bones));
+        renderPass.SetBones(std::move(bones));
     }
 
-    constexpr float kColliderWireRedUVE = 0.20F;
-    constexpr float kColliderWireGreenUVE = 0.95F;
-    constexpr float kColliderWireBlueUVE = 0.45F;
-    constexpr float kColliderWireWidthPixelsUVE = 1.5F;
-    constexpr float kColliderHighlightWidthPixelsUVE = 2.5F;
-    const univex::math::Vec3 wireColour{kColliderWireRedUVE, kColliderWireGreenUVE, kColliderWireBlueUVE};
+    constexpr float kColliderWireRed = 0.20F;
+    constexpr float kColliderWireGreen = 0.95F;
+    constexpr float kColliderWireBlue = 0.45F;
+    constexpr float kColliderWireWidthPixels = 1.5F;
+    constexpr float kColliderHighlightWidthPixels = 2.5F;
+    const univex::math::Vec3 wireColour{kColliderWireRed, kColliderWireGreen, kColliderWireBlue};
     const univex::math::Vec3 highlightColour{0.70F, 1.00F, 0.82F};
     std::vector<univex::gizmo::GizmoLine> colliderLines;
     colliderLines.reserve(overlayState.colliderLines.size());
     for (const auto& line : overlayState.colliderLines) {
         colliderLines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
                                                          line.highlighted ? highlightColour : wireColour,
-                                                         line.highlighted ? kColliderHighlightWidthPixelsUVE
-                                                                          : kColliderWireWidthPixelsUVE});
+                                                         line.highlighted ? kColliderHighlightWidthPixels
+                                                                          : kColliderWireWidthPixels});
     }
     if (overlayState.hostDrawsGizmos) {
         m_hostColliderLines = std::move(colliderLines);
-        renderPass.SetColliderWireframesUVE({});
+        renderPass.SetColliderWireframes({});
     } else {
         m_hostColliderLines.clear();
-        renderPass.SetColliderWireframesUVE(std::move(colliderLines));
+        renderPass.SetColliderWireframes(std::move(colliderLines));
     }
 }
 
-std::optional<Scene::EntityUVE> ViewportSceneInteractionUVE::UpdateCameraPreviewFlightUVE(
+std::optional<Scene::Entity> ViewportSceneInteraction::UpdateCameraPreviewFlight(
     const bool allowPreview,
-    const Editor::EditorViewportInputUVE& input) {
-    const Scene::EntityUVE previewCamera = m_editor.GetPreviewCameraUVE();
-    const bool wantPreview = allowPreview && (previewCamera != Scene::kInvalidEntityUVE);
+    const Editor::EditorViewportInput& input) {
+    const Scene::Entity previewCamera = m_editor.GetPreviewCamera();
+    const bool wantPreview = allowPreview && (previewCamera != Scene::kInvalidEntity);
     if (wantPreview && !m_previewing) {
-        m_poseBeforePreview = CapturePoseUVE();
+        m_poseBeforePreview = CapturePose();
         m_fovBeforePreview = m_camera.Settings().fovYRadians;
         m_previewing = true;
-        if (const std::optional<CameraFlightPoseUVE> into = CameraEntityPoseUVE(previewCamera)) {
+        if (const std::optional<CameraFlightPose> into = CameraEntityPose(previewCamera)) {
             m_camera.CancelAnimation();
-            m_flight = CameraFlightUVE{CurrentFlightPoseUVE(), *into, 0.0F, true};
+            m_flight = CameraFlight{CurrentFlightPose(), *into, 0.0F, true};
             m_camera.SetOrthographic(false);
         }
     } else if (!wantPreview && m_previewing) {
         if (m_poseBeforePreview.has_value()) {
             m_camera.CancelAnimation();
-            const CameraFlightPoseUVE back{m_poseBeforePreview->target, m_poseBeforePreview->yaw,
+            const CameraFlightPose back{m_poseBeforePreview->target, m_poseBeforePreview->yaw,
                                            m_poseBeforePreview->pitch, m_poseBeforePreview->distance,
                                            m_fovBeforePreview};
-            const std::optional<CameraFlightPoseUVE> from =
-                m_flight.has_value() ? std::optional<CameraFlightPoseUVE>{CurrentFlightPoseUVE()}
-                                     : CameraEntityPoseUVE(m_lastPreviewCamera);
+            const std::optional<CameraFlightPose> from =
+                m_flight.has_value() ? std::optional<CameraFlightPose>{CurrentFlightPose()}
+                                     : CameraEntityPose(m_lastPreviewCamera);
             if (from.has_value()) {
-                ApplyFlightPoseUVE(*from);
-                m_flight = CameraFlightUVE{*from, back, 0.0F, false};
+                ApplyFlightPose(*from);
+                m_flight = CameraFlight{*from, back, 0.0F, false};
             } else {
                 m_flight.reset();
-                ApplyFlightPoseUVE(back);
+                ApplyFlightPose(back);
             }
             m_camera.SetOrthographic(m_poseBeforePreview->orthographic);
             m_poseBeforePreview.reset();
@@ -323,16 +323,16 @@ std::optional<Scene::EntityUVE> ViewportSceneInteractionUVE::UpdateCameraPreview
         m_previewing = false;
     }
 
-    if (previewCamera != Scene::kInvalidEntityUVE) {
+    if (previewCamera != Scene::kInvalidEntity) {
         m_lastPreviewCamera = previewCamera;
     }
 
     if (m_flight.has_value()) {
-        m_flight->t = std::min(1.0F, m_flight->t + input.deltaTime / kCameraFlightSecondsUVE);
+        m_flight->t = std::min(1.0F, m_flight->t + input.deltaTime / kCameraFlightSeconds);
         const float t = m_flight->t;
         const float e = t * t * (3.0F - 2.0F * t);
-        const CameraFlightPoseUVE& a = m_flight->from;
-        const CameraFlightPoseUVE& b = m_flight->to;
+        const CameraFlightPose& a = m_flight->from;
+        const CameraFlightPose& b = m_flight->to;
         float yawDelta = b.yaw - a.yaw;
         while (yawDelta > 3.14159265F) {
             yawDelta -= 6.2831853F;
@@ -340,7 +340,7 @@ std::optional<Scene::EntityUVE> ViewportSceneInteractionUVE::UpdateCameraPreview
         while (yawDelta < -3.14159265F) {
             yawDelta += 6.2831853F;
         }
-        ApplyFlightPoseUVE(CameraFlightPoseUVE{a.target + (b.target - a.target) * e, a.yaw + yawDelta * e,
+        ApplyFlightPose(CameraFlightPose{a.target + (b.target - a.target) * e, a.yaw + yawDelta * e,
                                                a.pitch + (b.pitch - a.pitch) * e,
                                                a.distance + (b.distance - a.distance) * e,
                                                a.fovY + (b.fovY - a.fovY) * e});
@@ -358,50 +358,50 @@ std::optional<Scene::EntityUVE> ViewportSceneInteractionUVE::UpdateCameraPreview
     return std::nullopt;
 }
 
-void ViewportSceneInteractionUVE::UpdateInteractionUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::UpdateInteraction(const Editor::Editor::ViewportOverlayState& overlayState,
                                                        const int width,
                                                        const int height,
                                                        const bool skipAuthoringNavigation) {
-    UpdateSelectionGizmoUVE();
+    UpdateSelectionGizmo();
     if (overlayState.hostDrawsGizmos &&
         (overlayState.orbitRequestX != 0.0F || overlayState.orbitRequestY != 0.0F)) {
         m_camera.Orbit(overlayState.orbitRequestX, overlayState.orbitRequestY);
-        m_editor.NotifyViewportOrbitedUVE();
+        m_editor.NotifyViewportOrbited();
     }
 
-    const VpInputUVE& input = overlayState.input;
+    const VpInput& input = overlayState.input;
     constexpr bool kPointerTaken = false;
-    UpdateSelectionFromMouseUVE(overlayState, width, height, kPointerTaken);
-    UpdateEntityContextToolbarFromMouseUVE(input, width, height, kPointerTaken);
+    UpdateSelectionFromMouse(overlayState, width, height, kPointerTaken);
+    UpdateEntityContextToolbarFromMouse(input, width, height, kPointerTaken);
 
     if (!m_previewing && !skipAuthoringNavigation) {
-        UpdateTouchControllerCameraUVE(overlayState);
-        if (!UpdateFlyCameraUVE(input, kPointerTaken)) {
-            UpdateOrbitPanZoomFromMouseUVE(input, height, kPointerTaken);
-            UpdateViewportViewHotkeysUVE(input);
-            UpdateViewportBookmarkHotkeysUVE(input);
+        UpdateTouchControllerCamera(overlayState);
+        if (!UpdateFlyCamera(input, kPointerTaken)) {
+            UpdateOrbitPanZoomFromMouse(input, height, kPointerTaken);
+            UpdateViewportViewHotkeys(input);
+            UpdateViewportBookmarkHotkeys(input);
         }
     }
 }
 
-void ViewportSceneInteractionUVE::AdvanceCameraAndPublishFocusUVE(const Editor::EditorViewportInputUVE& input) {
+void ViewportSceneInteraction::AdvanceCameraAndPublishFocus(const Editor::EditorViewportInput& input) {
     m_camera.Update(input.deltaTime);
     const univex::math::Vec3 cameraFocus = m_camera.Target();
-    m_editor.SetViewportCameraFocusUVE(Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
+    m_editor.SetViewportCameraFocus(Math::Vector3{cameraFocus.x, cameraFocus.y, cameraFocus.z});
 }
 
-void ViewportSceneInteractionUVE::UpdateObjectGizmoOverlayUVE(
-    ViewportSurfaceUVE& surface,
-    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::UpdateObjectGizmoOverlay(
+    ViewportSurface& surface,
+    const Editor::Editor::ViewportOverlayState& overlayState,
     const int width,
     const int height,
-    const std::optional<Scene::EntityUVE> lookThroughCamera,
+    const std::optional<Scene::Entity> lookThroughCamera,
     const bool wantOverlay) {
-    auto& renderPass = surface.RenderPassUVE();
+    auto& renderPass = surface.RenderPass();
     if (wantOverlay) {
         const float aspect = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
-        const Scene::EntityUVE lookThrough = lookThroughCamera.value_or(Scene::kInvalidEntityUVE);
-        const std::size_t entityCount = m_entityManager.GetEntityCountUVE();
+        const Scene::Entity lookThrough = lookThroughCamera.value_or(Scene::kInvalidEntity);
+        const std::size_t entityCount = m_entityManager.GetEntityCount();
 
         m_overlayRefreshTimerSeconds += overlayState.input.deltaTime;
         const bool timerElapsed = m_overlayRefreshTimerSeconds >= 0.10F;
@@ -416,27 +416,27 @@ void ViewportSceneInteractionUVE::UpdateObjectGizmoOverlayUVE(
             m_cachedLookThroughCamera = lookThrough;
             m_cachedOverlayEntityCount = entityCount;
 
-            ViewportObjectGizmoBuildResultUVE built = ViewportObjectGizmosUVE::BuildAllObjectGizmosUVE(
+            ViewportObjectGizmoBuildResult built = ViewportObjectGizmos::BuildAllObjectGizmos(
                 m_entityManager, lookThrough, aspect, overlayState.hostDrawsGizmos);
             if (overlayState.hostDrawsGizmos) {
                 m_hostOverlayMesh = std::move(built.mesh);
                 m_hostOverlayOccludedFrom = built.colliderLinesStart;
-                renderPass.SetCameraFrustumMeshUVE({});
+                renderPass.SetCameraFrustumMesh({});
             } else {
                 m_hostOverlayMesh.Clear();
-                renderPass.SetCameraFrustumMeshUVE(std::move(built.mesh));
+                renderPass.SetCameraFrustumMesh(std::move(built.mesh));
             }
         }
     } else {
         m_hostOverlayMesh.Clear();
         if (m_cachedOverlayActive) {
-            renderPass.SetCameraFrustumMeshUVE({});
+            renderPass.SetCameraFrustumMesh({});
             m_cachedOverlayActive = false;
         }
     }
 }
 
-void ViewportSceneInteractionUVE::ExportViewForHostUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::ExportViewForHost(const Editor::Editor::ViewportOverlayState& overlayState,
                                                        const int width,
                                                        const int height,
                                                        const bool wantOverlay) {
@@ -486,12 +486,12 @@ void ViewportSceneInteractionUVE::ExportViewForHostUVE(const Editor::EditorUVE::
     }
 }
 
-void ViewportSceneInteractionUVE::ExportGridForHostUVE(const ViewportSurfaceUVE& surface,
-                                                       const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::ExportGridForHost(const ViewportSurface& surface,
+                                                       const Editor::Editor::ViewportOverlayState& overlayState,
                                                        const bool want) {
     auto& out = overlayState.hostGrid;
-    const univex::render::GridSettings& grid = surface.RenderPassUVE().Grid().Settings();
-    out.visible = want && surface.RenderPassUVE().Settings().viewGrid;
+    const univex::render::GridSettings& grid = surface.RenderPass().Grid().Settings();
+    out.visible = want && surface.RenderPass().Settings().viewGrid;
     out.plane = static_cast<int>(grid.plane);
     out.baseSpacing = grid.baseSpacing;
     out.targetCellPixels = grid.targetCellPixels;
@@ -510,25 +510,25 @@ void ViewportSceneInteractionUVE::ExportGridForHostUVE(const ViewportSurfaceUVE&
     out.opacity = grid.opacity;
 }
 
-void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
-    ViewportSurfaceUVE& surface,
-    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::ExportSceneDepthForHost(
+    ViewportSurface& surface,
+    const Editor::Editor::ViewportOverlayState& overlayState,
     const int width,
     const int height) {
     overlayState.sceneDepth.clear();
     overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
 
-    if (surface.IsCompatibilityProfileUVE()) {
+    if (surface.IsCompatibilityProfile()) {
         // Compatibility profile skips the extra depth-linearization FBO pass and glReadPixels
         // GPU->CPU readback altogether to maximize frame pacing on low-end TBDR GPUs.
         return;
     }
 
-    Core::EngineServicesUVE& services = surface.MutableServicesUVE();
-    const Render::SceneDepthExportUVE depth = services.GetRenderer3DUVE().GetLastSceneDepthUVE();
-    auto* const glDevice = dynamic_cast<Render::GlRenderDeviceUVE*>(&services.GetRenderDeviceUVE());
+    Core::EngineServices& services = surface.MutableServices();
+    const Render::SceneDepthExport depth = services.GetRenderer3D().GetLastSceneDepth();
+    auto* const glDevice = dynamic_cast<Render::GlRenderDevice*>(&services.GetRenderDevice());
     if (!depth.valid || glDevice == nullptr || depth.width == 0U || depth.height == 0U ||
-        !EnsureHostDepthUVE(surface, width, height)) {
+        !EnsureHostDepth(surface, width, height)) {
         return;
     }
 
@@ -544,7 +544,7 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     mixDepthKey(&depth.inverseViewProjection, sizeof(depth.inverseViewProjection));
     const int depthDims[2] = {m_hostDepthWidth, m_hostDepthHeight};
     mixDepthKey(depthDims, sizeof(depthDims));
-    const std::size_t entityCount = m_entityManager.GetEntityCountUVE();
+    const std::size_t entityCount = m_entityManager.GetEntityCount();
     mixDepthKey(&entityCount, sizeof(entityCount));
     const bool hasCachedDepth = !m_cachedHostDepth.empty() && m_cachedHostDepthWidth == m_hostDepthWidth &&
                                 m_cachedHostDepthHeight == m_hostDepthHeight;
@@ -554,9 +554,9 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
                               std::fabs(overlayState.touchLookX) > 1e-3F ||
                               std::fabs(overlayState.touchLookY) > 1e-3F ||
                               std::fabs(overlayState.touchZoomDelta) > 1e-3F;
-    const bool pointerActive = touchDriving || overlayState.input.IsDownUVE(VpBtnUVE::Left) ||
-                               overlayState.input.IsDownUVE(VpBtnUVE::Middle) ||
-                               overlayState.input.IsDownUVE(VpBtnUVE::Right);
+    const bool pointerActive = touchDriving || overlayState.input.IsDown(VpBtn::Left) ||
+                               overlayState.input.IsDown(VpBtn::Middle) ||
+                               overlayState.input.IsDown(VpBtn::Right);
     ++m_hostDepthFrameCounter;
     if (hasCachedDepth && ((depthKey == m_cachedHostDepthKey && !pointerActive) ||
                            ((depthKey != m_cachedHostDepthKey || touchDriving) && (m_hostDepthFrameCounter % 8U) != 0U))) {
@@ -566,8 +566,8 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
         return;
     }
 
-    const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture));
-    const GLuint fullscreenVao = surface.FullscreenVaoUVE();
+    const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureId(depth.depthTexture));
+    const GLuint fullscreenVao = surface.FullscreenVao();
     if (depthTexture == 0U || fullscreenVao == 0U) {
         return;
     }
@@ -673,7 +673,7 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
                                                      (static_cast<std::uint32_t>(px[1]) << 8U) |
                                                      static_cast<std::uint32_t>(px[2]);
                         overlayState.sceneDepth[dstRow + x] =
-                            (static_cast<float>(packed) / 16777215.0F) * kHostDepthMaxRangeMetersUVE;
+                            (static_cast<float>(packed) / 16777215.0F) * kHostDepthMaxRangeMeters;
                     }
                 }
             }
@@ -718,17 +718,17 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     }
 }
 
-void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
-    ViewportSurfaceUVE& surface,
-    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::RenderSelectionOutlineOrMask(
+    ViewportSurface& surface,
+    const Editor::Editor::ViewportOverlayState& overlayState,
     const int width,
     const int height) {
-    const auto& selected = m_editor.GetSelectedEntitiesUVE();
-    const auto active = m_editor.GetSelectedEntityUVE();
+    const auto& selected = m_editor.GetSelectedEntities();
+    const auto active = m_editor.GetSelectedEntity();
     if (selected.empty()) {
         m_cachedSelectionTriangles.clear();
         m_lastSelectedEntities.clear();
-        m_lastSelectedEntity = Scene::kInvalidEntityUVE;
+        m_lastSelectedEntity = Scene::kInvalidEntity;
         m_lastSelectedSnapshots.clear();
         return;
     }
@@ -736,21 +736,21 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
     bool needsRebuild = false;
     if (selected != m_lastSelectedEntities || active != m_lastSelectedEntity) {
         needsRebuild = true;
-    } else if (AnySelectedEntityMovedUVE()) {
+    } else if (AnySelectedEntityMoved()) {
         needsRebuild = true;
     }
 
     if (needsRebuild) {
         m_cachedSelectionTriangles =
-            univex::integration::CollectSelectionOutlineTrianglesUVE(m_entityManager, selected, active);
+            univex::integration::CollectSelectionOutlineTriangles(m_entityManager, selected, active);
         m_lastSelectedEntities = selected;
         m_lastSelectedEntity = active;
         m_lastSelectedSnapshots.clear();
         m_lastSelectedSnapshots.reserve(selected.size());
         for (const auto ent : selected) {
-            if (m_entityManager.IsAliveUVE(ent) &&
-                m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(ent)) {
-                const auto& wt = m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(ent);
+            if (m_entityManager.IsAlive(ent) &&
+                m_entityManager.HasComponent<Scene::WorldTransformComponent>(ent)) {
+                const auto& wt = m_entityManager.GetComponent<Scene::WorldTransformComponent>(ent);
                 m_lastSelectedSnapshots.push_back({ent, wt.worldPosition, wt.worldRotation});
             }
         }
@@ -760,9 +760,9 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
         return;
     }
 
-    auto& renderPass = surface.RenderPassUVE();
-    if (overlayState.hostDrawsGizmos && !surface.PreferGpuSelectionOutlineUVE()) {
-        const univex::render::SelectionOutlineSettings& outline = renderPass.SelectionOutlineSettingsUVE();
+    auto& renderPass = surface.RenderPass();
+    if (overlayState.hostDrawsGizmos && !surface.PreferGpuSelectionOutline()) {
+        const univex::render::SelectionOutlineSettings& outline = renderPass.SelectionOutlineSettings();
         std::uint64_t maskKey = 1469598103934665603ULL;
         const auto mixKey = [&maskKey](const void* data, const std::size_t size) {
             const auto* p = static_cast<const unsigned char*>(data);
@@ -782,7 +782,7 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
         if (maskKey == m_lastMaskKey && !m_lastMask.empty()) {
             overlayState.selectionMask = m_lastMask;
             maskRead = true;
-        } else if (renderPass.ReadSelectionMaskUVE(m_camera, width, height, m_cachedSelectionTriangles,
+        } else if (renderPass.ReadSelectionMask(m_camera, width, height, m_cachedSelectionTriangles,
                                                    overlayState.selectionMask)) {
             m_lastMask = overlayState.selectionMask;
             m_lastMaskKey = maskKey;
@@ -796,34 +796,34 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
                 std::max(1, static_cast<int>(std::lround(outline.thicknessPixels * coordScale)));
             overlayState.selectionOutlineRgb = {outline.r, outline.g, outline.b};
         }
-        glBindFramebuffer(GL_FRAMEBUFFER, surface.ActiveDrawFboUVE());
+        glBindFramebuffer(GL_FRAMEBUFFER, surface.ActiveDrawFbo());
         glViewport(0, 0, width, height);
     } else {
         // Pure GPU selection outline: zero glReadPixels stall and automatically smoothed by FXAA 3.11.
-        renderPass.RenderSelectionOutlineUVE(m_camera, width, height, m_cachedSelectionTriangles);
+        renderPass.RenderSelectionOutline(m_camera, width, height, m_cachedSelectionTriangles);
     }
 }
 
-ViewportSceneInteractionUVE::CameraFlightPoseUVE ViewportSceneInteractionUVE::CurrentFlightPoseUVE() const {
-    return CameraFlightPoseUVE{m_camera.Target(), m_camera.Yaw(), m_camera.Pitch(), m_camera.Distance(),
+ViewportSceneInteraction::CameraFlightPose ViewportSceneInteraction::CurrentFlightPose() const {
+    return CameraFlightPose{m_camera.Target(), m_camera.Yaw(), m_camera.Pitch(), m_camera.Distance(),
                                m_camera.Settings().fovYRadians};
 }
 
-void ViewportSceneInteractionUVE::ApplyFlightPoseUVE(const CameraFlightPoseUVE& pose) {
+void ViewportSceneInteraction::ApplyFlightPose(const CameraFlightPose& pose) {
     m_camera.SetTarget(pose.target);
     m_camera.SetYawPitch(pose.yaw, pose.pitch);
     m_camera.SetDistance(pose.distance);
     m_camera.Settings().fovYRadians = pose.fovY;
 }
 
-std::optional<ViewportSceneInteractionUVE::CameraFlightPoseUVE> ViewportSceneInteractionUVE::CameraEntityPoseUVE(
-    const Scene::EntityUVE entity) const {
-    if (entity == Scene::kInvalidEntityUVE || !m_entityManager.IsAliveUVE(entity) ||
-        !m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+std::optional<ViewportSceneInteraction::CameraFlightPose> ViewportSceneInteraction::CameraEntityPose(
+    const Scene::Entity entity) const {
+    if (entity == Scene::kInvalidEntity || !m_entityManager.IsAlive(entity) ||
+        !m_entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
         return std::nullopt;
     }
-    const auto& world = m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-    const Math::Vector3UVE f = Math::RotateVectorUVE(world.worldRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    const auto& world = m_entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+    const Math::Vector3 f = Math::RotateVector(world.worldRotation, Math::Vector3{0.0F, 0.0F, -1.0F});
     const float length = std::sqrt(f.x * f.x + f.y * f.y + f.z * f.z);
     if (!(length > 1e-5F)) {
         return std::nullopt;
@@ -831,14 +831,14 @@ std::optional<ViewportSceneInteractionUVE::CameraFlightPoseUVE> ViewportSceneInt
     const univex::math::Vec3 forward{f.x / length, f.y / length, f.z / length};
     const float distance = std::max(1.0F, m_camera.Distance() * 0.25F);
     const univex::math::Vec3 eye{world.worldPosition.x, world.worldPosition.y, world.worldPosition.z};
-    CameraFlightPoseUVE pose{};
+    CameraFlightPose pose{};
     pose.target = eye + forward * distance;
     pose.distance = distance;
     pose.pitch = std::asin(std::clamp(-forward.y, -1.0F, 1.0F));
     pose.yaw = std::atan2(-forward.z, -forward.x);
     pose.fovY = m_camera.Settings().fovYRadians;
-    if (m_entityManager.HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
-        const float degrees = m_entityManager.GetComponentUVE<Scene::CameraComponentUVE>(entity).fieldOfViewDegrees;
+    if (m_entityManager.HasComponent<Scene::CameraComponent>(entity)) {
+        const float degrees = m_entityManager.GetComponent<Scene::CameraComponent>(entity).fieldOfViewDegrees;
         if (degrees > 1.0F && degrees < 179.0F) {
             pose.fovY = degrees * 3.14159265F / 180.0F;
         }
@@ -846,16 +846,16 @@ std::optional<ViewportSceneInteractionUVE::CameraFlightPoseUVE> ViewportSceneInt
     return pose;
 }
 
-void ViewportSceneInteractionUVE::UpdateSelectionGizmoUVE() {
+void ViewportSceneInteraction::UpdateSelectionGizmo() {
     univex::math::Vec3 centroid{0.0F, 0.0F, 0.0F};
     int contributing = 0;
-    for (const Scene::EntityUVE entity : m_editor.GetSelectedEntitiesUVE()) {
-        if (entity == Scene::kInvalidEntityUVE ||
-            !m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+    for (const Scene::Entity entity : m_editor.GetSelectedEntities()) {
+        if (entity == Scene::kInvalidEntity ||
+            !m_entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
             continue;
         }
-        const auto& worldTransform = m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-        centroid += univex::integration::FromUveVector3UVE(worldTransform.worldPosition);
+        const auto& worldTransform = m_entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+        centroid += univex::integration::FromUveVector3(worldTransform.worldPosition);
         ++contributing;
     }
     if (contributing > 0) {
@@ -865,23 +865,23 @@ void ViewportSceneInteractionUVE::UpdateSelectionGizmoUVE() {
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(
-    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSceneInteraction::UpdateSelectionFromMouse(
+    const Editor::Editor::ViewportOverlayState& overlayState,
     const int width,
     const int height,
     const bool suppressed) {
-    const Editor::EditorViewportInputUVE& input = overlayState.input;
+    const Editor::EditorViewportInput& input = overlayState.input;
     overlayState.marqueeActive = false;
 
-    const bool multiOrNav = input.alt || input.IsDownUVE(VpBtnUVE::Middle) || input.IsDownUVE(VpBtnUVE::Right) ||
+    const bool multiOrNav = input.alt || input.IsDown(VpBtn::Middle) || input.IsDown(VpBtn::Right) ||
                             std::fabs(input.wheel) > 1e-4F;
     if (suppressed || multiOrNav) {
         m_selectionPressActive = false;
         m_marqueeActive = false;
         return;
     }
-    if (!m_pointerOverOverlay && input.hovered && input.IsClickedUVE(VpBtnUVE::Left)) {
-        const Math::Vector2UVE imageOrigin = input.imageOrigin;
+    if (!m_pointerOverOverlay && input.hovered && input.IsClicked(VpBtn::Left)) {
+        const Math::Vector2 imageOrigin = input.imageOrigin;
         m_selectionPressActive = true;
         m_marqueeActive = false;
         m_selectionPressX = input.mousePos.x - imageOrigin.x;
@@ -897,7 +897,7 @@ void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(
     const float localY = std::clamp(input.mousePos.y - input.imageOrigin.y, 0.0F, static_cast<float>(height));
     const float slop = (input.touchNavigation ? 8.0F : 6.0F) * coordScale;
 
-    if (input.IsDownUVE(VpBtnUVE::Left) && !input.IsReleasedUVE(VpBtnUVE::Left)) {
+    if (input.IsDown(VpBtn::Left) && !input.IsReleased(VpBtn::Left)) {
         if ((std::fabs(localX - m_selectionPressX) + std::fabs(localY - m_selectionPressY)) > slop) {
             m_marqueeActive = true;
         }
@@ -911,7 +911,7 @@ void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(
         return;
     }
 
-    if (!input.IsReleasedUVE(VpBtnUVE::Left)) {
+    if (!input.IsReleased(VpBtn::Left)) {
         m_selectionPressActive = false;
         m_marqueeActive = false;
         return;
@@ -924,34 +924,34 @@ void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(
     if (wasMarquee) {
         const float startX = std::clamp(m_selectionPressX, 0.0F, static_cast<float>(width));
         const float startY = std::clamp(m_selectionPressY, 0.0F, static_cast<float>(height));
-        CommitMarqueeSelectionUVE(input, width, height, std::min(startX, localX), std::min(startY, localY),
+        CommitMarqueeSelection(input, width, height, std::min(startX, localX), std::min(startY, localY),
                                   std::max(startX, localX), std::max(startY, localY));
         return;
     }
 
-    const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Left);
+    const Math::Vector2 dragDelta = input.DragDelta(VpBtn::Left);
     if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
     }
 
-    const univex::integration::EntityPickResultUVE pick = univex::integration::PickEntityAtPixelUVE(
+    const univex::integration::EntityPickResult pick = univex::integration::PickEntityAtPixel(
         m_entityManager, m_camera, width, height, m_selectionPressX, m_selectionPressY);
 
     const bool extend = input.ctrl;
     if (!pick.hit) {
         if (!extend) {
-            m_editor.ClearSelectionUVE();
+            m_editor.ClearSelection();
         }
         return;
     }
     if (extend) {
-        m_editor.ToggleEntitySelectionUVE(pick.entity);
+        m_editor.ToggleEntitySelection(pick.entity);
     } else {
-        m_editor.SelectEntityUVE(pick.entity);
+        m_editor.SelectEntity(pick.entity);
     }
 }
 
-void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::EditorViewportInputUVE& input,
+void ViewportSceneInteraction::CommitMarqueeSelection(const Editor::EditorViewportInput& input,
                                                             const int width,
                                                             const int height,
                                                             const float minX,
@@ -962,15 +962,15 @@ void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::Editor
         return;
     }
 
-    std::vector<Scene::EntityUVE> hits;
-    m_entityManager.ForEachUVE<Scene::WorldTransformComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform) {
-            if (worldTransform.dirty || m_entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity) ||
-                m_editor.IsEntityLockedUVE(entity)) {
+    std::vector<Scene::Entity> hits;
+    m_entityManager.ForEach<Scene::WorldTransformComponent>(
+        [&](const Scene::Entity entity, const Scene::WorldTransformComponent& worldTransform) {
+            if (worldTransform.dirty || m_entityManager.HasComponent<Scene::EditorInternalEntityComponent>(entity) ||
+                m_editor.IsEntityLocked(entity)) {
                 return;
             }
-            if (m_entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
-                const auto& vis = m_entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+            if (m_entityManager.HasComponent<Scene::VisibilityComponent>(entity)) {
+                const auto& vis = m_entityManager.GetComponent<Scene::VisibilityComponent>(entity);
                 if (!vis.visible || !vis.visibleInHierarchy) {
                     return;
                 }
@@ -979,20 +979,20 @@ void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::Editor
             bool matched = false;
             float px = 0.0F;
             float py = 0.0F;
-            if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, worldTransform.worldPosition,
+            if (univex::integration::ProjectWorldPointToPixel(m_camera, width, height, worldTransform.worldPosition,
                                                                  px, py)) {
                 if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
                     matched = true;
                 }
             }
 
-            if (!matched && m_entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
-                const auto& primitive = m_entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
-                Math::Matrix4x4UVE worldMatrix{};
-                if (Scene::IsPrimitiveMeshComponentValidUVE(primitive) &&
-                    univex::integration::TryComputeWorldMatrixUVE(worldTransform, worldMatrix)) {
-                    const Math::AabbUVE bounds =
-                        Render::GetPrimitiveGeometryUVE(primitive.kind).localBounds.TransformUVE(worldMatrix);
+            if (!matched && m_entityManager.HasComponent<Scene::PrimitiveMeshComponent>(entity)) {
+                const auto& primitive = m_entityManager.GetComponent<Scene::PrimitiveMeshComponent>(entity);
+                Math::Matrix4x4 worldMatrix{};
+                if (Scene::IsPrimitiveMeshComponentValid(primitive) &&
+                    univex::integration::TryComputeWorldMatrix(worldTransform, worldMatrix)) {
+                    const Math::Aabb bounds =
+                        Render::GetPrimitiveGeometry(primitive.kind).localBounds.Transform(worldMatrix);
                     float boxMinX = std::numeric_limits<float>::max();
                     float boxMinY = std::numeric_limits<float>::max();
                     float boxMaxX = std::numeric_limits<float>::lowest();
@@ -1001,12 +1001,12 @@ void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::Editor
                     for (int cx = 0; cx < 2; ++cx) {
                         for (int cy = 0; cy < 2; ++cy) {
                             for (int cz = 0; cz < 2; ++cz) {
-                                const Math::Vector3UVE corner{cx == 0 ? bounds.min.x : bounds.max.x,
+                                const Math::Vector3 corner{cx == 0 ? bounds.min.x : bounds.max.x,
                                                               cy == 0 ? bounds.min.y : bounds.max.y,
                                                               cz == 0 ? bounds.min.z : bounds.max.z};
                                 float cornerX = 0.0F;
                                 float cornerY = 0.0F;
-                                if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, corner,
+                                if (univex::integration::ProjectWorldPointToPixel(m_camera, width, height, corner,
                                                                                      cornerX, cornerY)) {
                                     boxMinX = std::min(boxMinX, cornerX);
                                     boxMinY = std::min(boxMinY, cornerY);
@@ -1028,38 +1028,38 @@ void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::Editor
             }
         });
 
-    const auto isSelected = [this](const Scene::EntityUVE entity) {
-        const auto& sel = m_editor.GetSelectedEntitiesUVE();
+    const auto isSelected = [this](const Scene::Entity entity) {
+        const auto& sel = m_editor.GetSelectedEntities();
         return std::find(sel.begin(), sel.end(), entity) != sel.end();
     };
 
     if (input.ctrl) {
-        for (const Scene::EntityUVE entity : hits) {
-            m_editor.ToggleEntitySelectionUVE(entity);
+        for (const Scene::Entity entity : hits) {
+            m_editor.ToggleEntitySelection(entity);
         }
         return;
     }
     if (input.shift) {
-        for (const Scene::EntityUVE entity : hits) {
+        for (const Scene::Entity entity : hits) {
             if (!isSelected(entity)) {
-                m_editor.ToggleEntitySelectionUVE(entity);
+                m_editor.ToggleEntitySelection(entity);
             }
         }
         return;
     }
 
-    m_editor.ClearSelectionUVE();
+    m_editor.ClearSelection();
     if (!hits.empty()) {
-        m_editor.SelectEntityUVE(hits.front());
+        m_editor.SelectEntity(hits.front());
         for (std::size_t i = 1U; i < hits.size(); ++i) {
             if (!isSelected(hits[i])) {
-                m_editor.ToggleEntitySelectionUVE(hits[i]);
+                m_editor.ToggleEntitySelection(hits[i]);
             }
         }
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const Editor::EditorViewportInputUVE& input,
+void ViewportSceneInteraction::UpdateEntityContextToolbarFromMouse(const Editor::EditorViewportInput& input,
                                                                          const int width,
                                                                          const int height,
                                                                          const bool suppressed) {
@@ -1067,55 +1067,55 @@ void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const E
         m_contextToolbarPressActive = false;
         return;
     }
-    if (!m_pointerOverOverlay && input.hovered && input.IsClickedUVE(VpBtnUVE::Right)) {
-        const Math::Vector2UVE imageOrigin = input.imageOrigin;
+    if (!m_pointerOverOverlay && input.hovered && input.IsClicked(VpBtn::Right)) {
+        const Math::Vector2 imageOrigin = input.imageOrigin;
         m_contextToolbarPressActive = true;
         m_contextToolbarPressX = input.mousePos.x - imageOrigin.x;
         m_contextToolbarPressY = input.mousePos.y - imageOrigin.y;
     }
-    if (!m_contextToolbarPressActive || !input.IsReleasedUVE(VpBtnUVE::Right)) {
+    if (!m_contextToolbarPressActive || !input.IsReleased(VpBtn::Right)) {
         return;
     }
     m_contextToolbarPressActive = false;
 
     const float coordScale = std::max(0.25F, input.dpiScale);
-    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * coordScale;
-    const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Right);
+    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixels) * coordScale;
+    const Math::Vector2 dragDelta = input.DragDelta(VpBtn::Right);
     if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
     }
 
-    const univex::integration::EntityPickResultUVE pick = univex::integration::PickEntityAtPixelUVE(
+    const univex::integration::EntityPickResult pick = univex::integration::PickEntityAtPixel(
         m_entityManager, m_camera, width, height, m_contextToolbarPressX, m_contextToolbarPressY);
     if (!pick.hit) {
-        m_editor.ClearEntityContextToolbarUVE();
+        m_editor.ClearEntityContextToolbar();
         return;
     }
 
-    m_editor.SelectEntityUVE(pick.entity);
-    if (!m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(pick.entity)) {
-        m_editor.ClearEntityContextToolbarUVE();
+    m_editor.SelectEntity(pick.entity);
+    if (!m_entityManager.HasComponent<Scene::WorldTransformComponent>(pick.entity)) {
+        m_editor.ClearEntityContextToolbar();
         return;
     }
-    const auto& worldTransform = m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(pick.entity);
+    const auto& worldTransform = m_entityManager.GetComponent<Scene::WorldTransformComponent>(pick.entity);
     float anchorPixelX = 0.0F;
     float anchorPixelY = 0.0F;
-    if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, worldTransform.worldPosition,
+    if (univex::integration::ProjectWorldPointToPixel(m_camera, width, height, worldTransform.worldPosition,
                                                          anchorPixelX, anchorPixelY)) {
         const float invScale = 1.0F / coordScale;
-        m_editor.SetEntityContextToolbarAnchorUVE(pick.entity, anchorPixelX * invScale, anchorPixelY * invScale);
+        m_editor.SetEntityContextToolbarAnchor(pick.entity, anchorPixelX * invScale, anchorPixelY * invScale);
     } else {
-        m_editor.ClearEntityContextToolbarUVE();
+        m_editor.ClearEntityContextToolbar();
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateTouchControllerCameraUVE(
-    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+void ViewportSceneInteraction::UpdateTouchControllerCamera(
+    const Editor::Editor::ViewportOverlayState& overlayState) {
     const float dt = std::clamp(overlayState.input.deltaTime, 0.0F, 0.1F);
     if (dt <= 0.0F) {
         return;
     }
-    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    const auto& prefs = m_editor.GetExtendedPreferences();
     const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
     const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
 
@@ -1123,7 +1123,7 @@ void ViewportSceneInteractionUVE::UpdateTouchControllerCameraUVE(
         constexpr float kLookPixelsPerSecond = 340.0F;
         m_camera.Look(overlayState.touchLookX * kLookPixelsPerSecond * orbitSens * dt,
                       overlayState.touchLookY * kLookPixelsPerSecond * orbitSens * dt);
-        m_editor.NotifyViewportOrbitedUVE();
+        m_editor.NotifyViewportOrbited();
     }
     if (std::fabs(overlayState.touchZoomDelta) > 1e-3F) {
         m_camera.Dolly(overlayState.touchZoomDelta * zoomSens * dt * 6.0F);
@@ -1159,13 +1159,13 @@ void ViewportSceneInteractionUVE::UpdateTouchControllerCameraUVE(
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::EditorViewportInputUVE& input,
+void ViewportSceneInteraction::UpdateOrbitPanZoomFromMouse(const Editor::EditorViewportInput& input,
                                                                  const int framebufferHeight,
                                                                  const bool suppressOrbit) {
     if (m_pointerOverOverlay || !input.hovered) {
         return;
     }
-    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    const auto& prefs = m_editor.GetExtendedPreferences();
     const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
     const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
     const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
@@ -1176,11 +1176,11 @@ void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::E
     // Android touch: 1-finger empty drag draws Marquee Selection, on-screen dual-stick controller
     // drives Move/Look/Up/Down/Zoom, and 2-finger drag (Middle) / pinch (wheel) pan & dolly smoothly.
     const bool desktopOrbit = !input.touchNavigation && !suppressOrbit && input.alt &&
-                              input.IsDraggingUVE(VpBtnUVE::Left, 0.0F);
+                              input.IsDragging(VpBtn::Left, 0.0F);
     if (desktopOrbit) {
         m_camera.Orbit(input.mouseDelta.x * invScale * orbitSens, input.mouseDelta.y * invScale * orbitSens);
-        m_editor.NotifyViewportOrbitedUVE();
-    } else if (input.IsDraggingUVE(VpBtnUVE::Middle, 0.0F)) {
+        m_editor.NotifyViewportOrbited();
+    } else if (input.IsDragging(VpBtn::Middle, 0.0F)) {
         m_camera.Pan(input.mouseDelta.x * panSens, input.mouseDelta.y * panSens, framebufferHeight);
     }
     if (input.wheel != 0.0F) {
@@ -1188,46 +1188,46 @@ void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::E
     }
 }
 
-bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewportInputUVE& input,
+bool ViewportSceneInteraction::UpdateFlyCamera(const Editor::EditorViewportInput& input,
                                                      const bool suppressed) {
     // Pure-touch hosts use long-press Right click strictly for context menus, never WASD fly mode.
     if (input.touchNavigation) {
         return false;
     }
-    if (!input.IsDownUVE(VpBtnUVE::Right)) {
+    if (!input.IsDown(VpBtn::Right)) {
         if (m_flying || m_flyArmed) {
             m_flying = false;
             m_flyArmed = false;
             m_flyVelocity = univex::math::Vec3{0.0F, 0.0F, 0.0F};
-            m_editor.SetViewportFlyingUVE(false);
-            m_editor.SetViewportFlyHeldUVE(false);
+            m_editor.SetViewportFlying(false);
+            m_editor.SetViewportFlyHeld(false);
         }
         return false;
     }
     if (!m_flying && !m_flyArmed) {
-        if (suppressed || m_pointerOverOverlay || !input.hovered || !input.IsClickedUVE(VpBtnUVE::Right)) {
+        if (suppressed || m_pointerOverOverlay || !input.hovered || !input.IsClicked(VpBtn::Right)) {
             return false;
         }
         m_flyArmed = true;
-        m_editor.SetViewportFlyHeldUVE(true);
+        m_editor.SetViewportFlyHeld(true);
     }
-    const bool moveKey = input.IsKeyDownUVE(VpKeyUVE::W) || input.IsKeyDownUVE(VpKeyUVE::A) ||
-                         input.IsKeyDownUVE(VpKeyUVE::S) || input.IsKeyDownUVE(VpKeyUVE::D) ||
-                         input.IsKeyDownUVE(VpKeyUVE::Q) || input.IsKeyDownUVE(VpKeyUVE::E);
+    const bool moveKey = input.IsKeyDown(VpKey::W) || input.IsKeyDown(VpKey::A) ||
+                         input.IsKeyDown(VpKey::S) || input.IsKeyDown(VpKey::D) ||
+                         input.IsKeyDown(VpKey::Q) || input.IsKeyDown(VpKey::E);
     if (!m_flying) {
-        const Math::Vector2UVE drag = input.DragDeltaUVE(VpBtnUVE::Right);
-        if (!moveKey && std::fabs(drag.x) + std::fabs(drag.y) <= kNavClickSlopPixelsUVE) {
+        const Math::Vector2 drag = input.DragDelta(VpBtn::Right);
+        if (!moveKey && std::fabs(drag.x) + std::fabs(drag.y) <= kNavClickSlopPixels) {
             return false;
         }
         m_flying = true;
-        m_editor.SetViewportFlyingUVE(true);
+        m_editor.SetViewportFlying(true);
     }
 
-    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    const auto& prefs = m_editor.GetExtendedPreferences();
     const float lookSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0)) * 0.8F;
     if (input.mouseDelta.x != 0.0F || input.mouseDelta.y != 0.0F) {
         m_camera.Look(input.mouseDelta.x * lookSens, input.mouseDelta.y * lookSens);
-        m_editor.NotifyViewportOrbitedUVE();
+        m_editor.NotifyViewportOrbited();
     }
     if (input.wheel != 0.0F) {
         m_flySpeed = std::clamp(m_flySpeed * std::pow(1.25F, input.wheel), 0.25F, 500.0F);
@@ -1242,22 +1242,22 @@ bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewpor
     right = univex::math::Length(right) < 0.001F ? univex::math::Vec3{1.0F, 0.0F, 0.0F}
                                                  : univex::math::Normalize(right);
     univex::math::Vec3 wish{0.0F, 0.0F, 0.0F};
-    if (input.IsKeyDownUVE(VpKeyUVE::W)) {
+    if (input.IsKeyDown(VpKey::W)) {
         wish = wish + forward;
     }
-    if (input.IsKeyDownUVE(VpKeyUVE::S)) {
+    if (input.IsKeyDown(VpKey::S)) {
         wish = wish - forward;
     }
-    if (input.IsKeyDownUVE(VpKeyUVE::D)) {
+    if (input.IsKeyDown(VpKey::D)) {
         wish = wish + right;
     }
-    if (input.IsKeyDownUVE(VpKeyUVE::A)) {
+    if (input.IsKeyDown(VpKey::A)) {
         wish = wish - right;
     }
-    if (input.IsKeyDownUVE(VpKeyUVE::E)) {
+    if (input.IsKeyDown(VpKey::E)) {
         wish = wish + up;
     }
-    if (input.IsKeyDownUVE(VpKeyUVE::Q)) {
+    if (input.IsKeyDown(VpKey::Q)) {
         wish = wish - up;
     }
     const float wishLength = univex::math::Length(wish);
@@ -1266,7 +1266,7 @@ bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewpor
         wishLength > 0.001F ? wish * (speed / wishLength) : univex::math::Vec3{0.0F, 0.0F, 0.0F};
     const float dt = std::clamp(input.deltaTime, 0.0F, 0.1F);
     // cameraInertiaSmoothing is the velocity blend's time constant (s); 0 follows input instantly.
-    const double smoothing = m_editor.GetExtendedPreferencesUVE().cameraInertiaSmoothing;
+    const double smoothing = m_editor.GetExtendedPreferences().cameraInertiaSmoothing;
     const float blend = smoothing > 0.001 ? 1.0F - std::exp(-dt * static_cast<float>(2.1 / smoothing)) : 1.0F;
     m_flyVelocity = m_flyVelocity + (wanted - m_flyVelocity) * blend;
     if (univex::math::Length(m_flyVelocity) > 0.0005F) {
@@ -1275,84 +1275,84 @@ bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewpor
     return true;
 }
 
-void ViewportSceneInteractionUVE::UpdateViewportViewHotkeysUVE(const Editor::EditorViewportInputUVE& input) {
+void ViewportSceneInteraction::UpdateViewportViewHotkeys(const Editor::EditorViewportInput& input) {
     if (!input.hovered || input.wantTextInput) {
         return;
     }
-    struct DigitKeysUVE final {
+    struct DigitKeys final {
         int digit;
-        VpKeyUVE keypad;
-        VpKeyUVE row;
+        VpKey keypad;
+        VpKey row;
     };
-    static constexpr DigitKeysUVE kKeysUVE[] = {
-        {1, VpKeyUVE::Keypad1, VpKeyUVE::Num1},
-        {3, VpKeyUVE::Keypad3, VpKeyUVE::Num3},
-        {5, VpKeyUVE::Keypad5, VpKeyUVE::Num5},
-        {7, VpKeyUVE::Keypad7, VpKeyUVE::Num7},
+    static constexpr DigitKeys kKeys[] = {
+        {1, VpKey::Keypad1, VpKey::Num1},
+        {3, VpKey::Keypad3, VpKey::Num3},
+        {5, VpKey::Keypad5, VpKey::Num5},
+        {7, VpKey::Keypad7, VpKey::Num7},
     };
-    for (const DigitKeysUVE& keys : kKeysUVE) {
-        const bool pressed = input.IsKeyPressedUVE(keys.keypad) || (input.alt && input.IsKeyPressedUVE(keys.row));
+    for (const DigitKeys& keys : kKeys) {
+        const bool pressed = input.IsKeyPressed(keys.keypad) || (input.alt && input.IsKeyPressed(keys.row));
         if (!pressed) {
             continue;
         }
         if (keys.digit == 5) {
-            m_editor.SetViewportOrthographicUVE(!m_editor.IsViewportOrthographicUVE());
+            m_editor.SetViewportOrthographic(!m_editor.IsViewportOrthographic());
             continue;
         }
-        if (const auto view = Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, input.ctrl)) {
-            m_editor.RequestViewportViewUVE(*view);
+        if (const auto view = Editor::Editor::GetViewportViewForKeypadDigit(keys.digit, input.ctrl)) {
+            m_editor.RequestViewportView(*view);
         }
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateViewportBookmarkHotkeysUVE(const Editor::EditorViewportInputUVE& input) {
+void ViewportSceneInteraction::UpdateViewportBookmarkHotkeys(const Editor::EditorViewportInput& input) {
     if (!input.hovered || input.wantTextInput || input.alt) {
         return;
     }
-    static constexpr VpKeyUVE kDigitKeysUVE[] = {
-        VpKeyUVE::Num1, VpKeyUVE::Num2, VpKeyUVE::Num3, VpKeyUVE::Num4, VpKeyUVE::Num5,
-        VpKeyUVE::Num6, VpKeyUVE::Num7, VpKeyUVE::Num8, VpKeyUVE::Num9, VpKeyUVE::Num0,
+    static constexpr VpKey kDigitKeys[] = {
+        VpKey::Num1, VpKey::Num2, VpKey::Num3, VpKey::Num4, VpKey::Num5,
+        VpKey::Num6, VpKey::Num7, VpKey::Num8, VpKey::Num9, VpKey::Num0,
     };
     for (std::size_t order = 0U; order < 10U; ++order) {
         const std::size_t slot = (order + 1U) % 10U;
-        if (!input.IsKeyPressedUVE(kDigitKeysUVE[order])) {
+        if (!input.IsKeyPressed(kDigitKeys[order])) {
             continue;
         }
         if (input.ctrl) {
             const univex::math::Vec3 target = m_camera.Target();
-            static_cast<void>(m_editor.SetViewportBookmarkUVE(
-                slot, Editor::EditorViewportBookmarkUVE{Math::Vector3UVE{target.x, target.y, target.z},
+            static_cast<void>(m_editor.SetViewportBookmark(
+                slot, Editor::EditorViewportBookmark{Math::Vector3{target.x, target.y, target.z},
                                                         m_camera.Yaw(), m_camera.Pitch(), m_camera.Distance()}));
             continue;
         }
-        const std::optional<Editor::EditorViewportBookmarkUVE> bookmark = m_editor.GetViewportBookmarkUVE(slot);
+        const std::optional<Editor::EditorViewportBookmark> bookmark = m_editor.GetViewportBookmark(slot);
         if (!bookmark.has_value()) {
             continue;
         }
-        m_editor.NotifyViewportOrbitedUVE();
+        m_editor.NotifyViewportOrbited();
         m_camera.CancelAnimation();
-        m_camera.SetTarget(univex::integration::FromUveVector3UVE(bookmark->target));
+        m_camera.SetTarget(univex::integration::FromUveVector3(bookmark->target));
         m_camera.SetYawPitch(bookmark->yawRadians, bookmark->pitchRadians);
         m_camera.SetDistance(bookmark->distance);
     }
-    if (input.IsKeyPressedUVE(VpKeyUVE::F) && !input.ctrl) {
-        static_cast<void>(m_editor.RequestViewportFocusUVE(m_editor.GetSelectedEntityUVE()));
+    if (input.IsKeyPressed(VpKey::F) && !input.ctrl) {
+        static_cast<void>(m_editor.RequestViewportFocus(m_editor.GetSelectedEntity()));
     }
 }
 
-bool ViewportSceneInteractionUVE::EnsureHostDepthUVE(ViewportSurfaceUVE& surface,
+bool ViewportSceneInteraction::EnsureHostDepth(ViewportSurface& surface,
                                                      const int width,
                                                      const int height) {
     if (!m_hostDepthProgram.has_value()) {
         std::string error;
         m_hostDepthProgram = univex::render::ShaderProgram::Build(
-            ViewportSurfaceUVE::kFullscreenTriangleVertexShaderUVE, kHostDepthFragmentShaderUVE, error);
+            ViewportSurface::kFullscreenTriangleVertexShader, kHostDepthFragmentShader, error);
         if (!m_hostDepthProgram.has_value()) {
             UVE_ERROR("uve_editor_app: viewport depth export shader build failed: {}", error);
             m_hostDepthFailed = true;
         }
     }
-    if (m_hostDepthFailed || !m_hostDepthProgram.has_value() || surface.FullscreenVaoUVE() == 0U) {
+    if (m_hostDepthFailed || !m_hostDepthProgram.has_value() || surface.FullscreenVao() == 0U) {
         return false;
     }
 #if defined(UNIVEX_GL_ES)
@@ -1392,13 +1392,13 @@ bool ViewportSceneInteractionUVE::EnsureHostDepthUVE(ViewportSurfaceUVE& surface
     return complete;
 }
 
-bool ViewportSceneInteractionUVE::AnySelectedEntityMovedUVE() const {
+bool ViewportSceneInteraction::AnySelectedEntityMoved() const {
     for (const auto& snap : m_lastSelectedSnapshots) {
-        if (!m_entityManager.IsAliveUVE(snap.entity) ||
-            !m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(snap.entity)) {
+        if (!m_entityManager.IsAlive(snap.entity) ||
+            !m_entityManager.HasComponent<Scene::WorldTransformComponent>(snap.entity)) {
             return true;
         }
-        const auto& wt = m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(snap.entity);
+        const auto& wt = m_entityManager.GetComponent<Scene::WorldTransformComponent>(snap.entity);
         if (wt.dirty) {
             return true;
         }

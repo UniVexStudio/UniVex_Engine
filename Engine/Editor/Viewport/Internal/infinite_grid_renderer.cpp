@@ -170,7 +170,7 @@ void InfiniteGridRenderer::Draw(const univex::camera::OrbitCamera& camera,
 }
 
 float WorldPerPixelAtPivot(const univex::camera::OrbitCamera& camera, int framebufferHeight) {
-    return univex::camera::WorldPerPixelAtOrbitTargetUVE(camera, framebufferHeight);
+    return univex::camera::WorldPerPixelAtOrbitTarget(camera, framebufferHeight);
 }
 
 } // namespace univex::render

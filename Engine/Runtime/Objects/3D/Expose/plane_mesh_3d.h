@@ -13,51 +13,51 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Authoring definition for the PlaneMesh3D scene object: the component set and defaults a freshly
 /// created PlaneMesh3D entity attaches — a ground-plane primitive mesh plus a thin flat collider
 /// (`0.5 x 0.025 x 0.5`).
-struct PlaneMesh3DObjectDefinitionUVE final {
+struct PlaneMesh3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Plane";
 
-    PrimitiveMeshComponentUVE mesh{PrimitiveMeshKindUVE::Plane, Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
-    ColliderComponentUVE collider{Math::Vector3UVE{0.5F, 0.025F, 0.5F}};
+    PrimitiveMeshComponent mesh{PrimitiveMeshKind::Plane, Math::Vector3{1.0F, 1.0F, 1.0F}};
+    ColliderComponent collider{Math::Vector3{0.5F, 0.025F, 0.5F}};
 };
 
-[[nodiscard]] bool IsPlaneMesh3DObjectDefinitionValidUVE(const PlaneMesh3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsPlaneMesh3DObjectDefinitionValid(const PlaneMesh3DObjectDefinition& value) noexcept;
 
-void ApplyPlaneMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                         const PlaneMesh3DObjectDefinitionUVE& value);
+void ApplyPlaneMesh3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                         const PlaneMesh3DObjectDefinition& value);
 
 /// Node policy for a `PlaneMesh3D` primitive object.
-class PlaneMesh3DUVE final {
+class PlaneMesh3D final {
 public:
-    PlaneMesh3DUVE() = delete;
+    PlaneMesh3D() = delete;
 
-    static constexpr Math::Vector3UVE kDefaultColliderHalfExtentsUVE{0.5F, 0.025F, 0.5F};
-    static constexpr Math::Vector3UVE kLocalNormalUVE{0.0F, 1.0F, 0.0F};
+    static constexpr Math::Vector3 kDefaultColliderHalfExtents{0.5F, 0.025F, 0.5F};
+    static constexpr Math::Vector3 kLocalNormal{0.0F, 1.0F, 0.0F};
 
     /// True when `mesh` is valid and configured as a `Plane` primitive.
-    [[nodiscard]] static bool IsPlaneMeshUVE(const PrimitiveMeshComponentUVE& mesh) noexcept;
+    [[nodiscard]] static bool IsPlaneMesh(const PrimitiveMeshComponent& mesh) noexcept;
 
     /// Returns the authored floor-slab collider half-extents `{0.5, 0.025, 0.5}`.
-    [[nodiscard]] static Math::Vector3UVE DefaultColliderHalfExtentsUVE() noexcept;
+    [[nodiscard]] static Math::Vector3 DefaultColliderHalfExtents() noexcept;
 
     /// Returns the local-space AABB enclosing the plane slab.
-    [[nodiscard]] static Math::AabbUVE LocalBoundsUVE() noexcept;
+    [[nodiscard]] static Math::Aabb LocalBounds() noexcept;
 
     /// Resolves the plane's world-space surface normal (`+Y` rotated by `worldRotation`).
     /// Falls back to `{0, 1, 0}` if `worldRotation` cannot be normalized.
-    [[nodiscard]] static Math::Vector3UVE WorldNormalUVE(
-        const Math::QuaternionUVE& worldRotation) noexcept;
+    [[nodiscard]] static Math::Vector3 WorldNormal(
+        const Math::Quaternion& worldRotation) noexcept;
 
     /// Computes the world-space area of the unit XZ plane scaled by `worldScale`. Returns `0.0F`
     /// when `worldScale.x` or `worldScale.z` is non-finite or non-positive.
-    [[nodiscard]] static float SurfaceAreaFromScaleUVE(const Math::Vector3UVE& worldScale) noexcept;
+    [[nodiscard]] static float SurfaceAreaFromScale(const Math::Vector3& worldScale) noexcept;
 
     /// Synchronises `collider` half-extents to the thin floor-slab default.
-    static void SyncColliderHalfExtentsUVE(ColliderComponentUVE& collider) noexcept;
+    static void SyncColliderHalfExtents(ColliderComponent& collider) noexcept;
 };
 
 } // namespace UVE::Scene

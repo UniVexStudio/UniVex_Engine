@@ -6,10 +6,10 @@
 #include "dedicated_server_sample.h"
 
 int main() {
-    UVE::Samples::DedicatedServerSampleConfigUVE config;
+    UVE::Samples::DedicatedServerSampleConfig config;
     config.log = [](const std::string& line) { std::printf("%s\n", line.c_str()); };
-    const UVE::Samples::DedicatedServerSampleResultUVE result =
-        UVE::Samples::RunDedicatedServerSampleUVE(config);
+    const UVE::Samples::DedicatedServerSampleResult result =
+        UVE::Samples::RunDedicatedServerSample(config);
     if (!result.success) {
         std::printf("SAMPLE FAIL (%zu violation%s):\n", result.failures.size(),
                     result.failures.size() == 1U ? "" : "s");

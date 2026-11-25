@@ -10,7 +10,7 @@
 namespace UVE::Scene {
 
 /// Whether an entity's rendered pose is smoothed between fixed physics steps.
-enum class PoseSmoothingUVE : std::uint8_t {
+enum class PoseSmoothing : std::uint8_t {
     /// Take the parent's answer, or Blended at the top of the hierarchy. The default, so a whole rig
     /// can be switched with one toggle instead of one per bone.
     Inherit = 0,
@@ -35,7 +35,7 @@ enum class PoseSmoothingUVE : std::uint8_t {
 /// the fraction of a step already elapsed makes every frame advance by the same 6.94 cm, and drops
 /// the frozen-frame count to zero.
 ///
-/// WHY IT IS A SEPARATE COMPONENT RATHER THAN EXTRA FIELDS ON WorldTransformComponentUVE. Ten
+/// WHY IT IS A SEPARATE COMPONENT RATHER THAN EXTRA FIELDS ON WorldTransformComponent. Ten
 /// systems read that component - physics, collision, constraints, audio, the camera. They must all
 /// keep seeing the exact simulated pose: a physics step that integrated from a blended position
 /// would simulate a world nobody authored, and the error would compound every step. The
@@ -44,12 +44,12 @@ enum class PoseSmoothingUVE : std::uint8_t {
 ///
 /// The component is optional, and an entity without one is drawn at its simulated pose. Only
 /// things that actually move on the fixed step need it.
-struct PhysicsInterpolationComponentUVE final {
+struct PhysicsInterpolationComponent final {
     /// The authored switch.
-    PoseSmoothingUVE mode = PoseSmoothingUVE::Inherit;
+    PoseSmoothing mode = PoseSmoothing::Inherit;
 
     /// Resolved from `mode` and the entity's ancestors, the same way visibility is. Written by
-    /// SceneGraphUVE::UpdateUVE, read when drawing.
+    /// SceneGraph::Update, read when drawing.
     bool interpolatedInHierarchy = true;
 
     /// The pose at the END of the step before last, and at the end of the last step. The renderer
@@ -58,13 +58,13 @@ struct PhysicsInterpolationComponentUVE final {
     /// Both are WORLD poses, not local: interpolating local values and then composing would blend
     /// a child against an un-blended parent, which bends rigs apart at exactly the moments the
     /// feature is supposed to smooth.
-    Math::Vector3UVE previousPosition{};
-    Math::QuaternionUVE previousRotation{};
-    Math::Vector3UVE previousScale{1.0F, 1.0F, 1.0F};
+    Math::Vector3 previousPosition{};
+    Math::Quaternion previousRotation{};
+    Math::Vector3 previousScale{1.0F, 1.0F, 1.0F};
 
-    Math::Vector3UVE currentPosition{};
-    Math::QuaternionUVE currentRotation{};
-    Math::Vector3UVE currentScale{1.0F, 1.0F, 1.0F};
+    Math::Vector3 currentPosition{};
+    Math::Quaternion currentRotation{};
+    Math::Vector3 currentScale{1.0F, 1.0F, 1.0F};
 
     /// False until seeded, or after an explicit reset/disable. The first valid update seeds both
     /// poses to the same authoritative value; later changed poses produce a useful pair. Never
@@ -74,8 +74,8 @@ struct PhysicsInterpolationComponentUVE final {
 
 /// Validates the authored mode. Runtime poses are not serialized and are checked when produced
 /// or sampled, so an invalid transient cache cannot silently publish a non-finite drawn pose.
-[[nodiscard]] bool IsPhysicsInterpolationComponentValidUVE(
-    const PhysicsInterpolationComponentUVE& component) noexcept;
+[[nodiscard]] bool IsPhysicsInterpolationComponentValid(
+    const PhysicsInterpolationComponent& component) noexcept;
 
 /// The pose to DRAW this frame: the two recorded poses blended by `alpha`, the fraction of a fixed
 /// step already elapsed.
@@ -89,8 +89,8 @@ struct PhysicsInterpolationComponentUVE final {
 /// `alpha` is clamped rather than rejected at the boundaries. A timer that overshoots slightly
 /// after a long frame should keep drawing, not stutter - and 1.0 simply means "the current pose",
 /// which is exactly right.
-[[nodiscard]] bool TryGetInterpolatedPoseUVE(const PhysicsInterpolationComponentUVE& component, float alpha,
-                                             Math::Vector3UVE& outPosition, Math::QuaternionUVE& outRotation,
-                                             Math::Vector3UVE& outScale) noexcept;
+[[nodiscard]] bool TryGetInterpolatedPose(const PhysicsInterpolationComponent& component, float alpha,
+                                             Math::Vector3& outPosition, Math::Quaternion& outRotation,
+                                             Math::Vector3& outScale) noexcept;
 
 } // namespace UVE::Scene

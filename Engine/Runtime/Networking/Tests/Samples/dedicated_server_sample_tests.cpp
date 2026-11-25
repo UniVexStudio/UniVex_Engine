@@ -10,8 +10,8 @@
 namespace UVE::Samples::Tests {
 namespace {
 
-TEST(DedicatedServerSampleUVE, FullStoryPasses) {
-    const DedicatedServerSampleResultUVE result = RunDedicatedServerSampleUVE();
+TEST(DedicatedServerSample, FullStoryPasses) {
+    const DedicatedServerSampleResult result = RunDedicatedServerSample();
     for (const std::string& failure : result.failures) {
         ADD_FAILURE() << failure;
     }
@@ -28,11 +28,11 @@ TEST(DedicatedServerSampleUVE, FullStoryPasses) {
     EXPECT_GT(result.stats.walkerX, 12.0F);
 }
 
-TEST(DedicatedServerSampleUVE, ShortRunsStayGreenAndDeterministic) {
-    DedicatedServerSampleConfigUVE config;
+TEST(DedicatedServerSample, ShortRunsStayGreenAndDeterministic) {
+    DedicatedServerSampleConfig config;
     config.ticks = 60U;
-    const DedicatedServerSampleResultUVE first = RunDedicatedServerSampleUVE(config);
-    const DedicatedServerSampleResultUVE second = RunDedicatedServerSampleUVE(config);
+    const DedicatedServerSampleResult first = RunDedicatedServerSample(config);
+    const DedicatedServerSampleResult second = RunDedicatedServerSample(config);
     for (const std::string& failure : first.failures) {
         ADD_FAILURE() << failure;
     }
@@ -50,12 +50,12 @@ TEST(DedicatedServerSampleUVE, ShortRunsStayGreenAndDeterministic) {
     EXPECT_FLOAT_EQ(first.stats.walkerX, second.stats.walkerX);
 }
 
-TEST(DedicatedServerSampleUVE, LogSinkSeesTheStory) {
-    DedicatedServerSampleConfigUVE config;
+TEST(DedicatedServerSample, LogSinkSeesTheStory) {
+    DedicatedServerSampleConfig config;
     config.ticks = 60U;
     std::vector<std::string> lines;
     config.log = [&](const std::string& line) { lines.push_back(line); };
-    const DedicatedServerSampleResultUVE result = RunDedicatedServerSampleUVE(config);
+    const DedicatedServerSampleResult result = RunDedicatedServerSample(config);
     EXPECT_TRUE(result.success);
     EXPECT_FALSE(lines.empty());
     EXPECT_NE(lines.back().find("violation"), std::string::npos);

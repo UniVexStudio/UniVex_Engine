@@ -9,35 +9,35 @@
 namespace UVE::Utilities::Tests {
 namespace {
 
-TEST(ScopeGuardUVETest, FiresAtScopeExit) {
+TEST(ScopeGuardTest, FiresAtScopeExit) {
     int calls = 0;
     {
-        ScopeGuardUVE guard{[&calls] { ++calls; }};
+        ScopeGuard guard{[&calls] { ++calls; }};
         EXPECT_EQ(calls, 0);
     }
     EXPECT_EQ(calls, 1);
 }
 
-TEST(ScopeGuardUVETest, Dismiss_CancelsTheCall) {
+TEST(ScopeGuardTest, Dismiss_CancelsTheCall) {
     int calls = 0;
     {
-        ScopeGuardUVE guard{[&calls] { ++calls; }};
-        guard.DismissUVE();
+        ScopeGuard guard{[&calls] { ++calls; }};
+        guard.Dismiss();
     }
     EXPECT_EQ(calls, 0);
 }
 
-TEST(ScopeGuardUVETest, Move_TransfersTheFiringToTheTarget) {
+TEST(ScopeGuardTest, Move_TransfersTheFiringToTheTarget) {
     int calls = 0;
     {
-        ScopeGuardUVE source{[&calls] { ++calls; }};
-        ScopeGuardUVE target{std::move(source)};
+        ScopeGuard source{[&calls] { ++calls; }};
+        ScopeGuard target{std::move(source)};
         EXPECT_EQ(calls, 0);
     }
     EXPECT_EQ(calls, 1); // Exactly once: the moved-from guard stays silent.
 }
 
-TEST(ScopeGuardUVETest, DeferMacro_RunsAtScopeExit) {
+TEST(ScopeGuardTest, DeferMacro_RunsAtScopeExit) {
     int calls = 0;
     {
         UVE_DEFER(++calls);

@@ -32,23 +32,23 @@ namespace {
 
 /// A small, fast, fully specified generator (xorshift32): the same seed gives the same rigs and
 /// weights on every machine and compiler, which std's distributions do not promise.
-struct RandomUVE final {
+struct Random final {
     std::uint32_t state;
-    explicit RandomUVE(const std::uint32_t seed) : state(seed == 0U ? 0x9E3779B9U : seed) {}
-    std::uint32_t NextUVE() {
+    explicit Random(const std::uint32_t seed) : state(seed == 0U ? 0x9E3779B9U : seed) {}
+    std::uint32_t Next() {
         state ^= state << 13U;
         state ^= state >> 17U;
         state ^= state << 5U;
         return state;
     }
     /// In [0, 1).
-    float UnitUVE() { return static_cast<float>(NextUVE() >> 8U) * (1.0F / 16777216.0F); }
-    float RangeUVE(const float low, const float high) { return low + (high - low) * UnitUVE(); }
-    std::size_t BelowUVE(const std::size_t count) { return count == 0U ? 0U : static_cast<std::size_t>(NextUVE() % count); }
-    bool ChanceUVE(const float p) { return UnitUVE() < p; }
+    float Unit() { return static_cast<float>(Next() >> 8U) * (1.0F / 16777216.0F); }
+    float Range(const float low, const float high) { return low + (high - low) * Unit(); }
+    std::size_t Below(const std::size_t count) { return count == 0U ? 0U : static_cast<std::size_t>(Next() % count); }
+    bool Chance(const float p) { return Unit() < p; }
 };
 
-[[nodiscard]] std::uint32_t HashUVE(const std::string_view text) {
+[[nodiscard]] std::uint32_t Hash(const std::string_view text) {
     std::uint32_t hash = 2166136261U;
     for (const char c : text) {
         hash ^= static_cast<std::uint8_t>(c);
@@ -59,7 +59,7 @@ struct RandomUVE final {
 
 // ---------------------------------------------------------------------------------- features
 
-[[nodiscard]] std::string LowerAlnumUVE(const std::string_view name) {
+[[nodiscard]] std::string LowerAlnum(const std::string_view name) {
     std::string out;
     // A "namespace:" prefix says nothing about the bone.
     const std::size_t colon = name.rfind(':');
@@ -71,31 +71,31 @@ struct RandomUVE final {
     return out;
 }
 
-void NameFeaturesUVE(const std::string_view name, float* out) {
-    std::fill(out, out + RigBrainUVE::kNameFeaturesUVE, 0.0F);
-    const std::string letters = "^" + LowerAlnumUVE(name) + "$";
+void NameFeatures(const std::string_view name, float* out) {
+    std::fill(out, out + RigBrain::kNameFeatures, 0.0F);
+    const std::string letters = "^" + LowerAlnum(name) + "$";
     for (std::size_t i = 0U; i + 3U <= letters.size(); ++i) {
-        out[HashUVE(std::string_view{letters}.substr(i, 3U)) % RigBrainUVE::kNameFeaturesUVE] += 1.0F;
+        out[Hash(std::string_view{letters}.substr(i, 3U)) % RigBrain::kNameFeatures] += 1.0F;
     }
     // The words its key folds it to (synonyms already one word): "LeftUpLeg" -> "thigh".
-    const std::string key = MakeBoneKeyUVE(name);
+    const std::string key = MakeBoneKey(name);
     const std::size_t bar = key.find('|');
     std::string_view words = bar == std::string::npos ? std::string_view{key} : std::string_view{key}.substr(bar + 1U);
     while (!words.empty()) {
         const std::size_t space = words.find(' ');
         const std::string_view word = words.substr(0U, space);
         if (!word.empty()) {
-            out[HashUVE(std::string{"w:"} + std::string{word}) % RigBrainUVE::kNameFeaturesUVE] += 2.0F;
+            out[Hash(std::string{"w:"} + std::string{word}) % RigBrain::kNameFeatures] += 2.0F;
         }
         words = space == std::string_view::npos ? std::string_view{} : words.substr(space + 1U);
     }
     float length = 0.0F;
-    for (std::size_t i = 0U; i < RigBrainUVE::kNameFeaturesUVE; ++i) {
+    for (std::size_t i = 0U; i < RigBrain::kNameFeatures; ++i) {
         length += out[i] * out[i];
     }
     if (length > 0.0F) {
         const float scale = 1.0F / std::sqrt(length);
-        for (std::size_t i = 0U; i < RigBrainUVE::kNameFeaturesUVE; ++i) {
+        for (std::size_t i = 0U; i < RigBrain::kNameFeatures; ++i) {
             out[i] *= scale;
         }
     }
@@ -106,8 +106,8 @@ void NameFeaturesUVE(const std::string_view name, float* out) {
 /// first bone that branches three ways (the spine and two legs), the chest the first three-way
 /// branch up the spine (the neck and two arms); up runs from one to the other. The legs end in the
 /// feet and toes, which point forward. Nothing when the shape is not a body's.
-[[nodiscard]] std::optional<Math::QuaternionUVE> OrientationFromShapeUVE(const RetargetSkeletonUVE& rig,
-                                                                       const std::vector<WorldTransformUVE>& world) {
+[[nodiscard]] std::optional<Math::Quaternion> OrientationFromShape(const RetargetSkeleton& rig,
+                                                                       const std::vector<WorldTransform>& world) {
     const std::size_t count = rig.bones.size();
     std::vector<std::vector<std::size_t>> children(count);
     std::vector<std::size_t> below(count, 0U);
@@ -149,7 +149,7 @@ void NameFeaturesUVE(const std::string_view name, float* out) {
     const auto lengthOf = [&](const std::vector<std::size_t>& chain) {
         float length = 0.0F;
         for (std::size_t i = 1U; i < chain.size(); ++i) {
-            length += Math::LengthUVE(world[chain[i]].position - world[chain[i - 1U]].position);
+            length += Math::Length(world[chain[i]].position - world[chain[i - 1U]].position);
         }
         return length;
     };
@@ -204,42 +204,42 @@ void NameFeaturesUVE(const std::string_view name, float* out) {
         }
         chest = next.front();
     }
-    Math::Vector3UVE up = world[chest].position - world[hips].position;
-    if (!(Math::LengthUVE(up) > 1e-6F)) {
+    Math::Vector3 up = world[chest].position - world[hips].position;
+    if (!(Math::Length(up) > 1e-6F)) {
         return std::nullopt;
     }
-    up = Math::NormalizeUVE(up);
+    up = Math::Normalize(up);
     // Each leg's last step (toe from foot) points forward.
-    Math::Vector3UVE forward{};
+    Math::Vector3 forward{};
     for (const std::size_t leg : {legs->first, legs->second}) {
         const std::vector<std::size_t> chain = chainOf(leg);
-        const Math::Vector3UVE step = world[chain.back()].position - world[chain[chain.size() - 2U]].position;
-        forward += step - up * Math::DotUVE(step, up);
+        const Math::Vector3 step = world[chain.back()].position - world[chain[chain.size() - 2U]].position;
+        forward += step - up * Math::Dot(step, up);
     }
-    const Math::QuaternionUVE stand = RotationBetweenUVE(up, kUpUVE);
-    Math::QuaternionUVE yaw{};
-    const Math::Vector3UVE ahead = Math::RotateVectorUVE(stand, forward);
+    const Math::Quaternion stand = RotationBetween(up, kUp);
+    Math::Quaternion yaw{};
+    const Math::Vector3 ahead = Math::RotateVector(stand, forward);
     if (ahead.x * ahead.x + ahead.z * ahead.z > 1e-10F) {
-        static_cast<void>(Math::TryMakeAxisAngleUVE(kUpUVE, -std::atan2(ahead.x, ahead.z), yaw));
+        static_cast<void>(Math::TryMakeAxisAngle(kUp, -std::atan2(ahead.x, ahead.z), yaw));
     }
-    return Math::MultiplyUVE(yaw, stand);
+    return Math::Multiply(yaw, stand);
 }
 } // namespace
 
-std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference) {
+std::vector<float> RigBoneFeatures(const RetargetSkeleton& rig, const HumanoidReference& reference) {
     const std::size_t count = rig.bones.size();
-    std::vector<float> rows(count * RigBrainUVE::kFeaturesUVE, 0.0F);
-    if (count == 0U || !IsRetargetSkeletonValidUVE(rig)) {
+    std::vector<float> rows(count * RigBrain::kFeatures, 0.0F);
+    if (count == 0U || !IsRetargetSkeletonValid(rig)) {
         return rows;
     }
-    std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(FoldScaleUVE(rig));
+    std::vector<WorldTransform> world = ComputeWorldTransforms(FoldScale(rig));
     // Stood up the way names say, when they say enough; else as authored.
     std::vector<std::string> names;
-    for (const RetargetBoneUVE& bone : rig.bones) {
+    for (const RetargetBone& bone : rig.bones) {
         names.push_back(bone.name);
     }
-    const HumanoidMatchUVE named = MatchHumanoidNamesUVE(names, reference);
-    Math::QuaternionUVE orientation = OrientationOfRigUVE(world, named, reference);
+    const HumanoidMatch named = MatchHumanoidNames(names, reference);
+    Math::Quaternion orientation = OrientationOfRig(world, named, reference);
     // Names that do not find the hips and the head say nothing of how it stands: read the shape.
     const auto namedBone = [&](const std::string_view key) {
         for (std::size_t index = 0U; index < reference.info.size(); ++index) {
@@ -250,23 +250,23 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
         return false;
     };
     if (!namedBone("C|hips") || !(namedBone("C|head") || namedBone("C|neck 1") || namedBone("C|spine 5"))) {
-        if (const std::optional<Math::QuaternionUVE> shape = OrientationFromShapeUVE(rig, world); shape.has_value()) {
+        if (const std::optional<Math::Quaternion> shape = OrientationFromShape(rig, world); shape.has_value()) {
             orientation = *shape;
         }
     }
-    Math::Vector3UVE low{1e30F, 1e30F, 1e30F};
-    Math::Vector3UVE high{-1e30F, -1e30F, -1e30F};
-    Math::Vector3UVE sum{};
-    for (WorldTransformUVE& transform : world) {
-        transform.position = Math::RotateVectorUVE(orientation, transform.position);
-        low = Math::Vector3UVE{std::min(low.x, transform.position.x), std::min(low.y, transform.position.y), std::min(low.z, transform.position.z)};
-        high = Math::Vector3UVE{std::max(high.x, transform.position.x), std::max(high.y, transform.position.y),
+    Math::Vector3 low{1e30F, 1e30F, 1e30F};
+    Math::Vector3 high{-1e30F, -1e30F, -1e30F};
+    Math::Vector3 sum{};
+    for (WorldTransform& transform : world) {
+        transform.position = Math::RotateVector(orientation, transform.position);
+        low = Math::Vector3{std::min(low.x, transform.position.x), std::min(low.y, transform.position.y), std::min(low.z, transform.position.z)};
+        high = Math::Vector3{std::max(high.x, transform.position.x), std::max(high.y, transform.position.y),
                                 std::max(high.z, transform.position.z)};
         sum += transform.position;
     }
     const float height = std::max(high.y - low.y, 1e-6F);
-    const Math::Vector3UVE centre = sum * (1.0F / static_cast<float>(count));
-    const Math::Vector3UVE origin{centre.x, low.y, centre.z};
+    const Math::Vector3 centre = sum * (1.0F / static_cast<float>(count));
+    const Math::Vector3 origin{centre.x, low.y, centre.z};
 
     std::vector<std::vector<std::size_t>> children(count);
     std::vector<std::size_t> depth(count, 0U);
@@ -283,16 +283,16 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
         }
     }
     for (std::size_t bone = 0U; bone < count; ++bone) {
-        float* row = rows.data() + bone * RigBrainUVE::kFeaturesUVE;
-        NameFeaturesUVE(rig.bones[bone].name, row);
-        float* shape = row + RigBrainUVE::kNameFeaturesUVE;
-        const std::string key = MakeBoneKeyUVE(rig.bones[bone].name);
+        float* row = rows.data() + bone * RigBrain::kFeatures;
+        NameFeatures(rig.bones[bone].name, row);
+        float* shape = row + RigBrain::kNameFeatures;
+        const std::string key = MakeBoneKey(rig.bones[bone].name);
         const char side = key.empty() ? 'C' : key.front();
         std::size_t at = 0U;
         shape[at++] = side == 'L' ? 1.0F : 0.0F;
         shape[at++] = side == 'R' ? 1.0F : 0.0F;
         shape[at++] = side == 'C' ? 1.0F : 0.0F;
-        const Math::Vector3UVE p = (world[bone].position - origin) * (1.0F / height);
+        const Math::Vector3 p = (world[bone].position - origin) * (1.0F / height);
         shape[at++] = p.x * 2.0F;
         shape[at++] = p.y;
         shape[at++] = p.z * 2.0F;
@@ -306,9 +306,9 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
             }
         }
         if (main >= 0) {
-            const Math::Vector3UVE along = world[static_cast<std::size_t>(main)].position - world[bone].position;
-            const float length = Math::LengthUVE(along);
-            const Math::Vector3UVE dir = length > 1e-9F ? along * (1.0F / length) : Math::Vector3UVE{};
+            const Math::Vector3 along = world[static_cast<std::size_t>(main)].position - world[bone].position;
+            const float length = Math::Length(along);
+            const Math::Vector3 dir = length > 1e-9F ? along * (1.0F / length) : Math::Vector3{};
             shape[at++] = dir.x;
             shape[at++] = dir.y;
             shape[at++] = dir.z;
@@ -317,9 +317,9 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
             at += 4U;
         }
         if (const std::int32_t parent = rig.bones[bone].parent; parent >= 0) {
-            const Math::Vector3UVE from = world[bone].position - world[static_cast<std::size_t>(parent)].position;
-            const float length = Math::LengthUVE(from);
-            const Math::Vector3UVE dir = length > 1e-9F ? from * (1.0F / length) : Math::Vector3UVE{};
+            const Math::Vector3 from = world[bone].position - world[static_cast<std::size_t>(parent)].position;
+            const float length = Math::Length(from);
+            const Math::Vector3 dir = length > 1e-9F ? from * (1.0F / length) : Math::Vector3{};
             shape[at++] = dir.x;
             shape[at++] = dir.y;
             shape[at++] = dir.z;
@@ -337,7 +337,7 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
         const std::int32_t parent = rig.bones[bone].parent;
         if (parent >= 0) {
             const auto up = static_cast<std::size_t>(parent);
-            const Math::Vector3UVE q = (world[up].position - origin) * (1.0F / height);
+            const Math::Vector3 q = (world[up].position - origin) * (1.0F / height);
             shape[at++] = q.y;
             shape[at++] = std::abs(q.x) * 2.0F;
             shape[at++] = (p.x - q.x) * 4.0F;
@@ -374,14 +374,14 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
             deepest = next;
             ++steps;
         }
-        const Math::Vector3UVE end = (world[deepest].position - origin) * (1.0F / height);
+        const Math::Vector3 end = (world[deepest].position - origin) * (1.0F / height);
         shape[at++] = static_cast<float>(steps) / 8.0F;
         shape[at++] = end.y;
         shape[at++] = (end.x - p.x) * 2.0F;
         shape[at++] = (end.y - p.y) * 2.0F;
         shape[at++] = (end.z - p.z) * 2.0F;
         shape[at++] = std::abs(end.x) * 2.0F;
-        shape[at++] = Math::LengthUVE(end - p) * 2.0F;
+        shape[at++] = Math::Length(end - p) * 2.0F;
     }
     return rows;
 }
@@ -390,7 +390,7 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
 
 namespace {
 
-[[nodiscard]] std::vector<std::string> WordsOfKeyUVE(const std::string& key) {
+[[nodiscard]] std::vector<std::string> WordsOfKey(const std::string& key) {
     std::vector<std::string> words;
     const std::size_t bar = key.find('|');
     std::string rest = bar == std::string::npos ? key : key.substr(bar + 1U);
@@ -409,7 +409,7 @@ namespace {
     return words;
 }
 
-[[nodiscard]] std::string PascalUVE(const std::string& word) {
+[[nodiscard]] std::string Pascal(const std::string& word) {
     std::string out = word;
     if (!out.empty()) {
         out.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(out.front())));
@@ -418,8 +418,8 @@ namespace {
 }
 
 /// Other words rigs use for the same part.
-[[nodiscard]] std::string SynonymUVE(const std::string& word, RandomUVE& random) {
-    static const std::vector<std::pair<std::string, std::vector<std::string>>> kSynonymsUVE{
+[[nodiscard]] std::string Synonym(const std::string& word, Random& random) {
+    static const std::vector<std::pair<std::string, std::vector<std::string>>> kSynonyms{
         {"upperarm", {"upperarm", "arm", "uparm", "upper_arm"}},
         {"forearm", {"forearm", "lowerarm", "lower_arm"}},
         {"thigh", {"thigh", "upleg", "upperleg"}},
@@ -428,29 +428,29 @@ namespace {
         {"toe", {"toe", "ball", "toebase"}},
         {"clavicle", {"clavicle", "shoulder", "collar"}},
     };
-    for (const auto& [base, others] : kSynonymsUVE) {
+    for (const auto& [base, others] : kSynonyms) {
         if (word == base) {
-            return others[random.BelowUVE(others.size())];
+            return others[random.Below(others.size())];
         }
     }
     return word;
 }
 
 /// A name in one of the naming styles rigs come in. Style 5 says nothing at all.
-[[nodiscard]] std::string NameInStyleUVE(const std::string& engineName, const std::string& key, const std::size_t style,
-                                         const bool padNumbers, const std::size_t serial, RandomUVE& random) {
+[[nodiscard]] std::string NameInStyle(const std::string& engineName, const std::string& key, const std::size_t style,
+                                         const bool padNumbers, const std::size_t serial, Random& random) {
     if (style == 0U) {
         return engineName;
     }
     if (style == 5U) {
         char text[32];
-        std::snprintf(text, sizeof(text), random.ChanceUVE(0.5F) ? "Bone%03zu" : "joint%zu", serial);
+        std::snprintf(text, sizeof(text), random.Chance(0.5F) ? "Bone%03zu" : "joint%zu", serial);
         return text;
     }
     const char side = key.empty() ? 'C' : key.front();
-    std::vector<std::string> words = WordsOfKeyUVE(key);
+    std::vector<std::string> words = WordsOfKey(key);
     for (std::string& word : words) {
-        word = SynonymUVE(word, random);
+        word = Synonym(word, random);
         if (padNumbers && word.size() == 1U && std::isdigit(static_cast<unsigned char>(word.front())) != 0) {
             word = "0" + word;
         }
@@ -459,7 +459,7 @@ namespace {
     const auto join = [&](const char* separator, const bool pascal) {
         joined.clear();
         for (std::size_t i = 0U; i < words.size(); ++i) {
-            joined += (i == 0U ? "" : separator) + (pascal ? PascalUVE(words[i]) : words[i]);
+            joined += (i == 0U ? "" : separator) + (pascal ? Pascal(words[i]) : words[i]);
         }
     };
     const bool sided = side == 'L' || side == 'R';
@@ -469,7 +469,7 @@ namespace {
             return sided ? joined + (side == 'L' ? "_l" : "_r") : joined;
         case 2U:   // rig:LeftUpperArm
             join("", true);
-            return std::string{random.ChanceUVE(0.5F) ? "rig:" : ""} + (sided ? (side == 'L' ? "Left" : "Right") : "") + joined;
+            return std::string{random.Chance(0.5F) ? "rig:" : ""} + (sided ? (side == 'L' ? "Left" : "Right") : "") + joined;
         case 3U:   // L_UpperArm
             join("_", true);
             return sided ? std::string{side} + "_" + joined : joined;
@@ -489,7 +489,7 @@ namespace {
         }
         case 9U:   // UpperArm_Left.001
             join("", true);
-            return (sided ? joined + (side == 'L' ? "_Left" : "_Right") : joined) + (random.ChanceUVE(0.3F) ? ".001" : "");
+            return (sided ? joined + (side == 'L' ? "_Left" : "_Right") : joined) + (random.Chance(0.3F) ? ".001" : "");
         default:   // DEF-upperarm.L
             join("", false);
             return "DEF-" + (sided ? joined + (side == 'L' ? ".L" : ".R") : joined);
@@ -498,35 +498,35 @@ namespace {
 
 } // namespace
 
-std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& reference, const std::size_t count, const std::uint32_t seed) {
-    std::vector<RigBrainSampleUVE> rigs;
+std::vector<RigBrainSample> MakeSyntheticRigs(const HumanoidReference& reference, const std::size_t count, const std::uint32_t seed) {
+    std::vector<RigBrainSample> rigs;
     const std::size_t bones = reference.skeleton.bones.size();
     if (bones == 0U) {
         return rigs;
     }
-    const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
-    RandomUVE random(seed);
-    static const std::array<const char*, 10> kExtrasUVE{"Weapon", "Cape1", "Hair2", "Tail1", "Prop", "Ponytail", "Skirt_F", "Bag", "Sword", "Hood"};
+    const std::vector<WorldTransform> referenceWorld = ComputeWorldTransforms(reference.skeleton);
+    Random random(seed);
+    static const std::array<const char*, 10> kExtras{"Weapon", "Cape1", "Hair2", "Tail1", "Prop", "Ponytail", "Skirt_F", "Bag", "Sword", "Hood"};
     for (std::size_t made = 0U; made < count; ++made) {
         // Which bones this rig has: always the body, often the fingers and twists, rarely the rest.
         std::vector<bool> keep(bones, true);
-        const float twists = random.UnitUVE();
-        const float fingers = random.UnitUVE();
-        const bool metacarpals = random.ChanceUVE(0.5F);
-        const float helpers = random.UnitUVE();
-        const std::size_t spines = 2U + random.BelowUVE(4U);   // 2..5 of the five
+        const float twists = random.Unit();
+        const float fingers = random.Unit();
+        const bool metacarpals = random.Chance(0.5F);
+        const float helpers = random.Unit();
+        const std::size_t spines = 2U + random.Below(4U);   // 2..5 of the five
         for (std::size_t bone = 0U; bone < bones; ++bone) {
-            const HumanoidBoneInfoUVE& info = reference.info[bone];
+            const HumanoidBoneInfo& info = reference.info[bone];
             const std::string& key = info.key;
             switch (info.kind) {
-                case HumanoidBoneKindUVE::Root: keep[bone] = random.ChanceUVE(0.6F); break;
-                case HumanoidBoneKindUVE::Twist: keep[bone] = twists < 0.5F; break;
-                case HumanoidBoneKindUVE::Finger:
+                case HumanoidBoneKind::Root: keep[bone] = random.Chance(0.6F); break;
+                case HumanoidBoneKind::Twist: keep[bone] = twists < 0.5F; break;
+                case HumanoidBoneKind::Finger:
                     keep[bone] = fingers < 0.75F && (metacarpals || key.find("metacarpal") == std::string::npos);
                     break;
-                case HumanoidBoneKindUVE::Corrective: keep[bone] = helpers < 0.15F; break;
-                case HumanoidBoneKindUVE::IK: keep[bone] = helpers < 0.45F; break;
-                case HumanoidBoneKindUVE::Socket: keep[bone] = helpers < 0.35F; break;
+                case HumanoidBoneKind::Corrective: keep[bone] = helpers < 0.15F; break;
+                case HumanoidBoneKind::IK: keep[bone] = helpers < 0.45F; break;
+                case HumanoidBoneKind::Socket: keep[bone] = helpers < 0.35F; break;
                 default: break;
             }
             for (std::size_t s = 1U; s <= 5U; ++s) {
@@ -535,16 +535,16 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
                 }
             }
             if (key == "C|neck 2") {
-                keep[bone] = random.ChanceUVE(0.5F);
+                keep[bone] = random.Chance(0.5F);
             }
         }
         // Proportions per chain, and arms raised anywhere from the A-pose to level.
-        const float armScale = random.RangeUVE(0.8F, 1.2F);
-        const float legScale = random.RangeUVE(0.8F, 1.2F);
-        const float spineScale = random.RangeUVE(0.85F, 1.15F);
-        const float raise = random.RangeUVE(0.0F, 0.96F);   // radians up from the reference's arms
-        const float units = random.ChanceUVE(0.3F) ? 100.0F : 1.0F;
-        std::vector<Math::Vector3UVE> position(bones);
+        const float armScale = random.Range(0.8F, 1.2F);
+        const float legScale = random.Range(0.8F, 1.2F);
+        const float spineScale = random.Range(0.85F, 1.15F);
+        const float raise = random.Range(0.0F, 0.96F);   // radians up from the reference's arms
+        const float units = random.Chance(0.3F) ? 100.0F : 1.0F;
+        std::vector<Math::Vector3> position(bones);
         for (std::size_t bone = 0U; bone < bones; ++bone) {
             const std::int32_t parent = reference.skeleton.bones[bone].parent;
             if (parent < 0) {
@@ -553,7 +553,7 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             }
             const std::string& key = reference.info[bone].key;
             const bool arm = key.find("arm") != std::string::npos || key.find("hand") != std::string::npos ||
-                             reference.info[bone].kind == HumanoidBoneKindUVE::Finger;
+                             reference.info[bone].kind == HumanoidBoneKind::Finger;
             const bool leg = key.find("thigh") != std::string::npos || key.find("shin") != std::string::npos ||
                              key.find("foot") != std::string::npos || key.find("toe") != std::string::npos;
             const float scale = arm ? armScale : (leg ? legScale : (key.find("spine") != std::string::npos ? spineScale : 1.0F));
@@ -562,27 +562,27 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
         }
         for (const char sideChar : {'L', 'R'}) {
             const std::string upper = std::string{sideChar} + "|upperarm";
-            const auto found = std::ranges::find_if(reference.info, [&upper](const HumanoidBoneInfoUVE& info) { return info.key == upper; });
+            const auto found = std::ranges::find_if(reference.info, [&upper](const HumanoidBoneInfo& info) { return info.key == upper; });
             if (found == reference.info.end()) {
                 continue;
             }
             const auto shoulder = static_cast<std::size_t>(found - reference.info.begin());
-            Math::QuaternionUVE turn{};
-            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 0.0F, 1.0F}, sideChar == 'L' ? raise : -raise, turn));
+            Math::Quaternion turn{};
+            static_cast<void>(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 0.0F, 1.0F}, sideChar == 'L' ? raise : -raise, turn));
             for (std::size_t bone = shoulder + 1U; bone < bones; ++bone) {
-                if (IsBelowUVE(reference.skeleton, static_cast<std::int32_t>(bone), static_cast<std::int32_t>(shoulder))) {
-                    position[bone] = position[shoulder] + Math::RotateVectorUVE(turn, position[bone] - position[shoulder]);
+                if (IsBelow(reference.skeleton, static_cast<std::int32_t>(bone), static_cast<std::int32_t>(shoulder))) {
+                    position[bone] = position[shoulder] + Math::RotateVector(turn, position[bone] - position[shoulder]);
                 }
             }
         }
         // The rig: kept bones under their nearest kept ancestor, in the reference's order.
         // One rig in five has names that say nothing: the shape alone must carry those.
-        const std::size_t style = random.ChanceUVE(0.2F) ? 5U : [&random] {
-            const std::size_t pick = random.BelowUVE(9U);
+        const std::size_t style = random.Chance(0.2F) ? 5U : [&random] {
+            const std::size_t pick = random.Below(9U);
             return pick >= 5U ? pick + 1U : pick;
         }();
-        const bool pad = random.ChanceUVE(0.3F);
-        RigBrainSampleUVE sample;
+        const bool pad = random.Chance(0.3F);
+        RigBrainSample sample;
         std::vector<std::int32_t> indexOf(bones, -1);
         for (std::size_t bone = 0U; bone < bones; ++bone) {
             if (!keep[bone]) {
@@ -592,8 +592,8 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             while (parent >= 0 && indexOf[static_cast<std::size_t>(parent)] < 0) {
                 parent = reference.skeleton.bones[static_cast<std::size_t>(parent)].parent;
             }
-            RetargetBoneUVE out;
-            out.name = NameInStyleUVE(reference.skeleton.bones[bone].name, reference.info[bone].key, style, pad, sample.rig.bones.size(), random);
+            RetargetBone out;
+            out.name = NameInStyle(reference.skeleton.bones[bone].name, reference.info[bone].key, style, pad, sample.rig.bones.size(), random);
             // One root: a dropped root's children hang from the first bone kept.
             out.parent = parent >= 0 ? indexOf[static_cast<std::size_t>(parent)] : (sample.rig.bones.empty() ? -1 : 0);
             out.position = position[bone] * units;   // made local below
@@ -603,7 +603,7 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
         }
         // The end bones exporters add (finger tips, the top of the head, eyes, toe ends): leaves that
         // are none of the humanoid's, named the rig's way.
-        if (random.ChanceUVE(0.7F)) {
+        if (random.Chance(0.7F)) {
             const std::size_t count = sample.rig.bones.size();
             for (std::size_t bone = 0U; bone < count; ++bone) {
                 const std::int32_t ref = sample.referenceOfBone[bone];
@@ -612,28 +612,28 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
                 }
                 const std::string& key = reference.info[static_cast<std::size_t>(ref)].key;
                 const char sideChar = key.empty() ? 'C' : key.front();
-                std::vector<std::pair<std::string, Math::Vector3UVE>> ends;
-                const bool fingerTip = reference.info[static_cast<std::size_t>(ref)].kind == HumanoidBoneKindUVE::Finger && !key.empty() && key.back() == '3';
+                std::vector<std::pair<std::string, Math::Vector3>> ends;
+                const bool fingerTip = reference.info[static_cast<std::size_t>(ref)].kind == HumanoidBoneKind::Finger && !key.empty() && key.back() == '3';
                 if (fingerTip) {
-                    ends.emplace_back(key.substr(0U, key.size() - 1U) + "4", Math::Vector3UVE{});
+                    ends.emplace_back(key.substr(0U, key.size() - 1U) + "4", Math::Vector3{});
                 } else if (key == "C|head") {
-                    ends.emplace_back("C|head top end", Math::Vector3UVE{0.0F, 0.18F, 0.0F});
-                    ends.emplace_back("L|eye", Math::Vector3UVE{0.03F, 0.07F, 0.09F});
-                    ends.emplace_back("R|eye", Math::Vector3UVE{-0.03F, 0.07F, 0.09F});
+                    ends.emplace_back("C|head top end", Math::Vector3{0.0F, 0.18F, 0.0F});
+                    ends.emplace_back("L|eye", Math::Vector3{0.03F, 0.07F, 0.09F});
+                    ends.emplace_back("R|eye", Math::Vector3{-0.03F, 0.07F, 0.09F});
                 } else if (key == "L|toe" || key == "R|toe") {
-                    ends.emplace_back(std::string{sideChar} + "|toe end", Math::Vector3UVE{0.0F, 0.0F, 0.08F});
+                    ends.emplace_back(std::string{sideChar} + "|toe end", Math::Vector3{0.0F, 0.0F, 0.08F});
                 }
                 for (auto& [endKey, offset] : ends) {
-                    RetargetBoneUVE out;
-                    std::string engineName = MakeHumanoidBoneNameUVE(endKey);
-                    out.name = NameInStyleUVE(engineName, endKey, style, pad, sample.rig.bones.size(), random);
+                    RetargetBone out;
+                    std::string engineName = MakeHumanoidBoneName(endKey);
+                    out.name = NameInStyle(engineName, endKey, style, pad, sample.rig.bones.size(), random);
                     out.parent = static_cast<std::int32_t>(bone);
                     // A finger tip goes on along its finger; the others sit where they are said to.
-                    Math::Vector3UVE along = offset * units;
+                    Math::Vector3 along = offset * units;
                     if (fingerTip) {
                         const std::int32_t parent = sample.rig.bones[bone].parent;
-                        const Math::Vector3UVE from = parent >= 0 ? sample.rig.bones[bone].position - sample.rig.bones[static_cast<std::size_t>(parent)].position
-                                                                   : Math::Vector3UVE{0.0F, -0.02F, 0.0F} * units;
+                        const Math::Vector3 from = parent >= 0 ? sample.rig.bones[bone].position - sample.rig.bones[static_cast<std::size_t>(parent)].position
+                                                                   : Math::Vector3{0.0F, -0.02F, 0.0F} * units;
                         along = from * 0.8F;
                     }
                     out.position = sample.rig.bones[bone].position + along;
@@ -643,39 +643,39 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             }
         }
         // Bones of the rig's own, on random bones.
-        const std::size_t extras = random.BelowUVE(5U);
+        const std::size_t extras = random.Below(5U);
         for (std::size_t e = 0U; e < extras && !sample.rig.bones.empty(); ++e) {
-            RetargetBoneUVE out;
-            const std::size_t on = random.BelowUVE(sample.rig.bones.size());
-            out.name = style == 5U ? "Bone" + std::to_string(900U + e) : std::string{kExtrasUVE[random.BelowUVE(kExtrasUVE.size())]} + std::to_string(e);
+            RetargetBone out;
+            const std::size_t on = random.Below(sample.rig.bones.size());
+            out.name = style == 5U ? "Bone" + std::to_string(900U + e) : std::string{kExtras[random.Below(kExtras.size())]} + std::to_string(e);
             out.parent = static_cast<std::int32_t>(on);
             out.position = sample.rig.bones[on].position +
-                           Math::Vector3UVE{random.RangeUVE(-0.1F, 0.1F), random.RangeUVE(-0.15F, 0.05F), random.RangeUVE(-0.15F, 0.1F)} * units;
+                           Math::Vector3{random.Range(-0.1F, 0.1F), random.Range(-0.15F, 0.05F), random.Range(-0.15F, 0.1F)} * units;
             sample.rig.bones.push_back(std::move(out));
             sample.referenceOfBone.push_back(-1);
         }
         // Stood however its tool stands rigs (Y-up, Z-up, facing away, turned), and placed a little
         // off the ideal, as real rigs are.
-        Math::QuaternionUVE stood{};
-        const float how = random.UnitUVE();
+        Math::Quaternion stood{};
+        const float how = random.Unit();
         if (how < 0.2F) {
-            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -1.5707963F, stood));
+            static_cast<void>(Math::TryMakeAxisAngle(Math::Vector3{1.0F, 0.0F, 0.0F}, -1.5707963F, stood));
         } else if (how < 0.35F) {
-            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 3.1415927F, stood));
+            static_cast<void>(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 3.1415927F, stood));
         } else if (how < 0.5F) {
-            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, random.RangeUVE(-3.1F, 3.1F), stood));
+            static_cast<void>(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, random.Range(-3.1F, 3.1F), stood));
         }
-        const float jitter = random.RangeUVE(0.0F, 0.012F) * units;
-        std::vector<Math::Vector3UVE> worldPosition(sample.rig.bones.size());
+        const float jitter = random.Range(0.0F, 0.012F) * units;
+        std::vector<Math::Vector3> worldPosition(sample.rig.bones.size());
         for (std::size_t bone = 0U; bone < sample.rig.bones.size(); ++bone) {
-            const Math::Vector3UVE off{random.RangeUVE(-jitter, jitter), random.RangeUVE(-jitter, jitter), random.RangeUVE(-jitter, jitter)};
-            worldPosition[bone] = Math::RotateVectorUVE(stood, sample.rig.bones[bone].position + off);
+            const Math::Vector3 off{random.Range(-jitter, jitter), random.Range(-jitter, jitter), random.Range(-jitter, jitter)};
+            worldPosition[bone] = Math::RotateVector(stood, sample.rig.bones[bone].position + off);
         }
         // World positions to locals (no rotations: names and shape are what the brain reads).
         for (std::size_t bone = 0U; bone < sample.rig.bones.size(); ++bone) {
             const std::int32_t parent = sample.rig.bones[bone].parent;
             sample.rig.bones[bone].position = parent < 0 ? worldPosition[bone] : worldPosition[bone] - worldPosition[static_cast<std::size_t>(parent)];
-            sample.rig.bones[bone].rotation = Math::QuaternionUVE{};
+            sample.rig.bones[bone].rotation = Math::Quaternion{};
         }
         rigs.push_back(std::move(sample));
     }
@@ -684,14 +684,14 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
 
 // ---------------------------------------------------------------------------------- the network
 
-std::vector<float> RigBrainUVE::ForwardUVE(const float* features, std::vector<std::vector<float>>* activations) const {
-    std::vector<float> input(features, features + kFeaturesUVE);
+std::vector<float> RigBrain::Forward(const float* features, std::vector<std::vector<float>>* activations) const {
+    std::vector<float> input(features, features + kFeatures);
     if (activations != nullptr) {
         activations->clear();
         activations->push_back(input);
     }
     for (std::size_t layer = 0U; layer < m_layers.size(); ++layer) {
-        const LayerUVE& l = m_layers[layer];
+        const Layer& l = m_layers[layer];
         std::vector<float> output(l.outputs);
         for (std::size_t o = 0U; o < l.outputs; ++o) {
             const float* w = l.weights.data() + o * l.inputs;
@@ -719,16 +719,16 @@ std::vector<float> RigBrainUVE::ForwardUVE(const float* features, std::vector<st
     return input;
 }
 
-void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vector<RigBrainSampleUVE>& extra,
-                           const RigBrainConfigUVE& config) {
+void RigBrain::Train(const HumanoidReference& reference, const std::vector<RigBrainSample>& extra,
+                           const RigBrainConfig& config) {
     m_referenceBones = reference.skeleton.bones.size();
     m_classes = m_referenceBones + 1U;
     const std::size_t none = m_referenceBones;
     // The examples: every bone of every rig, the project's own four times over.
     std::vector<float> features;
     std::vector<std::uint32_t> labels;
-    const auto add = [&](const RigBrainSampleUVE& sample, const std::size_t copies) {
-        const std::vector<float> rows = RigBoneFeaturesUVE(sample.rig, reference);
+    const auto add = [&](const RigBrainSample& sample, const std::size_t copies) {
+        const std::vector<float> rows = RigBoneFeatures(sample.rig, reference);
         for (std::size_t copy = 0U; copy < copies; ++copy) {
             features.insert(features.end(), rows.begin(), rows.end());
             for (const std::int32_t ref : sample.referenceOfBone) {
@@ -737,10 +737,10 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
             }
         }
     };
-    for (const RigBrainSampleUVE& sample : MakeSyntheticRigsUVE(reference, config.rigs, config.seed)) {
+    for (const RigBrainSample& sample : MakeSyntheticRigs(reference, config.rigs, config.seed)) {
         add(sample, 1U);
     }
-    for (const RigBrainSampleUVE& sample : extra) {
+    for (const RigBrainSample& sample : extra) {
         if (sample.referenceOfBone.size() == sample.rig.bones.size()) {
             add(sample, 4U);
         }
@@ -748,18 +748,18 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
     const std::size_t examples = labels.size();
 
     // Layers: features -> hidden -> hidden -> classes, He-initialised from the seed.
-    RandomUVE random(config.seed ^ 0xA5A5A5A5U);
-    const std::array<std::size_t, 4> sizes{kFeaturesUVE, config.hidden, config.hidden, m_classes};
+    Random random(config.seed ^ 0xA5A5A5A5U);
+    const std::array<std::size_t, 4> sizes{kFeatures, config.hidden, config.hidden, m_classes};
     m_layers.clear();
     for (std::size_t layer = 0U; layer + 1U < sizes.size(); ++layer) {
-        LayerUVE l;
+        Layer l;
         l.inputs = sizes[layer];
         l.outputs = sizes[layer + 1U];
         l.weights.resize(l.inputs * l.outputs);
         l.biases.assign(l.outputs, 0.0F);
         const float bound = std::sqrt(6.0F / static_cast<float>(l.inputs));
         for (float& w : l.weights) {
-            w = random.RangeUVE(-bound, bound);
+            w = random.Range(-bound, bound);
         }
         m_layers.push_back(std::move(l));
     }
@@ -768,20 +768,20 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
     }
 
     // Adam, mini-batches of 32, cross entropy.
-    struct MomentsUVE {
+    struct Moments {
         std::vector<float> mw, vw, mb, vb, gw, gb;
     };
-    std::vector<MomentsUVE> moments(m_layers.size());
+    std::vector<Moments> moments(m_layers.size());
     for (std::size_t layer = 0U; layer < m_layers.size(); ++layer) {
         const std::size_t w = m_layers[layer].weights.size();
         const std::size_t b = m_layers[layer].biases.size();
-        moments[layer] = MomentsUVE{std::vector<float>(w), std::vector<float>(w), std::vector<float>(b), std::vector<float>(b),
+        moments[layer] = Moments{std::vector<float>(w), std::vector<float>(w), std::vector<float>(b), std::vector<float>(b),
                                     std::vector<float>(w), std::vector<float>(b)};
     }
-    constexpr float kBeta1UVE = 0.9F;
-    constexpr float kBeta2UVE = 0.999F;
-    constexpr float kEpsilonUVE = 1e-8F;
-    constexpr std::size_t kBatchUVE = 32U;
+    constexpr float kBeta1 = 0.9F;
+    constexpr float kBeta2 = 0.999F;
+    constexpr float kEpsilon = 1e-8F;
+    constexpr std::size_t kBatch = 32U;
     std::vector<std::size_t> order(examples);
     std::iota(order.begin(), order.end(), std::size_t{0});
     std::size_t step = 0U;
@@ -789,23 +789,23 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
     std::vector<float> delta;
     for (std::size_t epoch = 0U; epoch < config.epochs; ++epoch) {
         for (std::size_t i = examples; i > 1U; --i) {
-            std::swap(order[i - 1U], order[random.BelowUVE(i)]);
+            std::swap(order[i - 1U], order[random.Below(i)]);
         }
-        for (std::size_t start = 0U; start < examples; start += kBatchUVE) {
-            const std::size_t end = std::min(start + kBatchUVE, examples);
-            for (MomentsUVE& m : moments) {
+        for (std::size_t start = 0U; start < examples; start += kBatch) {
+            const std::size_t end = std::min(start + kBatch, examples);
+            for (Moments& m : moments) {
                 std::fill(m.gw.begin(), m.gw.end(), 0.0F);
                 std::fill(m.gb.begin(), m.gb.end(), 0.0F);
             }
             for (std::size_t n = start; n < end; ++n) {
                 const std::size_t example = order[n];
-                std::vector<float> probability = ForwardUVE(features.data() + example * kFeaturesUVE, &activations);
+                std::vector<float> probability = Forward(features.data() + example * kFeatures, &activations);
                 delta = std::move(probability);
                 delta[labels[example]] -= 1.0F;
                 for (std::size_t layer = m_layers.size(); layer-- > 0U;) {
-                    const LayerUVE& l = m_layers[layer];
+                    const Layer& l = m_layers[layer];
                     const std::vector<float>& input = activations[layer];
-                    MomentsUVE& m = moments[layer];
+                    Moments& m = moments[layer];
                     std::vector<float> back(layer > 0U ? l.inputs : 0U, 0.0F);
                     for (std::size_t o = 0U; o < l.outputs; ++o) {
                         const float d = delta[o];
@@ -834,20 +834,20 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
             }
             ++step;
             const float scale = 1.0F / static_cast<float>(end - start);
-            const float correction1 = 1.0F - std::pow(kBeta1UVE, static_cast<float>(step));
-            const float correction2 = 1.0F - std::pow(kBeta2UVE, static_cast<float>(step));
+            const float correction1 = 1.0F - std::pow(kBeta1, static_cast<float>(step));
+            const float correction2 = 1.0F - std::pow(kBeta2, static_cast<float>(step));
             // The last third of the epochs at a third of the rate: it settles rather than wanders.
             const float settle = epoch * 3U >= config.epochs * 2U ? 0.33F : 1.0F;
             const float rate = config.learningRate * settle * std::sqrt(correction2) / correction1;
             for (std::size_t layer = 0U; layer < m_layers.size(); ++layer) {
-                LayerUVE& l = m_layers[layer];
-                MomentsUVE& m = moments[layer];
+                Layer& l = m_layers[layer];
+                Moments& m = moments[layer];
                 const auto update = [&](std::vector<float>& value, std::vector<float>& g, std::vector<float>& m1, std::vector<float>& m2) {
                     for (std::size_t k = 0U; k < value.size(); ++k) {
                         const float grad = g[k] * scale;
-                        m1[k] = kBeta1UVE * m1[k] + (1.0F - kBeta1UVE) * grad;
-                        m2[k] = kBeta2UVE * m2[k] + (1.0F - kBeta2UVE) * grad * grad;
-                        value[k] -= rate * m1[k] / (std::sqrt(m2[k]) + kEpsilonUVE);
+                        m1[k] = kBeta1 * m1[k] + (1.0F - kBeta1) * grad;
+                        m2[k] = kBeta2 * m2[k] + (1.0F - kBeta2) * grad * grad;
+                        value[k] -= rate * m1[k] / (std::sqrt(m2[k]) + kEpsilon);
                     }
                 };
                 update(l.weights, m.gw, m.mw, m.vw);
@@ -857,39 +857,39 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
     }
 }
 
-std::vector<BonePredictionUVE> RigBrainUVE::PredictUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference) const {
+std::vector<BonePrediction> RigBrain::Predict(const RetargetSkeleton& rig, const HumanoidReference& reference) const {
     const std::size_t count = rig.bones.size();
-    std::vector<BonePredictionUVE> out(count);
-    if (!IsTrainedUVE() || reference.skeleton.bones.size() != m_referenceBones || count == 0U) {
+    std::vector<BonePrediction> out(count);
+    if (!IsTrained() || reference.skeleton.bones.size() != m_referenceBones || count == 0U) {
         return out;
     }
-    const std::vector<float> rows = RigBoneFeaturesUVE(rig, reference);
+    const std::vector<float> rows = RigBoneFeatures(rig, reference);
     // Each bone's three likeliest; the surest claims first, each humanoid bone once.
-    struct GuessUVE {
+    struct Guess {
         float probability;
         std::size_t bone;
         std::size_t reference;
     };
-    std::vector<GuessUVE> guesses;
+    std::vector<Guess> guesses;
     for (std::size_t bone = 0U; bone < count; ++bone) {
-        const std::vector<float> probability = ForwardUVE(rows.data() + bone * kFeaturesUVE, nullptr);
+        const std::vector<float> probability = Forward(rows.data() + bone * kFeatures, nullptr);
         std::vector<std::size_t> best(probability.size());
         std::iota(best.begin(), best.end(), std::size_t{0});
         std::partial_sort(best.begin(), best.begin() + 3, best.end(),
                           [&probability](const std::size_t a, const std::size_t b) { return probability[a] > probability[b]; });
         for (std::size_t k = 0U; k < 3U; ++k) {
-            guesses.push_back(GuessUVE{probability[best[k]], bone, best[k]});
+            guesses.push_back(Guess{probability[best[k]], bone, best[k]});
         }
     }
-    std::ranges::stable_sort(guesses, [](const GuessUVE& a, const GuessUVE& b) { return a.probability > b.probability; });
+    std::ranges::stable_sort(guesses, [](const Guess& a, const Guess& b) { return a.probability > b.probability; });
     std::vector<bool> boneDone(count, false);
     std::vector<bool> referenceTaken(m_referenceBones, false);
-    for (const GuessUVE& guess : guesses) {
+    for (const Guess& guess : guesses) {
         if (boneDone[guess.bone]) {
             continue;
         }
         if (guess.reference == m_referenceBones) {
-            out[guess.bone] = BonePredictionUVE{-1, guess.probability};
+            out[guess.bone] = BonePrediction{-1, guess.probability};
             boneDone[guess.bone] = true;
             continue;
         }
@@ -898,18 +898,18 @@ std::vector<BonePredictionUVE> RigBrainUVE::PredictUVE(const RetargetSkeletonUVE
         }
         referenceTaken[guess.reference] = true;
         boneDone[guess.bone] = true;
-        out[guess.bone] = BonePredictionUVE{static_cast<std::int32_t>(guess.reference), guess.probability};
+        out[guess.bone] = BonePrediction{static_cast<std::int32_t>(guess.reference), guess.probability};
     }
     return out;
 }
 
-std::string RigBrainUVE::WriteUVE() const {
+std::string RigBrain::Write() const {
     nlohmann::ordered_json doc;
     doc["format"] = "uve-rigbrain-v1";
     doc["referenceBones"] = m_referenceBones;
-    doc["features"] = kFeaturesUVE;
+    doc["features"] = kFeatures;
     nlohmann::ordered_json layers = nlohmann::ordered_json::array();
-    for (const LayerUVE& l : m_layers) {
+    for (const Layer& l : m_layers) {
         nlohmann::ordered_json layer;
         layer["inputs"] = l.inputs;
         layer["outputs"] = l.outputs;
@@ -921,17 +921,17 @@ std::string RigBrainUVE::WriteUVE() const {
     return doc.dump();
 }
 
-bool RigBrainUVE::ReadUVE(const std::string_view text, const HumanoidReferenceUVE& reference) {
+bool RigBrain::Read(const std::string_view text, const HumanoidReference& reference) {
     try {
         const nlohmann::json doc = nlohmann::json::parse(text);
-        if (doc.value("format", std::string{}) != "uve-rigbrain-v1" || doc.value("features", std::size_t{0}) != kFeaturesUVE ||
+        if (doc.value("format", std::string{}) != "uve-rigbrain-v1" || doc.value("features", std::size_t{0}) != kFeatures ||
             doc.value("referenceBones", std::size_t{0}) != reference.skeleton.bones.size()) {
             return false;
         }
-        std::vector<LayerUVE> layers;
-        std::size_t inputs = kFeaturesUVE;
+        std::vector<Layer> layers;
+        std::size_t inputs = kFeatures;
         for (const nlohmann::json& entry : doc.at("layers")) {
-            LayerUVE l;
+            Layer l;
             l.inputs = entry.at("inputs").get<std::size_t>();
             l.outputs = entry.at("outputs").get<std::size_t>();
             l.weights = entry.at("weights").get<std::vector<float>>();
@@ -956,13 +956,13 @@ bool RigBrainUVE::ReadUVE(const std::string_view text, const HumanoidReferenceUV
 
 // ---------------------------------------------------------------------------------- matching
 
-HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference, const RigBrainUVE& brain,
+HumanoidMatch MatchHumanoidWithBrain(const RetargetSkeleton& rig, const HumanoidReference& reference, const RigBrain& brain,
                                            const float minimumConfidence) {
-    HumanoidMatchUVE match = MatchHumanoidUVE(rig, reference);
-    if (!brain.IsTrainedUVE() || !IsRetargetSkeletonValidUVE(rig)) {
+    HumanoidMatch match = MatchHumanoid(rig, reference);
+    if (!brain.IsTrained() || !IsRetargetSkeletonValid(rig)) {
         return match;
     }
-    const std::vector<BonePredictionUVE> predictions = brain.PredictUVE(rig, reference);
+    const std::vector<BonePrediction> predictions = brain.Predict(rig, reference);
     // The surest first; a guess is taken only where the hierarchy agrees: under the rig bone of the
     // nearest humanoid bone above it that is found, and above the rig bones of those below it.
     std::vector<std::size_t> order;
@@ -999,7 +999,7 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
         }
         for (std::size_t other = 0U; other < reference.info.size(); ++other) {
             const std::int32_t at = match.joints[other].bone;
-            if (at < 0 || !IsBelowUVE(reference.skeleton, static_cast<std::int32_t>(other), static_cast<std::int32_t>(ref))) {
+            if (at < 0 || !IsBelow(reference.skeleton, static_cast<std::int32_t>(other), static_cast<std::int32_t>(ref))) {
                 continue;
             }
             if (!below(at, bone)) {
@@ -1010,7 +1010,7 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
     };
     std::vector<std::pair<std::size_t, float>> found;   // reference bone, confidence
     for (const std::size_t bone : order) {
-        const BonePredictionUVE& guess = predictions[bone];
+        const BonePrediction& guess = predictions[bone];
         if (match.referenceOfBone[bone] >= 0 || guess.reference < 0 || guess.confidence < minimumConfidence) {
             continue;
         }
@@ -1020,14 +1020,14 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
         }
         match.referenceOfBone[bone] = guess.reference;
         match.joints[ref].bone = static_cast<std::int32_t>(bone);
-        match.joints[ref].status = JointStatusUVE::Good;
+        match.joints[ref].status = JointStatus::Good;
         match.joints[ref].reason.clear();
         found.emplace_back(ref, guess.confidence);
     }
     // Along the chains: a found bone with one body bone of the humanoid's still to find below it,
     // and one bone of the rig's not yet given below it, is that bone (the forearm after the upper
     // arm, the hand after the forearm) - the surest guess where a name and the network both fail.
-    constexpr float kChainConfidenceUVE = 0.6F;
+    constexpr float kChainConfidence = 0.6F;
     std::vector<std::vector<std::size_t>> rigChildren(rig.bones.size());
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
         if (const std::int32_t parent = rig.bones[bone].parent; parent >= 0) {
@@ -1043,9 +1043,9 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
             }
             std::vector<std::size_t> wanted;
             for (std::size_t child = 0U; child < reference.info.size(); ++child) {
-                const HumanoidBoneInfoUVE& info = reference.info[child];
+                const HumanoidBoneInfo& info = reference.info[child];
                 if (reference.skeleton.bones[child].parent == static_cast<std::int32_t>(ref) && !info.optional &&
-                    (info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger) && match.joints[child].bone < 0) {
+                    (info.kind == HumanoidBoneKind::Body || info.kind == HumanoidBoneKind::Finger) && match.joints[child].bone < 0) {
                     wanted.push_back(child);
                 }
             }
@@ -1060,7 +1060,7 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
             }
             // A child the humanoid continues from must have bones of its own below it, and an end
             // bone answers an end bone.
-            const bool refHasMore = std::ranges::any_of(reference.skeleton.bones, [&](const RetargetBoneUVE& bone) {
+            const bool refHasMore = std::ranges::any_of(reference.skeleton.bones, [&](const RetargetBone& bone) {
                 return bone.parent == static_cast<std::int32_t>(wanted.front());
             });
             if (refHasMore && rigChildren[free.front()].empty()) {
@@ -1068,42 +1068,42 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
             }
             match.referenceOfBone[free.front()] = static_cast<std::int32_t>(wanted.front());
             match.joints[wanted.front()].bone = static_cast<std::int32_t>(free.front());
-            match.joints[wanted.front()].status = JointStatusUVE::Good;
+            match.joints[wanted.front()].status = JointStatus::Good;
             match.joints[wanted.front()].reason.clear();
-            found.emplace_back(wanted.front(), kChainConfidenceUVE);
+            found.emplace_back(wanted.front(), kChainConfidence);
             grew = true;
         }
     }
     if (found.empty()) {
         return match;
     }
-    match = CheckHumanoidMatchUVE(rig, reference, std::move(match));
+    match = CheckHumanoidMatch(rig, reference, std::move(match));
     for (const auto& [ref, confidence] : found) {
-        JointReportUVE& joint = match.joints[ref];
+        JointReport& joint = match.joints[ref];
         joint.byBrain = true;
         joint.confidence = confidence;
-        if (joint.status == JointStatusUVE::Good && confidence < 0.85F) {
+        if (joint.status == JointStatus::Good && confidence < 0.85F) {
             char text[64];
             std::snprintf(text, sizeof(text), "found by the Rig Brain (%d%% sure)", static_cast<int>(std::lround(confidence * 100.0F)));
-            joint.status = JointStatusUVE::Warning;
+            joint.status = JointStatus::Warning;
             joint.reason = text;
         }
     }
     match.counts = {};
-    for (const JointReportUVE& joint : match.joints) {
+    for (const JointReport& joint : match.joints) {
         ++match.counts[static_cast<std::size_t>(joint.status)];
     }
     return match;
 }
 
-std::string WriteRigBrainSamplesUVE(const std::vector<RigBrainSampleUVE>& samples) {
+std::string WriteRigBrainSamples(const std::vector<RigBrainSample>& samples) {
     nlohmann::ordered_json doc;
     doc["format"] = "uve-rigbrain-samples-v1";
     nlohmann::ordered_json rigs = nlohmann::ordered_json::array();
-    for (const RigBrainSampleUVE& sample : samples) {
+    for (const RigBrainSample& sample : samples) {
         nlohmann::ordered_json bones = nlohmann::ordered_json::array();
         for (std::size_t bone = 0U; bone < sample.rig.bones.size(); ++bone) {
-            const RetargetBoneUVE& b = sample.rig.bones[bone];
+            const RetargetBone& b = sample.rig.bones[bone];
             bones.push_back({{"name", b.name},
                              {"parent", b.parent},
                              {"position", {b.position.x, b.position.y, b.position.z}},
@@ -1117,17 +1117,17 @@ std::string WriteRigBrainSamplesUVE(const std::vector<RigBrainSampleUVE>& sample
     return doc.dump();
 }
 
-std::vector<RigBrainSampleUVE> ReadRigBrainSamplesUVE(const std::string_view text) {
-    std::vector<RigBrainSampleUVE> samples;
+std::vector<RigBrainSample> ReadRigBrainSamples(const std::string_view text) {
+    std::vector<RigBrainSample> samples;
     try {
         const nlohmann::json doc = nlohmann::json::parse(text);
         if (doc.value("format", std::string{}) != "uve-rigbrain-samples-v1") {
             return samples;
         }
         for (const nlohmann::json& rig : doc.at("rigs")) {
-            RigBrainSampleUVE sample;
+            RigBrainSample sample;
             for (const nlohmann::json& entry : rig.at("bones")) {
-                RetargetBoneUVE bone;
+                RetargetBone bone;
                 bone.name = entry.at("name").get<std::string>();
                 bone.parent = entry.at("parent").get<std::int32_t>();
                 const std::vector<float> p = entry.at("position").get<std::vector<float>>();
@@ -1135,13 +1135,13 @@ std::vector<RigBrainSampleUVE> ReadRigBrainSamplesUVE(const std::string_view tex
                 if (p.size() != 3U || r.size() != 4U) {
                     return {};
                 }
-                bone.position = Math::Vector3UVE{p[0], p[1], p[2]};
-                bone.rotation = Math::QuaternionUVE{r[0], r[1], r[2], r[3]};
+                bone.position = Math::Vector3{p[0], p[1], p[2]};
+                bone.rotation = Math::Quaternion{r[0], r[1], r[2], r[3]};
                 bone.scale = entry.value("scale", 1.0F);
                 sample.referenceOfBone.push_back(entry.value("reference", -1));
                 sample.rig.bones.push_back(std::move(bone));
             }
-            if (IsRetargetSkeletonValidUVE(sample.rig)) {
+            if (IsRetargetSkeletonValid(sample.rig)) {
                 samples.push_back(std::move(sample));
             }
         }
@@ -1152,27 +1152,27 @@ std::vector<RigBrainSampleUVE> ReadRigBrainSamplesUVE(const std::string_view tex
 }
 
 namespace {
-std::atomic<bool> gDefaultBrainReadyUVE{false};
+std::atomic<bool> gDefaultBrainReady{false};
 } // namespace
 
-const RigBrainUVE& GetDefaultRigBrainUVE() {
-    static RigBrainUVE brain;
+const RigBrain& GetDefaultRigBrain() {
+    static RigBrain brain;
     static std::once_flag once;
     std::call_once(once, [] {
-        brain.TrainUVE(GetHumanoidReferenceUVE());
-        gDefaultBrainReadyUVE = true;
+        brain.Train(GetHumanoidReference());
+        gDefaultBrainReady = true;
     });
     return brain;
 }
 
-void WarmDefaultRigBrainUVE() {
+void WarmDefaultRigBrain() {
     static std::once_flag once;
     static std::future<void> training;
-    std::call_once(once, [] { training = std::async(std::launch::async, [] { static_cast<void>(GetDefaultRigBrainUVE()); }); });
+    std::call_once(once, [] { training = std::async(std::launch::async, [] { static_cast<void>(GetDefaultRigBrain()); }); });
 }
 
-bool IsDefaultRigBrainReadyUVE() noexcept {
-    return gDefaultBrainReadyUVE.load();
+bool IsDefaultRigBrainReady() noexcept {
+    return gDefaultBrainReady.load();
 }
 
 } // namespace UVE::Retarget

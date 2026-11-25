@@ -13,35 +13,35 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::size_t kMaximumStateTreeStates3DUVE = 64U;
-inline constexpr std::size_t kMaximumStateTreeTransitions3DUVE = 128U;
+inline constexpr std::size_t kMaximumStateTreeStates3D = 64U;
+inline constexpr std::size_t kMaximumStateTreeTransitions3D = 128U;
 
-struct StateTreeParameter3DUVE final {
+struct StateTreeParameter3D final {
     std::string key{};
     float value = 0.0F;
 
-    [[nodiscard]] bool operator==(const StateTreeParameter3DUVE&) const = default;
+    [[nodiscard]] bool operator==(const StateTreeParameter3D&) const = default;
 };
 
-struct StateTreeTransition3DUVE final {
+struct StateTreeTransition3D final {
     std::string fromStateId{};
     std::string toStateId{};
     std::string parameterKey{};
     float minimumParameterValue = 0.5F;
     float minimumDurationSeconds = 0.0F;
 
-    [[nodiscard]] bool operator==(const StateTreeTransition3DUVE&) const = default;
+    [[nodiscard]] bool operator==(const StateTreeTransition3D&) const = default;
 };
 
 /// Hierarchical/modular AI state-machine behavior component (`initialStateId`, `states`,
 /// `transitions`, `parameters`).
-struct StateTree3DComponentUVE final {
+struct StateTree3DComponent final {
     std::string initialStateId{"Idle"};
     std::vector<std::string> states{"Idle"};
-    std::vector<StateTreeTransition3DUVE> transitions{};
-    std::vector<StateTreeParameter3DUVE> parameters{};
+    std::vector<StateTreeTransition3D> transitions{};
+    std::vector<StateTreeParameter3D> parameters{};
     bool enabled = true;
 
     // Runtime state, never persisted:
@@ -49,43 +49,43 @@ struct StateTree3DComponentUVE final {
     float activeStateElapsedSeconds = 0.0F;
     std::uint32_t transitionCount = 0U;
 
-    [[nodiscard]] bool operator==(const StateTree3DComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const StateTree3DComponent& other) const noexcept {
         return initialStateId == other.initialStateId && states == other.states &&
                transitions == other.transitions && parameters == other.parameters &&
                enabled == other.enabled;
     }
 };
 
-[[nodiscard]] bool IsStateTree3DComponentValidUVE(const StateTree3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsStateTree3DComponentValid(const StateTree3DComponent& value) noexcept;
 
-[[nodiscard]] StateTree3DComponentUVE SanitizeStateTree3DComponentUVE(
-    const StateTree3DComponentUVE& value);
+[[nodiscard]] StateTree3DComponent SanitizeStateTree3DComponent(
+    const StateTree3DComponent& value);
 
-struct StateTree3DObjectDefinitionUVE final {
+struct StateTree3DObjectDefinition final {
     static constexpr std::string_view defaultName = "StateTree3D";
-    StateTree3DComponentUVE stateTree{};
+    StateTree3DComponent stateTree{};
 };
 
-[[nodiscard]] bool IsStateTree3DObjectDefinitionValidUVE(
-    const StateTree3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsStateTree3DObjectDefinitionValid(
+    const StateTree3DObjectDefinition& value) noexcept;
 
-void ApplyStateTree3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                         const StateTree3DObjectDefinitionUVE& value);
+void ApplyStateTree3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                         const StateTree3DObjectDefinition& value);
 
-class StateTree3DUVE final {
+class StateTree3D final {
 public:
-    StateTree3DUVE() = delete;
+    StateTree3D() = delete;
 
-    static void SetParameterUVE(StateTree3DComponentUVE& tree, std::string_view key, float value);
+    static void SetParameter(StateTree3DComponent& tree, std::string_view key, float value);
 
-    [[nodiscard]] static float GetParameterUVE(const StateTree3DComponentUVE& tree,
+    [[nodiscard]] static float GetParameter(const StateTree3DComponent& tree,
                                                std::string_view key,
                                                float fallback = 0.0F) noexcept;
 
     /// Evaluates one step (`deltaTimeSeconds`) on `tree`, returning true when a transition fired.
-    static bool StepUVE(StateTree3DComponentUVE& tree, float deltaTimeSeconds);
+    static bool Step(StateTree3DComponent& tree, float deltaTimeSeconds);
 };
 
-std::size_t UpdateStateTree3DObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds);
+std::size_t UpdateStateTree3DObjects(IEntityManager& entityManager, float deltaTimeSeconds);
 
 } // namespace UVE::Scene

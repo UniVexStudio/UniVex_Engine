@@ -13,16 +13,16 @@
 namespace UVE::VFX {
 namespace {
 
-constexpr float kMaxInstanceStepDtUVE = 0.1F;
+constexpr float kMaxInstanceStepDt = 0.1F;
 
-[[nodiscard]] bool IsSafeAssetQueryPathUVE(const std::string_view assetPath) noexcept {
+[[nodiscard]] bool IsSafeAssetQueryPath(const std::string_view assetPath) noexcept {
     if (assetPath.empty() || assetPath.find('\0') != std::string_view::npos) {
         return false;
     }
     return true;
 }
 
-[[nodiscard]] std::string NormalizeCacheKeyUVE(const std::filesystem::path& resolvedPath) {
+[[nodiscard]] std::string NormalizeCacheKey(const std::filesystem::path& resolvedPath) {
     std::error_code ec;
     const std::filesystem::path canonical = std::filesystem::weakly_canonical(resolvedPath, ec);
     if (!ec && !canonical.empty()) {
@@ -31,27 +31,27 @@ constexpr float kMaxInstanceStepDtUVE = 0.1F;
     return resolvedPath.lexically_normal().generic_string();
 }
 
-void AdvanceInstanceByTotalDtUVE(VfxInstanceUVE& instance,
+void AdvanceInstanceByTotalDt(VfxInstance& instance,
                                  float totalDt,
-                                 const VfxOwnerUVE& owner,
+                                 const VfxOwner& owner,
                                  const float externalSpawnScale,
-                                 const std::span<const VfxColliderVolumeUVE> sceneColliders) {
+                                 const std::span<const VfxColliderVolume> sceneColliders) {
     while (totalDt > 1e-6F) {
-        const float stepDt = std::min(totalDt, kMaxInstanceStepDtUVE);
-        instance.TickUVE(stepDt, owner, externalSpawnScale, sceneColliders);
+        const float stepDt = std::min(totalDt, kMaxInstanceStepDt);
+        instance.Tick(stepDt, owner, externalSpawnScale, sceneColliders);
         totalDt -= stepDt;
     }
 }
 
-[[nodiscard]] bool ValidateAndPrecompileAssetUVE(const Asset::ParticleSystemAssetUVE& asset,
-                                                 const VfxCompileContextUVE& compileContext) {
-    if (!Asset::IsParticleSystemAssetValidUVE(asset)) {
+[[nodiscard]] bool ValidateAndPrecompileAsset(const Asset::ParticleSystemAsset& asset,
+                                                 const VfxCompileContext& compileContext) {
+    if (!Asset::IsParticleSystemAssetValid(asset)) {
         return false;
     }
-    std::vector<ParticleCompileMessageUVE> messages;
+    std::vector<ParticleCompileMessage> messages;
     for (std::size_t idx = 0U; idx < asset.emitters.size(); ++idx) {
-        ParticleProgramUVE program;
-        if (!CompileParticleEmitterUVE(asset, idx, compileContext, program, messages)) {
+        ParticleProgram program;
+        if (!CompileParticleEmitter(asset, idx, compileContext, program, messages)) {
             return false;
         }
     }
@@ -60,7 +60,7 @@ void AdvanceInstanceByTotalDtUVE(VfxInstanceUVE& instance,
 
 } // namespace
 
-VfxWorldUVE::VfxWorldUVE() {
+VfxWorld::VfxWorld() {
 #if defined(__ANDROID__)
     m_qualityLevel = 0U;
 #else
@@ -69,26 +69,26 @@ VfxWorldUVE::VfxWorldUVE() {
     m_stats.globalBudget = m_globalBudget;
 }
 
-void VfxWorldUVE::SetProjectRootUVE(const std::filesystem::path& projectRoot) {
+void VfxWorld::SetProjectRoot(const std::filesystem::path& projectRoot) {
     m_projectRoot = projectRoot;
 }
 
-void VfxWorldUVE::SetGlobalParticleBudgetUVE(const std::size_t maxLiveParticles) noexcept {
+void VfxWorld::SetGlobalParticleBudget(const std::size_t maxLiveParticles) noexcept {
     m_globalBudget = maxLiveParticles;
     m_stats.globalBudget = maxLiveParticles;
 }
 
-void VfxWorldUVE::SetQualityLevelUVE(const std::uint8_t level) noexcept {
+void VfxWorld::SetQualityLevel(const std::uint8_t level) noexcept {
     m_qualityLevel = std::min<std::uint8_t>(level, 2U);
 }
 
-void VfxWorldUVE::ClearCacheUVE() {
+void VfxWorld::ClearCache() {
     m_assetCache.clear();
-    UpdateSummaryStatsUVE();
+    UpdateSummaryStats();
 }
 
-std::filesystem::path VfxWorldUVE::ResolveAssetPathUVE(const std::string_view assetPath) const {
-    if (!IsSafeAssetQueryPathUVE(assetPath)) {
+std::filesystem::path VfxWorld::ResolveAssetPath(const std::string_view assetPath) const {
+    if (!IsSafeAssetQueryPath(assetPath)) {
         return {};
     }
     const std::filesystem::path rel(assetPath);
@@ -126,32 +126,32 @@ std::filesystem::path VfxWorldUVE::ResolveAssetPathUVE(const std::string_view as
     return {};
 }
 
-VfxHandleUVE VfxWorldUVE::SpawnUVE(const std::string_view assetPath,
-                                   const VfxOwnerUVE& owner,
+VfxHandle VfxWorld::Spawn(const std::string_view assetPath,
+                                   const VfxOwner& owner,
                                    const std::uint64_t attachEntityKey,
                                    const std::uint32_t instanceSeed) {
-    const std::filesystem::path resolved = ResolveAssetPathUVE(assetPath);
+    const std::filesystem::path resolved = ResolveAssetPath(assetPath);
     if (resolved.empty()) {
-        UVE_WARNING("VfxWorldUVE: could not resolve particle system asset path \"{}\"", assetPath);
-        return kInvalidVfxHandleUVE;
+        UVE_WARNING("VfxWorld: could not resolve particle system asset path \"{}\"", assetPath);
+        return kInvalidVfxHandle;
     }
 
-    const std::string cacheKey = NormalizeCacheKeyUVE(resolved);
+    const std::string cacheKey = NormalizeCacheKey(resolved);
     auto cacheIt = m_assetCache.find(cacheKey);
     if (cacheIt == m_assetCache.end()) {
-        Asset::ParticleSystemAssetUVE loadedAsset;
-        if (!Asset::LoadParticleSystemAssetUVE(resolved, loadedAsset)) {
-            UVE_WARNING("VfxWorldUVE: failed to load particle system asset \"{}\"", resolved.string());
-            return kInvalidVfxHandleUVE;
+        Asset::ParticleSystemAsset loadedAsset;
+        if (!Asset::LoadParticleSystemAsset(resolved, loadedAsset)) {
+            UVE_WARNING("VfxWorld: failed to load particle system asset \"{}\"", resolved.string());
+            return kInvalidVfxHandle;
         }
-        const VfxCompileContextUVE compileContext{m_projectRoot};
-        if (!ValidateAndPrecompileAssetUVE(loadedAsset, compileContext)) {
-            UVE_WARNING("VfxWorldUVE: failed to compile particle system asset \"{}\"", resolved.string());
-            return kInvalidVfxHandleUVE;
+        const VfxCompileContext compileContext{m_projectRoot};
+        if (!ValidateAndPrecompileAsset(loadedAsset, compileContext)) {
+            UVE_WARNING("VfxWorld: failed to compile particle system asset \"{}\"", resolved.string());
+            return kInvalidVfxHandle;
         }
 
         std::error_code ec;
-        CachedAssetEntryUVE entry;
+        CachedAssetEntry entry;
         entry.resolvedDiskPath = resolved;
         entry.isDiskAsset = true;
         entry.lastWriteTime = std::filesystem::last_write_time(resolved, ec);
@@ -160,12 +160,12 @@ VfxHandleUVE VfxWorldUVE::SpawnUVE(const std::string_view assetPath,
         cacheIt = m_assetCache.emplace(cacheKey, std::move(entry)).first;
     }
 
-    return AllocateAndInitializeSlotUVE(cacheKey, cacheIt->second.asset, owner, attachEntityKey, instanceSeed);
+    return AllocateAndInitializeSlot(cacheKey, cacheIt->second.asset, owner, attachEntityKey, instanceSeed);
 }
 
-VfxHandleUVE VfxWorldUVE::SpawnFromAssetUVE(const std::string_view cacheKey,
-                                            const Asset::ParticleSystemAssetUVE& system,
-                                            const VfxOwnerUVE& owner,
+VfxHandle VfxWorld::SpawnFromAsset(const std::string_view cacheKey,
+                                            const Asset::ParticleSystemAsset& system,
+                                            const VfxOwner& owner,
                                             const std::uint64_t attachEntityKey,
                                             const std::uint32_t instanceSeed) {
     std::string normalizedKey;
@@ -173,60 +173,60 @@ VfxHandleUVE VfxWorldUVE::SpawnFromAssetUVE(const std::string_view cacheKey,
         normalizedKey.assign(cacheKey);
         auto it = m_assetCache.find(normalizedKey);
         if (it == m_assetCache.end()) {
-            const VfxCompileContextUVE compileContext{m_projectRoot};
-            if (!ValidateAndPrecompileAssetUVE(system, compileContext)) {
-                return kInvalidVfxHandleUVE;
+            const VfxCompileContext compileContext{m_projectRoot};
+            if (!ValidateAndPrecompileAsset(system, compileContext)) {
+                return kInvalidVfxHandle;
             }
-            CachedAssetEntryUVE entry;
+            CachedAssetEntry entry;
             entry.isDiskAsset = false;
             entry.asset = system;
             m_assetCache.emplace(normalizedKey, std::move(entry));
         }
     }
-    return AllocateAndInitializeSlotUVE(normalizedKey, system, owner, attachEntityKey, instanceSeed);
+    return AllocateAndInitializeSlot(normalizedKey, system, owner, attachEntityKey, instanceSeed);
 }
 
-bool VfxWorldUVE::StopUVE(const VfxHandleUVE handle) noexcept {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
+bool VfxWorld::Stop(const VfxHandle handle) noexcept {
+    InstanceSlot* const slot = ResolveSlot(handle);
     if (slot == nullptr) {
         return false;
     }
-    slot->instance.StopUVE();
-    if (!slot->instance.IsAliveUVE()) {
-        RetireSlotUVE(handle.index, *slot);
-        UpdateSummaryStatsUVE();
+    slot->instance.Stop();
+    if (!slot->instance.IsAlive()) {
+        RetireSlot(handle.index, *slot);
+        UpdateSummaryStats();
     }
     return true;
 }
 
-bool VfxWorldUVE::KillUVE(const VfxHandleUVE handle) noexcept {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
+bool VfxWorld::Kill(const VfxHandle handle) noexcept {
+    InstanceSlot* const slot = ResolveSlot(handle);
     if (slot == nullptr) {
         return false;
     }
-    slot->instance.KillUVE();
-    RetireSlotUVE(handle.index, *slot);
-    UpdateSummaryStatsUVE();
+    slot->instance.Kill();
+    RetireSlot(handle.index, *slot);
+    UpdateSummaryStats();
     return true;
 }
 
-void VfxWorldUVE::ClearAllInstancesUVE() noexcept {
+void VfxWorld::ClearAllInstances() noexcept {
     for (std::uint32_t idx = 0U; idx < static_cast<std::uint32_t>(m_slots.size()); ++idx) {
         if (m_slots[idx].active) {
-            m_slots[idx].instance.KillUVE();
-            RetireSlotUVE(idx, m_slots[idx]);
+            m_slots[idx].instance.Kill();
+            RetireSlot(idx, m_slots[idx]);
         }
     }
-    UpdateSummaryStatsUVE();
+    UpdateSummaryStats();
 }
 
-bool VfxWorldUVE::IsAliveUVE(const VfxHandleUVE handle) const noexcept {
-    const InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    return slot != nullptr && slot->instance.IsAliveUVE();
+bool VfxWorld::IsAlive(const VfxHandle handle) const noexcept {
+    const InstanceSlot* const slot = ResolveSlot(handle);
+    return slot != nullptr && slot->instance.IsAlive();
 }
 
-bool VfxWorldUVE::SetOwnerUVE(const VfxHandleUVE handle, const VfxOwnerUVE& owner) noexcept {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
+bool VfxWorld::SetOwner(const VfxHandle handle, const VfxOwner& owner) noexcept {
+    InstanceSlot* const slot = ResolveSlot(handle);
     if (slot == nullptr) {
         return false;
     }
@@ -235,81 +235,81 @@ bool VfxWorldUVE::SetOwnerUVE(const VfxHandleUVE handle, const VfxOwnerUVE& owne
     return true;
 }
 
-bool VfxWorldUVE::SetParameterFloatUVE(const VfxHandleUVE handle,
+bool VfxWorld::SetParameterFloat(const VfxHandle handle,
                                        const std::string_view name,
                                        const float value) {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    if (slot == nullptr || !slot->instance.SetParameterFloatUVE(name, value)) {
+    InstanceSlot* const slot = ResolveSlot(handle);
+    if (slot == nullptr || !slot->instance.SetParameterFloat(name, value)) {
         return false;
     }
-    ParameterOverrideUVE overrideEntry;
-    overrideEntry.type = Asset::ParticleUserParameterTypeUVE::Float;
+    ParameterOverride overrideEntry;
+    overrideEntry.type = Asset::ParticleUserParameterType::Float;
     overrideEntry.vector.x = value;
     slot->parameterOverrides[std::string(name)] = overrideEntry;
     return true;
 }
 
-bool VfxWorldUVE::SetParameterVectorUVE(const VfxHandleUVE handle,
+bool VfxWorld::SetParameterVector(const VfxHandle handle,
                                         const std::string_view name,
-                                        const Math::Vector3UVE& value) {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    if (slot == nullptr || !slot->instance.SetParameterVectorUVE(name, value)) {
+                                        const Math::Vector3& value) {
+    InstanceSlot* const slot = ResolveSlot(handle);
+    if (slot == nullptr || !slot->instance.SetParameterVector(name, value)) {
         return false;
     }
-    ParameterOverrideUVE overrideEntry;
-    overrideEntry.type = Asset::ParticleUserParameterTypeUVE::Vector;
+    ParameterOverride overrideEntry;
+    overrideEntry.type = Asset::ParticleUserParameterType::Vector;
     overrideEntry.vector = value;
     slot->parameterOverrides[std::string(name)] = overrideEntry;
     return true;
 }
 
-bool VfxWorldUVE::SetParameterColorUVE(const VfxHandleUVE handle,
+bool VfxWorld::SetParameterColor(const VfxHandle handle,
                                        const std::string_view name,
-                                       const Math::ColorUVE& color,
+                                       const Math::Color& color,
                                        const float alpha) {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    if (slot == nullptr || !slot->instance.SetParameterColorUVE(name, color, alpha)) {
+    InstanceSlot* const slot = ResolveSlot(handle);
+    if (slot == nullptr || !slot->instance.SetParameterColor(name, color, alpha)) {
         return false;
     }
-    ParameterOverrideUVE overrideEntry;
-    overrideEntry.type = Asset::ParticleUserParameterTypeUVE::Color;
-    overrideEntry.vector = Math::Vector3UVE{color.r, color.g, color.b};
+    ParameterOverride overrideEntry;
+    overrideEntry.type = Asset::ParticleUserParameterType::Color;
+    overrideEntry.vector = Math::Vector3{color.r, color.g, color.b};
     overrideEntry.alpha = alpha;
     slot->parameterOverrides[std::string(name)] = overrideEntry;
     return true;
 }
 
-bool VfxWorldUVE::SetParameterBoolUVE(const VfxHandleUVE handle,
+bool VfxWorld::SetParameterBool(const VfxHandle handle,
                                       const std::string_view name,
                                       const bool value) {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    if (slot == nullptr || !slot->instance.SetParameterBoolUVE(name, value)) {
+    InstanceSlot* const slot = ResolveSlot(handle);
+    if (slot == nullptr || !slot->instance.SetParameterBool(name, value)) {
         return false;
     }
-    ParameterOverrideUVE overrideEntry;
-    overrideEntry.type = Asset::ParticleUserParameterTypeUVE::Bool;
+    ParameterOverride overrideEntry;
+    overrideEntry.type = Asset::ParticleUserParameterType::Bool;
     overrideEntry.vector.x = value ? 1.0F : 0.0F;
     slot->parameterOverrides[std::string(name)] = overrideEntry;
     return true;
 }
 
-bool VfxWorldUVE::SetParameterIntUVE(const VfxHandleUVE handle,
+bool VfxWorld::SetParameterInt(const VfxHandle handle,
                                      const std::string_view name,
                                      const std::int32_t value) {
-    InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
-    if (slot == nullptr || !slot->instance.SetParameterIntUVE(name, value)) {
+    InstanceSlot* const slot = ResolveSlot(handle);
+    if (slot == nullptr || !slot->instance.SetParameterInt(name, value)) {
         return false;
     }
-    ParameterOverrideUVE overrideEntry;
-    overrideEntry.type = Asset::ParticleUserParameterTypeUVE::Int;
+    ParameterOverride overrideEntry;
+    overrideEntry.type = Asset::ParticleUserParameterType::Int;
     overrideEntry.vector.x = static_cast<float>(value);
     slot->parameterOverrides[std::string(name)] = overrideEntry;
     return true;
 }
 
-std::size_t VfxWorldUVE::PollHotReloadUVE() {
+std::size_t VfxWorld::PollHotReload() {
     std::size_t reloadedCount = 0U;
-    const VfxCompileContextUVE compileContext{m_projectRoot};
+    const VfxCompileContext compileContext{m_projectRoot};
 
     for (auto& [key, entry] : m_assetCache) {
         if (!entry.isDiskAsset || entry.resolvedDiskPath.empty()) {
@@ -331,10 +331,10 @@ std::size_t VfxWorldUVE::PollHotReloadUVE() {
             continue;
         }
 
-        Asset::ParticleSystemAssetUVE newAsset;
-        if (!Asset::LoadParticleSystemAssetUVE(entry.resolvedDiskPath, newAsset) ||
-            !ValidateAndPrecompileAssetUVE(newAsset, compileContext)) {
-            UVE_WARNING("VfxWorldUVE: hot reload of \"{}\" failed validation/compile; keeping previous version",
+        Asset::ParticleSystemAsset newAsset;
+        if (!Asset::LoadParticleSystemAsset(entry.resolvedDiskPath, newAsset) ||
+            !ValidateAndPrecompileAsset(newAsset, compileContext)) {
+            UVE_WARNING("VfxWorld: hot reload of \"{}\" failed validation/compile; keeping previous version",
                         entry.resolvedDiskPath.string());
             continue;
         }
@@ -345,15 +345,15 @@ std::size_t VfxWorldUVE::PollHotReloadUVE() {
         ++reloadedCount;
         ++m_stats.hotReloadCount;
 
-        for (InstanceSlotUVE& slot : m_slots) {
+        for (InstanceSlot& slot : m_slots) {
             if (!slot.active || slot.cacheKey != key) {
                 continue;
             }
-            VfxOwnerUVE effectiveOwner = slot.owner;
+            VfxOwner effectiveOwner = slot.owner;
             effectiveOwner.qualityLevel = m_qualityLevel;
-            VfxInstanceUVE rebuilt;
-            if (rebuilt.InitializeUVE(entry.asset, effectiveOwner, slot.instanceSeed, compileContext)) {
-                ApplyParameterOverridesUVE(rebuilt, slot.parameterOverrides);
+            VfxInstance rebuilt;
+            if (rebuilt.Initialize(entry.asset, effectiveOwner, slot.instanceSeed, compileContext)) {
+                ApplyParameterOverrides(rebuilt, slot.parameterOverrides);
                 slot.instance = std::move(rebuilt);
                 slot.outOfFrustumFrameCounter = 0U;
                 slot.accumulatedOutOfFrustumDt = 0.0F;
@@ -362,21 +362,21 @@ std::size_t VfxWorldUVE::PollHotReloadUVE() {
     }
 
     if (reloadedCount > 0U) {
-        UpdateSummaryStatsUVE();
+        UpdateSummaryStats();
     }
     return reloadedCount;
 }
 
-void VfxWorldUVE::SetSceneCollidersUVE(std::vector<VfxColliderVolumeUVE> colliders) {
+void VfxWorld::SetSceneColliders(std::vector<VfxColliderVolume> colliders) {
     m_sceneColliders = std::move(colliders);
 }
 
-void VfxWorldUVE::ClearSceneCollidersUVE() noexcept {
+void VfxWorld::ClearSceneColliders() noexcept {
     m_sceneColliders.clear();
 }
 
-void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
-    (void)PollHotReloadUVE();
+void VfxWorld::Tick(const float dt, const VfxFrameView& frameView) {
+    (void)PollHotReload();
 
     if (!std::isfinite(dt) || dt < 0.0F) {
         return;
@@ -384,15 +384,15 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
 
     std::size_t liveParticlesBeforeTick = 0U;
     for (std::uint32_t idx = 0U; idx < static_cast<std::uint32_t>(m_slots.size()); ++idx) {
-        InstanceSlotUVE& slot = m_slots[idx];
+        InstanceSlot& slot = m_slots[idx];
         if (!slot.active) {
             continue;
         }
-        if (!slot.instance.IsAliveUVE()) {
-            RetireSlotUVE(idx, slot);
+        if (!slot.instance.IsAlive()) {
+            RetireSlot(idx, slot);
             continue;
         }
-        liveParticlesBeforeTick += slot.instance.GetLiveCountUVE();
+        liveParticlesBeforeTick += slot.instance.GetLiveCount();
     }
 
     float budgetScale = 1.0F;
@@ -404,18 +404,18 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
     m_stats.lastBudgetScale = budgetScale;
 
     for (std::uint32_t idx = 0U; idx < static_cast<std::uint32_t>(m_slots.size()); ++idx) {
-        InstanceSlotUVE& slot = m_slots[idx];
+        InstanceSlot& slot = m_slots[idx];
         if (!slot.active) {
             continue;
         }
 
-        VfxOwnerUVE effectiveOwner = slot.owner;
+        VfxOwner effectiveOwner = slot.owner;
         effectiveOwner.qualityLevel = m_qualityLevel;
 
         float instanceSpawnScale = budgetScale;
-        const Asset::ParticleScalabilityUVE& scalability = slot.instance.GetScalabilityUVE(m_qualityLevel);
+        const Asset::ParticleScalability& scalability = slot.instance.GetScalability(m_qualityLevel);
         if (frameView.hasCamera && scalability.cullDistance > 0.0F) {
-            const float distSq = Math::LengthSquaredUVE(effectiveOwner.position - frameView.cameraPosition);
+            const float distSq = Math::LengthSquared(effectiveOwner.position - frameView.cameraPosition);
             const float cullDistSq = scalability.cullDistance * scalability.cullDistance;
             if (distSq > cullDistSq) {
                 instanceSpawnScale = 0.0F;
@@ -425,10 +425,10 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
 
         bool inFrustum = true;
         if (frameView.hasCamera) {
-            const Math::Matrix4x4UVE ownerWorld = Math::Matrix4x4UVE::ComposeTrsUVE(
-                effectiveOwner.position, effectiveOwner.rotation, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-            const Math::AabbUVE worldBounds = slot.instance.GetFixedBoundsUVE().TransformUVE(ownerWorld);
-            inFrustum = frameView.frustum.IntersectsUVE(worldBounds);
+            const Math::Matrix4x4 ownerWorld = Math::Matrix4x4::ComposeTrs(
+                effectiveOwner.position, effectiveOwner.rotation, Math::Vector3{1.0F, 1.0F, 1.0F});
+            const Math::Aabb worldBounds = slot.instance.GetFixedBounds().Transform(ownerWorld);
+            inFrustum = frameView.frustum.Intersects(worldBounds);
         }
 
         if (inFrustum) {
@@ -436,7 +436,7 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
             slot.accumulatedOutOfFrustumDt = 0.0F;
             slot.outOfFrustumFrameCounter = 0U;
             if (stepDt > 0.0F) {
-                AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
+                AdvanceInstanceByTotalDt(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
                                             m_sceneColliders);
             }
         } else {
@@ -447,7 +447,7 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
                 slot.accumulatedOutOfFrustumDt = 0.0F;
                 slot.outOfFrustumFrameCounter = 0U;
                 if (stepDt > 0.0F) {
-                    AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
+                    AdvanceInstanceByTotalDt(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
                                                 m_sceneColliders);
                 }
             } else {
@@ -455,34 +455,34 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
             }
         }
 
-        if (!slot.instance.IsAliveUVE()) {
-            RetireSlotUVE(idx, slot);
+        if (!slot.instance.IsAlive()) {
+            RetireSlot(idx, slot);
         }
     }
 
-    UpdateSummaryStatsUVE();
+    UpdateSummaryStats();
 }
 
-const VfxInstanceUVE* VfxWorldUVE::TryGetInstanceUVE(const VfxHandleUVE handle) const noexcept {
-    const InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
+const VfxInstance* VfxWorld::TryGetInstance(const VfxHandle handle) const noexcept {
+    const InstanceSlot* const slot = ResolveSlot(handle);
     return slot != nullptr ? &slot->instance : nullptr;
 }
 
-const VfxOwnerUVE* VfxWorldUVE::TryGetOwnerUVE(const VfxHandleUVE handle) const noexcept {
-    const InstanceSlotUVE* const slot = ResolveSlotUVE(handle);
+const VfxOwner* VfxWorld::TryGetOwner(const VfxHandle handle) const noexcept {
+    const InstanceSlot* const slot = ResolveSlot(handle);
     return slot != nullptr ? &slot->owner : nullptr;
 }
 
-void VfxWorldUVE::CollectActiveInstancesUVE(std::vector<VfxActiveInstanceRefUVE>& out) const {
+void VfxWorld::CollectActiveInstances(std::vector<VfxActiveInstanceRef>& out) const {
     out.clear();
     out.reserve(m_stats.activeInstanceCount);
     for (std::uint32_t idx = 0U; idx < static_cast<std::uint32_t>(m_slots.size()); ++idx) {
-        const InstanceSlotUVE& slot = m_slots[idx];
-        if (!slot.active || !slot.instance.IsAliveUVE()) {
+        const InstanceSlot& slot = m_slots[idx];
+        if (!slot.active || !slot.instance.IsAlive()) {
             continue;
         }
-        out.push_back(VfxActiveInstanceRefUVE{
-            VfxHandleUVE{idx, slot.generation},
+        out.push_back(VfxActiveInstanceRef{
+            VfxHandle{idx, slot.generation},
             &slot.instance,
             &slot.owner,
             slot.attachEntityKey,
@@ -490,29 +490,29 @@ void VfxWorldUVE::CollectActiveInstancesUVE(std::vector<VfxActiveInstanceRefUVE>
     }
 }
 
-VfxWorldUVE::InstanceSlotUVE* VfxWorldUVE::ResolveSlotUVE(const VfxHandleUVE handle) noexcept {
-    if (!handle.IsValidUVE() || handle.index >= m_slots.size()) {
+VfxWorld::InstanceSlot* VfxWorld::ResolveSlot(const VfxHandle handle) noexcept {
+    if (!handle.IsValid() || handle.index >= m_slots.size()) {
         return nullptr;
     }
-    InstanceSlotUVE& slot = m_slots[handle.index];
+    InstanceSlot& slot = m_slots[handle.index];
     if (!slot.active || slot.generation != handle.generation) {
         return nullptr;
     }
     return &slot;
 }
 
-const VfxWorldUVE::InstanceSlotUVE* VfxWorldUVE::ResolveSlotUVE(const VfxHandleUVE handle) const noexcept {
-    if (!handle.IsValidUVE() || handle.index >= m_slots.size()) {
+const VfxWorld::InstanceSlot* VfxWorld::ResolveSlot(const VfxHandle handle) const noexcept {
+    if (!handle.IsValid() || handle.index >= m_slots.size()) {
         return nullptr;
     }
-    const InstanceSlotUVE& slot = m_slots[handle.index];
+    const InstanceSlot& slot = m_slots[handle.index];
     if (!slot.active || slot.generation != handle.generation) {
         return nullptr;
     }
     return &slot;
 }
 
-void VfxWorldUVE::RetireSlotUVE(const std::uint32_t slotIndex, InstanceSlotUVE& slot) noexcept {
+void VfxWorld::RetireSlot(const std::uint32_t slotIndex, InstanceSlot& slot) noexcept {
     if (!slot.active) {
         return;
     }
@@ -529,12 +529,12 @@ void VfxWorldUVE::RetireSlotUVE(const std::uint32_t slotIndex, InstanceSlotUVE& 
     m_freeSlotIndices.push_back(slotIndex);
 }
 
-VfxHandleUVE VfxWorldUVE::AllocateAndInitializeSlotUVE(const std::string& cacheKey,
-                                                       const Asset::ParticleSystemAssetUVE& asset,
-                                                       const VfxOwnerUVE& owner,
+VfxHandle VfxWorld::AllocateAndInitializeSlot(const std::string& cacheKey,
+                                                       const Asset::ParticleSystemAsset& asset,
+                                                       const VfxOwner& owner,
                                                        const std::uint64_t attachEntityKey,
                                                        const std::uint32_t instanceSeed) {
-    VfxOwnerUVE effectiveOwner = owner;
+    VfxOwner effectiveOwner = owner;
     effectiveOwner.qualityLevel = m_qualityLevel;
 
     std::uint32_t seedToUse = instanceSeed;
@@ -545,10 +545,10 @@ VfxHandleUVE VfxWorldUVE::AllocateAndInitializeSlotUVE(const std::string& cacheK
         }
     }
 
-    VfxInstanceUVE newInstance;
-    const VfxCompileContextUVE compileContext{m_projectRoot};
-    if (!newInstance.InitializeUVE(asset, effectiveOwner, seedToUse, compileContext)) {
-        return kInvalidVfxHandleUVE;
+    VfxInstance newInstance;
+    const VfxCompileContext compileContext{m_projectRoot};
+    if (!newInstance.Initialize(asset, effectiveOwner, seedToUse, compileContext)) {
+        return kInvalidVfxHandle;
     }
 
     std::uint32_t slotIndex = 0U;
@@ -560,7 +560,7 @@ VfxHandleUVE VfxWorldUVE::AllocateAndInitializeSlotUVE(const std::string& cacheK
         m_slots.emplace_back();
     }
 
-    InstanceSlotUVE& slot = m_slots[slotIndex];
+    InstanceSlot& slot = m_slots[slotIndex];
     if (slot.generation == 0U) {
         slot.generation = 1U;
     }
@@ -574,44 +574,44 @@ VfxHandleUVE VfxWorldUVE::AllocateAndInitializeSlotUVE(const std::string& cacheK
     slot.parameterOverrides.clear();
     slot.instance = std::move(newInstance);
 
-    UpdateSummaryStatsUVE();
-    return VfxHandleUVE{slotIndex, slot.generation};
+    UpdateSummaryStats();
+    return VfxHandle{slotIndex, slot.generation};
 }
 
-void VfxWorldUVE::ApplyParameterOverridesUVE(
-    VfxInstanceUVE& instance,
-    const std::map<std::string, ParameterOverrideUVE, std::less<>>& overrides) noexcept {
+void VfxWorld::ApplyParameterOverrides(
+    VfxInstance& instance,
+    const std::map<std::string, ParameterOverride, std::less<>>& overrides) noexcept {
     for (const auto& [name, entry] : overrides) {
         switch (entry.type) {
-            case Asset::ParticleUserParameterTypeUVE::Float:
-                (void)instance.SetParameterFloatUVE(name, entry.vector.x);
+            case Asset::ParticleUserParameterType::Float:
+                (void)instance.SetParameterFloat(name, entry.vector.x);
                 break;
-            case Asset::ParticleUserParameterTypeUVE::Vector:
-                (void)instance.SetParameterVectorUVE(name, entry.vector);
+            case Asset::ParticleUserParameterType::Vector:
+                (void)instance.SetParameterVector(name, entry.vector);
                 break;
-            case Asset::ParticleUserParameterTypeUVE::Color:
-                (void)instance.SetParameterColorUVE(
-                    name, Math::ColorUVE{entry.vector.x, entry.vector.y, entry.vector.z}, entry.alpha);
+            case Asset::ParticleUserParameterType::Color:
+                (void)instance.SetParameterColor(
+                    name, Math::Color{entry.vector.x, entry.vector.y, entry.vector.z}, entry.alpha);
                 break;
-            case Asset::ParticleUserParameterTypeUVE::Bool:
-                (void)instance.SetParameterBoolUVE(name, entry.vector.x >= 0.5F);
+            case Asset::ParticleUserParameterType::Bool:
+                (void)instance.SetParameterBool(name, entry.vector.x >= 0.5F);
                 break;
-            case Asset::ParticleUserParameterTypeUVE::Int:
-                (void)instance.SetParameterIntUVE(name, static_cast<std::int32_t>(std::lround(entry.vector.x)));
+            case Asset::ParticleUserParameterType::Int:
+                (void)instance.SetParameterInt(name, static_cast<std::int32_t>(std::lround(entry.vector.x)));
                 break;
         }
     }
 }
 
-void VfxWorldUVE::UpdateSummaryStatsUVE() noexcept {
+void VfxWorld::UpdateSummaryStats() noexcept {
     std::size_t activeCount = 0U;
     std::size_t totalLive = 0U;
-    for (const InstanceSlotUVE& slot : m_slots) {
+    for (const InstanceSlot& slot : m_slots) {
         if (!slot.active) {
             continue;
         }
         ++activeCount;
-        totalLive += slot.instance.GetLiveCountUVE();
+        totalLive += slot.instance.GetLiveCount();
     }
     m_stats.activeInstanceCount = activeCount;
     m_stats.cachedAssetCount = m_assetCache.size();

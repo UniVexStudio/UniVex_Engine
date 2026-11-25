@@ -21,60 +21,60 @@ namespace UVE::Audio {
 ///    off a cliff and then crawl.
 /// 3. Combining two readings is a power sum, not a max and not a plain sum. A max hides the second
 ///    voice, a plain sum overstates two uncorrelated sources by 3 dB each time it is applied.
-inline constexpr float kAudioMeterFloorDbUVE = -96.0F;
-inline constexpr float kAudioMeterCeilingDbUVE = 0.0F;
+inline constexpr float kAudioMeterFloorDb = -96.0F;
+inline constexpr float kAudioMeterCeilingDb = 0.0F;
 /// 20 dB in one second: the reading is off the peak almost immediately but still readable to the eye.
-inline constexpr float kAudioMeterPeakReleaseDbPerSecondUVE = 20.0F;
+inline constexpr float kAudioMeterPeakReleaseDbPerSecond = 20.0F;
 /// How much of the past a reading averages over. Short enough to follow a gunshot, long enough that
 /// a single silent block never drops the bar to zero.
-inline constexpr float kAudioMeterRmsWindowSecondsUVE = 0.3F;
+inline constexpr float kAudioMeterRmsWindowSeconds = 0.3F;
 
 /// One meter value, as it is displayed: a peak that holds and releases, and a windowed average.
 /// Both are linear amplitudes in [0, ...]; a device may exceed 1 when voices sum past full scale,
 /// which is exactly the case a mixer is supposed to make visible.
-struct AudioMeterReadingUVE final {
+struct AudioMeterReading final {
     float peak = 0.0F;
     float rms = 0.0F;
 
-    [[nodiscard]] bool operator==(const AudioMeterReadingUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AudioMeterReading&) const noexcept = default;
 };
 
-inline constexpr AudioMeterReadingUVE kSilentAudioMeterUVE{};
+inline constexpr AudioMeterReading kSilentAudioMeter{};
 
-/// Linear amplitude to dBFS, floored at kAudioMeterFloorDbUVE so a silent bus reads "-inf dB" on a
+/// Linear amplitude to dBFS, floored at kAudioMeterFloorDb so a silent bus reads "-inf dB" on a
 /// panel rather than the -inf the logarithm actually returns. Non-finite input is silence, never a
 /// NaN that would poison every comparison downstream.
-[[nodiscard]] inline float LinearAudioLevelToDecibelsUVE(const float linear) noexcept {
-    if (!std::isfinite(linear) || linear <= 0.0F) return kAudioMeterFloorDbUVE;
+[[nodiscard]] inline float LinearAudioLevelToDecibels(const float linear) noexcept {
+    if (!std::isfinite(linear) || linear <= 0.0F) return kAudioMeterFloorDb;
     const float decibels = 20.0F * std::log10(linear);
-    return std::isfinite(decibels) ? std::max(decibels, kAudioMeterFloorDbUVE) : kAudioMeterFloorDbUVE;
+    return std::isfinite(decibels) ? std::max(decibels, kAudioMeterFloorDb) : kAudioMeterFloorDb;
 }
 
 /// dBFS back to a linear amplitude. The inverse of the function above over the range a meter can
 /// represent, clamped at both ends so a "-inf" from a panel cannot produce an infinity here.
-[[nodiscard]] inline float DecibelsToLinearAudioLevelUVE(const float decibels) noexcept {
+[[nodiscard]] inline float DecibelsToLinearAudioLevel(const float decibels) noexcept {
     if (!std::isfinite(decibels)) return 0.0F;
-    const float clamped = std::clamp(decibels, kAudioMeterFloorDbUVE, kAudioMeterCeilingDbUVE);
+    const float clamped = std::clamp(decibels, kAudioMeterFloorDb, kAudioMeterCeilingDb);
     return std::pow(10.0F, clamped / 20.0F);
 }
 
 /// Where a reading sits in a 0..1 bar, on the decibel scale: 0 at the floor, 1 at 0 dBFS. This is
 /// the only place the mapping lives, so every meter in the editor agrees with every other one.
-[[nodiscard]] inline float NormalizedAudioMeterLevelUVE(const float linear) noexcept {
-    const float decibels = LinearAudioLevelToDecibelsUVE(linear);
-    const float span = kAudioMeterCeilingDbUVE - kAudioMeterFloorDbUVE;
+[[nodiscard]] inline float NormalizedAudioMeterLevel(const float linear) noexcept {
+    const float decibels = LinearAudioLevelToDecibels(linear);
+    const float span = kAudioMeterCeilingDb - kAudioMeterFloorDb;
     if (!(span > 0.0F)) return 0.0F;
-    return std::clamp((decibels - kAudioMeterFloorDbUVE) / span, 0.0F, 1.0F);
+    return std::clamp((decibels - kAudioMeterFloorDb) / span, 0.0F, 1.0F);
 }
 
 /// Advances one voice's meter by one mixed block.
 ///
 /// `blockPeak` and `blockMeanSquare` are what the audio thread measured while mixing that block.
-/// The peak holds and then releases at kAudioMeterPeakReleaseDbPerSecondUVE; the mean square is a
-/// one-pole average whose time constant is kAudioMeterRmsWindowSecondsUVE. A non-positive or
+/// The peak holds and then releases at kAudioMeterPeakReleaseDbPerSecond; the mean square is a
+/// one-pole average whose time constant is kAudioMeterRmsWindowSeconds. A non-positive or
 /// non-finite `deltaSeconds` means "no time passed": the block is still accounted for (a caller
 /// that renders offline should see its level), but nothing is released or smoothed over time.
-[[nodiscard]] inline AudioMeterReadingUVE IntegrateAudioMeterUVE(const AudioMeterReadingUVE previous,
+[[nodiscard]] inline AudioMeterReading IntegrateAudioMeter(const AudioMeterReading previous,
                                                                 const float blockPeak,
                                                                 const float blockMeanSquare,
                                                                 const float deltaSeconds) noexcept {
@@ -84,7 +84,7 @@ inline constexpr AudioMeterReadingUVE kSilentAudioMeterUVE{};
     const float incomingPeak = sanitize(blockPeak);
     const float incomingMeanSquare = sanitize(blockMeanSquare);
 
-    AudioMeterReadingUVE reading;
+    AudioMeterReading reading;
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0F) {
         reading.peak = std::max(heldPeak, incomingPeak);
         reading.rms = std::sqrt(std::max(heldMeanSquare, incomingMeanSquare));
@@ -94,14 +94,14 @@ inline constexpr AudioMeterReadingUVE kSilentAudioMeterUVE{};
     // Release in dB, not in amplitude: 20 dB/s is a constant visual slope on a dBFS meter. Reaching
     // the floor means exactly zero rather than the floor's own amplitude, so "silent" is a value a
     // caller can compare against instead of an inaudible epsilon it has to know about.
-    const float heldDb = LinearAudioLevelToDecibelsUVE(heldPeak);
-    const float releasedDb = std::max(heldDb - kAudioMeterPeakReleaseDbPerSecondUVE * deltaSeconds,
-                                      kAudioMeterFloorDbUVE);
+    const float heldDb = LinearAudioLevelToDecibels(heldPeak);
+    const float releasedDb = std::max(heldDb - kAudioMeterPeakReleaseDbPerSecond * deltaSeconds,
+                                      kAudioMeterFloorDb);
     const float releasedPeak =
-        releasedDb <= kAudioMeterFloorDbUVE ? 0.0F : DecibelsToLinearAudioLevelUVE(releasedDb);
+        releasedDb <= kAudioMeterFloorDb ? 0.0F : DecibelsToLinearAudioLevel(releasedDb);
     reading.peak = std::max(releasedPeak, incomingPeak);
 
-    const float alpha = 1.0F - std::exp(-deltaSeconds / kAudioMeterRmsWindowSecondsUVE);
+    const float alpha = 1.0F - std::exp(-deltaSeconds / kAudioMeterRmsWindowSeconds);
     const float smoothedMeanSquare = heldMeanSquare + (incomingMeanSquare - heldMeanSquare) * alpha;
     reading.rms = std::sqrt(std::max(smoothedMeanSquare, 0.0F));
     return reading;
@@ -109,10 +109,10 @@ inline constexpr AudioMeterReadingUVE kSilentAudioMeterUVE{};
 
 /// Power-sums two readings. Used when a bus's level is assembled from the voices routed through it:
 /// the signals are uncorrelated in practice, so their powers add even though their samples do not.
-[[nodiscard]] inline AudioMeterReadingUVE CombineAudioMeterReadingsUVE(const AudioMeterReadingUVE& first,
-                                                                      const AudioMeterReadingUVE& second) noexcept {
+[[nodiscard]] inline AudioMeterReading CombineAudioMeterReadings(const AudioMeterReading& first,
+                                                                      const AudioMeterReading& second) noexcept {
     const auto power = [](const float value) { return (std::isfinite(value) && value > 0.0F) ? value * value : 0.0F; };
-    AudioMeterReadingUVE combined;
+    AudioMeterReading combined;
     combined.peak = std::sqrt(power(first.peak) + power(second.peak));
     combined.rms = std::sqrt(power(first.rms) + power(second.rms));
     return combined;
@@ -120,7 +120,7 @@ inline constexpr AudioMeterReadingUVE kSilentAudioMeterUVE{};
 
 /// True when a reading is at or past full scale, i.e. what a mixer should flag. Checked on the peak
 /// rather than the average: clipping is a property of the loudest sample, not of the block's energy.
-[[nodiscard]] inline bool IsAudioMeterClippingUVE(const AudioMeterReadingUVE& reading) noexcept {
+[[nodiscard]] inline bool IsAudioMeterClipping(const AudioMeterReading& reading) noexcept {
     return std::isfinite(reading.peak) && reading.peak > 1.0F;
 }
 

@@ -11,7 +11,7 @@ namespace UVE::Window {
 
 /// Finds an explicitly requested monitor by its exact backend-provided name. A missing index means
 /// the caller should use the primary monitor (for an empty request or an unmatched name).
-[[nodiscard]] constexpr std::optional<std::size_t> FindMonitorIndexUVE(
+[[nodiscard]] constexpr std::optional<std::size_t> FindMonitorIndex(
     const std::string_view requestedName, const std::span<const std::string_view> monitorNames) noexcept {
     if (requestedName.empty()) {
         return std::nullopt;

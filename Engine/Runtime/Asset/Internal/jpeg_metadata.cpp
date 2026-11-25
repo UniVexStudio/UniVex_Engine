@@ -12,46 +12,46 @@
 #include <jpeglib.h>
 namespace UVE::Asset {
 namespace {
-[[nodiscard]] bool IsSofMarkerUVE(const std::uint8_t marker) noexcept {
+[[nodiscard]] bool IsSofMarker(const std::uint8_t marker) noexcept {
     return (marker >= 0xC0U && marker <= 0xC3U) || (marker >= 0xC5U && marker <= 0xC7U) ||
            (marker >= 0xC9U && marker <= 0xCBU) || (marker >= 0xCDU && marker <= 0xCFU);
 }
-[[nodiscard]] bool IsProgressiveMarkerUVE(const std::uint8_t marker) noexcept {
+[[nodiscard]] bool IsProgressiveMarker(const std::uint8_t marker) noexcept {
     return marker == 0xC2U || marker == 0xC6U || marker == 0xCAU || marker == 0xCEU;
 }
-[[nodiscard]] std::uint16_t ReadU16BEUVE(const std::vector<std::byte>& bytes, const std::size_t offset) noexcept {
+[[nodiscard]] std::uint16_t ReadU16BE(const std::vector<std::byte>& bytes, const std::size_t offset) noexcept {
     return static_cast<std::uint16_t>((std::to_integer<std::uint16_t>(bytes[offset]) << 8U) |
                                       std::to_integer<std::uint16_t>(bytes[offset + 1U]));
 }
-struct JpegErrorUVE final {
+struct JpegError final {
     jpeg_error_mgr base{};
     std::jmp_buf jump{};
 };
 
-void JpegErrorExitUVE(j_common_ptr info) noexcept {
-    auto* const error = reinterpret_cast<JpegErrorUVE*>(info->err);
+void JpegErrorExit(j_common_ptr info) noexcept {
+    auto* const error = reinterpret_cast<JpegError*>(info->err);
     longjmp(error->jump, 1);
 }
 
-struct JpegDecodeStateUVE final {
+struct JpegDecodeState final {
     jpeg_decompress_struct decoder{};
     bool decoderCreated = false;
     unsigned char* rgbaPixels = nullptr;
     unsigned char* scanline = nullptr;
 };
 
-[[nodiscard]] bool DecodeJpegRawRgba8UVE(const std::vector<std::byte>& bytes,
-                                          const JpegMetadataUVE& metadata,
+[[nodiscard]] bool DecodeJpegRawRgba8(const std::vector<std::byte>& bytes,
+                                          const JpegMetadata& metadata,
                                           std::byte*& outPixels) noexcept {
     outPixels = nullptr;
     // volatile-qualified (not the pointee) because `state` is read in the setjmp/longjmp
     // recovery path below: the standard leaves a non-volatile automatic variable indeterminate
     // after longjmp if it could have changed since setjmp, even though this one never is.
-    JpegDecodeStateUVE* volatile state = new (std::nothrow) JpegDecodeStateUVE{};
+    JpegDecodeState* volatile state = new (std::nothrow) JpegDecodeState{};
     if (state == nullptr) return false;
-    JpegErrorUVE error;
+    JpegError error;
     state->decoder.err = jpeg_std_error(&error.base);
-    error.base.error_exit = JpegErrorExitUVE;
+    error.base.error_exit = JpegErrorExit;
     if (setjmp(error.jump) != 0) {
         std::free(state->scanline);
         std::free(state->rgbaPixels);
@@ -125,7 +125,7 @@ struct JpegDecodeStateUVE final {
 
 } // namespace
 
-bool ValidateJpegRgba8PixelBudgetUVE(const JpegMetadataUVE& metadata,
+bool ValidateJpegRgba8PixelBudget(const JpegMetadata& metadata,
                                      const std::uint64_t maximumBytes) noexcept {
     if (metadata.width == 0U || metadata.height == 0U || metadata.precision != 8U ||
         metadata.componentCount == 0U || metadata.componentCount > 4U || maximumBytes == 0U) {
@@ -140,7 +140,7 @@ bool ValidateJpegRgba8PixelBudgetUVE(const JpegMetadataUVE& metadata,
     return pixelCount * kBytesPerRgba8Pixel <= maximumBytes;
 }
 
-std::optional<JpegMetadataUVE> ParseJpegMetadataUVE(const std::vector<std::byte>& bytes) {
+std::optional<JpegMetadata> ParseJpegMetadata(const std::vector<std::byte>& bytes) {
     if (bytes.size() < 2U || bytes[0] != std::byte{0xFF} || bytes[1] != std::byte{0xD8}) return std::nullopt;
     std::size_t offset = 2U;
     while (offset < bytes.size()) {
@@ -152,39 +152,39 @@ std::optional<JpegMetadataUVE> ParseJpegMetadataUVE(const std::vector<std::byte>
         if (marker >= 0xD0U && marker <= 0xD7U) continue;
         if (marker == 0x01U) continue;
         if (offset + 2U > bytes.size()) return std::nullopt;
-        const std::uint16_t segmentLength = ReadU16BEUVE(bytes, offset);
+        const std::uint16_t segmentLength = ReadU16BE(bytes, offset);
         if (segmentLength < 2U || offset + segmentLength > bytes.size()) return std::nullopt;
-        if (IsSofMarkerUVE(marker)) {
+        if (IsSofMarker(marker)) {
             if (segmentLength < 8U) return std::nullopt;
             const std::size_t payload = offset + 2U;
             const std::uint8_t precision = std::to_integer<std::uint8_t>(bytes[payload]);
-            const std::uint16_t height = ReadU16BEUVE(bytes, payload + 1U);
-            const std::uint16_t width = ReadU16BEUVE(bytes, payload + 3U);
+            const std::uint16_t height = ReadU16BE(bytes, payload + 1U);
+            const std::uint16_t width = ReadU16BE(bytes, payload + 3U);
             const std::uint8_t components = std::to_integer<std::uint8_t>(bytes[payload + 5U]);
             if (width == 0U || height == 0U || components == 0U || components > 4U ||
                 segmentLength != static_cast<std::uint16_t>(8U + 3U * components)) return std::nullopt;
-            return JpegMetadataUVE{width, height, precision, components, IsProgressiveMarkerUVE(marker)};
+            return JpegMetadata{width, height, precision, components, IsProgressiveMarker(marker)};
         }
         offset += segmentLength;
     }
     return std::nullopt;
 }
 
-bool DecodeJpegRgba8ImageUVE(const std::vector<std::byte>& bytes, JpegRgba8ImageUVE& outImage) noexcept {
+bool DecodeJpegRgba8Image(const std::vector<std::byte>& bytes, JpegRgba8Image& outImage) noexcept {
     std::byte* rawPixels = nullptr;
     try {
-        const auto metadata = ParseJpegMetadataUVE(bytes);
-        if (!metadata.has_value() || !ValidateJpegRgba8PixelBudgetUVE(*metadata) ||
+        const auto metadata = ParseJpegMetadata(bytes);
+        if (!metadata.has_value() || !ValidateJpegRgba8PixelBudget(*metadata) ||
             bytes.size() > static_cast<std::size_t>(std::numeric_limits<unsigned long>::max())) {
             return false;
         }
-        if (!DecodeJpegRawRgba8UVE(bytes, *metadata, rawPixels)) return false;
+        if (!DecodeJpegRawRgba8(bytes, *metadata, rawPixels)) return false;
         const std::size_t pixelByteCount = static_cast<std::size_t>(metadata->width) * metadata->height * 4U;
         std::vector<std::byte> pixels(pixelByteCount);
         std::memcpy(pixels.data(), rawPixels, pixelByteCount);
         std::free(rawPixels);
         rawPixels = nullptr;
-        JpegRgba8ImageUVE image;
+        JpegRgba8Image image;
         image.width = metadata->width;
         image.height = metadata->height;
         image.pixels = std::move(pixels);

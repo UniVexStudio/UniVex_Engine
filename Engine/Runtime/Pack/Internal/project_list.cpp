@@ -16,106 +16,106 @@
 namespace UVE::Pack {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
 /// Suffix of the temporary sibling the settings are written through.
-inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
-inline constexpr std::string_view kMissingBadgeUVE = "Missing";
-inline constexpr std::string_view kEngineBadgePrefixUVE = "Engine ";
+inline constexpr std::string_view kTemporaryFileSuffix = ".tmp";
+inline constexpr std::string_view kMissingBadge = "Missing";
+inline constexpr std::string_view kEngineBadgePrefix = "Engine ";
 
-[[nodiscard]] std::string LowerUVE(const std::string_view text) {
+[[nodiscard]] std::string Lower(const std::string_view text) {
     std::string lower(text);
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return lower;
 }
 
-[[nodiscard]] ProjectListStatusUVE StatusForUVE(const ProjectCompatibilityVerdictUVE verdict) noexcept {
+[[nodiscard]] ProjectListStatus StatusFor(const ProjectCompatibilityVerdict verdict) noexcept {
     switch (verdict) {
-    case ProjectCompatibilityVerdictUVE::Same:
-    case ProjectCompatibilityVerdictUVE::OlderUpgradesSilently:
-        return ProjectListStatusUVE::Ready;
-    case ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade:
-        return ProjectListStatusUVE::NeedsUpgrade;
-    case ProjectCompatibilityVerdictUVE::NewerCompatible:
-        return ProjectListStatusUVE::OpensWithWarning;
-    case ProjectCompatibilityVerdictUVE::NewerIncompatible:
-        return ProjectListStatusUVE::Incompatible;
+    case ProjectCompatibilityVerdict::Same:
+    case ProjectCompatibilityVerdict::OlderUpgradesSilently:
+        return ProjectListStatus::Ready;
+    case ProjectCompatibilityVerdict::OlderNeedsUpgrade:
+        return ProjectListStatus::NeedsUpgrade;
+    case ProjectCompatibilityVerdict::NewerCompatible:
+        return ProjectListStatus::OpensWithWarning;
+    case ProjectCompatibilityVerdict::NewerIncompatible:
+        return ProjectListStatus::Incompatible;
     }
-    return ProjectListStatusUVE::Incompatible;
+    return ProjectListStatus::Incompatible;
 }
 
 } // namespace
 
-std::vector<ProjectListRowUVE> BuildProjectListUVE(const std::vector<ProjectRegistryEntryUVE>& entries,
-                                                   const std::string_view query, const ProjectListSortUVE sort,
-                                                   const Core::VersionUVE& engineVersion,
-                                                   const std::function<bool(const ProjectRegistryEntryUVE&)>& isMissing) {
-    const std::string needle = LowerUVE(query);
-    std::vector<ProjectListRowUVE> rows;
+std::vector<ProjectListRow> BuildProjectList(const std::vector<ProjectRegistryEntry>& entries,
+                                                   const std::string_view query, const ProjectListSort sort,
+                                                   const Core::Version& engineVersion,
+                                                   const std::function<bool(const ProjectRegistryEntry&)>& isMissing) {
+    const std::string needle = Lower(query);
+    std::vector<ProjectListRow> rows;
     rows.reserve(entries.size());
-    for (const ProjectRegistryEntryUVE& entry : entries) {
-        if (!needle.empty() && LowerUVE(entry.displayName).find(needle) == std::string::npos &&
-            LowerUVE(entry.projectFile.string()).find(needle) == std::string::npos) {
+    for (const ProjectRegistryEntry& entry : entries) {
+        if (!needle.empty() && Lower(entry.displayName).find(needle) == std::string::npos &&
+            Lower(entry.projectFile.string()).find(needle) == std::string::npos) {
             continue;
         }
-        ProjectListRowUVE row;
+        ProjectListRow row;
         row.entry = entry;
         if (isMissing && isMissing(entry)) {
-            row.status = ProjectListStatusUVE::Missing;
-            row.badge = kMissingBadgeUVE;
+            row.status = ProjectListStatus::Missing;
+            row.badge = kMissingBadge;
         } else {
-            row.status = StatusForUVE(EvaluateProjectCompatibilityUVE(entry.engineVersion, engineVersion).verdict);
-            row.badge = std::string(kEngineBadgePrefixUVE) + FormatProjectVersionUVE(entry.engineVersion);
+            row.status = StatusFor(EvaluateProjectCompatibility(entry.engineVersion, engineVersion).verdict);
+            row.badge = std::string(kEngineBadgePrefix) + FormatProjectVersion(entry.engineVersion);
         }
         rows.push_back(std::move(row));
     }
     // Registry order is most recent first; a stable sort keeps it among equals.
-    std::stable_sort(rows.begin(), rows.end(), [sort](const ProjectListRowUVE& lhs, const ProjectListRowUVE& rhs) {
+    std::stable_sort(rows.begin(), rows.end(), [sort](const ProjectListRow& lhs, const ProjectListRow& rhs) {
         if (lhs.entry.favorite != rhs.entry.favorite) {
             return lhs.entry.favorite;
         }
-        if (sort == ProjectListSortUVE::Name) {
-            return LowerUVE(lhs.entry.displayName) < LowerUVE(rhs.entry.displayName);
+        if (sort == ProjectListSort::Name) {
+            return Lower(lhs.entry.displayName) < Lower(rhs.entry.displayName);
         }
         return lhs.entry.lastOpenedUnixSeconds > rhs.entry.lastOpenedUnixSeconds;
     });
     return rows;
 }
 
-ProjectListStatusUVE ProjectListStatusForUVE(const Platform::EditorProjectVersionUVE& projectVersion,
-                                             const Core::VersionUVE& engineVersion) {
-    return StatusForUVE(EvaluateProjectCompatibilityUVE(projectVersion, engineVersion).verdict);
+ProjectListStatus ProjectListStatusFor(const Platform::EditorProjectVersion& projectVersion,
+                                             const Core::Version& engineVersion) {
+    return StatusFor(EvaluateProjectCompatibility(projectVersion, engineVersion).verdict);
 }
 
-LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file) {
-    LauncherSettingsUVE settings;
-    const Platform::ApplicationUserDataDirectoryResultUVE documents = Platform::ResolveUserDocumentsDirectoryUVE();
+LauncherSettings LoadLauncherSettings(const std::filesystem::path& file) {
+    LauncherSettings settings;
+    const Platform::ApplicationUserDataDirectoryResult documents = Platform::ResolveUserDocumentsDirectory();
     if (documents.success) {
-        settings.defaultProjectLocation = documents.directory / kDefaultProjectsDirectoryNameUVE;
-    } else if (const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
+        settings.defaultProjectLocation = documents.directory / kDefaultProjectsDirectoryName;
+    } else if (const Platform::ApplicationUserDataDirectoryResult home = Platform::ResolveUserHomeDirectory();
                home.success) {
-        settings.defaultProjectLocation = home.directory / kDefaultProjectsDirectoryNameUVE;
+        settings.defaultProjectLocation = home.directory / kDefaultProjectsDirectoryName;
     }
     std::ifstream input(file, std::ios::binary);
     if (!input.is_open()) {
         return settings;
     }
     const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    const JsonUVE json = JsonUVE::parse(text, nullptr, false);
-    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kLauncherSettingsFormatUVE ||
-        json.value("schemaVersion", 0U) != kCurrentLauncherSettingsSchemaVersionUVE) {
+    const Json json = Json::parse(text, nullptr, false);
+    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kLauncherSettingsFormat ||
+        json.value("schemaVersion", 0U) != kCurrentLauncherSettingsSchemaVersion) {
         return settings;
     }
     const std::string location = json.value("defaultProjectLocation", std::string{});
     if (!location.empty() && std::filesystem::path(location).is_absolute()) {
 #if defined(__ANDROID__)
         // Auto-migrate legacy private internal /data/user/... default to user-visible external storage.
-        const Platform::ApplicationUserDataDirectoryResultUVE internalHome = Platform::ResolveUserHomeDirectoryUVE();
+        const Platform::ApplicationUserDataDirectoryResult internalHome = Platform::ResolveUserHomeDirectory();
         const bool isLegacyPrivateDefault =
             internalHome.success &&
             std::filesystem::path(location).lexically_normal() ==
-                (internalHome.directory / kDefaultProjectsDirectoryNameUVE).lexically_normal();
+                (internalHome.directory / kDefaultProjectsDirectoryName).lexically_normal();
         if (!isLegacyPrivateDefault) {
             settings.defaultProjectLocation = location;
         }
@@ -126,9 +126,9 @@ LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file) {
     return settings;
 }
 
-bool SaveLauncherSettingsUVE(const std::filesystem::path& file, const LauncherSettingsUVE& settings) {
-    const JsonUVE json{{"format", kLauncherSettingsFormatUVE},
-                       {"schemaVersion", kCurrentLauncherSettingsSchemaVersionUVE},
+bool SaveLauncherSettings(const std::filesystem::path& file, const LauncherSettings& settings) {
+    const Json json{{"format", kLauncherSettingsFormat},
+                       {"schemaVersion", kCurrentLauncherSettingsSchemaVersion},
                        {"defaultProjectLocation", settings.defaultProjectLocation.generic_string()}};
     std::error_code error;
     if (file.has_parent_path()) {
@@ -138,10 +138,10 @@ bool SaveLauncherSettingsUVE(const std::filesystem::path& file, const LauncherSe
         }
     }
     std::filesystem::path temporary = file;
-    temporary += kTemporaryFileSuffixUVE;
+    temporary += kTemporaryFileSuffix;
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        output << json.dump(kPackJsonIndentUVE);
+        output << json.dump(kPackJsonIndent);
         if (!output.good()) {
             return false;
         }

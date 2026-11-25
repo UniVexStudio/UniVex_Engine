@@ -11,201 +11,201 @@
 namespace UVE::Editor {
 
 /// The ids of the editor's own settings in the settings file, each declared once by
-/// RegisterEditorSettingsUVE. The strings are the keys the file has always used, so existing
+/// RegisterEditorSettings. The strings are the keys the file has always used, so existing
 /// settings files keep working.
-namespace EditorSettingIdUVE {
+namespace EditorSettingId {
 // Session state the editor remembers for itself: Hidden, never offered as a preference.
-inline constexpr std::string_view kScenePanelVisibleUVE = "editor.panels.sceneVisible";
-inline constexpr std::string_view kInspectorPanelVisibleUVE = "editor.panels.inspectorVisible";
-inline constexpr std::string_view kBottomDockVisibleUVE = "editor.panels.bottomDockVisible";
-inline constexpr std::string_view kBottomDockHeightUVE = "editor.panels.bottomDockHeight";
+inline constexpr std::string_view kScenePanelVisible = "editor.panels.sceneVisible";
+inline constexpr std::string_view kInspectorPanelVisible = "editor.panels.inspectorVisible";
+inline constexpr std::string_view kBottomDockVisible = "editor.panels.bottomDockVisible";
+inline constexpr std::string_view kBottomDockHeight = "editor.panels.bottomDockHeight";
 /// The widths the author dragged the two side panels to. Persisted for the same reason the dock's
 /// height is: a layout the author tuned is part of how they work, and a width that survives only
 /// until the next launch is a width they have to keep re-setting. A value of 0 means "never
 /// dragged", and the layout falls back to its default ratio.
-inline constexpr std::string_view kScenePanelWidthUVE = "editor.panels.sceneWidth";
-inline constexpr std::string_view kInspectorPanelWidthUVE = "editor.panels.inspectorWidth";
-inline constexpr std::string_view kAssetTableViewModeUVE = "editor.assetTable.viewMode";
-inline constexpr std::string_view kAssetTableModeUVE = "editor.assetTable.mode";
-inline constexpr std::string_view kActiveWorkspaceUVE = "editor.workspace.active";
-inline constexpr std::string_view kActiveRightPanelTabUVE = "editor.rightPanel.activeTab";
-inline constexpr std::string_view kActiveBottomDockUVE = "editor.bottomDock.active";
-inline constexpr std::string_view kColorPickerAdvancedOpenUVE = "editor.colorPicker.advancedOpen";
-inline constexpr std::string_view kColorPickerSavedUVE = "editor.colorPicker.saved";
-inline constexpr std::string_view kColorPickerRecentUVE = "editor.colorPicker.recent";
-inline constexpr std::string_view kInspectorFoldsUVE = "editor.inspector.folds";
-inline constexpr std::string_view kFavoriteProjectsUVE = "editor.favorites";
-inline constexpr std::string_view kViewportAxisColorXUVE = "editor.viewport.axisColors.x";
-inline constexpr std::string_view kViewportAxisColorYUVE = "editor.viewport.axisColors.y";
-inline constexpr std::string_view kViewportAxisColorZUVE = "editor.viewport.axisColors.z";
+inline constexpr std::string_view kScenePanelWidth = "editor.panels.sceneWidth";
+inline constexpr std::string_view kInspectorPanelWidth = "editor.panels.inspectorWidth";
+inline constexpr std::string_view kAssetTableViewMode = "editor.assetTable.viewMode";
+inline constexpr std::string_view kAssetTableMode = "editor.assetTable.mode";
+inline constexpr std::string_view kActiveWorkspace = "editor.workspace.active";
+inline constexpr std::string_view kActiveRightPanelTab = "editor.rightPanel.activeTab";
+inline constexpr std::string_view kActiveBottomDock = "editor.bottomDock.active";
+inline constexpr std::string_view kColorPickerAdvancedOpen = "editor.colorPicker.advancedOpen";
+inline constexpr std::string_view kColorPickerSaved = "editor.colorPicker.saved";
+inline constexpr std::string_view kColorPickerRecent = "editor.colorPicker.recent";
+inline constexpr std::string_view kInspectorFolds = "editor.inspector.folds";
+inline constexpr std::string_view kFavoriteProjects = "editor.favorites";
+inline constexpr std::string_view kViewportAxisColorX = "editor.viewport.axisColors.x";
+inline constexpr std::string_view kViewportAxisColorY = "editor.viewport.axisColors.y";
+inline constexpr std::string_view kViewportAxisColorZ = "editor.viewport.axisColors.z";
 // Preferences.
-inline constexpr std::string_view kSnapEnabledUVE = "editor.viewport.snap.enabled";
-inline constexpr std::string_view kSnapTranslateStepUVE = "editor.viewport.snap.translateStep";
-inline constexpr std::string_view kSnapRotateStepDegreesUVE = "editor.viewport.snap.rotateStepDegrees";
-inline constexpr std::string_view kSnapScaleStepUVE = "editor.viewport.snap.scaleStep";
-inline constexpr std::string_view kSnapScaleEnabledUVE = "editor.viewport.snap.scaleEnabled";
-inline constexpr std::string_view kGridVisibleUVE = "editor.viewport.grid.visible";
-inline constexpr std::string_view kGridOpacityUVE = "editor.viewport.grid.opacity";
-inline constexpr std::string_view kGridCellSizeUVE = "editor.viewport.grid.cellSize";
-inline constexpr std::string_view kSelectionOutlineVisibleUVE = "editor.viewport.selectionOutline.visible";
+inline constexpr std::string_view kSnapEnabled = "editor.viewport.snap.enabled";
+inline constexpr std::string_view kSnapTranslateStep = "editor.viewport.snap.translateStep";
+inline constexpr std::string_view kSnapRotateStepDegrees = "editor.viewport.snap.rotateStepDegrees";
+inline constexpr std::string_view kSnapScaleStep = "editor.viewport.snap.scaleStep";
+inline constexpr std::string_view kSnapScaleEnabled = "editor.viewport.snap.scaleEnabled";
+inline constexpr std::string_view kGridVisible = "editor.viewport.grid.visible";
+inline constexpr std::string_view kGridOpacity = "editor.viewport.grid.opacity";
+inline constexpr std::string_view kGridCellSize = "editor.viewport.grid.cellSize";
+inline constexpr std::string_view kSelectionOutlineVisible = "editor.viewport.selectionOutline.visible";
 /// A colour, so its channels sit at `.r`, `.g` and `.b` beneath this id.
-inline constexpr std::string_view kSelectionOutlineColorUVE = "editor.viewport.selectionOutline";
-inline constexpr std::string_view kSelectionOutlineThicknessUVE = "editor.viewport.selectionOutline.thickness";
-inline constexpr std::string_view kNewObjectsUnderSelectionUVE = "editor.objects.addUnderSelection";
-inline constexpr std::string_view kNewObjectPlacementUVE = "editor.objects.placement";
-inline constexpr std::string_view kPlayPauseOnStartUVE = "editor.play.pauseOnStart";
-inline constexpr std::string_view kPlaySaveSceneFirstUVE = "editor.play.saveSceneFirst";
-inline constexpr std::string_view kPlaySwitchToGameUVE = "editor.play.switchToGame";
-inline constexpr std::string_view kPlayTintEnabledUVE = "editor.play.tint.enabled";
-inline constexpr std::string_view kPlayTintColorUVE = "editor.play.tint.color";
-inline constexpr std::string_view kPlayTintStrengthUVE = "editor.play.tint.strength";
-inline constexpr std::string_view kHierarchyRevealSelectionUVE = "editor.hierarchy.revealSelection";
-inline constexpr std::string_view kHierarchyShowIconsUVE = "editor.hierarchy.showIcons";
-inline constexpr std::string_view kHierarchyShowTypeNameUVE = "editor.hierarchy.showTypeName";
-inline constexpr std::string_view kHierarchyVisibilityColumnUVE = "editor.hierarchy.visibilityColumn";
-inline constexpr std::string_view kHierarchyDoubleClickUVE = "editor.hierarchy.doubleClick";
-inline constexpr std::string_view kHierarchyDragToReparentUVE = "editor.hierarchy.dragToReparent";
-inline constexpr std::string_view kHierarchyTreeLinesUVE = "editor.hierarchy.treeLines";
-inline constexpr std::string_view kHierarchyIndentWidthUVE = "editor.hierarchy.indentWidth";
+inline constexpr std::string_view kSelectionOutlineColor = "editor.viewport.selectionOutline";
+inline constexpr std::string_view kSelectionOutlineThickness = "editor.viewport.selectionOutline.thickness";
+inline constexpr std::string_view kNewObjectsUnderSelection = "editor.objects.addUnderSelection";
+inline constexpr std::string_view kNewObjectPlacement = "editor.objects.placement";
+inline constexpr std::string_view kPlayPauseOnStart = "editor.play.pauseOnStart";
+inline constexpr std::string_view kPlaySaveSceneFirst = "editor.play.saveSceneFirst";
+inline constexpr std::string_view kPlaySwitchToGame = "editor.play.switchToGame";
+inline constexpr std::string_view kPlayTintEnabled = "editor.play.tint.enabled";
+inline constexpr std::string_view kPlayTintColor = "editor.play.tint.color";
+inline constexpr std::string_view kPlayTintStrength = "editor.play.tint.strength";
+inline constexpr std::string_view kHierarchyRevealSelection = "editor.hierarchy.revealSelection";
+inline constexpr std::string_view kHierarchyShowIcons = "editor.hierarchy.showIcons";
+inline constexpr std::string_view kHierarchyShowTypeName = "editor.hierarchy.showTypeName";
+inline constexpr std::string_view kHierarchyVisibilityColumn = "editor.hierarchy.visibilityColumn";
+inline constexpr std::string_view kHierarchyDoubleClick = "editor.hierarchy.doubleClick";
+inline constexpr std::string_view kHierarchyDragToReparent = "editor.hierarchy.dragToReparent";
+inline constexpr std::string_view kHierarchyTreeLines = "editor.hierarchy.treeLines";
+inline constexpr std::string_view kHierarchyIndentWidth = "editor.hierarchy.indentWidth";
 // Part 2.1 Interface & Theme
-inline constexpr std::string_view kThemePresetUVE = "editor.interface.themePreset";
-inline constexpr std::string_view kCustomThemeFileUVE = "editor.interface.customThemeFile";
-inline constexpr std::string_view kThemeBaseColorUVE = "editor.interface.baseColor";
-inline constexpr std::string_view kThemeAccentColorUVE = "editor.interface.accentColor";
-inline constexpr std::string_view kThemeContrastUVE = "editor.interface.contrast";
-inline constexpr std::string_view kUiScaleModeUVE = "editor.interface.uiScaleMode";
-inline constexpr std::string_view kUiScaleFactorUVE = "editor.interface.uiScaleFactor";
-inline constexpr std::string_view kFontSizePxUVE = "editor.interface.fontSizePx";
-inline constexpr std::string_view kFontHintingModeUVE = "editor.interface.fontHinting";
-inline constexpr std::string_view kFontOversamplingUVE = "editor.interface.fontOversampling";
-inline constexpr std::string_view kIconSaturationUVE = "editor.interface.iconSaturation";
-inline constexpr std::string_view kCornerRadiusPxUVE = "editor.interface.cornerRadiusPx";
-inline constexpr std::string_view kSpacingDensityUVE = "editor.interface.spacingDensity";
-inline constexpr std::string_view kUiAnimationSpeedUVE = "editor.interface.animationSpeed";
-inline constexpr std::string_view kReduceMotionUVE = "editor.interface.reduceMotion";
-inline constexpr std::string_view kTooltipDelaySecondsUVE = "editor.interface.tooltipDelaySeconds";
-inline constexpr std::string_view kEditorLanguageUVE = "editor.interface.language";
-inline constexpr std::string_view kTouchFriendlyTargetsUVE = "editor.interface.touchFriendlyTargets";
+inline constexpr std::string_view kThemePreset = "editor.interface.themePreset";
+inline constexpr std::string_view kCustomThemeFile = "editor.interface.customThemeFile";
+inline constexpr std::string_view kThemeBaseColor = "editor.interface.baseColor";
+inline constexpr std::string_view kThemeAccentColor = "editor.interface.accentColor";
+inline constexpr std::string_view kThemeContrast = "editor.interface.contrast";
+inline constexpr std::string_view kUiScaleMode = "editor.interface.uiScaleMode";
+inline constexpr std::string_view kUiScaleFactor = "editor.interface.uiScaleFactor";
+inline constexpr std::string_view kFontSizePx = "editor.interface.fontSizePx";
+inline constexpr std::string_view kFontHintingMode = "editor.interface.fontHinting";
+inline constexpr std::string_view kFontOversampling = "editor.interface.fontOversampling";
+inline constexpr std::string_view kIconSaturation = "editor.interface.iconSaturation";
+inline constexpr std::string_view kCornerRadiusPx = "editor.interface.cornerRadiusPx";
+inline constexpr std::string_view kSpacingDensity = "editor.interface.spacingDensity";
+inline constexpr std::string_view kUiAnimationSpeed = "editor.interface.animationSpeed";
+inline constexpr std::string_view kReduceMotion = "editor.interface.reduceMotion";
+inline constexpr std::string_view kTooltipDelaySeconds = "editor.interface.tooltipDelaySeconds";
+inline constexpr std::string_view kEditorLanguage = "editor.interface.language";
+inline constexpr std::string_view kTouchFriendlyTargets = "editor.interface.touchFriendlyTargets";
 // Part 2.2 Layout, Docking & Workspaces
-inline constexpr std::string_view kPersistDockLayoutUVE = "editor.layout.persistDockLayout";
-inline constexpr std::string_view kLeftSplitRatioUVE = "editor.layout.leftSplitRatio";
-inline constexpr std::string_view kRightSplitRatioUVE = "editor.layout.rightSplitRatio";
-inline constexpr std::string_view kAllowFloatingWindowsUVE = "editor.layout.allowFloatingWindows";
-inline constexpr std::string_view kTabPositionUVE = "editor.layout.tabPosition";
-inline constexpr std::string_view kDistractionFreeModeUVE = "editor.layout.distractionFreeMode";
+inline constexpr std::string_view kPersistDockLayout = "editor.layout.persistDockLayout";
+inline constexpr std::string_view kLeftSplitRatio = "editor.layout.leftSplitRatio";
+inline constexpr std::string_view kRightSplitRatio = "editor.layout.rightSplitRatio";
+inline constexpr std::string_view kAllowFloatingWindows = "editor.layout.allowFloatingWindows";
+inline constexpr std::string_view kTabPosition = "editor.layout.tabPosition";
+inline constexpr std::string_view kDistractionFreeMode = "editor.layout.distractionFreeMode";
 // Part 2.3 Hierarchy Extended
-inline constexpr std::string_view kHierarchyExpandDepthLimitUVE = "editor.hierarchy.expandDepthLimit";
-inline constexpr std::string_view kHierarchyPersistExpansionUVE = "editor.hierarchy.persistExpansion";
-inline constexpr std::string_view kHierarchyRowHeightPxUVE = "editor.hierarchy.rowHeightPx";
-inline constexpr std::string_view kHierarchyColorCodeIconsUVE = "editor.hierarchy.colorCodeIcons";
-inline constexpr std::string_view kHierarchyShowLockColumnUVE = "editor.hierarchy.showLockColumn";
-inline constexpr std::string_view kHierarchyFilterModeUVE = "editor.hierarchy.filterMode";
-inline constexpr std::string_view kHierarchySortModeUVE = "editor.hierarchy.sortMode";
-inline constexpr std::string_view kHierarchyTintByTagColorUVE = "editor.hierarchy.tintByTagColor";
-inline constexpr std::string_view kHierarchyRenameModeUVE = "editor.hierarchy.renameMode";
+inline constexpr std::string_view kHierarchyExpandDepthLimit = "editor.hierarchy.expandDepthLimit";
+inline constexpr std::string_view kHierarchyPersistExpansion = "editor.hierarchy.persistExpansion";
+inline constexpr std::string_view kHierarchyRowHeightPx = "editor.hierarchy.rowHeightPx";
+inline constexpr std::string_view kHierarchyColorCodeIcons = "editor.hierarchy.colorCodeIcons";
+inline constexpr std::string_view kHierarchyShowLockColumn = "editor.hierarchy.showLockColumn";
+inline constexpr std::string_view kHierarchyFilterMode = "editor.hierarchy.filterMode";
+inline constexpr std::string_view kHierarchySortMode = "editor.hierarchy.sortMode";
+inline constexpr std::string_view kHierarchyTintByTagColor = "editor.hierarchy.tintByTagColor";
+inline constexpr std::string_view kHierarchyRenameMode = "editor.hierarchy.renameMode";
 // Part 2.4 Context Menu
-inline constexpr std::string_view kContextDuplicateSuffixUVE = "editor.contextMenu.duplicateSuffix";
-inline constexpr std::string_view kContextReparentKeepGlobalUVE = "editor.contextMenu.reparentKeepGlobal";
-inline constexpr std::string_view kContextSelectOnOpenUVE = "editor.contextMenu.selectOnOpen";
-inline constexpr std::string_view kContextTouchHoldSecondsUVE = "editor.contextMenu.touchHoldSeconds";
-inline constexpr std::string_view kContextConfirmDeleteSubtreeUVE = "editor.contextMenu.confirmDeleteSubtree";
+inline constexpr std::string_view kContextDuplicateSuffix = "editor.contextMenu.duplicateSuffix";
+inline constexpr std::string_view kContextReparentKeepGlobal = "editor.contextMenu.reparentKeepGlobal";
+inline constexpr std::string_view kContextSelectOnOpen = "editor.contextMenu.selectOnOpen";
+inline constexpr std::string_view kContextTouchHoldSeconds = "editor.contextMenu.touchHoldSeconds";
+inline constexpr std::string_view kContextConfirmDeleteSubtree = "editor.contextMenu.confirmDeleteSubtree";
 // Part 2.5 Commands & Menu Bar
-inline constexpr std::string_view kCommandPaletteFuzzyModeUVE = "editor.commands.paletteFuzzyMode";
-inline constexpr std::string_view kCommandPaletteRecentDepthUVE = "editor.commands.paletteRecentDepth";
-inline constexpr std::string_view kShortcutProfileUVE = "editor.commands.shortcutProfile";
-inline constexpr std::string_view kRecentFilesLimitUVE = "editor.commands.recentFilesLimit";
-inline constexpr std::string_view kToolbarButtonSizePxUVE = "editor.commands.toolbarButtonSizePx";
-inline constexpr std::string_view kAutoSavePreferencesUVE = "editor.commands.autoSavePreferences";
+inline constexpr std::string_view kCommandPaletteFuzzyMode = "editor.commands.paletteFuzzyMode";
+inline constexpr std::string_view kCommandPaletteRecentDepth = "editor.commands.paletteRecentDepth";
+inline constexpr std::string_view kShortcutProfile = "editor.commands.shortcutProfile";
+inline constexpr std::string_view kRecentFilesLimit = "editor.commands.recentFilesLimit";
+inline constexpr std::string_view kToolbarButtonSizePx = "editor.commands.toolbarButtonSizePx";
+inline constexpr std::string_view kAutoSavePreferences = "editor.commands.autoSavePreferences";
 // Part 2.6 Viewport Extended
-inline constexpr std::string_view kGridSubdivisionsUVE = "editor.viewport.grid.subdivisions";
-inline constexpr std::string_view kGridFadeDistanceUVE = "editor.viewport.grid.fadeDistance";
-inline constexpr std::string_view kGridFollowsCameraUVE = "editor.viewport.grid.followsCamera";
-inline constexpr std::string_view kGizmoSizePxUVE = "editor.viewport.gizmo.sizePx";
-inline constexpr std::string_view kGizmoOpacityUVE = "editor.viewport.gizmo.opacity";
-inline constexpr std::string_view kRememberGizmoModeUVE = "editor.viewport.gizmo.rememberMode";
-inline constexpr std::string_view kDefaultTransformSpaceUVE = "editor.viewport.defaultTransformSpace";
-inline constexpr std::string_view kPivotModeUVE = "editor.viewport.pivotMode";
-inline constexpr std::string_view kNavigationSchemeUVE = "editor.viewport.navigationScheme";
-inline constexpr std::string_view kOrbitSensitivityUVE = "editor.viewport.orbitSensitivity";
-inline constexpr std::string_view kPanSensitivityUVE = "editor.viewport.panSensitivity";
-inline constexpr std::string_view kZoomSensitivityUVE = "editor.viewport.zoomSensitivity";
-inline constexpr std::string_view kCameraInertiaSmoothingUVE = "editor.viewport.cameraInertia";
-inline constexpr std::string_view kFreelookBaseSpeedUVE = "editor.viewport.freelookBaseSpeed";
-inline constexpr std::string_view kDefaultCameraFovUVE = "editor.viewport.defaultCameraFovDegrees";
-inline constexpr std::string_view kBoxSelectModeUVE = "editor.viewport.boxSelectMode";
-inline constexpr std::string_view kDefaultViewModeUVE = "editor.viewport.defaultViewMode";
-inline constexpr std::string_view kViewportRenderScaleUVE = "editor.viewport.renderScale";
-inline constexpr std::string_view kViewportPaneCountUVE = "editor.viewport.paneCount";
+inline constexpr std::string_view kGridSubdivisions = "editor.viewport.grid.subdivisions";
+inline constexpr std::string_view kGridFadeDistance = "editor.viewport.grid.fadeDistance";
+inline constexpr std::string_view kGridFollowsCamera = "editor.viewport.grid.followsCamera";
+inline constexpr std::string_view kGizmoSizePx = "editor.viewport.gizmo.sizePx";
+inline constexpr std::string_view kGizmoOpacity = "editor.viewport.gizmo.opacity";
+inline constexpr std::string_view kRememberGizmoMode = "editor.viewport.gizmo.rememberMode";
+inline constexpr std::string_view kDefaultTransformSpace = "editor.viewport.defaultTransformSpace";
+inline constexpr std::string_view kPivotMode = "editor.viewport.pivotMode";
+inline constexpr std::string_view kNavigationScheme = "editor.viewport.navigationScheme";
+inline constexpr std::string_view kOrbitSensitivity = "editor.viewport.orbitSensitivity";
+inline constexpr std::string_view kPanSensitivity = "editor.viewport.panSensitivity";
+inline constexpr std::string_view kZoomSensitivity = "editor.viewport.zoomSensitivity";
+inline constexpr std::string_view kCameraInertiaSmoothing = "editor.viewport.cameraInertia";
+inline constexpr std::string_view kFreelookBaseSpeed = "editor.viewport.freelookBaseSpeed";
+inline constexpr std::string_view kDefaultCameraFov = "editor.viewport.defaultCameraFovDegrees";
+inline constexpr std::string_view kBoxSelectMode = "editor.viewport.boxSelectMode";
+inline constexpr std::string_view kDefaultViewMode = "editor.viewport.defaultViewMode";
+inline constexpr std::string_view kViewportRenderScale = "editor.viewport.renderScale";
+inline constexpr std::string_view kViewportPaneCount = "editor.viewport.paneCount";
 // Part 2.7 Inspector Extended
-inline constexpr std::string_view kInspectorLabelRatioUVE = "editor.inspector.labelRatio";
-inline constexpr std::string_view kInspectorFloatPrecisionUVE = "editor.inspector.floatPrecision";
-inline constexpr std::string_view kInspectorAngleUnitUVE = "editor.inspector.angleUnit";
-inline constexpr std::string_view kInspectorShowAdvancedUVE = "editor.inspector.showAdvanced";
-inline constexpr std::string_view kInspectorColorPickerShapeUVE = "editor.inspector.colorPickerShape";
-inline constexpr std::string_view kInspectorColorPickerModeUVE = "editor.inspector.colorPickerMode";
-inline constexpr std::string_view kInspectorOpenResourcesModeUVE = "editor.inspector.openResourcesMode";
-inline constexpr std::string_view kInspectorPlayRefreshHzUVE = "editor.inspector.playRefreshHz";
+inline constexpr std::string_view kInspectorLabelRatio = "editor.inspector.labelRatio";
+inline constexpr std::string_view kInspectorFloatPrecision = "editor.inspector.floatPrecision";
+inline constexpr std::string_view kInspectorAngleUnit = "editor.inspector.angleUnit";
+inline constexpr std::string_view kInspectorShowAdvanced = "editor.inspector.showAdvanced";
+inline constexpr std::string_view kInspectorColorPickerShape = "editor.inspector.colorPickerShape";
+inline constexpr std::string_view kInspectorColorPickerMode = "editor.inspector.colorPickerMode";
+inline constexpr std::string_view kInspectorOpenResourcesMode = "editor.inspector.openResourcesMode";
+inline constexpr std::string_view kInspectorPlayRefreshHz = "editor.inspector.playRefreshHz";
 // Part 2.8 Script & Shader Editor
-inline constexpr std::string_view kScriptFontSizePxUVE = "editor.scriptEditor.fontSizePx";
-inline constexpr std::string_view kScriptLineNumbersUVE = "editor.scriptEditor.showLineNumbers";
-inline constexpr std::string_view kScriptTabSizeUVE = "editor.scriptEditor.tabSize";
-inline constexpr std::string_view kScriptWordWrapModeUVE = "editor.scriptEditor.wordWrapMode";
-inline constexpr std::string_view kScriptSyntaxThemeUVE = "editor.scriptEditor.syntaxTheme";
-inline constexpr std::string_view kScriptCodeCompletionUVE = "editor.scriptEditor.codeCompletion";
-inline constexpr std::string_view kScriptMinimapEnabledUVE = "editor.scriptEditor.minimapEnabled";
-inline constexpr std::string_view kScriptFormatOnSaveUVE = "editor.scriptEditor.formatOnSave";
-inline constexpr std::string_view kScriptExternalEditorPathUVE = "editor.scriptEditor.externalExecutable";
-inline constexpr std::string_view kNodeGraphWireStyleUVE = "editor.scriptEditor.nodeGraphWireStyle";
+inline constexpr std::string_view kScriptFontSizePx = "editor.scriptEditor.fontSizePx";
+inline constexpr std::string_view kScriptLineNumbers = "editor.scriptEditor.showLineNumbers";
+inline constexpr std::string_view kScriptTabSize = "editor.scriptEditor.tabSize";
+inline constexpr std::string_view kScriptWordWrapMode = "editor.scriptEditor.wordWrapMode";
+inline constexpr std::string_view kScriptSyntaxTheme = "editor.scriptEditor.syntaxTheme";
+inline constexpr std::string_view kScriptCodeCompletion = "editor.scriptEditor.codeCompletion";
+inline constexpr std::string_view kScriptMinimapEnabled = "editor.scriptEditor.minimapEnabled";
+inline constexpr std::string_view kScriptFormatOnSave = "editor.scriptEditor.formatOnSave";
+inline constexpr std::string_view kScriptExternalEditorPath = "editor.scriptEditor.externalExecutable";
+inline constexpr std::string_view kNodeGraphWireStyle = "editor.scriptEditor.nodeGraphWireStyle";
 // Part 2.9 Asset Browser
-inline constexpr std::string_view kAssetThumbnailSizePxUVE = "editor.assetBrowser.thumbnailSizePx";
-inline constexpr std::string_view kAssetSortModeUVE = "editor.assetBrowser.sortMode";
-inline constexpr std::string_view kAssetShowHiddenFilesUVE = "editor.assetBrowser.showHiddenFiles";
-inline constexpr std::string_view kAssetSplitRatioUVE = "editor.assetBrowser.splitRatio";
-inline constexpr std::string_view kAssetAutoReimportUVE = "editor.assetBrowser.autoReimport";
-inline constexpr std::string_view kAssetDeleteToTrashUVE = "editor.assetBrowser.deleteToTrash";
+inline constexpr std::string_view kAssetThumbnailSizePx = "editor.assetBrowser.thumbnailSizePx";
+inline constexpr std::string_view kAssetSortMode = "editor.assetBrowser.sortMode";
+inline constexpr std::string_view kAssetShowHiddenFiles = "editor.assetBrowser.showHiddenFiles";
+inline constexpr std::string_view kAssetSplitRatio = "editor.assetBrowser.splitRatio";
+inline constexpr std::string_view kAssetAutoReimport = "editor.assetBrowser.autoReimport";
+inline constexpr std::string_view kAssetDeleteToTrash = "editor.assetBrowser.deleteToTrash";
 // Part 2.10 Console, Log & Debug
-inline constexpr std::string_view kConsoleCollapseDuplicatesUVE = "editor.console.collapseDuplicates";
-inline constexpr std::string_view kConsoleMaxLinesUVE = "editor.console.maxLines";
-inline constexpr std::string_view kConsoleClearOnPlayUVE = "editor.console.clearOnPlay";
-inline constexpr std::string_view kConsoleShowStackTracesUVE = "editor.console.showStackTraces";
-inline constexpr std::string_view kConsoleHistoryDepthUVE = "editor.console.historyDepth";
-inline constexpr std::string_view kConsoleRemotePortUVE = "editor.console.remotePort";
-inline constexpr std::string_view kDebugPhysicsDrawUVE = "editor.debug.physicsDraw";
-inline constexpr std::string_view kDebugNavigationDrawUVE = "editor.debug.navigationDraw";
-inline constexpr std::string_view kDebugRendererBoundsUVE = "editor.debug.rendererBounds";
-inline constexpr std::string_view kDebugAudioRadiiUVE = "editor.debug.audioRadii";
-inline constexpr std::string_view kDebugAssertionBehaviorUVE = "editor.debug.assertionBehavior";
+inline constexpr std::string_view kConsoleCollapseDuplicates = "editor.console.collapseDuplicates";
+inline constexpr std::string_view kConsoleMaxLines = "editor.console.maxLines";
+inline constexpr std::string_view kConsoleClearOnPlay = "editor.console.clearOnPlay";
+inline constexpr std::string_view kConsoleShowStackTraces = "editor.console.showStackTraces";
+inline constexpr std::string_view kConsoleHistoryDepth = "editor.console.historyDepth";
+inline constexpr std::string_view kConsoleRemotePort = "editor.console.remotePort";
+inline constexpr std::string_view kDebugPhysicsDraw = "editor.debug.physicsDraw";
+inline constexpr std::string_view kDebugNavigationDraw = "editor.debug.navigationDraw";
+inline constexpr std::string_view kDebugRendererBounds = "editor.debug.rendererBounds";
+inline constexpr std::string_view kDebugAudioRadii = "editor.debug.audioRadii";
+inline constexpr std::string_view kDebugAssertionBehavior = "editor.debug.assertionBehavior";
 // Part 2.11 Play Mode Extended
-inline constexpr std::string_view kPlayWindowModeUVE = "editor.play.windowMode";
-inline constexpr std::string_view kPlayWindowSizeUVE = "editor.play.windowSize";
-inline constexpr std::string_view kPlaySceneSourceUVE = "editor.play.sceneSource";
-inline constexpr std::string_view kPlayPauseOnErrorUVE = "editor.play.pauseOnError";
-inline constexpr std::string_view kPlayLiveReloadUVE = "editor.play.liveReload";
-inline constexpr std::string_view kPlayTimeScaleUVE = "editor.play.timeScale";
+inline constexpr std::string_view kPlayWindowMode = "editor.play.windowMode";
+inline constexpr std::string_view kPlayWindowSize = "editor.play.windowSize";
+inline constexpr std::string_view kPlaySceneSource = "editor.play.sceneSource";
+inline constexpr std::string_view kPlayPauseOnError = "editor.play.pauseOnError";
+inline constexpr std::string_view kPlayLiveReload = "editor.play.liveReload";
+inline constexpr std::string_view kPlayTimeScale = "editor.play.timeScale";
 // Part 2.12 Autosave, Recovery & Performance
-inline constexpr std::string_view kAutosaveEnabledUVE = "editor.autosave.enabled";
-inline constexpr std::string_view kAutosaveIntervalSecondsUVE = "editor.autosave.intervalSeconds";
-inline constexpr std::string_view kCrashRecoveryEnabledUVE = "editor.autosave.crashRecovery";
-inline constexpr std::string_view kBackupFileCountUVE = "editor.autosave.backupCount";
-inline constexpr std::string_view kUndoHistoryDepthUVE = "editor.autosave.undoHistoryDepth";
-inline constexpr std::string_view kLowProcessorModeUVE = "editor.autosave.lowProcessorMode";
-inline constexpr std::string_view kBackgroundWorkerThreadsUVE = "editor.autosave.backgroundWorkerThreads";
-inline constexpr std::string_view kImportCacheLimitMbUVE = "editor.autosave.importCacheLimitMb";
+inline constexpr std::string_view kAutosaveEnabled = "editor.autosave.enabled";
+inline constexpr std::string_view kAutosaveIntervalSeconds = "editor.autosave.intervalSeconds";
+inline constexpr std::string_view kCrashRecoveryEnabled = "editor.autosave.crashRecovery";
+inline constexpr std::string_view kBackupFileCount = "editor.autosave.backupCount";
+inline constexpr std::string_view kUndoHistoryDepth = "editor.autosave.undoHistoryDepth";
+inline constexpr std::string_view kLowProcessorMode = "editor.autosave.lowProcessorMode";
+inline constexpr std::string_view kBackgroundWorkerThreads = "editor.autosave.backgroundWorkerThreads";
+inline constexpr std::string_view kImportCacheLimitMb = "editor.autosave.importCacheLimitMb";
 // Part 2.13 Version Control & External Tools
-inline constexpr std::string_view kVcsEnabledUVE = "editor.vcs.enabled";
-inline constexpr std::string_view kVcsProviderUVE = "editor.vcs.provider";
-inline constexpr std::string_view kVcsShowStatusBadgesUVE = "editor.vcs.showStatusBadges";
-inline constexpr std::string_view kVcsDiffToolPathUVE = "editor.vcs.diffToolPath";
-inline constexpr std::string_view kExternalImageEditorPathUVE = "editor.externalTools.imageEditorPath";
-inline constexpr std::string_view kExternal3dToolPathUVE = "editor.externalTools.model3dToolPath";
-} // namespace EditorSettingIdUVE
+inline constexpr std::string_view kVcsEnabled = "editor.vcs.enabled";
+inline constexpr std::string_view kVcsProvider = "editor.vcs.provider";
+inline constexpr std::string_view kVcsShowStatusBadges = "editor.vcs.showStatusBadges";
+inline constexpr std::string_view kVcsDiffToolPath = "editor.vcs.diffToolPath";
+inline constexpr std::string_view kExternalImageEditorPath = "editor.externalTools.imageEditorPath";
+inline constexpr std::string_view kExternal3dToolPath = "editor.externalTools.model3dToolPath";
+} // namespace EditorSettingId
 
 /// Cohesive editor user preferences covering Part 2 (2.1 Interface/Theme through 2.13 Version Control).
-struct EditorExtendedPreferencesUVE final {
+struct EditorExtendedPreferences final {
     std::int64_t themePreset = 0; // 0=Dark, 1=Light, 2=HighContrast, 3=Custom
     std::string customThemeFile;
-    Config::SettingColorUVE themeBaseColor{0.14F, 0.15F, 0.18F, 1.0F};
-    Config::SettingColorUVE themeAccentColor{0.22F, 0.56F, 0.96F, 1.0F};
+    Config::SettingColor themeBaseColor{0.14F, 0.15F, 0.18F, 1.0F};
+    Config::SettingColor themeAccentColor{0.22F, 0.56F, 0.96F, 1.0F};
     double themeContrast = 1.0;
     std::int64_t uiScaleMode = 0; // 0=AutoFromDpi, 1=Manual
     double uiScaleFactor = 1.0;
@@ -311,7 +311,7 @@ struct EditorExtendedPreferencesUVE final {
     std::int64_t debugAssertionBehavior = 0; // 0=BreakIntoDebugger, 1=LogAndContinue, 2=Abort
 
     std::int64_t playWindowMode = 0; // 0=EmbeddedViewport, 1=MaximisedViewport, 2=SeparateWindow
-    Config::SettingVector2UVE playWindowSize{1280.0, 720.0};
+    Config::SettingVector2 playWindowSize{1280.0, 720.0};
     std::int64_t playSceneSource = 0; // 0=CurrentScene, 1=ProjectMainScene, 2=CustomScene
     bool playPauseOnError = true;
     bool playLiveReload = true;
@@ -337,16 +337,16 @@ struct EditorExtendedPreferencesUVE final {
 /// One setting id that was renamed, and the id it now has. A settings file written before the
 /// rename still carries the old key; the registry's Deprecated alias migrates its value to the new
 /// id on load, so the author keeps their choice.
-struct RenamedSettingIdUVE final {
+struct RenamedSettingId final {
     std::string_view oldId;
     std::string_view newId;
 };
 
 /// The renames so far. `editor.nodes.*` became `editor.objects.*` when the engine's word for a
 /// scene node became object.
-inline constexpr RenamedSettingIdUVE kRenamedSettingIdsUVE[] = {
-    {"editor.nodes.addUnderSelection", EditorSettingIdUVE::kNewObjectsUnderSelectionUVE},
-    {"editor.nodes.placement", EditorSettingIdUVE::kNewObjectPlacementUVE},
+inline constexpr RenamedSettingId kRenamedSettingIds[] = {
+    {"editor.nodes.addUnderSelection", EditorSettingId::kNewObjectsUnderSelection},
+    {"editor.nodes.placement", EditorSettingId::kNewObjectPlacement},
 };
 
 /// Declares every editor setting in `registry`, with defaults and legal ranges taken from the
@@ -358,19 +358,19 @@ inline constexpr RenamedSettingIdUVE kRenamedSettingIdsUVE[] = {
 /// hidden StringList descriptors; the viewport axis colours use hidden Color descriptors but are
 /// loaded and saved as one palette because their defaults belong to the host. Lists have no
 /// editable generic panel row yet.
-[[nodiscard]] bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry);
+[[nodiscard]] bool RegisterEditorSettings(Config::SettingsRegistry& registry);
 
 // What the preferences window is made of, kept free of UI so it can be tested.
 
 /// Whether `descriptor` matches the search `query`: every space-separated word in it appears,
 /// ignoring case, in the setting's name, category, id or tooltip. An empty query matches all.
-[[nodiscard]] bool MatchesSettingSearchUVE(const Config::SettingDescriptorUVE& descriptor, std::string_view query);
+[[nodiscard]] bool MatchesSettingSearch(const Config::SettingDescriptor& descriptor, std::string_view query);
 
 /// Whether a setting in `category` sits at or beneath the category tree object `path`.
-[[nodiscard]] bool IsInSettingCategoryUVE(std::string_view category, std::string_view path) noexcept;
+[[nodiscard]] bool IsInSettingCategory(std::string_view category, std::string_view path) noexcept;
 
 /// One object of the category tree: "Editor/Viewport/Grid" is `name` "Grid" at `depth` 2.
-struct SettingCategoryObjectUVE final {
+struct SettingCategoryObject final {
     std::string path;
     std::string name;
     int depth = 0;
@@ -378,12 +378,12 @@ struct SettingCategoryObjectUVE final {
 
 /// The category tree of `descriptors`, every ancestor included, flattened depth first: a parent
 /// always comes right before its children, and siblings keep the order they first appear in.
-[[nodiscard]] std::vector<SettingCategoryObjectUVE> BuildSettingCategoryTreeUVE(
-    const std::vector<const Config::SettingDescriptorUVE*>& descriptors);
+[[nodiscard]] std::vector<SettingCategoryObject> BuildSettingCategoryTree(
+    const std::vector<const Config::SettingDescriptor*>& descriptors);
 
 /// `value` as a person reads it: On or Off, a number without trailing zeros, an enum entry's
 /// label, a colour's hex code.
-[[nodiscard]] std::string FormatSettingValueUVE(const Config::SettingDescriptorUVE& descriptor,
-                                                const Config::SettingValueUVE& value);
+[[nodiscard]] std::string FormatSettingValue(const Config::SettingDescriptor& descriptor,
+                                                const Config::SettingValue& value);
 
 } // namespace UVE::Editor

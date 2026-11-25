@@ -19,7 +19,7 @@ namespace UVE::Threading {
 
 #if defined(_WIN32)
 
-bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
+bool SetCurrentThreadName(const std::string_view name) noexcept {
     // SetThreadDescription takes UTF-16; thread names here are ASCII by convention, so a
     // widening copy (no MultiByteToWideChar machinery) is exact for every name we set.
     std::array<wchar_t, 64U> wide{};
@@ -35,7 +35,7 @@ bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
     return SUCCEEDED(SetThreadDescription(GetCurrentThread(), wide.data()));
 }
 
-bool TryGetCurrentThreadNameUVE(std::string& outName) {
+bool TryGetCurrentThreadName(std::string& outName) {
     PWSTR description = nullptr;
     if (FAILED(GetThreadDescription(GetCurrentThread(), &description))) {
         return false;
@@ -54,14 +54,14 @@ bool TryGetCurrentThreadNameUVE(std::string& outName) {
 namespace {
 
 /// Linux thread names hold 15 bytes plus the terminator; pthread_setname_np fails past it.
-constexpr std::size_t kMaxThreadNameBytesUVE = 15U;
+constexpr std::size_t kMaxThreadNameBytes = 15U;
 
 } // namespace
 
-bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
-    std::array<char, kMaxThreadNameBytesUVE + 1U> truncated{};
+bool SetCurrentThreadName(const std::string_view name) noexcept {
+    std::array<char, kMaxThreadNameBytes + 1U> truncated{};
     const std::size_t length =
-        name.size() < kMaxThreadNameBytesUVE ? name.size() : kMaxThreadNameBytesUVE;
+        name.size() < kMaxThreadNameBytes ? name.size() : kMaxThreadNameBytes;
     for (std::size_t i = 0U; i < length; ++i) {
         truncated[i] = name[i];
     }
@@ -69,8 +69,8 @@ bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
     return pthread_setname_np(pthread_self(), truncated.data()) == 0;
 }
 
-bool TryGetCurrentThreadNameUVE(std::string& outName) {
-    std::array<char, kMaxThreadNameBytesUVE + 1U> fetched{};
+bool TryGetCurrentThreadName(std::string& outName) {
+    std::array<char, kMaxThreadNameBytes + 1U> fetched{};
     if (pthread_getname_np(pthread_self(), fetched.data(), fetched.size()) != 0) {
         return false;
     }
@@ -80,7 +80,7 @@ bool TryGetCurrentThreadNameUVE(std::string& outName) {
 
 #elif defined(__APPLE__)
 
-bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
+bool SetCurrentThreadName(const std::string_view name) noexcept {
     // macOS names only the calling thread (no handle overload exists) and caps at 63 bytes.
     std::array<char, 64U> truncated{};
     const std::size_t length = name.size() < 63U ? name.size() : 63U;
@@ -91,7 +91,7 @@ bool SetCurrentThreadNameUVE(const std::string_view name) noexcept {
     return pthread_setname_np(truncated.data()) == 0;
 }
 
-bool TryGetCurrentThreadNameUVE(std::string& outName) {
+bool TryGetCurrentThreadName(std::string& outName) {
     std::array<char, 64U> fetched{};
     if (pthread_getname_np(pthread_self(), fetched.data(), fetched.size()) != 0) {
         return false;
@@ -102,11 +102,11 @@ bool TryGetCurrentThreadNameUVE(std::string& outName) {
 
 #else
 
-bool SetCurrentThreadNameUVE(const std::string_view /*name*/) noexcept {
+bool SetCurrentThreadName(const std::string_view /*name*/) noexcept {
     return false;
 }
 
-bool TryGetCurrentThreadNameUVE(std::string& /*outName*/) {
+bool TryGetCurrentThreadName(std::string& /*outName*/) {
     return false;
 }
 

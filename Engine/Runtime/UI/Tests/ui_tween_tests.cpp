@@ -24,219 +24,219 @@
 namespace UVE::UI::Tests {
 namespace {
 
-class UITweenUVETest : public ::testing::Test {
+class UITweenTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Input::InputSystemUVE inputSystem{eventSystem};
-    UIRuntimeUVE runtime;
-    Scene::SceneSerializerUVE serializer;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Input::InputSystem inputSystem{eventSystem};
+    UIRuntime runtime;
+    Scene::SceneSerializer serializer;
 
-    void FrameUVE(const float dt) {
-        runtime.SetDeltaTimeUVE(dt);
-        inputSystem.UpdateUVE();
-        runtime.TickUVE(entityManager, inputSystem);
+    void Frame(const float dt) {
+        runtime.SetDeltaTime(dt);
+        inputSystem.Update();
+        runtime.Tick(entityManager, inputSystem);
     }
 
-    Scene::EntityUVE MakeButtonUVE(const Math::RectUVE rect) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UIButtonComponentUVE button;
+    Scene::Entity MakeButton(const Math::Rect rect) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UIButtonComponent button;
         button.rect = rect;
-        entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(entity, button);
+        entityManager.AddComponent<Scene::UIButtonComponent>(entity, button);
         return entity;
     }
 
-    Scene::EntityUVE MakeImageUVE(const Math::RectUVE rect, const float alpha) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::UIImageComponentUVE image;
+    Scene::Entity MakeImage(const Math::Rect rect, const float alpha) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::UIImageComponent image;
         image.rect = rect;
         image.alpha = alpha;
-        entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(entity, image);
+        entityManager.AddComponent<Scene::UIImageComponent>(entity, image);
         return entity;
     }
 
-    void AddTweenUVE(const Scene::EntityUVE entity, const Scene::UITweenComponentUVE& tween) {
-        entityManager.AddComponentUVE<Scene::UITweenComponentUVE>(entity, tween);
+    void AddTween(const Scene::Entity entity, const Scene::UITweenComponent& tween) {
+        entityManager.AddComponent<Scene::UITweenComponent>(entity, tween);
     }
 };
 
-TEST_F(UITweenUVETest, Easings_PinEndpointsMidpointsAndTheBackOvershoot) {
-    using Scene::UITweenEaseUVE;
-    const UITweenEaseUVE all[] = {UITweenEaseUVE::Linear,     UITweenEaseUVE::SineInOut,  UITweenEaseUVE::QuadIn,
-                                  UITweenEaseUVE::QuadOut,    UITweenEaseUVE::QuadInOut,  UITweenEaseUVE::CubicIn,
-                                  UITweenEaseUVE::CubicOut,   UITweenEaseUVE::CubicInOut, UITweenEaseUVE::OutBack};
-    for (const UITweenEaseUVE ease : all) {
-        EXPECT_FLOAT_EQ(EaseUITweenUVE(ease, 0.0F), 0.0F);
-        EXPECT_FLOAT_EQ(EaseUITweenUVE(ease, 1.0F), 1.0F);
+TEST_F(UITweenTest, Easings_PinEndpointsMidpointsAndTheBackOvershoot) {
+    using Scene::UITweenEase;
+    const UITweenEase all[] = {UITweenEase::Linear,     UITweenEase::SineInOut,  UITweenEase::QuadIn,
+                                  UITweenEase::QuadOut,    UITweenEase::QuadInOut,  UITweenEase::CubicIn,
+                                  UITweenEase::CubicOut,   UITweenEase::CubicInOut, UITweenEase::OutBack};
+    for (const UITweenEase ease : all) {
+        EXPECT_FLOAT_EQ(EaseUITween(ease, 0.0F), 0.0F);
+        EXPECT_FLOAT_EQ(EaseUITween(ease, 1.0F), 1.0F);
     }
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::SineInOut, 0.5F), 0.5F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::QuadIn, 0.5F), 0.25F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::QuadOut, 0.5F), 0.75F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::QuadInOut, 0.25F), 0.125F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::CubicIn, 0.5F), 0.125F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::CubicOut, 0.5F), 0.875F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(UITweenEaseUVE::CubicInOut, 0.25F), 0.0625F);
-    EXPECT_GT(EaseUITweenUVE(UITweenEaseUVE::OutBack, 0.5F), 1.0F);
-    EXPECT_FLOAT_EQ(EaseUITweenUVE(static_cast<UITweenEaseUVE>(99), 0.3F), 0.3F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::SineInOut, 0.5F), 0.5F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::QuadIn, 0.5F), 0.25F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::QuadOut, 0.5F), 0.75F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::QuadInOut, 0.25F), 0.125F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::CubicIn, 0.5F), 0.125F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::CubicOut, 0.5F), 0.875F);
+    EXPECT_FLOAT_EQ(EaseUITween(UITweenEase::CubicInOut, 0.25F), 0.0625F);
+    EXPECT_GT(EaseUITween(UITweenEase::OutBack, 0.5F), 1.0F);
+    EXPECT_FLOAT_EQ(EaseUITween(static_cast<UITweenEase>(99), 0.3F), 0.3F);
 }
 
-TEST_F(UITweenUVETest, RectTween_AdvancesLinearlyWithDeltaTime) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}});
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{200.0F, 0.0F}, {100.0F, 20.0F}};
-    AddTweenUVE(widget, tween);
+TEST_F(UITweenTest, RectTween_AdvancesLinearlyWithDeltaTime) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}});
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.toRect = Math::Rect{{200.0F, 0.0F}, {100.0F, 20.0F}};
+    AddTween(widget, tween);
 
-    FrameUVE(0.25F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 50.0F);
-    FrameUVE(0.25F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 100.0F);
+    Frame(0.25F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 50.0F);
+    Frame(0.25F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 100.0F);
 }
 
-TEST_F(UITweenUVETest, Delay_HoldsFromUntilDelayExpires) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}});
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{200.0F, 0.0F}, {100.0F, 20.0F}};
+TEST_F(UITweenTest, Delay_HoldsFromUntilDelayExpires) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}});
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.toRect = Math::Rect{{200.0F, 0.0F}, {100.0F, 20.0F}};
     tween.delay = 0.5F;
-    AddTweenUVE(widget, tween);
+    AddTween(widget, tween);
 
-    FrameUVE(0.25F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 0.0F);
-    FrameUVE(0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 50.0F);
+    Frame(0.25F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 0.0F);
+    Frame(0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 50.0F);
 }
 
-TEST_F(UITweenUVETest, Once_CompletesAndHoldsTo) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}});
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{200.0F, 0.0F}, {100.0F, 20.0F}};
-    AddTweenUVE(widget, tween);
+TEST_F(UITweenTest, Once_CompletesAndHoldsTo) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}});
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.toRect = Math::Rect{{200.0F, 0.0F}, {100.0F, 20.0F}};
+    AddTween(widget, tween);
 
-    FrameUVE(0.6F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 120.0F);
-    FrameUVE(0.6F);
-    const Scene::UITweenComponentUVE& done = entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 200.0F);
+    Frame(0.6F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 120.0F);
+    Frame(0.6F);
+    const Scene::UITweenComponent& done = entityManager.GetComponent<Scene::UITweenComponent>(widget);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 200.0F);
     EXPECT_FALSE(done.playing);
     EXPECT_TRUE(done.completedThisFrame);
-    FrameUVE(0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 200.0F);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).completedThisFrame);
+    Frame(0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 200.0F);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UITweenComponent>(widget).completedThisFrame);
 }
 
-TEST_F(UITweenUVETest, Loop_WrapsAndSignalsEachWrap) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}});
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{200.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.loop = Scene::UITweenLoopUVE::Loop;
-    AddTweenUVE(widget, tween);
+TEST_F(UITweenTest, Loop_WrapsAndSignalsEachWrap) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}});
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.toRect = Math::Rect{{200.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.loop = Scene::UITweenLoop::Loop;
+    AddTween(widget, tween);
 
-    FrameUVE(0.75F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 150.0F);
-    FrameUVE(0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 50.0F);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).completedThisFrame);
-    FrameUVE(0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 150.0F);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).completedThisFrame);
+    Frame(0.75F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 150.0F);
+    Frame(0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 50.0F);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::UITweenComponent>(widget).completedThisFrame);
+    Frame(0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 150.0F);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UITweenComponent>(widget).completedThisFrame);
 }
 
-TEST_F(UITweenUVETest, PingPong_ReversesEachCycle) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}});
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{200.0F, 0.0F}, {100.0F, 20.0F}};
-    tween.loop = Scene::UITweenLoopUVE::PingPong;
-    AddTweenUVE(widget, tween);
+TEST_F(UITweenTest, PingPong_ReversesEachCycle) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}});
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.toRect = Math::Rect{{200.0F, 0.0F}, {100.0F, 20.0F}};
+    tween.loop = Scene::UITweenLoop::PingPong;
+    AddTween(widget, tween);
 
-    FrameUVE(1.0F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 200.0F);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).completedThisFrame);
-    FrameUVE(0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect.position.x, 100.0F);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).completedThisFrame);
+    Frame(1.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 200.0F);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::UITweenComponent>(widget).completedThisFrame);
+    Frame(0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect.position.x, 100.0F);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UITweenComponent>(widget).completedThisFrame);
 }
 
-TEST_F(UITweenUVETest, AlphaTween_MultipliesAuthoredAlpha) {
-    const Scene::EntityUVE widget = MakeImageUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}}, 0.5F);
-    Scene::UITweenComponentUVE tween;
-    tween.target = Scene::UITweenTargetUVE::Alpha;
+TEST_F(UITweenTest, AlphaTween_MultipliesAuthoredAlpha) {
+    const Scene::Entity widget = MakeImage(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}}, 0.5F);
+    Scene::UITweenComponent tween;
+    tween.target = Scene::UITweenTarget::Alpha;
     tween.fromAlpha = 0.0F;
     tween.toAlpha = 1.0F;
-    AddTweenUVE(widget, tween);
+    AddTween(widget, tween);
 
-    FrameUVE(0.5F);
+    Frame(0.5F);
 
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget).currentAlpha, 0.5F);
-    const std::vector<UIQuadUVE>& quads = runtime.GetDrawBatchUVE().quads;
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UITweenComponent>(widget).currentAlpha, 0.5F);
+    const std::vector<UIQuad>& quads = runtime.GetDrawBatch().quads;
     ASSERT_EQ(quads.size(), 1U);
     EXPECT_FLOAT_EQ(quads[0].alpha, 0.25F);
 }
 
-TEST_F(UITweenUVETest, TweenOverridesAnchoredRect) {
-    const Scene::EntityUVE widget = MakeButtonUVE(Math::RectUVE{{0.0F, 0.0F}, {10.0F, 10.0F}});
-    Scene::UIAnchorComponentUVE anchor; // full-stretch: anchors alone would fill the viewport
-    entityManager.AddComponentUVE<Scene::UIAnchorComponentUVE>(widget, anchor);
-    Scene::UITweenComponentUVE tween;
-    tween.fromRect = Math::RectUVE{{10.0F, 10.0F}, {50.0F, 50.0F}};
-    tween.toRect = Math::RectUVE{{10.0F, 10.0F}, {50.0F, 50.0F}};
-    AddTweenUVE(widget, tween);
-    runtime.SetViewportSizeUVE({400.0F, 300.0F});
+TEST_F(UITweenTest, TweenOverridesAnchoredRect) {
+    const Scene::Entity widget = MakeButton(Math::Rect{{0.0F, 0.0F}, {10.0F, 10.0F}});
+    Scene::UIAnchorComponent anchor; // full-stretch: anchors alone would fill the viewport
+    entityManager.AddComponent<Scene::UIAnchorComponent>(widget, anchor);
+    Scene::UITweenComponent tween;
+    tween.fromRect = Math::Rect{{10.0F, 10.0F}, {50.0F, 50.0F}};
+    tween.toRect = Math::Rect{{10.0F, 10.0F}, {50.0F, 50.0F}};
+    AddTween(widget, tween);
+    runtime.SetViewportSize({400.0F, 300.0F});
 
-    FrameUVE(0.5F);
+    Frame(0.5F);
 
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect,
-              (Math::RectUVE{{10.0F, 10.0F}, {50.0F, 50.0F}}));
+    EXPECT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(widget).rect,
+              (Math::Rect{{10.0F, 10.0F}, {50.0F, 50.0F}}));
 }
 
-TEST_F(UITweenUVETest, InvalidTween_ParksNeutrallyAndDimsNothing) {
-    const Scene::EntityUVE widget = MakeImageUVE(Math::RectUVE{{0.0F, 0.0F}, {100.0F, 20.0F}}, 0.5F);
-    Scene::UITweenComponentUVE tween;
-    tween.target = Scene::UITweenTargetUVE::Alpha;
+TEST_F(UITweenTest, InvalidTween_ParksNeutrallyAndDimsNothing) {
+    const Scene::Entity widget = MakeImage(Math::Rect{{0.0F, 0.0F}, {100.0F, 20.0F}}, 0.5F);
+    Scene::UITweenComponent tween;
+    tween.target = Scene::UITweenTarget::Alpha;
     tween.duration = 0.0F;
     tween.currentAlpha = 0.3F;
-    AddTweenUVE(widget, tween);
+    AddTween(widget, tween);
 
-    FrameUVE(0.5F);
+    Frame(0.5F);
 
-    const Scene::UITweenComponentUVE& parked = entityManager.GetComponentUVE<Scene::UITweenComponentUVE>(widget);
+    const Scene::UITweenComponent& parked = entityManager.GetComponent<Scene::UITweenComponent>(widget);
     EXPECT_FALSE(parked.playing);
     EXPECT_FLOAT_EQ(parked.currentAlpha, 1.0F);
-    EXPECT_FLOAT_EQ(runtime.GetDrawBatchUVE().quads[0].alpha, 0.5F);
+    EXPECT_FLOAT_EQ(runtime.GetDrawBatch().quads[0].alpha, 0.5F);
 }
 
-TEST_F(UITweenUVETest, SaveThenLoad_Tween_RestartsFromAuthoredValues) {
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::UITweenComponentUVE tween;
-    tween.target = Scene::UITweenTargetUVE::Rect;
-    tween.fromRect = Math::RectUVE{{5.0F, 5.0F}, {60.0F, 20.0F}};
-    tween.toRect = Math::RectUVE{{100.0F, 100.0F}, {80.0F, 40.0F}};
+TEST_F(UITweenTest, SaveThenLoad_Tween_RestartsFromAuthoredValues) {
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::UITweenComponent tween;
+    tween.target = Scene::UITweenTarget::Rect;
+    tween.fromRect = Math::Rect{{5.0F, 5.0F}, {60.0F, 20.0F}};
+    tween.toRect = Math::Rect{{100.0F, 100.0F}, {80.0F, 40.0F}};
     tween.fromAlpha = 0.2F;
     tween.toAlpha = 0.9F;
     tween.duration = 2.0F;
     tween.delay = 0.5F;
-    tween.ease = Scene::UITweenEaseUVE::QuadOut;
-    tween.loop = Scene::UITweenLoopUVE::PingPong;
+    tween.ease = Scene::UITweenEase::QuadOut;
+    tween.loop = Scene::UITweenLoop::PingPong;
     tween.elapsed = 0.7F;
     tween.playing = true;
     tween.completedThisFrame = true;
     tween.currentAlpha = 0.3F;
-    entityManager.AddComponentUVE<Scene::UITweenComponentUVE>(entity, tween);
+    entityManager.AddComponent<Scene::UITweenComponent>(entity, tween);
 
     const std::filesystem::path path = "uve_scene_serializer_tests_ui_tween.uvscene";
     std::filesystem::remove(path);
-    ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, Scene::SceneAssetTypeUVE::Scene));
+    ASSERT_TRUE(serializer.Save(entityManager, {entity}, path, Scene::SceneAssetType::Scene));
 
-    Scene::EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
-    const std::vector<Scene::EntityUVE> loaded = serializer.LoadUVE(loadedManager, path);
+    Scene::EntityManager loadedManager(memoryManager.GetDefaultAllocator(), eventSystem);
+    const std::vector<Scene::Entity> loaded = serializer.Load(loadedManager, path);
     ASSERT_EQ(loaded.size(), 1U);
-    const Scene::UITweenComponentUVE& restored =
-        loadedManager.GetComponentUVE<Scene::UITweenComponentUVE>(loaded[0]);
-    EXPECT_EQ(restored.target, Scene::UITweenTargetUVE::Rect);
+    const Scene::UITweenComponent& restored =
+        loadedManager.GetComponent<Scene::UITweenComponent>(loaded[0]);
+    EXPECT_EQ(restored.target, Scene::UITweenTarget::Rect);
     EXPECT_FLOAT_EQ(restored.fromRect.position.x, 5.0F);
     EXPECT_FLOAT_EQ(restored.fromRect.size.y, 20.0F);
     EXPECT_FLOAT_EQ(restored.toRect.position.x, 100.0F);
@@ -245,8 +245,8 @@ TEST_F(UITweenUVETest, SaveThenLoad_Tween_RestartsFromAuthoredValues) {
     EXPECT_FLOAT_EQ(restored.toAlpha, 0.9F);
     EXPECT_FLOAT_EQ(restored.duration, 2.0F);
     EXPECT_FLOAT_EQ(restored.delay, 0.5F);
-    EXPECT_EQ(restored.ease, Scene::UITweenEaseUVE::QuadOut);
-    EXPECT_EQ(restored.loop, Scene::UITweenLoopUVE::PingPong);
+    EXPECT_EQ(restored.ease, Scene::UITweenEase::QuadOut);
+    EXPECT_EQ(restored.loop, Scene::UITweenLoop::PingPong);
     EXPECT_FLOAT_EQ(restored.elapsed, 0.0F);
     EXPECT_TRUE(restored.playing);
     EXPECT_FALSE(restored.completedThisFrame);

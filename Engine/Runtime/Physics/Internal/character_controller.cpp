@@ -17,103 +17,103 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] bool HasFiniteLengthUVE(const Math::Vector3UVE& value) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(value);
+[[nodiscard]] bool HasFiniteLength(const Math::Vector3& value) noexcept {
+    const float lengthSquared = Math::LengthSquared(value);
     return std::isfinite(lengthSquared) && lengthSquared >= 0.0F;
 }
 
-[[nodiscard]] float FiniteLengthUVE(const Math::Vector3UVE& value) noexcept {
-    return HasFiniteLengthUVE(value) ? std::sqrt(Math::LengthSquaredUVE(value)) : 0.0F;
+[[nodiscard]] float FiniteLength(const Math::Vector3& value) noexcept {
+    return HasFiniteLength(value) ? std::sqrt(Math::LengthSquared(value)) : 0.0F;
 }
 
-[[nodiscard]] Math::Vector3UVE RemoveIntoNormalComponentUVE(
-    const Math::Vector3UVE& displacement, const Math::Vector3UVE& normal) noexcept {
-    const float normalLengthSquared = Math::LengthSquaredUVE(normal);
+[[nodiscard]] Math::Vector3 RemoveIntoNormalComponent(
+    const Math::Vector3& displacement, const Math::Vector3& normal) noexcept {
+    const float normalLengthSquared = Math::LengthSquared(normal);
     if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.0F) {
         return displacement;
     }
-    const float intoSurface = Math::DotUVE(displacement, normal);
+    const float intoSurface = Math::Dot(displacement, normal);
     if (!std::isfinite(intoSurface) || intoSurface <= 0.0F) {
         return displacement;
     }
     return displacement - normal * (intoSurface / normalLengthSquared);
 }
 
-bool ValidateControllerInputUVE(Scene::IEntityManagerUVE& entityManager,
-                                  const CharacterControllerInputUVE& input,
-                                  CharacterControllerMoveResultUVE& result) {
-    if (!entityManager.IsAliveUVE(input.entity)) {
-        result.code = CharacterControllerMoveCodeUVE::InvalidEntity;
+bool ValidateControllerInput(Scene::IEntityManager& entityManager,
+                                  const CharacterControllerInput& input,
+                                  CharacterControllerMoveResult& result) {
+    if (!entityManager.IsAlive(input.entity)) {
+        result.code = CharacterControllerMoveCode::InvalidEntity;
         return false;
     }
-    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(input.entity) ||
-        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(input.entity)) {
-        result.code = CharacterControllerMoveCodeUVE::MissingTransform;
+    if (!entityManager.HasComponent<Scene::TransformComponent>(input.entity) ||
+        !entityManager.HasComponent<Scene::WorldTransformComponent>(input.entity)) {
+        result.code = CharacterControllerMoveCode::MissingTransform;
         return false;
     }
-    if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(input.entity)) {
-        result.code = CharacterControllerMoveCodeUVE::MissingCollider;
+    if (!entityManager.HasComponent<Scene::ColliderComponent>(input.entity)) {
+        result.code = CharacterControllerMoveCode::MissingCollider;
         return false;
     }
-    if (!Math::IsFiniteUVE(input.desiredDisplacement) || !HasFiniteLengthUVE(input.desiredDisplacement) ||
-        !Scene::IsColliderComponentValidUVE(
-            entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(input.entity))) {
-        result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+    if (!Math::IsFinite(input.desiredDisplacement) || !HasFiniteLength(input.desiredDisplacement) ||
+        !Scene::IsColliderComponentValid(
+            entityManager.GetComponent<Scene::ColliderComponent>(input.entity))) {
+        result.code = CharacterControllerMoveCode::InvalidInput;
         return false;
     }
-    if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(input.entity)) {
-        const Scene::Rigid3DComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(input.entity);
-        if (!Scene::IsRigid3DComponentValidUVE(rigidBody)) {
-            result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+    if (entityManager.HasComponent<Scene::Rigid3DComponent>(input.entity)) {
+        const Scene::Rigid3DComponent& rigidBody =
+            entityManager.GetComponent<Scene::Rigid3DComponent>(input.entity);
+        if (!Scene::IsRigid3DComponentValid(rigidBody)) {
+            result.code = CharacterControllerMoveCode::InvalidInput;
             return false;
         }
         if (!rigidBody.isKinematic) {
-            result.code = CharacterControllerMoveCodeUVE::NonKinematicBody;
+            result.code = CharacterControllerMoveCode::NonKinematicBody;
             return false;
         }
     }
     return true;
 }
 
-[[nodiscard]] bool ApplyLocalDeltaUVE(Scene::IEntityManagerUVE& entityManager,
-                                      Scene::ISceneGraphUVE& sceneGraph, Scene::EntityUVE entity,
-                                      const Math::Vector3UVE& delta) {
-    if (!Math::IsFiniteUVE(delta)) {
+[[nodiscard]] bool ApplyLocalDelta(Scene::IEntityManager& entityManager,
+                                      Scene::ISceneGraph& sceneGraph, Scene::Entity entity,
+                                      const Math::Vector3& delta) {
+    if (!Math::IsFinite(delta)) {
         return false;
     }
-    Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-    const Math::Vector3UVE candidatePosition = transform.localPosition + delta;
-    if (!Math::IsFiniteUVE(candidatePosition)) {
+    Scene::TransformComponent transform = entityManager.GetComponent<Scene::TransformComponent>(entity);
+    const Math::Vector3 candidatePosition = transform.localPosition + delta;
+    if (!Math::IsFinite(candidatePosition)) {
         return false;
     }
     transform.localPosition = candidatePosition;
-    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+    sceneGraph.SetLocalTransform(entityManager, entity, transform);
     return true;
 }
 
-[[nodiscard]] float ResolveGroundSlopeCosineUVE(
-    const CharacterControllerInputUVE& input, CharacterControllerMoveResultUVE& result) noexcept {
+[[nodiscard]] float ResolveGroundSlopeCosine(
+    const CharacterControllerInput& input, CharacterControllerMoveResult& result) noexcept {
     float degrees = input.maximumGroundSlopeDegrees;
     if (!std::isfinite(degrees) || degrees < 0.0F) {
-        degrees = CharacterControllerUVE::kDefaultMaximumGroundSlopeDegreesUVE;
+        degrees = CharacterController::kDefaultMaximumGroundSlopeDegrees;
         result.inputClamped = true;
     }
-    if (degrees > CharacterControllerUVE::kMaximumGroundSlopeDegreesUVE) {
-        degrees = CharacterControllerUVE::kMaximumGroundSlopeDegreesUVE;
+    if (degrees > CharacterController::kMaximumGroundSlopeDegrees) {
+        degrees = CharacterController::kMaximumGroundSlopeDegrees;
         result.inputClamped = true;
     }
-    return std::cos(Math::DegToRadUVE(degrees));
+    return std::cos(Math::DegToRad(degrees));
 }
 
-void RegisterGroundContactUVE(CharacterControllerMoveResultUVE& result,
-                              const Math::Vector3UVE& controllerToTargetNormal,
+void RegisterGroundContact(CharacterControllerMoveResult& result,
+                              const Math::Vector3& controllerToTargetNormal,
                               const float minimumGroundNormalY) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(controllerToTargetNormal);
+    const float lengthSquared = Math::LengthSquared(controllerToTargetNormal);
     if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
         return;
     }
-    const Math::Vector3UVE supportNormal =
+    const Math::Vector3 supportNormal =
         -controllerToTargetNormal * (1.0F / std::sqrt(lengthSquared));
     if (!std::isfinite(supportNormal.y) || supportNormal.y < minimumGroundNormalY) {
         return;
@@ -124,16 +124,16 @@ void RegisterGroundContactUVE(CharacterControllerMoveResultUVE& result,
     }
 }
 
-struct DynamicBodyPushPolicyUVE final {
+struct DynamicBodyPushPolicy final {
     bool enabled = false;
     float strength = 0.0F;
     float maximumSpeed = 0.0F;
     float deltaTimeSeconds = 0.0F;
 };
 
-[[nodiscard]] DynamicBodyPushPolicyUVE ResolveDynamicBodyPushPolicyUVE(
-    const CharacterControllerInputUVE& input, CharacterControllerMoveResultUVE& result) noexcept {
-    DynamicBodyPushPolicyUVE policy;
+[[nodiscard]] DynamicBodyPushPolicy ResolveDynamicBodyPushPolicy(
+    const CharacterControllerInput& input, CharacterControllerMoveResult& result) noexcept {
+    DynamicBodyPushPolicy policy;
     if (!input.pushDynamicBodies) {
         return policy;
     }
@@ -159,30 +159,30 @@ struct DynamicBodyPushPolicyUVE final {
     return policy;
 }
 
-[[nodiscard]] bool ApplyDynamicBodyPushUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE targetEntity,
-    const Math::Vector3UVE& contactNormal, const Math::Vector3UVE& controllerDisplacement,
-    const DynamicBodyPushPolicyUVE& policy) {
+[[nodiscard]] bool ApplyDynamicBodyPush(
+    Scene::IEntityManager& entityManager, Scene::Entity targetEntity,
+    const Math::Vector3& contactNormal, const Math::Vector3& controllerDisplacement,
+    const DynamicBodyPushPolicy& policy) {
     if (!policy.enabled || policy.strength <= 0.0F || !std::isfinite(policy.maximumSpeed) ||
         policy.maximumSpeed <= 0.0F || !std::isfinite(policy.deltaTimeSeconds) ||
-        policy.deltaTimeSeconds <= 0.0F || !entityManager.IsAliveUVE(targetEntity) ||
-        !entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(targetEntity)) {
+        policy.deltaTimeSeconds <= 0.0F || !entityManager.IsAlive(targetEntity) ||
+        !entityManager.HasComponent<Scene::Rigid3DComponent>(targetEntity)) {
         return false;
     }
-    const float normalLengthSquared = Math::LengthSquaredUVE(contactNormal);
+    const float normalLengthSquared = Math::LengthSquared(contactNormal);
     if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.0F ||
-        !Math::IsFiniteUVE(controllerDisplacement)) {
+        !Math::IsFinite(controllerDisplacement)) {
         return false;
     }
-    const Math::Vector3UVE normal = contactNormal * (1.0F / std::sqrt(normalLengthSquared));
-    const float intoTarget = Math::DotUVE(controllerDisplacement, normal);
+    const Math::Vector3 normal = contactNormal * (1.0F / std::sqrt(normalLengthSquared));
+    const float intoTarget = Math::Dot(controllerDisplacement, normal);
     if (!std::isfinite(intoTarget) || intoTarget <= 0.0F) {
         return false;
     }
 
-    Scene::Rigid3DComponentUVE& rigidBody =
-        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(targetEntity);
-    if (!Scene::IsRigid3DComponentValidUVE(rigidBody) || rigidBody.isKinematic ||
+    Scene::Rigid3DComponent& rigidBody =
+        entityManager.GetComponent<Scene::Rigid3DComponent>(targetEntity);
+    if (!Scene::IsRigid3DComponentValid(rigidBody) || rigidBody.isKinematic ||
         rigidBody.mass <= 0.0F) {
         return false;
     }
@@ -191,7 +191,7 @@ struct DynamicBodyPushPolicyUVE final {
     if (!std::isfinite(desiredNormalSpeed) || desiredNormalSpeed <= 0.0F) {
         return false;
     }
-    const float currentNormalSpeed = Math::DotUVE(rigidBody.velocity, normal);
+    const float currentNormalSpeed = Math::Dot(rigidBody.velocity, normal);
     if (!std::isfinite(currentNormalSpeed)) {
         return false;
     }
@@ -199,41 +199,41 @@ struct DynamicBodyPushPolicyUVE final {
     if (!std::isfinite(speedDelta) || speedDelta <= 0.0F) {
         return false;
     }
-    const Math::Vector3UVE proposedVelocity = rigidBody.velocity + normal * speedDelta;
-    if (!Math::IsFiniteUVE(proposedVelocity)) {
+    const Math::Vector3 proposedVelocity = rigidBody.velocity + normal * speedDelta;
+    if (!Math::IsFinite(proposedVelocity)) {
         return false;
     }
     rigidBody.velocity = proposedVelocity;
     return true;
 }
 
-struct ToICandidateUVE final {
-    Scene::EntityUVE entity;
-    Math::SweptAabbHitUVE hit;
+struct ToICandidate final {
+    Scene::Entity entity;
+    Math::SweptAabbHit hit;
 };
 
-[[nodiscard]] bool CollisionFilterAcceptsUVE(const Scene::ColliderComponentUVE& moving,
+[[nodiscard]] bool CollisionFilterAccepts(const Scene::ColliderComponent& moving,
                                               std::uint32_t targetLayer,
                                               std::uint32_t targetMask) noexcept {
     return (moving.collisionMask & targetLayer) != 0U &&
            (targetMask & moving.collisionLayer) != 0U;
 }
 
-[[nodiscard]] std::optional<ToICandidateUVE> FindEarliestToIUVE(
-    const Math::AabbUVE& movingAabb, const Math::Vector3UVE& remaining,
-    const Scene::ColliderComponentUVE& movingCollider,
-    const std::vector<Detail::ColliderWorldAabbUVE>& cache,
-    Scene::EntityUVE movingEntity, std::size_t maximumTargets, bool& truncated) {
+[[nodiscard]] std::optional<ToICandidate> FindEarliestToI(
+    const Math::Aabb& movingAabb, const Math::Vector3& remaining,
+    const Scene::ColliderComponent& movingCollider,
+    const std::vector<Detail::ColliderWorldAabb>& cache,
+    Scene::Entity movingEntity, std::size_t maximumTargets, bool& truncated) {
     truncated = false;
     std::size_t evaluatedCount = 0U;
-    std::optional<ToICandidateUVE> best;
-    for (const Detail::ColliderWorldAabbUVE& candidate : cache) {
+    std::optional<ToICandidate> best;
+    for (const Detail::ColliderWorldAabb& candidate : cache) {
         if (candidate.entity == movingEntity ||
-            !CollisionFilterAcceptsUVE(movingCollider, candidate.collisionLayer, candidate.collisionMask)) {
+            !CollisionFilterAccepts(movingCollider, candidate.collisionLayer, candidate.collisionMask)) {
             continue;
         }
-        const std::optional<Math::SweptAabbHitUVE> hit =
-            Math::SweepAabbUVE(movingAabb, remaining, candidate.worldAabb);
+        const std::optional<Math::SweptAabbHit> hit =
+            Math::SweepAabb(movingAabb, remaining, candidate.worldAabb);
         if (!hit.has_value()) {
             continue;
         }
@@ -242,153 +242,153 @@ struct ToICandidateUVE final {
             break;
         }
         ++evaluatedCount;
-        const bool earlier = !best.has_value() || hit->time < best->hit.time - CharacterControllerUVE::kToIEpsilonUVE;
+        const bool earlier = !best.has_value() || hit->time < best->hit.time - CharacterController::kToIEpsilon;
         const bool tied = best.has_value() &&
-                          std::fabs(hit->time - best->hit.time) <= CharacterControllerUVE::kToIEpsilonUVE;
+                          std::fabs(hit->time - best->hit.time) <= CharacterController::kToIEpsilon;
         if (earlier || (tied && candidate.entity.index < best->entity.index)) {
-            best = ToICandidateUVE{candidate.entity, *hit};
+            best = ToICandidate{candidate.entity, *hit};
         }
     }
     return best;
 }
 
-[[nodiscard]] bool HasControllerCollisionUVE(Scene::IEntityManagerUVE& entityManager,
-                                              ICollisionSystemUVE& collisionSystem,
-                                              Scene::EntityUVE controller) {
-    const std::vector<CollisionPairUVE> pairs = collisionSystem.DetectCollisionsUVE(entityManager);
-    return std::any_of(pairs.begin(), pairs.end(), [&](const CollisionPairUVE& pair) {
+[[nodiscard]] bool HasControllerCollision(Scene::IEntityManager& entityManager,
+                                              ICollisionSystem& collisionSystem,
+                                              Scene::Entity controller) {
+    const std::vector<CollisionPair> pairs = collisionSystem.DetectCollisions(entityManager);
+    return std::any_of(pairs.begin(), pairs.end(), [&](const CollisionPair& pair) {
         return pair.first == controller || pair.second == controller;
     });
 }
 
-[[nodiscard]] bool IsCollisionFreeAfterDeltaUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, Scene::EntityUVE controller,
-    const Math::Vector3UVE& delta) {
-    if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, delta)) {
+[[nodiscard]] bool IsCollisionFreeAfterDelta(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, Scene::Entity controller,
+    const Math::Vector3& delta) {
+    if (!ApplyLocalDelta(entityManager, sceneGraph, controller, delta)) {
         return false;
     }
-    sceneGraph.UpdateUVE(entityManager);
-    const bool collisionFree = !HasControllerCollisionUVE(entityManager, collisionSystem, controller);
-    if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, -delta)) {
+    sceneGraph.Update(entityManager);
+    const bool collisionFree = !HasControllerCollision(entityManager, collisionSystem, controller);
+    if (!ApplyLocalDelta(entityManager, sceneGraph, controller, -delta)) {
         return false;
     }
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
     return collisionFree;
 }
 
-[[nodiscard]] bool TryStepUpUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, Scene::EntityUVE controller,
-    const Math::Vector3UVE& horizontalDisplacement, float maximumStepHeight,
-    bool& outContactsTruncated, Math::Vector3UVE& outNetDisplacement) {
-    const Math::Vector3UVE lift{0.0F, maximumStepHeight, 0.0F};
-    if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, lift)) {
+[[nodiscard]] bool TryStepUp(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, Scene::Entity controller,
+    const Math::Vector3& horizontalDisplacement, float maximumStepHeight,
+    bool& outContactsTruncated, Math::Vector3& outNetDisplacement) {
+    const Math::Vector3 lift{0.0F, maximumStepHeight, 0.0F};
+    if (!ApplyLocalDelta(entityManager, sceneGraph, controller, lift)) {
         return false;
     }
-    sceneGraph.UpdateUVE(entityManager);
-    if (HasControllerCollisionUVE(entityManager, collisionSystem, controller)) {
-        if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, -lift)) {
+    sceneGraph.Update(entityManager);
+    if (HasControllerCollision(entityManager, collisionSystem, controller)) {
+        if (!ApplyLocalDelta(entityManager, sceneGraph, controller, -lift)) {
             return false;
         }
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.Update(entityManager);
         return false;
     }
 
-    const Scene::WorldTransformComponentUVE& worldTransform =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(controller);
+    const Scene::WorldTransformComponent& worldTransform =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(controller);
     // The sweeper's own shape is read at the scale the mesh is drawn at, exactly like the
     // broadphase reads everyone else's: a controller that sweeps at unit size through a world that
     // collides at full size is a body that walks into a floor it should be standing on.
-    const Scene::ColliderComponentUVE movingCollider = Scene::ScaleColliderUVE(
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(controller),
+    const Scene::ColliderComponent movingCollider = Scene::ScaleCollider(
+        entityManager.GetComponent<Scene::ColliderComponent>(controller),
         worldTransform.worldScale);
-    const Math::AabbUVE movingAabb = Math::AabbUVE::FromCenterExtentsUVE(
-        worldTransform.worldPosition, Scene::GetColliderLocalHalfExtentsUVE(movingCollider));
-    const std::vector<Detail::ColliderWorldAabbUVE> cache =
-        Detail::BuildColliderWorldAabbCacheUVE(entityManager);
+    const Math::Aabb movingAabb = Math::Aabb::FromCenterExtents(
+        worldTransform.worldPosition, Scene::GetColliderLocalHalfExtents(movingCollider));
+    const std::vector<Detail::ColliderWorldAabb> cache =
+        Detail::BuildColliderWorldAabbCache(entityManager);
     bool targetCacheTruncated = false;
-    const std::optional<ToICandidateUVE> horizontalImpact = FindEarliestToIUVE(
+    const std::optional<ToICandidate> horizontalImpact = FindEarliestToI(
         movingAabb, horizontalDisplacement, movingCollider, cache, controller,
-        CharacterControllerUVE::kMaximumToITargetsUVE, targetCacheTruncated);
+        CharacterController::kMaximumToITargets, targetCacheTruncated);
     outContactsTruncated = outContactsTruncated || targetCacheTruncated;
     if (horizontalImpact.has_value()) {
-        if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, -lift)) {
+        if (!ApplyLocalDelta(entityManager, sceneGraph, controller, -lift)) {
             return false;
         }
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.Update(entityManager);
         return false;
     }
 
-    if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, horizontalDisplacement)) {
+    if (!ApplyLocalDelta(entityManager, sceneGraph, controller, horizontalDisplacement)) {
         return false;
     }
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
 
-    const Math::Vector3UVE fullDrop{0.0F, -maximumStepHeight, 0.0F};
+    const Math::Vector3 fullDrop{0.0F, -maximumStepHeight, 0.0F};
     float dropDistance = maximumStepHeight;
-    if (!IsCollisionFreeAfterDeltaUVE(entityManager, sceneGraph, collisionSystem, controller, fullDrop)) {
+    if (!IsCollisionFreeAfterDelta(entityManager, sceneGraph, collisionSystem, controller, fullDrop)) {
         float freeDistance = 0.0F;
         float blockedDistance = maximumStepHeight;
-        for (std::size_t iteration = 0U; iteration < CharacterControllerUVE::kMaximumStepSearchIterationsUVE;
+        for (std::size_t iteration = 0U; iteration < CharacterController::kMaximumStepSearchIterations;
              ++iteration) {
             const float candidateDistance = (freeDistance + blockedDistance) * 0.5F;
-            const Math::Vector3UVE candidateDrop{0.0F, -candidateDistance, 0.0F};
-            if (IsCollisionFreeAfterDeltaUVE(entityManager, sceneGraph, collisionSystem, controller, candidateDrop)) {
+            const Math::Vector3 candidateDrop{0.0F, -candidateDistance, 0.0F};
+            if (IsCollisionFreeAfterDelta(entityManager, sceneGraph, collisionSystem, controller, candidateDrop)) {
                 freeDistance = candidateDistance;
             } else {
                 blockedDistance = candidateDistance;
             }
         }
-        if (freeDistance <= CharacterControllerUVE::kMinimumMovementDistanceUVE) {
-            if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, -horizontalDisplacement) ||
-                !ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, -lift)) {
+        if (freeDistance <= CharacterController::kMinimumMovementDistance) {
+            if (!ApplyLocalDelta(entityManager, sceneGraph, controller, -horizontalDisplacement) ||
+                !ApplyLocalDelta(entityManager, sceneGraph, controller, -lift)) {
                 return false;
             }
-            sceneGraph.UpdateUVE(entityManager);
+            sceneGraph.Update(entityManager);
             return false;
         }
         dropDistance = freeDistance;
     }
 
-    const Math::Vector3UVE actualDrop{0.0F, -dropDistance, 0.0F};
-    if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, controller, actualDrop)) {
+    const Math::Vector3 actualDrop{0.0F, -dropDistance, 0.0F};
+    if (!ApplyLocalDelta(entityManager, sceneGraph, controller, actualDrop)) {
         return false;
     }
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
     outNetDisplacement = lift + horizontalDisplacement + actualDrop;
     return true;
 }
 
 } // namespace
 
-CcdEligibilityStatusUVE EvaluateCcdEligibilityUVE(const Math::Vector3UVE displacement,
+CcdEligibilityStatus EvaluateCcdEligibility(const Math::Vector3 displacement,
                                                    const float minimumSweepDistance) noexcept {
-    if (!Math::IsFiniteUVE(displacement) || !HasFiniteLengthUVE(displacement) ||
+    if (!Math::IsFinite(displacement) || !HasFiniteLength(displacement) ||
         !std::isfinite(minimumSweepDistance) || minimumSweepDistance <= 0.0F) {
-        return CcdEligibilityStatusUVE::Invalid;
+        return CcdEligibilityStatus::Invalid;
     }
-    const float displacementLength = FiniteLengthUVE(displacement);
+    const float displacementLength = FiniteLength(displacement);
     if (!std::isfinite(displacementLength)) {
-        return CcdEligibilityStatusUVE::Invalid;
+        return CcdEligibilityStatus::Invalid;
     }
-    return displacementLength >= minimumSweepDistance ? CcdEligibilityStatusUVE::Enabled
-                                                       : CcdEligibilityStatusUVE::Disabled;
+    return displacementLength >= minimumSweepDistance ? CcdEligibilityStatus::Enabled
+                                                       : CcdEligibilityStatus::Disabled;
 }
 
-CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, const CharacterControllerInputUVE& input) {
-    CharacterControllerMoveResultUVE result;
+CharacterControllerMoveResult CharacterController::Move(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, const CharacterControllerInput& input) {
+    CharacterControllerMoveResult result;
     result.requestedDisplacement = input.desiredDisplacement;
     result.remainingDisplacement = input.desiredDisplacement;
 
-    if (!ValidateControllerInputUVE(entityManager, input, result)) {
+    if (!ValidateControllerInput(entityManager, input, result)) {
         return result;
     }
 
-    std::size_t maximumSubsteps = std::min(input.maximumSubsteps, kMaximumSubstepsUVE);
-    if (input.maximumSubsteps > kMaximumSubstepsUVE) {
+    std::size_t maximumSubsteps = std::min(input.maximumSubsteps, kMaximumSubsteps);
+    if (input.maximumSubsteps > kMaximumSubsteps) {
         result.inputClamped = true;
     }
     if (maximumSubsteps == 0U) {
@@ -398,99 +398,99 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
 
     float maximumSubstepDistance = input.maximumSubstepDistance;
     if (!std::isfinite(maximumSubstepDistance) || maximumSubstepDistance <= 0.0F) {
-        maximumSubstepDistance = kDefaultMaximumSubstepDistanceUVE;
+        maximumSubstepDistance = kDefaultMaximumSubstepDistance;
         result.inputClamped = true;
     }
-    const float minimumGroundNormalY = ResolveGroundSlopeCosineUVE(input, result);
-    const DynamicBodyPushPolicyUVE pushPolicy = ResolveDynamicBodyPushPolicyUVE(input, result);
+    const float minimumGroundNormalY = ResolveGroundSlopeCosine(input, result);
+    const DynamicBodyPushPolicy pushPolicy = ResolveDynamicBodyPushPolicy(input, result);
 
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
     while (result.substeps < maximumSubsteps &&
-           FiniteLengthUVE(result.remainingDisplacement) > kMinimumMovementDistanceUVE) {
-        const float remainingLength = FiniteLengthUVE(result.remainingDisplacement);
+           FiniteLength(result.remainingDisplacement) > kMinimumMovementDistance) {
+        const float remainingLength = FiniteLength(result.remainingDisplacement);
         const float stepLength = std::min(remainingLength, maximumSubstepDistance);
-        const Math::Vector3UVE step = result.remainingDisplacement * (stepLength / remainingLength);
-        if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, input.entity, step)) {
-            result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+        const Math::Vector3 step = result.remainingDisplacement * (stepLength / remainingLength);
+        if (!ApplyLocalDelta(entityManager, sceneGraph, input.entity, step)) {
+            result.code = CharacterControllerMoveCode::InvalidInput;
             return result;
         }
         result.remainingDisplacement -= step;
         result.appliedDisplacement += step;
-        if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
-            !Math::IsFiniteUVE(result.appliedDisplacement)) {
-            result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+        if (!Math::IsFinite(result.remainingDisplacement) ||
+            !Math::IsFinite(result.appliedDisplacement)) {
+            result.code = CharacterControllerMoveCode::InvalidInput;
             return result;
         }
         ++result.substeps;
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.Update(entityManager);
 
-        const std::vector<CollisionPairUVE> pairs = collisionSystem.DetectCollisionsUVE(entityManager);
+        const std::vector<CollisionPair> pairs = collisionSystem.DetectCollisions(entityManager);
         std::size_t entityPairCount = 0U;
-        for (const CollisionPairUVE& pair : pairs) {
+        for (const CollisionPair& pair : pairs) {
             if (pair.first != input.entity && pair.second != input.entity) {
                 continue;
             }
-            if (entityPairCount >= kMaximumContactsUVE) {
+            if (entityPairCount >= kMaximumContacts) {
                 result.contactsTruncated = true;
                 break;
             }
             ++entityPairCount;
-            const float separationAxisLengthSquared = Math::LengthSquaredUVE(pair.separationAxis);
+            const float separationAxisLengthSquared = Math::LengthSquared(pair.separationAxis);
             if (!std::isfinite(pair.penetrationDepth) || pair.penetrationDepth <= 0.0F ||
-                !Math::IsFiniteUVE(pair.separationAxis) || !std::isfinite(separationAxisLengthSquared) ||
+                !Math::IsFinite(pair.separationAxis) || !std::isfinite(separationAxisLengthSquared) ||
                 std::abs(separationAxisLengthSquared - 1.0F) > 1.0e-3F) {
                 continue;
             }
             const bool controllerIsFirst = pair.first == input.entity;
-            const Scene::EntityUVE targetEntity = controllerIsFirst ? pair.second : pair.first;
-            const Math::Vector3UVE contactNormal = controllerIsFirst
+            const Scene::Entity targetEntity = controllerIsFirst ? pair.second : pair.first;
+            const Math::Vector3 contactNormal = controllerIsFirst
                 ? pair.separationAxis : -pair.separationAxis;
-            const Math::Vector3UVE correction = controllerIsFirst
+            const Math::Vector3 correction = controllerIsFirst
                 ? -pair.separationAxis * pair.penetrationDepth
                 : pair.separationAxis * pair.penetrationDepth;
-            if (!Math::IsFiniteUVE(correction)) {
+            if (!Math::IsFinite(correction)) {
                 continue;
             }
-            RegisterGroundContactUVE(result, contactNormal, minimumGroundNormalY);
-            if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, input.entity, correction)) {
-                result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+            RegisterGroundContact(result, contactNormal, minimumGroundNormalY);
+            if (!ApplyLocalDelta(entityManager, sceneGraph, input.entity, correction)) {
+                result.code = CharacterControllerMoveCode::InvalidInput;
                 return result;
             }
             result.appliedDisplacement += correction;
-            result.remainingDisplacement = RemoveIntoNormalComponentUVE(
+            result.remainingDisplacement = RemoveIntoNormalComponent(
                 result.remainingDisplacement, contactNormal);
-            if (!Math::IsFiniteUVE(result.appliedDisplacement) ||
-                !Math::IsFiniteUVE(result.remainingDisplacement)) {
-                result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+            if (!Math::IsFinite(result.appliedDisplacement) ||
+                !Math::IsFinite(result.remainingDisplacement)) {
+                result.code = CharacterControllerMoveCode::InvalidInput;
                 return result;
             }
-            if (ApplyDynamicBodyPushUVE(entityManager, targetEntity, contactNormal, step, pushPolicy)) {
+            if (ApplyDynamicBodyPush(entityManager, targetEntity, contactNormal, step, pushPolicy)) {
                 ++result.pushedBodyCount;
             }
             result.blocked = true;
             ++result.contactCount;
         }
         if (entityPairCount > 0U) {
-            sceneGraph.UpdateUVE(entityManager);
+            sceneGraph.Update(entityManager);
         }
     }
 
-    result.code = CharacterControllerMoveCodeUVE::Moved;
+    result.code = CharacterControllerMoveCode::Moved;
     return result;
 }
 
-CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, const CharacterControllerInputUVE& input) {
-    CharacterControllerMoveResultUVE result;
+CharacterControllerMoveResult CharacterController::MoveWithToI(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, const CharacterControllerInput& input) {
+    CharacterControllerMoveResult result;
     result.requestedDisplacement = input.desiredDisplacement;
     result.remainingDisplacement = input.desiredDisplacement;
-    if (!ValidateControllerInputUVE(entityManager, input, result)) {
+    if (!ValidateControllerInput(entityManager, input, result)) {
         return result;
     }
 
-    std::size_t maximumIterations = std::min(input.maximumSubsteps, kMaximumToIIterationsUVE);
-    if (input.maximumSubsteps > kMaximumToIIterationsUVE) {
+    std::size_t maximumIterations = std::min(input.maximumSubsteps, kMaximumToIIterations);
+    if (input.maximumSubsteps > kMaximumToIIterations) {
         result.inputClamped = true;
     }
     if (maximumIterations == 0U) {
@@ -499,71 +499,71 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
     }
     float maximumStepDistance = input.maximumSubstepDistance;
     if (!std::isfinite(maximumStepDistance) || maximumStepDistance <= 0.0F) {
-        maximumStepDistance = kDefaultMaximumSubstepDistanceUVE;
+        maximumStepDistance = kDefaultMaximumSubstepDistance;
         result.inputClamped = true;
     }
-    const float minimumGroundNormalY = ResolveGroundSlopeCosineUVE(input, result);
-    const DynamicBodyPushPolicyUVE pushPolicy = ResolveDynamicBodyPushPolicyUVE(input, result);
+    const float minimumGroundNormalY = ResolveGroundSlopeCosine(input, result);
+    const DynamicBodyPushPolicy pushPolicy = ResolveDynamicBodyPushPolicy(input, result);
     float maximumStepHeight = input.maximumStepHeight;
     if (!std::isfinite(maximumStepHeight) || maximumStepHeight < 0.0F) {
         maximumStepHeight = 0.0F;
         result.inputClamped = true;
     }
 
-    sceneGraph.UpdateUVE(entityManager);
-    const std::vector<CollisionPairUVE> initialPairs = collisionSystem.DetectCollisionsUVE(entityManager);
-    if (std::any_of(initialPairs.begin(), initialPairs.end(), [&](const CollisionPairUVE& pair) {
+    sceneGraph.Update(entityManager);
+    const std::vector<CollisionPair> initialPairs = collisionSystem.DetectCollisions(entityManager);
+    if (std::any_of(initialPairs.begin(), initialPairs.end(), [&](const CollisionPair& pair) {
             return pair.first == input.entity || pair.second == input.entity;
         })) {
-        return MoveUVE(entityManager, sceneGraph, collisionSystem, input);
+        return Move(entityManager, sceneGraph, collisionSystem, input);
     }
 
     while (result.substeps < maximumIterations &&
-           FiniteLengthUVE(result.remainingDisplacement) > kMinimumMovementDistanceUVE) {
-        const float remainingLength = FiniteLengthUVE(result.remainingDisplacement);
+           FiniteLength(result.remainingDisplacement) > kMinimumMovementDistance) {
+        const float remainingLength = FiniteLength(result.remainingDisplacement);
         const float consideredLength = std::min(remainingLength, maximumStepDistance);
-        const Math::Vector3UVE consideredDisplacement =
+        const Math::Vector3 consideredDisplacement =
             result.remainingDisplacement * (consideredLength / remainingLength);
-        const Scene::WorldTransformComponentUVE& worldTransform =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(input.entity);
-        const Scene::ColliderComponentUVE movingCollider = Scene::ScaleColliderUVE(
-            entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(input.entity),
+        const Scene::WorldTransformComponent& worldTransform =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(input.entity);
+        const Scene::ColliderComponent movingCollider = Scene::ScaleCollider(
+            entityManager.GetComponent<Scene::ColliderComponent>(input.entity),
             worldTransform.worldScale);
-        const Math::AabbUVE movingAabb = Math::AabbUVE::FromCenterExtentsUVE(
-            worldTransform.worldPosition, Scene::GetColliderLocalHalfExtentsUVE(movingCollider));
-        const std::vector<Detail::ColliderWorldAabbUVE> cache =
-            Detail::BuildColliderWorldAabbCacheUVE(entityManager);
+        const Math::Aabb movingAabb = Math::Aabb::FromCenterExtents(
+            worldTransform.worldPosition, Scene::GetColliderLocalHalfExtents(movingCollider));
+        const std::vector<Detail::ColliderWorldAabb> cache =
+            Detail::BuildColliderWorldAabbCache(entityManager);
         bool targetCacheTruncated = false;
-        const std::optional<ToICandidateUVE> candidate = FindEarliestToIUVE(
+        const std::optional<ToICandidate> candidate = FindEarliestToI(
             movingAabb, consideredDisplacement, movingCollider, cache, input.entity,
-            kMaximumToITargetsUVE, targetCacheTruncated);
+            kMaximumToITargets, targetCacheTruncated);
         result.contactsTruncated = result.contactsTruncated || targetCacheTruncated;
 
         if (!candidate.has_value()) {
-            if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, input.entity, consideredDisplacement)) {
-                result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+            if (!ApplyLocalDelta(entityManager, sceneGraph, input.entity, consideredDisplacement)) {
+                result.code = CharacterControllerMoveCode::InvalidInput;
                 return result;
             }
             result.remainingDisplacement -= consideredDisplacement;
             result.appliedDisplacement += consideredDisplacement;
-            if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
-                !Math::IsFiniteUVE(result.appliedDisplacement)) {
-                result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+            if (!Math::IsFinite(result.remainingDisplacement) ||
+                !Math::IsFinite(result.appliedDisplacement)) {
+                result.code = CharacterControllerMoveCode::InvalidInput;
                 return result;
             }
             ++result.substeps;
-            sceneGraph.UpdateUVE(entityManager);
+            sceneGraph.Update(entityManager);
             continue;
         }
 
         const float impactTime = std::clamp(candidate->hit.time, 0.0F, 1.0F);
-        const Math::Vector3UVE horizontalDisplacement{
+        const Math::Vector3 horizontalDisplacement{
             consideredDisplacement.x, 0.0F, consideredDisplacement.z};
-        if (maximumStepHeight > kMinimumMovementDistanceUVE &&
+        if (maximumStepHeight > kMinimumMovementDistance &&
             std::fabs(candidate->hit.normal.y) < minimumGroundNormalY &&
-            FiniteLengthUVE(horizontalDisplacement) > kMinimumMovementDistanceUVE) {
-            Math::Vector3UVE stepDisplacement{};
-            if (TryStepUpUVE(entityManager, sceneGraph, collisionSystem, input.entity,
+            FiniteLength(horizontalDisplacement) > kMinimumMovementDistance) {
+            Math::Vector3 stepDisplacement{};
+            if (TryStepUp(entityManager, sceneGraph, collisionSystem, input.entity,
                              horizontalDisplacement, maximumStepHeight, result.contactsTruncated,
                              stepDisplacement)) {
                 result.remainingDisplacement -= horizontalDisplacement;
@@ -578,36 +578,36 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveWithToIUVE(
             }
         }
 
-        const float advanceTime = std::max(0.0F, impactTime - kToIEpsilonUVE);
-        const Math::Vector3UVE preImpactDisplacement = consideredDisplacement * advanceTime;
-        if (!ApplyLocalDeltaUVE(entityManager, sceneGraph, input.entity, preImpactDisplacement)) {
-            result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+        const float advanceTime = std::max(0.0F, impactTime - kToIEpsilon);
+        const Math::Vector3 preImpactDisplacement = consideredDisplacement * advanceTime;
+        if (!ApplyLocalDelta(entityManager, sceneGraph, input.entity, preImpactDisplacement)) {
+            result.code = CharacterControllerMoveCode::InvalidInput;
             return result;
         }
         result.remainingDisplacement -= preImpactDisplacement;
         result.appliedDisplacement += preImpactDisplacement;
-        if (!Math::IsFiniteUVE(result.remainingDisplacement) ||
-            !Math::IsFiniteUVE(result.appliedDisplacement)) {
-            result.code = CharacterControllerMoveCodeUVE::InvalidInput;
+        if (!Math::IsFinite(result.remainingDisplacement) ||
+            !Math::IsFinite(result.appliedDisplacement)) {
+            result.code = CharacterControllerMoveCode::InvalidInput;
             return result;
         }
         ++result.substeps;
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.Update(entityManager);
 
         result.blocked = true;
         result.toiUsed = true;
-        RegisterGroundContactUVE(result, candidate->hit.normal, minimumGroundNormalY);
-        if (ApplyDynamicBodyPushUVE(entityManager, candidate->entity, candidate->hit.normal,
+        RegisterGroundContact(result, candidate->hit.normal, minimumGroundNormalY);
+        if (ApplyDynamicBodyPush(entityManager, candidate->entity, candidate->hit.normal,
                                     consideredDisplacement, pushPolicy)) {
             ++result.pushedBodyCount;
         }
         result.earliestImpactTime = std::min(result.earliestImpactTime, impactTime);
         ++result.contactCount;
-        result.remainingDisplacement = RemoveIntoNormalComponentUVE(
+        result.remainingDisplacement = RemoveIntoNormalComponent(
             result.remainingDisplacement, candidate->hit.normal);
     }
 
-    result.code = CharacterControllerMoveCodeUVE::Moved;
+    result.code = CharacterControllerMoveCode::Moved;
     return result;
 }
 

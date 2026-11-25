@@ -25,62 +25,62 @@
 namespace UVE::Asset {
 namespace {
 
-using JsonUVE = nlohmann::json;
-constexpr std::string_view kAnimationSchemaUVE = "uve-animation-v2";
-constexpr std::string_view kAnimationSchemaV3UVE = "uve-animation-v3";
+using Json = nlohmann::json;
+constexpr std::string_view kAnimationSchema = "uve-animation-v2";
+constexpr std::string_view kAnimationSchemaV3 = "uve-animation-v3";
 /// v4 adds blend-shape weight tracks. Written only when a clip has them, so every clip that does
 /// not - which is all of them until facial animation is authored - stays byte-identical to v3.
-constexpr std::string_view kAnimationSchemaV4UVE = "uve-animation-v4";
-constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
+constexpr std::string_view kAnimationSchemaV4 = "uve-animation-v4";
+constexpr std::string_view kAnimationSchemaV1 = "uve-animation-v1";
 
-[[nodiscard]] bool IsFinitePoseUVE(const AnimationAssetPoseUVE& pose) noexcept {
-    return Math::IsFiniteUVE(pose.position) && Math::IsFiniteUVE(pose.rotation) &&
-           Math::IsFiniteUVE(pose.scale);
+[[nodiscard]] bool IsFinitePose(const AnimationAssetPose& pose) noexcept {
+    return Math::IsFinite(pose.position) && Math::IsFinite(pose.rotation) &&
+           Math::IsFinite(pose.scale);
 }
 
-[[nodiscard]] JsonUVE ToVectorJsonUVE(const Math::Vector3UVE& value) {
-    return JsonUVE::array({value.x, value.y, value.z});
+[[nodiscard]] Json ToVectorJson(const Math::Vector3& value) {
+    return Json::array({value.x, value.y, value.z});
 }
 
-[[nodiscard]] JsonUVE ToQuaternionJsonUVE(const Math::QuaternionUVE& value) {
-    return JsonUVE::array({value.x, value.y, value.z, value.w});
+[[nodiscard]] Json ToQuaternionJson(const Math::Quaternion& value) {
+    return Json::array({value.x, value.y, value.z, value.w});
 }
 
-[[nodiscard]] bool ReadVectorJsonUVE(const JsonUVE& value, Math::Vector3UVE& outVector) {
+[[nodiscard]] bool ReadVectorJson(const Json& value, Math::Vector3& outVector) {
     if (!value.is_array() || value.size() != 3U) {
         return false;
     }
-    const Math::Vector3UVE candidate{value.at(0).get<float>(), value.at(1).get<float>(), value.at(2).get<float>()};
-    if (!Math::IsFiniteUVE(candidate)) {
+    const Math::Vector3 candidate{value.at(0).get<float>(), value.at(1).get<float>(), value.at(2).get<float>()};
+    if (!Math::IsFinite(candidate)) {
         return false;
     }
     outVector = candidate;
     return true;
 }
 
-[[nodiscard]] bool ReadQuaternionJsonUVE(const JsonUVE& value, Math::QuaternionUVE& outRotation) {
+[[nodiscard]] bool ReadQuaternionJson(const Json& value, Math::Quaternion& outRotation) {
     if (!value.is_array() || value.size() != 4U) {
         return false;
     }
-    const Math::QuaternionUVE candidate{value.at(0).get<float>(), value.at(1).get<float>(),
+    const Math::Quaternion candidate{value.at(0).get<float>(), value.at(1).get<float>(),
                                        value.at(2).get<float>(), value.at(3).get<float>()};
-    Math::QuaternionUVE normalized;
-    if (!Math::TryNormalizeUVE(candidate, normalized)) {
+    Math::Quaternion normalized;
+    if (!Math::TryNormalize(candidate, normalized)) {
         return false;
     }
     outRotation = normalized;
     return true;
 }
 
-[[nodiscard]] bool ReadPoseJsonUVE(const JsonUVE& value, AnimationAssetPoseUVE& outPose) {
+[[nodiscard]] bool ReadPoseJson(const Json& value, AnimationAssetPose& outPose) {
     if (!value.is_object() || !value.contains("position") || !value.contains("rotation") ||
         !value.contains("scale")) {
         return false;
     }
-    AnimationAssetPoseUVE candidate;
-    if (!ReadVectorJsonUVE(value.at("position"), candidate.position) ||
-        !ReadQuaternionJsonUVE(value.at("rotation"), candidate.rotation) ||
-        !ReadVectorJsonUVE(value.at("scale"), candidate.scale)) {
+    AnimationAssetPose candidate;
+    if (!ReadVectorJson(value.at("position"), candidate.position) ||
+        !ReadQuaternionJson(value.at("rotation"), candidate.rotation) ||
+        !ReadVectorJson(value.at("scale"), candidate.scale)) {
         return false;
     }
     outPose = candidate;
@@ -88,19 +88,19 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
 }
 
 /// Times sorted, inside [0, duration], poses finite with a usable rotation.
-[[nodiscard]] bool AreSamplesValidUVE(const std::vector<AnimationAssetSampleUVE>& samples,
+[[nodiscard]] bool AreSamplesValid(const std::vector<AnimationAssetSample>& samples,
                                       const double durationSeconds) noexcept {
-    if (samples.size() > kMaximumAnimationAssetSamplesUVE) {
+    if (samples.size() > kMaximumAnimationAssetSamples) {
         return false;
     }
     double previousTime = -std::numeric_limits<double>::infinity();
-    for (const AnimationAssetSampleUVE& sample : samples) {
+    for (const AnimationAssetSample& sample : samples) {
         if (!std::isfinite(sample.timeSeconds) || sample.timeSeconds < 0.0 || sample.timeSeconds > durationSeconds ||
-            sample.timeSeconds < previousTime || !IsFinitePoseUVE(sample.pose)) {
+            sample.timeSeconds < previousTime || !IsFinitePose(sample.pose)) {
             return false;
         }
-        Math::QuaternionUVE normalized;
-        if (!Math::TryNormalizeUVE(sample.pose.rotation, normalized)) {
+        Math::Quaternion normalized;
+        if (!Math::TryNormalize(sample.pose.rotation, normalized)) {
             return false;
         }
         previousTime = sample.timeSeconds;
@@ -108,29 +108,29 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
     return true;
 }
 
-[[nodiscard]] JsonUVE ToSamplesJsonUVE(const std::vector<AnimationAssetSampleUVE>& samples) {
-    JsonUVE result = JsonUVE::array();
-    for (const AnimationAssetSampleUVE& sample : samples) {
+[[nodiscard]] Json ToSamplesJson(const std::vector<AnimationAssetSample>& samples) {
+    Json result = Json::array();
+    for (const AnimationAssetSample& sample : samples) {
         result.push_back({{"timeSeconds", sample.timeSeconds},
-                          {"pose", {{"position", ToVectorJsonUVE(sample.pose.position)},
-                                    {"rotation", ToQuaternionJsonUVE(sample.pose.rotation)},
-                                    {"scale", ToVectorJsonUVE(sample.pose.scale)}}}});
+                          {"pose", {{"position", ToVectorJson(sample.pose.position)},
+                                    {"rotation", ToQuaternionJson(sample.pose.rotation)},
+                                    {"scale", ToVectorJson(sample.pose.scale)}}}});
     }
     return result;
 }
 
-[[nodiscard]] bool ReadSamplesJsonUVE(const JsonUVE& samples, std::vector<AnimationAssetSampleUVE>& outSamples) {
-    if (!samples.is_array() || samples.size() > kMaximumAnimationAssetSamplesUVE) {
+[[nodiscard]] bool ReadSamplesJson(const Json& samples, std::vector<AnimationAssetSample>& outSamples) {
+    if (!samples.is_array() || samples.size() > kMaximumAnimationAssetSamples) {
         return false;
     }
     outSamples.reserve(samples.size());
-    for (const JsonUVE& value : samples) {
+    for (const Json& value : samples) {
         if (!value.is_object() || !value.contains("timeSeconds") || !value.contains("pose")) {
             return false;
         }
-        AnimationAssetSampleUVE sample;
+        AnimationAssetSample sample;
         sample.timeSeconds = value.at("timeSeconds").get<double>();
-        if (!ReadPoseJsonUVE(value.at("pose"), sample.pose)) {
+        if (!ReadPoseJson(value.at("pose"), sample.pose)) {
             return false;
         }
         outSamples.push_back(std::move(sample));
@@ -138,16 +138,16 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
     return true;
 }
 
-[[nodiscard]] bool IsRestValidUVE(const std::vector<AnimationAssetRestBoneUVE>& rest) noexcept {
-    if (rest.size() > kMaximumAnimationAssetBonesUVE) {
+[[nodiscard]] bool IsRestValid(const std::vector<AnimationAssetRestBone>& rest) noexcept {
+    if (rest.size() > kMaximumAnimationAssetBones) {
         return false;
     }
     for (std::size_t index = 0U; index < rest.size(); ++index) {
-        const AnimationAssetRestBoneUVE& bone = rest[index];
-        Math::QuaternionUVE normalized;
-        if (bone.bone.empty() || bone.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE || bone.bone.contains('\0') ||
-            bone.parent < -1 || bone.parent >= static_cast<std::int32_t>(index) || !Math::IsFiniteUVE(bone.position) ||
-            !Math::IsFiniteUVE(bone.scale) || !Math::TryNormalizeUVE(bone.rotation, normalized)) {
+        const AnimationAssetRestBone& bone = rest[index];
+        Math::Quaternion normalized;
+        if (bone.bone.empty() || bone.bone.size() > kMaximumAnimationAssetIdentifierBytes || bone.bone.contains('\0') ||
+            bone.parent < -1 || bone.parent >= static_cast<std::int32_t>(index) || !Math::IsFinite(bone.position) ||
+            !Math::IsFinite(bone.scale) || !Math::TryNormalize(bone.rotation, normalized)) {
             return false;
         }
         for (std::size_t other = 0U; other < index; ++other) {
@@ -162,23 +162,23 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
 /// Blend-shape tracks: each names a mesh, carries at least one key, keeps its keys ordered and in
 /// range, and uses ONE weight count throughout - a track whose keys disagree about how many shapes
 /// it drives cannot be interpolated at all.
-[[nodiscard]] bool AreMorphTracksValidUVE(const std::vector<AnimationAssetMorphTrackUVE>& tracks,
+[[nodiscard]] bool AreMorphTracksValid(const std::vector<AnimationAssetMorphTrack>& tracks,
                                           const double durationSeconds) noexcept {
-    if (tracks.size() > kMaximumAnimationAssetMorphTracksUVE) {
+    if (tracks.size() > kMaximumAnimationAssetMorphTracks) {
         return false;
     }
     for (std::size_t index = 0U; index < tracks.size(); ++index) {
-        const AnimationAssetMorphTrackUVE& track = tracks[index];
-        if (track.node.empty() || track.node.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+        const AnimationAssetMorphTrack& track = tracks[index];
+        if (track.node.empty() || track.node.size() > kMaximumAnimationAssetIdentifierBytes ||
             track.node.contains('\0') || track.samples.empty()) {
             return false;
         }
         const std::size_t targetCount = track.samples.front().weights.size();
-        if (targetCount > kMaximumMeshMorphTargetsUVE) {
+        if (targetCount > kMaximumMeshMorphTargets) {
             return false;
         }
         double previousTime = -std::numeric_limits<double>::infinity();
-        for (const AnimationAssetMorphWeightSampleUVE& sample : track.samples) {
+        for (const AnimationAssetMorphWeightSample& sample : track.samples) {
             if (!std::isfinite(sample.timeSeconds) || sample.timeSeconds < 0.0 ||
                 sample.timeSeconds > durationSeconds || sample.timeSeconds < previousTime ||
                 sample.weights.size() != targetCount) {
@@ -202,19 +202,19 @@ constexpr std::string_view kAnimationSchemaV1UVE = "uve-animation-v1";
 
 } // namespace
 
-bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
-    if (clip.clipId.empty() || clip.clipId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+bool IsAnimationClipAssetValid(const AnimationClipAsset& clip) noexcept {
+    if (clip.clipId.empty() || clip.clipId.size() > kMaximumAnimationAssetIdentifierBytes ||
         !std::isfinite(clip.durationSeconds) || clip.durationSeconds <= 0.0 ||
-        clip.events.size() > kMaximumAnimationAssetEventsUVE || clip.bones.size() > kMaximumAnimationAssetBonesUVE ||
-        !AreSamplesValidUVE(clip.samples, clip.durationSeconds) || !IsRestValidUVE(clip.rest) ||
-        !AreMorphTracksValidUVE(clip.morphWeights, clip.durationSeconds)) {
+        clip.events.size() > kMaximumAnimationAssetEvents || clip.bones.size() > kMaximumAnimationAssetBones ||
+        !AreSamplesValid(clip.samples, clip.durationSeconds) || !IsRestValid(clip.rest) ||
+        !AreMorphTracksValid(clip.morphWeights, clip.durationSeconds)) {
         return false;
     }
     bool anyBoneSamples = false;
     for (std::size_t index = 0U; index < clip.bones.size(); ++index) {
-        const AnimationAssetBoneTrackUVE& track = clip.bones[index];
-        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
-            track.bone.contains('\0') || !AreSamplesValidUVE(track.samples, clip.durationSeconds)) {
+        const AnimationAssetBoneTrack& track = clip.bones[index];
+        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytes ||
+            track.bone.contains('\0') || !AreSamplesValid(track.samples, clip.durationSeconds)) {
             return false;
         }
         for (std::size_t other = 0U; other < index; ++other) {
@@ -224,13 +224,13 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
         }
         anyBoneSamples = anyBoneSamples || !track.samples.empty();
     }
-    if (clip.objects.size() > kMaximumAnimationAssetBonesUVE) {
+    if (clip.objects.size() > kMaximumAnimationAssetBones) {
         return false;
     }
     for (std::size_t index = 0U; index < clip.objects.size(); ++index) {
-        const AnimationAssetBoneTrackUVE& track = clip.objects[index];
-        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
-            track.bone.contains('\0') || !AreSamplesValidUVE(track.samples, clip.durationSeconds)) {
+        const AnimationAssetBoneTrack& track = clip.objects[index];
+        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytes ||
+            track.bone.contains('\0') || !AreSamplesValid(track.samples, clip.durationSeconds)) {
             return false;
         }
         for (std::size_t other = 0U; other < index; ++other) {
@@ -246,10 +246,10 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
         return false; // nothing moves
     }
     double previousTime = -std::numeric_limits<double>::infinity();
-    for (const AnimationAssetEventUVE& event : clip.events) {
+    for (const AnimationAssetEvent& event : clip.events) {
         if (!std::isfinite(event.timeSeconds) || event.timeSeconds < 0.0 ||
             event.timeSeconds > clip.durationSeconds || event.timeSeconds < previousTime || event.eventId.empty() ||
-            event.eventId.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+            event.eventId.size() > kMaximumAnimationAssetIdentifierBytes ||
             event.eventId.contains('\0')) {
             return false;
         }
@@ -258,8 +258,8 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
     return true;
 }
 
-bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::vector<std::byte>& outPayload) {
-    if (!IsAnimationClipAssetValidUVE(clip)) {
+bool SerializeAnimationClipPayload(const AnimationClipAsset& clip, std::vector<std::byte>& outPayload) {
+    if (!IsAnimationClipAssetValid(clip)) {
         return false;
     }
     // The schema is the union of what the clip needs: v4 only when it carries blend shapes, v3 only
@@ -267,44 +267,44 @@ bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::ve
     // exactly what it always read.
     const bool v4 = !clip.morphWeights.empty();
     const bool v3 = !clip.rest.empty() || clip.conformed;
-    std::string_view schema = kAnimationSchemaUVE;
+    std::string_view schema = kAnimationSchema;
     if (v4) {
-        schema = kAnimationSchemaV4UVE;
+        schema = kAnimationSchemaV4;
     } else if (v3) {
-        schema = kAnimationSchemaV3UVE;
+        schema = kAnimationSchemaV3;
     }
-    JsonUVE document{{"schema", std::string{schema}}, {"clipId", clip.clipId},
-                     {"durationSeconds", clip.durationSeconds}, {"samples", JsonUVE::array()},
-                     {"events", JsonUVE::array()}, {"bones", JsonUVE::array()}};
-    document["samples"] = ToSamplesJsonUVE(clip.samples);
-    for (const AnimationAssetBoneTrackUVE& track : clip.bones) {
-        document["bones"].push_back({{"bone", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
+    Json document{{"schema", std::string{schema}}, {"clipId", clip.clipId},
+                     {"durationSeconds", clip.durationSeconds}, {"samples", Json::array()},
+                     {"events", Json::array()}, {"bones", Json::array()}};
+    document["samples"] = ToSamplesJson(clip.samples);
+    for (const AnimationAssetBoneTrack& track : clip.bones) {
+        document["bones"].push_back({{"bone", track.bone}, {"samples", ToSamplesJson(track.samples)}});
     }
     if (!clip.objects.empty()) {
         // Only when present: a clip without them stays byte-for-byte what it was.
-        document["objects"] = JsonUVE::array();
-        for (const AnimationAssetBoneTrackUVE& track : clip.objects) {
-            document["objects"].push_back({{"object", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
+        document["objects"] = Json::array();
+        for (const AnimationAssetBoneTrack& track : clip.objects) {
+            document["objects"].push_back({{"object", track.bone}, {"samples", ToSamplesJson(track.samples)}});
         }
     }
     if (v4 || v3) {
         document["conformed"] = clip.conformed;
-        document["rest"] = JsonUVE::array();
-        for (const AnimationAssetRestBoneUVE& bone : clip.rest) {
+        document["rest"] = Json::array();
+        for (const AnimationAssetRestBone& bone : clip.rest) {
             document["rest"].push_back({{"bone", bone.bone}, {"parent", bone.parent},
-                                        {"position", ToVectorJsonUVE(bone.position)},
-                                        {"rotation", ToQuaternionJsonUVE(bone.rotation)},
-                                        {"scale", ToVectorJsonUVE(bone.scale)}});
+                                        {"position", ToVectorJson(bone.position)},
+                                        {"rotation", ToQuaternionJson(bone.rotation)},
+                                        {"scale", ToVectorJson(bone.scale)}});
         }
     }
-    for (const AnimationAssetEventUVE& event : clip.events) {
+    for (const AnimationAssetEvent& event : clip.events) {
         document["events"].push_back({{"timeSeconds", event.timeSeconds}, {"eventId", event.eventId}});
     }
     if (v4) {
-        document["morphWeights"] = JsonUVE::array();
-        for (const AnimationAssetMorphTrackUVE& track : clip.morphWeights) {
-            JsonUVE trackJson{{"node", track.node}, {"samples", JsonUVE::array()}};
-            for (const AnimationAssetMorphWeightSampleUVE& sample : track.samples) {
+        document["morphWeights"] = Json::array();
+        for (const AnimationAssetMorphTrack& track : clip.morphWeights) {
+            Json trackJson{{"node", track.node}, {"samples", Json::array()}};
+            for (const AnimationAssetMorphWeightSample& sample : track.samples) {
                 trackJson["samples"].push_back(
                     {{"timeSeconds", sample.timeSeconds}, {"weights", sample.weights}});
             }
@@ -312,7 +312,7 @@ bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::ve
         }
     }
     const std::string serialized = document.dump();
-    if (serialized.empty() || serialized.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+    if (serialized.empty() || serialized.size() > kMaximumAnimationAssetPayloadBytes) {
         return false;
     }
     const auto* const bytes = reinterpret_cast<const std::byte*>(serialized.data());
@@ -320,22 +320,22 @@ bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::ve
     return true;
 }
 
-bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::filesystem::path& path) {
-    if (!IsAnimationClipAssetValidUVE(clip)) {
-        UVE_ERROR("AnimationClipAssetUVE: refusing to save invalid clip to {}", path.string());
+bool SaveAnimationClipAsset(const AnimationClipAsset& clip, const std::filesystem::path& path) {
+    if (!IsAnimationClipAssetValid(clip)) {
+        UVE_ERROR("AnimationClipAsset: refusing to save invalid clip to {}", path.string());
         return false;
     }
     // A take kept inside a model is written back into the model, beside its other takes.
     std::filesystem::path model;
     std::string take;
-    if (SplitEmbeddedClipPathUVE(path, model, take)) {
-        std::vector<AnimationClipAssetUVE> takes;
+    if (SplitEmbeddedClipPath(path, model, take)) {
+        std::vector<AnimationClipAsset> takes;
         std::uint64_t stamp = 0U;
-        if (!LoadAllModelAnimationsUVE(model, takes, &stamp)) {
+        if (!LoadAllModelAnimations(model, takes, &stamp)) {
             return false;
         }
         bool replaced = false;
-        for (AnimationClipAssetUVE& existing : takes) {
+        for (AnimationClipAsset& existing : takes) {
             if (existing.clipId == take) {
                 existing = clip;
                 existing.clipId = take;
@@ -344,23 +344,23 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
             }
         }
         if (!replaced) {
-            AnimationClipAssetUVE added = clip;
+            AnimationClipAsset added = clip;
             added.clipId = take;
             takes.push_back(std::move(added));
         }
-        return SaveModelAnimationsUVE(model, takes, stamp);
+        return SaveModelAnimations(model, takes, stamp);
     }
     std::vector<std::byte> payload;
-    if (!SerializeAnimationClipPayloadUVE(clip, payload)) {
-        UVE_ERROR("AnimationClipAssetUVE: serialized payload is empty or oversized for {}", path.string());
+    if (!SerializeAnimationClipPayload(clip, payload)) {
+        UVE_ERROR("AnimationClipAsset: serialized payload is empty or oversized for {}", path.string());
         return false;
     }
-    return WriteUveFileUVE(path, AssetKindUVE::Animation, payload);
+    return WriteUveFile(path, AssetKind::Animation, payload);
 }
 
 namespace {
 
-struct AnimationClipSummarySaxUVE final : nlohmann::json_sax<JsonUVE> {
+struct AnimationClipSummarySax final : nlohmann::json_sax<Json> {
     int depth = 0;
     bool rootIsObject = false;
     std::string topKey;
@@ -423,9 +423,9 @@ struct AnimationClipSummarySaxUVE final : nlohmann::json_sax<JsonUVE> {
         if (depth == 1) {
             if (topKey == "schema") {
                 hasSchema = true;
-                validSchema = (val == kAnimationSchemaV4UVE || val == kAnimationSchemaV3UVE ||
-                               val == kAnimationSchemaUVE || val == kAnimationSchemaV1UVE);
-                v3OrHigher = (val == kAnimationSchemaV4UVE || val == kAnimationSchemaV3UVE);
+                validSchema = (val == kAnimationSchemaV4 || val == kAnimationSchemaV3 ||
+                               val == kAnimationSchema || val == kAnimationSchemaV1);
+                v3OrHigher = (val == kAnimationSchemaV4 || val == kAnimationSchemaV3);
             } else if (topKey == "clipId") {
                 hasClipId = !val.empty();
             }
@@ -490,22 +490,22 @@ struct AnimationClipSummarySaxUVE final : nlohmann::json_sax<JsonUVE> {
         }
         return true;
     }
-    bool parse_error(std::size_t, const std::string&, const JsonUVE::exception&) override {
+    bool parse_error(std::size_t, const std::string&, const Json::exception&) override {
         return false;
     }
 };
 
 } // namespace
 
-AnimationClipSummaryUVE InspectAnimationClipSummaryUVE(const std::span<const std::byte> payload) {
-    AnimationClipSummaryUVE summary;
-    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+AnimationClipSummary InspectAnimationClipSummary(const std::span<const std::byte> payload) {
+    AnimationClipSummary summary;
+    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytes) {
         return summary;
     }
-    AnimationClipSummarySaxUVE sax;
+    AnimationClipSummarySax sax;
     const auto* const begin = reinterpret_cast<const char*>(payload.data());
     const auto* const end = begin + payload.size();
-    const bool parsed = JsonUVE::sax_parse(begin, end, &sax);
+    const bool parsed = Json::sax_parse(begin, end, &sax);
     if (!parsed || !sax.rootIsObject || !sax.hasSchema || !sax.validSchema || !sax.hasClipId || !sax.hasDuration ||
         !sax.hasSamples || !sax.hasEvents) {
         return summary;
@@ -517,12 +517,12 @@ AnimationClipSummaryUVE InspectAnimationClipSummaryUVE(const std::span<const std
     return summary;
 }
 
-AnimationClipSummaryUVE InspectAnimationClipFileSummaryUVE(const std::filesystem::path& path) {
+AnimationClipSummary InspectAnimationClipFileSummary(const std::filesystem::path& path) {
     std::filesystem::path model;
     std::string take;
-    if (SplitEmbeddedClipPathUVE(path, model, take)) {
-        std::vector<std::pair<std::string, AnimationClipSummaryUVE>> summaries;
-        if (!InspectModelAnimationsSummaryUVE(model, summaries)) {
+    if (SplitEmbeddedClipPath(path, model, take)) {
+        std::vector<std::pair<std::string, AnimationClipSummary>> summaries;
+        if (!InspectModelAnimationsSummary(model, summaries)) {
             return {};
         }
         for (const auto& [name, summary] : summaries) {
@@ -532,143 +532,143 @@ AnimationClipSummaryUVE InspectAnimationClipFileSummaryUVE(const std::filesystem
         }
         return {};
     }
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
-    if (!file.has_value() || file->first.assetType != AssetKindUVE::Animation || file->second.empty() ||
-        file->second.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
+    if (!file.has_value() || file->first.assetType != AssetKind::Animation || file->second.empty() ||
+        file->second.size() > kMaximumAnimationAssetPayloadBytes) {
         return {};
     }
-    return InspectAnimationClipSummaryUVE(file->second);
+    return InspectAnimationClipSummary(file->second);
 }
 
-bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipAssetUVE& outClip) {
+bool LoadAnimationClipAsset(const std::filesystem::path& path, AnimationClipAsset& outClip) {
     // A take kept inside a model ("Hero.uvmodel#Walk") is read from the model.
     std::filesystem::path model;
     std::string take;
-    if (SplitEmbeddedClipPathUVE(path, model, take)) {
-        return LoadModelAnimationUVE(model, take, outClip);
+    if (SplitEmbeddedClipPath(path, model, take)) {
+        return LoadModelAnimation(model, take, outClip);
     }
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
-    if (!file.has_value() || file->first.assetType != AssetKindUVE::Animation || file->second.empty() ||
-        file->second.size() > kMaximumAnimationAssetPayloadBytesUVE) {
-        UVE_ERROR("AnimationClipAssetUVE: invalid animation envelope {}", path.string());
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
+    if (!file.has_value() || file->first.assetType != AssetKind::Animation || file->second.empty() ||
+        file->second.size() > kMaximumAnimationAssetPayloadBytes) {
+        UVE_ERROR("AnimationClipAsset: invalid animation envelope {}", path.string());
         return false;
     }
-    return ParseAnimationClipPayloadUVE(file->second, outClip);
+    return ParseAnimationClipPayload(file->second, outClip);
 }
 
-bool ParseAnimationClipPayloadUVE(const std::vector<std::byte>& payload, AnimationClipAssetUVE& outClip) {
-    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+bool ParseAnimationClipPayload(const std::vector<std::byte>& payload, AnimationClipAsset& outClip) {
+    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytes) {
         return false;
     }
     try {
         const std::string serialized(reinterpret_cast<const char*>(payload.data()), payload.size());
-        const JsonUVE document = JsonUVE::parse(serialized);
+        const Json document = Json::parse(serialized);
         const std::string schema = document.is_object() ? document.value("schema", std::string{}) : std::string{};
         if (!document.is_object() ||
-            (schema != kAnimationSchemaV4UVE && schema != kAnimationSchemaV3UVE &&
-             schema != kAnimationSchemaUVE && schema != kAnimationSchemaV1UVE) ||
+            (schema != kAnimationSchemaV4 && schema != kAnimationSchemaV3 &&
+             schema != kAnimationSchema && schema != kAnimationSchemaV1) ||
             !document.contains("clipId") || !document.contains("durationSeconds") ||
             !document.contains("samples") || !document.contains("events")) {
             return false;
         }
-        AnimationClipAssetUVE candidate;
+        AnimationClipAsset candidate;
         candidate.clipId = document.at("clipId").get<std::string>();
         candidate.durationSeconds = document.at("durationSeconds").get<double>();
-        const JsonUVE& events = document.at("events");
-        if (!events.is_array() || events.size() > kMaximumAnimationAssetEventsUVE ||
-            !ReadSamplesJsonUVE(document.at("samples"), candidate.samples)) {
+        const Json& events = document.at("events");
+        if (!events.is_array() || events.size() > kMaximumAnimationAssetEvents ||
+            !ReadSamplesJson(document.at("samples"), candidate.samples)) {
             return false;
         }
         if (document.contains("bones")) {
-            const JsonUVE& bones = document.at("bones");
-            if (!bones.is_array() || bones.size() > kMaximumAnimationAssetBonesUVE) {
+            const Json& bones = document.at("bones");
+            if (!bones.is_array() || bones.size() > kMaximumAnimationAssetBones) {
                 return false;
             }
             candidate.bones.reserve(bones.size());
-            for (const JsonUVE& value : bones) {
+            for (const Json& value : bones) {
                 if (!value.is_object() || !value.contains("bone") || !value.contains("samples")) {
                     return false;
                 }
-                AnimationAssetBoneTrackUVE track;
+                AnimationAssetBoneTrack track;
                 track.bone = value.at("bone").get<std::string>();
-                if (!ReadSamplesJsonUVE(value.at("samples"), track.samples)) {
+                if (!ReadSamplesJson(value.at("samples"), track.samples)) {
                     return false;
                 }
                 candidate.bones.push_back(std::move(track));
             }
         }
         if (document.contains("objects")) {
-            const JsonUVE& objects = document.at("objects");
-            if (!objects.is_array() || objects.size() > kMaximumAnimationAssetBonesUVE) {
+            const Json& objects = document.at("objects");
+            if (!objects.is_array() || objects.size() > kMaximumAnimationAssetBones) {
                 return false;
             }
             candidate.objects.reserve(objects.size());
-            for (const JsonUVE& value : objects) {
+            for (const Json& value : objects) {
                 if (!value.is_object() || !value.contains("object") || !value.at("object").is_string() ||
                     !value.contains("samples")) {
                     return false;
                 }
-                AnimationAssetBoneTrackUVE track;
+                AnimationAssetBoneTrack track;
                 track.bone = value.at("object").get<std::string>();
-                if (!ReadSamplesJsonUVE(value.at("samples"), track.samples)) {
+                if (!ReadSamplesJson(value.at("samples"), track.samples)) {
                     return false;
                 }
                 candidate.objects.push_back(std::move(track));
             }
         }
-        if (schema == kAnimationSchemaV3UVE || schema == kAnimationSchemaV4UVE) {
+        if (schema == kAnimationSchemaV3 || schema == kAnimationSchemaV4) {
             candidate.conformed = document.value("conformed", false);
-            const JsonUVE rest = document.value("rest", JsonUVE::array());
-            if (!rest.is_array() || rest.size() > kMaximumAnimationAssetBonesUVE) {
+            const Json rest = document.value("rest", Json::array());
+            if (!rest.is_array() || rest.size() > kMaximumAnimationAssetBones) {
                 return false;
             }
-            for (const JsonUVE& value : rest) {
+            for (const Json& value : rest) {
                 if (!value.is_object() || !value.contains("bone") || !value.contains("position") ||
                     !value.contains("rotation")) {
                     return false;
                 }
-                AnimationAssetRestBoneUVE bone;
+                AnimationAssetRestBone bone;
                 bone.bone = value.at("bone").get<std::string>();
                 bone.parent = value.value("parent", -1);
-                if (!ReadVectorJsonUVE(value.at("position"), bone.position) ||
-                    !ReadQuaternionJsonUVE(value.at("rotation"), bone.rotation) ||
-                    (value.contains("scale") && !ReadVectorJsonUVE(value.at("scale"), bone.scale))) {
+                if (!ReadVectorJson(value.at("position"), bone.position) ||
+                    !ReadQuaternionJson(value.at("rotation"), bone.rotation) ||
+                    (value.contains("scale") && !ReadVectorJson(value.at("scale"), bone.scale))) {
                     return false;
                 }
                 candidate.rest.push_back(std::move(bone));
             }
         }
         if (document.contains("morphWeights")) {
-            const JsonUVE& tracks = document.at("morphWeights");
-            if (!tracks.is_array() || tracks.size() > kMaximumAnimationAssetMorphTracksUVE) {
+            const Json& tracks = document.at("morphWeights");
+            if (!tracks.is_array() || tracks.size() > kMaximumAnimationAssetMorphTracks) {
                 return false;
             }
             candidate.morphWeights.reserve(tracks.size());
-            for (const JsonUVE& value : tracks) {
+            for (const Json& value : tracks) {
                 if (!value.is_object() || !value.contains("node") || !value.at("node").is_string() ||
                     !value.contains("samples") || !value.at("samples").is_array()) {
                     return false;
                 }
-                AnimationAssetMorphTrackUVE track;
+                AnimationAssetMorphTrack track;
                 track.node = value.at("node").get<std::string>();
-                const JsonUVE& samples = value.at("samples");
-                if (samples.size() > kMaximumAnimationAssetSamplesUVE) {
+                const Json& samples = value.at("samples");
+                if (samples.size() > kMaximumAnimationAssetSamples) {
                     return false;
                 }
                 track.samples.reserve(samples.size());
-                for (const JsonUVE& sampleJson : samples) {
+                for (const Json& sampleJson : samples) {
                     if (!sampleJson.is_object() || !sampleJson.contains("timeSeconds") ||
                         !sampleJson.contains("weights") || !sampleJson.at("weights").is_array()) {
                         return false;
                     }
-                    AnimationAssetMorphWeightSampleUVE sample;
+                    AnimationAssetMorphWeightSample sample;
                     sample.timeSeconds = sampleJson.at("timeSeconds").get<double>();
-                    const JsonUVE& weights = sampleJson.at("weights");
-                    if (weights.size() > kMaximumMeshMorphTargetsUVE) {
+                    const Json& weights = sampleJson.at("weights");
+                    if (weights.size() > kMaximumMeshMorphTargets) {
                         return false;
                     }
                     sample.weights.reserve(weights.size());
-                    for (const JsonUVE& weight : weights) {
+                    for (const Json& weight : weights) {
                         if (!weight.is_number()) {
                             return false;
                         }
@@ -680,23 +680,23 @@ bool ParseAnimationClipPayloadUVE(const std::vector<std::byte>& payload, Animati
             }
         }
         candidate.events.reserve(events.size());
-        for (const JsonUVE& value : events) {
+        for (const Json& value : events) {
             if (!value.is_object() || !value.contains("timeSeconds") || !value.contains("eventId")) {
                 return false;
             }
             candidate.events.push_back(
-                AnimationAssetEventUVE{value.at("timeSeconds").get<double>(), value.at("eventId").get<std::string>()});
+                AnimationAssetEvent{value.at("timeSeconds").get<double>(), value.at("eventId").get<std::string>()});
         }
-        if (!IsAnimationClipAssetValidUVE(candidate)) {
+        if (!IsAnimationClipAssetValid(candidate)) {
             return false;
         }
         outClip = std::move(candidate);
         return true;
     } catch (const std::exception& exception) {
-        UVE_ERROR("AnimationClipAssetUVE: failed to parse a clip: {}", exception.what());
+        UVE_ERROR("AnimationClipAsset: failed to parse a clip: {}", exception.what());
         return false;
     } catch (...) {
-        UVE_ERROR("AnimationClipAssetUVE: failed to parse a clip with an unknown exception");
+        UVE_ERROR("AnimationClipAsset: failed to parse a clip with an unknown exception");
         return false;
     }
 }

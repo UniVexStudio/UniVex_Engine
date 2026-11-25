@@ -12,35 +12,35 @@
 
 namespace UVE::Asset {
 namespace {
-constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
+constexpr std::uint32_t kMaximumCount = 1'000'000U;
 [[nodiscard]] std::uint32_t ReadU32LE(const std::vector<std::byte>& bytes, const std::size_t offset) noexcept {
     return static_cast<std::uint32_t>(std::to_integer<std::uint32_t>(bytes[offset]) |
                                       (std::to_integer<std::uint32_t>(bytes[offset + 1U]) << 8U) |
                                       (std::to_integer<std::uint32_t>(bytes[offset + 2U]) << 16U) |
                                       (std::to_integer<std::uint32_t>(bytes[offset + 3U]) << 24U));
 }
-[[nodiscard]] std::optional<std::uint32_t> CountArrayUVE(const nlohmann::json& document, const char* key) {
+[[nodiscard]] std::optional<std::uint32_t> CountArray(const nlohmann::json& document, const char* key) {
     if (!document.contains(key)) return 0U;
     const auto& value = document.at(key);
-    if (!value.is_array() || value.size() > kMaximumCountUVE) return std::nullopt;
+    if (!value.is_array() || value.size() > kMaximumCount) return std::nullopt;
     return static_cast<std::uint32_t>(value.size());
 }
-[[nodiscard]] std::optional<GltfMetadataUVE> ParseJsonUVE(const std::string_view source, const GltfContainerKindUVE kind,
+[[nodiscard]] std::optional<GltfMetadata> ParseJson(const std::string_view source, const GltfContainerKind kind,
                                                           const bool hasBinaryChunk) {
     try {
         const nlohmann::json document = nlohmann::json::parse(source);
         if (!document.is_object() || !document.contains("asset") || !document.at("asset").is_object() ||
             !document.at("asset").contains("version") || !document.at("asset").at("version").is_string() ||
             document.at("asset").at("version").get<std::string>() != "2.0") return std::nullopt;
-        GltfMetadataUVE metadata;
+        GltfMetadata metadata;
         metadata.container = kind;
         metadata.hasBinaryChunk = hasBinaryChunk;
-        const auto objects = CountArrayUVE(document, "nodes");
-        const auto meshes = CountArrayUVE(document, "meshes");
-        const auto materials = CountArrayUVE(document, "materials");
-        const auto images = CountArrayUVE(document, "images");
-        const auto buffers = CountArrayUVE(document, "buffers");
-        const auto skins = CountArrayUVE(document, "skins");
+        const auto objects = CountArray(document, "nodes");
+        const auto meshes = CountArray(document, "meshes");
+        const auto materials = CountArray(document, "materials");
+        const auto images = CountArray(document, "images");
+        const auto buffers = CountArray(document, "buffers");
+        const auto skins = CountArray(document, "skins");
         if (!objects || !meshes || !materials || !images || !buffers || !skins) return std::nullopt;
         metadata.objectCount = *objects; metadata.meshCount = *meshes; metadata.materialCount = *materials;
         metadata.imageCount = *images; metadata.bufferCount = *buffers; metadata.skinCount = *skins;
@@ -49,34 +49,34 @@ constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
 }
 } // namespace
 
-GltfResourceUriKindUVE ClassifyGltfResourceUriUVE(const std::string_view uri) noexcept {
-    if (uri.empty() || uri.size() > kMaximumGltfResourceUriBytesUVE) {
-        return GltfResourceUriKindUVE::Invalid;
+GltfResourceUriKind ClassifyGltfResourceUri(const std::string_view uri) noexcept {
+    if (uri.empty() || uri.size() > kMaximumGltfResourceUriBytes) {
+        return GltfResourceUriKind::Invalid;
     }
     if (uri.starts_with("data:")) {
         if (uri.find(',') == std::string_view::npos) {
-            return GltfResourceUriKindUVE::Invalid;
+            return GltfResourceUriKind::Invalid;
         }
         for (const char rawCharacter : uri) {
             const unsigned char character = static_cast<unsigned char>(rawCharacter);
             if (character == 0U || character < 0x20U || character == 0x7FU) {
-                return GltfResourceUriKindUVE::Invalid;
+                return GltfResourceUriKind::Invalid;
             }
         }
-        return GltfResourceUriKindUVE::DataUri;
+        return GltfResourceUriKind::DataUri;
     }
     if (uri.front() == '/' || uri.front() == '\\') {
-        return GltfResourceUriKindUVE::Invalid;
+        return GltfResourceUriKind::Invalid;
     }
     std::size_t segmentStart = 0U;
     for (std::size_t index = 0U; index < uri.size(); ++index) {
         const unsigned char character = static_cast<unsigned char>(uri[index]);
         if (character == 0U || character < 0x20U || character == 0x7FU || character == ':') {
-            return GltfResourceUriKindUVE::Invalid;
+            return GltfResourceUriKind::Invalid;
         }
         if (character == '%') {
             if (index + 2U >= uri.size()) {
-                return GltfResourceUriKindUVE::Invalid;
+                return GltfResourceUriKind::Invalid;
             }
             const char first = uri[index + 1U];
             const char second = uri[index + 2U];
@@ -85,7 +85,7 @@ GltfResourceUriKindUVE ClassifyGltfResourceUriUVE(const std::string_view uri) no
                        (value >= 'A' && value <= 'F');
             };
             if (!isHex(first) || !isHex(second)) {
-                return GltfResourceUriKindUVE::Invalid;
+                return GltfResourceUriKind::Invalid;
             }
             const auto hexValue = [](const char value) noexcept -> unsigned int {
                 if (value >= '0' && value <= '9') return static_cast<unsigned int>(value - '0');
@@ -94,7 +94,7 @@ GltfResourceUriKindUVE ClassifyGltfResourceUriUVE(const std::string_view uri) no
             };
             const unsigned int decoded = (hexValue(first) << 4U) | hexValue(second);
             if (decoded == 0U || decoded == '.' || decoded == '/' || decoded == '\\') {
-                return GltfResourceUriKindUVE::Invalid;
+                return GltfResourceUriKind::Invalid;
             }
             index += 2U;
             continue;
@@ -105,7 +105,7 @@ GltfResourceUriKindUVE ClassifyGltfResourceUriUVE(const std::string_view uri) no
         const std::size_t segmentLength = index - segmentStart;
         if (segmentLength == 0U || (segmentLength == 1U && uri[segmentStart] == '.') ||
             (segmentLength == 2U && uri[segmentStart] == '.' && uri[segmentStart + 1U] == '.')) {
-            return GltfResourceUriKindUVE::Invalid;
+            return GltfResourceUriKind::Invalid;
         }
         segmentStart = index + 1U;
     }
@@ -113,14 +113,14 @@ GltfResourceUriKindUVE ClassifyGltfResourceUriUVE(const std::string_view uri) no
     if (finalSegmentLength == 0U ||
         (finalSegmentLength == 1U && uri[segmentStart] == '.') ||
         (finalSegmentLength == 2U && uri[segmentStart] == '.' && uri[segmentStart + 1U] == '.')) {
-        return GltfResourceUriKindUVE::Invalid;
+        return GltfResourceUriKind::Invalid;
     }
-    return GltfResourceUriKindUVE::RelativePath;
+    return GltfResourceUriKind::RelativePath;
 }
 
-bool DecodeGltfDataUriUVE(const std::string_view uri, std::vector<std::byte>& outBytes,
+bool DecodeGltfDataUri(const std::string_view uri, std::vector<std::byte>& outBytes,
                           const std::size_t maximumBytes) {
-    if (ClassifyGltfResourceUriUVE(uri) != GltfResourceUriKindUVE::DataUri) {
+    if (ClassifyGltfResourceUri(uri) != GltfResourceUriKind::DataUri) {
         return false;
     }
     const std::size_t comma = uri.find(',');
@@ -219,18 +219,18 @@ bool DecodeGltfDataUriUVE(const std::string_view uri, std::vector<std::byte>& ou
     }
 }
 
-bool ResolveGltfResourceVirtualPathUVE(const std::string_view assetVirtualPath,
+bool ResolveGltfResourceVirtualPath(const std::string_view assetVirtualPath,
                                           const std::string_view resourceUri,
                                           std::string& outVirtualPath) {
-    if (assetVirtualPath.empty() || assetVirtualPath.size() > kMaximumGltfResourceUriBytesUVE ||
-        resourceUri.empty() || resourceUri.size() > kMaximumGltfResourceUriBytesUVE ||
-        ClassifyGltfResourceUriUVE(assetVirtualPath) != GltfResourceUriKindUVE::RelativePath ||
-        ClassifyGltfResourceUriUVE(resourceUri) != GltfResourceUriKindUVE::RelativePath) {
+    if (assetVirtualPath.empty() || assetVirtualPath.size() > kMaximumGltfResourceUriBytes ||
+        resourceUri.empty() || resourceUri.size() > kMaximumGltfResourceUriBytes ||
+        ClassifyGltfResourceUri(assetVirtualPath) != GltfResourceUriKind::RelativePath ||
+        ClassifyGltfResourceUri(resourceUri) != GltfResourceUriKind::RelativePath) {
         return false;
     }
     const std::size_t separator = assetVirtualPath.rfind('/');
     const std::size_t directoryBytes = separator == std::string_view::npos ? 0U : separator + 1U;
-    if (directoryBytes + resourceUri.size() > kMaximumGltfResourceUriBytesUVE) {
+    if (directoryBytes + resourceUri.size() > kMaximumGltfResourceUriBytes) {
         return false;
     }
     try {
@@ -247,7 +247,7 @@ bool ResolveGltfResourceVirtualPathUVE(const std::string_view assetVirtualPath,
     }
 }
 
-bool ValidateGltfAccessorSpanUVE(const std::uint64_t bufferByteLength,
+bool ValidateGltfAccessorSpan(const std::uint64_t bufferByteLength,
                                  const std::uint64_t byteOffset,
                                  const std::uint64_t elementCount,
                                  const std::uint64_t elementStride,
@@ -269,10 +269,10 @@ bool ValidateGltfAccessorSpanUVE(const std::uint64_t bufferByteLength,
     return elementSize <= remainingBytes - lastElementOffset;
 }
 
-std::optional<GltfMetadataUVE> ParseGltfMetadataUVE(const std::string_view jsonSource) {
-    return ParseJsonUVE(jsonSource, GltfContainerKindUVE::Json, false);
+std::optional<GltfMetadata> ParseGltfMetadata(const std::string_view jsonSource) {
+    return ParseJson(jsonSource, GltfContainerKind::Json, false);
 }
-std::optional<GltfMetadataUVE> ParseGlbMetadataUVE(const std::vector<std::byte>& bytes) {
+std::optional<GltfMetadata> ParseGlbMetadata(const std::vector<std::byte>& bytes) {
     constexpr std::size_t kHeaderBytes = 12U;
     constexpr std::size_t kChunkHeaderBytes = 8U;
     if (bytes.size() < kHeaderBytes || ReadU32LE(bytes, 0U) != 0x46546C67U || ReadU32LE(bytes, 4U) != 2U) return std::nullopt;
@@ -296,6 +296,6 @@ std::optional<GltfMetadataUVE> ParseGlbMetadataUVE(const std::vector<std::byte>&
         }
         offset += static_cast<std::size_t>(chunkLength);
     }
-    return ParseJsonUVE(json, GltfContainerKindUVE::Binary, hasBinaryChunk);
+    return ParseJson(json, GltfContainerKind::Binary, hasBinaryChunk);
 }
 } // namespace UVE::Asset

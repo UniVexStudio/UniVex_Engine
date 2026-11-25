@@ -8,30 +8,30 @@
 
 namespace UVE::Asset {
 
-TEST(MontageLibraryAssetUVETest, SaveThenLoadRoundTrips) {
+TEST(MontageLibraryAssetTest, SaveThenLoadRoundTrips) {
     const std::filesystem::path path = "uve_montage_library_round_trip.uvmontagelib";
     std::filesystem::remove(path);
-    MontageLibraryAssetUVE library;
+    MontageLibraryAsset library;
     library.libraryId = "Combat";
-    library.entries = {MontageLibraryEntryUVE{AssetGuidUVE{11U}, "Attack"}, MontageLibraryEntryUVE{AssetGuidUVE{12U}, "Dodge"}};
-    ASSERT_TRUE(SaveMontageLibraryAssetUVE(library, path));
-    MontageLibraryAssetUVE loaded;
-    ASSERT_TRUE(LoadMontageLibraryAssetUVE(path, loaded));
+    library.entries = {MontageLibraryEntry{AssetGuid{11U}, "Attack"}, MontageLibraryEntry{AssetGuid{12U}, "Dodge"}};
+    ASSERT_TRUE(SaveMontageLibraryAsset(library, path));
+    MontageLibraryAsset loaded;
+    ASSERT_TRUE(LoadMontageLibraryAsset(path, loaded));
     EXPECT_EQ(loaded, library);
-    AnimationLibraryAssetUVE notAnimations;
-    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(path, notAnimations)) << "a motion montage library is not an animation library";
+    AnimationLibraryAsset notAnimations;
+    EXPECT_FALSE(LoadAnimationLibraryAsset(path, notAnimations)) << "a motion montage library is not an animation library";
     std::filesystem::remove(path);
 }
 
-TEST(MontageLibraryAssetUVETest, RefusesDuplicatesAndBlankNames) {
-    MontageLibraryAssetUVE library;
+TEST(MontageLibraryAssetTest, RefusesDuplicatesAndBlankNames) {
+    MontageLibraryAsset library;
     library.libraryId = "Combat";
-    library.entries = {MontageLibraryEntryUVE{AssetGuidUVE{11U}, "Attack"}, MontageLibraryEntryUVE{AssetGuidUVE{11U}, "Again"}};
-    EXPECT_FALSE(IsMontageLibraryAssetValidUVE(library));
-    library.entries = {MontageLibraryEntryUVE{AssetGuidUVE{11U}, ""}};
-    EXPECT_FALSE(IsMontageLibraryAssetValidUVE(library));
+    library.entries = {MontageLibraryEntry{AssetGuid{11U}, "Attack"}, MontageLibraryEntry{AssetGuid{11U}, "Again"}};
+    EXPECT_FALSE(IsMontageLibraryAssetValid(library));
+    library.entries = {MontageLibraryEntry{AssetGuid{11U}, ""}};
+    EXPECT_FALSE(IsMontageLibraryAssetValid(library));
     library.entries.clear();
-    EXPECT_TRUE(IsMontageLibraryAssetValidUVE(library)) << "an empty library is a new one";
+    EXPECT_TRUE(IsMontageLibraryAssetValid(library)) << "an empty library is a new one";
 }
 
 } // namespace UVE::Asset

@@ -11,19 +11,19 @@
 namespace UVE::Network::Tests {
 namespace {
 
-void ExpectCounterUVE(const Core::DiagnosticCounterUVE& counter, const std::string& name,
+void ExpectCounter(const Core::DiagnosticCounter& counter, const std::string& name,
                        const double value, const std::uint64_t frameNumber,
                        const std::uint64_t timestampNanoseconds, const std::uint64_t threadId) {
     EXPECT_EQ(counter.name, name);
-    EXPECT_EQ(counter.category, Core::DiagnosticCategoryUVE::Net);
+    EXPECT_EQ(counter.category, Core::DiagnosticCategory::Net);
     EXPECT_DOUBLE_EQ(counter.value, value);
     EXPECT_EQ(counter.frameNumber, frameNumber);
     EXPECT_EQ(counter.timestampNanoseconds, timestampNanoseconds);
     EXPECT_EQ(counter.threadId, threadId);
 }
 
-TEST(NetworkProfilerUVETest, Replication_NamesEveryField) {
-    ReplicationStatsUVE stats;
+TEST(NetworkProfilerTest, Replication_NamesEveryField) {
+    ReplicationStats stats;
     stats.snapshotsSent = 1U;
     stats.snapshotsReceived = 2U;
     stats.entriesApplied = 3U;
@@ -48,9 +48,9 @@ TEST(NetworkProfilerUVETest, Replication_NamesEveryField) {
     stats.propertiesSkippedOversized = 22U;
     stats.propertiesTruncated = 23U;
 
-    Core::ProfilerCaptureUVE capture;
-    ASSERT_TRUE(capture.BeginUVE("net", 1U).IsAcceptedUVE());
-    EXPECT_TRUE(RecordReplicationCountersUVE(capture, stats, 42U, 100U, 7U).IsAcceptedUVE());
+    Core::ProfilerCapture capture;
+    ASSERT_TRUE(capture.Begin("net", 1U).IsAccepted());
+    EXPECT_TRUE(RecordReplicationCounters(capture, stats, 42U, 100U, 7U).IsAccepted());
 
     const std::vector<std::string> names{
         "net.replication.snapshots-sent", "net.replication.snapshots-received",
@@ -65,30 +65,30 @@ TEST(NetworkProfilerUVETest, Replication_NamesEveryField) {
         "net.replication.properties-applied", "net.replication.properties-ignored-unknown",
         "net.replication.properties-ignored-owned",
         "net.replication.properties-skipped-oversized", "net.replication.properties-truncated"};
-    const Core::DiagnosticCaptureBundleUVE live = capture.SnapshotUVE();
+    const Core::DiagnosticCaptureBundle live = capture.Snapshot();
     ASSERT_EQ(live.counters.size(), names.size());
     for (std::size_t i = 0U; i < names.size(); ++i) {
-        ExpectCounterUVE(live.counters[i], names[i], static_cast<double>(i + 1U), 42U, 100U, 7U);
+        ExpectCounter(live.counters[i], names[i], static_cast<double>(i + 1U), 42U, 100U, 7U);
     }
 }
 
-TEST(NetworkProfilerUVETest, InterestAndFanout_NamesEveryField) {
-    InterestStatsUVE interest;
+TEST(NetworkProfilerTest, InterestAndFanout_NamesEveryField) {
+    InterestStats interest;
     interest.queries = 1U;
     interest.refreshes = 2U;
     interest.relevant = 3U;
     interest.culled = 4U;
     interest.unknownIds = 5U;
     interest.throttled = 6U;
-    FanoutStatsUVE fanout;
+    FanoutStats fanout;
     fanout.refreshes = 7U;
     fanout.selected = 8U;
     fanout.budgetDropped = 9U;
 
-    Core::ProfilerCaptureUVE capture;
-    ASSERT_TRUE(capture.BeginUVE("net", 1U).IsAcceptedUVE());
-    EXPECT_TRUE(RecordInterestCountersUVE(capture, interest, 42U, 100U, 7U).IsAcceptedUVE());
-    EXPECT_TRUE(RecordFanoutCountersUVE(capture, fanout, 42U, 100U, 7U).IsAcceptedUVE());
+    Core::ProfilerCapture capture;
+    ASSERT_TRUE(capture.Begin("net", 1U).IsAccepted());
+    EXPECT_TRUE(RecordInterestCounters(capture, interest, 42U, 100U, 7U).IsAccepted());
+    EXPECT_TRUE(RecordFanoutCounters(capture, fanout, 42U, 100U, 7U).IsAccepted());
 
     const std::vector<std::string> names{"net.interest.queries",
                                          "net.interest.refreshes",
@@ -99,22 +99,22 @@ TEST(NetworkProfilerUVETest, InterestAndFanout_NamesEveryField) {
                                          "net.fanout.refreshes",
                                          "net.fanout.selected",
                                          "net.fanout.budget-dropped"};
-    const Core::DiagnosticCaptureBundleUVE live = capture.SnapshotUVE();
+    const Core::DiagnosticCaptureBundle live = capture.Snapshot();
     ASSERT_EQ(live.counters.size(), names.size());
     for (std::size_t i = 0U; i < names.size(); ++i) {
-        ExpectCounterUVE(live.counters[i], names[i], static_cast<double>(i + 1U), 42U, 100U, 7U);
+        ExpectCounter(live.counters[i], names[i], static_cast<double>(i + 1U), 42U, 100U, 7U);
     }
 }
 
-TEST(NetworkProfilerUVETest, InactiveCapture_NamesTheFailure) {
-    Core::ProfilerCaptureUVE capture;
-    EXPECT_EQ(RecordReplicationCountersUVE(capture, ReplicationStatsUVE{}, 1U, 1U, 1U).code,
-              Core::DiagnosticCaptureCodeUVE::NotActive);
-    EXPECT_EQ(RecordInterestCountersUVE(capture, InterestStatsUVE{}, 1U, 1U, 1U).code,
-              Core::DiagnosticCaptureCodeUVE::NotActive);
-    EXPECT_EQ(RecordFanoutCountersUVE(capture, FanoutStatsUVE{}, 1U, 1U, 1U).code,
-              Core::DiagnosticCaptureCodeUVE::NotActive);
-    EXPECT_TRUE(capture.SnapshotUVE().counters.empty());
+TEST(NetworkProfilerTest, InactiveCapture_NamesTheFailure) {
+    Core::ProfilerCapture capture;
+    EXPECT_EQ(RecordReplicationCounters(capture, ReplicationStats{}, 1U, 1U, 1U).code,
+              Core::DiagnosticCaptureCode::NotActive);
+    EXPECT_EQ(RecordInterestCounters(capture, InterestStats{}, 1U, 1U, 1U).code,
+              Core::DiagnosticCaptureCode::NotActive);
+    EXPECT_EQ(RecordFanoutCounters(capture, FanoutStats{}, 1U, 1U, 1U).code,
+              Core::DiagnosticCaptureCode::NotActive);
+    EXPECT_TRUE(capture.Snapshot().counters.empty());
 }
 
 } // namespace

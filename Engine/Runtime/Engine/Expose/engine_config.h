@@ -26,102 +26,102 @@
 
 namespace UVE::Core {
 
-/// Render backend EngineCoreUVE::Init() should try first when a window is created. The engine
+/// Render backend EngineCore::Init() should try first when a window is created. The engine
 /// always degrades gracefully through this fixed fallback chain — the requested backend is a
 /// starting point, never a hard requirement:
-///   Vulkan -> OpenGL -> NullRenderDeviceUVE (engine still runs headless-correct, renders nothing)
+///   Vulkan -> OpenGL -> NullRenderDevice (engine still runs headless-correct, renders nothing)
 /// so picking a backend that the host lacks (no ICD, no GLFW Vulkan support, no display) is a
-/// logged warning, never a fail-fast abort. `AutoUVE` = `OpenGLUVE` today: OpenGL remains the
+/// logged warning, never a fail-fast abort. `Auto` = `OpenGL` today: OpenGL remains the
 /// production-default backend and Auto exists so future milestones can flip the default without
 /// changing the meaning of persisted configurations.
-enum class RenderBackendPreferenceUVE : std::uint32_t {
-    AutoUVE = 0U,
-    OpenGLUVE,
-    VulkanUVE,
-    NullUVE, ///< Force the null swapchain device (rendering disabled) even with a window.
+enum class RenderBackendPreference : std::uint32_t {
+    Auto = 0U,
+    OpenGL,
+    Vulkan,
+    Null, ///< Force the null swapchain device (rendering disabled) even with a window.
 };
 
 /// Runtime on-demand shader work scheduling. Ahead-of-time compilation and placeholder programs
 /// are not currently provided; asynchronous mode preprocesses on workers, then compiles/links on
-/// the render thread when ShaderManagerUVE::UpdateUVE() drains completed jobs.
-enum class ShaderCompilationModeUVE : std::uint32_t {
-    SynchronousOnDemandUVE = 0U,
-    AsynchronousOnDemandUVE,
+/// the render thread when ShaderManager::Update() drains completed jobs.
+enum class ShaderCompilationMode : std::uint32_t {
+    SynchronousOnDemand = 0U,
+    AsynchronousOnDemand,
 };
 
 /// Post-process anti-aliasing methods the runtime can execute today. Temporal AA is omitted until
 /// the renderer has frame-history, motion vectors, and camera-jitter support.
-enum class PostProcessAAMethodUVE : std::uint32_t {
-    NoneUVE = 0U,
-    FastApproximateUVE,
+enum class PostProcessAAMethod : std::uint32_t {
+    None = 0U,
+    FastApproximate,
 };
 
-/// Frustum-culling mode for the renderer's main colour view. DebugFreezeUVE stops rejecting geometry
+/// Frustum-culling mode for the renderer's main colour view. DebugFreeze stops rejecting geometry
 /// by frustum so every placed mesh, primitive, surface instance and decal is submitted for the frame
 /// - the "is it off-screen or is it missing?" diagnostic. Author visibility flags, world partitioning,
 /// visibility regions, LOD/SurfaceInstance draw distances, render layers, Occluder3D occlusion and the
-/// shadow cascades' own light-frustum culls all keep running; see Render::CullingSettingsUVE.
-enum class FrustumCullingModeUVE : std::uint32_t {
-    EnabledUVE = 0U,
-    DebugFreezeUVE,
+/// shadow cascades' own light-frustum culls all keep running; see Render::CullingSettings.
+enum class FrustumCullingMode : std::uint32_t {
+    Enabled = 0U,
+    DebugFreeze,
 };
 
 /// Spatial reconstruction used when the scene render target is smaller than the presentation target.
 /// Temporal upscaling remains unavailable without frame history and motion vectors.
-enum class SpatialUpscalingMethodUVE : std::uint32_t {
-    BilinearUVE = 0U,
-    NearestUVE,
+enum class SpatialUpscalingMethod : std::uint32_t {
+    Bilinear = 0U,
+    Nearest,
 };
 
 /// Tone-mapping operators the built-in final pass can execute. LinearClamp is a direct clip into
 /// display range; ACES provides a high-contrast filmic curve; SoftFilmic provides smooth
 /// highlight desaturation and roll-off and is the default.
-enum class ToneMappingMethodUVE : std::uint32_t {
-    LinearClampUVE = 0U,
-    AcesUVE,
-    SoftFilmicUVE,
+enum class ToneMappingMethod : std::uint32_t {
+    LinearClamp = 0U,
+    Aces,
+    SoftFilmic,
 };
 
-/// Bounds shared by the persisted resolution-scale settings and EngineCoreUVE's startup validation.
-inline constexpr double kMinimumRenderResolutionScaleUVE = 0.5;
-inline constexpr double kMaximumRenderResolutionScaleUVE = 1.0;
-inline constexpr double kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE = 8.0;
-inline constexpr double kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE = 100.0;
-inline constexpr double kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE = 16.6667;
+/// Bounds shared by the persisted resolution-scale settings and EngineCore's startup validation.
+inline constexpr double kMinimumRenderResolutionScale = 0.5;
+inline constexpr double kMaximumRenderResolutionScale = 1.0;
+inline constexpr double kMinimumRenderResolutionTargetFrameTimeMilliseconds = 8.0;
+inline constexpr double kMaximumRenderResolutionTargetFrameTimeMilliseconds = 100.0;
+inline constexpr double kDefaultRenderResolutionTargetFrameTimeMilliseconds = 16.6667;
 
 /// Decoded icon pixels staged by the application bootstrap and copied into the native window
 /// descriptor when a desktop window is created.
-struct EngineApplicationIconImageUVE final {
+struct EngineApplicationIconImage final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::vector<std::uint8_t> rgba8;
 
-    [[nodiscard]] bool operator==(const EngineApplicationIconImageUVE&) const = default;
+    [[nodiscard]] bool operator==(const EngineApplicationIconImage&) const = default;
 };
 
-/// Configuration passed into EngineCoreUVE's constructor. Every field has a
+/// Configuration passed into EngineCore's constructor. Every field has a
 /// sensible default, so most callers (including tests) can construct one
 /// with zero overrides. New fields can be added here in the future without
-/// changing EngineCoreUVE's constructor signature.
-/// Thread-safety: value type; read only during EngineCoreUVE::Init().
-struct EngineConfigUVE {
+/// changing EngineCore's constructor signature.
+/// Thread-safety: value type; read only during EngineCore::Init().
+struct EngineConfig {
     /// Target frames per second for the frame pipeline. Informational this
     /// increment — nothing throttles to it yet, since there is no frame
-    /// limiter — but consumed by future systems comparing FrameStatsUVE's
+    /// limiter — but consumed by future systems comparing FrameStats's
     /// actual FPS against this target.
     double targetFps = 60.0;
 
     /// Frequency, in Hz, of the fixed-timestep simulation accumulator (see
-    /// UVE::Utilities::ITimerUVE::SetFixedTimestepUVE()). Converted to
-    /// seconds-per-step by EngineCoreUVE during Init().
+    /// UVE::Utilities::ITimer::SetFixedTimestep()). Converted to
+    /// seconds-per-step by EngineCore during Init().
     double fixedUpdateFps = 60.0;
 
     /// Maximum delta time, in seconds, a single frame may report (see
-    /// UVE::Utilities::ITimerUVE::SetMaxDeltaTimeUVE()) — guards against a
+    /// UVE::Utilities::ITimer::SetMaxDeltaTime()) — guards against a
     /// spiral of death after a debugger pause or long stall.
     double maxDeltaTimeSeconds = 0.10;
 
-    /// Most fixed steps run in one frame (TimerUVE::SetMaxStepsPerTickUVE): past it, the leftover
+    /// Most fixed steps run in one frame (Timer::SetMaxStepsPerTick): past it, the leftover
     /// time is dropped and the simulation slows down rather than falling ever further behind.
     int maxFixedStepsPerFrame = 4;
 
@@ -130,127 +130,127 @@ struct EngineConfigUVE {
     /// configuration; integrations outside CMake retain the historical Trace
     /// default.
 #if defined(UVE_PROFILE_DEFAULT_LOG_LEVEL)
-    Debug::LogLevelUVE minLogLevel =
-        static_cast<Debug::LogLevelUVE>(UVE_PROFILE_DEFAULT_LOG_LEVEL);
+    Debug::LogLevel minLogLevel =
+        static_cast<Debug::LogLevel>(UVE_PROFILE_DEFAULT_LOG_LEVEL);
 #else
-    Debug::LogLevelUVE minLogLevel = Debug::LogLevelUVE::Trace;
+    Debug::LogLevel minLogLevel = Debug::LogLevel::Trace;
 #endif
 
-    /// Path the FileSinkUVE attached during Init() will append to.
+    /// Path the FileSink attached during Init() will append to.
     std::filesystem::path logFilePath = "uve_engine.log";
 
-    /// Whether a ConsoleSinkUVE is attached during Init(), in addition to
-    /// the FileSinkUVE (which is always attached regardless of this flag).
+    /// Whether a ConsoleSink is attached during Init(), in addition to
+    /// the FileSink (which is always attached regardless of this flag).
     bool enableConsoleLogging = true;
 
-    /// Number of ThreadPoolUVE worker threads to spawn during Init(). `0`
+    /// Number of ThreadPool worker threads to spawn during Init(). `0`
     /// (the default) means "auto" — see
-    /// UVE::Threading::ThreadPoolUVE::ThreadPoolUVE() for the exact
+    /// UVE::Threading::ThreadPool::ThreadPool() for the exact
     /// resolution policy.
     std::size_t threadPoolWorkerCount = 0;
 
-    /// Path ConfigManagerUVE::LoadUVE() is called with during Init(). A
+    /// Path ConfigManager::Load() is called with during Init(). A
     /// missing file at this path is not an error (see
-    /// IConfigManagerUVE::LoadUVE()) — a first-run engine has no settings
+    /// IConfigManager::Load()) — a first-run engine has no settings
     /// file yet.
     std::filesystem::path settingsFilePath = ".uvsettings";
 
-    /// Optional path to an active-target override file. When empty, EngineCoreUVE loads
+    /// Optional path to an active-target override file. When empty, EngineCore loads
     /// `<settingsFilePath parent>/platforms/<target>/<settingsFilePath filename>` if present;
     /// target is android, linux, windows, apple, web or unknown. These values only override
     /// descriptors marked PerPlatform and are kept separate from the user settings file.
     std::filesystem::path platformSettingsFilePath{};
 
-    /// Path of the project's own settings file (see EngineServicesUVE::GetProjectSettingsUVE()),
+    /// Path of the project's own settings file (see EngineServices::GetProjectSettings()),
     /// read during Init(). Valid project values override this struct's base values; user,
     /// per-platform and command-line layers may override them in turn. A missing file changes
     /// nothing.
     std::filesystem::path projectSettingsFilePath = "project.uvsettings";
 
-    /// Path of the project's input map (see Core::InputMapDocumentUVE), read during Init() and
+    /// Path of the project's input map (see Core::InputMapDocument), read during Init() and
     /// registered with the input system. A missing file is an empty map, not an error.
     std::filesystem::path inputMapFilePath = "project.uvinput";
 
     /// Raw startup argument tokens (excluding the program path) that
-    /// CommandLineUVE parses during Init(). Populated by main() from
+    /// CommandLine parses during Init(). Populated by main() from
     /// argv[1..argc); left empty by default so tests can construct an
-    /// EngineConfigUVE without a real process argv. A registered EngineConfig
+    /// EngineConfig without a real process argv. A registered EngineConfig
     /// setting can be overridden as `--<setting.id> <value>`; booleans also
     /// accept a presence-only flag, enums accept their label or integer value, and
     /// vectors/colors use comma-separated numbers.
     std::vector<std::string> commandLineArgs = {};
 
-    /// Path AssetDatabaseUVE::LoadUVE() is called with during Init(). A
+    /// Path AssetDatabase::Load() is called with during Init(). A
     /// missing file at this path is not an error (see
-    /// IAssetDatabaseUVE::LoadUVE()) — a first-run project has no asset
+    /// IAssetDatabase::Load()) — a first-run project has no asset
     /// registry yet.
     std::filesystem::path assetDatabaseFilePath = ".uvassetdb";
-    bool cookedAssetPathsUVE = false;
+    bool cookedAssetPaths = false;
     /// Optional admission limit for counted CPU asset payloads, not a process/GPU memory cap.
-    std::size_t assetResidentBudgetBytesUVE = 0;
+    std::size_t assetResidentBudgetBytes = 0;
 
-    /// Root directory the read-only ProjectFileIndexUVE explicitly scans for
+    /// Root directory the read-only ProjectFileIndex explicitly scans for
     /// editor Asset Browser presentation. Missing or empty roots are valid
     /// empty snapshots and are never created by the index. The root does not
-    /// change AssetDatabaseUVE ownership, import behavior, or VFS mounts.
-    std::filesystem::path projectContentRootUVE = "assets/";
+    /// change AssetDatabase ownership, import behavior, or VFS mounts.
+    std::filesystem::path projectContentRoot = "assets/";
     /// The project directory, mounted at the root of the virtual file system at the lowest
     /// priority, so a project-relative path such as "scripts/player.uvs" - what a Script
     /// component stores - resolves to the same file the editor wrote. The default is the working
     /// directory, which is exactly where the editor already saves scenes, workspaces and scripts
     /// when nothing else is mounted, so mounting it moves no file. Empty disables the mount.
-    std::filesystem::path projectRootDirectoryUVE = ".";
+    std::filesystem::path projectRootDirectory = ".";
 
-    /// Project-local root reserved for derived import metadata only. DerivedArtifactCacheUVE
+    /// Project-local root reserved for derived import metadata only. DerivedArtifactCache
     /// creates this directory lazily on successful cache writes; it never creates source or
-    /// destination directories and never changes AssetDatabaseUVE ownership.
-    std::filesystem::path derivedArtifactCacheRootUVE = "DerivedData/Import/";
+    /// destination directories and never changes AssetDatabase ownership.
+    std::filesystem::path derivedArtifactCacheRoot = "DerivedData/Import/";
 
-    /// Minimum elapsed engine-update time before ProjectChangeWatcherUVE re-enumerates the
+    /// Minimum elapsed engine-update time before ProjectChangeWatcher re-enumerates the
     /// configured project content root. The watcher has no background thread or native OS event
     /// backend in v1; a zero value intentionally requests a scan every engine Update().
-    double projectChangeWatchPollIntervalSecondsUVE = 1.0;
+    double projectChangeWatchPollIntervalSeconds = 1.0;
 
     /// Maximum copied project-change entries retained for editor review. When the journal is full,
-    /// ProjectChangeWatcherUVE retains newest entries while setting an explicit rescan-required
+    /// ProjectChangeWatcher retains newest entries while setting an explicit rescan-required
     /// boundary; stale-cache marking continues for every subsequently observed change.
-    std::size_t projectChangeJournalCapacityUVE = 256U;
+    std::size_t projectChangeJournalCapacity = 256U;
 
-    /// Whether Update() calls HotReloadUVE::PollUVE() each frame.
-    /// AssetManagerUVE still tracks/untracks loaded assets with HotReloadUVE
+    /// Whether Update() calls HotReload::Poll() each frame.
+    /// AssetManager still tracks/untracks loaded assets with HotReload
     /// regardless of this flag — it only gates whether the poll itself
     /// runs, so flipping it at runtime (by mutating a running
-    /// EngineCoreUVE's config — not currently exposed, but the field itself
+    /// EngineCore's config — not currently exposed, but the field itself
     /// is read fresh every Update()) takes effect immediately.
-    bool hotReloadEnabledUVE = true;
+    bool hotReloadEnabled = true;
 
-    /// Poll interval, in seconds, HotReloadUVE waits between checking every
+    /// Poll interval, in seconds, HotReload waits between checking every
     /// tracked asset's on-disk modification time (see
-    /// IHotReloadUVE::PollUVE()).
-    double hotReloadPollIntervalSecondsUVE = 1.0;
+    /// IHotReload::Poll()).
+    double hotReloadPollIntervalSeconds = 1.0;
 
-    /// Fixed dimensions, in pixels, of Renderer3DUVE's offscreen color/depth render target
-    /// (see Render::Renderer3DUVE). No WindowManagerUVE/swapchain exists yet in this sandbox to
+    /// Fixed dimensions, in pixels, of Renderer3D's offscreen color/depth render target
+    /// (see Render::Renderer3D). No WindowManager/swapchain exists yet in this sandbox to
     /// resize against, so these are set once at Init() and cannot change for a running
-    /// EngineCoreUVE's lifetime.
+    /// EngineCore's lifetime.
     std::uint32_t renderTargetWidth = 1280;
     std::uint32_t renderTargetHeight = 720;
 
-    /// Global flat ambient light term Renderer3DUVE adds to every rendered item's final color
-    /// (Render::Renderer3DUVE's `ambientColor` constructor parameter), independent of whether any
-    /// LightComponentUVE-bearing entity exists this frame (see Render::LightSystemUVE, Increment
+    /// Global flat ambient light term Renderer3D adds to every rendered item's final color
+    /// (Render::Renderer3D's `ambientColor` constructor parameter), independent of whether any
+    /// LightComponent-bearing entity exists this frame (see Render::LightSystem, Increment
     /// 23). No "scene settings" component/system exists in this engine yet, so — exactly like
     /// `gravity` below — an engine-config-level constant is this engine's only existing precedent
     /// for a whole-scene tunable. Low, desaturated default so an unlit scene isn't pitch black.
-    Math::Vector3UVE ambientColor{0.05F, 0.05F, 0.05F};
+    Math::Vector3 ambientColor{0.05F, 0.05F, 0.05F};
 
-    /// Width/height, in texels, of the persistent depth-only texture Renderer3DUVE renders its
-    /// directional-light shadow depth pre-pass into (see Render::Renderer3DUVE, Increment 26). A
+    /// Width/height, in texels, of the persistent depth-only texture Renderer3D renders its
+    /// directional-light shadow depth pre-pass into (see Render::Renderer3D, Increment 26). A
     /// square texture, sized once at construction — like renderTargetWidth/Height above, this
-    /// can't change for a running EngineCoreUVE's lifetime.
+    /// can't change for a running EngineCore's lifetime.
     std::uint32_t shadowMapResolution = 2048;
 
-    /// Half-size, in world units, of the fixed orthographic box Renderer3DUVE's shadow depth
+    /// Half-size, in world units, of the fixed orthographic box Renderer3D's shadow depth
     /// pre-pass projects through, centered on the shadow-casting light entity's world position.
     /// Not fitted to the camera's visible frustum (that's future work, e.g. cascaded shadow
     /// maps) — a fixed box is the simplest choice that needs no new frustum-fitting/AABB math,
@@ -264,14 +264,14 @@ struct EngineConfigUVE {
 
     /// Extra extent, in light-view world units, added to each fitted directional shadow-frustum
     /// bound. Prevents edge clipping caused by small camera movement or floating-point rounding;
-    /// negative caller values are clamped to zero by Renderer3DUVE.
+    /// negative caller values are clamped to zero by Renderer3D.
     float shadowFrustumPadding = 1.0F;
 
     /// Default authored LightEmitter3D depth bias for components with a negative/inherit bias.
-    /// Renderer3DUVE scales this value by 0.025 before sending it to the shadow shader.
-    float shadowBiasDefaultUVE = 0.1F;
+    /// Renderer3D scales this value by 0.025 before sending it to the shadow shader.
+    float shadowBiasDefault = 0.1F;
     /// Default angle-aware normal-bias multiplier for LightEmitter3D components that inherit it.
-    float shadowNormalBiasDefaultUVE = 1.0F;
+    float shadowNormalBiasDefault = 1.0F;
 
     /// Default practical-split blend for directional shadows whose per-light split value is unset.
     /// `0` distributes splits uniformly over the camera depth range; `1` uses fully logarithmic
@@ -285,114 +285,114 @@ struct EngineConfigUVE {
 
     /// Radius, in shadow-map texels, of the square percentage-closer-filtering kernel the
     /// canonical directional-shadow material shader uses. `0` preserves a single hard comparison;
-    /// `1` (the default) produces a 3x3 soft-shadow kernel. Renderer3DUVE clamps larger values to
+    /// `1` (the default) produces a 3x3 soft-shadow kernel. Renderer3D clamps larger values to
     /// `2` so the per-fragment sampling cost remains bounded at 25 depth comparisons.
     std::uint32_t shadowPcfKernelRadius = 1;
 
-    /// Acceleration PhysicsSystemUVE (see Physics::PhysicsSystemUVE) applies to every
-    /// non-kinematic Rigid3DComponentUVE each fixed step, scaled by its own gravityScale.
+    /// Acceleration PhysicsSystem (see Physics::PhysicsSystem) applies to every
+    /// non-kinematic Rigid3DComponent each fixed step, scaled by its own gravityScale.
     /// Earth-like default, Y-up (matching this engine's convention throughout).
-    Math::Vector3UVE gravity{0.0F, -9.81F, 0.0F};
+    Math::Vector3 gravity{0.0F, -9.81F, 0.0F};
 
-    /// Directory Save::SaveGameSystemUVE reads/writes numbered save slots (and
-    /// Save::CheckpointManagerUVE's reserved auto-save/checkpoint slot) under. Created lazily on
+    /// Directory Save::SaveGameSystem reads/writes numbered save slots (and
+    /// Save::CheckpointManager's reserved auto-save/checkpoint slot) under. Created lazily on
     /// first write — a first-run engine has no save directory yet, mirroring
     /// settingsFilePath/assetDatabaseFilePath's own "missing is not an error" contract.
     std::filesystem::path saveDirectoryPath = "saves/";
 
-    /// Auto-save interval, in seconds, CheckpointManagerUVE::UpdateUVE() waits between writes to
-    /// its reserved auto-save slot (see Save::kAutoSaveSlotIndexUVE). The spec's "every 5
+    /// Auto-save interval, in seconds, CheckpointManager::Update() waits between writes to
+    /// its reserved auto-save slot (see Save::kAutoSaveSlotIndex). The spec's "every 5
     /// minutes" example; test suites override this to a small value to avoid a real wait.
-    double autoSaveIntervalSecondsUVE = 300.0;
+    double autoSaveIntervalSeconds = 300.0;
 
-    /// When true, EngineCoreUVE::Init() constructs Window::NullWindowManagerUVE and
-    /// Render::NullRenderDeviceUVE instead of the real GLFW3/OpenGL backends — no window, no GL
+    /// When true, EngineCore::Init() constructs Window::NullWindowManager and
+    /// Render::NullRenderDevice instead of the real GLFW3/OpenGL backends — no window, no GL
     /// context, safe to run with no display attached (CI, this project's own test suite). The
     /// hidden, NotPersisted `headless` setting maps the `--headless` presence-only CLI flag into
     /// the highest-priority command-line layer during Init(); project/user/platform files cannot
     /// override it.
-    bool headlessUVE = false;
+    bool headless = false;
 
     /// Application-level policies resolved from the project manifest before engine startup.
-    /// `applicationIdentifierUVE` keys the process single-instance lock; the user-data directory
-    /// is the resolved per-user or project-portable root. CrashReporterUVE writes platform-native
+    /// `applicationIdentifier` keys the process single-instance lock; the user-data directory
+    /// is the resolved per-user or project-portable root. CrashReporter writes platform-native
     /// Windows minidumps and bounded POSIX fatal-signal reports below the configured directory.
-    std::string applicationIdentifierUVE;
-    std::filesystem::path userDataDirectoryPathUVE;
-    bool quitOnLastWindowClosedUVE = true;
-    bool enforceSingleInstanceUVE = false;
-    bool crashHandlerEnabledUVE = true;
-    std::filesystem::path crashDumpDirectoryUVE = "crash-dumps";
-    std::string symbolUploadEndpointUVE;
+    std::string applicationIdentifier;
+    std::filesystem::path userDataDirectoryPath;
+    bool quitOnLastWindowClosed = true;
+    bool enforceSingleInstance = false;
+    bool crashHandlerEnabled = true;
+    std::filesystem::path crashDumpDirectory = "crash-dumps";
+    std::string symbolUploadEndpoint;
 
     /// Boot-splash presentation policy. The standalone runtime draws the background and optional
     /// imported image through the UI overlay, then restores the project's active camera.
-    std::filesystem::path bootSplashImagePathUVE;
-    std::array<float, 4U> backgroundColorUVE{0.05F, 0.05F, 0.05F, 1.0F};
-    double splashFadeSecondsUVE = 0.25;
-    double splashMinimumDisplaySecondsUVE = 1.0;
-    bool splashSkippableUVE = true;
-    bool skipSplashInEditorPlayModeUVE = true;
+    std::filesystem::path bootSplashImagePath;
+    std::array<float, 4U> backgroundColor{0.05F, 0.05F, 0.05F, 1.0F};
+    double splashFadeSeconds = 0.25;
+    double splashMinimumDisplaySeconds = 1.0;
+    bool splashSkippable = true;
+    bool skipSplashInEditorPlayMode = true;
 
     /// Product/project identity used by the window title formatter. `windowTitle` remains the
     /// product-name fallback and legacy caller-provided title.
     std::string windowTitle = "UniVex Engine";
-    std::string projectDisplayNameUVE;
+    std::string projectDisplayName;
     /// Supports {productName}, {projectName}, and {sceneName}; literal text is preserved.
-    std::string windowTitleFormatUVE = "{productName}";
-    std::vector<EngineApplicationIconImageUVE> windowIconsUVE;
+    std::string windowTitleFormat = "{productName}";
+    std::vector<EngineApplicationIconImage> windowIcons;
 
     /// Requested window size, in pixels, at creation time (the OS/window manager may still clamp
-    /// or override it). Unused when headlessUVE is true.
+    /// or override it). Unused when headless is true.
     std::uint32_t windowWidth = 1280;
     std::uint32_t windowHeight = 720;
 
     /// Whether the real window is user-resizable. Remaining window policy is consumed by the
     /// platform backend at construction; unsupported platform-specific choices are retained in
     /// config but reported/fallback by that backend.
-    bool windowResizableUVE = true;
-    Platform::WindowModeUVE windowModeUVE = Platform::WindowModeUVE::Windowed;
-    bool windowBorderlessUVE = false;
-    bool windowAlwaysOnTopUVE = false;
-    bool windowTransparentUVE = false;
-    std::uint32_t windowMinimumWidthUVE = 0U;
-    std::uint32_t windowMinimumHeightUVE = 0U;
-    std::uint32_t windowMaximumWidthUVE = 0U;
-    std::uint32_t windowMaximumHeightUVE = 0U;
-    bool windowPositionSpecifiedUVE = false;
-    std::int32_t windowPositionXUVE = 0;
-    std::int32_t windowPositionYUVE = 0;
-    std::string windowMonitorNameUVE;
-    bool highDpiAwareUVE = true;
-    bool perMonitorScalingUVE = true;
-    double contentScaleOverrideUVE = 0.0;
-    Platform::StretchModeUVE stretchModeUVE = Platform::StretchModeUVE::Disabled;
-    Platform::AspectPolicyUVE aspectPolicyUVE = Platform::AspectPolicyUVE::Keep;
-    bool integerOnlyScalingUVE = false;
-    Platform::DisplayOrientationUVE orientationUVE = Platform::DisplayOrientationUVE::Auto;
-    std::vector<Platform::DisplayOrientationUVE> allowedOrientationsUVE{
-        Platform::DisplayOrientationUVE::Landscape, Platform::DisplayOrientationUVE::Portrait};
+    bool windowResizable = true;
+    Platform::WindowMode windowMode = Platform::WindowMode::Windowed;
+    bool windowBorderless = false;
+    bool windowAlwaysOnTop = false;
+    bool windowTransparent = false;
+    std::uint32_t windowMinimumWidth = 0U;
+    std::uint32_t windowMinimumHeight = 0U;
+    std::uint32_t windowMaximumWidth = 0U;
+    std::uint32_t windowMaximumHeight = 0U;
+    bool windowPositionSpecified = false;
+    std::int32_t windowPositionX = 0;
+    std::int32_t windowPositionY = 0;
+    std::string windowMonitorName;
+    bool highDpiAware = true;
+    bool perMonitorScaling = true;
+    double contentScaleOverride = 0.0;
+    Platform::StretchMode stretchMode = Platform::StretchMode::Disabled;
+    Platform::AspectPolicy aspectPolicy = Platform::AspectPolicy::Keep;
+    bool integerOnlyScaling = false;
+    Platform::DisplayOrientation orientation = Platform::DisplayOrientation::Auto;
+    std::vector<Platform::DisplayOrientation> allowedOrientations{
+        Platform::DisplayOrientation::Landscape, Platform::DisplayOrientation::Portrait};
 
-    /// `vsyncEnabledUVE` remains the source-compatible legacy toggle. Explicit enum selections
-    /// set `vsyncModeExplicitUVE`; otherwise EngineCore maps the legacy bool to Off/On.
-    bool vsyncEnabledUVE = true;
-    Platform::VSyncModeUVE vsyncModeUVE = Platform::VSyncModeUVE::On;
-    bool vsyncModeExplicitUVE = false;
-    std::uint32_t focusedFrameRateCapUVE = 0U;
-    std::uint32_t unfocusedFrameRateCapUVE = 0U;
-    bool allowDisplaySleepUVE = true;
-    std::filesystem::path cursorImagePathUVE;
-    std::uint32_t cursorHotspotXUVE = 0U;
-    std::uint32_t cursorHotspotYUVE = 0U;
-    std::vector<std::uint8_t> cursorRgba8UVE;
-    std::uint32_t cursorImageWidthUVE = 0U;
-    std::uint32_t cursorImageHeightUVE = 0U;
-    bool cursorVisibleUVE = true;
-    bool cursorConfinedToWindowUVE = false;
-    bool appendSceneNameInEditorPlayModeUVE = false;
-    bool editorPlayModeUVE = false;
+    /// `vsyncEnabled` remains the source-compatible legacy toggle. Explicit enum selections
+    /// set `vsyncModeExplicit`; otherwise EngineCore maps the legacy bool to Off/On.
+    bool vsyncEnabled = true;
+    Platform::VSyncMode vsyncMode = Platform::VSyncMode::On;
+    bool vsyncModeExplicit = false;
+    std::uint32_t focusedFrameRateCap = 0U;
+    std::uint32_t unfocusedFrameRateCap = 0U;
+    bool allowDisplaySleep = true;
+    std::filesystem::path cursorImagePath;
+    std::uint32_t cursorHotspotX = 0U;
+    std::uint32_t cursorHotspotY = 0U;
+    std::vector<std::uint8_t> cursorRgba8;
+    std::uint32_t cursorImageWidth = 0U;
+    std::uint32_t cursorImageHeight = 0U;
+    bool cursorVisible = true;
+    bool cursorConfinedToWindow = false;
+    bool appendSceneNameInEditorPlayMode = false;
+    bool editorPlayMode = false;
 
-    /// Requested OpenGL context version, forwarded to Window::WindowDescUVE::glVersionMajor/Minor.
+    /// Requested OpenGL context version, forwarded to Window::WindowDesc::glVersionMajor/Minor.
     /// The production default is OpenGL 4.6 Core, per the approved architecture decision.
     /// Configurable (not hardcoded) because GL context availability is a real driver/platform
     /// fact — this project's own development sandbox (Mesa llvmpipe under Xvfb) caps at 4.5 Core
@@ -405,17 +405,17 @@ struct EngineConfigUVE {
     /// pool, then compiles/links through the RHI on the render thread as completed jobs are drained;
     /// the synchronous mode completes the work in each Create* call and can stall that caller.
     /// Ahead-of-time compilation and placeholder programs are not supported yet.
-    ShaderCompilationModeUVE shaderCompilationModeUVE = ShaderCompilationModeUVE::AsynchronousOnDemandUVE;
+    ShaderCompilationMode shaderCompilationMode = ShaderCompilationMode::AsynchronousOnDemand;
 
     /// Request VK_LAYER_KHRONOS_validation when the Vulkan backend is selected. The layer is
     /// enabled only when installed; otherwise Vulkan logs a warning and continues without it.
 #if UVE_DEBUG
-    bool vulkanValidationLayersEnabledUVE = true;
+    bool vulkanValidationLayersEnabled = true;
 #else
-    bool vulkanValidationLayersEnabledUVE = false;
+    bool vulkanValidationLayersEnabled = false;
 #endif
 
-    /// Directory relative to the process working directory where Shader::ShaderManagerUVE persists
+    /// Directory relative to the process working directory where Shader::ShaderManager persists
     /// compiled OpenGL program binaries (keyed by a hash of each program's fully resolved —
     /// post-#include, post-macro — source). A per-platform subdirectory is appended automatically;
     /// the cache directory is created lazily on first write. EngineCore rejects absolute/rooted paths
@@ -423,359 +423,359 @@ struct EngineConfigUVE {
     /// directory as a sandbox boundary.
     std::filesystem::path shaderCachePath = "shader_cache/";
 
-    /// Whether ShaderManagerUVE::UpdateUVE() polls loaded shader programs' source file (and
+    /// Whether ShaderManager::Update() polls loaded shader programs' source file (and
     /// #include closure) modification times each frame and hot-swaps a recompiled program when
     /// one changed. Debug builds default to on (iteration speed); Release defaults to off (no
     /// reason a shipped build ever re-reads shader source off disk).
 #if UVE_DEBUG
-    bool shaderHotReloadEnabledUVE = true;
+    bool shaderHotReloadEnabled = true;
 #else
-    bool shaderHotReloadEnabledUVE = false;
+    bool shaderHotReloadEnabled = false;
 #endif
 
-    /// Poll interval, in seconds, ShaderManagerUVE waits between checking every hot-reload-tracked
+    /// Poll interval, in seconds, ShaderManager waits between checking every hot-reload-tracked
     /// program's dependency closure for an on-disk modification time change — the shader-specific
-    /// analogue of hotReloadPollIntervalSecondsUVE (kept as its own field since the two subsystems
+    /// analogue of hotReloadPollIntervalSeconds (kept as its own field since the two subsystems
     /// are otherwise unrelated and may want independent tuning later).
-    double shaderHotReloadPollIntervalSecondsUVE = 1.0;
+    double shaderHotReloadPollIntervalSeconds = 1.0;
 
-    /// Virtual-filesystem mount prefix ShaderManagerUVE's #include resolver and built-in shader
+    /// Virtual-filesystem mount prefix ShaderManager's #include resolver and built-in shader
     /// loader resolve paths against (e.g. "shaders/basic_3d.glsl"), and the real directory it's
     /// mounted from during Init(). A shader file missing at this location is not an error — every
     /// built-in also carries an embedded C++ string fallback (see
     /// Render::Shader::BuiltIn::kBasic3DSource) used automatically when the mount doesn't
     /// resolve, so the engine still runs (without hot-reload) if launched from a working
     /// directory where the source tree isn't reachable.
-    std::string shaderSourceMountPrefixUVE = "shaders";
-    std::filesystem::path shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in/";
+    std::string shaderSourceMountPrefix = "shaders";
+    std::filesystem::path shaderSourceRealDirectory = "Engine/Runtime/RHI/Shader/built_in/";
 
     /// Optional borrowed native window handle for platform backends. Android uses this as an
     /// ANativeWindow* supplied by NativeActivity; the engine never takes ownership or destroys it.
-    /// Desktop callers leave it null and continue through the GLFW WindowManagerUVE path.
-    void* nativeWindowHandleUVE = nullptr;
+    /// Desktop callers leave it null and continue through the GLFW WindowManager path.
+    void* nativeWindowHandle = nullptr;
 
-    /// Preferred render backend when a real window is created (ignored when headlessUVE is
-    /// true — headless always uses NullRenderDeviceUVE). `AutoUVE` resolves to `OpenGLUVE`,
-    /// the production default; `VulkanUVE` opts into the milestone-1 Vulkan bootstrap device
-    /// (window surface + clear-color present; see Render::VulkanRenderDeviceUVE) with the
+    /// Preferred render backend when a real window is created (ignored when headless is
+    /// true — headless always uses NullRenderDevice). `Auto` resolves to `OpenGL`,
+    /// the production default; `Vulkan` opts into the milestone-1 Vulkan bootstrap device
+    /// (window surface + clear-color present; see Render::VulkanRenderDevice) with the
     /// documented Vulkan -> OpenGL -> Null fallback chain when the host lacks it. Appended after
     /// the pre-existing config fields so their aggregate-construction order remains unchanged.
-    RenderBackendPreferenceUVE renderBackendPreferenceUVE = RenderBackendPreferenceUVE::AutoUVE;
+    RenderBackendPreference renderBackendPreference = RenderBackendPreference::Auto;
 
     /// Maximum fraction of the display/viewport dimensions used for the 3D scene render target.
     /// With dynamic resolution disabled this is the fixed scale; when enabled it is the starting
     /// and upper scale. The final image is still presented at the normal output size.
-    double renderResolutionScaleUVE = kMaximumRenderResolutionScaleUVE;
-    bool dynamicRenderResolutionEnabledUVE = false;
-    double minimumRenderResolutionScaleUVE = kMinimumRenderResolutionScaleUVE;
-    double renderResolutionTargetFrameTimeMillisecondsUVE =
-        kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE;
+    double renderResolutionScale = kMaximumRenderResolutionScale;
+    bool dynamicRenderResolutionEnabled = false;
+    double minimumRenderResolutionScale = kMinimumRenderResolutionScale;
+    double renderResolutionTargetFrameTimeMilliseconds =
+        kDefaultRenderResolutionTargetFrameTimeMilliseconds;
 
     /// Spatial resampling used to fit the scene render target to the presentation size.
-    SpatialUpscalingMethodUVE spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
+    SpatialUpscalingMethod spatialUpscalingMethod = SpatialUpscalingMethod::Bilinear;
     /// Operator used to map the HDR scene color into display range in the final full-screen pass.
-    ToneMappingMethodUVE toneMappingMethodUVE = ToneMappingMethodUVE::SoftFilmicUVE;
+    ToneMappingMethod toneMappingMethod = ToneMappingMethod::SoftFilmic;
     /// Unsharp-mask strength applied to the final scene reconstruction before exposure/tone mapping; 0 disables it.
-    float sharpeningAmountUVE = 0.0F;
+    float sharpeningAmount = 0.0F;
     /// Add sub-LSB screen-space noise before output quantization to reduce visible banding.
-    bool ditheringEnabledUVE = true;
+    bool ditheringEnabled = true;
 
-    /// Fast approximate AA is applied in the Renderer3DUVE tone-mapping shader when selected.
+    /// Fast approximate AA is applied in the Renderer3D tone-mapping shader when selected.
     /// Temporal AA is not available until the engine supports frame history and camera jitter.
-    PostProcessAAMethodUVE postProcessAAMethodUVE = PostProcessAAMethodUVE::NoneUVE;
+    PostProcessAAMethod postProcessAAMethod = PostProcessAAMethod::None;
     /// Edge-direction taps used only by fast approximate AA: 0 = low (3), 1 = medium (5),
     /// 2 = high (7), in addition to the filter's fixed four-neighbour contrast probes.
-    std::uint32_t screenSpaceAAQualityUVE = 1U;
+    std::uint32_t screenSpaceAAQuality = 1U;
 
     /// Screen-space ambient occlusion controls. These are global renderer defaults; an active
     /// WorldEnvironment retains its existing enable/radius/intensity values as local overrides.
-    bool ssaoEnabledUVE = true;
-    float ssaoRadiusUVE = 0.5F;
-    float ssaoIntensityUVE = 1.0F;
-    float ssaoPowerUVE = 1.0F;
+    bool ssaoEnabled = true;
+    float ssaoRadius = 0.5F;
+    float ssaoIntensity = 1.0F;
+    float ssaoPower = 1.0F;
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12); High preserves the existing kernel cost.
-    std::uint32_t ssaoQualityUVE = 2U;
+    std::uint32_t ssaoQuality = 2U;
     /// Apply the depth-aware separable bilateral AO blur to smooth half-resolution kernel noise.
-    bool ssaoBlurEnabledUVE = true;
+    bool ssaoBlurEnabled = true;
 
-    /// Frustum culling for the renderer's main colour view. DebugFreezeUVE submits everything the
-    /// scene placed, wherever the camera looks; EnabledUVE preserves the shipped culling behaviour.
-    FrustumCullingModeUVE frustumCullingModeUVE = FrustumCullingModeUVE::EnabledUVE;
+    /// Frustum culling for the renderer's main colour view. DebugFreeze submits everything the
+    /// scene placed, wherever the camera looks; Enabled preserves the shipped culling behaviour.
+    FrustumCullingMode frustumCullingMode = FrustumCullingMode::Enabled;
 
     /// Extended Part 1 Project Settings (Physics 3D, Input, Audio, Animation, Navigation,
     /// Networking, Localisation, Quality Tiers, and Packaging).
-    double defaultLinearDampingUVE = 0.01;
-    double defaultAngularDampingUVE = 0.05;
-    double sleepThresholdUVE = 0.05;
-    double sleepTimeSecondsUVE = 0.5;
-    bool allowSleepingDefaultUVE = true;
-    std::int64_t physicsPositionIterationsUVE = 6;
-    std::int64_t physicsVelocityIterationsUVE = 8;
-    double physicsContactOffsetUVE = 0.01;
-    double physicsRestOffsetUVE = 0.0;
-    double physicsPenetrationSlopUVE = 0.005;
-    double physicsMaxDepenetrationVelocityUVE = 10.0;
-    std::int64_t physicsCcdDefaultModeUVE = 0;
-    std::int64_t physicsBroadphaseAlgorithmUVE = 0;
-    double physicsBroadphaseHalfExtentUVE = 1000.0;
-    double defaultPhysicsFrictionUVE = 0.5;
-    double defaultPhysicsRestitutionUVE = 0.0;
-    std::uint32_t defaultCollisionLayerUVE = 1U;
-    std::uint32_t defaultCollisionMaskUVE = 0xFFFFFFFFU;
-    bool triggerCallbacksEnabledUVE = true;
-    bool triggersReportOnStaticBodiesUVE = false;
-    bool raycastHitBackfacesUVE = false;
-    bool raycastHitTriggersUVE = false;
-    double raycastDefaultMaxDistanceUVE = 1000.0;
-    bool physicsInterpolationDefaultUVE = true;
-    bool physicsDebugDrawCollidersUVE = false;
-    bool physicsDeterministicModeUVE = true;
-    std::int64_t physicsFixedRandomSeedUVE = 1337;
+    double defaultLinearDamping = 0.01;
+    double defaultAngularDamping = 0.05;
+    double sleepThreshold = 0.05;
+    double sleepTimeSeconds = 0.5;
+    bool allowSleepingDefault = true;
+    std::int64_t physicsPositionIterations = 6;
+    std::int64_t physicsVelocityIterations = 8;
+    double physicsContactOffset = 0.01;
+    double physicsRestOffset = 0.0;
+    double physicsPenetrationSlop = 0.005;
+    double physicsMaxDepenetrationVelocity = 10.0;
+    std::int64_t physicsCcdDefaultMode = 0;
+    std::int64_t physicsBroadphaseAlgorithm = 0;
+    double physicsBroadphaseHalfExtent = 1000.0;
+    double defaultPhysicsFriction = 0.5;
+    double defaultPhysicsRestitution = 0.0;
+    std::uint32_t defaultCollisionLayer = 1U;
+    std::uint32_t defaultCollisionMask = 0xFFFFFFFFU;
+    bool triggerCallbacksEnabled = true;
+    bool triggersReportOnStaticBodies = false;
+    bool raycastHitBackfaces = false;
+    bool raycastHitTriggers = false;
+    double raycastDefaultMaxDistance = 1000.0;
+    bool physicsInterpolationDefault = true;
+    bool physicsDebugDrawColliders = false;
+    bool physicsDeterministicMode = true;
+    std::int64_t physicsFixedRandomSeed = 1337;
 
-    double inputDefaultDeadzoneUVE = 0.2;
-    double inputDefaultSensitivityUVE = 1.0;
-    bool inputAnalogByDefaultUVE = true;
-    std::uint32_t inputEnabledDeviceMaskUVE = 0x1FU;
-    std::string inputGamepadDatabasePathUVE;
-    std::int64_t inputGamepadDeadzoneShapeUVE = 1;
-    double inputGamepadDeadzoneInnerUVE = 0.15;
-    double inputGamepadDeadzoneOuterUVE = 0.95;
-    bool inputHapticsEnabledUVE = true;
-    double inputHapticsStrengthUVE = 1.0;
-    bool inputMouseRawUVE = false;
-    bool inputMouseAccelerationUVE = false;
-    double inputMouseSensitivityUVE = 1.0;
-    bool inputMouseInvertXUVE = false;
-    bool inputMouseInvertYUVE = false;
-    bool inputEmulateMouseFromTouchUVE = true;
-    bool inputEmulateTouchFromMouseUVE = false;
-    std::int64_t inputMaxTouchPointsUVE = 10;
-    bool inputImeEnabledUVE = true;
-    bool inputVirtualKeyboardAutoShowUVE = true;
-    bool inputAccumulatedPollingUVE = true;
-    std::string inputDefaultActionSetUVE = "gameplay";
-    std::string inputUserRebindsPathUVE = "user_input.uvinput";
+    double inputDefaultDeadzone = 0.2;
+    double inputDefaultSensitivity = 1.0;
+    bool inputAnalogByDefault = true;
+    std::uint32_t inputEnabledDeviceMask = 0x1FU;
+    std::string inputGamepadDatabasePath;
+    std::int64_t inputGamepadDeadzoneShape = 1;
+    double inputGamepadDeadzoneInner = 0.15;
+    double inputGamepadDeadzoneOuter = 0.95;
+    bool inputHapticsEnabled = true;
+    double inputHapticsStrength = 1.0;
+    bool inputMouseRaw = false;
+    bool inputMouseAcceleration = false;
+    double inputMouseSensitivity = 1.0;
+    bool inputMouseInvertX = false;
+    bool inputMouseInvertY = false;
+    bool inputEmulateMouseFromTouch = true;
+    bool inputEmulateTouchFromMouse = false;
+    std::int64_t inputMaxTouchPoints = 10;
+    bool inputImeEnabled = true;
+    bool inputVirtualKeyboardAutoShow = true;
+    bool inputAccumulatedPolling = true;
+    std::string inputDefaultActionSet = "gameplay";
+    std::string inputUserRebindsPath = "user_input.uvinput";
 
-    std::int64_t audioDriverPreferenceUVE = 0;
-    std::int64_t audioSampleRateUVE = 48000;
-    std::int64_t audioBufferSizeFramesUVE = 512;
-    std::int64_t audioChannelLayoutUVE = 1;
-    double audioMasterVolumeUVE = 1.0;
-    double audioMusicVolumeUVE = 1.0;
-    double audioSfxVolumeUVE = 1.0;
-    double audioVoiceVolumeUVE = 1.0;
-    double audioDopplerFactorUVE = 1.0;
-    double audioSpeedOfSoundUVE = 343.0;
-    std::int64_t audioAttenuationModelUVE = 0;
-    double audioDefaultMinDistanceUVE = 1.0;
-    double audioDefaultMaxDistanceUVE = 50.0;
-    std::int64_t audioMaxVoicesUVE = 64;
-    std::int64_t audioVoiceStealingPolicyUVE = 0;
-    std::int64_t audioStreamingThresholdKbUVE = 512;
-    bool audioMuteOnFocusLossUVE = false;
+    std::int64_t audioDriverPreference = 0;
+    std::int64_t audioSampleRate = 48000;
+    std::int64_t audioBufferSizeFrames = 512;
+    std::int64_t audioChannelLayout = 1;
+    double audioMasterVolume = 1.0;
+    double audioMusicVolume = 1.0;
+    double audioSfxVolume = 1.0;
+    double audioVoiceVolume = 1.0;
+    double audioDopplerFactor = 1.0;
+    double audioSpeedOfSound = 343.0;
+    std::int64_t audioAttenuationModel = 0;
+    double audioDefaultMinDistance = 1.0;
+    double audioDefaultMaxDistance = 50.0;
+    std::int64_t audioMaxVoices = 64;
+    std::int64_t audioVoiceStealingPolicy = 0;
+    std::int64_t audioStreamingThresholdKb = 512;
+    bool audioMuteOnFocusLoss = false;
 
-    double animationDefaultBlendTimeUVE = 0.2;
-    std::int64_t animationDefaultBlendModeUVE = 0;
-    double animationUpdateRateHzUVE = 60.0;
-    bool animationFixedTimestepUVE = true;
-    bool animationRootMotionDefaultUVE = false;
-    Math::Vector3UVE animationLodDistanceTiersUVE{15.0F, 35.0F, 70.0F};
-    double animationCompressionToleranceUVE = 0.001;
-    bool animationKeyframeReductionUVE = true;
-    std::int64_t animationSkinningMethodUVE = 1;
-    std::int64_t animationMaxBoneInfluencesUVE = 4;
-    double animationStateMachineDefaultTransitionUVE = 0.15;
-    std::int64_t animationIkDefaultIterationsUVE = 10;
+    double animationDefaultBlendTime = 0.2;
+    std::int64_t animationDefaultBlendMode = 0;
+    double animationUpdateRateHz = 60.0;
+    bool animationFixedTimestep = true;
+    bool animationRootMotionDefault = false;
+    Math::Vector3 animationLodDistanceTiers{15.0F, 35.0F, 70.0F};
+    double animationCompressionTolerance = 0.001;
+    bool animationKeyframeReduction = true;
+    std::int64_t animationSkinningMethod = 1;
+    std::int64_t animationMaxBoneInfluences = 4;
+    double animationStateMachineDefaultTransition = 0.15;
+    std::int64_t animationIkDefaultIterations = 10;
 
-    double navCellSizeUVE = 0.3;
-    double navCellHeightUVE = 0.2;
-    double navAgentRadiusUVE = 0.5;
-    double navAgentHeightUVE = 2.0;
-    double navAgentMaxSlopeDegreesUVE = 45.0;
-    double navAgentMaxClimbUVE = 0.4;
-    double navRegionMinSizeUVE = 8.0;
-    double navRegionMergeSizeUVE = 20.0;
-    double navEdgeMaxLengthUVE = 12.0;
-    double navEdgeMaxErrorUVE = 1.3;
-    double navDetailSampleDistanceUVE = 6.0;
-    double navDetailMaxErrorUVE = 1.0;
-    bool navStringPullingUVE = true;
-    bool navPathSmoothingUVE = false;
-    bool navCorridorOptimizationUVE = true;
-    bool navAvoidanceEnabledUVE = true;
-    double navNeighborDistanceUVE = 5.0;
-    double navTimeHorizonUVE = 1.5;
-    std::int64_t navMaxNeighborsUVE = 8;
-    bool navAsyncBakingUVE = true;
-    double navBakeBudgetMsUVE = 2.0;
+    double navCellSize = 0.3;
+    double navCellHeight = 0.2;
+    double navAgentRadius = 0.5;
+    double navAgentHeight = 2.0;
+    double navAgentMaxSlopeDegrees = 45.0;
+    double navAgentMaxClimb = 0.4;
+    double navRegionMinSize = 8.0;
+    double navRegionMergeSize = 20.0;
+    double navEdgeMaxLength = 12.0;
+    double navEdgeMaxError = 1.3;
+    double navDetailSampleDistance = 6.0;
+    double navDetailMaxError = 1.0;
+    bool navStringPulling = true;
+    bool navPathSmoothing = false;
+    bool navCorridorOptimization = true;
+    bool navAvoidanceEnabled = true;
+    double navNeighborDistance = 5.0;
+    double navTimeHorizon = 1.5;
+    std::int64_t navMaxNeighbors = 8;
+    bool navAsyncBaking = true;
+    double navBakeBudgetMs = 2.0;
 
-    std::int64_t networkDefaultPortUVE = 7777;
-    std::string networkBindAddressUVE = "0.0.0.0";
-    std::int64_t networkMaxConnectionsUVE = 64;
-    std::int64_t networkMaxPacketSizeBytesUVE = 1200;
-    std::int64_t networkChannelCountUVE = 4;
-    double networkTickRateHzUVE = 60.0;
-    double networkSendRateHzUVE = 30.0;
-    double networkInterpolationBufferMsUVE = 100.0;
-    bool networkCompressionEnabledUVE = true;
-    std::int64_t networkCompressionThresholdBytesUVE = 128;
-    bool networkEncryptionEnabledUVE = false;
-    std::string networkCertificatePathUVE;
-    double networkTimeoutSecondsUVE = 10.0;
-    double networkKeepaliveIntervalSecondsUVE = 1.0;
-    double networkRelevancyDistanceMetresUVE = 150.0;
-    double networkDefaultPriorityUVE = 1.0;
-    double networkLagCompensationWindowMsUVE = 250.0;
-    double networkSimLatencyMsUVE = 0.0;
-    double networkSimJitterMsUVE = 0.0;
-    double networkSimPacketLossPercentUVE = 0.0;
-    double networkSimDuplicatePercentUVE = 0.0;
+    std::int64_t networkDefaultPort = 7777;
+    std::string networkBindAddress = "0.0.0.0";
+    std::int64_t networkMaxConnections = 64;
+    std::int64_t networkMaxPacketSizeBytes = 1200;
+    std::int64_t networkChannelCount = 4;
+    double networkTickRateHz = 60.0;
+    double networkSendRateHz = 30.0;
+    double networkInterpolationBufferMs = 100.0;
+    bool networkCompressionEnabled = true;
+    std::int64_t networkCompressionThresholdBytes = 128;
+    bool networkEncryptionEnabled = false;
+    std::string networkCertificatePath;
+    double networkTimeoutSeconds = 10.0;
+    double networkKeepaliveIntervalSeconds = 1.0;
+    double networkRelevancyDistanceMetres = 150.0;
+    double networkDefaultPriority = 1.0;
+    double networkLagCompensationWindowMs = 250.0;
+    double networkSimLatencyMs = 0.0;
+    double networkSimJitterMs = 0.0;
+    double networkSimPacketLossPercent = 0.0;
+    double networkSimDuplicatePercent = 0.0;
 
-    std::string localisationDefaultLocaleUVE = "en";
-    std::string localisationFallbackLocaleUVE = "en";
-    std::vector<std::string> localisationSupportedLocalesUVE{"en"};
-    std::string localisationTranslationsDirUVE = "Content/Locales";
-    bool pseudolocalisationEnabledUVE = false;
-    double pseudolocalisationExpansionUVE = 0.3;
-    bool rightToLeftLayoutUVE = false;
-    std::string localisationDefaultFontAssetUVE;
-    std::int64_t localisationFormattingModeUVE = 0;
-    bool warnOnUntranslatedStringsUVE = true;
+    std::string localisationDefaultLocale = "en";
+    std::string localisationFallbackLocale = "en";
+    std::vector<std::string> localisationSupportedLocales{"en"};
+    std::string localisationTranslationsDir = "Content/Locales";
+    bool pseudolocalisationEnabled = false;
+    double pseudolocalisationExpansion = 0.3;
+    bool rightToLeftLayout = false;
+    std::string localisationDefaultFontAsset;
+    std::int64_t localisationFormattingMode = 0;
+    bool warnOnUntranslatedStrings = true;
 
-    bool caseSensitiveAssetPathsUVE = true;
-    std::int64_t maxPathLengthWarningUVE = 240;
-    std::int64_t packMountPriorityUVE = 100;
-    std::int64_t activeQualityTierUVE = 2; // 0=Low, 1=Medium, 2=High, 3=Ultra
-    Platform::RendererProfileUVE requestedRendererProfileUVE = Platform::DefaultRendererProfileForHostUVE();
-    bool autoDetectQualityTierUVE = false;
-    bool allowRuntimeQualitySwitchingUVE = true;
-    std::vector<std::string> platformFeatureTagsUVE{"desktop", "gpu_compute"};
+    bool caseSensitiveAssetPaths = true;
+    std::int64_t maxPathLengthWarning = 240;
+    std::int64_t packMountPriority = 100;
+    std::int64_t activeQualityTier = 2; // 0=Low, 1=Medium, 2=High, 3=Ultra
+    Platform::RendererProfile requestedRendererProfile = Platform::DefaultRendererProfileForHost();
+    bool autoDetectQualityTier = false;
+    bool allowRuntimeQualitySwitching = true;
+    std::vector<std::string> platformFeatureTags{"desktop", "gpu_compute"};
 
-    std::string packagingDefaultPresetUVE = "Shipping";
-    std::string packagingTargetArchUVE = "x86_64";
-    std::int64_t packagingBuildConfigUVE = 2; // 0=Debug, 1=Development, 2=Shipping
-    std::vector<std::string> packagingIncludeFiltersUVE{"*"};
-    std::vector<std::string> packagingExcludeFiltersUVE{"*.tmp", "*.bak"};
-    std::int64_t packagingCompressionModeUVE = 1;
-    std::int64_t packagingDebugSymbolsPolicyUVE = 1;
-    std::string packagingCodeSigningIdentityUVE;
-    bool packagingEncryptAssetsUVE = false;
-    std::int64_t packagingPackModeUVE = 0;
-    std::string packagingPostBuildCommandUVE;
-    bool packagingAutoIncrementBuildUVE = false;
+    std::string packagingDefaultPreset = "Shipping";
+    std::string packagingTargetArch = "x86_64";
+    std::int64_t packagingBuildConfig = 2; // 0=Debug, 1=Development, 2=Shipping
+    std::vector<std::string> packagingIncludeFilters{"*"};
+    std::vector<std::string> packagingExcludeFilters{"*.tmp", "*.bak"};
+    std::int64_t packagingCompressionMode = 1;
+    std::int64_t packagingDebugSymbolsPolicy = 1;
+    std::string packagingCodeSigningIdentity;
+    bool packagingEncryptAssets = false;
+    std::int64_t packagingPackMode = 0;
+    std::string packagingPostBuildCommand;
+    bool packagingAutoIncrementBuild = false;
 
     /// Extended Part 1.3 Rendering & Part 6.5/6.8/6.9 Project Settings.
-    std::int64_t renderingMethodUVE = 0; // 0=Forward, 1=ForwardPlus, 2=Deferred, 3=Mobile
-    std::int64_t colorSpaceModeUVE = 0; // 0=LinearSrgb, 1=GammaSrgb
-    bool hdrRenderingEnabledUVE = false;
-    std::int64_t hdrTransferFunctionUVE = 0; // 0=PQ_ST2084, 1=HLG, 2=scRGB
-    double hdrPeakLuminanceNitsUVE = 1000.0;
-    double hdrPaperWhiteNitsUVE = 200.0;
-    std::int64_t renderTargetFormatUVE = 2; // 0=RGBA8, 1=RGB10A2, 2=RGBA16F
-    bool multiThreadedRenderingUVE = true;
-    std::int64_t commandBufferThreadCountUVE = 4;
+    std::int64_t renderingMethod = 0; // 0=Forward, 1=ForwardPlus, 2=Deferred, 3=Mobile
+    std::int64_t colorSpaceMode = 0; // 0=LinearSrgb, 1=GammaSrgb
+    bool hdrRenderingEnabled = false;
+    std::int64_t hdrTransferFunction = 0; // 0=PQ_ST2084, 1=HLG, 2=scRGB
+    double hdrPeakLuminanceNits = 1000.0;
+    double hdrPaperWhiteNits = 200.0;
+    std::int64_t renderTargetFormat = 2; // 0=RGBA8, 1=RGB10A2, 2=RGBA16F
+    bool multiThreadedRendering = true;
+    std::int64_t commandBufferThreadCount = 4;
 
-    std::int64_t msaa3dSamplesUVE = 1;
-    std::int64_t taaSampleCountUVE = 8;
-    std::int64_t taaJitterPatternUVE = 0; // 0=Halton23, 1=BlueNoise, 2=Uniform2x
-    double taaSharpeningAmountUVE = 0.25;
-    bool alphaToCoverageEnabledUVE = false;
+    std::int64_t msaa3dSamples = 1;
+    std::int64_t taaSampleCount = 8;
+    std::int64_t taaJitterPattern = 0; // 0=Halton23, 1=BlueNoise, 2=Uniform2x
+    double taaSharpeningAmount = 0.25;
+    bool alphaToCoverageEnabled = false;
 
-    std::int64_t shadowAtlasSizeUVE = 4096;
-    std::int64_t shadowAtlasSubdivisionUVE = 4;
-    std::int64_t directionalShadowSplitCountUVE = 3;
-    double shadowMaxDistanceUVE = 150.0;
-    std::int64_t shadowDepthFormatBitsUVE = 32;
-    std::int64_t pointSpotShadowResolutionUVE = 1024;
-    bool contactShadowsEnabledUVE = false;
-    double contactShadowsLengthUVE = 0.15;
-    std::int64_t contactShadowsStepCountUVE = 16;
+    std::int64_t shadowAtlasSize = 4096;
+    std::int64_t shadowAtlasSubdivision = 4;
+    std::int64_t directionalShadowSplitCount = 3;
+    double shadowMaxDistance = 150.0;
+    std::int64_t shadowDepthFormatBits = 32;
+    std::int64_t pointSpotShadowResolution = 1024;
+    bool contactShadowsEnabled = false;
+    double contactShadowsLength = 0.15;
+    std::int64_t contactShadowsStepCount = 16;
     /// How far behind the ray a depth sample may sit and still count as touching geometry, in metres.
-    double contactShadowsThicknessUVE = 0.1;
+    double contactShadowsThickness = 0.1;
     /// Fraction of the light a fully occluded ray removes, 0..1. Below 1.0 on purpose: contact
     /// shadow refines a real shadow, and at full strength the seam reads as a hole.
-    double contactShadowsStrengthUVE = 0.8;
+    double contactShadowsStrength = 0.8;
 
-    bool ssilEnabledUVE = false;
-    std::int64_t ssilQualityUVE = 1;
-    std::int64_t ssilFrameCountUVE = 4;
-    bool ssrEnabledUVE = false;
-    std::int64_t ssrMaxStepsUVE = 32;
-    double ssrFadeInUVE = 0.1;
-    double ssrFadeOutUVE = 0.8;
-    double ssrDepthToleranceUVE = 0.2;
-    std::int64_t reflectionProbeAtlasSizeUVE = 2048;
-    std::int64_t reflectionProbeDefaultResolutionUVE = 128;
-    std::int64_t voxelGiQualityUVE = 1;
-    std::int64_t voxelGiBounceCountUVE = 2;
-    double voxelGiUpdateBudgetMsUVE = 2.0;
-    double lightmapResolutionScaleUVE = 1.0;
-    std::int64_t lightmapBounceCountUVE = 3;
-    bool lightmapDenoiserEnabledUVE = true;
-    bool lightmapDirectionalEnabledUVE = true;
-    double lightmapTexelDensityUVE = 16.0;
-    double lightProbeDefaultDensityUVE = 2.0;
+    bool ssilEnabled = false;
+    std::int64_t ssilQuality = 1;
+    std::int64_t ssilFrameCount = 4;
+    bool ssrEnabled = false;
+    std::int64_t ssrMaxSteps = 32;
+    double ssrFadeIn = 0.1;
+    double ssrFadeOut = 0.8;
+    double ssrDepthTolerance = 0.2;
+    std::int64_t reflectionProbeAtlasSize = 2048;
+    std::int64_t reflectionProbeDefaultResolution = 128;
+    std::int64_t voxelGiQuality = 1;
+    std::int64_t voxelGiBounceCount = 2;
+    double voxelGiUpdateBudgetMs = 2.0;
+    double lightmapResolutionScale = 1.0;
+    std::int64_t lightmapBounceCount = 3;
+    bool lightmapDenoiserEnabled = true;
+    bool lightmapDirectionalEnabled = true;
+    double lightmapTexelDensity = 16.0;
+    double lightProbeDefaultDensity = 2.0;
 
-    bool autoExposureEnabledUVE = false;
-    double autoExposureMinLuminanceUVE = -4.0;
-    double autoExposureMaxLuminanceUVE = 8.0;
-    double autoExposureSpeedUpUVE = 3.0;
-    double autoExposureSpeedDownUVE = 1.0;
-    std::string colorGradingLutAssetUVE;
-    std::int64_t colorGradingLutSizeUVE = 32;
-    bool colorGradingPreTonemapUVE = true;
-    bool volumetricFogEnabledUVE = false;
-    std::int64_t volumetricFogFroxelResolutionUVE = 128;
-    double volumetricFogDepthDistributionUVE = 2.0;
-    bool volumetricFogTemporalReprojectionUVE = true;
-    double volumetricFogAnisotropyUVE = 0.2;
+    bool autoExposureEnabled = false;
+    double autoExposureMinLuminance = -4.0;
+    double autoExposureMaxLuminance = 8.0;
+    double autoExposureSpeedUp = 3.0;
+    double autoExposureSpeedDown = 1.0;
+    std::string colorGradingLutAsset;
+    std::int64_t colorGradingLutSize = 32;
+    bool colorGradingPreTonemap = true;
+    bool volumetricFogEnabled = false;
+    std::int64_t volumetricFogFroxelResolution = 128;
+    double volumetricFogDepthDistribution = 2.0;
+    bool volumetricFogTemporalReprojection = true;
+    double volumetricFogAnisotropy = 0.2;
 
-    double defaultNearClipPlaneUVE = 0.1;
-    double defaultFarClipPlaneUVE = 1000.0;
-    bool occlusionCullingEnabledUVE = true;
-    std::int64_t occlusionCullingMethodUVE = 0; // 0=RasterSoftware, 1=HiZHardware
-    std::int64_t occlusionBufferResolutionUVE = 256;
-    double globalLodBiasUVE = 0.0;
-    double minLodScreenCoverageUVE = 0.02;
-    std::int64_t lodCrossfadeModeUVE = 1; // 0=None, 1=Dither, 2=AlphaBlend
-    bool meshLodAutoGenerateDefaultUVE = false;
-    std::int64_t instancingMinCountUVE = 4;
-    std::int64_t perInstanceDataBudgetKbUVE = 4096;
-    bool staticBatchingEnabledUVE = true;
-    std::int64_t staticBatchVertexBudgetUVE = 65536;
-    bool indirectDrawEnabledUVE = true;
-    std::int64_t maxDrawCallsWarningUVE = 3000;
-    std::int64_t maxTrianglesWarningUVE = 2500000;
+    double defaultNearClipPlane = 0.1;
+    double defaultFarClipPlane = 1000.0;
+    bool occlusionCullingEnabled = true;
+    std::int64_t occlusionCullingMethod = 0; // 0=RasterSoftware, 1=HiZHardware
+    std::int64_t occlusionBufferResolution = 256;
+    double globalLodBias = 0.0;
+    double minLodScreenCoverage = 0.02;
+    std::int64_t lodCrossfadeMode = 1; // 0=None, 1=Dither, 2=AlphaBlend
+    bool meshLodAutoGenerateDefault = false;
+    std::int64_t instancingMinCount = 4;
+    std::int64_t perInstanceDataBudgetKb = 4096;
+    bool staticBatchingEnabled = true;
+    std::int64_t staticBatchVertexBudget = 65536;
+    bool indirectDrawEnabled = true;
+    std::int64_t maxDrawCallsWarning = 3000;
+    std::int64_t maxTrianglesWarning = 2500000;
 
-    std::int64_t defaultTextureFilterUVE = 2; // 0=Nearest, 1=Bilinear, 2=Trilinear
-    std::int64_t defaultAnisotropyLevelUVE = 8;
-    double globalMipLodBiasUVE = 0.0;
-    bool textureStreamingEnabledUVE = true;
-    std::int64_t textureStreamingBudgetMbUVE = 512;
-    double textureStreamingPressureMipBiasUVE = 1.0;
-    std::int64_t maxTextureSizePerTierUVE = 4096;
-    std::int64_t defaultTextureRepeatModeUVE = 1; // 0=Disabled, 1=Enabled, 2=Mirrored
+    std::int64_t defaultTextureFilter = 2; // 0=Nearest, 1=Bilinear, 2=Trilinear
+    std::int64_t defaultAnisotropyLevel = 8;
+    double globalMipLodBias = 0.0;
+    bool textureStreamingEnabled = true;
+    std::int64_t textureStreamingBudgetMb = 512;
+    double textureStreamingPressureMipBias = 1.0;
+    std::int64_t maxTextureSizePerTier = 4096;
+    std::int64_t defaultTextureRepeatMode = 1; // 0=Disabled, 1=Enabled, 2=Mirrored
 
-    std::int64_t defaultSkyModeUVE = 3; // 0=None, 1=Colour, 2=Gradient, 3=Physical, 4=Panorama
-    std::int64_t defaultSkyResolutionUVE = 512;
-    std::int64_t defaultSkyUpdateModeUVE = 2; // 0=Realtime, 1=Once, 2=OnDemand
-    std::string defaultWorldEnvironmentAssetUVE;
+    std::int64_t defaultSkyMode = 3; // 0=None, 1=Colour, 2=Gradient, 3=Physical, 4=Panorama
+    std::int64_t defaultSkyResolution = 512;
+    std::int64_t defaultSkyUpdateMode = 2; // 0=Realtime, 1=Once, 2=OnDemand
+    std::string defaultWorldEnvironmentAsset;
 
-    std::string defaultPhysicsMaterialAssetUVE;
-    double runtimeUiScaleUVE = 1.0;
-    bool runtimeSubtitlesEnabledUVE = true;
-    double runtimeCaptionFontScaleUVE = 1.0;
-    bool runtimeHighContrastUiUVE = false;
-    bool runtimeReduceMotionUVE = false;
-    bool telemetryAnalyticsOptInUVE = false;
-    std::int64_t crashReportSubmissionPolicyUVE = 0; // 0=AskEachTime, 1=Always, 2=Never
-    bool anonymousUsageStatsOptInUVE = false;
+    std::string defaultPhysicsMaterialAsset;
+    double runtimeUiScale = 1.0;
+    bool runtimeSubtitlesEnabled = true;
+    double runtimeCaptionFontScale = 1.0;
+    bool runtimeHighContrastUi = false;
+    bool runtimeReduceMotion = false;
+    bool telemetryAnalyticsOptIn = false;
+    std::int64_t crashReportSubmissionPolicy = 0; // 0=AskEachTime, 1=Always, 2=Never
+    bool anonymousUsageStatsOptIn = false;
     /// Opt-in lightweight UI-host mode (used by UniVex Hub & Setup): installs a zero-cost no-op
-    /// IRenderer3DUVE instead of compiling 3D shaders and allocating shadow/post-process targets.
-    bool skip3dRendererUVE = false;
-    /// Opt-in silent UI-host mode (used by UniVex Hub & Setup): uses NullAudioDeviceUVE directly
+    /// IRenderer3D instead of compiling 3D shaders and allocating shadow/post-process targets.
+    bool skip3dRenderer = false;
+    /// Opt-in silent UI-host mode (used by UniVex Hub & Setup): uses NullAudioDevice directly
     /// instead of opening an OS audio backend stream (miniaudio/AAudio).
-    bool skipAudioUVE = false;
+    bool skipAudio = false;
 };
 
 } // namespace UVE::Core

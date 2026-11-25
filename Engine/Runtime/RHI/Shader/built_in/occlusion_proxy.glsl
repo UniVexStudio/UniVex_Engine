@@ -1,6 +1,6 @@
 #version 450 core
 
-// Occlusion proxy for Renderer3DUVE's GPU occlusion stage (Foundation WP3). The pipeline that owns
+// Occlusion proxy for Renderer3D's GPU occlusion stage (Foundation WP3). The pipeline that owns
 // this shader is depth-tested (LessOrEqual), writes no depth, and blends additively; because the
 // fragment contributes exactly zero, the colour attachment is left untouched and the only
 // observable effect is the sample count inside the query bracket that surrounds the draw.

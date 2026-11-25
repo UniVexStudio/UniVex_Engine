@@ -8,35 +8,35 @@
 namespace UVE::VFX {
 
 /// Result of sampling a spawn shape in emitter-local space: position plus outward unit normal.
-struct VfxShapeSampleUVE final {
-    Math::Vector3UVE position{};
-    Math::Vector3UVE normal{0.0F, 1.0F, 0.0F};
+struct VfxShapeSample final {
+    Math::Vector3 position{};
+    Math::Vector3 normal{0.0F, 1.0F, 0.0F};
 };
 
 /// Draws a uniformly distributed unit direction on S^2.
-[[nodiscard]] Math::Vector3UVE SampleUniformUnitSphereDirectionUVE(Math::RandomUVE& rng) noexcept;
+[[nodiscard]] Math::Vector3 SampleUniformUnitSphereDirection(Math::Random& rng) noexcept;
 
 /// Point shape at the emitter origin.
-[[nodiscard]] VfxShapeSampleUVE SampleShapePointUVE(Math::RandomUVE& rng) noexcept;
+[[nodiscard]] VfxShapeSample SampleShapePoint(Math::Random& rng) noexcept;
 
 /// Sphere (or +Y hemisphere) volume or surface sampling.
-[[nodiscard]] VfxShapeSampleUVE SampleShapeSphereUVE(Math::RandomUVE& rng, float radius, bool surface,
+[[nodiscard]] VfxShapeSample SampleShapeSphere(Math::Random& rng, float radius, bool surface,
                                                      bool hemisphere) noexcept;
 
 /// Box centered at the origin with side extents `size` (volume or surface).
-[[nodiscard]] VfxShapeSampleUVE SampleShapeBoxUVE(Math::RandomUVE& rng, const Math::Vector3UVE& size,
+[[nodiscard]] VfxShapeSample SampleShapeBox(Math::Random& rng, const Math::Vector3& size,
                                                   bool surface) noexcept;
 
 /// Truncated cone along +Y from `y = 0` (`radius`) to `y = length` (`radius + length * tan(angle)`).
-[[nodiscard]] VfxShapeSampleUVE SampleShapeConeUVE(Math::RandomUVE& rng, float angleDegrees, float length,
+[[nodiscard]] VfxShapeSample SampleShapeCone(Math::Random& rng, float angleDegrees, float length,
                                                    float radius, bool surface) noexcept;
 
 /// Cylinder centered at the origin with radius `radius` and height `height` along Y.
-[[nodiscard]] VfxShapeSampleUVE SampleShapeCylinderUVE(Math::RandomUVE& rng, float radius, float height,
+[[nodiscard]] VfxShapeSample SampleShapeCylinder(Math::Random& rng, float radius, float height,
                                                        bool surface) noexcept;
 
 /// Torus centered at the origin in the XZ plane with major and minor radii.
-[[nodiscard]] VfxShapeSampleUVE SampleShapeTorusUVE(Math::RandomUVE& rng, float majorRadius, float minorRadius,
+[[nodiscard]] VfxShapeSample SampleShapeTorus(Math::Random& rng, float majorRadius, float minorRadius,
                                                     bool surface) noexcept;
 
 } // namespace UVE::VFX

@@ -9,20 +9,20 @@
 namespace UVE::Utilities::Tests {
 namespace {
 
-struct WidgetUVE : public NonCopyableUVE {
+struct Widget : public NonCopyable {
     int value = 0;
 };
 
-static_assert(!std::is_copy_constructible_v<WidgetUVE>);
-static_assert(!std::is_copy_assignable_v<WidgetUVE>);
-static_assert(!std::is_move_constructible_v<WidgetUVE>);
-static_assert(!std::is_move_assignable_v<WidgetUVE>);
-static_assert(std::is_default_constructible_v<WidgetUVE>);
+static_assert(!std::is_copy_constructible_v<Widget>);
+static_assert(!std::is_copy_assignable_v<Widget>);
+static_assert(!std::is_move_constructible_v<Widget>);
+static_assert(!std::is_move_assignable_v<Widget>);
+static_assert(std::is_default_constructible_v<Widget>);
 
-TEST(NonCopyableUVETest, Derived_IsConstructibleButNotCopyableOrMovable) {
+TEST(NonCopyableTest, Derived_IsConstructibleButNotCopyableOrMovable) {
     // The static_asserts above are the test; this case exists so the file runs green and the
     // inheritance reads naturally (a default-constructed derived still works).
-    const WidgetUVE widget;
+    const Widget widget;
     EXPECT_EQ(widget.value, 0);
 }
 

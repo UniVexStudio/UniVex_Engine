@@ -5,8 +5,8 @@
 
 namespace UVE::Asset {
 
-/// The lifecycle state of one AssetManagerUVE-tracked asset record.
-enum class AssetLoadStateUVE {
+/// The lifecycle state of one AssetManager-tracked asset record.
+enum class AssetLoadState {
     /// No load has ever been requested for this GUID (not currently used as a stored state —
     /// a record is only created once a load is requested — but named for completeness/clarity
     /// at call sites that query state for a GUID with no record at all).

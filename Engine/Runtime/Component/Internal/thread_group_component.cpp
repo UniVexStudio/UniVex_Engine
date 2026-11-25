@@ -4,30 +4,30 @@
 
 namespace UVE::Scene {
 
-bool IsThreadGroupModeValidUVE(const ThreadGroupModeUVE mode) noexcept {
+bool IsThreadGroupModeValid(const ThreadGroupMode mode) noexcept {
     switch (mode) {
-        case ThreadGroupModeUVE::Inherit:
-        case ThreadGroupModeUVE::MainThread:
-        case ThreadGroupModeUVE::SubThread:
+        case ThreadGroupMode::Inherit:
+        case ThreadGroupMode::MainThread:
+        case ThreadGroupMode::SubThread:
             return true;
     }
     return false;
 }
 
-bool IsThreadGroupComponentValidUVE(const ThreadGroupComponentUVE& component) noexcept {
-    return IsThreadGroupModeValidUVE(component.mode) &&
-           IsThreadGroupModeValidUVE(component.resolvedModeInHierarchy);
+bool IsThreadGroupComponentValid(const ThreadGroupComponent& component) noexcept {
+    return IsThreadGroupModeValid(component.mode) &&
+           IsThreadGroupModeValid(component.resolvedModeInHierarchy);
 }
 
-ThreadGroupModeUVE ResolveThreadGroupModeUVE(const ThreadGroupModeUVE mode,
-                                             const ThreadGroupModeUVE parentMode) noexcept {
-    const ThreadGroupModeUVE safeMode =
-        IsThreadGroupModeValidUVE(mode) ? mode : ThreadGroupModeUVE::MainThread;
-    if (safeMode == ThreadGroupModeUVE::Inherit) {
+ThreadGroupMode ResolveThreadGroupMode(const ThreadGroupMode mode,
+                                             const ThreadGroupMode parentMode) noexcept {
+    const ThreadGroupMode safeMode =
+        IsThreadGroupModeValid(mode) ? mode : ThreadGroupMode::MainThread;
+    if (safeMode == ThreadGroupMode::Inherit) {
         // Inherit at the top of a hierarchy means the safe default rather than "unanswered".
-        return (!IsThreadGroupModeValidUVE(parentMode) ||
-                parentMode == ThreadGroupModeUVE::Inherit)
-                   ? ThreadGroupModeUVE::MainThread
+        return (!IsThreadGroupModeValid(parentMode) ||
+                parentMode == ThreadGroupMode::Inherit)
+                   ? ThreadGroupMode::MainThread
                    : parentMode;
     }
     // A MainThread ancestor is a constraint, not a preference: the child is part of whatever shared
@@ -37,32 +37,32 @@ ThreadGroupModeUVE ResolveThreadGroupModeUVE(const ThreadGroupModeUVE mode,
     // Tested against `parentMode`, not against a parent whose Inherit has already been folded into
     // MainThread. Folding first would make an entity with no ancestor constraint look like one
     // that has been pinned, and a root could then never choose SubThread at all.
-    if (parentMode == ThreadGroupModeUVE::MainThread) {
-        return ThreadGroupModeUVE::MainThread;
+    if (parentMode == ThreadGroupMode::MainThread) {
+        return ThreadGroupMode::MainThread;
     }
     return safeMode;
 }
 
-ThreadGroupModeUVE ResolveHierarchyThreadGroupModeUVE(
-    ThreadGroupComponentUVE* const component,
-    const ThreadGroupModeUVE parentResolvedMode) noexcept {
+ThreadGroupMode ResolveHierarchyThreadGroupMode(
+    ThreadGroupComponent* const component,
+    const ThreadGroupMode parentResolvedMode) noexcept {
     if (component == nullptr) {
-        return ResolveThreadGroupModeUVE(ThreadGroupModeUVE::Inherit, parentResolvedMode);
+        return ResolveThreadGroupMode(ThreadGroupMode::Inherit, parentResolvedMode);
     }
-    const ThreadGroupModeUVE resolved =
-        ResolveThreadGroupModeUVE(component->mode, parentResolvedMode);
+    const ThreadGroupMode resolved =
+        ResolveThreadGroupMode(component->mode, parentResolvedMode);
     component->resolvedModeInHierarchy = resolved;
     return resolved;
 }
 
-bool CanDispatchOnSubThreadUVE(const ThreadGroupComponentUVE* const component) noexcept {
+bool CanDispatchOnSubThread(const ThreadGroupComponent* const component) noexcept {
     return component != nullptr &&
-           component->resolvedModeInHierarchy == ThreadGroupModeUVE::SubThread;
+           component->resolvedModeInHierarchy == ThreadGroupMode::SubThread;
 }
 
-bool CompareThreadGroupExecutionOrderUVE(const ThreadGroupComponentUVE& lhs,
+bool CompareThreadGroupExecutionOrder(const ThreadGroupComponent& lhs,
                                          const std::uint32_t lhsTieBreak,
-                                         const ThreadGroupComponentUVE& rhs,
+                                         const ThreadGroupComponent& rhs,
                                          const std::uint32_t rhsTieBreak) noexcept {
     if (lhs.order != rhs.order) {
         return lhs.order < rhs.order;
@@ -70,16 +70,16 @@ bool CompareThreadGroupExecutionOrderUVE(const ThreadGroupComponentUVE& lhs,
     return lhsTieBreak < rhsTieBreak;
 }
 
-ThreadGroupComponentUVE SanitizeThreadGroupComponentUVE(
-    const ThreadGroupComponentUVE& component) noexcept {
-    const ThreadGroupModeUVE safeMode =
-        IsThreadGroupModeValidUVE(component.mode) ? component.mode : ThreadGroupModeUVE::Inherit;
-    const ThreadGroupModeUVE safeResolved =
-        (IsThreadGroupModeValidUVE(component.resolvedModeInHierarchy) &&
-         component.resolvedModeInHierarchy != ThreadGroupModeUVE::Inherit)
+ThreadGroupComponent SanitizeThreadGroupComponent(
+    const ThreadGroupComponent& component) noexcept {
+    const ThreadGroupMode safeMode =
+        IsThreadGroupModeValid(component.mode) ? component.mode : ThreadGroupMode::Inherit;
+    const ThreadGroupMode safeResolved =
+        (IsThreadGroupModeValid(component.resolvedModeInHierarchy) &&
+         component.resolvedModeInHierarchy != ThreadGroupMode::Inherit)
             ? component.resolvedModeInHierarchy
-            : ResolveThreadGroupModeUVE(safeMode, ThreadGroupModeUVE::Inherit);
-    return ThreadGroupComponentUVE{
+            : ResolveThreadGroupMode(safeMode, ThreadGroupMode::Inherit);
+    return ThreadGroupComponent{
         .mode = safeMode,
         .order = component.order,
         .resolvedModeInHierarchy = safeResolved,

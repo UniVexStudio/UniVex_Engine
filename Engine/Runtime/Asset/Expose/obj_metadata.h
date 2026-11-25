@@ -8,7 +8,7 @@
 
 namespace UVE::Asset {
 
-struct ObjMetadataUVE final {
+struct ObjMetadata final {
     std::uint32_t positionCount = 0U;
     std::uint32_t texcoordCount = 0U;
     std::uint32_t normalCount = 0U;
@@ -22,26 +22,26 @@ struct ObjMetadataUVE final {
 
 /// Resolves one OBJ 1-based or negative-relative attribute index to a zero-based copied index.
 /// Zero, empty domains, and out-of-range values fail closed without allocating mesh data.
-[[nodiscard]] bool ResolveObjIndexUVE(std::int64_t rawIndex, std::uint32_t attributeCount,
+[[nodiscard]] bool ResolveObjIndex(std::int64_t rawIndex, std::uint32_t attributeCount,
                                       std::uint32_t& outZeroBasedIndex) noexcept;
 
-struct ObjFaceVertexUVE final {
+struct ObjFaceVertex final {
     std::uint32_t positionIndex = 0U;
     std::optional<std::uint32_t> texcoordIndex;
     std::optional<std::uint32_t> normalIndex;
-    [[nodiscard]] bool operator==(const ObjFaceVertexUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ObjFaceVertex&) const noexcept = default;
 };
 
 /// Resolves one bounded OBJ face vertex token (`v`, `v/vt`, `v//vn`, or `v/vt/vn`) into copied
 /// zero-based indices. It performs no face triangulation, mesh allocation, material loading, or I/O.
-[[nodiscard]] bool ResolveObjFaceVertexUVE(
+[[nodiscard]] bool ResolveObjFaceVertex(
     std::string_view token, std::uint32_t positionCount, std::uint32_t texcoordCount,
-    std::uint32_t normalCount, ObjFaceVertexUVE& outVertex) noexcept;
+    std::uint32_t normalCount, ObjFaceVertex& outVertex) noexcept;
 
 /// Parses bounded OBJ declaration statistics from caller-owned text. It validates declaration
 /// arity and face reference presence, reports polygon triangulation capacity, and returns copied
 /// counts only; it does not resolve indices, load material libraries, allocate mesh data, or own
 /// renderer/importer state.
-[[nodiscard]] std::optional<ObjMetadataUVE> ParseObjMetadataUVE(std::string_view source);
+[[nodiscard]] std::optional<ObjMetadata> ParseObjMetadata(std::string_view source);
 
 } // namespace UVE::Asset

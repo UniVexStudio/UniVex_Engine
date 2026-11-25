@@ -15,7 +15,7 @@ namespace {
 
 /// Union-find over dense body indices with path halving. Iterative: a recursive find would let a
 /// long chain of touching bodies - which a stack of crates produces - decide the stack depth.
-[[nodiscard]] std::uint32_t FindRootUVE(std::vector<std::uint32_t>& parents, std::uint32_t index) noexcept {
+[[nodiscard]] std::uint32_t FindRoot(std::vector<std::uint32_t>& parents, std::uint32_t index) noexcept {
     while (parents[index] != index) {
         const std::uint32_t grandparent = parents[parents[index]];
         parents[index] = grandparent;
@@ -24,10 +24,10 @@ namespace {
     return index;
 }
 
-void UnionUVE(std::vector<std::uint32_t>& parents, std::vector<std::uint32_t>& sizes, std::uint32_t first,
+void Union(std::vector<std::uint32_t>& parents, std::vector<std::uint32_t>& sizes, std::uint32_t first,
               std::uint32_t second) noexcept {
-    std::uint32_t firstRoot = FindRootUVE(parents, first);
-    std::uint32_t secondRoot = FindRootUVE(parents, second);
+    std::uint32_t firstRoot = FindRoot(parents, first);
+    std::uint32_t secondRoot = FindRoot(parents, second);
     if (firstRoot == secondRoot) {
         return;
     }
@@ -42,33 +42,33 @@ void UnionUVE(std::vector<std::uint32_t>& parents, std::vector<std::uint32_t>& s
 
 } // namespace
 
-PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(const std::vector<CollisionPairUVE>& pairs) {
-    PhysicsIslandPartitionUVE partition;
+PhysicsIslandPartition BuildPhysicsIslandPartition(const std::vector<CollisionPair>& pairs) {
+    PhysicsIslandPartition partition;
     if (pairs.empty()) {
         return partition;
     }
 
     // Dense body indices in pair-scan order. The scan order is the caller's pair order, so the
     // numbering - and therefore the island numbering - is a pure function of the input list.
-    std::unordered_map<Scene::EntityUVE, std::uint32_t> bodyIndices;
+    std::unordered_map<Scene::Entity, std::uint32_t> bodyIndices;
     bodyIndices.reserve(pairs.size() * 2U);
-    const auto bodyIndexOfUVE = [&bodyIndices](const Scene::EntityUVE entity) {
+    const auto bodyIndexOf = [&bodyIndices](const Scene::Entity entity) {
         const auto inserted = bodyIndices.try_emplace(entity, static_cast<std::uint32_t>(bodyIndices.size()));
         return inserted.first->second;
     };
 
     // Self-pairs are not collisions, so they must neither union anything nor appear in the result.
-    // `resolvable` holds indices into `pairs`, not a filtered copy: `pairOrderUVE` promises indices
+    // `resolvable` holds indices into `pairs`, not a filtered copy: `pairOrder` promises indices
     // the caller can use against the list it passed in.
     std::vector<std::uint32_t> resolvable;
     resolvable.reserve(pairs.size());
     for (std::size_t index = 0U; index < pairs.size(); ++index) {
-        const CollisionPairUVE& pair = pairs[index];
+        const CollisionPair& pair = pairs[index];
         if (pair.first == pair.second) {
             continue;
         }
-        static_cast<void>(bodyIndexOfUVE(pair.first));
-        static_cast<void>(bodyIndexOfUVE(pair.second));
+        static_cast<void>(bodyIndexOf(pair.first));
+        static_cast<void>(bodyIndexOf(pair.second));
         resolvable.push_back(static_cast<std::uint32_t>(index));
     }
     if (resolvable.empty()) {
@@ -81,7 +81,7 @@ PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(const std::vector<Colli
         parents[index] = index;
     }
     for (const std::uint32_t pairIndex : resolvable) {
-        UnionUVE(parents, sizes, bodyIndices[pairs[pairIndex].first], bodyIndices[pairs[pairIndex].second]);
+        Union(parents, sizes, bodyIndices[pairs[pairIndex].first], bodyIndices[pairs[pairIndex].second]);
     }
 
     // Island ids are assigned from the FINAL roots, in first-appearance order. Assigning them
@@ -91,7 +91,7 @@ PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(const std::vector<Colli
     std::vector<std::uint32_t> islandBodyCounts;
     std::vector<std::uint32_t> pairIsland(resolvable.size(), 0U);
     for (std::size_t index = 0U; index < resolvable.size(); ++index) {
-        const std::uint32_t root = FindRootUVE(parents, bodyIndices[pairs[resolvable[index]].first]);
+        const std::uint32_t root = FindRoot(parents, bodyIndices[pairs[resolvable[index]].first]);
         const auto inserted = islandOfRoot.try_emplace(root, static_cast<std::uint32_t>(islandBodyCounts.size()));
         if (inserted.second) {
             islandBodyCounts.push_back(0U);
@@ -101,7 +101,7 @@ PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(const std::vector<Colli
 
     // One body counts towards exactly one island - the one its final root names.
     for (std::uint32_t body = 0U; body < parents.size(); ++body) {
-        const auto found = islandOfRoot.find(FindRootUVE(parents, body));
+        const auto found = islandOfRoot.find(FindRoot(parents, body));
         if (found != islandOfRoot.end()) {
             ++islandBodyCounts[found->second];
         }
@@ -118,21 +118,21 @@ PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(const std::vector<Colli
         islandOffsets[island + 1U] += islandOffsets[island];
     }
 
-    partition.pairOrderUVE.resize(islandOffsets.back());
-    partition.islandsUVE.resize(islandBodyCounts.size());
+    partition.pairOrder.resize(islandOffsets.back());
+    partition.islands.resize(islandBodyCounts.size());
 
     std::vector<std::uint32_t> cursors(islandOffsets.begin(), islandOffsets.end() - 1);
     for (std::size_t index = 0U; index < resolvable.size(); ++index) {
-        partition.pairOrderUVE[cursors[pairIsland[index]]++] = resolvable[index];
+        partition.pairOrder[cursors[pairIsland[index]]++] = resolvable[index];
     }
 
     for (std::size_t island = 0U; island < islandBodyCounts.size(); ++island) {
-        PhysicsIslandUVE& entry = partition.islandsUVE[island];
-        entry.firstPairUVE = islandOffsets[island];
-        entry.pairCountUVE = islandOffsets[island + 1U] - islandOffsets[island];
-        entry.bodyCountUVE = islandBodyCounts[island];
+        PhysicsIsland& entry = partition.islands[island];
+        entry.firstPair = islandOffsets[island];
+        entry.pairCount = islandOffsets[island + 1U] - islandOffsets[island];
+        entry.bodyCount = islandBodyCounts[island];
     }
-    partition.bodyCountUVE = static_cast<std::uint32_t>(parents.size());
+    partition.bodyCount = static_cast<std::uint32_t>(parents.size());
 
     return partition;
 }

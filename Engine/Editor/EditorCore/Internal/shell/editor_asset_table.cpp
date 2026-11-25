@@ -59,36 +59,36 @@
 namespace UVE::Editor {
 namespace {
 
-void HashUVE(std::uint64_t& h, const std::uint64_t v) {
+void Hash(std::uint64_t& h, const std::uint64_t v) {
     h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2);
 }
 
-void HashUVE(std::uint64_t& h, const std::string& s) {
+void Hash(std::uint64_t& h, const std::string& s) {
     for (const char c : s) {
-        HashUVE(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
+        Hash(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
     }
 }
 
-[[nodiscard]] std::string LowerExtensionUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string LowerExtension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return extension;
 }
 
-[[nodiscard]] bool IsEntityAssetUVE(const std::filesystem::path& path) {
-    const std::string extension = LowerExtensionUVE(path);
+[[nodiscard]] bool IsEntityAsset(const std::filesystem::path& path) {
+    const std::string extension = LowerExtension(path);
     return extension == ".uventity" || extension == ".uvprefab";
 }
 
 /// `path` is `folder` or lies inside it (generic content-relative paths).
-[[nodiscard]] bool IsSameOrInsideUVE(const std::string& path, const std::string& folder) {
+[[nodiscard]] bool IsSameOrInside(const std::string& path, const std::string& folder) {
     return path == folder ||
            (!folder.empty() && path.size() > folder.size() && path.starts_with(folder) && path[folder.size()] == '/');
 }
 
 /// `paths` without repeats, the content root, or any path inside another listed folder.
-[[nodiscard]] std::vector<std::filesystem::path> TopLevelContentPathsUVE(const std::vector<std::filesystem::path>& paths) {
+[[nodiscard]] std::vector<std::filesystem::path> TopLevelContentPaths(const std::vector<std::filesystem::path>& paths) {
     std::vector<std::string> names;
     names.reserve(paths.size());
     for (const std::filesystem::path& path : paths) {
@@ -102,7 +102,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
             continue;
         }
         const bool inside = std::ranges::any_of(names, [&name](const std::string& other) {
-            return other != name && IsSameOrInsideUVE(name, other);
+            return other != name && IsSameOrInside(name, other);
         });
         if (!inside) {
             top.push_back(paths[i]);
@@ -112,11 +112,11 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
     return top;
 }
 
-[[nodiscard]] std::string CountItemsUVE(const std::size_t count) {
+[[nodiscard]] std::string CountItems(const std::size_t count) {
     return count == 1U ? std::string("1 item") : std::to_string(count) + " items";
 }
 
-[[nodiscard]] std::string FormatSizeUVE(const std::uintmax_t bytes) {
+[[nodiscard]] std::string FormatSize(const std::uintmax_t bytes) {
     char buffer[32];
     if (bytes >= 1024U * 1024U) {
         std::snprintf(buffer, sizeof(buffer), "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
@@ -128,7 +128,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
     return buffer;
 }
 
-[[nodiscard]] std::string FormatTimeUVE(const std::int64_t seconds) {
+[[nodiscard]] std::string FormatTime(const std::int64_t seconds) {
     if (seconds <= 0) {
         return "-";
     }
@@ -144,7 +144,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
     return buffer;
 }
 
-[[nodiscard]] std::int64_t StartOfTodayUVE() {
+[[nodiscard]] std::int64_t StartOfToday() {
     const std::time_t now = std::time(nullptr);
     std::tm local{};
 #if defined(_WIN32)
@@ -160,38 +160,38 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 
 /// Data columns of the Details table, and the sort key each one stands for.
 /// The narrowest the sidebar gets side by side: its create row ("+ Add | Save All | Import") fits.
-constexpr float kSidebarMinWidthUVE = 262.0F;
+constexpr float kSidebarMinWidth = 262.0F;
 
-constexpr std::array<std::pair<const char*, ContentSortKeyUVE>, 5> kDetailsColumnsUVE{{
-    {"Name", ContentSortKeyUVE::Name},
-    {"Type", ContentSortKeyUVE::Type},
-    {"Size", ContentSortKeyUVE::Size},
-    {"Modified", ContentSortKeyUVE::Modified},
-    {"Folder", ContentSortKeyUVE::Folder},
+constexpr std::array<std::pair<const char*, ContentSortKey>, 5> kDetailsColumns{{
+    {"Name", ContentSortKey::Name},
+    {"Type", ContentSortKey::Type},
+    {"Size", ContentSortKey::Size},
+    {"Modified", ContentSortKey::Modified},
+    {"Folder", ContentSortKey::Folder},
 }};
 
 /// The tile grid: tiles fill each row edge to edge and re-flow with the width. A narrow area still
-/// fits at least kMinColumnsUVE tiles (they shrink, never below kMinTileUVE); a wide one fits as
+/// fits at least kMinColumns tiles (they shrink, never below kMinTile); a wide one fits as
 /// many of the chosen size as there is room for. List rows keep their height and fill columns.
-class TileGridUVE final : public prism::Widget {
+class TileGrid final : public prism::Widget {
 public:
-    static constexpr int kMinColumnsUVE = 4;
-    static constexpr float kMinTileUVE = 56.0F;
-    static constexpr float kGapUVE = 6.0F;
+    static constexpr int kMinColumns = 4;
+    static constexpr float kMinTile = 56.0F;
+    static constexpr float kGap = 6.0F;
 
-    TileGridUVE(const prism::Vec2 baseSize, const bool rows) : m_base(baseSize), m_rows(rows) {}
+    TileGrid(const prism::Vec2 baseSize, const bool rows) : m_base(baseSize), m_rows(rows) {}
     void add(prism::Ref<prism::Widget> w) { addChild(std::move(w)); }
 
     /// Columns and tile width for a row `width` wide.
     [[nodiscard]] static std::pair<int, float> Fit(const float width, const float baseWidth, const bool rows) {
-        const float gap = rows ? 2.0F : kGapUVE;
+        const float gap = rows ? 2.0F : kGap;
         int columns = std::max(1, static_cast<int>(std::floor((width + gap) / (baseWidth + gap))));
         if (!rows) {
-            columns = std::max(columns, kMinColumnsUVE);
-            const int fitMin = std::max(1, static_cast<int>(std::floor((width + gap) / (kMinTileUVE + gap))));
+            columns = std::max(columns, kMinColumns);
+            const int fitMin = std::max(1, static_cast<int>(std::floor((width + gap) / (kMinTile + gap))));
             columns = std::min(columns, std::max(1, fitMin));
         }
-        const float tile = std::max(rows ? 120.0F : kMinTileUVE, (width - gap * static_cast<float>(columns - 1)) /
+        const float tile = std::max(rows ? 120.0F : kMinTile, (width - gap * static_cast<float>(columns - 1)) /
                                                                        static_cast<float>(columns));
         return {columns, tile};
     }
@@ -202,7 +202,7 @@ public:
         const float tileH = m_rows ? m_base.y : std::floor(tile * (m_base.y / m_base.x));
         const int count = static_cast<int>(children().size());
         const int lines = (count + columns - 1) / std::max(1, columns);
-        const float gap = m_rows ? 1.0F : kGapUVE;
+        const float gap = m_rows ? 1.0F : kGap;
         for (const auto& child : children()) {
             child->measure(prism::Vec2(tile, tileH));
         }
@@ -212,8 +212,8 @@ public:
         prism::Widget::arrange(r);
         const auto [columns, tile] = Fit(r.w, m_base.x, m_rows);
         const float tileH = m_rows ? m_base.y : std::floor(tile * (m_base.y / m_base.x));
-        const float gapX = m_rows ? 2.0F : kGapUVE;
-        const float gapY = m_rows ? 1.0F : kGapUVE;
+        const float gapX = m_rows ? 2.0F : kGap;
+        const float gapY = m_rows ? 1.0F : kGap;
         int i = 0;
         for (const auto& child : children()) {
             const int col = i % columns;
@@ -231,82 +231,82 @@ private:
 
 } // namespace
 
-prism::Icon EditorAssetTableUVE::IconForUVE(const ItemTypeUVE type) {
+prism::Icon EditorAssetTable::IconFor(const ItemType type) {
     switch (type) {
-        case ItemTypeUVE::Folder: return prism::Icon::Folder;
-        case ItemTypeUVE::Scene: return prism::Icon::SceneAsset;
-        case ItemTypeUVE::Prefab: return prism::Icon::Prefab;
-        case ItemTypeUVE::Entity: return prism::Icon::EntityAsset;
-        case ItemTypeUVE::Bundle: return prism::Icon::Bundle;
-        case ItemTypeUVE::Mesh: return prism::Icon::MeshAsset;
-        case ItemTypeUVE::Model: return prism::Icon::Model;
-        case ItemTypeUVE::Texture: return prism::Icon::NodeTexture;
-        case ItemTypeUVE::Shader: return prism::Icon::Shader;
-        case ItemTypeUVE::Material: return prism::Icon::Material;
-        case ItemTypeUVE::Save: return prism::Icon::Save;
-        case ItemTypeUVE::Animation: return prism::Icon::AnimClip;
-        case ItemTypeUVE::AnimationLibrary: return prism::Icon::AnimLibrary;
-        case ItemTypeUVE::MotionMontage: return prism::Icon::AnimMontage;
-        case ItemTypeUVE::ParticleSystem: return prism::Icon::Light;
-        case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
-        case ItemTypeUVE::Blueprint: return prism::Icon::BlueprintClass;
-        case ItemTypeUVE::WidgetBlueprint: return prism::Icon::BlueprintClass;
-        case ItemTypeUVE::Script: return prism::Icon::Script;
-        case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
-        case ItemTypeUVE::Font: return prism::Icon::NodeText;
-        case ItemTypeUVE::File: return prism::Icon::File;
+        case ItemType::Folder: return prism::Icon::Folder;
+        case ItemType::Scene: return prism::Icon::SceneAsset;
+        case ItemType::Prefab: return prism::Icon::Prefab;
+        case ItemType::Entity: return prism::Icon::EntityAsset;
+        case ItemType::Bundle: return prism::Icon::Bundle;
+        case ItemType::Mesh: return prism::Icon::MeshAsset;
+        case ItemType::Model: return prism::Icon::Model;
+        case ItemType::Texture: return prism::Icon::NodeTexture;
+        case ItemType::Shader: return prism::Icon::Shader;
+        case ItemType::Material: return prism::Icon::Material;
+        case ItemType::Save: return prism::Icon::Save;
+        case ItemType::Animation: return prism::Icon::AnimClip;
+        case ItemType::AnimationLibrary: return prism::Icon::AnimLibrary;
+        case ItemType::MotionMontage: return prism::Icon::AnimMontage;
+        case ItemType::ParticleSystem: return prism::Icon::Light;
+        case ItemType::MontageLibrary: return prism::Icon::MontageLibrary;
+        case ItemType::Blueprint: return prism::Icon::BlueprintClass;
+        case ItemType::WidgetBlueprint: return prism::Icon::BlueprintClass;
+        case ItemType::Script: return prism::Icon::Script;
+        case ItemType::Audio: return prism::Icon::NodeSound;
+        case ItemType::Font: return prism::Icon::NodeText;
+        case ItemType::File: return prism::Icon::File;
     }
     return prism::Icon::File;
 }
 
-std::pair<std::string, std::string> EditorAssetTableUVE::DescribeUVE(const ItemTypeUVE type) {
+std::pair<std::string, std::string> EditorAssetTable::Describe(const ItemType type) {
     switch (type) {
-        case ItemTypeUVE::Folder: return {"Folder", "DIR"};
-        case ItemTypeUVE::Scene: return {"World Level", "LVL"};
-        case ItemTypeUVE::Prefab: return {"Prefab", "PFB"};
-        case ItemTypeUVE::Entity: return {"Entity", "ENT"};
-        case ItemTypeUVE::Bundle: return {"Bundle", "BND"};
-        case ItemTypeUVE::Mesh: return {"Static Mesh", "SM"};
-        case ItemTypeUVE::Model: return {"Skeletal Mesh", "SK"};
-        case ItemTypeUVE::Texture: return {"Texture 2D", "T2D"};
-        case ItemTypeUVE::Shader: return {"Shader", "SH"};
-        case ItemTypeUVE::Material: return {"Material", "MAT"};
-        case ItemTypeUVE::Save: return {"Save", "SAV"};
-        case ItemTypeUVE::Animation: return {"Animation", "ANM"};
-        case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
-        case ItemTypeUVE::MotionMontage: return {"Motion Montage", "MM"};
-        case ItemTypeUVE::ParticleSystem: return {"Particle System", "VFX"};
-        case ItemTypeUVE::MontageLibrary: return {"Motion Montage Library", "ACL"};
-        case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
-        case ItemTypeUVE::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
-        case ItemTypeUVE::Script: return {"Script", "UVS"};
-        case ItemTypeUVE::Audio: return {"Audio", "AUD"};
-        case ItemTypeUVE::Font: return {"Font", "FNT"};
-        case ItemTypeUVE::File: return {"File", "FILE"};
+        case ItemType::Folder: return {"Folder", "DIR"};
+        case ItemType::Scene: return {"World Level", "LVL"};
+        case ItemType::Prefab: return {"Prefab", "PFB"};
+        case ItemType::Entity: return {"Entity", "ENT"};
+        case ItemType::Bundle: return {"Bundle", "BND"};
+        case ItemType::Mesh: return {"Static Mesh", "SM"};
+        case ItemType::Model: return {"Skeletal Mesh", "SK"};
+        case ItemType::Texture: return {"Texture 2D", "T2D"};
+        case ItemType::Shader: return {"Shader", "SH"};
+        case ItemType::Material: return {"Material", "MAT"};
+        case ItemType::Save: return {"Save", "SAV"};
+        case ItemType::Animation: return {"Animation", "ANM"};
+        case ItemType::AnimationLibrary: return {"Animation Library", "LIB"};
+        case ItemType::MotionMontage: return {"Motion Montage", "MM"};
+        case ItemType::ParticleSystem: return {"Particle System", "VFX"};
+        case ItemType::MontageLibrary: return {"Motion Montage Library", "ACL"};
+        case ItemType::Blueprint: return {"Blueprint Class", "BP"};
+        case ItemType::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
+        case ItemType::Script: return {"Script", "UVS"};
+        case ItemType::Audio: return {"Audio", "AUD"};
+        case ItemType::Font: return {"Font", "FNT"};
+        case ItemType::File: return {"File", "FILE"};
     }
     return {"File", "FILE"};
 }
 
-prism::Color EditorAssetTableUVE::TintForUVE(const ItemTypeUVE type) {
+prism::Color EditorAssetTable::TintFor(const ItemType type) {
     switch (type) {
-        case ItemTypeUVE::Folder: return prism::Color(214, 176, 92);
-        case ItemTypeUVE::Scene: return prism::Color(120, 170, 235);
-        case ItemTypeUVE::Entity:
-        case ItemTypeUVE::Prefab: return prism::Color(110, 200, 160);
-        case ItemTypeUVE::Mesh:
-        case ItemTypeUVE::Model: return prism::Color(160, 200, 230);
-        case ItemTypeUVE::Texture: return prism::Color(220, 140, 110);
-        case ItemTypeUVE::Material: return prism::Color(200, 160, 110);
-        case ItemTypeUVE::Script:
-        case ItemTypeUVE::Shader: return prism::Color(170, 150, 230);
-        case ItemTypeUVE::Animation:
-        case ItemTypeUVE::AnimationLibrary:
-        case ItemTypeUVE::MotionMontage:
-        case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
-        case ItemTypeUVE::ParticleSystem: return prism::Color(240, 130, 70);
-        case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
-        case ItemTypeUVE::Blueprint: return prism::Color(80, 150, 240);
-        case ItemTypeUVE::WidgetBlueprint: return prism::Color(70, 190, 140);
+        case ItemType::Folder: return prism::Color(214, 176, 92);
+        case ItemType::Scene: return prism::Color(120, 170, 235);
+        case ItemType::Entity:
+        case ItemType::Prefab: return prism::Color(110, 200, 160);
+        case ItemType::Mesh:
+        case ItemType::Model: return prism::Color(160, 200, 230);
+        case ItemType::Texture: return prism::Color(220, 140, 110);
+        case ItemType::Material: return prism::Color(200, 160, 110);
+        case ItemType::Script:
+        case ItemType::Shader: return prism::Color(170, 150, 230);
+        case ItemType::Animation:
+        case ItemType::AnimationLibrary:
+        case ItemType::MotionMontage:
+        case ItemType::MontageLibrary: return prism::Color(90, 200, 200);
+        case ItemType::ParticleSystem: return prism::Color(240, 130, 70);
+        case ItemType::Audio: return prism::Color(230, 190, 90);
+        case ItemType::Blueprint: return prism::Color(80, 150, 240);
+        case ItemType::WidgetBlueprint: return prism::Color(70, 190, 140);
         default: return prism::Color(170, 176, 186);
     }
 }
@@ -316,9 +316,9 @@ prism::Color EditorAssetTableUVE::TintForUVE(const ItemTypeUVE type) {
 /// One item in the tile area. Assets are PRISM's asset tile around the engine's preview; folders
 /// are a large folder glyph with the name under it (no card), the way a content search shows them.
 /// A right click opens the item's menu; dragging it starts a content drag (to the Outliner, ...).
-class EditorAssetTableUVE::TileUVE final : public prism::Widget {
+class EditorAssetTable::Tile final : public prism::Widget {
 public:
-    TileUVE(EditorAssetTableUVE& owner, const std::size_t entryIndex, std::string name, const ItemTypeUVE type,
+    Tile(EditorAssetTable& owner, const std::size_t entryIndex, std::string name, const ItemType type,
             const bool selected, const std::uint32_t* preview, const int previewW, const int previewH, const float scale,
             const prism::Vec2 size, const bool row)
         : m_owner(owner), m_entryIndex(entryIndex), m_name(std::move(name)), m_type(type), m_selected(selected),
@@ -341,7 +341,7 @@ public:
             if (m_selected || m_hot) {
                 c.fillRoundRect(r, 3.0F, m_selected ? t.rowSelected : t.rowHover);
             }
-            const EditorIconsUVE::ImageUVE icon = m_owner.TypeIconUVE(m_type, 16);
+            const EditorIcons::Image icon = m_owner.TypeIcon(m_type, 16);
             const prism::Rect box{r.x + 6.0F, std::floor(r.y + (r.h - 16.0F) * 0.5F), 16.0F, 16.0F};
             if (icon) {
                 c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, box);
@@ -349,14 +349,14 @@ public:
             c.textIn(*t.ui, prism::Rect{r.x + 28.0F, r.y, r.w - 32.0F, r.h}, m_name, t.text, prism::HAlign::Left, true);
             return;
         }
-        if (m_type == ItemTypeUVE::Folder) {
+        if (m_type == ItemType::Folder) {
             if (m_selected || m_hot) {
                 c.fillRoundRect(r, 4.0F, m_selected ? t.rowSelected : t.rowHover);
             }
             const float labelH = 30.0F;
             const float side = std::min(r.w - 12.0F, r.h - labelH - 6.0F);
             const prism::Rect box{std::floor(r.x + (r.w - side) * 0.5F), r.y + 6.0F, side, side};
-            PaintFolderUVE(c, box);
+            PaintFolder(c, box);
             c.textIn(*t.ui, prism::Rect{r.x + 2.0F, r.bottom() - labelH, r.w - 4.0F, labelH}, m_name, t.textBright,
                      prism::HAlign::Center, true);
             return;
@@ -365,9 +365,9 @@ public:
         prism::AssetRecord record{};
         record.name = m_name;
         record.path = m_name;
-        record.icon = IconForUVE(m_type);
-        record.badgeColor = TintForUVE(m_type);
-        const auto [typeName, badge] = DescribeUVE(m_type);
+        record.icon = IconFor(m_type);
+        record.badgeColor = TintFor(m_type);
+        const auto [typeName, badge] = Describe(m_type);
         record.type = typeName;
         record.badgeText = badge;
         record.thumbnail = m_preview;
@@ -375,21 +375,21 @@ public:
         record.thumbnailH = m_previewH;
         record.thumbnailScale = m_previewScale;
         prism::paintAssetTile(c, r, record, m_selected, m_hot);
-        if (m_type == ItemTypeUVE::Blueprint || m_type == ItemTypeUVE::WidgetBlueprint) {
+        if (m_type == ItemType::Blueprint || m_type == ItemType::WidgetBlueprint) {
             // A Blueprint's well is the word, not a glyph.
             const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, prism::assetTileWellHeight(r) - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
-            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
+            c.textIn(*t.medium, well, m_type == ItemType::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
                      prism::HAlign::Center, false);
         }
     }
 
     bool onMouseDown(const prism::MouseEvent& e) override {
         if (e.button == prism::MouseButton::Left) {
-            m_owner.SelectEntryUVE(m_entryIndex, (e.mods & prism::ModCtrl) != 0, (e.mods & prism::ModShift) != 0);
+            m_owner.SelectEntry(m_entryIndex, (e.mods & prism::ModCtrl) != 0, (e.mods & prism::ModShift) != 0);
             if (e.clicks >= 2) {
                 m_pressed = false;
-                m_owner.OpenEntryUVE(m_entryIndex);
+                m_owner.OpenEntry(m_entryIndex);
                 return true;
             }
             m_pressed = true;
@@ -398,9 +398,9 @@ public:
         }
         if (e.button == prism::MouseButton::Right) {
             if (!m_selected) {
-                m_owner.SelectEntryUVE(m_entryIndex, false, false);
+                m_owner.SelectEntry(m_entryIndex, false, false);
             }
-            m_owner.ShowItemMenuUVE(m_entryIndex, e.pos);
+            m_owner.ShowItemMenu(m_entryIndex, e.pos);
             return true;
         }
         return false;
@@ -408,7 +408,7 @@ public:
     bool onMouseMove(const prism::MouseEvent& e) override {
         if (m_pressed && (e.pos - m_pressPos).length() > 6.0F) {
             m_pressed = false;
-            m_owner.BeginDragUVE(m_entryIndex);
+            m_owner.BeginDrag(m_entryIndex);
             return true;
         }
         if (!m_hot) {
@@ -429,7 +429,7 @@ public:
 private:
     /// A filled folder, shaded: the tab and back in the darker gold-brown, the front lighter with a
     /// highlight along its top edge and a soft shadow under it.
-    static void PaintFolderUVE(prism::Canvas& c, const prism::Rect b) {
+    static void PaintFolder(prism::Canvas& c, const prism::Rect b) {
         const prism::Color back(138, 96, 34);
         const prism::Color front(196, 142, 58);
         const prism::Color frontLow(170, 118, 44);
@@ -450,10 +450,10 @@ private:
         c.fillRect(prism::Rect{frontRect.x + 4.0F, frontRect.y + 1.0F, frontRect.w - 8.0F, 1.5F}, prism::Color(240, 196, 120, 200));
     }
 
-    EditorAssetTableUVE& m_owner;
+    EditorAssetTable& m_owner;
     std::size_t m_entryIndex = 0;
     std::string m_name;
-    ItemTypeUVE m_type = ItemTypeUVE::File;
+    ItemType m_type = ItemType::File;
     bool m_selected = false;
     bool m_hot = false;
     bool m_pressed = false;
@@ -467,19 +467,19 @@ private:
 };
 
 /// The item area: a click on empty space clears the pick, a right click opens the create menu.
-class EditorAssetTableUVE::ItemsAreaUVE final : public prism::Border {
+class EditorAssetTable::ItemsArea final : public prism::Border {
 public:
-    explicit ItemsAreaUVE(EditorAssetTableUVE& owner) : m_owner(owner) {}
+    explicit ItemsArea(EditorAssetTable& owner) : m_owner(owner) {}
     bool onMouseDown(const prism::MouseEvent& e) override {
         if (e.button == prism::MouseButton::Right) {
-            m_owner.ShowEmptyMenuUVE(e.pos);
+            m_owner.ShowEmptyMenu(e.pos);
             return true;
         }
         if (e.button == prism::MouseButton::Left) {
-            m_owner.m_editor.m_contentSelection.ClearUVE();
+            m_owner.m_editor.m_contentSelection.Clear();
             m_owner.m_editor.m_selectedProjectFile.reset();
             m_owner.m_editor.m_selectedAsset.reset();
-            m_owner.ChangedUVE();
+            m_owner.Changed();
             return true;
         }
         return false;
@@ -490,21 +490,21 @@ public:
             return false;
         }
         if (!e.repeat) {
-            m_owner.AskDeleteContentUVE(m_owner.PickedContentUVE());
+            m_owner.AskDeleteContent(m_owner.PickedContent());
         }
         return true;
     }
     bool focusable() const override { return true; }
 
 private:
-    EditorAssetTableUVE& m_owner;
+    EditorAssetTable& m_owner;
 };
 
-EditorAssetTableUVE::EditorAssetTableUVE(EditorUVE& editor) : m_editor(editor) {}
+EditorAssetTable::EditorAssetTable(Editor& editor) : m_editor(editor) {}
 
-EditorAssetTableUVE::~EditorAssetTableUVE() = default;
+EditorAssetTable::~EditorAssetTable() = default;
 
-prism::Ref<prism::Widget> EditorAssetTableUVE::SectionHeaderUVE(const std::string& title, const bool open,
+prism::Ref<prism::Widget> EditorAssetTable::SectionHeader(const std::string& title, const bool open,
                                                                       std::shared_ptr<prism::Widget> body,
                                                                       std::shared_ptr<prism::Widget> extra) {
     auto row = prism::hbox(2.0F);
@@ -534,7 +534,7 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::SectionHeaderUVE(const std::strin
     return bar;
 }
 
-prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorAssetTable::Build() {
     // ---- sidebar: Create (catalogue with icons), Favorites, Content (folders), Shelves.
     auto left = prism::vbox(0.0F);
     const auto sized = [](prism::Ref<prism::Widget> w, const float h) {
@@ -551,12 +551,12 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     std::weak_ptr<prism::Button> weakAdd = addButton;
     addButton->onClick = [this, weakAdd] {
         const auto anchor = weakAdd.lock();
-        prism::showSearchMenu(CatalogueMenuUVE(), anchor ? anchor->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+        prism::showSearchMenu(CatalogueMenu(), anchor ? anchor->rect() : prism::Rect{}, prism::PopupPlacement::Below,
                               "Start typing to search", true);
     };
     auto saveAllButton = prism::make<prism::Button>("Save All", prism::Icon::Save, prism::ButtonStyle::Toolbar);
     saveAllButton->setTooltip("Save everything (Ctrl+Shift+S)");
-    saveAllButton->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
+    saveAllButton->onClick = [this] { static_cast<void>(m_editor.RunEditorCommand("file.saveAll")); };
     auto createRow = prism::hbox(4.0F);
     createRow->setPadding(prism::Margin(4.0F, 3.0F, 4.0F, 3.0F));
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -564,14 +564,14 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
     importButton->setTooltip("Import one or more models, animations, textures, or sounds into this folder");
     importButton->onClick = [this] {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-        static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+        static_cast<void>(m_editor.PromptImportFiles(root / m_editor.m_assetTableDirectory));
     };
     auto importFolderButton = prism::make<prism::Button>("Import Folder", prism::Icon::FolderOpen, prism::ButtonStyle::Toolbar);
     importFolderButton->setTooltip("Import an entire folder (preserving subfolders) into this directory");
     importFolderButton->onClick = [this] {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-        static_cast<void>(m_editor.PromptImportFolderUVE(root / m_editor.m_assetTableDirectory));
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+        static_cast<void>(m_editor.PromptImportFolder(root / m_editor.m_assetTableDirectory));
     };
     createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(importFolderButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -589,7 +589,7 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         }
         const int id = nodes.front()->id;
         if (id > 0 && static_cast<std::size_t>(id) <= m_favoriteIds.size()) {
-            RevealUVE(m_favoriteIds[static_cast<std::size_t>(id - 1)]);
+            Reveal(m_favoriteIds[static_cast<std::size_t>(id - 1)]);
         }
     };
     m_favorites->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
@@ -598,15 +598,15 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         }
         const std::filesystem::path path = m_favoriteIds[static_cast<std::size_t>(node->id - 1)];
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Show in Folder", [this, path] { RevealUVE(path); }));
+        items.push_back(prism::MenuItem::Item("Show in Folder", [this, path] { Reveal(path); }));
         items.push_back(prism::MenuItem::Item("Unpin", [this, path] {
-            m_editor.ToggleProjectPathFavoriteUVE(path);
+            m_editor.ToggleProjectPathFavorite(path);
             m_favoriteSignature = 0;
         }));
         prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
     };
     auto favoritesSection = prism::vbox(0.0F);
-    favoritesSection->add(SectionHeaderUVE("Favorites", true, m_favorites, nullptr));
+    favoritesSection->add(SectionHeader("Favorites", true, m_favorites, nullptr));
     favoritesSection->add(m_favorites, prism::Slot{1.0F});
 
     m_folderSearch = prism::make<prism::TextInput>("", "Search folders");
@@ -633,7 +633,7 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         }
         const int id = nodes.front()->id;
         if (id > 0 && static_cast<std::size_t>(id) <= m_folderIds.size()) {
-            GoToFolderUVE(std::filesystem::path(m_folderIds[static_cast<std::size_t>(id - 1)]));
+            GoToFolder(std::filesystem::path(m_folderIds[static_cast<std::size_t>(id - 1)]));
         }
     };
     m_folders->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
@@ -641,11 +641,11 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
             return;
         }
         const std::filesystem::path relFolder(m_folderIds[static_cast<std::size_t>(node->id - 1)]);
-        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
         const std::string folderPrefix = relFolder.generic_string();
         std::size_t animCount = 0U;
-        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-            if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+        for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+            if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
                 continue;
             }
             const std::string p = entry.relativePath.generic_string();
@@ -655,23 +655,23 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
             if (!inside) {
                 continue;
             }
-            const std::string ext = LowerExtensionUVE(entry.relativePath);
+            const std::string ext = LowerExtension(entry.relativePath);
             if (ext == ".uvanim" || ext == ".uvmodel") {
                 ++animCount;
-            } else if (EditorUVE::IsModelSourcePathUVE(entry.relativePath)) {
-                const EditorModelSourceInfoUVE* const src = m_editor.FindModelSourceInfoUVE(entry.relativePath);
+            } else if (Editor::IsModelSourcePath(entry.relativePath)) {
+                const EditorModelSourceInfo* const src = m_editor.FindModelSourceInfo(entry.relativePath);
                 if (src == nullptr || src->rigged || src->hasSkeleton || src->animationCount > 0U || src->animationOnly) {
                     ++animCount;
                 }
             }
         }
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Open", [this, relFolder] { GoToFolderUVE(relFolder); }, "", prism::Icon::FolderOpen));
+        items.push_back(prism::MenuItem::Item("Open", [this, relFolder] { GoToFolder(relFolder); }, "", prism::Icon::FolderOpen));
         if (animCount > 0U) {
             prism::MenuItem retarget = prism::MenuItem::Item(
                 "Retarget Folder (" + std::to_string(animCount) + ")...",
-                [this, relFolder] { m_editor.OpenRetargetWindowForFolderUVE(relFolder); });
-            if (!m_editor.IsAuthoringCommandAllowedUVE()) {
+                [this, relFolder] { m_editor.OpenRetargetWindowForFolder(relFolder); });
+            if (!m_editor.IsAuthoringCommandAllowed()) {
                 retarget.disabled();
             }
             items.push_back(std::move(retarget));
@@ -679,7 +679,7 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
     };
     auto contentSection = prism::vbox(0.0F);
-    contentSection->add(SectionHeaderUVE("Content", true, m_folders, searchToggle));
+    contentSection->add(SectionHeader("Content", true, m_folders, searchToggle));
     contentSection->add(m_folderSearch, prism::Slot{0.0F, prism::Margin(4.0F, 2.0F, 4.0F, 2.0F)});
     contentSection->add(m_folders, prism::Slot{1.0F});
 
@@ -692,14 +692,14 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         if (id > 0 && static_cast<std::size_t>(id) <= m_shelfNames.size() &&
             !m_shelfNames[static_cast<std::size_t>(id - 1)].empty()) {
             m_editor.m_assetTableShelf = m_shelfNames[static_cast<std::size_t>(id - 1)];
-            m_editor.m_contentSelection.ClearUVE();
-            ChangedUVE();
+            m_editor.m_contentSelection.Clear();
+            Changed();
         }
     };
     auto shelvesBody = sized(m_shelves, 96.0F);
     shelvesBody->setVisible(false);
     auto shelvesSection = prism::vbox(0.0F);
-    shelvesSection->add(SectionHeaderUVE("Shelves", false, shelvesBody, nullptr));
+    shelvesSection->add(SectionHeader("Shelves", false, shelvesBody, nullptr));
     shelvesSection->add(shelvesBody);
     // The sections share the sidebar through dividers, so each can be made taller or shorter.
     auto sections = prism::make<prism::Splitter>(prism::Orientation::Vertical);
@@ -719,17 +719,17 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     auto bar = prism::hbox(4.0F);
     m_viewButton = prism::make<prism::Button>("View", prism::Icon::Settings, prism::ButtonStyle::Toolbar);
     m_viewButton->setTooltip("How items are shown: Tiles, Columns, Details, Recent, Board; size and sort");
-    m_viewButton->onClick = [this] { ShowViewMenuUVE(); };
+    m_viewButton->onClick = [this] { ShowViewMenu(); };
     m_splitButton = prism::make<prism::Button>("Split", prism::Icon::Frame, prism::ButtonStyle::Toolbar);
     m_splitButton->setTooltip("How the sidebar and the items share the Asset Table");
-    m_splitButton->onClick = [this] { ShowSplitMenuUVE(); };
+    m_splitButton->onClick = [this] { ShowSplitMenu(); };
     m_filterButton = prism::make<prism::Button>("Filter", prism::Icon::Filter, prism::ButtonStyle::Toolbar);
-    m_filterButton->onClick = [this] { ShowFilterMenuUVE(); };
+    m_filterButton->onClick = [this] { ShowFilterMenu(); };
     m_itemSearch = prism::make<prism::TextInput>("", "Search items");
     m_itemSearch->setLeadingIcon(prism::Icon::Search);
     m_itemSearch->onChanged = [this](const std::string& text) {
         m_editor.m_assetFilter = text;
-        ChangedUVE();
+        Changed();
     };
     bar->add(m_viewButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     bar->add(m_splitButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -739,7 +739,7 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     m_path = prism::make<prism::Label>("Content", prism::FontRole::Small);
     m_path->setColor(prism::ThemeColor(&prism::Theme::textDim));
     right->add(m_path);
-    m_itemsHost = prism::make<ItemsAreaUVE>(*this);
+    m_itemsHost = prism::make<ItemsArea>(*this);
     right->add(m_itemsHost, prism::Slot{1.0F});
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
@@ -747,12 +747,12 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     m_items = right;
 
     m_root = prism::make<prism::Border>();
-    m_splitMode = m_editor.m_assetTableSplitModeUVE ? SplitModeUVE::SideBySide : SplitModeUVE::ItemsOnly;
-    ApplySplitModeUVE();
+    m_splitMode = m_editor.m_assetTableSplitMode ? SplitMode::SideBySide : SplitMode::ItemsOnly;
+    ApplySplitMode();
     return m_root;
 }
 
-void EditorAssetTableUVE::ApplySplitModeUVE() {
+void EditorAssetTable::ApplySplitMode() {
     if (!m_root || !m_sidebar || !m_items) {
         return;
     }
@@ -767,62 +767,62 @@ void EditorAssetTableUVE::ApplySplitModeUVE() {
     m_items->setVisible(true);
     const float ratio = std::clamp(m_editor.m_assetTableSplitRatio, 0.12F, 0.7F);
     switch (m_splitMode) {
-        case SplitModeUVE::SideBySide:
-        case SplitModeUVE::Stacked: {
-            const bool stacked = m_splitMode == SplitModeUVE::Stacked;
+        case SplitMode::SideBySide:
+        case SplitMode::Stacked: {
+            const bool stacked = m_splitMode == SplitMode::Stacked;
             m_split = prism::make<prism::Splitter>(stacked ? prism::Orientation::Vertical : prism::Orientation::Horizontal);
             // Wide enough for the "+ Add | Save All | Import" row.
-            m_split->add(m_sidebar, prism::Splitter::Pane{stacked ? 220.0F : std::max(kSidebarMinWidthUVE, ratio * 640.0F),
-                                                          stacked ? 120.0F : kSidebarMinWidthUVE, stacked ? 600.0F : 700.0F, false});
+            m_split->add(m_sidebar, prism::Splitter::Pane{stacked ? 220.0F : std::max(kSidebarMinWidth, ratio * 640.0F),
+                                                          stacked ? 120.0F : kSidebarMinWidth, stacked ? 600.0F : 700.0F, false});
             m_split->add(m_items, prism::Splitter::Pane{600.0F, 160.0F, 1e9F, true});
             m_root->setChild(m_split);
             break;
         }
-        case SplitModeUVE::ItemsOnly: m_root->setChild(m_items); break;
-        case SplitModeUVE::SidebarOnly: m_root->setChild(m_sidebar); break;
+        case SplitMode::ItemsOnly: m_root->setChild(m_items); break;
+        case SplitMode::SidebarOnly: m_root->setChild(m_sidebar); break;
     }
-    m_editor.m_assetTableSplitModeUVE = m_splitMode != SplitModeUVE::ItemsOnly;
+    m_editor.m_assetTableSplitMode = m_splitMode != SplitMode::ItemsOnly;
     if (prism::Application::exists()) {
         prism::Application::get().invalidateLayout();
     }
 }
 
-void EditorAssetTableUVE::RefreshUVE() {
-    RebuildFoldersUVE();
-    RebuildFavoritesUVE();
-    RebuildItemsUVE();
+void EditorAssetTable::Refresh() {
+    RebuildFolders();
+    RebuildFavorites();
+    RebuildItems();
     if (m_status && m_status->text() != m_editor.m_contentStatusMessage && !m_editor.m_contentStatusMessage.empty()) {
         m_status->setText(m_editor.m_contentStatusMessage);
     }
 }
 
-void EditorAssetTableUVE::ChangedUVE() {
+void EditorAssetTable::Changed() {
     m_tileSignature = 0;
 }
 
-void EditorAssetTableUVE::GoToFolderUVE(const std::filesystem::path& directory) {
+void EditorAssetTable::GoToFolder(const std::filesystem::path& directory) {
     m_editor.m_assetTableDirectory = directory;
     m_editor.m_assetTableShelf.clear();
     m_editor.m_selectedProjectFile.reset();
     m_editor.m_selectedAsset.reset();
-    m_editor.m_contentSelection.ClearUVE();
+    m_editor.m_contentSelection.Clear();
     // Files copied into the folder from outside (a file manager, USB) show up and start importing on open.
-    m_editor.RefreshProjectFileIndexUVE();
-    ChangedUVE();
+    m_editor.RefreshProjectFileIndex();
+    Changed();
 }
 
-void EditorAssetTableUVE::RevealUVE(const std::filesystem::path& relativePath) {
+void EditorAssetTable::Reveal(const std::filesystem::path& relativePath) {
     // Go to where it lives and pick it there (a folder opens itself).
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+    for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
         if (entry.relativePath != relativePath) {
             continue;
         }
-        if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-            GoToFolderUVE(entry.relativePath);
+        if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
+            GoToFolder(entry.relativePath);
             return;
         }
-        GoToFolderUVE(entry.relativePath.parent_path());
+        GoToFolder(entry.relativePath.parent_path());
         m_editor.m_selectedProjectFile = entry;
         m_editor.m_assetFilter.clear();
         if (m_itemSearch) {
@@ -832,36 +832,36 @@ void EditorAssetTableUVE::RevealUVE(const std::filesystem::path& relativePath) {
     }
 }
 
-void EditorAssetTableUVE::RevealFileUVE(const std::filesystem::path& absolutePath) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::RevealFile(const std::filesystem::path& absolutePath) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     std::error_code error;
     const std::filesystem::path relative = std::filesystem::relative(absolutePath, snapshot.contentRoot, error);
     if (!error && !relative.empty()) {
-        RevealUVE(relative);
+        Reveal(relative);
     }
 }
 
-std::string EditorAssetTableUVE::DisplayNameUVE(const Asset::ProjectFileEntryUVE& entry) const {
+std::string EditorAssetTable::DisplayName(const Asset::ProjectFileEntry& entry) const {
     return entry.relativePath.filename().string();
 }
 
-EditorIconsUVE::ImageUVE EditorAssetTableUVE::TypeIconUVE(const ItemTypeUVE type, const int size) {
-    return m_icons.ContentTypeUVE(EditorUVE::GetAssetTableItemTypeLabelUVE(type), size, IconForUVE(type));
+EditorIcons::Image EditorAssetTable::TypeIcon(const ItemType type, const int size) {
+    return m_icons.ContentType(Editor::GetAssetTableItemTypeLabel(type), size, IconFor(type));
 }
 
-void EditorAssetTableUVE::RebuildFavoritesUVE() {
+void EditorAssetTable::RebuildFavorites() {
     if (!m_favorites) {
         return;
     }
     // The project listing is copied only when the favourites have to be built again.
-    std::uint64_t h = m_editor.m_services->GetProjectFileIndexUVE().GetRefreshGenerationUVE();
+    std::uint64_t h = m_editor.m_services->GetProjectFileIndex().GetRefreshGeneration();
     for (const std::filesystem::path& p : m_editor.m_favoriteProjectPaths) {
-        HashUVE(h, p.generic_string());
+        Hash(h, p.generic_string());
     }
     if (h == m_favoriteSignature) {
         return;
     }
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     m_favoriteSignature = h;
     m_syncingFolders = true;
     m_favorites->clear();
@@ -869,16 +869,16 @@ void EditorAssetTableUVE::RebuildFavoritesUVE() {
     // Favorites that exist in this snapshot (one not yet scanned stays stored, just not shown).
     for (const std::filesystem::path& favorite : m_editor.m_favoriteProjectPaths) {
         const auto it = std::find_if(snapshot.entries.begin(), snapshot.entries.end(),
-                                     [&](const Asset::ProjectFileEntryUVE& e) { return e.relativePath == favorite; });
+                                     [&](const Asset::ProjectFileEntry& e) { return e.relativePath == favorite; });
         if (it == snapshot.entries.end()) {
             continue;
         }
         m_favoriteIds.push_back(favorite);
-        const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(*it);
-        prism::TreeNode* node = m_favorites->addNode(nullptr, favorite.filename().string(), IconForUVE(type),
+        const ItemType type = m_editor.GetAssetTableEntryType(*it);
+        prism::TreeNode* node = m_favorites->addNode(nullptr, favorite.filename().string(), IconFor(type),
                                                      static_cast<int>(m_favoriteIds.size()));
         node->toggles = false;
-        if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 16); icon) {
+        if (const EditorIcons::Image icon = TypeIcon(type, 16); icon) {
             node->image = icon.pixels;
             node->imageSize = icon.size;
         }
@@ -893,20 +893,20 @@ void EditorAssetTableUVE::RebuildFavoritesUVE() {
     m_syncingFolders = false;
 }
 
-void EditorAssetTableUVE::RebuildFoldersUVE() {
-    std::uint64_t h = m_editor.m_services->GetProjectFileIndexUVE().GetRefreshGenerationUVE();
-    HashUVE(h, m_editor.m_contentTreeFilter);
-    HashUVE(h, m_editor.m_assetTableDirectory.generic_string());
+void EditorAssetTable::RebuildFolders() {
+    std::uint64_t h = m_editor.m_services->GetProjectFileIndex().GetRefreshGeneration();
+    Hash(h, m_editor.m_contentTreeFilter);
+    Hash(h, m_editor.m_assetTableDirectory.generic_string());
     if (h == m_folderSignature || !m_folders) {
         return;
     }
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     m_folderSignature = h;
     m_syncingFolders = true;
     if (m_shelves) {
         m_shelves->clear();
         m_shelfNames.clear();
-        for (const ContentShelfUVE& shelf : m_editor.m_contentShelves.GetAllUVE()) {
+        for (const ContentShelf& shelf : m_editor.m_contentShelves.GetAll()) {
             m_shelfNames.push_back(shelf.name);
             m_shelves->addNode(nullptr, shelf.name, prism::Icon::Layers, static_cast<int>(m_shelfNames.size()))->toggles =
                 false;
@@ -919,12 +919,12 @@ void EditorAssetTableUVE::RebuildFoldersUVE() {
     }
     m_folders->clear();
     m_folderIds.clear();
-    std::vector<std::string> folders = CollectVisibleContentFoldersUVE(snapshot.entries, m_editor.m_contentTreeFilter);
+    std::vector<std::string> folders = CollectVisibleContentFolders(snapshot.entries, m_editor.m_contentTreeFilter);
     // The content root itself.
     m_folderIds.emplace_back("");
     prism::TreeNode* root = m_folders->addNode(nullptr, "Content", prism::Icon::FolderOpen, 1);
     root->toggles = false;
-    if (const EditorIconsUVE::ImageUVE icon = m_icons.ContentTypeUVE("folder_open", 16); icon) {
+    if (const EditorIcons::Image icon = m_icons.ContentType("folder_open", 16); icon) {
         root->image = icon.pixels;
         root->imageSize = icon.size;
     }
@@ -939,7 +939,7 @@ void EditorAssetTableUVE::RebuildFoldersUVE() {
         const int id = static_cast<int>(m_folderIds.size());
         prism::TreeNode* node = m_folders->addNode(parentNode, p.filename().string(), prism::Icon::Folder, id);
         node->toggles = false;
-        if (const EditorIconsUVE::ImageUVE icon = m_icons.ContentTypeUVE("Folder", 16); icon) {
+        if (const EditorIcons::Image icon = m_icons.ContentType("Folder", 16); icon) {
             node->image = icon.pixels;
             node->imageSize = icon.size;
         }
@@ -956,14 +956,14 @@ void EditorAssetTableUVE::RebuildFoldersUVE() {
 }
 
 
-void EditorAssetTableUVE::RebuildItemsUVE() {
+void EditorAssetTable::RebuildItems() {
     if (!m_itemsHost) {
         return;
     }
-    Asset::IProjectFileIndexUVE& index = m_editor.m_services->GetProjectFileIndexUVE();
+    Asset::IProjectFileIndex& index = m_editor.m_services->GetProjectFileIndex();
     // The project listing is copied only when the tiles (or the pick) have to change: an unchanged
     // folder costs a few hashes a frame, not a copy of every file the project has.
-    std::uint64_t h = index.GetRefreshGenerationUVE();
+    std::uint64_t h = index.GetRefreshGeneration();
     // Clip icons drawn in the background: the tiles take the new ones a few times a second at most.
     {
         const auto now = std::chrono::steady_clock::now();
@@ -971,76 +971,76 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
             m_iconGenerationShown = m_editor.m_animationIconGeneration;
             m_iconGenerationAt = now;
         }
-        HashUVE(h, m_iconGenerationShown);
+        Hash(h, m_iconGenerationShown);
     }
-    HashUVE(h, m_editor.m_materialThumbnailGeneration);
-    HashUVE(h, m_editor.m_meshThumbnailGeneration);   // a model finishing its import redraws its tile
-    HashUVE(h, m_editor.m_assetTableDirectory.generic_string());
-    HashUVE(h, m_editor.m_assetFilter);
-    HashUVE(h, m_editor.m_assetTableShelf);
-    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_assetTableTypeFocus));
-    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_assetTableMode));
-    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_assetTableViewMode));
-    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_contentSortKey) * 2U + (m_editor.m_contentSortAscending ? 1U : 0U));
+    Hash(h, m_editor.m_materialThumbnailGeneration);
+    Hash(h, m_editor.m_meshThumbnailGeneration);   // a model finishing its import redraws its tile
+    Hash(h, m_editor.m_assetTableDirectory.generic_string());
+    Hash(h, m_editor.m_assetFilter);
+    Hash(h, m_editor.m_assetTableShelf);
+    Hash(h, static_cast<std::uint64_t>(m_editor.m_assetTableTypeFocus));
+    Hash(h, static_cast<std::uint64_t>(m_editor.m_assetTableMode));
+    Hash(h, static_cast<std::uint64_t>(m_editor.m_assetTableViewMode));
+    Hash(h, static_cast<std::uint64_t>(m_editor.m_contentSortKey) * 2U + (m_editor.m_contentSortAscending ? 1U : 0U));
     // The pick is tracked apart: picking an item restyles the shown items instead of rebuilding them
     // (a rebuild would drop the tile being pressed, and with it a drag about to start).
     std::uint64_t pick = 0;
-    for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
-        HashUVE(pick, item);
+    for (const std::string& item : m_editor.m_contentSelection.Items()) {
+        Hash(pick, item);
     }
     if (m_editor.m_selectedProjectFile.has_value()) {
-        HashUVE(pick, m_editor.m_selectedProjectFile->relativePath.generic_string());
+        Hash(pick, m_editor.m_selectedProjectFile->relativePath.generic_string());
     }
-    if (m_editor.m_assetTableMode == AssetTableModeUVE::Columns) {
-        HashUVE(h, pick); // Columns shows the picked file's preview, so it follows the pick
+    if (m_editor.m_assetTableMode == AssetTableMode::Columns) {
+        Hash(h, pick); // Columns shows the picked file's preview, so it follows the pick
     }
     if (h == m_tileSignature) {
         if (pick != m_pickSignature) {
             m_pickSignature = pick;
-            UpdatePickUVE(index.GetSnapshotUVE());
+            UpdatePick(index.GetSnapshot());
         }
         return;
     }
-    const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
-    m_editor.ReconcileAssetTableDirectoryUVE(snapshot);
+    const Asset::ProjectFileSnapshot snapshot = index.GetSnapshot();
+    m_editor.ReconcileAssetTableDirectory(snapshot);
     m_contentRoot = snapshot.contentRoot;
     m_tileSignature = h;
     m_pickSignature = pick;
 
     // What the mode lists: one folder (or a shelf) for Tiles / Columns / Details; everything below
     // the folder for Recent and Board.
-    const AssetTableModeUVE mode = m_editor.m_assetTableMode;
+    const AssetTableMode mode = m_editor.m_assetTableMode;
     const std::filesystem::path directory = m_editor.m_assetTableDirectory;
-    const ContentShelfUVE* const shelf =
-        m_editor.m_assetTableShelf.empty() ? nullptr : m_editor.m_contentShelves.FindUVE(m_editor.m_assetTableShelf);
-    const bool wholeTree = mode == AssetTableModeUVE::Recent || mode == AssetTableModeUVE::Board;
+    const ContentShelf* const shelf =
+        m_editor.m_assetTableShelf.empty() ? nullptr : m_editor.m_contentShelves.Find(m_editor.m_assetTableShelf);
+    const bool wholeTree = mode == AssetTableMode::Recent || mode == AssetTableMode::Board;
     std::vector<std::size_t> listed =
-        shelf != nullptr ? ListContentShelfUVE(snapshot.entries, *shelf, m_editor.m_assetFilter)
-        : wholeTree      ? ListContentTreeUVE(snapshot.entries, directory, m_editor.m_assetFilter)
-                         : ListContentFolderUVE(snapshot.entries, directory, m_editor.m_assetFilter);
+        shelf != nullptr ? ListContentShelf(snapshot.entries, *shelf, m_editor.m_assetFilter)
+        : wholeTree      ? ListContentTree(snapshot.entries, directory, m_editor.m_assetFilter)
+                         : ListContentFolder(snapshot.entries, directory, m_editor.m_assetFilter);
     // "<folder>/<stem>" of every .uvanim, sorted; read only when an animation-only source is listed.
     std::vector<std::string> clipStems;
     bool clipStemsRead = false;
     const auto hasImportedClips = [&snapshot, &clipStems, &clipStemsRead](const std::filesystem::path& source) {
         if (!clipStemsRead) {
             clipStemsRead = true;
-            for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
-                if (other.kind == Asset::ProjectFileEntryKindUVE::File && other.relativePath.extension() == ".uvanim") {
+            for (const Asset::ProjectFileEntry& other : snapshot.entries) {
+                if (other.kind == Asset::ProjectFileEntryKind::File && other.relativePath.extension() == ".uvanim") {
                     clipStems.push_back((other.relativePath.parent_path() / other.relativePath.stem()).generic_string());
                 }
             }
             std::ranges::sort(clipStems);
         }
-        // "<source>.uvanim" or "<source>_<take>.uvanim", as ImportModelAnimationsUVE names them.
+        // "<source>.uvanim" or "<source>_<take>.uvanim", as ImportModelAnimations names them.
         const std::string stem = (source.parent_path() / source.stem()).generic_string();
         const auto take = std::ranges::lower_bound(clipStems, stem + "_");
         return std::ranges::binary_search(clipStems, stem) || (take != clipStems.end() && take->starts_with(stem + "_"));
     };
     std::vector<std::size_t> candidates;
     for (const std::size_t i : listed) {
-        const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(snapshot.entries[i]);
+        const ItemType type = m_editor.GetAssetTableEntryType(snapshot.entries[i]);
         // Gameplay is written as Blueprints: loose script files are not listed.
-        if (type == ItemTypeUVE::Script) {
+        if (type == ItemType::Script) {
             continue;
         }
         // An image's import settings (<image>.uvimport) belong to the image, not beside it as a file.
@@ -1048,27 +1048,27 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
             continue;
         }
         // An animation-only file is listed as the clips imported from it, not a second time beside them.
-        if (type == ItemTypeUVE::Animation && EditorUVE::IsModelSourcePathUVE(snapshot.entries[i].relativePath) &&
+        if (type == ItemType::Animation && Editor::IsModelSourcePath(snapshot.entries[i].relativePath) &&
             hasImportedClips(snapshot.entries[i].relativePath)) {
             continue;
         }
-        if (m_editor.DoesAssetTableEntryMatchFocusUVE(snapshot.entries[i])) {
+        if (m_editor.DoesAssetTableEntryMatchFocus(snapshot.entries[i])) {
             candidates.push_back(i);
         }
     }
     // The engine's facts and sort (folders stay ahead of files).
-    std::vector<ContentItemFactsUVE> facts;
+    std::vector<ContentItemFacts> facts;
     facts.reserve(candidates.size());
     for (const std::size_t i : candidates) {
-        const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
-        ContentItemFactsUVE f;
+        const Asset::ProjectFileEntry& entry = snapshot.entries[i];
+        ContentItemFacts f;
         f.name = entry.relativePath.filename().string();
-        f.type = EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor.GetAssetTableEntryTypeUVE(entry));
+        f.type = Editor::GetAssetTableItemTypeLabel(m_editor.GetAssetTableEntryType(entry));
         f.folder = entry.relativePath.parent_path().generic_string();
-        f.isFolder = entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
+        f.isFolder = entry.kind == Asset::ProjectFileEntryKind::Directory;
         if (!f.isFolder) {
-            const ContentFileFactsUVE disk =
-                m_editor.GetContentFileFactsUVE(snapshot.contentRoot, entry, snapshot.refreshGeneration);
+            const ContentFileFacts disk =
+                m_editor.GetContentFileFacts(snapshot.contentRoot, entry, snapshot.refreshGeneration);
             f.size = disk.size;
             f.modified = disk.modified;
         }
@@ -1078,16 +1078,16 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
     for (std::size_t i = 0; i < order.size(); ++i) {
         order[i] = i;
     }
-    if (mode == AssetTableModeUVE::Recent) {
-        SortContentFactsUVE(order, facts, ContentSortKeyUVE::Modified, false);
+    if (mode == AssetTableMode::Recent) {
+        SortContentFacts(order, facts, ContentSortKey::Modified, false);
     } else {
-        SortContentFactsUVE(order, facts, m_editor.m_contentSortKey, m_editor.m_contentSortAscending);
+        SortContentFacts(order, facts, m_editor.m_contentSortKey, m_editor.m_contentSortAscending);
     }
     m_shown.clear();
     m_facts.clear();
     std::vector<std::string> shownOrder;
     for (const std::size_t o : order) {
-        if (mode == AssetTableModeUVE::Recent && facts[o].isFolder) {
+        if (mode == AssetTableMode::Recent && facts[o].isFolder) {
             continue; // Recent lists what changed, which is files
         }
         m_shown.push_back(candidates[o]);
@@ -1097,11 +1097,11 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
     m_editor.m_contentShownOrderPrevious = shownOrder;
 
     switch (mode) {
-        case AssetTableModeUVE::Tiles: BuildTilesUVE(snapshot); break;
-        case AssetTableModeUVE::Columns: BuildColumnsUVE(snapshot); break;
-        case AssetTableModeUVE::Details: BuildTableUVE(snapshot, false); break;
-        case AssetTableModeUVE::Recent: BuildTableUVE(snapshot, true); break;
-        case AssetTableModeUVE::Board: BuildBoardUVE(snapshot); break;
+        case AssetTableMode::Tiles: BuildTiles(snapshot); break;
+        case AssetTableMode::Columns: BuildColumns(snapshot); break;
+        case AssetTableMode::Details: BuildTable(snapshot, false); break;
+        case AssetTableMode::Recent: BuildTable(snapshot, true); break;
+        case AssetTableMode::Board: BuildBoard(snapshot); break;
     }
 
     if (m_path) {
@@ -1118,43 +1118,43 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
     }
 }
 
-void EditorAssetTableUVE::BuildTilesUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
-    using ViewMode = EditorUVE::AssetTableViewModeUVE;
+void EditorAssetTable::BuildTiles(const Asset::ProjectFileSnapshot& snapshot) {
+    using ViewMode = Editor::AssetTableViewMode;
     const ViewMode view = m_editor.m_assetTableViewMode;
     const bool rows = view == ViewMode::List;
     const prism::Vec2 size = rows ? prism::Vec2(240.0F, 24.0F)
                              : view == ViewMode::LargeTiles ? prism::Vec2(140.0F, 178.0F)
                                                             : prism::Vec2(100.0F, 138.0F);   // square wells (see assetTileWellHeight)
-    auto tiles = prism::make<TileGridUVE>(size, rows);
+    auto tiles = prism::make<TileGrid>(size, rows);
     m_tileWidgets.clear();
-    m_editor.BeginAnimationIconBatchUVE();   // this folder's clips are drawn first, top-down
+    m_editor.BeginAnimationIconBatch();   // this folder's clips are drawn first, top-down
     for (std::size_t n = 0; n < m_shown.size(); ++n) {
         const std::size_t i = m_shown[n];
-        const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
+        const Asset::ProjectFileEntry& entry = snapshot.entries[i];
         const std::string key = entry.relativePath.generic_string();
-        const bool selected = m_editor.m_contentSelection.ContainsUVE(key) ||
-                              (m_editor.m_contentSelection.IsEmptyUVE() && m_editor.m_selectedProjectFile.has_value() &&
+        const bool selected = m_editor.m_contentSelection.Contains(key) ||
+                              (m_editor.m_contentSelection.IsEmpty() && m_editor.m_selectedProjectFile.has_value() &&
                                m_editor.m_selectedProjectFile->relativePath == entry.relativePath);
-        const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(entry);
+        const ItemType type = m_editor.GetAssetTableEntryType(entry);
         // The engine's own preview (real mesh, PBR material, texture) when it has one, else the
         // engine's icon for the type; PRISM only draws the tile around it. Folders have no preview.
         const std::uint32_t* pixels = nullptr;
         int pw = 0;
         int ph = 0;
         float scale = 1.0F;
-        if (!rows && type != ItemTypeUVE::Folder) {
-            if (const PreviewUVE* preview = PreviewForUVE(entry, type); preview != nullptr) {
+        if (!rows && type != ItemType::Folder) {
+            if (const Preview* preview = PreviewFor(entry, type); preview != nullptr) {
                 pixels = preview->pixels.data();
                 pw = preview->width;
                 ph = preview->height;
-            } else if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 64); icon) {
+            } else if (const EditorIcons::Image icon = TypeIcon(type, 64); icon) {
                 pixels = icon.pixels;
                 pw = icon.size;
                 ph = icon.size;
                 scale = 0.62F;
             }
         }
-        auto tile = prism::make<TileUVE>(*this, i, DisplayNameUVE(entry), type, selected, pixels, pw, ph, scale, size, rows);
+        auto tile = prism::make<Tile>(*this, i, DisplayName(entry), type, selected, pixels, pw, ph, scale, size, rows);
         tile->setTooltip(entry.relativePath.filename().string() + "\nType: " + m_facts[n].type);
         m_tileWidgets.emplace_back(key, tile);
         tiles->add(tile);
@@ -1165,14 +1165,14 @@ void EditorAssetTableUVE::BuildTilesUVE(const Asset::ProjectFileSnapshotUVE& sna
     m_itemsHost->setChild(scroll);
 }
 
-void EditorAssetTableUVE::UpdatePickUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
+void EditorAssetTable::UpdatePick(const Asset::ProjectFileSnapshot& snapshot) {
     const auto picked = [this](const std::filesystem::path& relative) {
-        return m_editor.m_contentSelection.ContainsUVE(relative.generic_string()) ||
-               (m_editor.m_contentSelection.IsEmptyUVE() && m_editor.m_selectedProjectFile.has_value() &&
+        return m_editor.m_contentSelection.Contains(relative.generic_string()) ||
+               (m_editor.m_contentSelection.IsEmpty() && m_editor.m_selectedProjectFile.has_value() &&
                 m_editor.m_selectedProjectFile->relativePath == relative);
     };
     for (const auto& [key, weakTile] : m_tileWidgets) {
-        if (const std::shared_ptr<TileUVE> tile = weakTile.lock()) {
+        if (const std::shared_ptr<Tile> tile = weakTile.lock()) {
             tile->setSelected(picked(std::filesystem::path(key)));
         }
     }
@@ -1192,12 +1192,12 @@ void EditorAssetTableUVE::UpdatePickUVE(const Asset::ProjectFileSnapshotUVE& sna
     }
 }
 
-void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& snapshot, const bool recent) {
+void EditorAssetTable::BuildTable(const Asset::ProjectFileSnapshot& snapshot, const bool recent) {
     m_tileWidgets.clear();
     // Details: a table to sort by name, type, size, date or folder. Recent: what changed lately
     // across everything below, newest first, bucketed by the engine's age labels.
     auto table = prism::make<prism::TableView>();
-    const std::int64_t today = StartOfTodayUVE();
+    const std::int64_t today = StartOfToday();
     if (recent) {
         for (const auto& [title, width] : std::array<std::pair<const char*, float>, 5>{
                  {{"Name", 240.0F}, {"Changed", 100.0F}, {"Modified", 140.0F}, {"Type", 120.0F}, {"Folder", 200.0F}}}) {
@@ -1209,10 +1209,10 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
             table->addColumn(column);
         }
     } else {
-        for (std::size_t c = 0; c < kDetailsColumnsUVE.size(); ++c) {
+        for (std::size_t c = 0; c < kDetailsColumns.size(); ++c) {
             prism::TableColumn column;
-            column.id = kDetailsColumnsUVE[c].first;
-            column.title = kDetailsColumnsUVE[c].first;
+            column.id = kDetailsColumns[c].first;
+            column.title = kDetailsColumns[c].first;
             column.width = c == 0 ? 240.0F : c == 4 ? 200.0F : 110.0F;
             table->addColumn(column);
         }
@@ -1221,12 +1221,12 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         if (row < 0 || static_cast<std::size_t>(row) >= m_facts.size()) {
             return {};
         }
-        const ContentItemFactsUVE& f = m_facts[static_cast<std::size_t>(row)];
+        const ContentItemFacts& f = m_facts[static_cast<std::size_t>(row)];
         if (recent) {
             switch (col) {
                 case 0: return f.name;
-                case 1: return GetContentAgeLabelUVE(ClassifyContentAgeUVE(f.modified, today));
-                case 2: return FormatTimeUVE(f.modified);
+                case 1: return GetContentAgeLabel(ClassifyContentAge(f.modified, today));
+                case 2: return FormatTime(f.modified);
                 case 3: return f.type;
                 default: return f.folder.empty() ? std::string("Content") : f.folder;
             }
@@ -1234,8 +1234,8 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         switch (col) {
             case 0: return f.name;
             case 1: return f.type;
-            case 2: return f.isFolder ? std::string("-") : FormatSizeUVE(f.size);
-            case 3: return f.isFolder ? std::string("-") : FormatTimeUVE(f.modified);
+            case 2: return f.isFolder ? std::string("-") : FormatSize(f.size);
+            case 3: return f.isFolder ? std::string("-") : FormatTime(f.modified);
             default: return f.folder.empty() ? std::string("Content") : f.folder;
         }
     };
@@ -1244,14 +1244,14 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
             return;
         }
         const prism::Theme& t = prism::theme();
-        const ContentItemFactsUVE& f = m_facts[static_cast<std::size_t>(row)];
-        const Asset::ProjectFileSnapshotUVE snap = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const ContentItemFacts& f = m_facts[static_cast<std::size_t>(row)];
+        const Asset::ProjectFileSnapshot snap = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
         std::string text = m_table && m_table->cellText ? m_table->cellText(row, col) : f.name;
         float x = r.x + 6.0F;
         if (col == 0 && static_cast<std::size_t>(m_shown[static_cast<std::size_t>(row)]) < snap.entries.size()) {
-            const ItemTypeUVE type =
-                m_editor.GetAssetTableEntryTypeUVE(snap.entries[m_shown[static_cast<std::size_t>(row)]]);
-            if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 16); icon) {
+            const ItemType type =
+                m_editor.GetAssetTableEntryType(snap.entries[m_shown[static_cast<std::size_t>(row)]]);
+            if (const EditorIcons::Image icon = TypeIcon(type, 16); icon) {
                 c.blitBlend(icon.pixels, icon.size, icon.size, icon.size,
                             prism::Rect{x, std::floor(r.y + (r.h - 16.0F) * 0.5F), 16.0F, 16.0F});
             }
@@ -1260,15 +1260,15 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         c.textIn(*t.ui, prism::Rect{x, r.y, r.right() - x - 4.0F, r.h}, text, col == 0 ? t.text : t.textDim,
                  prism::HAlign::Left, true);
     };
-    // The order is the engine's (SortContentFactsUVE); a header click changes the engine's sort key.
+    // The order is the engine's (SortContentFacts); a header click changes the engine's sort key.
     table->lessThan = [](const int a, const int b, int) { return a < b; };
     table->onSort = [this, recent](const int col, const prism::SortState state) {
-        if (recent || m_syncingFolders || col < 0 || static_cast<std::size_t>(col) >= kDetailsColumnsUVE.size()) {
+        if (recent || m_syncingFolders || col < 0 || static_cast<std::size_t>(col) >= kDetailsColumns.size()) {
             return;
         }
-        m_editor.m_contentSortKey = kDetailsColumnsUVE[static_cast<std::size_t>(col)].second;
+        m_editor.m_contentSortKey = kDetailsColumns[static_cast<std::size_t>(col)].second;
         m_editor.m_contentSortAscending = state != prism::SortState::Descending;
-        ChangedUVE();
+        Changed();
     };
     table->onSelect = [this](const std::vector<int>& rows) {
         if (m_syncingFolders) {
@@ -1283,33 +1283,33 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
             }
         }
         if (picked.empty()) {
-            m_editor.m_contentSelection.ClearUVE();
+            m_editor.m_contentSelection.Clear();
             m_editor.m_selectedProjectFile.reset();
             m_editor.m_selectedAsset.reset();
             return;
         }
         // The details follow the row just added to the pick, else the last one.
         const auto added = std::ranges::find_if(
-            picked, [this, &shown](const std::size_t n) { return !m_editor.m_contentSelection.ContainsUVE(shown[n]); });
+            picked, [this, &shown](const std::size_t n) { return !m_editor.m_contentSelection.Contains(shown[n]); });
         const std::size_t primary = added != picked.end() ? *added : picked.back();
-        m_editor.m_contentSelection.ClearUVE();
+        m_editor.m_contentSelection.Clear();
         for (const std::size_t n : picked) {
             if (n != primary) {
-                m_editor.m_contentSelection.ClickUVE(shown, shown[n], true, false);
+                m_editor.m_contentSelection.Click(shown, shown[n], true, false);
             }
         }
-        SelectEntryUVE(m_shown[primary], true, false);
+        SelectEntry(m_shown[primary], true, false);
     };
     table->onActivate = [this](const int row) {
         if (row >= 0 && static_cast<std::size_t>(row) < m_shown.size()) {
-            OpenEntryUVE(m_shown[static_cast<std::size_t>(row)]);
+            OpenEntry(m_shown[static_cast<std::size_t>(row)]);
         }
     };
     table->onContext = [this](const int row, const prism::Vec2 at) {
         if (row >= 0 && static_cast<std::size_t>(row) < m_shown.size()) {
-            ShowItemMenuUVE(m_shown[static_cast<std::size_t>(row)], at);
+            ShowItemMenu(m_shown[static_cast<std::size_t>(row)], at);
         } else {
-            ShowEmptyMenuUVE(at);
+            ShowEmptyMenu(at);
         }
     };
     table->setRowCount(static_cast<int>(m_shown.size()));
@@ -1317,8 +1317,8 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
     // Show the engine's sort on the header without sorting again.
     if (!recent) {
         int sortColumn = 0;
-        for (std::size_t c = 0; c < kDetailsColumnsUVE.size(); ++c) {
-            if (kDetailsColumnsUVE[c].second == m_editor.m_contentSortKey) {
+        for (std::size_t c = 0; c < kDetailsColumns.size(); ++c) {
+            if (kDetailsColumns[c].second == m_editor.m_contentSortKey) {
                 sortColumn = static_cast<int>(c);
             }
         }
@@ -1326,15 +1326,15 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         table->sortBy(sortColumn, prism::SortState::Ascending);
         m_syncingFolders = false;
     }
-    // Picked as UpdatePickUVE picks; the file the details follow goes last, as the table's Shift+click anchor.
+    // Picked as UpdatePick picks; the file the details follow goes last, as the table's Shift+click anchor.
     std::vector<int> picked;
     int primary = -1;
     for (std::size_t n = 0; n < m_shown.size(); ++n) {
-        const Asset::ProjectFileEntryUVE& entry = snapshot.entries[m_shown[n]];
+        const Asset::ProjectFileEntry& entry = snapshot.entries[m_shown[n]];
         const bool current =
             m_editor.m_selectedProjectFile.has_value() && m_editor.m_selectedProjectFile->relativePath == entry.relativePath;
-        if (!m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string()) &&
-            !(current && m_editor.m_contentSelection.IsEmptyUVE())) {
+        if (!m_editor.m_contentSelection.Contains(entry.relativePath.generic_string()) &&
+            !(current && m_editor.m_contentSelection.IsEmpty())) {
             continue;
         }
         if (current) {
@@ -1352,7 +1352,7 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
     m_itemsHost->setChild(table);
 }
 
-void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
+void EditorAssetTable::BuildColumns(const Asset::ProjectFileSnapshot& snapshot) {
     m_tileWidgets.clear();
     // Columns: one list per folder level from Content down to the open folder, then a preview of
     // the file picked. Picking a folder in any column opens it.
@@ -1364,18 +1364,18 @@ void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& s
     for (std::size_t level = 0; level < levels.size(); ++level) {
         const std::filesystem::path& dir = levels[level];
         const std::vector<std::size_t> entries =
-            level + 1 == levels.size() ? m_shown : ListContentFolderUVE(snapshot.entries, dir, "");
+            level + 1 == levels.size() ? m_shown : ListContentFolder(snapshot.entries, dir, "");
         auto list = prism::make<prism::TreeView>();
         std::vector<std::size_t> ids;
         int selectedId = 0;
         for (const std::size_t i : entries) {
-            const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
-            const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(entry);
+            const Asset::ProjectFileEntry& entry = snapshot.entries[i];
+            const ItemType type = m_editor.GetAssetTableEntryType(entry);
             ids.push_back(i);
             prism::TreeNode* node =
-                list->addNode(nullptr, DisplayNameUVE(entry), IconForUVE(type), static_cast<int>(ids.size()));
+                list->addNode(nullptr, DisplayName(entry), IconFor(type), static_cast<int>(ids.size()));
             node->toggles = false;
-            if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 16); icon) {
+            if (const EditorIcons::Image icon = TypeIcon(type, 16); icon) {
                 node->image = icon.pixels;
                 node->imageSize = icon.size;
             }
@@ -1394,26 +1394,26 @@ void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& s
                 return;
             }
             const std::size_t i = ids[static_cast<std::size_t>(nodes.front()->id - 1)];
-            if (i < snapshotEntries.size() && snapshotEntries[i].kind == Asset::ProjectFileEntryKindUVE::Directory) {
-                GoToFolderUVE(snapshotEntries[i].relativePath);
+            if (i < snapshotEntries.size() && snapshotEntries[i].kind == Asset::ProjectFileEntryKind::Directory) {
+                GoToFolder(snapshotEntries[i].relativePath);
             } else {
-                SelectEntryUVE(i, false, false);
-                ChangedUVE();
+                SelectEntry(i, false, false);
+                Changed();
             }
         };
         list->onActivate = [this, ids](prism::TreeNode* node) {
             if (node != nullptr && node->id > 0) {
-                OpenEntryUVE(ids[static_cast<std::size_t>(node->id - 1)]);
+                OpenEntry(ids[static_cast<std::size_t>(node->id - 1)]);
             }
         };
         list->onContext = [this, ids](prism::TreeNode* node, const prism::Vec2 at) {
             if (node != nullptr && node->id > 0) {
-                ShowItemMenuUVE(ids[static_cast<std::size_t>(node->id - 1)], at);
+                ShowItemMenu(ids[static_cast<std::size_t>(node->id - 1)], at);
             } else {
-                ShowEmptyMenuUVE(at);
+                ShowEmptyMenu(at);
             }
         };
-        list->onDelete = [this](prism::TreeNode*) { AskDeleteContentUVE(PickedContentUVE()); };
+        list->onDelete = [this](prism::TreeNode*) { AskDeleteContent(PickedContent()); };
         list->refresh();
         auto column = prism::make<prism::Border>();
         column->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 1.0F, 0.0F));
@@ -1427,34 +1427,34 @@ void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& s
     auto preview = prism::vbox(4.0F);
     preview->setPadding(prism::Margin(10.0F));
     if (m_editor.m_selectedProjectFile.has_value() &&
-        m_editor.m_selectedProjectFile->kind != Asset::ProjectFileEntryKindUVE::Directory) {
-        const Asset::ProjectFileEntryUVE entry = *m_editor.m_selectedProjectFile;
-        const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(entry);
+        m_editor.m_selectedProjectFile->kind != Asset::ProjectFileEntryKind::Directory) {
+        const Asset::ProjectFileEntry entry = *m_editor.m_selectedProjectFile;
+        const ItemType type = m_editor.GetAssetTableEntryType(entry);
         const std::uint32_t* pixels = nullptr;
         int pw = 0;
         int ph = 0;
         float scale = 1.0F;
-        if (const PreviewUVE* p = PreviewForUVE(entry, type); p != nullptr) {
+        if (const Preview* p = PreviewFor(entry, type); p != nullptr) {
             pixels = p->pixels.data();
             pw = p->width;
             ph = p->height;
-        } else if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 64); icon) {
+        } else if (const EditorIcons::Image icon = TypeIcon(type, 64); icon) {
             pixels = icon.pixels;
             pw = icon.size;
             ph = icon.size;
             scale = 0.62F;
         }
         const auto found = std::find_if(snapshot.entries.begin(), snapshot.entries.end(),
-                                        [&](const Asset::ProjectFileEntryUVE& e) { return e.relativePath == entry.relativePath; });
+                                        [&](const Asset::ProjectFileEntry& e) { return e.relativePath == entry.relativePath; });
         const std::size_t index = found == snapshot.entries.end() ? 0U
                                                                   : static_cast<std::size_t>(found - snapshot.entries.begin());
-        preview->add(prism::make<TileUVE>(*this, index, DisplayNameUVE(entry), type, true, pixels, pw, ph, scale,
+        preview->add(prism::make<Tile>(*this, index, DisplayName(entry), type, true, pixels, pw, ph, scale,
                                           prism::Vec2(160.0F, 198.0F), false),
                      prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
-        const ContentFileFactsUVE disk = m_editor.GetContentFileFactsUVE(snapshot.contentRoot, entry, snapshot.refreshGeneration);
-        for (const std::string& line : {std::string("Type: ") + EditorUVE::GetAssetTableItemTypeLabelUVE(type),
-                                        std::string("Size: ") + FormatSizeUVE(disk.size),
-                                        std::string("Modified: ") + FormatTimeUVE(disk.modified)}) {
+        const ContentFileFacts disk = m_editor.GetContentFileFacts(snapshot.contentRoot, entry, snapshot.refreshGeneration);
+        for (const std::string& line : {std::string("Type: ") + Editor::GetAssetTableItemTypeLabel(type),
+                                        std::string("Size: ") + FormatSize(disk.size),
+                                        std::string("Modified: ") + FormatTime(disk.modified)}) {
             auto label = prism::make<prism::Label>(line, prism::FontRole::Small);
             label->setColor(prism::ThemeColor(&prism::Theme::textDim));
             preview->add(label);
@@ -1465,14 +1465,14 @@ void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& s
     m_itemsHost->setChild(row);
 }
 
-void EditorAssetTableUVE::BuildBoardUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
+void EditorAssetTable::BuildBoard(const Asset::ProjectFileSnapshot& snapshot) {
     m_tileWidgets.clear();
-    // Board: everything below the folder in lanes by kind (the engine's GroupContentByTypeUVE).
+    // Board: everything below the folder in lanes by kind (the engine's GroupContentByType).
     std::vector<std::size_t> order(m_facts.size());
     for (std::size_t i = 0; i < order.size(); ++i) {
         order[i] = i;
     }
-    const auto lanes = GroupContentByTypeUVE(order, m_facts);
+    const auto lanes = GroupContentByType(order, m_facts);
     auto row = prism::hbox(6.0F);
     row->setPadding(prism::Margin(2.0F));
     for (const auto& [typeName, members] : lanes) {
@@ -1485,32 +1485,32 @@ void EditorAssetTableUVE::BuildBoardUVE(const Asset::ProjectFileSnapshotUVE& sna
         std::vector<std::size_t> ids;
         for (const std::size_t m : members) {
             const std::size_t i = m_shown[m];
-            const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
-            const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(entry);
+            const Asset::ProjectFileEntry& entry = snapshot.entries[i];
+            const ItemType type = m_editor.GetAssetTableEntryType(entry);
             ids.push_back(i);
-            prism::TreeNode* node = list->addNode(nullptr, DisplayNameUVE(entry), IconForUVE(type), static_cast<int>(ids.size()));
+            prism::TreeNode* node = list->addNode(nullptr, DisplayName(entry), IconFor(type), static_cast<int>(ids.size()));
             node->toggles = false;
-            if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 16); icon) {
+            if (const EditorIcons::Image icon = TypeIcon(type, 16); icon) {
                 node->image = icon.pixels;
                 node->imageSize = icon.size;
             }
         }
         list->onSelect = [this, ids](const std::vector<prism::TreeNode*>& nodes) {
             if (!m_syncingFolders && !nodes.empty() && nodes.front()->id > 0) {
-                SelectEntryUVE(ids[static_cast<std::size_t>(nodes.front()->id - 1)], false, false);
+                SelectEntry(ids[static_cast<std::size_t>(nodes.front()->id - 1)], false, false);
             }
         };
         list->onActivate = [this, ids](prism::TreeNode* node) {
             if (node != nullptr && node->id > 0) {
-                OpenEntryUVE(ids[static_cast<std::size_t>(node->id - 1)]);
+                OpenEntry(ids[static_cast<std::size_t>(node->id - 1)]);
             }
         };
         list->onContext = [this, ids](prism::TreeNode* node, const prism::Vec2 at) {
             if (node != nullptr && node->id > 0) {
-                ShowItemMenuUVE(ids[static_cast<std::size_t>(node->id - 1)], at);
+                ShowItemMenu(ids[static_cast<std::size_t>(node->id - 1)], at);
             }
         };
-        list->onDelete = [this](prism::TreeNode*) { AskDeleteContentUVE(PickedContentUVE()); };
+        list->onDelete = [this](prism::TreeNode*) { AskDeleteContent(PickedContent()); };
         list->refresh();
         lane->add(list, prism::Slot{1.0F});
         auto card = prism::make<prism::Border>();
@@ -1534,21 +1534,21 @@ void EditorAssetTableUVE::BuildBoardUVE(const Asset::ProjectFileSnapshotUVE& sna
 
 // ------------------------------------------------------------------------------------- menus
 
-void EditorAssetTableUVE::ShowViewMenuUVE() {
+void EditorAssetTable::ShowViewMenu() {
     // The view mode: the engine's five Asset Table modes, the tile size and the sort.
-    using ViewMode = EditorUVE::AssetTableViewModeUVE;
+    using ViewMode = Editor::AssetTableViewMode;
     std::vector<prism::MenuItem> items;
-    static constexpr std::array<std::pair<AssetTableModeUVE, const char*>, 5> kModes{{
-        {AssetTableModeUVE::Tiles, "Tiles"},
-        {AssetTableModeUVE::Columns, "Columns"},
-        {AssetTableModeUVE::Details, "Details"},
-        {AssetTableModeUVE::Recent, "Recent"},
-        {AssetTableModeUVE::Board, "Board"},
+    static constexpr std::array<std::pair<AssetTableMode, const char*>, 5> kModes{{
+        {AssetTableMode::Tiles, "Tiles"},
+        {AssetTableMode::Columns, "Columns"},
+        {AssetTableMode::Details, "Details"},
+        {AssetTableMode::Recent, "Recent"},
+        {AssetTableMode::Board, "Board"},
     }};
     for (const auto& [mode, label] : kModes) {
         items.push_back(prism::MenuItem::Check(label, m_editor.m_assetTableMode == mode, [this, m = mode] {
             m_editor.m_assetTableMode = m;
-            ChangedUVE();
+            Changed();
         }));
     }
     items.push_back(prism::MenuItem::Sep());
@@ -1557,56 +1557,56 @@ void EditorAssetTableUVE::ShowViewMenuUVE() {
              {{ViewMode::LargeTiles, "Large Tiles"}, {ViewMode::SmallTiles, "Small Tiles"}, {ViewMode::List, "List"}}}) {
         sizes.push_back(prism::MenuItem::Check(label, m_editor.m_assetTableViewMode == view, [this, v = view] {
             m_editor.m_assetTableViewMode = v;
-            m_editor.m_assetTableMode = AssetTableModeUVE::Tiles;
-            ChangedUVE();
+            m_editor.m_assetTableMode = AssetTableMode::Tiles;
+            Changed();
         }));
     }
     items.push_back(prism::MenuItem::Sub("Tile Size", std::move(sizes), prism::Icon::Grid));
     std::vector<prism::MenuItem> sort;
-    for (std::size_t c = 0; c < kDetailsColumnsUVE.size(); ++c) {
-        const ContentSortKeyUVE key = kDetailsColumnsUVE[c].second;
-        sort.push_back(prism::MenuItem::Check(kDetailsColumnsUVE[c].first, m_editor.m_contentSortKey == key, [this, key] {
+    for (std::size_t c = 0; c < kDetailsColumns.size(); ++c) {
+        const ContentSortKey key = kDetailsColumns[c].second;
+        sort.push_back(prism::MenuItem::Check(kDetailsColumns[c].first, m_editor.m_contentSortKey == key, [this, key] {
             m_editor.m_contentSortKey = key;
-            ChangedUVE();
+            Changed();
         }));
     }
     sort.push_back(prism::MenuItem::Sep());
     sort.push_back(prism::MenuItem::Check("Ascending", m_editor.m_contentSortAscending, [this] {
         m_editor.m_contentSortAscending = !m_editor.m_contentSortAscending;
-        ChangedUVE();
+        Changed();
     }));
     items.push_back(prism::MenuItem::Sub("Sort By", std::move(sort), prism::Icon::Filter));
     prism::showMenu(std::move(items), m_viewButton ? m_viewButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
 }
 
-void EditorAssetTableUVE::ShowSplitMenuUVE() {
+void EditorAssetTable::ShowSplitMenu() {
     // The split mode: how the Asset Table's own sidebar and items share its space.
     std::vector<prism::MenuItem> items;
-    static constexpr std::array<std::pair<SplitModeUVE, const char*>, 4> kSplits{{
-        {SplitModeUVE::SideBySide, "Side by Side"},
-        {SplitModeUVE::Stacked, "Stacked (sidebar above)"},
-        {SplitModeUVE::ItemsOnly, "Items Only"},
-        {SplitModeUVE::SidebarOnly, "Sidebar Only"},
+    static constexpr std::array<std::pair<SplitMode, const char*>, 4> kSplits{{
+        {SplitMode::SideBySide, "Side by Side"},
+        {SplitMode::Stacked, "Stacked (sidebar above)"},
+        {SplitMode::ItemsOnly, "Items Only"},
+        {SplitMode::SidebarOnly, "Sidebar Only"},
     }};
     for (const auto& [mode, label] : kSplits) {
         items.push_back(prism::MenuItem::Check(label, m_splitMode == mode, [this, m = mode] {
             m_splitMode = m;
-            ApplySplitModeUVE();
+            ApplySplitMode();
         }));
     }
     prism::showMenu(std::move(items), m_splitButton ? m_splitButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
 }
 
-std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
+std::vector<prism::MenuItem> EditorAssetTable::CatalogueMenu() {
     // Laid out as the standard Asset Table Add: GET (import), CREATE (a folder, the assets made most,
     // then every kind by category, each opening beside the menu). Only what the engine makes from
     // nothing is here: objects (lights, meshes ...) are placed with the Outliner's '+', and textures,
     // meshes and sounds come in through Import.
     std::vector<prism::MenuItem> items;
     const auto item = [this](const char* label, const std::string& id, const prism::Icon icon, const char* typeLabel) {
-        prism::MenuItem entry = prism::MenuItem::Item(label, [this, id] { CreateCatalogueItemUVE(id); }, "", icon);
+        prism::MenuItem entry = prism::MenuItem::Item(label, [this, id] { CreateCatalogueItem(id); }, "", icon);
         if (typeLabel != nullptr) {
-            if (const EditorIconsUVE::ImageUVE image = m_icons.ContentTypeUVE(typeLabel, 16, icon); image) {
+            if (const EditorIcons::Image image = m_icons.ContentType(typeLabel, 16, icon); image) {
                 entry.withImage(image.pixels, image.size);
             }
         }
@@ -1614,28 +1614,28 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     };
     const auto entityClass = [this] {
         prism::MenuItem entry = prism::MenuItem::Item("Entity Class", [this] {
-            const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_assetTableDirectory);
+            const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+            m_editor.OpenEntityClassPicker(snapshot.contentRoot / m_editor.m_assetTableDirectory);
         }, "", prism::Icon::EntityAsset);
-        if (const EditorIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Entity", 16, prism::Icon::EntityAsset); image) {
+        if (const EditorIcons::Image image = m_icons.ContentType("Entity", 16, prism::Icon::EntityAsset); image) {
             entry.withImage(image.pixels, image.size);
         }
         return entry;
     };
     // A material of a given kind, made in the current folder.
-    const auto material = [this](const char* label, const char* stem, const Asset::MaterialKindUVE kind) {
-        prism::MenuItem entry = prism::MenuItem::Item(label, [this, stem, kind] { CreateMaterialUVE(stem, kind); }, "", prism::Icon::Material);
-        if (const EditorIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Material", 16, prism::Icon::Material); image) {
+    const auto material = [this](const char* label, const char* stem, const Asset::MaterialKind kind) {
+        prism::MenuItem entry = prism::MenuItem::Item(label, [this, stem, kind] { CreateMaterial(stem, kind); }, "", prism::Icon::Material);
+        if (const EditorIcons::Image image = m_icons.ContentType("Material", 16, prism::Icon::Material); image) {
             entry.withImage(image.pixels, image.size);
         }
         return entry;
     };
 
     items.push_back(prism::MenuItem::Header("GET"));
-    items.push_back(prism::MenuItem::Item("Import Files to Current Folder...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Files to Current Folder...", [this] { CreateCatalogueItem(""); }, "Ctrl+I", prism::Icon::Open));
     items.push_back(prism::MenuItem::Item("Import Folder to Current Folder...", [this] {
-        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        static_cast<void>(m_editor.PromptImportFolderUVE(snapshot.contentRoot / m_editor.m_assetTableDirectory));
+        const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+        static_cast<void>(m_editor.PromptImportFolder(snapshot.contentRoot / m_editor.m_assetTableDirectory));
     }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Header("CREATE"));
     items.push_back(item("New Folder", "folder", prism::Icon::Folder, "Folder"));
@@ -1652,59 +1652,59 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     }));
     // A Blueprint Class: gameplay as nodes (what an object's Script slot runs).
     prism::MenuItem blueprintClass =
-        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprint(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("Blueprint", {blueprintClass, entityClass()}));
     items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
     // A Widget Blueprint: a screen of UI (text, buttons, bars ...) with its own graph.
     prism::MenuItem widgetBlueprint =
-        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprint(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
     items.push_back(prism::MenuItem::Sub("Visual Effects", {
-        prism::MenuItem::Item("Particle System", [this] { CreateParticleSystemUVE(); }, "", prism::Icon::Light),
+        prism::MenuItem::Item("Particle System", [this] { CreateParticleSystem(); }, "", prism::Icon::Light),
     }));
     items.push_back(prism::MenuItem::Sub("Material", {
-        material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
-        material("ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm),
-        material("Shader Material", "M_Shader", Asset::MaterialKindUVE::Shader),
+        material("Material", "M_Standard", Asset::MaterialKind::Standard),
+        material("ORM Material", "M_ORM", Asset::MaterialKind::Orm),
+        material("Shader Material", "M_Shader", Asset::MaterialKind::Shader),
         item("Shader", "shader_script", prism::Icon::Shader, "Shader"),
     }));
     // Textures made here rather than imported: seamless noise (clouds, dirt, stone, a bumpy
     // normal map) and gradients, baked to an ordinary 2D texture any material slot can take.
-    const auto generated = [this](const char* label, const char* stem, std::function<bool(Asset::TextureAssetUVE&)> make) {
-        return prism::MenuItem::Item(label, [this, stem, make = std::move(make)] { CreateGeneratedTextureUVE(stem, make); }, "",
+    const auto generated = [this](const char* label, const char* stem, std::function<bool(Asset::TextureAsset&)> make) {
+        return prism::MenuItem::Item(label, [this, stem, make = std::move(make)] { CreateGeneratedTexture(stem, make); }, "",
                                      prism::Icon::NodeTexture);
     };
     items.push_back(prism::MenuItem::Sub("Texture", {
-        generated("Noise Texture", "T_Noise", [](Asset::TextureAssetUVE& out) {
-            return Asset::GenerateNoiseTextureUVE(Asset::NoiseTextureSettingsUVE{}, out);
+        generated("Noise Texture", "T_Noise", [](Asset::TextureAsset& out) {
+            return Asset::GenerateNoiseTexture(Asset::NoiseTextureSettings{}, out);
         }),
-        generated("Cellular Noise Texture", "T_Cells", [](Asset::TextureAssetUVE& out) {
-            Asset::NoiseTextureSettingsUVE settings;
-            settings.type = Asset::NoiseTextureTypeUVE::Cellular;
+        generated("Cellular Noise Texture", "T_Cells", [](Asset::TextureAsset& out) {
+            Asset::NoiseTextureSettings settings;
+            settings.type = Asset::NoiseTextureType::Cellular;
             settings.frequency = 8U;
             settings.octaves = 2U;
-            return Asset::GenerateNoiseTextureUVE(settings, out);
+            return Asset::GenerateNoiseTexture(settings, out);
         }),
-        generated("Value Noise Texture", "T_ValueNoise", [](Asset::TextureAssetUVE& out) {
-            Asset::NoiseTextureSettingsUVE settings;
-            settings.type = Asset::NoiseTextureTypeUVE::Value;
-            return Asset::GenerateNoiseTextureUVE(settings, out);
+        generated("Value Noise Texture", "T_ValueNoise", [](Asset::TextureAsset& out) {
+            Asset::NoiseTextureSettings settings;
+            settings.type = Asset::NoiseTextureType::Value;
+            return Asset::GenerateNoiseTexture(settings, out);
         }),
-        generated("Noise Normal Map", "T_NoiseNormal", [](Asset::TextureAssetUVE& out) {
-            Asset::NoiseTextureSettingsUVE settings;
+        generated("Noise Normal Map", "T_NoiseNormal", [](Asset::TextureAsset& out) {
+            Asset::NoiseTextureSettings settings;
             settings.asNormalMap = true;
             settings.frequency = 8U;
-            return Asset::GenerateNoiseTextureUVE(settings, out);
+            return Asset::GenerateNoiseTexture(settings, out);
         }),
-        generated("Gradient Texture", "T_Gradient", [](Asset::TextureAssetUVE& out) {
-            return Asset::GenerateGradientTextureUVE(Asset::GradientTextureSettingsUVE{}, out);
+        generated("Gradient Texture", "T_Gradient", [](Asset::TextureAsset& out) {
+            return Asset::GenerateGradientTexture(Asset::GradientTextureSettings{}, out);
         }),
-        generated("Radial Gradient Texture", "T_RadialGradient", [](Asset::TextureAssetUVE& out) {
-            Asset::GradientTextureSettingsUVE settings;
+        generated("Radial Gradient Texture", "T_RadialGradient", [](Asset::TextureAsset& out) {
+            Asset::GradientTextureSettings settings;
             settings.radial = true;
-            settings.colorA = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-            settings.colorB = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-            return Asset::GenerateGradientTextureUVE(settings, out);
+            settings.colorA = Math::Vector3{1.0F, 1.0F, 1.0F};
+            settings.colorB = Math::Vector3{0.0F, 0.0F, 0.0F};
+            return Asset::GenerateGradientTexture(settings, out);
         }),
     }));
     items.push_back(prism::MenuItem::Sub("World", {
@@ -1713,52 +1713,52 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     return items;
 }
 
-void EditorAssetTableUVE::CreateGeneratedTextureUVE(const std::string& stem, const std::function<bool(Asset::TextureAssetUVE&)>& make) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::CreateGeneratedTexture(const std::string& stem, const std::function<bool(Asset::TextureAsset&)>& make) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_assetTableDirectory;
     std::error_code error;
     std::filesystem::create_directories(folder, error);
-    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, stem, ".uvtex");
-    Asset::TextureAssetUVE texture;
-    if (!make(texture) || !Asset::SaveTextureAssetUVE(texture, path)) {
+    const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, stem, ".uvtex");
+    Asset::TextureAsset texture;
+    if (!make(texture) || !Asset::SaveTextureAsset(texture, path)) {
         m_editor.m_contentStatusMessage = "Could not make the texture here.";
         return;
     }
-    static_cast<void>(m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+    static_cast<void>(m_editor.m_services->GetAssetDatabase().Register(path));
     m_editor.m_contentStatusMessage.clear();
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     m_folderSignature = 0;
-    ChangedUVE();
+    Changed();
 }
 
-void EditorAssetTableUVE::CreateMaterialUVE(const std::string& stem, const Asset::MaterialKindUVE kind) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::CreateMaterial(const std::string& stem, const Asset::MaterialKind kind) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_assetTableDirectory;
     std::error_code error;
     std::filesystem::create_directories(folder, error);
-    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, stem, ".uvmaterial");
-    Asset::MaterialAssetUVE material{};
+    const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, stem, ".uvmaterial");
+    Asset::MaterialAsset material{};
     material.kind = kind;
-    if (kind == Asset::MaterialKindUVE::Orm) {
+    if (kind == Asset::MaterialKind::Orm) {
         material.metallic = 1.0F;
         material.occlusionStrength = 1.0F;
-    } else if (kind == Asset::MaterialKindUVE::Shader) {
+    } else if (kind == Asset::MaterialKind::Shader) {
         material.useCustomShaderCode = true;
     }
-    if (!Asset::SaveMaterialAssetUVE(material, path)) {
+    if (!Asset::SaveMaterialAsset(material, path)) {
         m_editor.m_contentStatusMessage = "Could not create a material here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     m_folderSignature = 0;
-    ChangedUVE();
+    Changed();
 }
 
 namespace {
 
 /// One object of an entity file, as the Blueprint Class dialog lists it.
-struct EntityFileObjectUVE {
+struct EntityFileObject {
     std::string name;
     std::string graph;                 // the Blueprint its Script slot names (and that exists), or ""
     std::vector<std::string> path;     // names from the root down to it
@@ -1766,7 +1766,7 @@ struct EntityFileObjectUVE {
 };
 
 /// The objects of an `.uventity`, root first, each followed by the objects under it.
-[[nodiscard]] std::vector<EntityFileObjectUVE> ReadEntityFileObjectsUVE(const std::filesystem::path& file,
+[[nodiscard]] std::vector<EntityFileObject> ReadEntityFileObjects(const std::filesystem::path& file,
                                                                        const std::filesystem::path& projectRoot) {
     std::ifstream in(file, std::ios::binary);
     const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -1778,27 +1778,27 @@ struct EntityFileObjectUVE {
     if (!document.is_object() || !document.contains("entities") || !document["entities"].is_array()) {
         return {};
     }
-    struct NodeUVE {
+    struct Node {
         std::int64_t id = -1;
         std::int64_t parent = -1;
         std::string name;
         std::string graph;
     };
-    std::vector<NodeUVE> nodes;
+    std::vector<Node> nodes;
     for (const nlohmann::json& entity : document["entities"]) {
         if (!entity.is_object() || !entity.contains("components") || !entity["components"].is_object()) {
             continue;
         }
         const nlohmann::json& components = entity["components"];
-        NodeUVE node;
+        Node node;
         node.id = entity.value("localId", std::int64_t{-1});
-        if (const auto h = components.find("HierarchyComponentUVE"); h != components.end() && h->is_object()) {
+        if (const auto h = components.find("HierarchyComponent"); h != components.end() && h->is_object()) {
             node.parent = h->value("parentLocalId", std::int64_t{-1});
         }
-        if (const auto n = components.find("NameComponentUVE"); n != components.end() && n->is_object()) {
+        if (const auto n = components.find("NameComponent"); n != components.end() && n->is_object()) {
             node.name = n->value("name", std::string{});
         }
-        if (const auto sc = components.find("ScriptComponentUVE"); sc != components.end() && sc->is_object()) {
+        if (const auto sc = components.find("ScriptComponent"); sc != components.end() && sc->is_object()) {
             const std::string path = sc->value("scriptAssetPath", std::string{});
             std::error_code error;
             if (path.ends_with(".uvbp") && std::filesystem::is_regular_file(projectRoot / path, error)) {
@@ -1807,16 +1807,16 @@ struct EntityFileObjectUVE {
         }
         nodes.push_back(std::move(node));
     }
-    std::vector<EntityFileObjectUVE> out;
+    std::vector<EntityFileObject> out;
     const std::function<void(std::int64_t, std::vector<std::string>, int)> walk = [&](const std::int64_t parent,
                                                                                        std::vector<std::string> path, const int depth) {
-        for (const NodeUVE& node : nodes) {
+        for (const Node& node : nodes) {
             if (node.parent != parent || out.size() > 4096U) {
                 continue;
             }
             std::vector<std::string> here = path;
             here.push_back(node.name);
-            out.push_back(EntityFileObjectUVE{node.name, node.graph, here, depth});
+            out.push_back(EntityFileObject{node.name, node.graph, here, depth});
             if (node.id >= 0) {
                 walk(node.id, here, depth + 1);
             }
@@ -1826,7 +1826,7 @@ struct EntityFileObjectUVE {
     return out;
 }
 
-[[nodiscard]] std::string GraphNameForUVE(const std::string& object) {
+[[nodiscard]] std::string GraphNameFor(const std::string& object) {
     std::string name = "BP_";
     for (const char c : object) {
         name.push_back(std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_');
@@ -1836,17 +1836,17 @@ struct EntityFileObjectUVE {
 
 } // namespace
 
-void EditorAssetTableUVE::CreateBlueprintUVE() {
+void EditorAssetTable::CreateBlueprint() {
     // A Blueprint runs on an object of an entity class: the class, then the object (None: the
     // entity's root itself, else one of the objects under it). Create makes the graph in this
     // folder and opens the entity with the graph on that object.
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_assetTableDirectory;
     const std::filesystem::path projectRoot = snapshot.contentRoot.parent_path();
     std::vector<std::filesystem::path> entities;
     std::vector<std::string> labels;
-    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-        if (entry.kind == Asset::ProjectFileEntryKindUVE::File && LowerExtensionUVE(entry.relativePath) == ".uventity") {
+    for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKind::File && LowerExtension(entry.relativePath) == ".uventity") {
             entities.push_back(snapshot.contentRoot / entry.relativePath);
             const std::string where = entry.relativePath.parent_path().generic_string();
             labels.push_back(entry.relativePath.stem().string() + (where.empty() ? std::string{} : "   (" + where + ")"));
@@ -1856,12 +1856,12 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
         m_editor.m_contentStatusMessage = "Make an Entity Class first: a Blueprint runs on an object of an entity.";
         return;
     }
-    struct StateUVE {
+    struct State {
         int entity = 0;
         int object = 0;
-        std::vector<EntityFileObjectUVE> objects;
+        std::vector<EntityFileObject> objects;
     };
-    auto state = std::make_shared<StateUVE>();
+    auto state = std::make_shared<State>();
     auto name = prism::make<prism::TextInput>("BP_NewBlueprint", "Name");
     auto entityCombo = prism::make<prism::ComboBox>(labels, 0);
     // One picker: the entity itself (None), then every object under it, indented by depth. An
@@ -1928,7 +1928,7 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
         std::vector<std::string> items;
         std::vector<bool> taken;
         for (std::size_t i = 0U; i < objects.size(); ++i) {
-            const EntityFileObjectUVE& object = objects[i];
+            const EntityFileObject& object = objects[i];
             std::string label = i == 0U ? "None (" + object.name + ")" : std::string(static_cast<std::size_t>(object.depth) * 2U, ' ') + object.name;
             if (!object.graph.empty()) {
                 label += "  (has " + std::filesystem::path(object.graph).stem().string() + ")";
@@ -1949,16 +1949,16 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
         }
         state->object = index;
         if (const auto n = weakName.lock()) {
-            n->setText(GraphNameForUVE(state->objects[static_cast<std::size_t>(index)].name));
+            n->setText(GraphNameFor(state->objects[static_cast<std::size_t>(index)].name));
         }
         showPick();
     };
     const auto load = [state, entities, projectRoot, weakName, rebuild](const int index) {
         state->entity = std::clamp(index, 0, static_cast<int>(entities.size()) - 1);
-        state->objects = ReadEntityFileObjectsUVE(entities[static_cast<std::size_t>(state->entity)], projectRoot);
+        state->objects = ReadEntityFileObjects(entities[static_cast<std::size_t>(state->entity)], projectRoot);
         state->object = 0;
         if (const auto n = weakName.lock(); n && !state->objects.empty()) {
-            n->setText(GraphNameForUVE(state->objects.front().name));
+            n->setText(GraphNameFor(state->objects.front().name));
         }
         (*rebuild)();
     };
@@ -1973,11 +1973,11 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
             return;
         }
         *made = true;
-        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(folder, n->text(), ".uvbp");
-        m_editor.m_pendingBlueprintCreateUVE =
-            EditorUVE::PendingBlueprintCreateUVE{file, state->objects[static_cast<std::size_t>(state->object)].path};
-        if (!m_editor.OpenEntityEditorUVE(entities[static_cast<std::size_t>(state->entity)])) {
-            m_editor.m_pendingBlueprintCreateUVE.reset();
+        const std::filesystem::path file = Editor::MakeUniqueContentPath(folder, n->text(), ".uvbp");
+        m_editor.m_pendingBlueprintCreate =
+            Editor::PendingBlueprintCreate{file, state->objects[static_cast<std::size_t>(state->object)].path};
+        if (!m_editor.OpenEntityEditor(entities[static_cast<std::size_t>(state->entity)])) {
+            m_editor.m_pendingBlueprintCreate.reset();
             m_editor.m_contentStatusMessage = "Could not open " + entities[static_cast<std::size_t>(state->entity)].filename().string() + ".";
         }
         static_cast<void>(rebuild);
@@ -1994,13 +1994,13 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
                       compact ? 400.0F : 480.0F);
 }
 
-void EditorAssetTableUVE::CreateParticleSystemUVE() {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::CreateParticleSystem() {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_assetTableDirectory;
-    const std::vector<VFX::ParticleTemplateInfoUVE>& templates = VFX::GetParticleTemplatesUVE();
+    const std::vector<VFX::ParticleTemplateInfo>& templates = VFX::GetParticleTemplates();
     std::vector<std::string> labels;
     labels.reserve(templates.size());
-    for (const VFX::ParticleTemplateInfoUVE& info : templates) {
+    for (const VFX::ParticleTemplateInfo& info : templates) {
         labels.emplace_back(info.name);
     }
     auto name = prism::make<prism::TextInput>("VFX_NewEffect", "Name");
@@ -2028,7 +2028,7 @@ void EditorAssetTableUVE::CreateParticleSystemUVE() {
     std::weak_ptr<prism::Label> weakTitle = tplTitle;
     std::weak_ptr<prism::Label> weakDesc = tplDesc;
     picker->onChange = [weakTitle, weakDesc](const int idx) {
-        const std::vector<VFX::ParticleTemplateInfoUVE>& infos = VFX::GetParticleTemplatesUVE();
+        const std::vector<VFX::ParticleTemplateInfo>& infos = VFX::GetParticleTemplates();
         if (infos.empty()) {
             return;
         }
@@ -2067,20 +2067,20 @@ void EditorAssetTableUVE::CreateParticleSystemUVE() {
         if (*made || !n || !p || n->text().empty()) {
             return;
         }
-        const std::vector<VFX::ParticleTemplateInfoUVE>& infos = VFX::GetParticleTemplatesUVE();
+        const std::vector<VFX::ParticleTemplateInfo>& infos = VFX::GetParticleTemplates();
         const int index = std::clamp(p->selected(), 0, static_cast<int>(infos.size()) - 1);
         *made = true;
-        const std::filesystem::path path = m_editor.CreateParticleSystemAssetUVE(
+        const std::filesystem::path path = m_editor.CreateParticleSystemAsset(
             folder, n->text(), infos[static_cast<std::size_t>(index)].kind);
         if (path.empty()) {
             m_editor.m_contentStatusMessage = "Could not create a Particle System here.";
             return;
         }
         m_editor.m_contentStatusMessage.clear();
-        m_editor.RefreshProjectFileIndexUVE();
+        m_editor.RefreshProjectFileIndex();
         m_folderSignature = 0;
-        ChangedUVE();
-        static_cast<void>(m_editor.OpenVfxEditorUVE(path));
+        Changed();
+        static_cast<void>(m_editor.OpenVfxEditor(path));
     };
     name->onCommit = [create](const std::string&) {
         create();
@@ -2094,27 +2094,27 @@ void EditorAssetTableUVE::CreateParticleSystemUVE() {
                       compact ? 380.0F : 460.0F);
 }
 
-void EditorAssetTableUVE::CreateWidgetBlueprintUVE() {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::CreateWidgetBlueprint() {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::optional<std::filesystem::path> made =
-        m_editor.CreateWidgetBlueprintAssetUVE(snapshot.contentRoot / m_editor.m_assetTableDirectory);
+        m_editor.CreateWidgetBlueprintAsset(snapshot.contentRoot / m_editor.m_assetTableDirectory);
     if (!made.has_value()) {
         m_editor.m_contentStatusMessage = "Could not create a Widget Blueprint here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     m_folderSignature = 0;
-    ChangedUVE();
+    Changed();
 }
 
-void EditorAssetTableUVE::OpenBlueprintUVE(const std::filesystem::path& full) {
+void EditorAssetTable::OpenBlueprint(const std::filesystem::path& full) {
     // A Blueprint is edited on its object: open the entity whose object runs it, then the graph.
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path relative = full.lexically_relative(snapshot.contentRoot);
     const std::string name = full.filename().string();
-    for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
-        if (other.kind != Asset::ProjectFileEntryKindUVE::File || LowerExtensionUVE(other.relativePath) != ".uventity") {
+    for (const Asset::ProjectFileEntry& other : snapshot.entries) {
+        if (other.kind != Asset::ProjectFileEntryKind::File || LowerExtension(other.relativePath) != ".uventity") {
             continue;
         }
         const std::filesystem::path entityPath = snapshot.contentRoot / other.relativePath;
@@ -2127,56 +2127,56 @@ void EditorAssetTableUVE::OpenBlueprintUVE(const std::filesystem::path& full) {
         // The path as the Script slot stores it (everything from its opening quote).
         const std::size_t open = text.rfind('"', at - 1U);
         const std::string stored = open == std::string::npos ? relative.generic_string() : text.substr(open + 1U, at + relative.generic_string().size() - open - 1U);
-        if (!m_editor.OpenEntityEditorUVE(entityPath)) {
+        if (!m_editor.OpenEntityEditor(entityPath)) {
             break;
         }
-        m_editor.m_pendingBlueprintOpenUVE = stored;
+        m_editor.m_pendingBlueprintOpen = stored;
         return;
     }
     m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Blueprint button.";
 }
 
-void EditorAssetTableUVE::CreateCatalogueItemUVE(const std::string& id) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::CreateCatalogueItem(const std::string& id) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path here = snapshot.contentRoot / m_editor.m_assetTableDirectory;
     if (id.empty()) {
-        static_cast<void>(m_editor.PromptImportFilesUVE(here));
-    } else if (!m_editor.CreateContentCatalogueItemUVE(id, here).has_value()) {
+        static_cast<void>(m_editor.PromptImportFiles(here));
+    } else if (!m_editor.CreateContentCatalogueItem(id, here).has_value()) {
         m_editor.m_contentStatusMessage = "Could not create that here.";
     } else {
         m_editor.m_contentStatusMessage.clear();
     }
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     m_folderSignature = 0;
-    ChangedUVE();
+    Changed();
 }
 
-void EditorAssetTableUVE::ShowEmptyMenuUVE(const prism::Vec2 at) {
+void EditorAssetTable::ShowEmptyMenu(const prism::Vec2 at) {
     // Right-click on empty space: the same Add menu, and Refresh.
-    std::vector<prism::MenuItem> items = CatalogueMenuUVE();
+    std::vector<prism::MenuItem> items = CatalogueMenu();
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Item("Refresh", [this] {
-        m_editor.RefreshProjectFileIndexUVE();
+        m_editor.RefreshProjectFileIndex();
         m_folderSignature = 0;
-        ChangedUVE();
+        Changed();
     }, "", prism::Icon::Refresh));
     prism::showSearchMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::AtPoint,
                           "Start typing to search", true);
 }
 
-void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const prism::Vec2 at) {
+void EditorAssetTable::ShowItemMenu(const std::size_t entryIndex, const prism::Vec2 at) {
     // A file's or folder's menu: the same actions the previous Asset Table offered.
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     if (entryIndex >= snapshot.entries.size()) {
         return;
     }
-    const Asset::ProjectFileEntryUVE entry = snapshot.entries[entryIndex];
+    const Asset::ProjectFileEntry entry = snapshot.entries[entryIndex];
     const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
     const std::string name = entry.relativePath.filename().string();
-    const bool directory = entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
-    const bool allowed = m_editor.IsAuthoringCommandAllowedUVE();
-    const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(entry);
-    const std::string extension = LowerExtensionUVE(entry.relativePath);
+    const bool directory = entry.kind == Asset::ProjectFileEntryKind::Directory;
+    const bool allowed = m_editor.IsAuthoringCommandAllowed();
+    const ItemType type = m_editor.GetAssetTableEntryType(entry);
+    const std::string extension = LowerExtension(entry.relativePath);
     std::vector<prism::MenuItem> items;
     const auto add = [&items](prism::MenuItem item, const bool enabled = true) {
         if (!enabled) {
@@ -2186,31 +2186,31 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
     };
 
     if (directory) {
-        add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::FolderOpen));
+        add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntry(entryIndex); }, "", prism::Icon::FolderOpen));
     }
-    if (!directory && IsEntityAssetUVE(entry.relativePath)) {
+    if (!directory && IsEntityAsset(entry.relativePath)) {
         // Opens the entity in the Entity Editor's own window; the level stays open beside it.
         add(prism::MenuItem::Item("Open Entity", [this, absolute, name] {
-            if (!m_editor.OpenEntityEditorUVE(absolute)) {
+            if (!m_editor.OpenEntityEditor(absolute)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Entity Editor.";
             }
         }, "", prism::Icon::Open), allowed);
         add(prism::MenuItem::Item("Place in Scene", [this, absolute, name] {
-            if (m_editor.PlaceEntityAssetUVE(absolute) == Scene::kInvalidEntityUVE) {
+            if (m_editor.PlaceEntityAsset(absolute) == Scene::kInvalidEntity) {
                 m_editor.m_contentStatusMessage = "Could not place " + name + ".";
             }
         }, "", prism::Icon::Plus), allowed);
         if (extension == ".uventity") {
-            const bool isDefault = m_editor.GetDefaultPlayerEntityUVE() == entry.relativePath.generic_string();
+            const bool isDefault = m_editor.GetDefaultPlayerEntity() == entry.relativePath.generic_string();
             add(prism::MenuItem::Check("Default Player", isDefault, [this, isDefault, rel = entry.relativePath] {
-                if (!m_editor.SetDefaultPlayerEntityUVE(isDefault ? std::filesystem::path{} : rel)) {
+                if (!m_editor.SetDefaultPlayerEntity(isDefault ? std::filesystem::path{} : rel)) {
                     m_editor.m_contentStatusMessage = "Could not save the project settings.";
                 }
             }));
         }
     }
-    if (type == ItemTypeUVE::Scene) {
-        add(prism::MenuItem::Item("Open Scene", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::Globe));
+    if (type == ItemType::Scene) {
+        add(prism::MenuItem::Item("Open Scene", [this, entryIndex] { OpenEntry(entryIndex); }, "", prism::Icon::Globe));
     }
     if (extension == ".uvshader") {
         add(prism::MenuItem::Item("Edit Shader", [this, entry] {
@@ -2218,86 +2218,86 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
             m_editor.m_selectedAsset.reset();
         }, "", prism::Icon::Script));
     }
-    if (type == ItemTypeUVE::AnimationLibrary) {
-        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::AnimLibrary));
+    if (type == ItemType::AnimationLibrary) {
+        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntry(entryIndex); }, "", prism::Icon::AnimLibrary));
     }
-    if (type == ItemTypeUVE::ParticleSystem) {
-        add(prism::MenuItem::Item("Open in Particle System Editor", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "",
+    if (type == ItemType::ParticleSystem) {
+        add(prism::MenuItem::Item("Open in Particle System Editor", [this, entryIndex] { OpenEntry(entryIndex); }, "",
                                   prism::Icon::Light));
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
-        add(prism::MenuItem::Item("Create Motion Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
+        add(prism::MenuItem::Item("Create Motion Montage", [this, absolute] { CreateMontageFromClip(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }
     // A montage joins a motion montage library, the way a clip joins an animation library.
-    if (type == ItemTypeUVE::MotionMontage) {
+    if (type == ItemType::MotionMontage) {
         std::vector<prism::MenuItem> libraries;
-        for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
-            if (other.kind != Asset::ProjectFileEntryKindUVE::File || LowerExtensionUVE(other.relativePath) != ".uvmontagelib") {
+        for (const Asset::ProjectFileEntry& other : snapshot.entries) {
+            if (other.kind != Asset::ProjectFileEntryKind::File || LowerExtension(other.relativePath) != ".uvmontagelib") {
                 continue;
             }
             const std::filesystem::path library = snapshot.contentRoot / other.relativePath;
             libraries.push_back(prism::MenuItem::Item(other.relativePath.stem().string(),
-                                                      [this, absolute, library] { AddMontageToLibraryUVE(absolute, library); }));
+                                                      [this, absolute, library] { AddMontageToLibrary(absolute, library); }));
         }
         if (!libraries.empty()) {
             libraries.push_back(prism::MenuItem::Sep());
         }
         libraries.push_back(prism::MenuItem::Item("New Motion Montage Library", [this, absolute] {
             const std::filesystem::path library = absolute.parent_path() / "Motion Montage Library.uvmontagelib";
-            AddMontageToLibraryUVE(absolute, library);
+            AddMontageToLibrary(absolute, library);
         }, "", prism::Icon::MontageLibrary));
         add(prism::MenuItem::Sub("Add to Motion Montage Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
     }
-    if (type == ItemTypeUVE::MontageLibrary) {
-        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::MontageLibrary));
+    if (type == ItemType::MontageLibrary) {
+        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntry(entryIndex); }, "", prism::Icon::MontageLibrary));
     }
     // Model sources and imported models: place, use as the selected object's mesh, retarget.
-    const bool modelSource = EditorUVE::IsModelSourcePathUVE(entry.relativePath);
+    const bool modelSource = Editor::IsModelSourcePath(entry.relativePath);
     const std::filesystem::path importedModel =
-        modelSource ? m_editor.GetImportedModelPathUVE(entry.relativePath) : std::filesystem::path{};
+        modelSource ? m_editor.GetImportedModelPath(entry.relativePath) : std::filesystem::path{};
     std::error_code ec;
     const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, ec);
     const bool uvmodel = entry.registeredAssetGuid.has_value() && extension == ".uvmodel";
-    const EditorModelSourceInfoUVE* const info = modelSource ? m_editor.FindModelSourceInfoUVE(entry.relativePath) : nullptr;
+    const EditorModelSourceInfo* const info = modelSource ? m_editor.FindModelSourceInfo(entry.relativePath) : nullptr;
     // A clip of an animation-only file places that file, playing this clip.
     const std::filesystem::path clipSource =
-        extension == ".uvanim" ? m_editor.FindAnimationClipSourceUVE(entry.relativePath) : std::filesystem::path{};
+        extension == ".uvanim" ? m_editor.FindAnimationClipSource(entry.relativePath) : std::filesystem::path{};
     if (modelReady || uvmodel || (info != nullptr && info->hasSkeleton) || !clipSource.empty()) {
         add(prism::MenuItem::Item("Place in Scene", [this, rel = entry.relativePath, clipSource, name] {
-            const Scene::EntityUVE placed = clipSource.empty()
-                                                ? m_editor.PlaceModelSourceUVE(rel)
-                                                : m_editor.PlaceModelSourceUVE(clipSource, Scene::kInvalidEntityUVE, rel);
-            if (placed == Scene::kInvalidEntityUVE && m_editor.m_contentStatusMessage.empty()) {
+            const Scene::Entity placed = clipSource.empty()
+                                                ? m_editor.PlaceModelSource(rel)
+                                                : m_editor.PlaceModelSource(clipSource, Scene::kInvalidEntity, rel);
+            if (placed == Scene::kInvalidEntity && m_editor.m_contentStatusMessage.empty()) {
                 m_editor.m_contentStatusMessage = "Could not place " + name + ".";
             }
         }, "", prism::Icon::Plus), allowed);
     }
     if (modelReady || uvmodel) {
-        Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-        const bool canAssign = m_editor.IsDocumentEntityUVE(m_editor.m_selectedEntity) && allowed &&
-                               em.HasComponentUVE<Scene::MeshComponentUVE>(m_editor.m_selectedEntity);
+        Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+        const bool canAssign = m_editor.IsDocumentEntity(m_editor.m_selectedEntity) && allowed &&
+                               em.HasComponent<Scene::MeshComponent>(m_editor.m_selectedEntity);
         add(prism::MenuItem::Item("Use as Mesh on Selected Object", [this, modelReady, importedModel, entry] {
-            Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
-            if (!entities.HasComponentUVE<Scene::MeshComponentUVE>(m_editor.m_selectedEntity)) {
+            Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+            if (!entities.HasComponent<Scene::MeshComponent>(m_editor.m_selectedEntity)) {
                 return;
             }
-            const Asset::AssetGuidUVE meshGuid =
-                modelReady ? m_editor.RegisterImportedModelArtifactsUVE(importedModel) : *entry.registeredAssetGuid;
-            static_cast<void>(m_editor.SetSelectedMeshSourceUVE(meshGuid, std::nullopt));
+            const Asset::AssetGuid meshGuid =
+                modelReady ? m_editor.RegisterImportedModelArtifacts(importedModel) : *entry.registeredAssetGuid;
+            static_cast<void>(m_editor.SetSelectedMeshSource(meshGuid, std::nullopt));
         }), canAssign);
     }
-    const auto isRetargetableFile = [this](const Asset::ProjectFileEntryUVE& item) -> bool {
-        if (item.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+    const auto isRetargetableFile = [this](const Asset::ProjectFileEntry& item) -> bool {
+        if (item.kind == Asset::ProjectFileEntryKind::Directory) {
             return false;
         }
-        const std::string ext = LowerExtensionUVE(item.relativePath);
+        const std::string ext = LowerExtension(item.relativePath);
         if (ext == ".uvanim" || ext == ".uvmodel") {
             return true;
         }
-        if (EditorUVE::IsModelSourcePathUVE(item.relativePath)) {
-            const EditorModelSourceInfoUVE* const src = m_editor.FindModelSourceInfoUVE(item.relativePath);
+        if (Editor::IsModelSourcePath(item.relativePath)) {
+            const EditorModelSourceInfo* const src = m_editor.FindModelSourceInfo(item.relativePath);
             return src == nullptr || src->rigged || src->hasSkeleton || src->animationCount > 0U || src->animationOnly;
         }
         return false;
@@ -2305,7 +2305,7 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
     const auto countInFolder = [&snapshot, &isRetargetableFile](const std::filesystem::path& relFolder) -> std::size_t {
         const std::string prefix = relFolder.generic_string();
         std::size_t count = 0U;
-        for (const Asset::ProjectFileEntryUVE& item : snapshot.entries) {
+        for (const Asset::ProjectFileEntry& item : snapshot.entries) {
             if (!isRetargetableFile(item)) {
                 continue;
             }
@@ -2317,14 +2317,14 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
         }
         return count;
     };
-    const bool inMultiSelect = m_editor.m_contentSelection.ItemsUVE().size() > 1U &&
-                               m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string());
+    const bool inMultiSelect = m_editor.m_contentSelection.Items().size() > 1U &&
+                               m_editor.m_contentSelection.Contains(entry.relativePath.generic_string());
     if (inMultiSelect) {
         // Strictly retarget ONLY the multi-selected items (expanding any selected folders recursively).
-        const std::vector<std::filesystem::path> picked = TopLevelContentPathsUVE(PickedContentUVE());
-        std::unordered_map<std::string, const Asset::ProjectFileEntryUVE*> entryIndex;
+        const std::vector<std::filesystem::path> picked = TopLevelContentPaths(PickedContent());
+        std::unordered_map<std::string, const Asset::ProjectFileEntry*> entryIndex;
         entryIndex.reserve(snapshot.entries.size());
-        for (const Asset::ProjectFileEntryUVE& item : snapshot.entries) {
+        for (const Asset::ProjectFileEntry& item : snapshot.entries) {
             entryIndex.emplace(item.relativePath.generic_string(), &item);
         }
         std::vector<std::filesystem::path> retargetPicked;
@@ -2335,7 +2335,7 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
             if (found == entryIndex.end()) {
                 continue;
             }
-            if (found->second->kind == Asset::ProjectFileEntryKindUVE::Directory) {
+            if (found->second->kind == Asset::ProjectFileEntryKind::Directory) {
                 const std::size_t c = countInFolder(rel);
                 if (c > 0U) {
                     retargetPicked.push_back(rel);
@@ -2350,7 +2350,7 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
             add(prism::MenuItem::Item(
                     "Retarget Selected (" + std::to_string(retargetableCount) + ")...",
                     [this, retargetPicked = std::move(retargetPicked)] {
-                        m_editor.OpenRetargetWindowForPathsUVE(retargetPicked);
+                        m_editor.OpenRetargetWindowForPaths(retargetPicked);
                     }),
                 allowed);
         }
@@ -2359,7 +2359,7 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
         if (folderCount > 0U) {
             add(prism::MenuItem::Item(
                     "Retarget Folder (" + std::to_string(folderCount) + ")...",
-                    [this, rel = entry.relativePath] { m_editor.OpenRetargetWindowForFolderUVE(rel); }),
+                    [this, rel = entry.relativePath] { m_editor.OpenRetargetWindowForFolder(rel); }),
                 allowed);
         }
     } else {
@@ -2367,9 +2367,9 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
         if (canRetarget) {
             add(prism::MenuItem::Item("Retarget...", [this, extension, absolute, rel = entry.relativePath] {
                 if (extension == ".uvanim") {
-                    m_editor.OpenRetargetWindowUVE({absolute}, {});
+                    m_editor.OpenRetargetWindow({absolute}, {});
                 } else {
-                    m_editor.OpenRetargetWindowUVE({}, rel);
+                    m_editor.OpenRetargetWindow({}, rel);
                 }
             }), allowed);
         }
@@ -2378,73 +2378,73 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
         items.push_back(prism::MenuItem::Sep());
     }
     // Favorites and shelves.
-    const bool pinned = m_editor.IsProjectPathFavoritedUVE(entry.relativePath);
+    const bool pinned = m_editor.IsProjectPathFavorited(entry.relativePath);
     add(prism::MenuItem::Item(pinned ? "Unpin from Favorites" : "Pin to Favorites", [this, rel = entry.relativePath] {
-        m_editor.ToggleProjectPathFavoriteUVE(rel);
+        m_editor.ToggleProjectPathFavorite(rel);
         m_favoriteSignature = 0;
     }, "", prism::Icon::NodeFlag));
     std::vector<prism::MenuItem> shelves;
-    for (const ContentShelfUVE& shelf : m_editor.m_contentShelves.GetAllUVE()) {
-        const bool onShelf = m_editor.m_contentShelves.ContainsUVE(shelf.name, entry.relativePath);
+    for (const ContentShelf& shelf : m_editor.m_contentShelves.GetAll()) {
+        const bool onShelf = m_editor.m_contentShelves.Contains(shelf.name, entry.relativePath);
         shelves.push_back(prism::MenuItem::Check(shelf.name, onShelf, [this, shelfName = shelf.name, onShelf, rel = entry.relativePath] {
             if (onShelf) {
-                static_cast<void>(m_editor.m_contentShelves.RemoveItemUVE(shelfName, rel));
+                static_cast<void>(m_editor.m_contentShelves.RemoveItem(shelfName, rel));
             } else {
-                static_cast<void>(m_editor.m_contentShelves.AddItemUVE(shelfName, rel));
+                static_cast<void>(m_editor.m_contentShelves.AddItem(shelfName, rel));
             }
-            static_cast<void>(m_editor.SaveSharedShelvesUVE());
+            static_cast<void>(m_editor.SaveSharedShelves());
             m_folderSignature = 0;
-            ChangedUVE();
+            Changed();
         }));
     }
     if (!shelves.empty()) {
         shelves.push_back(prism::MenuItem::Sep());
     }
     shelves.push_back(prism::MenuItem::Item("New Shelf with This", [this, rel = entry.relativePath] {
-        const std::string shelfName = m_editor.m_contentShelves.CreateUVE("Shelf");
+        const std::string shelfName = m_editor.m_contentShelves.Create("Shelf");
         if (!shelfName.empty()) {
-            static_cast<void>(m_editor.m_contentShelves.AddItemUVE(shelfName, rel));
-            static_cast<void>(m_editor.SaveSharedShelvesUVE());
+            static_cast<void>(m_editor.m_contentShelves.AddItem(shelfName, rel));
+            static_cast<void>(m_editor.SaveSharedShelves());
         }
         m_folderSignature = 0;
     }));
     items.push_back(prism::MenuItem::Sub("Shelves", std::move(shelves), prism::Icon::Layers));
     if (!m_editor.m_assetTableShelf.empty() &&
-        m_editor.m_contentShelves.ContainsUVE(m_editor.m_assetTableShelf, entry.relativePath)) {
+        m_editor.m_contentShelves.Contains(m_editor.m_assetTableShelf, entry.relativePath)) {
         add(prism::MenuItem::Item("Remove from " + m_editor.m_assetTableShelf, [this, rel = entry.relativePath] {
-            static_cast<void>(m_editor.m_contentShelves.RemoveItemUVE(m_editor.m_assetTableShelf, rel));
-            static_cast<void>(m_editor.SaveSharedShelvesUVE());
-            ChangedUVE();
+            static_cast<void>(m_editor.m_contentShelves.RemoveItem(m_editor.m_assetTableShelf, rel));
+            static_cast<void>(m_editor.SaveSharedShelves());
+            Changed();
         }));
     }
-    add(prism::MenuItem::Item("Show in Folder", [this, rel = entry.relativePath] { RevealUVE(rel); }, "", prism::Icon::FolderOpen));
+    add(prism::MenuItem::Item("Show in Folder", [this, rel = entry.relativePath] { Reveal(rel); }, "", prism::Icon::FolderOpen));
     add(prism::MenuItem::Item("Copy Path", [rel = entry.relativePath] {
         if (prism::Application::exists()) {
             prism::Application::get().platform().setClipboard(rel.generic_string());
         }
     }, "", prism::Icon::Copy));
     items.push_back(prism::MenuItem::Sep());
-    add(prism::MenuItem::Item("Rename", [this, entryIndex] { ShowRenameUVE(entryIndex); }, "F2"), allowed);
+    add(prism::MenuItem::Item("Rename", [this, entryIndex] { ShowRename(entryIndex); }, "F2"), allowed);
     add(prism::MenuItem::Item("Duplicate", [this, absolute, name] {
-        if (!EditorUVE::DuplicateContentFileUVE(absolute).has_value()) {
+        if (!Editor::DuplicateContentFile(absolute).has_value()) {
             m_editor.m_contentStatusMessage = "Could not duplicate " + name + ".";
         }
-        m_editor.RefreshProjectFileIndexUVE();
+        m_editor.RefreshProjectFileIndex();
         m_folderSignature = 0;
-        ChangedUVE();
+        Changed();
     }, "", prism::Icon::Duplicate), allowed);
     // Part of a multi-pick: deletes every picked item, after one question.
-    if (m_editor.m_contentSelection.ItemsUVE().size() > 1U &&
-        m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string())) {
-        const std::vector<std::filesystem::path> picked = TopLevelContentPathsUVE(PickedContentUVE());
-        add(prism::MenuItem::Item("Delete " + CountItemsUVE(picked.size()), [this, picked] { AskDeleteContentUVE(picked); },
+    if (m_editor.m_contentSelection.Items().size() > 1U &&
+        m_editor.m_contentSelection.Contains(entry.relativePath.generic_string())) {
+        const std::vector<std::filesystem::path> picked = TopLevelContentPaths(PickedContent());
+        add(prism::MenuItem::Item("Delete " + CountItems(picked.size()), [this, picked] { AskDeleteContent(picked); },
                                   "Delete", prism::Icon::Trash),
             allowed);
     } else {
         // Deleting cannot be undone, so it asks once more in a submenu instead of acting on one click.
         std::vector<prism::MenuItem> confirm;
         confirm.push_back(prism::MenuItem::Item(directory ? "Delete folder and everything in it" : "Delete permanently",
-                                                [this, rel = entry.relativePath] { DeleteContentUVE({rel}); }, "",
+                                                [this, rel = entry.relativePath] { DeleteContent({rel}); }, "",
                                                 prism::Icon::Trash));
         prism::MenuItem del = prism::MenuItem::Sub("Delete", std::move(confirm), prism::Icon::Trash);
         if (!allowed) {
@@ -2455,12 +2455,12 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
     prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
 }
 
-void EditorAssetTableUVE::ShowRenameUVE(const std::size_t entryIndex) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::ShowRename(const std::size_t entryIndex) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     if (entryIndex >= snapshot.entries.size()) {
         return;
     }
-    const Asset::ProjectFileEntryUVE entry = snapshot.entries[entryIndex];
+    const Asset::ProjectFileEntry entry = snapshot.entries[entryIndex];
     const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
     auto field = prism::make<prism::TextInput>(entry.relativePath.stem().string(), "New name");
     field->selectAll();
@@ -2470,12 +2470,12 @@ void EditorAssetTableUVE::ShowRenameUVE(const std::size_t entryIndex) {
         if (!f || f->text().empty()) {
             return;
         }
-        if (!m_editor.RenameContentAssetUVE(absolute, f->text()).has_value()) {
+        if (!m_editor.RenameContentAsset(absolute, f->text()).has_value()) {
             m_editor.m_contentStatusMessage = "Could not rename to \"" + f->text() + "\" (empty, taken or not allowed).";
         }
-        m_editor.RefreshProjectFileIndexUVE();
+        m_editor.RefreshProjectFileIndex();
         m_folderSignature = 0;
-        ChangedUVE();
+        Changed();
     };
     field->onCommit = [apply](const std::string&) {
         apply();
@@ -2490,18 +2490,18 @@ void EditorAssetTableUVE::ShowRenameUVE(const std::size_t entryIndex) {
     }
 }
 
-void EditorAssetTableUVE::BeginDragUVE(const std::size_t entryIndex) {
+void EditorAssetTable::BeginDrag(const std::size_t entryIndex) {
     // A content drag: the payload is the item's content-relative path (the Outliner places entity
     // assets and models dropped on it).
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     if (entryIndex >= snapshot.entries.size() || !prism::Application::exists()) {
         return;
     }
-    const Asset::ProjectFileEntryUVE& entry = snapshot.entries[entryIndex];
-    auto op = std::make_shared<prism::DragDropOperation>(kDragTagUVE);
+    const Asset::ProjectFileEntry& entry = snapshot.entries[entryIndex];
+    auto op = std::make_shared<prism::DragDropOperation>(kDragTag);
     op->setPayload(entry.relativePath.generic_string());
     const std::string name = entry.relativePath.filename().string();
-    const EditorIconsUVE::ImageUVE icon = TypeIconUVE(m_editor.GetAssetTableEntryTypeUVE(entry), 16);
+    const EditorIcons::Image icon = TypeIcon(m_editor.GetAssetTableEntryType(entry), 16);
     op->setDecorator([name, icon](prism::Canvas& c, const prism::Vec2 mouse) {
         const prism::Theme& t = prism::theme();
         const prism::Rect card{mouse.x + 12.0F, mouse.y + 12.0F, std::min(260.0F, t.ui->width(name) + 40.0F), 26.0F};
@@ -2516,30 +2516,30 @@ void EditorAssetTableUVE::BeginDragUVE(const std::size_t entryIndex) {
     prism::Application::get().startDragDrop(op);
 }
 
-const EditorAssetTableUVE::PreviewUVE* EditorAssetTableUVE::PreviewForUVE(
-    const Asset::ProjectFileEntryUVE& entry, const ItemTypeUVE type) {
+const EditorAssetTable::Preview* EditorAssetTable::PreviewFor(
+    const Asset::ProjectFileEntry& entry, const ItemType type) {
     std::uintptr_t texture = 0U;
     bool renderTarget = false;
     switch (type) {
-        case ItemTypeUVE::Texture: texture = m_editor.GetTextureThumbnailUVE(entry.relativePath); break;
-        case ItemTypeUVE::Material:
-            texture = m_editor.GetMaterialThumbnailUVE(entry.relativePath);
+        case ItemType::Texture: texture = m_editor.GetTextureThumbnail(entry.relativePath); break;
+        case ItemType::Material:
+            texture = m_editor.GetMaterialThumbnail(entry.relativePath);
             renderTarget = true;
             break;
-        case ItemTypeUVE::ParticleSystem:
-            texture = m_editor.GetVfxThumbnailUVE(entry.relativePath);
+        case ItemType::ParticleSystem:
+            texture = m_editor.GetVfxThumbnail(entry.relativePath);
             renderTarget = false;
             break;
-        case ItemTypeUVE::Animation: {
+        case ItemType::Animation: {
             // A clip's icon is drawn on the CPU already: copied as it is (again when it is redrawn).
             // The content root kept from the last listing: a snapshot copy per tile would cost a
             // whole project listing for each of thousands of clips.
             const std::filesystem::path absolute = m_contentRoot / entry.relativePath;
-            const EditorUVE::AnimationIconUVE* const icon = m_editor.GetAnimationIconUVE(absolute);
+            const Editor::AnimationIcon* const icon = m_editor.GetAnimationIcon(absolute);
             if (icon == nullptr) {
                 return nullptr;
             }
-            PreviewUVE& preview = m_previews[entry.relativePath.generic_string()];
+            Preview& preview = m_previews[entry.relativePath.generic_string()];
             const std::uint64_t generation = icon->serial | (std::uint64_t{1} << 63U);
             if (preview.generation != generation || preview.pixels.empty()) {
                 preview.pixels = icon->pixels;
@@ -2550,14 +2550,14 @@ const EditorAssetTableUVE::PreviewUVE* EditorAssetTableUVE::PreviewForUVE(
             }
             return &preview;
         }
-        case ItemTypeUVE::Entity:
-        case ItemTypeUVE::Prefab:
+        case ItemType::Entity:
+        case ItemType::Prefab:
             // An entity's own look: its models and primitives through the thumbnail's camera.
-        case ItemTypeUVE::Mesh:
-        case ItemTypeUVE::Model:
+        case ItemType::Mesh:
+        case ItemType::Model:
             // The mesh preview is drawn upright already (its projection is flipped for top-down
             // images), so it is read as it is; reading it bottom-up stood the model on its head.
-            texture = m_editor.GetMeshThumbnailUVE(entry.relativePath);
+            texture = m_editor.GetMeshThumbnail(entry.relativePath);
             renderTarget = false;
             break;
         default: return nullptr;
@@ -2565,14 +2565,14 @@ const EditorAssetTableUVE::PreviewUVE* EditorAssetTableUVE::PreviewForUVE(
     if (texture == 0U) {
         return nullptr;
     }
-    PreviewUVE& preview = m_previews[entry.relativePath.generic_string()];
+    Preview& preview = m_previews[entry.relativePath.generic_string()];
     const std::uint64_t generation =
-        type == ItemTypeUVE::Material ? m_editor.m_materialThumbnailGeneration : m_editor.m_meshThumbnailGeneration;
+        type == ItemType::Material ? m_editor.m_materialThumbnailGeneration : m_editor.m_meshThumbnailGeneration;
     if (preview.texture == texture && preview.generation == generation && !preview.pixels.empty()) {
         return &preview;
     }
     // Read the engine's GL texture back once; PRISM draws CPU-side pixels.
-    if (!ReadTexturePixelsUVE(texture, renderTarget, preview.width, preview.height, preview.pixels)) {
+    if (!ReadTexturePixels(texture, renderTarget, preview.width, preview.height, preview.pixels)) {
         return nullptr;
     }
     preview.texture = texture;
@@ -2580,25 +2580,25 @@ const EditorAssetTableUVE::PreviewUVE* EditorAssetTableUVE::PreviewForUVE(
     return &preview;
 }
 
-void EditorAssetTableUVE::SelectEntryUVE(const std::size_t entryIndex, const bool additive, const bool range) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::SelectEntry(const std::size_t entryIndex, const bool additive, const bool range) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     if (entryIndex >= snapshot.entries.size()) {
         return;
     }
-    const Asset::ProjectFileEntryUVE& entry = snapshot.entries[entryIndex];
-    m_editor.m_contentSelection.ClickUVE(m_editor.m_contentShownOrderPrevious, entry.relativePath.generic_string(),
+    const Asset::ProjectFileEntry& entry = snapshot.entries[entryIndex];
+    m_editor.m_contentSelection.Click(m_editor.m_contentShownOrderPrevious, entry.relativePath.generic_string(),
                                          additive, range);
     m_editor.m_selectedProjectFile = entry;
     if (entry.registeredAssetGuid.has_value()) {
-        m_editor.m_selectedAsset = Asset::AssetRecordUVE{*entry.registeredAssetGuid, snapshot.contentRoot / entry.relativePath};
+        m_editor.m_selectedAsset = Asset::AssetRecord{*entry.registeredAssetGuid, snapshot.contentRoot / entry.relativePath};
     } else {
         m_editor.m_selectedAsset.reset();
     }
 }
 
-std::vector<std::filesystem::path> EditorAssetTableUVE::PickedContentUVE() const {
+std::vector<std::filesystem::path> EditorAssetTable::PickedContent() const {
     std::vector<std::filesystem::path> picked;
-    for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
+    for (const std::string& item : m_editor.m_contentSelection.Items()) {
         picked.emplace_back(item);
     }
     if (picked.empty() && m_editor.m_selectedProjectFile.has_value()) {
@@ -2607,23 +2607,23 @@ std::vector<std::filesystem::path> EditorAssetTableUVE::PickedContentUVE() const
     return picked;
 }
 
-void EditorAssetTableUVE::AskDeleteContentUVE(std::vector<std::filesystem::path> relativePaths) {
-    relativePaths = TopLevelContentPathsUVE(relativePaths);
-    if (relativePaths.empty() || !m_editor.IsAuthoringCommandAllowedUVE() || !prism::Application::exists()) {
+void EditorAssetTable::AskDeleteContent(std::vector<std::filesystem::path> relativePaths) {
+    relativePaths = TopLevelContentPaths(relativePaths);
+    if (relativePaths.empty() || !m_editor.IsAuthoringCommandAllowed() || !prism::Application::exists()) {
         return;
     }
     const std::string what =
-        relativePaths.size() == 1U ? relativePaths.front().filename().string() : CountItemsUVE(relativePaths.size());
+        relativePaths.size() == 1U ? relativePaths.front().filename().string() : CountItems(relativePaths.size());
     auto text = prism::make<prism::Label>("Delete " + what + "? This cannot be undone.");
     prism::showDialog("Delete", text,
                       {prism::DialogButton{"Cancel", false, {}},
-                       prism::DialogButton{"Delete", true, [this, relativePaths] { DeleteContentUVE(relativePaths); }}},
+                       prism::DialogButton{"Delete", true, [this, relativePaths] { DeleteContent(relativePaths); }}},
                       380.0F);
 }
 
-void EditorAssetTableUVE::DeleteContentUVE(const std::vector<std::filesystem::path>& relativePaths) {
-    const std::filesystem::path contentRoot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-    const std::vector<std::filesystem::path> paths = TopLevelContentPathsUVE(relativePaths);
+void EditorAssetTable::DeleteContent(const std::vector<std::filesystem::path>& relativePaths) {
+    const std::filesystem::path contentRoot = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+    const std::vector<std::filesystem::path> paths = TopLevelContentPaths(relativePaths);
     if (contentRoot.empty() || paths.empty()) {
         return;
     }
@@ -2639,26 +2639,26 @@ void EditorAssetTableUVE::DeleteContentUVE(const std::vector<std::filesystem::pa
         }
         const std::string key = rel.generic_string();
         deleted.push_back(key);
-        if (m_editor.m_onContentDeletedUVE) {
-            m_editor.m_onContentDeletedUVE(absolute);
+        if (m_editor.m_onContentDeleted) {
+            m_editor.m_onContentDeleted(absolute);
         }
-        if (IsSameOrInsideUVE(m_editor.GetDefaultPlayerEntityUVE(), key)) {
-            static_cast<void>(m_editor.SetDefaultPlayerEntityUVE({}));
+        if (IsSameOrInside(m_editor.GetDefaultPlayerEntity(), key)) {
+            static_cast<void>(m_editor.SetDefaultPlayerEntity({}));
         }
         if (m_editor.m_selectedProjectFile.has_value() &&
-            IsSameOrInsideUVE(m_editor.m_selectedProjectFile->relativePath.generic_string(), key)) {
+            IsSameOrInside(m_editor.m_selectedProjectFile->relativePath.generic_string(), key)) {
             m_editor.m_selectedProjectFile.reset();
             m_editor.m_selectedAsset.reset();
         }
     }
     std::vector<std::string> kept;
-    for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
-        if (std::ranges::none_of(deleted, [&item](const std::string& gone) { return IsSameOrInsideUVE(item, gone); })) {
+    for (const std::string& item : m_editor.m_contentSelection.Items()) {
+        if (std::ranges::none_of(deleted, [&item](const std::string& gone) { return IsSameOrInside(item, gone); })) {
             kept.push_back(item);
         }
     }
-    m_editor.m_contentSelection.KeepOnlyUVE(kept);
-    std::string message = deleted.empty() ? std::string() : "Deleted " + CountItemsUVE(deleted.size()) + ".";
+    m_editor.m_contentSelection.KeepOnly(kept);
+    std::string message = deleted.empty() ? std::string() : "Deleted " + CountItems(deleted.size()) + ".";
     if (!failed.empty()) {
         std::string names;
         for (std::size_t i = 0; i < failed.size() && i < 3U; ++i) {
@@ -2670,63 +2670,63 @@ void EditorAssetTableUVE::DeleteContentUVE(const std::vector<std::filesystem::pa
         message += (message.empty() ? "Could not delete " : " Could not delete ") + names + ".";
     }
     m_editor.m_contentStatusMessage = message;
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     m_folderSignature = 0;
-    ChangedUVE();
+    Changed();
 }
 
-void EditorAssetTableUVE::OpenEntryUVE(const std::size_t entryIndex) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorAssetTable::OpenEntry(const std::size_t entryIndex) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     if (entryIndex >= snapshot.entries.size()) {
         return;
     }
-    const Asset::ProjectFileEntryUVE entry = snapshot.entries[entryIndex];
+    const Asset::ProjectFileEntry entry = snapshot.entries[entryIndex];
     const std::string name = entry.relativePath.filename().string();
     const std::filesystem::path full = snapshot.contentRoot / entry.relativePath;
     // The same actions the previous Asset Table ran on a double click.
-    if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-        GoToFolderUVE(entry.relativePath);
+    if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
+        GoToFolder(entry.relativePath);
         return;
     }
-    switch (m_editor.GetAssetTableEntryTypeUVE(entry)) {
-        case ItemTypeUVE::Entity:
-            if (!m_editor.OpenEntityEditorUVE(full)) {
+    switch (m_editor.GetAssetTableEntryType(entry)) {
+        case ItemType::Entity:
+            if (!m_editor.OpenEntityEditor(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Entity Editor.";
             }
             break;
-        case ItemTypeUVE::Scene:
-            if (!m_editor.OpenSceneAssetUVE(full)) {
+        case ItemType::Scene:
+            if (!m_editor.OpenSceneAsset(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as a scene.";
             }
             break;
-        case ItemTypeUVE::MotionMontage:
-            if (!m_editor.OpenMontageEditorUVE(full)) {
+        case ItemType::MotionMontage:
+            if (!m_editor.OpenMontageEditor(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Motion Montage Editor.";
             }
             break;
-        case ItemTypeUVE::MontageLibrary:
-            ShowMontageLibraryUVE(full);
+        case ItemType::MontageLibrary:
+            ShowMontageLibrary(full);
             break;
-        case ItemTypeUVE::ParticleSystem:
-            if (!m_editor.OpenVfxEditorUVE(full)) {
+        case ItemType::ParticleSystem:
+            if (!m_editor.OpenVfxEditor(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Particle System Editor.";
             }
             break;
-        case ItemTypeUVE::AnimationLibrary:
-            if (!m_editor.OpenAnimationLibraryUVE(full)) {
+        case ItemType::AnimationLibrary:
+            if (!m_editor.OpenAnimationLibrary(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as an animation library.";
             }
             break;
-        case ItemTypeUVE::Blueprint:
-            OpenBlueprintUVE(full);
+        case ItemType::Blueprint:
+            OpenBlueprint(full);
             break;
-        case ItemTypeUVE::WidgetBlueprint:
-            if (!m_editor.OpenEntityEditorUVE(full)) {
+        case ItemType::WidgetBlueprint:
+            if (!m_editor.OpenEntityEditor(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Widget Editor.";
             }
             break;
-        case ItemTypeUVE::Script:
-            if (!m_editor.OpenUVScriptPathUVE(full)) {
+        case ItemType::Script:
+            if (!m_editor.OpenUVScriptPath(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Script Editor.";
             }
             break;
@@ -2735,23 +2735,23 @@ void EditorAssetTableUVE::OpenEntryUVE(const std::size_t entryIndex) {
     }
 }
 
-void EditorAssetTableUVE::ShowFilterMenuUVE() {
-    static constexpr std::array<std::pair<FocusUVE, const char*>, 12> kFocusesUVE{{
-        {FocusUVE::All, "All"},
-        {FocusUVE::Folders, "Folders"},
-        {FocusUVE::Scene, "Scenes"},
-        {FocusUVE::Prefab, "Prefabs"},
-        {FocusUVE::Bundle, "Bundles"},
-        {FocusUVE::Mesh, "Meshes"},
-        {FocusUVE::Texture, "Textures"},
-        {FocusUVE::Shader, "Shaders"},
-        {FocusUVE::Material, "Materials"},
-        {FocusUVE::Save, "Saves"},
-        {FocusUVE::Registered, "Registered"},
-        {FocusUVE::OtherFiles, "Other files"},
+void EditorAssetTable::ShowFilterMenu() {
+    static constexpr std::array<std::pair<Focus, const char*>, 12> kFocuses{{
+        {Focus::All, "All"},
+        {Focus::Folders, "Folders"},
+        {Focus::Scene, "Scenes"},
+        {Focus::Prefab, "Prefabs"},
+        {Focus::Bundle, "Bundles"},
+        {Focus::Mesh, "Meshes"},
+        {Focus::Texture, "Textures"},
+        {Focus::Shader, "Shaders"},
+        {Focus::Material, "Materials"},
+        {Focus::Save, "Saves"},
+        {Focus::Registered, "Registered"},
+        {Focus::OtherFiles, "Other files"},
     }};
     std::vector<prism::MenuItem> items;
-    for (const auto& [focus, label] : kFocusesUVE) {
+    for (const auto& [focus, label] : kFocuses) {
         items.push_back(prism::MenuItem::Check(label, m_editor.m_assetTableTypeFocus == focus, [this, f = focus] {
             m_editor.m_assetTableTypeFocus = f;
             m_tileSignature = 0;
@@ -2762,70 +2762,70 @@ void EditorAssetTableUVE::ShowFilterMenuUVE() {
 
 // ---------------------------------------------------------------------------------- montages
 
-void EditorAssetTableUVE::CreateMontageFromClipUVE(const std::filesystem::path& clipPath) {
-    Asset::AnimationClipAssetUVE clip;
-    if (!Asset::LoadAnimationClipAssetUVE(clipPath, clip)) {
+void EditorAssetTable::CreateMontageFromClip(const std::filesystem::path& clipPath) {
+    Asset::AnimationClipAsset clip;
+    if (!Asset::LoadAnimationClipAsset(clipPath, clip)) {
         m_editor.m_contentStatusMessage = "Could not read " + clipPath.filename().string();
         return;
     }
-    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
-    const Asset::AssetGuidUVE guid = database.RegisterUVE(clipPath);
-    Asset::MotionMontageAssetUVE montage;
-    static_cast<void>(Asset::AddMontageSegmentUVE(montage, guid, clip.durationSeconds));
+    Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
+    const Asset::AssetGuid guid = database.Register(clipPath);
+    Asset::MotionMontageAsset montage;
+    static_cast<void>(Asset::AddMontageSegment(montage, guid, clip.durationSeconds));
     // AM_<clip>, or AM_<clip>_2 ... beside the clip.
     std::filesystem::path path = clipPath.parent_path() / ("MM_" + clipPath.stem().string() + ".uvmontage");
     std::error_code error;
     for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n) {
         path = clipPath.parent_path() / ("MM_" + clipPath.stem().string() + "_" + std::to_string(n) + ".uvmontage");
     }
-    if (!Asset::SaveMotionMontageAssetUVE(montage, path)) {
+    if (!Asset::SaveMotionMontageAsset(montage, path)) {
         m_editor.m_contentStatusMessage = "Could not write " + path.filename().string();
         return;
     }
-    static_cast<void>(database.RegisterUVE(path));
-    static_cast<void>(m_editor.m_services->GetProjectFileIndexUVE().RefreshUVE(m_editor.m_services->GetAssetDatabaseUVE()));
+    static_cast<void>(database.Register(path));
+    static_cast<void>(m_editor.m_services->GetProjectFileIndex().Refresh(m_editor.m_services->GetAssetDatabase()));
     m_editor.m_contentStatusMessage = "Created " + path.filename().string();
-    static_cast<void>(m_editor.OpenMontageEditorUVE(path));
+    static_cast<void>(m_editor.OpenMontageEditor(path));
 }
 
-void EditorAssetTableUVE::AddMontageToLibraryUVE(const std::filesystem::path& montagePath, const std::filesystem::path& libraryPath) {
-    Asset::MontageLibraryAssetUVE library;
+void EditorAssetTable::AddMontageToLibrary(const std::filesystem::path& montagePath, const std::filesystem::path& libraryPath) {
+    Asset::MontageLibraryAsset library;
     std::error_code error;
     if (std::filesystem::exists(libraryPath, error)) {
-        if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
+        if (!Asset::LoadMontageLibraryAsset(libraryPath, library)) {
             m_editor.m_contentStatusMessage = "Not an motion montage library: " + libraryPath.filename().string();
             return;
         }
     } else {
         library.libraryId = libraryPath.stem().string();
     }
-    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
-    const Asset::AssetGuidUVE guid = database.RegisterUVE(montagePath);
-    if (std::ranges::any_of(library.entries, [guid](const Asset::MontageLibraryEntryUVE& e) { return e.montage == guid; })) {
+    Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
+    const Asset::AssetGuid guid = database.Register(montagePath);
+    if (std::ranges::any_of(library.entries, [guid](const Asset::MontageLibraryEntry& e) { return e.montage == guid; })) {
         m_editor.m_contentStatusMessage = montagePath.stem().string() + " is already in " + libraryPath.stem().string();
         return;
     }
-    Asset::MontageLibraryEntryUVE entry;
+    Asset::MontageLibraryEntry entry;
     entry.montage = guid;
     entry.name = montagePath.stem().string();
     library.entries.push_back(std::move(entry));
-    if (!Asset::SaveMontageLibraryAssetUVE(library, libraryPath)) {
+    if (!Asset::SaveMontageLibraryAsset(library, libraryPath)) {
         m_editor.m_contentStatusMessage = "Could not write " + libraryPath.filename().string();
         return;
     }
-    static_cast<void>(database.RegisterUVE(libraryPath));
-    static_cast<void>(m_editor.m_services->GetProjectFileIndexUVE().RefreshUVE(m_editor.m_services->GetAssetDatabaseUVE()));
+    static_cast<void>(database.Register(libraryPath));
+    static_cast<void>(m_editor.m_services->GetProjectFileIndex().Refresh(m_editor.m_services->GetAssetDatabase()));
     m_editor.m_contentStatusMessage = "Added " + montagePath.stem().string() + " to " + libraryPath.stem().string();
 }
 
-void EditorAssetTableUVE::ShowMontageLibraryUVE(const std::filesystem::path& libraryPath) {
-    Asset::MontageLibraryAssetUVE library;
-    if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
+void EditorAssetTable::ShowMontageLibrary(const std::filesystem::path& libraryPath) {
+    Asset::MontageLibraryAsset library;
+    if (!Asset::LoadMontageLibraryAsset(libraryPath, library)) {
         m_editor.m_contentStatusMessage = "Could not read " + libraryPath.filename().string();
         return;
     }
     // Its montages, each with the name a script plays it by, opened or taken off the list.
-    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
     auto list = prism::vbox(4.0F);
     list->setPadding(prism::Margin(4.0F));
     if (library.entries.empty()) {
@@ -2833,8 +2833,8 @@ void EditorAssetTableUVE::ShowMontageLibraryUVE(const std::filesystem::path& lib
         hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
         list->add(hint);
     }
-    for (const Asset::MontageLibraryEntryUVE& entry : library.entries) {
-        const std::filesystem::path montage = database.ResolveUVE(entry.montage);
+    for (const Asset::MontageLibraryEntry& entry : library.entries) {
+        const std::filesystem::path montage = database.Resolve(entry.montage);
         auto row = prism::hbox(6.0F);
         auto label = prism::make<prism::Label>(entry.name + (montage.empty() ? "   (missing)" : "   " + montage.filename().string()));
         row->add(label, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -2844,19 +2844,19 @@ void EditorAssetTableUVE::ShowMontageLibraryUVE(const std::filesystem::path& lib
             if (prism::Application::exists()) {
                 prism::Application::get().closeAllPopups();
             }
-            static_cast<void>(m_editor.OpenMontageEditorUVE(montage));
+            static_cast<void>(m_editor.OpenMontageEditor(montage));
         };
         auto remove = prism::make<prism::Button>("Remove", prism::Icon::Trash, prism::ButtonStyle::Flat);
         remove->onClick = [this, libraryPath, guid = entry.montage] {
-            Asset::MontageLibraryAssetUVE current;
-            if (Asset::LoadMontageLibraryAssetUVE(libraryPath, current)) {
-                std::erase_if(current.entries, [guid](const Asset::MontageLibraryEntryUVE& e) { return e.montage == guid; });
-                static_cast<void>(Asset::SaveMontageLibraryAssetUVE(current, libraryPath));
+            Asset::MontageLibraryAsset current;
+            if (Asset::LoadMontageLibraryAsset(libraryPath, current)) {
+                std::erase_if(current.entries, [guid](const Asset::MontageLibraryEntry& e) { return e.montage == guid; });
+                static_cast<void>(Asset::SaveMontageLibraryAsset(current, libraryPath));
             }
             if (prism::Application::exists()) {
                 prism::Application::get().closeAllPopups();
             }
-            ShowMontageLibraryUVE(libraryPath);
+            ShowMontageLibrary(libraryPath);
         };
         row->add(open);
         row->add(remove);

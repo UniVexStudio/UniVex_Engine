@@ -7,22 +7,22 @@
 
 namespace UVE::Threading {
 
-/// `RwLockUVE` is a readers-writer lock over `std::shared_mutex`: any number of concurrent
+/// `RwLock` is a readers-writer lock over `std::shared_mutex`: any number of concurrent
 /// readers (`lock_shared`) or one exclusive writer (`lock`). The shape registries and caches
 /// want — read-mostly, occasionally rebuilt — without serializing every lookup behind a plain
 /// mutex.
 ///
 /// Member names are lowercase for the STL guard interop (`std::shared_lock` needs
 /// `lock_shared`/`unlock_shared`; `std::lock_guard`/`std::unique_lock` need `lock`/`unlock`),
-/// the same rationale as `SpinLockUVE`. Not recursive in either mode. Copy/move deleted: a
+/// the same rationale as `SpinLock`. Not recursive in either mode. Copy/move deleted: a
 /// lock has identity.
-class RwLockUVE final {
+class RwLock final {
 public:
-    RwLockUVE() = default;
-    RwLockUVE(const RwLockUVE&) = delete;
-    RwLockUVE& operator=(const RwLockUVE&) = delete;
-    RwLockUVE(RwLockUVE&&) = delete;
-    RwLockUVE& operator=(RwLockUVE&&) = delete;
+    RwLock() = default;
+    RwLock(const RwLock&) = delete;
+    RwLock& operator=(const RwLock&) = delete;
+    RwLock(RwLock&&) = delete;
+    RwLock& operator=(RwLock&&) = delete;
 
     /// Exclusive (writer) lock. Blocks until no reader or writer holds the lock.
     void lock() { m_mutex.lock(); }

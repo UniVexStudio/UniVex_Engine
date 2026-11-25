@@ -14,7 +14,7 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] constexpr std::uint32_t ClampToPowerOfTwoTileSizeUVE(std::uint32_t size) noexcept {
+[[nodiscard]] constexpr std::uint32_t ClampToPowerOfTwoTileSize(std::uint32_t size) noexcept {
     if (size <= 128U) return 128U;
     if (size <= 256U) return 256U;
     if (size <= 512U) return 512U;
@@ -26,47 +26,47 @@ namespace {
 
 } // namespace
 
-ShadowAtlasManagerUVE::ShadowAtlasManagerUVE(IRenderDeviceUVE* renderDevice)
+ShadowAtlasManager::ShadowAtlasManager(IRenderDevice* renderDevice)
     : m_renderDevice(renderDevice) {
     if (m_renderDevice != nullptr) {
-        TextureDescUVE desc{};
-        desc.width = kShadowAtlasResolutionUVE;
-        desc.height = kShadowAtlasResolutionUVE;
-        desc.format = TextureFormatUVE::Depth32Float;
+        TextureDesc desc{};
+        desc.width = kShadowAtlasResolution;
+        desc.height = kShadowAtlasResolution;
+        desc.format = TextureFormat::Depth32Float;
         desc.mipLevels = 1U;
-        desc.type = TextureTypeUVE::Texture2D;
-        desc.colorSpace = TextureColorSpaceUVE::Linear;
-        desc.usage = TextureUsageUVE::RenderTarget | TextureUsageUVE::Sampled;
-        m_atlasTexture = m_renderDevice->CreateTextureUVE(desc);
+        desc.type = TextureType::Texture2D;
+        desc.colorSpace = TextureColorSpace::Linear;
+        desc.usage = TextureUsage::RenderTarget | TextureUsage::Sampled;
+        m_atlasTexture = m_renderDevice->CreateTexture(desc);
     }
-    ResetUVE();
+    Reset();
 }
 
-ShadowAtlasManagerUVE::ShadowAtlasManagerUVE(IRenderDeviceUVE& renderDevice)
-    : ShadowAtlasManagerUVE(&renderDevice) {}
+ShadowAtlasManager::ShadowAtlasManager(IRenderDevice& renderDevice)
+    : ShadowAtlasManager(&renderDevice) {}
 
-ShadowAtlasManagerUVE::~ShadowAtlasManagerUVE() {
-    if (m_renderDevice != nullptr && m_atlasTexture != kInvalidTextureHandleUVE) {
-        m_renderDevice->DestroyTextureUVE(m_atlasTexture);
-        m_atlasTexture = kInvalidTextureHandleUVE;
+ShadowAtlasManager::~ShadowAtlasManager() {
+    if (m_renderDevice != nullptr && m_atlasTexture != kInvalidTextureHandle) {
+        m_renderDevice->DestroyTexture(m_atlasTexture);
+        m_atlasTexture = kInvalidTextureHandle;
     }
 }
 
-ShadowAtlasManagerUVE::ShadowAtlasManagerUVE(ShadowAtlasManagerUVE&& other) noexcept
+ShadowAtlasManager::ShadowAtlasManager(ShadowAtlasManager&& other) noexcept
     : m_renderDevice(other.m_renderDevice),
       m_atlasTexture(other.m_atlasTexture),
       m_nodes(std::move(other.m_nodes)),
       m_freeNodeIndices(std::move(other.m_freeNodeIndices)),
       m_allocatedTileCount(other.m_allocatedTileCount) {
     other.m_renderDevice = nullptr;
-    other.m_atlasTexture = kInvalidTextureHandleUVE;
+    other.m_atlasTexture = kInvalidTextureHandle;
     other.m_allocatedTileCount = 0U;
 }
 
-ShadowAtlasManagerUVE& ShadowAtlasManagerUVE::operator=(ShadowAtlasManagerUVE&& other) noexcept {
+ShadowAtlasManager& ShadowAtlasManager::operator=(ShadowAtlasManager&& other) noexcept {
     if (this != &other) {
-        if (m_renderDevice != nullptr && m_atlasTexture != kInvalidTextureHandleUVE) {
-            m_renderDevice->DestroyTextureUVE(m_atlasTexture);
+        if (m_renderDevice != nullptr && m_atlasTexture != kInvalidTextureHandle) {
+            m_renderDevice->DestroyTexture(m_atlasTexture);
         }
         m_renderDevice = other.m_renderDevice;
         m_atlasTexture = other.m_atlasTexture;
@@ -75,22 +75,22 @@ ShadowAtlasManagerUVE& ShadowAtlasManagerUVE::operator=(ShadowAtlasManagerUVE&& 
         m_allocatedTileCount = other.m_allocatedTileCount;
 
         other.m_renderDevice = nullptr;
-        other.m_atlasTexture = kInvalidTextureHandleUVE;
+        other.m_atlasTexture = kInvalidTextureHandle;
         other.m_allocatedTileCount = 0U;
     }
     return *this;
 }
 
-void ShadowAtlasManagerUVE::ResetUVE() noexcept {
+void ShadowAtlasManager::Reset() noexcept {
     m_nodes.clear();
     m_freeNodeIndices.clear();
     m_allocatedTileCount = 0U;
     m_nodes.reserve(1365U);
 
-    ShadowAtlasNodeUVE root{};
+    ShadowAtlasNode root{};
     root.x = 0U;
     root.y = 0U;
-    root.size = kShadowAtlasResolutionUVE;
+    root.size = kShadowAtlasResolution;
     root.isAllocated = false;
     root.isSplit = false;
     root.parentIndex = -1;
@@ -98,36 +98,36 @@ void ShadowAtlasManagerUVE::ResetUVE() noexcept {
     m_nodes.push_back(root);
 }
 
-std::optional<TileAllocUVE> ShadowAtlasManagerUVE::AllocateTileUVE(std::uint32_t sizePixels) {
-    const std::uint32_t targetSize = ClampToPowerOfTwoTileSizeUVE(sizePixels);
+std::optional<TileAlloc> ShadowAtlasManager::AllocateTile(std::uint32_t sizePixels) {
+    const std::uint32_t targetSize = ClampToPowerOfTwoTileSize(sizePixels);
     if (targetSize == 0U) {
         return std::nullopt;
     }
 
-    const std::int32_t allocatedIndex = FindAndAllocateNodeUVE(0, targetSize);
+    const std::int32_t allocatedIndex = FindAndAllocateNode(0, targetSize);
     if (allocatedIndex < 0) {
         return std::nullopt;
     }
 
     ++m_allocatedTileCount;
-    const ShadowAtlasNodeUVE& node = m_nodes[static_cast<std::size_t>(allocatedIndex)];
+    const ShadowAtlasNode& node = m_nodes[static_cast<std::size_t>(allocatedIndex)];
 
-    TileAllocUVE tile{};
+    TileAlloc tile{};
     tile.tileId = static_cast<std::uint32_t>(allocatedIndex);
-    tile.pixelRect = ComputePixelRectUVE(node.x, node.y, node.size);
-    tile.normalizedRect = ComputeTileRectUVE(node.x, node.y, node.size);
+    tile.pixelRect = ComputePixelRect(node.x, node.y, node.size);
+    tile.normalizedRect = ComputeTileRect(node.x, node.y, node.size);
     return tile;
 }
 
-void ShadowAtlasManagerUVE::FreeTileUVE(const TileAllocUVE& tile) {
-    FreeTileUVE(tile.tileId);
+void ShadowAtlasManager::FreeTile(const TileAlloc& tile) {
+    FreeTile(tile.tileId);
 }
 
-void ShadowAtlasManagerUVE::FreeTileUVE(std::uint32_t tileId) {
+void ShadowAtlasManager::FreeTile(std::uint32_t tileId) {
     if (static_cast<std::size_t>(tileId) >= m_nodes.size()) {
         return;
     }
-    ShadowAtlasNodeUVE& node = m_nodes[tileId];
+    ShadowAtlasNode& node = m_nodes[tileId];
     if (!node.isAllocated || node.isSplit) {
         return;
     }
@@ -137,53 +137,53 @@ void ShadowAtlasManagerUVE::FreeTileUVE(std::uint32_t tileId) {
         --m_allocatedTileCount;
     }
 
-    CoalesceBuddiesUVE(node.parentIndex);
+    CoalesceBuddies(node.parentIndex);
 }
 
-bool ShadowAtlasManagerUVE::IsTileAllocatedUVE(std::uint32_t tileId) const noexcept {
+bool ShadowAtlasManager::IsTileAllocated(std::uint32_t tileId) const noexcept {
     if (static_cast<std::size_t>(tileId) >= m_nodes.size()) {
         return false;
     }
     return m_nodes[tileId].isAllocated && !m_nodes[tileId].isSplit;
 }
 
-std::optional<TileAllocUVE> ShadowAtlasManagerUVE::GetTileUVE(std::uint32_t tileId) const noexcept {
-    if (!IsTileAllocatedUVE(tileId)) {
+std::optional<TileAlloc> ShadowAtlasManager::GetTile(std::uint32_t tileId) const noexcept {
+    if (!IsTileAllocated(tileId)) {
         return std::nullopt;
     }
-    const ShadowAtlasNodeUVE& node = m_nodes[tileId];
-    TileAllocUVE tile{};
+    const ShadowAtlasNode& node = m_nodes[tileId];
+    TileAlloc tile{};
     tile.tileId = tileId;
-    tile.pixelRect = ComputePixelRectUVE(node.x, node.y, node.size);
-    tile.normalizedRect = ComputeTileRectUVE(node.x, node.y, node.size);
+    tile.pixelRect = ComputePixelRect(node.x, node.y, node.size);
+    tile.normalizedRect = ComputeTileRect(node.x, node.y, node.size);
     return tile;
 }
 
-std::int32_t ShadowAtlasManagerUVE::AllocateNodeSlotUVE() {
+std::int32_t ShadowAtlasManager::AllocateNodeSlot() {
     if (!m_freeNodeIndices.empty()) {
         const std::int32_t idx = m_freeNodeIndices.back();
         m_freeNodeIndices.pop_back();
-        m_nodes[static_cast<std::size_t>(idx)] = ShadowAtlasNodeUVE{};
+        m_nodes[static_cast<std::size_t>(idx)] = ShadowAtlasNode{};
         return idx;
     }
     const std::int32_t idx = static_cast<std::int32_t>(m_nodes.size());
-    m_nodes.push_back(ShadowAtlasNodeUVE{});
+    m_nodes.push_back(ShadowAtlasNode{});
     return idx;
 }
 
-void ShadowAtlasManagerUVE::ReleaseNodeSlotUVE(std::int32_t nodeIndex) {
+void ShadowAtlasManager::ReleaseNodeSlot(std::int32_t nodeIndex) {
     if (nodeIndex >= 0 && static_cast<std::size_t>(nodeIndex) < m_nodes.size()) {
-        m_nodes[static_cast<std::size_t>(nodeIndex)] = ShadowAtlasNodeUVE{};
+        m_nodes[static_cast<std::size_t>(nodeIndex)] = ShadowAtlasNode{};
         m_freeNodeIndices.push_back(nodeIndex);
     }
 }
 
-std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeIndex, std::uint32_t targetSize) {
+std::int32_t ShadowAtlasManager::FindAndAllocateNode(std::int32_t nodeIndex, std::uint32_t targetSize) {
     if (nodeIndex < 0 || static_cast<std::size_t>(nodeIndex) >= m_nodes.size()) {
         return -1;
     }
 
-    ShadowAtlasNodeUVE& node = m_nodes[static_cast<std::size_t>(nodeIndex)];
+    ShadowAtlasNode& node = m_nodes[static_cast<std::size_t>(nodeIndex)];
     if (node.isAllocated || node.size < targetSize) {
         return -1;
     }
@@ -193,7 +193,7 @@ std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeInde
             return -1;
         }
         for (std::int32_t childIndex : node.childIndices) {
-            std::int32_t allocated = FindAndAllocateNodeUVE(childIndex, targetSize);
+            std::int32_t allocated = FindAndAllocateNode(childIndex, targetSize);
             if (allocated >= 0) {
                 return allocated;
             }
@@ -214,11 +214,11 @@ std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeInde
 
     std::array<std::int32_t, 4> children{-1, -1, -1, -1};
     for (std::size_t i = 0U; i < 4U; ++i) {
-        children[i] = AllocateNodeSlotUVE();
+        children[i] = AllocateNodeSlot();
     }
 
     // Re-acquire reference after potential reallocations
-    ShadowAtlasNodeUVE& parentNode = m_nodes[static_cast<std::size_t>(nodeIndex)];
+    ShadowAtlasNode& parentNode = m_nodes[static_cast<std::size_t>(nodeIndex)];
     parentNode.isSplit = true;
     parentNode.childIndices = children;
 
@@ -230,7 +230,7 @@ std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeInde
     }};
 
     for (std::size_t i = 0; i < 4; ++i) {
-        ShadowAtlasNodeUVE& child = m_nodes[static_cast<std::size_t>(children[i])];
+        ShadowAtlasNode& child = m_nodes[static_cast<std::size_t>(children[i])];
         child.x = offsets[i].first;
         child.y = offsets[i].second;
         child.size = halfSize;
@@ -240,15 +240,15 @@ std::int32_t ShadowAtlasManagerUVE::FindAndAllocateNodeUVE(std::int32_t nodeInde
         child.childIndices = {-1, -1, -1, -1};
     }
 
-    return FindAndAllocateNodeUVE(children[0], targetSize);
+    return FindAndAllocateNode(children[0], targetSize);
 }
 
-void ShadowAtlasManagerUVE::CoalesceBuddiesUVE(std::int32_t parentIndex) {
+void ShadowAtlasManager::CoalesceBuddies(std::int32_t parentIndex) {
     if (parentIndex < 0 || static_cast<std::size_t>(parentIndex) >= m_nodes.size()) {
         return;
     }
 
-    ShadowAtlasNodeUVE& parent = m_nodes[static_cast<std::size_t>(parentIndex)];
+    ShadowAtlasNode& parent = m_nodes[static_cast<std::size_t>(parentIndex)];
     if (!parent.isSplit) {
         return;
     }
@@ -257,7 +257,7 @@ void ShadowAtlasManagerUVE::CoalesceBuddiesUVE(std::int32_t parentIndex) {
         if (childIndex < 0 || static_cast<std::size_t>(childIndex) >= m_nodes.size()) {
             return;
         }
-        const ShadowAtlasNodeUVE& child = m_nodes[static_cast<std::size_t>(childIndex)];
+        const ShadowAtlasNode& child = m_nodes[static_cast<std::size_t>(childIndex)];
         if (child.isAllocated || child.isSplit) {
             return;
         }
@@ -269,15 +269,15 @@ void ShadowAtlasManagerUVE::CoalesceBuddiesUVE(std::int32_t parentIndex) {
     parent.childIndices = {-1, -1, -1, -1};
 
     for (std::int32_t childIndex : childrenToRelease) {
-        ReleaseNodeSlotUVE(childIndex);
+        ReleaseNodeSlot(childIndex);
     }
 
-    CoalesceBuddiesUVE(parent.parentIndex);
+    CoalesceBuddies(parent.parentIndex);
 }
 
-Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputeSpotLightMatrixUVE(
-    const Math::Vector3UVE& position,
-    const Math::QuaternionUVE& rotation,
+Math::Matrix4x4 ShadowAtlasManager::ComputeSpotLightMatrix(
+    const Math::Vector3& position,
+    const Math::Quaternion& rotation,
     float spotAngleDegrees,
     float range,
     float nearPlane) noexcept {
@@ -285,24 +285,24 @@ Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputeSpotLightMatrixUVE(
     const float fovY = 2.0F * clampedAngle * (3.14159265358979323846F / 180.0F);
     const float safeNear = std::max(nearPlane, 0.01F);
     const float safeFar = std::max(range, safeNear + 0.1F);
-    const Math::Matrix4x4UVE view = Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(position, rotation);
-    const Math::Matrix4x4UVE proj = Math::Matrix4x4UVE::PerspectiveUVE(fovY, 1.0F, safeNear, safeFar);
+    const Math::Matrix4x4 view = Math::Matrix4x4::ViewFromPositionAndRotation(position, rotation);
+    const Math::Matrix4x4 proj = Math::Matrix4x4::Perspective(fovY, 1.0F, safeNear, safeFar);
     return proj * view;
 }
 
-Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(
-    const Math::Vector3UVE& position, const std::uint32_t faceIndex, const float range,
+Math::Matrix4x4 ShadowAtlasManager::ComputePointLightFaceMatrix(
+    const Math::Vector3& position, const std::uint32_t faceIndex, const float range,
     const float nearPlane) noexcept {
-    constexpr float kFaceFovYRadiansUVE = 3.14159265358979323846F * 0.5F;
-    const auto table = PointLightShadowFaceTableUVE();
-    const PointShadowFaceBasisUVE& basis =
-        table[std::min(faceIndex, kPointShadowFaceCountUVE - 1U)];
+    constexpr float kFaceFovYRadians = 3.14159265358979323846F * 0.5F;
+    const auto table = PointLightShadowFaceTable();
+    const PointShadowFaceBasis& basis =
+        table[std::min(faceIndex, kPointShadowFaceCount - 1U)];
 
     // View matrix built straight from the basis instead of a quaternion: the basis is already
     // orthonormal, and going through an Euler/quaternion round trip would only add a place for the
     // face table and the rendered image to disagree.
-    Math::Matrix4x4UVE view = Math::Matrix4x4UVE::IdentityUVE();
-    const Math::Vector3UVE rows[3] = {basis.right, basis.up, Math::Vector3UVE{-basis.forward.x,
+    Math::Matrix4x4 view = Math::Matrix4x4::Identity();
+    const Math::Vector3 rows[3] = {basis.right, basis.up, Math::Vector3{-basis.forward.x,
                                                                             -basis.forward.y,
                                                                             -basis.forward.z}};
     for (int row = 0; row < 3; ++row) {
@@ -315,13 +315,13 @@ Math::Matrix4x4UVE ShadowAtlasManagerUVE::ComputePointLightFaceMatrixUVE(
 
     const float safeNear = std::max(nearPlane, 0.01F);
     const float safeFar = std::max(range, safeNear + 0.1F);
-    const Math::Matrix4x4UVE projection =
-        Math::Matrix4x4UVE::PerspectiveUVE(kFaceFovYRadiansUVE, 1.0F, safeNear, safeFar);
+    const Math::Matrix4x4 projection =
+        Math::Matrix4x4::Perspective(kFaceFovYRadians, 1.0F, safeNear, safeFar);
     return projection * view;
 }
 
-std::uint32_t ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE(
-    const Math::Vector3UVE& direction) noexcept {
+std::uint32_t ShadowAtlasManager::PointLightShadowFaceForDirection(
+    const Math::Vector3& direction) noexcept {
     const float ax = std::abs(direction.x);
     const float ay = std::abs(direction.y);
     const float az = std::abs(direction.z);
@@ -334,21 +334,21 @@ std::uint32_t ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE(
     return direction.z >= 0.0F ? 4U : 5U;
 }
 
-Math::Vector4UVE ShadowAtlasManagerUVE::ComputeTileRectUVE(
+Math::Vector4 ShadowAtlasManager::ComputeTileRect(
     std::uint32_t x, std::uint32_t y, std::uint32_t size) noexcept {
-    const float invAtlas = 1.0F / static_cast<float>(kShadowAtlasResolutionUVE);
+    const float invAtlas = 1.0F / static_cast<float>(kShadowAtlasResolution);
     const float uMin = static_cast<float>(x) * invAtlas;
     const float vMin = static_cast<float>(y) * invAtlas;
     const float uMax = static_cast<float>(x + size) * invAtlas;
     const float vMax = static_cast<float>(y + size) * invAtlas;
-    return Math::Vector4UVE{uMin, vMin, uMax, vMax};
+    return Math::Vector4{uMin, vMin, uMax, vMax};
 }
 
-ViewportRectUVE ShadowAtlasManagerUVE::ComputePixelRectUVE(
+ViewportRect ShadowAtlasManager::ComputePixelRect(
     std::uint32_t x, std::uint32_t y, std::uint32_t size) noexcept {
-    ViewportRectUVE rect{};
-    rect.position = Math::Vector2iUVE{static_cast<std::int32_t>(x), static_cast<std::int32_t>(y)};
-    rect.size = Math::Vector2iUVE{static_cast<std::int32_t>(size), static_cast<std::int32_t>(size)};
+    ViewportRect rect{};
+    rect.position = Math::Vector2i{static_cast<std::int32_t>(x), static_cast<std::int32_t>(y)};
+    rect.size = Math::Vector2i{static_cast<std::int32_t>(size), static_cast<std::int32_t>(size)};
     return rect;
 }
 

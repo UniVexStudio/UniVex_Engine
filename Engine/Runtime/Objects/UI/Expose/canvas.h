@@ -10,11 +10,11 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-/// Authoring definition for the Canvas scene object. The record lives in CanvasComponentUVE;
-/// UIRuntimeUVE reads that component for visibility and sort order.
-struct CanvasObjectDefinitionUVE final {
+/// Authoring definition for the Canvas scene object. The record lives in CanvasComponent;
+/// UIRuntime reads that component for visibility and sort order.
+struct CanvasObjectDefinition final {
     static constexpr std::string_view typeName = "Canvas";
     /// Default document-entity name for a freshly created object of this kind — matches the
     /// Inspector's own "Canvas" component label exactly, so both entry points feel identical.
@@ -22,41 +22,41 @@ struct CanvasObjectDefinitionUVE final {
 
     /// Canvas authored defaults (visible, sort order 0); the entity's transform is attached by
     /// the creation shell.
-    CanvasComponentUVE canvas{};
+    CanvasComponent canvas{};
 
-    [[nodiscard]] bool operator==(const CanvasObjectDefinitionUVE&) const = default;
+    [[nodiscard]] bool operator==(const CanvasObjectDefinition&) const = default;
 };
 
-[[nodiscard]] bool IsCanvasObjectDefinitionValidUVE(const CanvasObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsCanvasObjectDefinitionValid(const CanvasObjectDefinition& value) noexcept;
 
 /// Attaches this object's components to `entity` using the definition's authored defaults. The
 /// entity must be alive and must not already have any of the attached component types.
-void ApplyCanvasObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                    const CanvasObjectDefinitionUVE& value);
+void ApplyCanvasObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                    const CanvasObjectDefinition& value);
 
 /// Node policy for a `Canvas` UI root object.
 ///
-/// Centralises canvas visibility and sort-order comparisons consumed by `ResolveCanvasAncestryUVE`
+/// Centralises canvas visibility and sort-order comparisons consumed by `ResolveCanvasAncestry`
 /// and UI draw-order ranking.
-class CanvasUVE final {
+class Canvas final {
 public:
-    CanvasUVE() = delete;
+    Canvas() = delete;
 
     /// True when `canvas` is valid and its authored `visible` flag is true.
-    [[nodiscard]] static bool IsCanvasVisibleUVE(const CanvasComponentUVE& canvas) noexcept;
+    [[nodiscard]] static bool IsCanvasVisible(const CanvasComponent& canvas) noexcept;
 
-    /// True when `entity` is alive, carries a visible `CanvasComponentUVE`, and is not hidden via
-    /// `VisibilityComponentUVE::visibleInHierarchy`.
-    [[nodiscard]] static bool IsEntityCanvasVisibleUVE(
-        const IEntityManagerUVE& entityManager, EntityUVE entity) noexcept;
+    /// True when `entity` is alive, carries a visible `CanvasComponent`, and is not hidden via
+    /// `VisibilityComponent::visibleInHierarchy`.
+    [[nodiscard]] static bool IsEntityCanvasVisible(
+        const IEntityManager& entityManager, Entity entity) noexcept;
 
     /// Returns `canvas.sortOrder` when valid, or `0` otherwise.
-    [[nodiscard]] static std::int32_t EffectiveSortOrderUVE(
-        const CanvasComponentUVE& canvas) noexcept;
+    [[nodiscard]] static std::int32_t EffectiveSortOrder(
+        const CanvasComponent& canvas) noexcept;
 
     /// True when `lhs` draws strictly before `rhs` by `sortOrder`.
-    [[nodiscard]] static bool RendersBeforeUVE(
-        const CanvasComponentUVE& lhs, const CanvasComponentUVE& rhs) noexcept;
+    [[nodiscard]] static bool RendersBefore(
+        const CanvasComponent& lhs, const CanvasComponent& rhs) noexcept;
 };
 
 } // namespace UVE::Scene

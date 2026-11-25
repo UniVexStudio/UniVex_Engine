@@ -9,25 +9,25 @@ namespace UVE::Scene {
 namespace {
 
 template <typename ComponentT>
-void EnsureComponentUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.HasComponentUVE<ComponentT>(entity)) {
-        entityManager.AddComponentUVE<ComponentT>(entity, ComponentT{});
+void EnsureComponent(IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.HasComponent<ComponentT>(entity)) {
+        entityManager.AddComponent<ComponentT>(entity, ComponentT{});
     }
 }
 
 } // namespace
 
-void ApplySceneRootObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                     const SceneRootObjectDefinitionUVE& value) {
+void ApplySceneRootObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                     const SceneRootObjectDefinition& value) {
     static_cast<void>(value);
-    if (!entityManager.IsAliveUVE(entity)) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
     // The root is a pure Object: in the hierarchy, named, with no transform of its own - children
     // under it start their own transform chains. The shared baseline also migrates an older root
     // created when every root carried a transform, so this runs on every load and repair.
-    EnsureObjectBaselineUVE(entityManager, entity, SceneRootObjectDefinitionUVE::defaultName);
-    EnsureComponentUVE<SceneRootComponentUVE>(entityManager, entity);
+    EnsureObjectBaseline(entityManager, entity, SceneRootObjectDefinition::defaultName);
+    EnsureComponent<SceneRootComponent>(entityManager, entity);
 }
 
 } // namespace UVE::Scene

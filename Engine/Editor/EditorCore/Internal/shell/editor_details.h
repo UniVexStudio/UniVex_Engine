@@ -35,36 +35,36 @@ namespace UVE::Editor {
 /// component metadata registry (the same declarations the previous Inspector drew), in the same
 /// section order, and every edit goes through the editor's own write paths:
 ///
-///   * a property: SetSelectedComponentPropertyUVE, or Preview... while a drag is held and
-///     CommitComponentPropertyPreviewForUVE when it ends (one undo step per gesture);
-///   * the transform: BeginTransformGestureUVE / PreviewTransformGestureValueUVE /
-///     CommitTransformGestureUVE, exactly like the transform drawer;
-///   * the name: SetSelectedEntityNameUVE.
-class EditorDetailsUVE final {
+///   * a property: SetSelectedComponentProperty, or Preview... while a drag is held and
+///     CommitComponentPropertyPreviewFor when it ends (one undo step per gesture);
+///   * the transform: BeginTransformGesture / PreviewTransformGestureValue /
+///     CommitTransformGesture, exactly like the transform drawer;
+///   * the name: SetSelectedEntityName.
+class EditorDetails final {
 public:
-    explicit EditorDetailsUVE(EditorUVE& editor);
-    ~EditorDetailsUVE();
+    explicit EditorDetails(Editor& editor);
+    ~EditorDetails();
 
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
     /// Rebuilds the rows when the selection, its components or the search change; otherwise
     /// refreshes the shown values (never the one being edited).
-    void RefreshUVE();
+    void Refresh();
     /// The camera Screen is on: the shell shows the selected camera's view in its viewport's corner.
-    [[nodiscard]] bool CameraScreenOpenUVE() const noexcept { return m_cameraScreenOpen; }
+    [[nodiscard]] bool CameraScreenOpen() const noexcept { return m_cameraScreenOpen; }
 
 private:
-    using EntryUVE = Core::TypeMetadataEntryUVE;
-    using PropertyUVE = Core::TypeMetadataPropertyUVE;
+    using Entry = Core::TypeMetadataEntry;
+    using Property = Core::TypeMetadataProperty;
 
-    struct RowUVE final {
-        const EntryUVE* entry = nullptr;           // null for the transform rows
+    struct Row final {
+        const Entry* entry = nullptr;           // null for the transform rows
         std::function<void(const void* instance)> sync;
         prism::Widget* editor = nullptr;
         bool editing = false;                      // a gesture is held: do not overwrite its value
     };
 
     /// What a slot's picker offers (editor_details_pickers.cpp).
-    struct PickerSpecUVE final {
+    struct PickerSpec final {
         std::string title;                    ///< "Mesh", "Material", "Texture" ...
         std::vector<std::string> listed;      ///< project files shown, by extension
         std::vector<std::string> loadable;    ///< what Load... / Import... accept
@@ -72,51 +72,51 @@ private:
         bool newMaterial = false;
     };
     /// What picking does: the slot's own setters.
-    struct PickerActionsUVE final {
+    struct PickerActions final {
         std::function<void()> empty;
         std::function<void(const std::filesystem::path& absolute)> file;
-        std::function<void(Scene::PrimitiveMeshKindUVE)> shape;
+        std::function<void(Scene::PrimitiveMeshKind)> shape;
         std::filesystem::path current;        ///< the file in the slot now (absolute), if any
-        std::optional<Scene::PrimitiveMeshKindUVE> currentShape;
+        std::optional<Scene::PrimitiveMeshKind> currentShape;
         /// More commands at the top of the menu, after Empty (a sky slot's New Sky).
         std::vector<std::pair<std::string, std::function<void()>>> extras;
     };
-    [[nodiscard]] static PickerSpecUVE PickerSpecForUVE(const std::vector<std::string>& extensions);
-    void ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE actions, prism::Rect anchor);
+    [[nodiscard]] static PickerSpec PickerSpecFor(const std::vector<std::string>& extensions);
+    void ShowPicker(const PickerSpec& spec, PickerActions actions, prism::Rect anchor);
     /// The asset a picked file becomes for a slot: a model source its .uvmodel, an image its .uvtex.
-    [[nodiscard]] Asset::AssetGuidUVE PublishPickedUVE(const std::filesystem::path& absolute);
+    [[nodiscard]] Asset::AssetGuid PublishPicked(const std::filesystem::path& absolute);
     /// Packs a material's separate Metallic / Roughness maps into the ORM map the shader reads.
-    void PackSeparateMapsUVE(Asset::MaterialAssetUVE& material, const std::filesystem::path& materialPath, bool metallicPicked,
+    void PackSeparateMaps(Asset::MaterialAsset& material, const std::filesystem::path& materialPath, bool metallicPicked,
                              bool roughnessPicked);
-    [[nodiscard]] std::filesystem::path PathOfGuidUVE(Asset::AssetGuidUVE guid) const;
+    [[nodiscard]] std::filesystem::path PathOfGuid(Asset::AssetGuid guid) const;
     /// How the texture at `texturePath` is imported (colour space, usage, mipmaps, size...), applied by
     /// re-importing its source image (editor_details_material.cpp).
-    void ShowTextureSettingsUVE(const std::filesystem::path& texturePath);
+    void ShowTextureSettings(const std::filesystem::path& texturePath);
 
-    void RebuildUVE(Scene::EntityUVE entity);
+    void Rebuild(Scene::Entity entity);
     // Rows some objects need beyond their properties (editor_details_objects.cpp).
-    void AddCameraPreviewUVE(Scene::EntityUVE entity);
-    void AddRagdollBuilderUVE(Scene::EntityUVE entity);
-    void AddSkeletonSourceUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
+    void AddCameraPreview(Scene::Entity entity);
+    void AddRagdollBuilder(Scene::Entity entity);
+    void AddSkeletonSource(int category, const Entry& entry, const Property& property, const void* instance,
                               bool writable);
-    void AddSkeletonBonesUVE(int category, const void* instance);
+    void AddSkeletonBones(int category, const void* instance);
     /// The object's script `export` fields, one typed row each.
-    void AddScriptExportsUVE(int category, bool writable);
+    void AddScriptExports(int category, bool writable);
     /// The object's metadata: key, value and remove per entry, then Add.
-    void AddObjectMetadataUVE(int category, const void* instance, bool writable);
-    void AddBonePickerUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
+    void AddObjectMetadata(int category, const void* instance, bool writable);
+    void AddBonePicker(int category, const Entry& entry, const Property& property, const void* instance,
                           bool writable);
-    void AddTransformUVE(int category, Scene::EntityUVE entity);
+    void AddTransform(int category, Scene::Entity entity);
     /// The material file at `absolutePath`, edited in place (editor_details_material.cpp).
-    void AddMaterialSectionUVE(const std::filesystem::path& absolutePath, const std::string& slotLabel);
-    void AddPropertyUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
+    void AddMaterialSection(const std::filesystem::path& absolutePath, const std::string& slotLabel);
+    void AddProperty(int category, const Entry& entry, const Property& property, const void* instance,
                         bool writable);
-    [[nodiscard]] std::uint64_t StructureSignatureUVE(Scene::EntityUVE entity) const;
-    [[nodiscard]] bool MatchesFilterUVE(const std::string& text) const;
-    [[nodiscard]] bool IsBeingEditedUVE(const RowUVE& row) const;
+    [[nodiscard]] std::uint64_t StructureSignature(Scene::Entity entity) const;
+    [[nodiscard]] bool MatchesFilter(const std::string& text) const;
+    [[nodiscard]] bool IsBeingEdited(const Row& row) const;
 
-    EditorUVE& m_editor;
-    EditorIconsUVE m_icons;
+    Editor& m_editor;
+    EditorIcons m_icons;
     std::shared_ptr<prism::TextInput> m_search;
     std::shared_ptr<prism::Label> m_title;
     std::shared_ptr<prism::Label> m_subtitle;
@@ -125,8 +125,8 @@ private:
     std::weak_ptr<prism::Button> m_scaleLockButton;
     /// Scale lock: on, a change to one axis of Scale takes the other two with it (in proportion).
     bool m_scaleLocked = false;
-    std::vector<std::shared_ptr<RowUVE>> m_rows;
-    Scene::EntityUVE m_entity = Scene::kInvalidEntityUVE;
+    std::vector<std::shared_ptr<Row>> m_rows;
+    Scene::Entity m_entity = Scene::kInvalidEntity;
     std::uint64_t m_signature = 0;
     std::string m_filter;
     // Materials the rows just added use, shown as their own sections after the component's rows.
@@ -140,7 +140,7 @@ private:
 
 /// Wraps an asset slot so a file dragged from the Asset Library onto it is used (`use`), when its
 /// extension is one of `kinds`. The slot highlights while a usable file is over it.
-[[nodiscard]] prism::Ref<prism::Widget> WithAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
+[[nodiscard]] prism::Ref<prism::Widget> WithAssetDrop(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
                                                          std::vector<std::string> kinds,
                                                          std::function<void(const std::filesystem::path&)> use);
 

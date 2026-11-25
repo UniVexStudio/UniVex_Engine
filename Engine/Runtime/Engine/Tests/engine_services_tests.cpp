@@ -63,57 +63,57 @@
 #include "i_timer.h"
 #include "i_window_manager.h"
 
-// These hand-written fakes exist to prove that EngineServicesUVE (and, by
-// extension, anything that consumes ILoggerUVE/ITimerUVE/IEventSystemUVE/
-// IMemoryManagerUVE/IThreadPoolUVE/ICommandLineUVE/IConfigManagerUVE/
-// IEntityManagerUVE/ISceneGraphUVE/IAssetDatabaseUVE/ISceneSerializerUVE/
-// IPrefabSystemUVE/IHotReloadUVE/IAssetManagerUVE/IAssetImporterUVE/
-// IAssetBundleUVE/IFileSystemUVE/IRenderDeviceUVE/Shader::IShaderManagerUVE/IRenderSystemUVE/
-// ICameraSystemUVE/IMeshRendererUVE) works against ANY conforming
-// implementation, independent of the concrete LoggerUVE/TimerUVE/
-// EventSystemUVE/MemoryManagerUVE/ThreadPoolUVE/CommandLineUVE/
-// ConfigManagerUVE/EntityManagerUVE/SceneGraphUVE/AssetDatabaseUVE/
-// SceneSerializerUVE/PrefabSystemUVE/HotReloadUVE/AssetManagerUVE/
-// AssetImporterUVE/AssetBundleUVE/FileSystemUVE/NullRenderDeviceUVE/
-// RenderSystemUVE/CameraSystemUVE/MeshRendererUVE classes used by
-// EngineCoreUVE — this is the whole point of introducing the interfaces.
+// These hand-written fakes exist to prove that EngineServices (and, by
+// extension, anything that consumes ILogger/ITimer/IEventSystem/
+// IMemoryManager/IThreadPool/ICommandLine/IConfigManager/
+// IEntityManager/ISceneGraph/IAssetDatabase/ISceneSerializer/
+// IPrefabSystem/IHotReload/IAssetManager/IAssetImporter/
+// IAssetBundle/IFileSystem/IRenderDevice/Shader::IShaderManager/IRenderSystem/
+// ICameraSystem/IMeshRenderer) works against ANY conforming
+// implementation, independent of the concrete Logger/Timer/
+// EventSystem/MemoryManager/ThreadPool/CommandLine/
+// ConfigManager/EntityManager/SceneGraph/AssetDatabase/
+// SceneSerializer/PrefabSystem/HotReload/AssetManager/
+// AssetImporter/AssetBundle/FileSystem/NullRenderDevice/
+// RenderSystem/CameraSystem/MeshRenderer classes used by
+// EngineCore — this is the whole point of introducing the interfaces.
 
 namespace UVE::Core::Tests {
 namespace {
 
-class FakeLoggerUVE final : public Debug::ILoggerUVE {
+class FakeLogger final : public Debug::ILogger {
 public:
-    void Init(Debug::LogLevelUVE) override {}
+    void Init(Debug::LogLevel) override {}
     void Shutdown() override {}
-    void AddSink(std::unique_ptr<Debug::ILogSinkUVE>) override {}
-    void SetMinLevel(Debug::LogLevelUVE level) override { minLevel = level; }
-    [[nodiscard]] Debug::LogLevelUVE GetMinLevel() const override { return minLevel; }
-    void LogFormatted(Debug::LogLevelUVE, std::string_view, const char*, int, std::string) override {}
+    void AddSink(std::unique_ptr<Debug::ILogSink>) override {}
+    void SetMinLevel(Debug::LogLevel level) override { minLevel = level; }
+    [[nodiscard]] Debug::LogLevel GetMinLevel() const override { return minLevel; }
+    void LogFormatted(Debug::LogLevel, std::string_view, const char*, int, std::string) override {}
 
-    Debug::LogLevelUVE minLevel = Debug::LogLevelUVE::Trace;
+    Debug::LogLevel minLevel = Debug::LogLevel::Trace;
 };
 
-class FakeTimerUVE final : public Utilities::ITimerUVE {
+class FakeTimer final : public Utilities::ITimer {
 public:
     void Tick() override { ++tickCount; }
-    [[nodiscard]] double GetDeltaTimeUVE() const override { return 0.0; }
-    [[nodiscard]] float GetDeltaTimeFloatUVE() const override { return 0.0F; }
-    [[nodiscard]] double GetTotalTimeUVE() const override { return 0.0; }
+    [[nodiscard]] double GetDeltaTime() const override { return 0.0; }
+    [[nodiscard]] float GetDeltaTimeFloat() const override { return 0.0F; }
+    [[nodiscard]] double GetTotalTime() const override { return 0.0; }
     void Reset() override {}
-    void SetMaxDeltaTimeUVE(double) override {}
-    void SetFixedTimestepUVE(double) override {}
-    void SetMaxStepsPerTickUVE(int) override {}
-    Utilities::FixedStepResultUVE AdvanceFixedStepUVE() override { return {}; }
-    void DiscardFixedStepAccumulatorUVE() noexcept override { ++discardCount; }
+    void SetMaxDeltaTime(double) override {}
+    void SetFixedTimestep(double) override {}
+    void SetMaxStepsPerTick(int) override {}
+    Utilities::FixedStepResult AdvanceFixedStep() override { return {}; }
+    void DiscardFixedStepAccumulator() noexcept override { ++discardCount; }
 
     int tickCount = 0;
     int discardCount = 0;
 };
 
-class FakeEventSystemUVE final : public Events::IEventSystemUVE {
+class FakeEventSystem final : public Events::IEventSystem {
 public:
-    void Unsubscribe(const Events::EventSubscriptionUVE&) override {}
-    void DispatchQueuedUVE() override { ++dispatchCount; }
+    void Unsubscribe(const Events::EventSubscription&) override {}
+    void DispatchQueued() override { ++dispatchCount; }
     void Clear() override {}
 
     int dispatchCount = 0;
@@ -121,124 +121,124 @@ public:
 protected:
     std::uint64_t SubscribeErased(std::type_index, std::function<void(const void*)>) override { return 1; }
     void PublishErased(std::type_index, const void*) override {}
-    void QueueErased(std::type_index, Events::EventPriorityUVE, std::function<void()>) override {}
+    void QueueErased(std::type_index, Events::EventPriority, std::function<void()>) override {}
 };
 
-class FakeAllocatorUVE final : public Memory::IAllocatorUVE {
+class FakeAllocator final : public Memory::IAllocator {
 public:
-    [[nodiscard]] void* AllocateUVE(std::size_t, std::size_t, const char*, int) override {
+    [[nodiscard]] void* Allocate(std::size_t, std::size_t, const char*, int) override {
         return nullptr;
     }
-    void DeallocateUVE(void*) override {}
-    [[nodiscard]] std::size_t GetAllocatedBytesUVE() const override { return 0; }
+    void Deallocate(void*) override {}
+    [[nodiscard]] std::size_t GetAllocatedBytes() const override { return 0; }
 };
 
-class FakeMemoryManagerUVE final : public Memory::IMemoryManagerUVE {
+class FakeMemoryManager final : public Memory::IMemoryManager {
 public:
-    void RecordAllocationUVE(void*, std::size_t, std::size_t, std::string_view, const char*,
+    void RecordAllocation(void*, std::size_t, std::size_t, std::string_view, const char*,
                               int) override {
         ++recordAllocationCount;
     }
-    void RecordDeallocationUVE(void*) override { ++recordDeallocationCount; }
-    [[nodiscard]] Memory::IAllocatorUVE& GetDefaultAllocatorUVE() override { return allocator; }
-    [[nodiscard]] std::size_t GetActiveAllocationCountUVE() const override { return 0; }
-    [[nodiscard]] std::size_t GetActiveBytesUVE() const override { return 0; }
-    [[nodiscard]] std::size_t GetPeakBytesUVE() const override { return 0; }
-    [[nodiscard]] std::uint64_t GetTotalAllocationsEverUVE() const override { return 0; }
-    [[nodiscard]] bool HasLeaksUVE() const override { return false; }
-    [[nodiscard]] std::vector<Memory::AllocationRecordUVE> GetLeakedAllocationsUVE() const override {
+    void RecordDeallocation(void*) override { ++recordDeallocationCount; }
+    [[nodiscard]] Memory::IAllocator& GetDefaultAllocator() override { return allocator; }
+    [[nodiscard]] std::size_t GetActiveAllocationCount() const override { return 0; }
+    [[nodiscard]] std::size_t GetActiveBytes() const override { return 0; }
+    [[nodiscard]] std::size_t GetPeakBytes() const override { return 0; }
+    [[nodiscard]] std::uint64_t GetTotalAllocationsEver() const override { return 0; }
+    [[nodiscard]] bool HasLeaks() const override { return false; }
+    [[nodiscard]] std::vector<Memory::AllocationRecord> GetLeakedAllocations() const override {
         return {};
     }
-    void LogLeakReportUVE() override { ++logLeakReportCallCount; }
+    void LogLeakReport() override { ++logLeakReportCallCount; }
 
-    FakeAllocatorUVE allocator;
+    FakeAllocator allocator;
     int recordAllocationCount = 0;
     int recordDeallocationCount = 0;
     int logLeakReportCallCount = 0;
 };
 
-class FakeThreadPoolUVE final : public Threading::IThreadPoolUVE {
+class FakeThreadPool final : public Threading::IThreadPool {
 public:
-    void SubmitUVE(Threading::JobUVE job) override {
+    void Submit(Threading::Job job) override {
         ++submitCount;
         job();
     }
-    void SubmitUVE(Threading::JobUVE job, Threading::JobCounterUVE& counter) override {
+    void Submit(Threading::Job job, Threading::JobCounter& counter) override {
         ++submitCount;
-        counter.IncrementUVE();
+        counter.Increment();
         job();
-        counter.DecrementAndNotifyUVE();
+        counter.DecrementAndNotify();
     }
-    [[nodiscard]] std::size_t GetWorkerCountUVE() const noexcept override { return 1; }
-    [[nodiscard]] std::size_t GetPendingJobCountUVE() const noexcept override { return 0; }
-    [[nodiscard]] std::size_t GetActiveWorkerCountUVE() const noexcept override { return 0; }
-    [[nodiscard]] std::uint64_t GetStolenJobCountUVE() const noexcept override { return 0; }
-    [[nodiscard]] bool IsWorkerThreadUVE() const noexcept override { return false; }
+    [[nodiscard]] std::size_t GetWorkerCount() const noexcept override { return 1; }
+    [[nodiscard]] std::size_t GetPendingJobCount() const noexcept override { return 0; }
+    [[nodiscard]] std::size_t GetActiveWorkerCount() const noexcept override { return 0; }
+    [[nodiscard]] std::uint64_t GetStolenJobCount() const noexcept override { return 0; }
+    [[nodiscard]] bool IsWorkerThread() const noexcept override { return false; }
 
     int submitCount = 0;
 };
 
-class FakeCommandLineUVE final : public CommandLine::ICommandLineUVE {
+class FakeCommandLine final : public CommandLine::ICommandLine {
 public:
-    [[nodiscard]] bool HasFlagUVE(std::string_view name) const noexcept override {
+    [[nodiscard]] bool HasFlag(std::string_view name) const noexcept override {
         ++hasFlagCallCount;
         return name == "server";
     }
-    [[nodiscard]] std::string GetValueUVE(std::string_view /*name*/,
+    [[nodiscard]] std::string GetValue(std::string_view /*name*/,
                                            std::string_view defaultValue) const override {
         return std::string(defaultValue);
     }
-    [[nodiscard]] std::optional<std::string> GetOptionalValueUVE(std::string_view) const override {
+    [[nodiscard]] std::optional<std::string> GetOptionalValue(std::string_view) const override {
         return std::nullopt;
     }
 
     mutable int hasFlagCallCount = 0;
 };
 
-class FakeConfigManagerUVE final : public Config::IConfigManagerUVE {
+class FakeConfigManager final : public Config::IConfigManager {
 public:
-    bool LoadUVE(const std::filesystem::path&) override { return true; }
-    bool SaveUVE() override {
+    bool Load(const std::filesystem::path&) override { return true; }
+    bool Save() override {
         ++saveCallCount;
         return true;
     }
-    bool SaveUVE(const std::filesystem::path&) override {
+    bool Save(const std::filesystem::path&) override {
         ++saveCallCount;
         return true;
     }
-    [[nodiscard]] std::string GetStringUVE(std::string_view,
+    [[nodiscard]] std::string GetString(std::string_view,
                                             std::string_view defaultValue) const override {
         return std::string(defaultValue);
     }
-    [[nodiscard]] std::int64_t GetIntUVE(std::string_view, std::int64_t defaultValue) const override {
+    [[nodiscard]] std::int64_t GetInt(std::string_view, std::int64_t defaultValue) const override {
         return defaultValue;
     }
-    [[nodiscard]] double GetDoubleUVE(std::string_view, double defaultValue) const override {
+    [[nodiscard]] double GetDouble(std::string_view, double defaultValue) const override {
         return defaultValue;
     }
-    [[nodiscard]] bool GetBoolUVE(std::string_view, bool defaultValue) const override {
+    [[nodiscard]] bool GetBool(std::string_view, bool defaultValue) const override {
         return defaultValue;
     }
-    void SetStringUVE(std::string_view, std::string) override {}
-    void SetIntUVE(std::string_view, std::int64_t) override {}
-    void SetDoubleUVE(std::string_view, double) override {}
-    void SetBoolUVE(std::string_view, bool) override {}
-    [[nodiscard]] bool HasKeyUVE(std::string_view) const override { return false; }
-    bool RemoveKeyUVE(std::string_view) override { return false; }
+    void SetString(std::string_view, std::string) override {}
+    void SetInt(std::string_view, std::int64_t) override {}
+    void SetDouble(std::string_view, double) override {}
+    void SetBool(std::string_view, bool) override {}
+    [[nodiscard]] bool HasKey(std::string_view) const override { return false; }
+    bool RemoveKey(std::string_view) override { return false; }
 
     int saveCallCount = 0;
 };
 
-class FakeEntityManagerUVE final : public Scene::IEntityManagerUVE {
+class FakeEntityManager final : public Scene::IEntityManager {
 public:
-    [[nodiscard]] Scene::EntityUVE CreateEntityUVE() override {
+    [[nodiscard]] Scene::Entity CreateEntity() override {
         ++createEntityCallCount;
-        return Scene::EntityUVE{0, 0};
+        return Scene::Entity{0, 0};
     }
-    void DestroyEntityUVE(Scene::EntityUVE) override { ++destroyEntityCallCount; }
-    [[nodiscard]] bool IsAliveUVE(Scene::EntityUVE) const noexcept override { return true; }
-    [[nodiscard]] std::size_t GetEntityCountUVE() const noexcept override { return 0; }
-    [[nodiscard]] std::vector<std::type_index> GetComponentTypesUVE(Scene::EntityUVE) const override {
+    void DestroyEntity(Scene::Entity) override { ++destroyEntityCallCount; }
+    [[nodiscard]] bool IsAlive(Scene::Entity) const noexcept override { return true; }
+    [[nodiscard]] std::size_t GetEntityCount() const noexcept override { return 0; }
+    [[nodiscard]] std::vector<std::type_index> GetComponentTypes(Scene::Entity) const override {
         return {};
     }
 
@@ -246,86 +246,86 @@ public:
     int destroyEntityCallCount = 0;
 
 protected:
-    [[nodiscard]] void* AddComponentErased(Scene::EntityUVE, std::type_index,
-                                            const Scene::ComponentTypeInfoUVE&) override {
+    [[nodiscard]] void* AddComponentErased(Scene::Entity, std::type_index,
+                                            const Scene::ComponentTypeInfo&) override {
         return nullptr;
     }
-    void RemoveComponentErased(Scene::EntityUVE, std::type_index) override {}
-    [[nodiscard]] bool HasComponentErased(Scene::EntityUVE, std::type_index) const override { return false; }
-    [[nodiscard]] void* GetComponentErased(Scene::EntityUVE, std::type_index) override { return nullptr; }
+    void RemoveComponentErased(Scene::Entity, std::type_index) override {}
+    [[nodiscard]] bool HasComponentErased(Scene::Entity, std::type_index) const override { return false; }
+    [[nodiscard]] void* GetComponentErased(Scene::Entity, std::type_index) override { return nullptr; }
     void ForEachErased(const std::vector<std::type_index>&,
-                        const std::function<void(Scene::EntityUVE, const std::vector<void*>&)>&) override {}
+                        const std::function<void(Scene::Entity, const std::vector<void*>&)>&) override {}
 };
 
-class FakeSceneGraphUVE final : public Scene::ISceneGraphUVE {
+class FakeSceneGraph final : public Scene::ISceneGraph {
 public:
-    void AttachTransformUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE,
-                             const Scene::TransformComponentUVE&) override {}
-    void SetLocalTransformUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE,
-                               const Scene::TransformComponentUVE&) override {}
-    void SetParentUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE, Scene::EntityUVE) override {}
-    void UpdateUVE(Scene::IEntityManagerUVE&) override { ++updateCallCount; }
-    [[nodiscard]] std::vector<Scene::EntityUVE> GetChildrenUVE(Scene::IEntityManagerUVE&,
-                                                                Scene::EntityUVE) override {
+    void AttachTransform(Scene::IEntityManager&, Scene::Entity,
+                             const Scene::TransformComponent&) override {}
+    void SetLocalTransform(Scene::IEntityManager&, Scene::Entity,
+                               const Scene::TransformComponent&) override {}
+    void SetParent(Scene::IEntityManager&, Scene::Entity, Scene::Entity) override {}
+    void Update(Scene::IEntityManager&) override { ++updateCallCount; }
+    [[nodiscard]] std::vector<Scene::Entity> GetChildren(Scene::IEntityManager&,
+                                                                Scene::Entity) override {
         return {};
     }
-    [[nodiscard]] std::optional<std::size_t> GetSiblingIndexUVE(Scene::IEntityManagerUVE&,
-                                                                 Scene::EntityUVE) override {
+    [[nodiscard]] std::optional<std::size_t> GetSiblingIndex(Scene::IEntityManager&,
+                                                                 Scene::Entity) override {
         return std::nullopt;
     }
-    [[nodiscard]] bool SetSiblingIndexUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE, std::size_t) override {
+    [[nodiscard]] bool SetSiblingIndex(Scene::IEntityManager&, Scene::Entity, std::size_t) override {
         return false;
     }
-    [[nodiscard]] std::optional<Scene::ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
-        Scene::EntityUVE) const override {
+    [[nodiscard]] std::optional<Scene::ResolvedObjectModes> TryGetResolvedObjectModes(
+        Scene::Entity) const override {
         return std::nullopt;
     }
 
     int updateCallCount = 0;
 };
 
-class FakeParticleRuntimeUVE final : public Scene::IParticleRuntimeUVE {
+class FakeParticleRuntime final : public Scene::IParticleRuntime {
 public:
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE AttachDetailedUVE(
-        Scene::EntityUVE, const Scene::ParticleEmitterComponentUVE&) override {
+    [[nodiscard]] Scene::ParticleRuntimeResult AttachDetailed(
+        Scene::Entity, const Scene::ParticleEmitterComponent&) override {
         ++attachCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "attached"};
+        return {Scene::ParticleRuntimeCode::Applied, "attached"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE DetachDetailedUVE(Scene::EntityUVE) noexcept override {
+    [[nodiscard]] Scene::ParticleRuntimeResult DetachDetailed(Scene::Entity) noexcept override {
         ++detachCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "detached"};
+        return {Scene::ParticleRuntimeCode::Applied, "detached"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE SetEnabledDetailedUVE(Scene::EntityUVE, bool) noexcept override {
+    [[nodiscard]] Scene::ParticleRuntimeResult SetEnabledDetailed(Scene::Entity, bool) noexcept override {
         ++setEnabledCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "enabled"};
+        return {Scene::ParticleRuntimeCode::Applied, "enabled"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE SetLiveParticleCountDetailedUVE(
-        Scene::EntityUVE, std::uint32_t) noexcept override {
+    [[nodiscard]] Scene::ParticleRuntimeResult SetLiveParticleCountDetailed(
+        Scene::Entity, std::uint32_t) noexcept override {
         ++setLiveParticleCountCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "live count"};
+        return {Scene::ParticleRuntimeCode::Applied, "live count"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE EmitDetailedUVE(
-        Scene::EntityUVE, const Scene::ParticleEmissionUVE&) override {
+    [[nodiscard]] Scene::ParticleRuntimeResult EmitDetailed(
+        Scene::Entity, const Scene::ParticleEmission&) override {
         ++emitCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "emitted"};
+        return {Scene::ParticleRuntimeCode::Applied, "emitted"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeResultUVE SimulateDetailedUVE(
-        float, const Math::Vector3UVE&) noexcept override {
+    [[nodiscard]] Scene::ParticleRuntimeResult SimulateDetailed(
+        float, const Math::Vector3&) noexcept override {
         ++simulateCallCount;
-        return {Scene::ParticleRuntimeCodeUVE::Applied, "simulated"};
+        return {Scene::ParticleRuntimeCode::Applied, "simulated"};
     }
-    [[nodiscard]] Scene::ParticleRuntimeSnapshotUVE GetSnapshotUVE() const override {
+    [[nodiscard]] Scene::ParticleRuntimeSnapshot GetSnapshot() const override {
         ++snapshotCallCount;
         return {};
     }
-    [[nodiscard]] std::optional<Scene::ParticleStateSnapshotUVE> GetParticleSnapshotUVE(
-        Scene::EntityUVE) const override {
+    [[nodiscard]] std::optional<Scene::ParticleStateSnapshot> GetParticleSnapshot(
+        Scene::Entity) const override {
         ++particleSnapshotCallCount;
         return std::nullopt;
     }
-    [[nodiscard]] bool HasInstanceUVE(Scene::EntityUVE) const noexcept override { return false; }
-    [[nodiscard]] std::size_t GetInstanceCountUVE() const noexcept override { return 0U; }
-    [[nodiscard]] std::uint64_t GetTotalBudgetUVE() const noexcept override { return 0U; }
+    [[nodiscard]] bool HasInstance(Scene::Entity) const noexcept override { return false; }
+    [[nodiscard]] std::size_t GetInstanceCount() const noexcept override { return 0U; }
+    [[nodiscard]] std::uint64_t GetTotalBudget() const noexcept override { return 0U; }
 
     mutable int snapshotCallCount = 0;
     mutable int particleSnapshotCallCount = 0;
@@ -337,133 +337,133 @@ public:
     int simulateCallCount = 0;
 };
 
-class FakeAssetDatabaseUVE final : public Asset::IAssetDatabaseUVE {
+class FakeAssetDatabase final : public Asset::IAssetDatabase {
 public:
-    bool LoadUVE(const std::filesystem::path&) override { return true; }
-    bool SaveUVE() override {
+    bool Load(const std::filesystem::path&) override { return true; }
+    bool Save() override {
         ++saveCallCount;
         return true;
     }
-    bool SaveUVE(const std::filesystem::path&) override {
+    bool Save(const std::filesystem::path&) override {
         ++saveCallCount;
         return true;
     }
-    [[nodiscard]] Asset::AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
-        return Asset::AssetGuidUVE{1};
+    [[nodiscard]] Asset::AssetGuid Register(const std::filesystem::path&) override {
+        return Asset::AssetGuid{1};
     }
-    [[nodiscard]] std::filesystem::path ResolveUVE(Asset::AssetGuidUVE) const override { return {}; }
-    [[nodiscard]] bool HasGuidUVE(Asset::AssetGuidUVE) const override { return false; }
-    [[nodiscard]] std::vector<Asset::AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+    [[nodiscard]] std::filesystem::path Resolve(Asset::AssetGuid) const override { return {}; }
+    [[nodiscard]] bool HasGuid(Asset::AssetGuid) const override { return false; }
+    [[nodiscard]] std::vector<Asset::AssetRecord> GetRegisteredAssets() const override { return {}; }
 
     int saveCallCount = 0;
 };
 
-class FakeProjectFileIndexUVE final : public Asset::IProjectFileIndexUVE {
+class FakeProjectFileIndex final : public Asset::IProjectFileIndex {
 public:
-    bool RefreshUVE(const Asset::IAssetDatabaseUVE&) override {
+    bool Refresh(const Asset::IAssetDatabase&) override {
         ++refreshCallCount;
         ++snapshot.refreshGeneration;
         return true;
     }
 
-    [[nodiscard]] Asset::ProjectFileSnapshotUVE GetSnapshotUVE() const override { return snapshot; }
+    [[nodiscard]] Asset::ProjectFileSnapshot GetSnapshot() const override { return snapshot; }
 
     int refreshCallCount = 0;
-    Asset::ProjectFileSnapshotUVE snapshot;
+    Asset::ProjectFileSnapshot snapshot;
 };
 
-class FakeProjectChangeWatcherUVE final : public Asset::IProjectChangeWatcherUVE {
+class FakeProjectChangeWatcher final : public Asset::IProjectChangeWatcher {
 public:
-    [[nodiscard]] bool PollUVE(double, const Asset::IAssetDatabaseUVE&,
-                               Asset::IDerivedArtifactCacheUVE&) override {
+    [[nodiscard]] bool Poll(double, const Asset::IAssetDatabase&,
+                               Asset::IDerivedArtifactCache&) override {
         ++pollCallCount;
         return true;
     }
 
-    [[nodiscard]] bool PollNowUVE(const Asset::IAssetDatabaseUVE&,
-                                  Asset::IDerivedArtifactCacheUVE&) override {
+    [[nodiscard]] bool PollNow(const Asset::IAssetDatabase&,
+                                  Asset::IDerivedArtifactCache&) override {
         ++pollNowCallCount;
         return true;
     }
 
-    [[nodiscard]] Asset::ProjectChangeSnapshotUVE GetSnapshotUVE() const override { return snapshot; }
+    [[nodiscard]] Asset::ProjectChangeSnapshot GetSnapshot() const override { return snapshot; }
 
-    void AcknowledgeThroughUVE(std::uint64_t sequence) override { acknowledgedThrough = sequence; }
+    void AcknowledgeThrough(std::uint64_t sequence) override { acknowledgedThrough = sequence; }
 
-    void AcknowledgeRescanUVE() override { snapshot.rescanRequired = false; }
+    void AcknowledgeRescan() override { snapshot.rescanRequired = false; }
 
     int pollCallCount = 0;
     int pollNowCallCount = 0;
     std::uint64_t acknowledgedThrough = 0U;
-    Asset::ProjectChangeSnapshotUVE snapshot;
+    Asset::ProjectChangeSnapshot snapshot;
 };
 
-class FakeDerivedArtifactCacheUVE final : public Asset::IDerivedArtifactCacheUVE {
+class FakeDerivedArtifactCache final : public Asset::IDerivedArtifactCache {
 public:
-    [[nodiscard]] std::optional<Asset::DerivedArtifactCacheRecordUVE>
-    LoadImportRecordUVE(const std::filesystem::path&) const override {
+    [[nodiscard]] std::optional<Asset::DerivedArtifactCacheRecord>
+    LoadImportRecord(const std::filesystem::path&) const override {
         ++loadCallCount;
         return std::nullopt;
     }
 
-    [[nodiscard]] bool StoreImportRecordUVE(const std::filesystem::path&,
-                                             const Asset::DerivedArtifactCacheRecordUVE&) override {
+    [[nodiscard]] bool StoreImportRecord(const std::filesystem::path&,
+                                             const Asset::DerivedArtifactCacheRecord&) override {
         ++storeCallCount;
         return true;
     }
 
-    [[nodiscard]] std::size_t MarkStaleForSourceUVE(const std::filesystem::path&) override {
+    [[nodiscard]] std::size_t MarkStaleForSource(const std::filesystem::path&) override {
         ++markStaleCallCount;
         return 0U;
     }
 
-    [[nodiscard]] std::filesystem::path GetCacheRootUVE() const override { return "fake-derived-cache"; }
+    [[nodiscard]] std::filesystem::path GetCacheRoot() const override { return "fake-derived-cache"; }
 
     mutable int loadCallCount = 0;
     int storeCallCount = 0;
     int markStaleCallCount = 0;
 };
 
-class FakeAssetImportQueueUVE final : public Asset::IAssetImportQueueUVE {
+class FakeAssetImportQueue final : public Asset::IAssetImportQueue {
 public:
-    [[nodiscard]] std::optional<Asset::AssetImportJobIdUVE> EnqueueUVE(Asset::AssetImportRequestUVE) override {
+    [[nodiscard]] std::optional<Asset::AssetImportJobId> Enqueue(Asset::AssetImportRequest) override {
         ++enqueueCallCount;
-        return Asset::AssetImportJobIdUVE{1U};
+        return Asset::AssetImportJobId{1U};
     }
 
-    [[nodiscard]] bool TickUVE() override {
+    [[nodiscard]] bool Tick() override {
         ++tickCallCount;
         return false;
     }
 
-    [[nodiscard]] bool RetryUVE(Asset::AssetImportJobIdUVE) override {
+    [[nodiscard]] bool Retry(Asset::AssetImportJobId) override {
         ++retryCallCount;
         return false;
     }
 
-    [[nodiscard]] std::vector<Asset::AssetImportJobUVE> GetJobsUVE() const override { return {}; }
+    [[nodiscard]] std::vector<Asset::AssetImportJob> GetJobs() const override { return {}; }
 
     int enqueueCallCount = 0;
     int tickCallCount = 0;
     int retryCallCount = 0;
 };
 
-class FakeSceneSerializerUVE final : public Scene::ISceneSerializerUVE {
+class FakeSceneSerializer final : public Scene::ISceneSerializer {
 public:
-    [[nodiscard]] std::optional<Scene::SceneSnapshotUVE> CaptureUVE(
-        Scene::IEntityManagerUVE&, const std::vector<Scene::EntityUVE>&, Scene::SceneAssetTypeUVE assetType) const override {
-        return Scene::SceneSnapshotUVE{{}, assetType};
+    [[nodiscard]] std::optional<Scene::SceneSnapshot> Capture(
+        Scene::IEntityManager&, const std::vector<Scene::Entity>&, Scene::SceneAssetType assetType) const override {
+        return Scene::SceneSnapshot{{}, assetType};
     }
-    [[nodiscard]] std::vector<Scene::EntityUVE> RestoreUVE(Scene::IEntityManagerUVE&,
-                                                            const Scene::SceneSnapshotUVE&) const override {
+    [[nodiscard]] std::vector<Scene::Entity> Restore(Scene::IEntityManager&,
+                                                            const Scene::SceneSnapshot&) const override {
         return {};
     }
-    [[nodiscard]] bool SaveUVE(Scene::IEntityManagerUVE&, const std::vector<Scene::EntityUVE>&,
-                                const std::filesystem::path&, Scene::SceneAssetTypeUVE) override {
+    [[nodiscard]] bool Save(Scene::IEntityManager&, const std::vector<Scene::Entity>&,
+                                const std::filesystem::path&, Scene::SceneAssetType) override {
         ++saveCallCount;
         return true;
     }
-    [[nodiscard]] std::vector<Scene::EntityUVE> LoadUVE(Scene::IEntityManagerUVE&,
+    [[nodiscard]] std::vector<Scene::Entity> Load(Scene::IEntityManager&,
                                                           const std::filesystem::path&) override {
         return {};
     }
@@ -471,87 +471,87 @@ public:
     int saveCallCount = 0;
 };
 
-class FakePrefabSystemUVE final : public Scene::IPrefabSystemUVE {
+class FakePrefabSystem final : public Scene::IPrefabSystem {
 public:
-    [[nodiscard]] Asset::AssetGuidUVE SavePrefabUVE(Scene::IEntityManagerUVE&,
-                                                     Asset::IAssetDatabaseUVE&, Scene::EntityUVE,
+    [[nodiscard]] Asset::AssetGuid SavePrefab(Scene::IEntityManager&,
+                                                     Asset::IAssetDatabase&, Scene::Entity,
                                                      const std::filesystem::path&) override {
         ++savePrefabCallCount;
-        return Asset::AssetGuidUVE{1};
+        return Asset::AssetGuid{1};
     }
-    [[nodiscard]] Scene::EntityUVE InstantiateUVE(Scene::IEntityManagerUVE&, Scene::ISceneGraphUVE&,
-                                                   Asset::IAssetDatabaseUVE&, Asset::AssetGuidUVE,
-                                                   Scene::EntityUVE) override {
-        return Scene::kInvalidEntityUVE;
+    [[nodiscard]] Scene::Entity Instantiate(Scene::IEntityManager&, Scene::ISceneGraph&,
+                                                   Asset::IAssetDatabase&, Asset::AssetGuid,
+                                                   Scene::Entity) override {
+        return Scene::kInvalidEntity;
     }
-    [[nodiscard]] Scene::PrefabRefreshResultUVE RefreshInstanceUVE(
-        Scene::IEntityManagerUVE&, Scene::ISceneGraphUVE&, Asset::IAssetDatabaseUVE&,
-        Scene::EntityUVE instanceRoot, bool) override {
-        return {Scene::PrefabRefreshCodeUVE::InvalidInstance, instanceRoot, 0U, "fake"};
+    [[nodiscard]] Scene::PrefabRefreshResult RefreshInstance(
+        Scene::IEntityManager&, Scene::ISceneGraph&, Asset::IAssetDatabase&,
+        Scene::Entity instanceRoot, bool) override {
+        return {Scene::PrefabRefreshCode::InvalidInstance, instanceRoot, 0U, "fake"};
     }
 
     int savePrefabCallCount = 0;
 };
 
-class FakeHotReloadUVE final : public Asset::IHotReloadUVE {
+class FakeHotReload final : public Asset::IHotReload {
 public:
-    void TrackUVE(Asset::AssetGuidUVE) override {}
-    void UntrackUVE(Asset::AssetGuidUVE) override {}
-    void PollUVE(Asset::IAssetManagerUVE&, Asset::IAssetDatabaseUVE&, double) override { ++pollCallCount; }
+    void Track(Asset::AssetGuid) override {}
+    void Untrack(Asset::AssetGuid) override {}
+    void Poll(Asset::IAssetManager&, Asset::IAssetDatabase&, double) override { ++pollCallCount; }
 
     int pollCallCount = 0;
 };
 
-class FakeAssetManagerUVE final : public Asset::IAssetManagerUVE {
+class FakeAssetManager final : public Asset::IAssetManager {
 public:
-    void CollectGarbageUVE() override { ++collectGarbageCallCount; }
-    void ReloadUVE(Asset::AssetGuidUVE, Asset::IAssetDatabaseUVE&) override { ++reloadCallCount; }
-    [[nodiscard]] std::size_t GetLoadedAssetCountUVE() const override { return 0; }
+    void CollectGarbage() override { ++collectGarbageCallCount; }
+    void Reload(Asset::AssetGuid, Asset::IAssetDatabase&) override { ++reloadCallCount; }
+    [[nodiscard]] std::size_t GetLoadedAssetCount() const override { return 0; }
 
     int collectGarbageCallCount = 0;
     int reloadCallCount = 0;
 
 protected:
-    void RegisterLoaderErased(std::type_index, Asset::AssetLoaderInfoUVE) override {}
-    void LoadErased(Asset::AssetGuidUVE, std::type_index, Asset::IAssetDatabaseUVE&) override {}
-    [[nodiscard]] Asset::AssetLoadStateUVE GetStateErased(Asset::AssetGuidUVE) const override {
-        return Asset::AssetLoadStateUVE::NotLoaded;
+    void RegisterLoaderErased(std::type_index, Asset::AssetLoaderInfo) override {}
+    void LoadErased(Asset::AssetGuid, std::type_index, Asset::IAssetDatabase&) override {}
+    [[nodiscard]] Asset::AssetLoadState GetStateErased(Asset::AssetGuid) const override {
+        return Asset::AssetLoadState::NotLoaded;
     }
-    [[nodiscard]] std::string GetFailureReasonErased(Asset::AssetGuidUVE) const override { return {}; }
-    [[nodiscard]] void* TryGetErased(Asset::AssetGuidUVE) override { return nullptr; }
-    void AddRefErased(Asset::AssetGuidUVE) override {}
-    void ReleaseErased(Asset::AssetGuidUVE) override {}
+    [[nodiscard]] std::string GetFailureReasonErased(Asset::AssetGuid) const override { return {}; }
+    [[nodiscard]] void* TryGetErased(Asset::AssetGuid) override { return nullptr; }
+    void AddRefErased(Asset::AssetGuid) override {}
+    void ReleaseErased(Asset::AssetGuid) override {}
 };
 
-class FakeAssetImporterUVE final : public Asset::IAssetImporterUVE {
+class FakeAssetImporter final : public Asset::IAssetImporter {
 public:
-    void RegisterImporterUVE(std::string,
+    void RegisterImporter(std::string,
                               std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
-                                                  const Asset::AssetImportSettingsUVE&)>) override {}
-    [[nodiscard]] Asset::AssetGuidUVE ImportUVE(const std::filesystem::path&, const std::filesystem::path&,
-                                                 Asset::IAssetDatabaseUVE&,
-                                                 const Asset::AssetImportSettingsUVE&) override {
+                                                  const Asset::AssetImportSettings&)>) override {}
+    [[nodiscard]] Asset::AssetGuid Import(const std::filesystem::path&, const std::filesystem::path&,
+                                                 Asset::IAssetDatabase&,
+                                                 const Asset::AssetImportSettings&) override {
         ++importCallCount;
-        return Asset::AssetGuidUVE{1};
+        return Asset::AssetGuid{1};
     }
 
     int importCallCount = 0;
 };
 
-class FakeAssetBundleUVE final : public Asset::IAssetBundleUVE {
+class FakeAssetBundle final : public Asset::IAssetBundle {
 public:
-    [[nodiscard]] bool PackUVE(const std::vector<Asset::AssetBundleEntryUVE>&,
+    [[nodiscard]] bool Pack(const std::vector<Asset::AssetBundleEntry>&,
                                 const std::filesystem::path&) override {
         ++packCallCount;
         return true;
     }
-    [[nodiscard]] bool UnpackUVE(const std::filesystem::path&, const std::filesystem::path&) override {
+    [[nodiscard]] bool Unpack(const std::filesystem::path&, const std::filesystem::path&) override {
         return true;
     }
-    [[nodiscard]] bool HasEntryUVE(const std::filesystem::path&, std::string_view) const override {
+    [[nodiscard]] bool HasEntry(const std::filesystem::path&, std::string_view) const override {
         return false;
     }
-    [[nodiscard]] std::optional<std::vector<std::byte>> ReadEntryUVE(const std::filesystem::path&,
+    [[nodiscard]] std::optional<std::vector<std::byte>> ReadEntry(const std::filesystem::path&,
                                                                        std::string_view) const override {
         return std::nullopt;
     }
@@ -559,192 +559,192 @@ public:
     int packCallCount = 0;
 };
 
-class FakeFileSystemUVE final : public Asset::IFileSystemUVE {
+class FakeFileSystem final : public Asset::IFileSystem {
 public:
-    [[nodiscard]] Asset::MountHandleUVE MountDirectoryUVE(std::string, std::filesystem::path, int) override {
+    [[nodiscard]] Asset::MountHandle MountDirectory(std::string, std::filesystem::path, int) override {
         return 1;
     }
-    [[nodiscard]] Asset::MountHandleUVE MountBundleUVE(std::string, std::filesystem::path, int) override {
+    [[nodiscard]] Asset::MountHandle MountBundle(std::string, std::filesystem::path, int) override {
         return 1;
     }
-    void UnmountUVE(Asset::MountHandleUVE) override {}
-    [[nodiscard]] bool HasFileUVE(std::string_view) const override { return false; }
-    [[nodiscard]] std::optional<std::vector<std::byte>> ReadFileUVE(std::string_view) const override {
+    void Unmount(Asset::MountHandle) override {}
+    [[nodiscard]] bool HasFile(std::string_view) const override { return false; }
+    [[nodiscard]] std::optional<std::vector<std::byte>> ReadFile(std::string_view) const override {
         return std::nullopt;
     }
-    [[nodiscard]] bool WriteFileUVE(std::string_view, const std::vector<std::byte>&) override {
+    [[nodiscard]] bool WriteFile(std::string_view, const std::vector<std::byte>&) override {
         ++writeCallCount;
         return true;
     }
-    [[nodiscard]] std::filesystem::path ResolveRealPathUVE(std::string_view) const override { return {}; }
+    [[nodiscard]] std::filesystem::path ResolveRealPath(std::string_view) const override { return {}; }
 
     int writeCallCount = 0;
 };
 
-class FakeCommandBufferUVE final : public Render::ICommandBufferUVE {
+class FakeCommandBuffer final : public Render::ICommandBuffer {
 public:
-    void BeginRenderPassUVE(const Render::RenderPassDescUVE&) override {}
-    void EndRenderPassUVE() override {}
-    void BindPipelineUVE(Render::PipelineHandleUVE) override {}
-    void BindVertexBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
-    void BindIndexBufferUVE(Render::BufferHandleUVE) override {}
-    void BindTextureUVE(Render::TextureHandleUVE, std::uint32_t) override {}
-    void BindSamplerUVE(Render::SamplerHandleUVE, std::uint32_t) override {}
-    void BindUniformBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
-    void BindStorageBufferUVE(Render::BufferHandleUVE, std::uint32_t) override {}
-    void DrawIndexedUVE(std::uint32_t, std::uint32_t, std::uint32_t) override {}
-    void DrawIndexedIndirectUVE(Render::BufferHandleUVE, std::uint64_t) override {}
-    void DrawUVE(std::uint32_t, std::uint32_t) override {}
-    void DispatchUVE(std::uint32_t, std::uint32_t, std::uint32_t) override {}
-    void SetUniformFloatUVE(std::string_view, float) override {}
-    void SetUniformIntUVE(std::string_view, std::int32_t) override {}
-    void SetUniformBoolUVE(std::string_view, bool) override {}
-    void SetUniformVector2UVE(std::string_view, const Math::Vector2UVE&) override {}
-    void SetUniformVector3UVE(std::string_view, const Math::Vector3UVE&) override {}
-    void SetUniformVector4UVE(std::string_view, const Math::Vector4UVE&) override {}
-    void SetUniformMatrix4x4UVE(std::string_view, const Math::Matrix4x4UVE&) override {}
+    void BeginRenderPass(const Render::RenderPassDesc&) override {}
+    void EndRenderPass() override {}
+    void BindPipeline(Render::PipelineHandle) override {}
+    void BindVertexBuffer(Render::BufferHandle, std::uint32_t) override {}
+    void BindIndexBuffer(Render::BufferHandle) override {}
+    void BindTexture(Render::TextureHandle, std::uint32_t) override {}
+    void BindSampler(Render::SamplerHandle, std::uint32_t) override {}
+    void BindUniformBuffer(Render::BufferHandle, std::uint32_t) override {}
+    void BindStorageBuffer(Render::BufferHandle, std::uint32_t) override {}
+    void DrawIndexed(std::uint32_t, std::uint32_t, std::uint32_t) override {}
+    void DrawIndexedIndirect(Render::BufferHandle, std::uint64_t) override {}
+    void Draw(std::uint32_t, std::uint32_t) override {}
+    void Dispatch(std::uint32_t, std::uint32_t, std::uint32_t) override {}
+    void SetUniformFloat(std::string_view, float) override {}
+    void SetUniformInt(std::string_view, std::int32_t) override {}
+    void SetUniformBool(std::string_view, bool) override {}
+    void SetUniformVector2(std::string_view, const Math::Vector2&) override {}
+    void SetUniformVector3(std::string_view, const Math::Vector3&) override {}
+    void SetUniformVector4(std::string_view, const Math::Vector4&) override {}
+    void SetUniformMatrix4x4(std::string_view, const Math::Matrix4x4&) override {}
 };
 
-class FakeRenderDeviceUVE final : public Render::IRenderDeviceUVE {
+class FakeRenderDevice final : public Render::IRenderDevice {
 public:
-    [[nodiscard]] Render::BufferHandleUVE CreateBufferUVE(const Render::BufferDescUVE&,
+    [[nodiscard]] Render::BufferHandle CreateBuffer(const Render::BufferDesc&,
                                                             std::span<const std::byte>) override {
         ++createBufferCallCount;
-        return Render::BufferHandleUVE{1};
+        return Render::BufferHandle{1};
     }
-    void DestroyBufferUVE(Render::BufferHandleUVE) override {}
-    [[nodiscard]] bool UpdateBufferUVE(Render::BufferHandleUVE, std::span<const std::byte>, std::uint64_t) override {
+    void DestroyBuffer(Render::BufferHandle) override {}
+    [[nodiscard]] bool UpdateBuffer(Render::BufferHandle, std::span<const std::byte>, std::uint64_t) override {
         return true;
     }
-    [[nodiscard]] bool ReadbackBufferUVE(Render::BufferHandleUVE, std::span<std::byte>, std::uint64_t) override {
+    [[nodiscard]] bool ReadbackBuffer(Render::BufferHandle, std::span<std::byte>, std::uint64_t) override {
         return false; // this fake owns no memory - it never pretends to have contents to hand back
     }
-    [[nodiscard]] Render::TextureHandleUVE CreateTextureUVE(const Render::TextureDescUVE&,
+    [[nodiscard]] Render::TextureHandle CreateTexture(const Render::TextureDesc&,
                                                               std::span<const std::byte>) override {
-        return Render::TextureHandleUVE{1};
+        return Render::TextureHandle{1};
     }
-    [[nodiscard]] bool SupportsTextureFormatUVE(const Render::TextureFormatUVE format,
-                                                const Render::TextureColorSpaceUVE colorSpace) const noexcept override {
-        const bool formatKnown = Render::GetTextureFormatBlockInfoUVE(format).bytes != 0U;
+    [[nodiscard]] bool SupportsTextureFormat(const Render::TextureFormat format,
+                                                const Render::TextureColorSpace colorSpace) const noexcept override {
+        const bool formatKnown = Render::GetTextureFormatBlockInfo(format).bytes != 0U;
         switch (colorSpace) {
-            case Render::TextureColorSpaceUVE::Linear:
-                return formatKnown && !Render::IsTextureFormatCompressedUVE(format);
-            case Render::TextureColorSpaceUVE::Srgb:
-                return formatKnown && Render::IsTextureFormatSrgbCapableUVE(format) &&
-                       !Render::IsTextureFormatCompressedUVE(format);
+            case Render::TextureColorSpace::Linear:
+                return formatKnown && !Render::IsTextureFormatCompressed(format);
+            case Render::TextureColorSpace::Srgb:
+                return formatKnown && Render::IsTextureFormatSrgbCapable(format) &&
+                       !Render::IsTextureFormatCompressed(format);
         }
         return false;
     }
-    void DestroyTextureUVE(Render::TextureHandleUVE) override {}
-    [[nodiscard]] Render::SamplerHandleUVE CreateSamplerUVE(const Render::SamplerDescUVE&) override {
-        return Render::SamplerHandleUVE{1};
+    void DestroyTexture(Render::TextureHandle) override {}
+    [[nodiscard]] Render::SamplerHandle CreateSampler(const Render::SamplerDesc&) override {
+        return Render::SamplerHandle{1};
     }
-    void DestroySamplerUVE(Render::SamplerHandleUVE) override {}
-    [[nodiscard]] Render::ShaderHandleUVE CreateShaderUVE(const Render::ShaderDescUVE&, std::string*) override {
-        return Render::ShaderHandleUVE{1};
+    void DestroySampler(Render::SamplerHandle) override {}
+    [[nodiscard]] Render::ShaderHandle CreateShader(const Render::ShaderDesc&, std::string*) override {
+        return Render::ShaderHandle{1};
     }
-    void DestroyShaderUVE(Render::ShaderHandleUVE) override {}
-    [[nodiscard]] Render::PipelineHandleUVE CreatePipelineUVE(const Render::PipelineDescUVE&, std::string*) override {
-        return Render::PipelineHandleUVE{1};
+    void DestroyShader(Render::ShaderHandle) override {}
+    [[nodiscard]] Render::PipelineHandle CreatePipeline(const Render::PipelineDesc&, std::string*) override {
+        return Render::PipelineHandle{1};
     }
-    [[nodiscard]] Render::PipelineHandleUVE CreateComputePipelineUVE(const Render::ComputePipelineDescUVE&,
+    [[nodiscard]] Render::PipelineHandle CreateComputePipeline(const Render::ComputePipelineDesc&,
                                                                       std::string*) override {
-        return Render::PipelineHandleUVE{1};
+        return Render::PipelineHandle{1};
     }
-    void DestroyPipelineUVE(Render::PipelineHandleUVE) override {}
-    [[nodiscard]] std::vector<Render::UniformReflectionUVE> GetPipelineUniformsUVE(
-        Render::PipelineHandleUVE) const override {
+    void DestroyPipeline(Render::PipelineHandle) override {}
+    [[nodiscard]] std::vector<Render::UniformReflection> GetPipelineUniforms(
+        Render::PipelineHandle) const override {
         return {};
     }
-    [[nodiscard]] bool GetPipelineBinaryUVE(Render::PipelineHandleUVE, std::vector<std::byte>&,
+    [[nodiscard]] bool GetPipelineBinary(Render::PipelineHandle, std::vector<std::byte>&,
                                              std::uint32_t&) const override {
         return false;
     }
-    [[nodiscard]] Render::PipelineHandleUVE CreatePipelineFromBinaryUVE(
-        std::span<const std::byte>, std::uint32_t, const Render::PipelineBinaryDescUVE&) override {
-        return Render::PipelineHandleUVE{1};
+    [[nodiscard]] Render::PipelineHandle CreatePipelineFromBinary(
+        std::span<const std::byte>, std::uint32_t, const Render::PipelineBinaryDesc&) override {
+        return Render::PipelineHandle{1};
     }
-    [[nodiscard]] std::unique_ptr<Render::ICommandBufferUVE> CreateCommandBufferUVE() override { return nullptr; }
-    void SubmitUVE(std::unique_ptr<Render::ICommandBufferUVE>) override {}
-    void PresentUVE() override { ++presentCallCount; }
-    [[nodiscard]] bool IsUsableUVE() const noexcept override { return true; }
-    [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override { return "Fake"; }
+    [[nodiscard]] std::unique_ptr<Render::ICommandBuffer> CreateCommandBuffer() override { return nullptr; }
+    void Submit(std::unique_ptr<Render::ICommandBuffer>) override {}
+    void Present() override { ++presentCallCount; }
+    [[nodiscard]] bool IsUsable() const noexcept override { return true; }
+    [[nodiscard]] std::string_view GetBackendName() const noexcept override { return "Fake"; }
 
     int createBufferCallCount = 0;
     int presentCallCount = 0;
 };
 
-class FakeShaderManagerUVE final : public Render::Shader::IShaderManagerUVE {
+class FakeShaderManager final : public Render::Shader::IShaderManager {
 public:
-    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderSourceUVE> CreateSourceUVE(
-        const Render::Shader::ShaderSourceCompileDescUVE&) override {
+    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderSource> CreateSource(
+        const Render::Shader::ShaderSourceCompileDesc&) override {
         return nullptr;
     }
-    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderProgramUVE> CreateProgramUVE(
-        const Render::Shader::ShaderProgramDescUVE&) override {
+    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderProgram> CreateProgram(
+        const Render::Shader::ShaderProgramDesc&) override {
         return nullptr;
     }
-    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderProgramUVE> CreateProgramFromStagesUVE(
-        const Render::Shader::ShaderProgramStagesDescUVE&) override {
+    [[nodiscard]] std::shared_ptr<Render::Shader::ShaderProgram> CreateProgramFromStages(
+        const Render::Shader::ShaderProgramStagesDesc&) override {
         return nullptr;
     }
-    void UpdateUVE(double) override { ++updateCallCount; }
+    void Update(double) override { ++updateCallCount; }
 
     int updateCallCount = 0;
 };
 
-class FakeRenderSystemUVE final : public Render::IRenderSystemUVE {
+class FakeRenderSystem final : public Render::IRenderSystem {
 public:
-    void BeginFrameUVE() override { ++beginFrameCallCount; }
-    [[nodiscard]] Render::ICommandBufferUVE& GetFrameCommandBufferUVE() override { return commandBuffer; }
-    void EndFrameUVE() override {}
-    [[nodiscard]] std::uint64_t GetFrameIndexUVE() const noexcept override { return 0; }
+    void BeginFrame() override { ++beginFrameCallCount; }
+    [[nodiscard]] Render::ICommandBuffer& GetFrameCommandBuffer() override { return commandBuffer; }
+    void EndFrame() override {}
+    [[nodiscard]] std::uint64_t GetFrameIndex() const noexcept override { return 0; }
 
-    FakeCommandBufferUVE commandBuffer;
+    FakeCommandBuffer commandBuffer;
     int beginFrameCallCount = 0;
 };
 
-class FakeComputeSystemUVE final : public Render::IComputeSystemUVE {
+class FakeComputeSystem final : public Render::IComputeSystem {
 public:
-    [[nodiscard]] Render::PipelineHandleUVE CreateProgramUVE(const Render::ComputeProgramDescUVE&,
+    [[nodiscard]] Render::PipelineHandle CreateProgram(const Render::ComputeProgramDesc&,
                                                               std::string*) override {
-        return Render::kInvalidPipelineHandleUVE;
+        return Render::kInvalidPipelineHandle;
     }
-    void DestroyProgramUVE(Render::PipelineHandleUVE) override {}
-    [[nodiscard]] bool IsProgramLiveUVE(Render::PipelineHandleUVE) const noexcept override { return false; }
-    [[nodiscard]] bool EnqueueDispatchUVE(const Render::ComputeDispatchDescUVE&) override { return false; }
-    std::size_t ExecuteQueuedDispatchesUVE(Render::ICommandBufferUVE&) override { return 0U; }
-    [[nodiscard]] std::size_t GetQueuedDispatchCountUVE() const noexcept override { return 0U; }
-    void ClearQueueUVE() override {}
-    [[nodiscard]] const Render::ComputeSystemDiagnosticsUVE& GetDiagnosticsUVE() const noexcept override {
+    void DestroyProgram(Render::PipelineHandle) override {}
+    [[nodiscard]] bool IsProgramLive(Render::PipelineHandle) const noexcept override { return false; }
+    [[nodiscard]] bool EnqueueDispatch(const Render::ComputeDispatchDesc&) override { return false; }
+    std::size_t ExecuteQueuedDispatches(Render::ICommandBuffer&) override { return 0U; }
+    [[nodiscard]] std::size_t GetQueuedDispatchCount() const noexcept override { return 0U; }
+    void ClearQueue() override {}
+    [[nodiscard]] const Render::ComputeSystemDiagnostics& GetDiagnostics() const noexcept override {
         return diagnostics;
     }
 
-    Render::ComputeSystemDiagnosticsUVE diagnostics;
+    Render::ComputeSystemDiagnostics diagnostics;
 };
 
-class FakeCameraSystemUVE final : public Render::ICameraSystemUVE {
+class FakeCameraSystem final : public Render::ICameraSystem {
 public:
-    [[nodiscard]] Math::Matrix4x4UVE ComputeViewMatrixUVE(const Scene::IEntityManagerUVE&,
-                                                            Scene::EntityUVE) const override {
+    [[nodiscard]] Math::Matrix4x4 ComputeViewMatrix(const Scene::IEntityManager&,
+                                                            Scene::Entity) const override {
         ++computeViewCallCount;
-        return Math::Matrix4x4UVE::IdentityUVE();
+        return Math::Matrix4x4::Identity();
     }
-    [[nodiscard]] Math::Matrix4x4UVE ComputeProjectionMatrixUVE(const Scene::IEntityManagerUVE&, Scene::EntityUVE,
+    [[nodiscard]] Math::Matrix4x4 ComputeProjectionMatrix(const Scene::IEntityManager&, Scene::Entity,
                                                                  float) const override {
-        return Math::Matrix4x4UVE::IdentityUVE();
+        return Math::Matrix4x4::Identity();
     }
-    [[nodiscard]] Math::Matrix4x4UVE ComputeViewProjectionUVE(const Scene::IEntityManagerUVE&, Scene::EntityUVE,
+    [[nodiscard]] Math::Matrix4x4 ComputeViewProjection(const Scene::IEntityManager&, Scene::Entity,
                                                                float) const override {
-        return Math::Matrix4x4UVE::IdentityUVE();
+        return Math::Matrix4x4::Identity();
     }
-    [[nodiscard]] Math::FrustumUVE ExtractFrustumUVE(const Math::Matrix4x4UVE&) const override { return {}; }
-    [[nodiscard]] Render::CameraFrustumCornersUVE ComputeFrustumCornersUVE(
-        const Scene::IEntityManagerUVE&, Scene::EntityUVE, float) const override {
+    [[nodiscard]] Math::Frustum ExtractFrustum(const Math::Matrix4x4&) const override { return {}; }
+    [[nodiscard]] Render::CameraFrustumCorners ComputeFrustumCorners(
+        const Scene::IEntityManager&, Scene::Entity, float) const override {
         return {};
     }
-    [[nodiscard]] Math::Vector3UVE GetWorldPositionUVE(const Scene::IEntityManagerUVE&,
-                                                          Scene::EntityUVE) const override {
+    [[nodiscard]] Math::Vector3 GetWorldPosition(const Scene::IEntityManager&,
+                                                          Scene::Entity) const override {
         ++getWorldPositionCallCount;
         return {};
     }
@@ -753,11 +753,11 @@ public:
     mutable int getWorldPositionCallCount = 0;
 };
 
-class FakeMeshRendererUVE final : public Render::IMeshRendererUVE {
+class FakeMeshRenderer final : public Render::IMeshRenderer {
 public:
-    [[nodiscard]] Render::RenderQueueUVE ExtractRenderQueueUVE(Scene::IEntityManagerUVE&, Asset::IAssetManagerUVE&,
-                                                                 Asset::IAssetDatabaseUVE&,
-                                                                 const Math::FrustumUVE&) const override {
+    [[nodiscard]] Render::RenderQueue ExtractRenderQueue(Scene::IEntityManager&, Asset::IAssetManager&,
+                                                                 Asset::IAssetDatabase&,
+                                                                 const Math::Frustum&) const override {
         ++extractRenderQueueCallCount;
         return {};
     }
@@ -765,9 +765,9 @@ public:
     mutable int extractRenderQueueCallCount = 0;
 };
 
-class FakeLightSystemUVE final : public Render::ILightSystemUVE {
+class FakeLightSystem final : public Render::ILightSystem {
 public:
-    [[nodiscard]] Render::LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE&) const override {
+    [[nodiscard]] Render::LightList ExtractActiveLights(Scene::IEntityManager&) const override {
         ++extractActiveLightCallCount;
         return {};
     }
@@ -775,33 +775,33 @@ public:
     mutable int extractActiveLightCallCount = 0;
 };
 
-class FakeRenderer3DUVE final : public Render::IRenderer3DUVE {
+class FakeRenderer3D final : public Render::IRenderer3D {
 public:
     float lastPhysicsInterpolationAlpha = -1.0F;
 
-    void RenderFrameUVE(Scene::IEntityManagerUVE&, Scene::EntityUVE) override { ++renderFrameCallCount; }
+    void RenderFrame(Scene::IEntityManager&, Scene::Entity) override { ++renderFrameCallCount; }
 
-    void SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept override {
+    void SetPhysicsInterpolationAlpha(const float alpha) noexcept override {
         // Recorded rather than ignored: a fake that silently swallows the value cannot tell a
         // caller that forgot to set it from one that set it to zero, and this fake exists
         // precisely to observe what the engine hands the renderer.
         lastPhysicsInterpolationAlpha = alpha;
     }
 
-    [[nodiscard]] Render::Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override {
+    [[nodiscard]] Render::Renderer3DFrameDiagnostics GetLastFrameDiagnostics() const noexcept override {
         ++getDiagnosticsCallCount;
         return diagnostics;
     }
 
     int renderFrameCallCount = 0;
     mutable int getDiagnosticsCallCount = 0;
-    Render::Renderer3DFrameDiagnosticsUVE diagnostics{};
+    Render::Renderer3DFrameDiagnostics diagnostics{};
 };
 
-class FakeCollisionSystemUVE final : public Physics::ICollisionSystemUVE {
+class FakeCollisionSystem final : public Physics::ICollisionSystem {
 public:
-    [[nodiscard]] std::vector<Physics::CollisionPairUVE> DetectCollisionsUVE(
-        Scene::IEntityManagerUVE&) const override {
+    [[nodiscard]] std::vector<Physics::CollisionPair> DetectCollisions(
+        Scene::IEntityManager&) const override {
         ++detectCollisionsCallCount;
         return {};
     }
@@ -809,17 +809,17 @@ public:
     mutable int detectCollisionsCallCount = 0;
 };
 
-class FakePhysicsSystemUVE final : public Physics::IPhysicsSystemUVE {
+class FakePhysicsSystem final : public Physics::IPhysicsSystem {
 public:
-    void StepUVE(Scene::IEntityManagerUVE&, Scene::ISceneGraphUVE&, float) override { ++stepCallCount; }
+    void Step(Scene::IEntityManager&, Scene::ISceneGraph&, float) override { ++stepCallCount; }
 
     int stepCallCount = 0;
 };
 
-class FakeRaycastSystemUVE final : public Physics::IRaycastSystemUVE {
+class FakeRaycastSystem final : public Physics::IRaycastSystem {
 public:
-    [[nodiscard]] std::optional<Physics::RaycastHitUVE> RaycastUVE(
-        Scene::IEntityManagerUVE&, const Physics::RaycastQueryUVE&) const override {
+    [[nodiscard]] std::optional<Physics::RaycastHit> Raycast(
+        Scene::IEntityManager&, const Physics::RaycastQuery&) const override {
         ++raycastCallCount;
         return std::nullopt;
     }
@@ -827,265 +827,265 @@ public:
     mutable int raycastCallCount = 0;
 };
 
-class FakeInputSystemUVE final : public Input::IInputSystemUVE {
+class FakeInputSystem final : public Input::IInputSystem {
 public:
-    void SetKeyStateUVE(Input::KeyCodeUVE, bool) override {}
-    void SetMouseButtonStateUVE(Input::MouseButtonUVE, bool) override {}
-    void SetMousePositionUVE(Math::Vector2UVE) override {}
-    void SetMouseScrollDeltaUVE(float) override {}
-    void UpdateUVE() override { ++updateCallCount; }
+    void SetKeyState(Input::KeyCode, bool) override {}
+    void SetMouseButtonState(Input::MouseButton, bool) override {}
+    void SetMousePosition(Math::Vector2) override {}
+    void SetMouseScrollDelta(float) override {}
+    void Update() override { ++updateCallCount; }
 
-    [[nodiscard]] bool IsKeyDownUVE(Input::KeyCodeUVE) const override { return false; }
-    [[nodiscard]] bool WasKeyPressedThisFrameUVE(Input::KeyCodeUVE) const override { return false; }
-    [[nodiscard]] bool WasKeyReleasedThisFrameUVE(Input::KeyCodeUVE) const override { return false; }
-    [[nodiscard]] bool IsMouseButtonDownUVE(Input::MouseButtonUVE) const override { return false; }
-    [[nodiscard]] bool WasMouseButtonPressedThisFrameUVE(Input::MouseButtonUVE) const override { return false; }
-    [[nodiscard]] bool WasMouseButtonReleasedThisFrameUVE(Input::MouseButtonUVE) const override { return false; }
-    [[nodiscard]] Math::Vector2UVE GetMousePositionUVE() const override { return {}; }
-    [[nodiscard]] Math::Vector2UVE GetMouseDeltaUVE() const override { return {}; }
-    [[nodiscard]] float GetMouseScrollDeltaUVE() const override { return 0.0F; }
+    [[nodiscard]] bool IsKeyDown(Input::KeyCode) const override { return false; }
+    [[nodiscard]] bool WasKeyPressedThisFrame(Input::KeyCode) const override { return false; }
+    [[nodiscard]] bool WasKeyReleasedThisFrame(Input::KeyCode) const override { return false; }
+    [[nodiscard]] bool IsMouseButtonDown(Input::MouseButton) const override { return false; }
+    [[nodiscard]] bool WasMouseButtonPressedThisFrame(Input::MouseButton) const override { return false; }
+    [[nodiscard]] bool WasMouseButtonReleasedThisFrame(Input::MouseButton) const override { return false; }
+    [[nodiscard]] Math::Vector2 GetMousePosition() const override { return {}; }
+    [[nodiscard]] Math::Vector2 GetMouseDelta() const override { return {}; }
+    [[nodiscard]] float GetMouseScrollDelta() const override { return 0.0F; }
 
-    void RegisterActionUVE(Input::InputActionUVE&&) override {}
-    bool UnregisterActionUVE(std::string_view) override { return false; }
-    bool RemapActionUVE(std::string_view, std::vector<Input::InputBindingUVE>,
-                       std::vector<Input::InputBindingUVE>) override {
+    void RegisterAction(Input::InputAction&&) override {}
+    bool UnregisterAction(std::string_view) override { return false; }
+    bool RemapAction(std::string_view, std::vector<Input::InputBinding>,
+                       std::vector<Input::InputBinding>) override {
         return false;
     }
-    [[nodiscard]] bool IsActionTriggeredUVE(std::string_view) const override { return false; }
-    [[nodiscard]] bool IsActionHeldUVE(std::string_view) const override { return false; }
-    [[nodiscard]] bool IsActionReleasedUVE(std::string_view) const override { return false; }
-    [[nodiscard]] float GetAxisValueUVE(std::string_view) const override { return 0.0F; }
-    [[nodiscard]] bool HasActionUVE(std::string_view) const override { return false; }
+    [[nodiscard]] bool IsActionTriggered(std::string_view) const override { return false; }
+    [[nodiscard]] bool IsActionHeld(std::string_view) const override { return false; }
+    [[nodiscard]] bool IsActionReleased(std::string_view) const override { return false; }
+    [[nodiscard]] float GetAxisValue(std::string_view) const override { return 0.0F; }
+    [[nodiscard]] bool HasAction(std::string_view) const override { return false; }
 
     int updateCallCount = 0;
 };
 
-class FakeAudioDeviceUVE final : public Audio::IAudioDeviceUVE {
+class FakeAudioDevice final : public Audio::IAudioDevice {
 public:
-    [[nodiscard]] Audio::VoiceHandleUVE CreateVoiceUVE(const Audio::AudioVoiceDescUVE&) override {
-        return Audio::VoiceHandleUVE{1};
+    [[nodiscard]] Audio::VoiceHandle CreateVoice(const Audio::AudioVoiceDesc&) override {
+        return Audio::VoiceHandle{1};
     }
-    void DestroyVoiceUVE(Audio::VoiceHandleUVE) override {}
-    [[nodiscard]] bool PlayUVE(Audio::VoiceHandleUVE) override { return true; }
-    [[nodiscard]] bool StopUVE(Audio::VoiceHandleUVE) override { return true; }
-    [[nodiscard]] bool SetVoiceParamsUVE(Audio::VoiceHandleUVE, const Audio::AudioVoiceParamsUVE&) override {
+    void DestroyVoice(Audio::VoiceHandle) override {}
+    [[nodiscard]] bool Play(Audio::VoiceHandle) override { return true; }
+    [[nodiscard]] bool Stop(Audio::VoiceHandle) override { return true; }
+    [[nodiscard]] bool SetVoiceParams(Audio::VoiceHandle, const Audio::AudioVoiceParams&) override {
         return true;
     }
-    [[nodiscard]] Audio::VoicePlaybackStateUVE GetVoiceStateUVE(Audio::VoiceHandleUVE) const override {
-        return Audio::VoicePlaybackStateUVE::Stopped;
+    [[nodiscard]] Audio::VoicePlaybackState GetVoiceState(Audio::VoiceHandle) const override {
+        return Audio::VoicePlaybackState::Stopped;
     }
-    [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override { return "Fake"; }
+    [[nodiscard]] std::string_view GetBackendName() const noexcept override { return "Fake"; }
 
-    [[nodiscard]] Audio::VoiceHandleUVE CreateStreamVoiceUVE(const Audio::AudioStreamFormatUVE&) override {
-        return Audio::VoiceHandleUVE{1};
+    [[nodiscard]] Audio::VoiceHandle CreateStreamVoice(const Audio::AudioStreamFormat&) override {
+        return Audio::VoiceHandle{1};
     }
-    [[nodiscard]] std::size_t PushStreamFramesUVE(Audio::VoiceHandleUVE, std::span<const float>) override {
+    [[nodiscard]] std::size_t PushStreamFrames(Audio::VoiceHandle, std::span<const float>) override {
         return 0U;
     }
-    [[nodiscard]] bool EndStreamUVE(Audio::VoiceHandleUVE) override { return true; }
-    [[nodiscard]] std::size_t GetStreamBufferedFramesUVE(Audio::VoiceHandleUVE) const override { return 0U; }
-    [[nodiscard]] std::size_t GetStreamFreeFramesUVE(Audio::VoiceHandleUVE) const override { return 0U; }
+    [[nodiscard]] bool EndStream(Audio::VoiceHandle) override { return true; }
+    [[nodiscard]] std::size_t GetStreamBufferedFrames(Audio::VoiceHandle) const override { return 0U; }
+    [[nodiscard]] std::size_t GetStreamFreeFrames(Audio::VoiceHandle) const override { return 0U; }
 };
 
-class FakeAudioSystemUVE final : public Audio::IAudioSystemUVE {
+class FakeAudioSystem final : public Audio::IAudioSystem {
 public:
-    void SetListenerPositionUVE(Math::Vector3UVE) override {}
-    void SetListenerOrientationUVE(Math::Vector3UVE, Math::Vector3UVE) override {}
-    [[nodiscard]] Math::Vector3UVE GetListenerPositionUVE() const noexcept override { return {}; }
-    [[nodiscard]] Audio::VoiceHandleUVE CreateSourceUVE(const Audio::AudioSourceDescUVE&) override {
-        return Audio::VoiceHandleUVE{1};
+    void SetListenerPosition(Math::Vector3) override {}
+    void SetListenerOrientation(Math::Vector3, Math::Vector3) override {}
+    [[nodiscard]] Math::Vector3 GetListenerPosition() const noexcept override { return {}; }
+    [[nodiscard]] Audio::VoiceHandle CreateSource(const Audio::AudioSourceDesc&) override {
+        return Audio::VoiceHandle{1};
     }
-    void DestroySourceUVE(Audio::VoiceHandleUVE) override {}
-    [[nodiscard]] bool PlayUVE(Audio::VoiceHandleUVE) override { return true; }
-    [[nodiscard]] bool StopUVE(Audio::VoiceHandleUVE) override { return true; }
-    [[nodiscard]] Audio::VoicePlaybackStateUVE GetSourceStateUVE(Audio::VoiceHandleUVE) const override {
-        return Audio::VoicePlaybackStateUVE::Stopped;
+    void DestroySource(Audio::VoiceHandle) override {}
+    [[nodiscard]] bool Play(Audio::VoiceHandle) override { return true; }
+    [[nodiscard]] bool Stop(Audio::VoiceHandle) override { return true; }
+    [[nodiscard]] Audio::VoicePlaybackState GetSourceState(Audio::VoiceHandle) const override {
+        return Audio::VoicePlaybackState::Stopped;
     }
-    void SetSourcePositionUVE(Audio::VoiceHandleUVE, Math::Vector3UVE) override {}
-    void SetSourceVolumeUVE(Audio::VoiceHandleUVE, float) override {}
-    void SetSourcePitchUVE(Audio::VoiceHandleUVE, float) override {}
-    bool RegisterMixerGroupUVE(std::string_view, std::string_view, float, float) override { return false; }
-    bool RegisterMixerGroupUVE(std::string_view, float, float) override { return false; }
-    bool RemoveMixerGroupUVE(std::string_view) override { return false; }
-    bool SetMixerGroupParentUVE(std::string_view, std::string_view) override { return false; }
-    bool SetMixerGroupVolumeUVE(std::string_view, float) override { return false; }
-    bool SetMixerGroupPitchUVE(std::string_view, float) override { return false; }
-    bool SetMixerGroupMutedUVE(std::string_view, bool) override { return false; }
-    bool SetMixerGroupSoloedUVE(std::string_view, bool) override { return false; }
-    bool SetMixerInsertUVE(std::string_view, std::size_t, const Audio::AudioInsertDescUVE&) override {
+    void SetSourcePosition(Audio::VoiceHandle, Math::Vector3) override {}
+    void SetSourceVolume(Audio::VoiceHandle, float) override {}
+    void SetSourcePitch(Audio::VoiceHandle, float) override {}
+    bool RegisterMixerGroup(std::string_view, std::string_view, float, float) override { return false; }
+    bool RegisterMixerGroup(std::string_view, float, float) override { return false; }
+    bool RemoveMixerGroup(std::string_view) override { return false; }
+    bool SetMixerGroupParent(std::string_view, std::string_view) override { return false; }
+    bool SetMixerGroupVolume(std::string_view, float) override { return false; }
+    bool SetMixerGroupPitch(std::string_view, float) override { return false; }
+    bool SetMixerGroupMuted(std::string_view, bool) override { return false; }
+    bool SetMixerGroupSoloed(std::string_view, bool) override { return false; }
+    bool SetMixerInsert(std::string_view, std::size_t, const Audio::AudioInsertDesc&) override {
         return false;
     }
-    bool ClearMixerInsertUVE(std::string_view, std::size_t) override { return false; }
-    bool SetMixerSampleRateUVE(float) override { return false; }
-    bool SetSourceMixerGroupUVE(Audio::VoiceHandleUVE, std::string_view) override { return false; }
-    [[nodiscard]] Audio::AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(std::size_t) const override { return {}; }
-    [[nodiscard]] bool ResetSourceStreamUVE(Audio::VoiceHandleUVE, std::size_t, bool, std::size_t,
+    bool ClearMixerInsert(std::string_view, std::size_t) override { return false; }
+    bool SetMixerSampleRate(float) override { return false; }
+    bool SetSourceMixerGroup(Audio::VoiceHandle, std::string_view) override { return false; }
+    [[nodiscard]] Audio::AudioMixerDiagnostics GetMixerDiagnostics(std::size_t) const override { return {}; }
+    [[nodiscard]] bool ResetSourceStream(Audio::VoiceHandle, std::size_t, bool, std::size_t,
                                              std::size_t) override {
         return false;
     }
-    [[nodiscard]] bool ScheduleSourceStreamWindowUVE(Audio::VoiceHandleUVE, std::size_t) override {
+    [[nodiscard]] bool ScheduleSourceStreamWindow(Audio::VoiceHandle, std::size_t) override {
         return false;
     }
-    [[nodiscard]] bool PopSourceStreamWindowUVE(Audio::VoiceHandleUVE,
-                                                 Audio::Pcm16StreamWindowPlanUVE&) override {
+    [[nodiscard]] bool PopSourceStreamWindow(Audio::VoiceHandle,
+                                                 Audio::Pcm16StreamWindowPlan&) override {
         return false;
     }
-    [[nodiscard]] bool ScheduleSourcePcmGainWindowUVE(
-        Audio::VoiceHandleUVE, const Audio::PcmGainEffectWindowUVE&) override {
+    [[nodiscard]] bool ScheduleSourcePcmGainWindow(
+        Audio::VoiceHandle, const Audio::PcmGainEffectWindow&) override {
         return false;
     }
-    [[nodiscard]] bool ApplySourcePcmGainEffectsUVE(
-        Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
+    [[nodiscard]] bool ApplySourcePcmGainEffects(
+        Audio::VoiceHandle, const std::vector<float>&, std::vector<float>&) override {
         return false;
     }
-    [[nodiscard]] bool ApplySourceBusChainUVE(
-        Audio::VoiceHandleUVE, const std::vector<float>&, std::vector<float>&) override {
+    [[nodiscard]] bool ApplySourceBusChain(
+        Audio::VoiceHandle, const std::vector<float>&, std::vector<float>&) override {
         return false;
     }
-    void UpdateUVE(float) override { ++updateCallCount; }
-    void SetOcclusionProviderUVE(const Audio::IAudioOcclusionProviderUVE*) override {}
-    [[nodiscard]] Audio::AudioMeterReadingUVE GetSourceMeterUVE(Audio::VoiceHandleUVE) const override {
-        return Audio::kSilentAudioMeterUVE;
+    void Update(float) override { ++updateCallCount; }
+    void SetOcclusionProvider(const Audio::IAudioOcclusionProvider*) override {}
+    [[nodiscard]] Audio::AudioMeterReading GetSourceMeter(Audio::VoiceHandle) const override {
+        return Audio::kSilentAudioMeter;
     }
-    [[nodiscard]] Audio::AudioMeterReadingUVE GetMixerGroupMeterUVE(std::string_view) const override {
-        return Audio::kSilentAudioMeterUVE;
+    [[nodiscard]] Audio::AudioMeterReading GetMixerGroupMeter(std::string_view) const override {
+        return Audio::kSilentAudioMeter;
     }
-    [[nodiscard]] Audio::VoiceHandleUVE CreateStreamingSourceUVE(const Audio::AudioSourceDescUVE&,
-                                                                 Audio::IAudioStreamSourceUVE&) override {
-        return Audio::VoiceHandleUVE{1};
+    [[nodiscard]] Audio::VoiceHandle CreateStreamingSource(const Audio::AudioSourceDesc&,
+                                                                 Audio::IAudioStreamSource&) override {
+        return Audio::VoiceHandle{1};
     }
-    [[nodiscard]] std::size_t PumpStreamingSourceUVE(Audio::VoiceHandleUVE) override { return 0U; }
-    [[nodiscard]] std::size_t GetStreamingSourceBufferedFramesUVE(Audio::VoiceHandleUVE) const override {
+    [[nodiscard]] std::size_t PumpStreamingSource(Audio::VoiceHandle) override { return 0U; }
+    [[nodiscard]] std::size_t GetStreamingSourceBufferedFrames(Audio::VoiceHandle) const override {
         return 0U;
     }
 
     int updateCallCount = 0;
 };
 
-class FakeAudioSourceSystemUVE final : public Audio::IAudioSourceSystemUVE {
+class FakeAudioSourceSystem final : public Audio::IAudioSourceSystem {
 public:
-    void SyncUVE(Scene::IEntityManagerUVE&, Audio::IAudioSystemUVE&) override { ++syncCallCount; }
-    [[nodiscard]] bool PlayEntityUVE(Scene::EntityUVE, Scene::IEntityManagerUVE&,
-                                     Audio::IAudioSystemUVE&) override {
+    void Sync(Scene::IEntityManager&, Audio::IAudioSystem&) override { ++syncCallCount; }
+    [[nodiscard]] bool PlayEntity(Scene::Entity, Scene::IEntityManager&,
+                                     Audio::IAudioSystem&) override {
         return false;
     }
-    [[nodiscard]] bool StopEntityUVE(Scene::EntityUVE, Audio::IAudioSystemUVE&) override { return false; }
-    [[nodiscard]] bool IsEntityPlayingUVE(Scene::EntityUVE, const Audio::IAudioSystemUVE&) const override {
+    [[nodiscard]] bool StopEntity(Scene::Entity, Audio::IAudioSystem&) override { return false; }
+    [[nodiscard]] bool IsEntityPlaying(Scene::Entity, const Audio::IAudioSystem&) const override {
         return false;
     }
 
     int syncCallCount = 0;
 };
 
-class FakeSaveGameSystemUVE final : public Save::ISaveGameSystemUVE {
+class FakeSaveGameSystem final : public Save::ISaveGameSystem {
 public:
-    [[nodiscard]] bool SaveUVE(int, Scene::IEntityManagerUVE&, const std::vector<Scene::EntityUVE>&,
-                                const Save::GameStateMetadataUVE&) override {
+    [[nodiscard]] bool Save(int, Scene::IEntityManager&, const std::vector<Scene::Entity>&,
+                                const Save::GameStateMetadata&) override {
         ++saveCallCount;
         return true;
     }
-    [[nodiscard]] Save::SaveMigrationRegistrationResultUVE RegisterMigrationUVE(
-        std::uint32_t, std::uint32_t, Save::SavePayloadMigrationTransformUVE) override {
-        return {Save::SaveMigrationRegistrationCodeUVE::Accepted, "fake migration accepted"};
+    [[nodiscard]] Save::SaveMigrationRegistrationResult RegisterMigration(
+        std::uint32_t, std::uint32_t, Save::SavePayloadMigrationTransform) override {
+        return {Save::SaveMigrationRegistrationCode::Accepted, "fake migration accepted"};
     }
-    [[nodiscard]] std::vector<Scene::EntityUVE> LoadUVE(int, Scene::IEntityManagerUVE&) override { return {}; }
-    [[nodiscard]] bool DeleteSaveUVE(int) override { return false; }
-    [[nodiscard]] bool HasSaveUVE(int) const override { return false; }
-    [[nodiscard]] std::optional<Save::GameStateMetadataUVE> GetSaveMetadataUVE(int) const override {
+    [[nodiscard]] std::vector<Scene::Entity> Load(int, Scene::IEntityManager&) override { return {}; }
+    [[nodiscard]] bool DeleteSave(int) override { return false; }
+    [[nodiscard]] bool HasSave(int) const override { return false; }
+    [[nodiscard]] std::optional<Save::GameStateMetadata> GetSaveMetadata(int) const override {
         return std::nullopt;
     }
-    [[nodiscard]] std::vector<int> ListUsedSlotsUVE() const override { return {}; }
-    [[nodiscard]] Save::SaveMigrationDiagnosticsUVE GetLastMigrationDiagnosticsUVE() const override { return {}; }
+    [[nodiscard]] std::vector<int> ListUsedSlots() const override { return {}; }
+    [[nodiscard]] Save::SaveMigrationDiagnostics GetLastMigrationDiagnostics() const override { return {}; }
 
     int saveCallCount = 0;
 };
 
-class FakeCheckpointManagerUVE final : public Save::ICheckpointManagerUVE {
+class FakeCheckpointManager final : public Save::ICheckpointManager {
 public:
-    void UpdateUVE(double, Scene::IEntityManagerUVE&, const std::vector<Scene::EntityUVE>&) override {
+    void Update(double, Scene::IEntityManager&, const std::vector<Scene::Entity>&) override {
         ++updateCallCount;
     }
-    [[nodiscard]] bool CheckpointUVE(Scene::IEntityManagerUVE&, const std::vector<Scene::EntityUVE>&) override {
+    [[nodiscard]] bool Checkpoint(Scene::IEntityManager&, const std::vector<Scene::Entity>&) override {
         return true;
     }
-    void SetAutoSaveIntervalSecondsUVE(double) noexcept override {}
-    [[nodiscard]] double GetAutoSaveIntervalSecondsUVE() const noexcept override { return 0.0; }
-    [[nodiscard]] double GetElapsedSinceLastSaveSecondsUVE() const noexcept override { return 0.0; }
-    [[nodiscard]] double GetTotalPlaytimeSecondsUVE() const noexcept override { return 0.0; }
+    void SetAutoSaveIntervalSeconds(double) noexcept override {}
+    [[nodiscard]] double GetAutoSaveIntervalSeconds() const noexcept override { return 0.0; }
+    [[nodiscard]] double GetElapsedSinceLastSaveSeconds() const noexcept override { return 0.0; }
+    [[nodiscard]] double GetTotalPlaytimeSeconds() const noexcept override { return 0.0; }
 
     int updateCallCount = 0;
 };
 
-class FakeWindowManagerUVE final : public Window::IWindowManagerUVE {
+class FakeWindowManager final : public Window::IWindowManager {
 public:
-    [[nodiscard]] bool IsValidUVE() const noexcept override { return true; }
-    void AttachInputSystemUVE(Input::IInputSystemUVE* /*inputSystem*/) noexcept override {}
-    void PollEventsUVE() override { ++pollEventsCallCount; }
-    void SwapBuffersUVE() override {}
-    [[nodiscard]] bool IsCloseRequestedUVE() const noexcept override { return false; }
-    void SetVSyncEnabledUVE(bool) override {}
-    [[nodiscard]] bool IsVSyncEnabledUVE() const noexcept override { return true; }
-    void SetFullscreenUVE(bool) override {}
-    [[nodiscard]] bool IsFullscreenUVE() const noexcept override { return false; }
-    [[nodiscard]] std::uint32_t GetWidthUVE() const noexcept override { return 0; }
-    [[nodiscard]] std::uint32_t GetHeightUVE() const noexcept override { return 0; }
-    [[nodiscard]] std::vector<Window::MonitorInfoUVE> EnumerateMonitorsUVE() const override { return {}; }
-    [[nodiscard]] void* GetNativeWindowHandleUVE() const noexcept override { return nullptr; }
-    [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override { return "Fake"; }
+    [[nodiscard]] bool IsValid() const noexcept override { return true; }
+    void AttachInputSystem(Input::IInputSystem* /*inputSystem*/) noexcept override {}
+    void PollEvents() override { ++pollEventsCallCount; }
+    void SwapBuffers() override {}
+    [[nodiscard]] bool IsCloseRequested() const noexcept override { return false; }
+    void SetVSyncEnabled(bool) override {}
+    [[nodiscard]] bool IsVSyncEnabled() const noexcept override { return true; }
+    void SetFullscreen(bool) override {}
+    [[nodiscard]] bool IsFullscreen() const noexcept override { return false; }
+    [[nodiscard]] std::uint32_t GetWidth() const noexcept override { return 0; }
+    [[nodiscard]] std::uint32_t GetHeight() const noexcept override { return 0; }
+    [[nodiscard]] std::vector<Window::MonitorInfo> EnumerateMonitors() const override { return {}; }
+    [[nodiscard]] void* GetNativeWindowHandle() const noexcept override { return nullptr; }
+    [[nodiscard]] std::string_view GetBackendName() const noexcept override { return "Fake"; }
 
     int pollEventsCallCount = 0;
 };
 
-TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
-    FakeLoggerUVE logger;
-    FakeTimerUVE timer;
-    FakeEventSystemUVE eventSystem;
-    FakeMemoryManagerUVE memoryManager;
-    FakeThreadPoolUVE threadPool;
-    FakeCommandLineUVE commandLine;
-    FakeConfigManagerUVE configManager;
-    FakeEntityManagerUVE entityManager;
-    FakeSceneGraphUVE sceneGraph;
-    FakeAssetDatabaseUVE assetDatabase;
-    FakeProjectFileIndexUVE projectFileIndex;
-    FakeDerivedArtifactCacheUVE derivedArtifactCache;
-    FakeProjectChangeWatcherUVE projectChangeWatcher;
-    FakeSceneSerializerUVE sceneSerializer;
-    FakePrefabSystemUVE prefabSystem;
-    FakeParticleRuntimeUVE particleRuntime;
-    FakeHotReloadUVE hotReload;
-    FakeAssetManagerUVE assetManager;
-    FakeAssetImporterUVE assetImporter;
-    FakeAssetImportQueueUVE assetImportQueue;
-    FakeAssetBundleUVE assetBundle;
-    FakeFileSystemUVE fileSystem;
-    FakeRenderDeviceUVE renderDevice;
-    FakeShaderManagerUVE shaderManager;
-    FakeRenderSystemUVE renderSystem;
-    FakeComputeSystemUVE computeSystem;
-    FakeCameraSystemUVE cameraSystem;
-    FakeMeshRendererUVE meshRenderer;
-    FakeLightSystemUVE lightSystem;
-    FakeRenderer3DUVE renderer3D;
-    FakeCollisionSystemUVE collisionSystem;
-    FakePhysicsSystemUVE physicsSystem;
-    Physics::PhysicsQuerySystemUVE physicsQuerySystem(collisionSystem);
-    Physics::PhysicsConstraintSystemUVE physicsConstraintSystem;
-    FakeRaycastSystemUVE raycastSystem;
-    FakeInputSystemUVE inputSystem;
-    Input::GamepadInputSystemUVE gamepadInputSystem;
-    Input::MobileInputSystemUVE mobileInputSystem;
-    Input::MobileGestureSystemUVE mobileGestureSystem(mobileInputSystem);
-    FakeAudioDeviceUVE audioDevice;
-    FakeAudioSystemUVE audioSystem;
-    FakeAudioSourceSystemUVE audioSourceSystem;
-    FakeSaveGameSystemUVE saveGameSystem;
-    FakeCheckpointManagerUVE checkpointManager;
-    FakeWindowManagerUVE windowManager;
-    Config::SettingsDocumentUVE projectSettings;
-    Core::InputMapDocumentUVE inputMap;
+TEST(EngineServicesTest, Accessors_ReturnExactSameInstancesPassedIn) {
+    FakeLogger logger;
+    FakeTimer timer;
+    FakeEventSystem eventSystem;
+    FakeMemoryManager memoryManager;
+    FakeThreadPool threadPool;
+    FakeCommandLine commandLine;
+    FakeConfigManager configManager;
+    FakeEntityManager entityManager;
+    FakeSceneGraph sceneGraph;
+    FakeAssetDatabase assetDatabase;
+    FakeProjectFileIndex projectFileIndex;
+    FakeDerivedArtifactCache derivedArtifactCache;
+    FakeProjectChangeWatcher projectChangeWatcher;
+    FakeSceneSerializer sceneSerializer;
+    FakePrefabSystem prefabSystem;
+    FakeParticleRuntime particleRuntime;
+    FakeHotReload hotReload;
+    FakeAssetManager assetManager;
+    FakeAssetImporter assetImporter;
+    FakeAssetImportQueue assetImportQueue;
+    FakeAssetBundle assetBundle;
+    FakeFileSystem fileSystem;
+    FakeRenderDevice renderDevice;
+    FakeShaderManager shaderManager;
+    FakeRenderSystem renderSystem;
+    FakeComputeSystem computeSystem;
+    FakeCameraSystem cameraSystem;
+    FakeMeshRenderer meshRenderer;
+    FakeLightSystem lightSystem;
+    FakeRenderer3D renderer3D;
+    FakeCollisionSystem collisionSystem;
+    FakePhysicsSystem physicsSystem;
+    Physics::PhysicsQuerySystem physicsQuerySystem(collisionSystem);
+    Physics::PhysicsConstraintSystem physicsConstraintSystem;
+    FakeRaycastSystem raycastSystem;
+    FakeInputSystem inputSystem;
+    Input::GamepadInputSystem gamepadInputSystem;
+    Input::MobileInputSystem mobileInputSystem;
+    Input::MobileGestureSystem mobileGestureSystem(mobileInputSystem);
+    FakeAudioDevice audioDevice;
+    FakeAudioSystem audioSystem;
+    FakeAudioSourceSystem audioSourceSystem;
+    FakeSaveGameSystem saveGameSystem;
+    FakeCheckpointManager checkpointManager;
+    FakeWindowManager windowManager;
+    Config::SettingsDocument projectSettings;
+    Core::InputMapDocument inputMap;
 
-    const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
+    const EngineServices services(logger, timer, eventSystem, memoryManager, threadPool,
                                       commandLine, configManager, projectSettings, inputMap, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
@@ -1097,103 +1097,103 @@ TEST(EngineServicesUVETest, Accessors_ReturnExactSameInstancesPassedIn) {
                                       audioSourceSystem, saveGameSystem, checkpointManager,
                                       windowManager);
 
-    EXPECT_EQ(&services.GetLoggerUVE(), &logger);
-    EXPECT_EQ(&services.GetTimerUVE(), &timer);
-    EXPECT_EQ(&services.GetEventSystemUVE(), &eventSystem);
-    EXPECT_EQ(&services.GetMemoryManagerUVE(), &memoryManager);
-    EXPECT_EQ(&services.GetThreadPoolUVE(), &threadPool);
-    EXPECT_EQ(&services.GetProjectSettingsUVE(), &projectSettings);
-    EXPECT_EQ(&services.GetInputMapUVE(), &inputMap);
-    EXPECT_EQ(&services.GetCommandLineUVE(), &commandLine);
-    EXPECT_EQ(&services.GetConfigManagerUVE(), &configManager);
-    EXPECT_EQ(&services.GetEntityManagerUVE(), &entityManager);
-    EXPECT_EQ(&services.GetSceneGraphUVE(), &sceneGraph);
-    EXPECT_EQ(&services.GetAssetDatabaseUVE(), &assetDatabase);
-    EXPECT_EQ(&services.GetProjectFileIndexUVE(), &projectFileIndex);
-    EXPECT_EQ(&services.GetDerivedArtifactCacheUVE(), &derivedArtifactCache);
-    EXPECT_EQ(&services.GetProjectChangeWatcherUVE(), &projectChangeWatcher);
-    EXPECT_EQ(&services.GetSceneSerializerUVE(), &sceneSerializer);
-    EXPECT_EQ(&services.GetPrefabSystemUVE(), &prefabSystem);
-    EXPECT_EQ(&services.GetParticleRuntimeUVE(), &particleRuntime);
-    EXPECT_EQ(&services.GetHotReloadUVE(), &hotReload);
-    EXPECT_EQ(&services.GetAssetManagerUVE(), &assetManager);
-    EXPECT_EQ(&services.GetAssetImporterUVE(), &assetImporter);
-    EXPECT_EQ(&services.GetAssetBundleUVE(), &assetBundle);
-    EXPECT_EQ(&services.GetFileSystemUVE(), &fileSystem);
-    EXPECT_EQ(&services.GetRenderDeviceUVE(), &renderDevice);
-    EXPECT_EQ(&services.GetShaderManagerUVE(), &shaderManager);
-    EXPECT_EQ(&services.GetRenderSystemUVE(), &renderSystem);
-    EXPECT_EQ(&services.GetComputeSystemUVE(), &computeSystem);
-    EXPECT_EQ(&services.GetCameraSystemUVE(), &cameraSystem);
-    EXPECT_EQ(&services.GetMeshRendererUVE(), &meshRenderer);
-    EXPECT_EQ(&services.GetLightSystemUVE(), &lightSystem);
-    EXPECT_EQ(&services.GetRenderer3DUVE(), &renderer3D);
-    EXPECT_EQ(&services.GetCollisionSystemUVE(), &collisionSystem);
-    EXPECT_EQ(&services.GetPhysicsSystemUVE(), &physicsSystem);
-    EXPECT_EQ(&services.GetPhysicsQuerySystemUVE(), &physicsQuerySystem);
-    EXPECT_EQ(&services.GetRaycastSystemUVE(), &raycastSystem);
-    EXPECT_EQ(&services.GetPhysicsConstraintSystemUVE(), &physicsConstraintSystem);
-    EXPECT_EQ(&services.GetInputSystemUVE(), &inputSystem);
-    EXPECT_EQ(&services.GetGamepadInputSystemUVE(), &gamepadInputSystem);
-    EXPECT_EQ(&services.GetMobileInputSystemUVE(), &mobileInputSystem);
-    EXPECT_EQ(&services.GetMobileGestureSystemUVE(), &mobileGestureSystem);
-    EXPECT_EQ(&services.GetAudioDeviceUVE(), &audioDevice);
-    EXPECT_EQ(&services.GetAudioSystemUVE(), &audioSystem);
-    EXPECT_EQ(&services.GetAudioSourceSystemUVE(), &audioSourceSystem);
-    EXPECT_EQ(&services.GetSaveGameSystemUVE(), &saveGameSystem);
-    EXPECT_EQ(&services.GetCheckpointManagerUVE(), &checkpointManager);
-    EXPECT_EQ(&services.GetWindowManagerUVE(), &windowManager);
+    EXPECT_EQ(&services.GetLogger(), &logger);
+    EXPECT_EQ(&services.GetTimer(), &timer);
+    EXPECT_EQ(&services.GetEventSystem(), &eventSystem);
+    EXPECT_EQ(&services.GetMemoryManager(), &memoryManager);
+    EXPECT_EQ(&services.GetThreadPool(), &threadPool);
+    EXPECT_EQ(&services.GetProjectSettings(), &projectSettings);
+    EXPECT_EQ(&services.GetInputMap(), &inputMap);
+    EXPECT_EQ(&services.GetCommandLine(), &commandLine);
+    EXPECT_EQ(&services.GetConfigManager(), &configManager);
+    EXPECT_EQ(&services.GetEntityManager(), &entityManager);
+    EXPECT_EQ(&services.GetSceneGraph(), &sceneGraph);
+    EXPECT_EQ(&services.GetAssetDatabase(), &assetDatabase);
+    EXPECT_EQ(&services.GetProjectFileIndex(), &projectFileIndex);
+    EXPECT_EQ(&services.GetDerivedArtifactCache(), &derivedArtifactCache);
+    EXPECT_EQ(&services.GetProjectChangeWatcher(), &projectChangeWatcher);
+    EXPECT_EQ(&services.GetSceneSerializer(), &sceneSerializer);
+    EXPECT_EQ(&services.GetPrefabSystem(), &prefabSystem);
+    EXPECT_EQ(&services.GetParticleRuntime(), &particleRuntime);
+    EXPECT_EQ(&services.GetHotReload(), &hotReload);
+    EXPECT_EQ(&services.GetAssetManager(), &assetManager);
+    EXPECT_EQ(&services.GetAssetImporter(), &assetImporter);
+    EXPECT_EQ(&services.GetAssetBundle(), &assetBundle);
+    EXPECT_EQ(&services.GetFileSystem(), &fileSystem);
+    EXPECT_EQ(&services.GetRenderDevice(), &renderDevice);
+    EXPECT_EQ(&services.GetShaderManager(), &shaderManager);
+    EXPECT_EQ(&services.GetRenderSystem(), &renderSystem);
+    EXPECT_EQ(&services.GetComputeSystem(), &computeSystem);
+    EXPECT_EQ(&services.GetCameraSystem(), &cameraSystem);
+    EXPECT_EQ(&services.GetMeshRenderer(), &meshRenderer);
+    EXPECT_EQ(&services.GetLightSystem(), &lightSystem);
+    EXPECT_EQ(&services.GetRenderer3D(), &renderer3D);
+    EXPECT_EQ(&services.GetCollisionSystem(), &collisionSystem);
+    EXPECT_EQ(&services.GetPhysicsSystem(), &physicsSystem);
+    EXPECT_EQ(&services.GetPhysicsQuerySystem(), &physicsQuerySystem);
+    EXPECT_EQ(&services.GetRaycastSystem(), &raycastSystem);
+    EXPECT_EQ(&services.GetPhysicsConstraintSystem(), &physicsConstraintSystem);
+    EXPECT_EQ(&services.GetInputSystem(), &inputSystem);
+    EXPECT_EQ(&services.GetGamepadInputSystem(), &gamepadInputSystem);
+    EXPECT_EQ(&services.GetMobileInputSystem(), &mobileInputSystem);
+    EXPECT_EQ(&services.GetMobileGestureSystem(), &mobileGestureSystem);
+    EXPECT_EQ(&services.GetAudioDevice(), &audioDevice);
+    EXPECT_EQ(&services.GetAudioSystem(), &audioSystem);
+    EXPECT_EQ(&services.GetAudioSourceSystem(), &audioSourceSystem);
+    EXPECT_EQ(&services.GetSaveGameSystem(), &saveGameSystem);
+    EXPECT_EQ(&services.GetCheckpointManager(), &checkpointManager);
+    EXPECT_EQ(&services.GetWindowManager(), &windowManager);
 }
 
-TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) {
-    FakeLoggerUVE logger;
-    FakeTimerUVE timer;
-    FakeEventSystemUVE eventSystem;
-    FakeMemoryManagerUVE memoryManager;
-    FakeThreadPoolUVE threadPool;
-    FakeCommandLineUVE commandLine;
-    FakeConfigManagerUVE configManager;
-    FakeEntityManagerUVE entityManager;
-    FakeSceneGraphUVE sceneGraph;
-    FakeAssetDatabaseUVE assetDatabase;
-    FakeProjectFileIndexUVE projectFileIndex;
-    FakeDerivedArtifactCacheUVE derivedArtifactCache;
-    FakeProjectChangeWatcherUVE projectChangeWatcher;
-    FakeSceneSerializerUVE sceneSerializer;
-    FakePrefabSystemUVE prefabSystem;
-    FakeParticleRuntimeUVE particleRuntime;
-    FakeHotReloadUVE hotReload;
-    FakeAssetManagerUVE assetManager;
-    FakeAssetImporterUVE assetImporter;
-    FakeAssetImportQueueUVE assetImportQueue;
-    FakeAssetBundleUVE assetBundle;
-    FakeFileSystemUVE fileSystem;
-    FakeRenderDeviceUVE renderDevice;
-    FakeShaderManagerUVE shaderManager;
-    FakeRenderSystemUVE renderSystem;
-    FakeComputeSystemUVE computeSystem;
-    FakeCameraSystemUVE cameraSystem;
-    FakeMeshRendererUVE meshRenderer;
-    FakeLightSystemUVE lightSystem;
-    FakeRenderer3DUVE renderer3D;
-    FakeCollisionSystemUVE collisionSystem;
-    FakePhysicsSystemUVE physicsSystem;
-    Physics::PhysicsQuerySystemUVE physicsQuerySystem(collisionSystem);
-    Physics::PhysicsConstraintSystemUVE physicsConstraintSystem;
-    FakeRaycastSystemUVE raycastSystem;
-    FakeInputSystemUVE inputSystem;
-    Input::GamepadInputSystemUVE gamepadInputSystem;
-    Input::MobileInputSystemUVE mobileInputSystem;
-    Input::MobileGestureSystemUVE mobileGestureSystem(mobileInputSystem);
-    FakeAudioDeviceUVE audioDevice;
-    FakeAudioSystemUVE audioSystem;
-    FakeAudioSourceSystemUVE audioSourceSystem;
-    FakeSaveGameSystemUVE saveGameSystem;
-    FakeCheckpointManagerUVE checkpointManager;
-    FakeWindowManagerUVE windowManager;
-    Config::SettingsDocumentUVE projectSettings;
-    Core::InputMapDocumentUVE inputMap;
-    const EngineServicesUVE services(logger, timer, eventSystem, memoryManager, threadPool,
+TEST(EngineServicesTest, Accessors_ProveInterfacesAreGenuinelySubstitutable) {
+    FakeLogger logger;
+    FakeTimer timer;
+    FakeEventSystem eventSystem;
+    FakeMemoryManager memoryManager;
+    FakeThreadPool threadPool;
+    FakeCommandLine commandLine;
+    FakeConfigManager configManager;
+    FakeEntityManager entityManager;
+    FakeSceneGraph sceneGraph;
+    FakeAssetDatabase assetDatabase;
+    FakeProjectFileIndex projectFileIndex;
+    FakeDerivedArtifactCache derivedArtifactCache;
+    FakeProjectChangeWatcher projectChangeWatcher;
+    FakeSceneSerializer sceneSerializer;
+    FakePrefabSystem prefabSystem;
+    FakeParticleRuntime particleRuntime;
+    FakeHotReload hotReload;
+    FakeAssetManager assetManager;
+    FakeAssetImporter assetImporter;
+    FakeAssetImportQueue assetImportQueue;
+    FakeAssetBundle assetBundle;
+    FakeFileSystem fileSystem;
+    FakeRenderDevice renderDevice;
+    FakeShaderManager shaderManager;
+    FakeRenderSystem renderSystem;
+    FakeComputeSystem computeSystem;
+    FakeCameraSystem cameraSystem;
+    FakeMeshRenderer meshRenderer;
+    FakeLightSystem lightSystem;
+    FakeRenderer3D renderer3D;
+    FakeCollisionSystem collisionSystem;
+    FakePhysicsSystem physicsSystem;
+    Physics::PhysicsQuerySystem physicsQuerySystem(collisionSystem);
+    Physics::PhysicsConstraintSystem physicsConstraintSystem;
+    FakeRaycastSystem raycastSystem;
+    FakeInputSystem inputSystem;
+    Input::GamepadInputSystem gamepadInputSystem;
+    Input::MobileInputSystem mobileInputSystem;
+    Input::MobileGestureSystem mobileGestureSystem(mobileInputSystem);
+    FakeAudioDevice audioDevice;
+    FakeAudioSystem audioSystem;
+    FakeAudioSourceSystem audioSourceSystem;
+    FakeSaveGameSystem saveGameSystem;
+    FakeCheckpointManager checkpointManager;
+    FakeWindowManager windowManager;
+    Config::SettingsDocument projectSettings;
+    Core::InputMapDocument inputMap;
+    const EngineServices services(logger, timer, eventSystem, memoryManager, threadPool,
                                       commandLine, configManager, projectSettings, inputMap, entityManager, sceneGraph,
                                       assetDatabase, projectFileIndex, derivedArtifactCache, projectChangeWatcher,
                                       sceneSerializer, prefabSystem, particleRuntime,
@@ -1205,57 +1205,57 @@ TEST(EngineServicesUVETest, Accessors_ProveInterfacesAreGenuinelySubstitutable) 
                                       audioSourceSystem, saveGameSystem, checkpointManager,
                                       windowManager);
 
-    services.GetTimerUVE().Tick();
-    services.GetEventSystemUVE().DispatchQueuedUVE();
-    services.GetMemoryManagerUVE().LogLeakReportUVE();
-    services.GetThreadPoolUVE().SubmitUVE([] {});
-    static_cast<void>(services.GetCommandLineUVE().HasFlagUVE("server"));
-    services.GetConfigManagerUVE().SaveUVE();
-    static_cast<void>(services.GetEntityManagerUVE().CreateEntityUVE());
-    services.GetSceneGraphUVE().UpdateUVE(services.GetEntityManagerUVE());
-    EXPECT_TRUE(services.GetParticleRuntimeUVE().AttachUVE(Scene::EntityUVE{1, 1}, Scene::ParticleEmitterComponentUVE{}));
-    services.GetAssetDatabaseUVE().SaveUVE();
-    static_cast<void>(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
-    static_cast<void>(services.GetDerivedArtifactCacheUVE().LoadImportRecordUVE("unused.asset"));
-    EXPECT_TRUE(services.GetProjectChangeWatcherUVE().PollNowUVE(services.GetAssetDatabaseUVE(),
-                                                                   services.GetDerivedArtifactCacheUVE()));
-    static_cast<void>(services.GetAssetImportQueueUVE().TickUVE());
-    static_cast<void>(services.GetSceneSerializerUVE().SaveUVE(
-        services.GetEntityManagerUVE(), {}, "unused.uvscene", Scene::SceneAssetTypeUVE::Scene));
-    static_cast<void>(services.GetPrefabSystemUVE().SavePrefabUVE(
-        services.GetEntityManagerUVE(), services.GetAssetDatabaseUVE(), Scene::kInvalidEntityUVE,
+    services.GetTimer().Tick();
+    services.GetEventSystem().DispatchQueued();
+    services.GetMemoryManager().LogLeakReport();
+    services.GetThreadPool().Submit([] {});
+    static_cast<void>(services.GetCommandLine().HasFlag("server"));
+    services.GetConfigManager().Save();
+    static_cast<void>(services.GetEntityManager().CreateEntity());
+    services.GetSceneGraph().Update(services.GetEntityManager());
+    EXPECT_TRUE(services.GetParticleRuntime().Attach(Scene::Entity{1, 1}, Scene::ParticleEmitterComponent{}));
+    services.GetAssetDatabase().Save();
+    static_cast<void>(services.GetProjectFileIndex().Refresh(services.GetAssetDatabase()));
+    static_cast<void>(services.GetDerivedArtifactCache().LoadImportRecord("unused.asset"));
+    EXPECT_TRUE(services.GetProjectChangeWatcher().PollNow(services.GetAssetDatabase(),
+                                                                   services.GetDerivedArtifactCache()));
+    static_cast<void>(services.GetAssetImportQueue().Tick());
+    static_cast<void>(services.GetSceneSerializer().Save(
+        services.GetEntityManager(), {}, "unused.uvscene", Scene::SceneAssetType::Scene));
+    static_cast<void>(services.GetPrefabSystem().SavePrefab(
+        services.GetEntityManager(), services.GetAssetDatabase(), Scene::kInvalidEntity,
         "unused.uvprefab"));
-    services.GetHotReloadUVE().PollUVE(services.GetAssetManagerUVE(), services.GetAssetDatabaseUVE(), 0.0);
-    services.GetAssetManagerUVE().CollectGarbageUVE();
+    services.GetHotReload().Poll(services.GetAssetManager(), services.GetAssetDatabase(), 0.0);
+    services.GetAssetManager().CollectGarbage();
     static_cast<void>(
-        services.GetAssetImporterUVE().ImportUVE("unused_source", "unused_dest", services.GetAssetDatabaseUVE()));
-    static_cast<void>(services.GetAssetBundleUVE().PackUVE({}, "unused.uvbundle"));
-    static_cast<void>(services.GetFileSystemUVE().WriteFileUVE("unused.txt", {}));
-    static_cast<void>(services.GetRenderDeviceUVE().CreateBufferUVE(Render::BufferDescUVE{}));
-    services.GetShaderManagerUVE().UpdateUVE(0.0);
-    services.GetRenderSystemUVE().BeginFrameUVE();
+        services.GetAssetImporter().Import("unused_source", "unused_dest", services.GetAssetDatabase()));
+    static_cast<void>(services.GetAssetBundle().Pack({}, "unused.uvbundle"));
+    static_cast<void>(services.GetFileSystem().WriteFile("unused.txt", {}));
+    static_cast<void>(services.GetRenderDevice().CreateBuffer(Render::BufferDesc{}));
+    services.GetShaderManager().Update(0.0);
+    services.GetRenderSystem().BeginFrame();
     static_cast<void>(
-        services.GetCameraSystemUVE().ComputeViewMatrixUVE(services.GetEntityManagerUVE(), Scene::kInvalidEntityUVE));
+        services.GetCameraSystem().ComputeViewMatrix(services.GetEntityManager(), Scene::kInvalidEntity));
     static_cast<void>(
-        services.GetCameraSystemUVE().GetWorldPositionUVE(services.GetEntityManagerUVE(), Scene::kInvalidEntityUVE));
-    static_cast<void>(services.GetMeshRendererUVE().ExtractRenderQueueUVE(
-        services.GetEntityManagerUVE(), services.GetAssetManagerUVE(), services.GetAssetDatabaseUVE(),
-        Math::FrustumUVE{}));
-    static_cast<void>(services.GetLightSystemUVE().ExtractActiveLightsUVE(services.GetEntityManagerUVE()));
-    services.GetRenderer3DUVE().RenderFrameUVE(services.GetEntityManagerUVE(), Scene::kInvalidEntityUVE);
+        services.GetCameraSystem().GetWorldPosition(services.GetEntityManager(), Scene::kInvalidEntity));
+    static_cast<void>(services.GetMeshRenderer().ExtractRenderQueue(
+        services.GetEntityManager(), services.GetAssetManager(), services.GetAssetDatabase(),
+        Math::Frustum{}));
+    static_cast<void>(services.GetLightSystem().ExtractActiveLights(services.GetEntityManager()));
+    services.GetRenderer3D().RenderFrame(services.GetEntityManager(), Scene::kInvalidEntity);
     renderer3D.diagnostics.primitiveItemsExtracted = 7U;
-    EXPECT_EQ(services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE().primitiveItemsExtracted, 7U);
-    static_cast<void>(services.GetRaycastSystemUVE().RaycastUVE(services.GetEntityManagerUVE(), Physics::RaycastQueryUVE{}));
-    services.GetGamepadInputSystemUVE().UpdateUVE();
-    services.GetMobileInputSystemUVE().UpdateUVE();
-    services.GetMobileGestureSystemUVE().UpdateUVE(0.0F);
-    services.GetInputSystemUVE().UpdateUVE();
-    services.GetAudioSystemUVE().UpdateUVE(0.0F);
-    services.GetAudioSourceSystemUVE().SyncUVE(services.GetEntityManagerUVE(), services.GetAudioSystemUVE());
-    static_cast<void>(services.GetSaveGameSystemUVE().SaveUVE(0, services.GetEntityManagerUVE(), {},
-                                                                Save::GameStateMetadataUVE{}));
-    services.GetCheckpointManagerUVE().UpdateUVE(0.0, services.GetEntityManagerUVE(), {});
-    services.GetWindowManagerUVE().PollEventsUVE();
+    EXPECT_EQ(services.GetRenderer3D().GetLastFrameDiagnostics().primitiveItemsExtracted, 7U);
+    static_cast<void>(services.GetRaycastSystem().Raycast(services.GetEntityManager(), Physics::RaycastQuery{}));
+    services.GetGamepadInputSystem().Update();
+    services.GetMobileInputSystem().Update();
+    services.GetMobileGestureSystem().Update(0.0F);
+    services.GetInputSystem().Update();
+    services.GetAudioSystem().Update(0.0F);
+    services.GetAudioSourceSystem().Sync(services.GetEntityManager(), services.GetAudioSystem());
+    static_cast<void>(services.GetSaveGameSystem().Save(0, services.GetEntityManager(), {},
+                                                                Save::GameStateMetadata{}));
+    services.GetCheckpointManager().Update(0.0, services.GetEntityManager(), {});
+    services.GetWindowManager().PollEvents();
 
     EXPECT_EQ(timer.tickCount, 1);
     EXPECT_EQ(eventSystem.dispatchCount, 1);

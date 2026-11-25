@@ -10,7 +10,7 @@
 
 namespace UVE::Pack {
 
-struct MountedPatchEntryUVE final {
+struct MountedPatchEntry final {
     std::string patchId;
     std::string version;
     std::int32_t priority = 0; // Higher priority overrides lower priority and base content.
@@ -19,41 +19,41 @@ struct MountedPatchEntryUVE final {
 };
 
 /// Computes a deterministic 64-bit FNV-1a lowercase hex digest of a file on disk.
-[[nodiscard]] bool ComputeFileIntegrityHashHexUVE(const std::filesystem::path& filePath,
+[[nodiscard]] bool ComputeFileIntegrityHashHex(const std::filesystem::path& filePath,
                                                   std::string& outHexDigest);
 
 /// Manages priority-ordered downloadable content (DLC) and live hotfix patch mounts over a
 /// base content directory, with optional integrity verification and clean rollback.
-class PatchManagerUVE final {
+class PatchManager final {
 public:
-    explicit PatchManagerUVE(std::filesystem::path baseContentRoot = {});
+    explicit PatchManager(std::filesystem::path baseContentRoot = {});
 
-    void SetBaseContentRootUVE(std::filesystem::path baseContentRoot);
-    [[nodiscard]] const std::filesystem::path& BaseContentRootUVE() const noexcept {
+    void SetBaseContentRoot(std::filesystem::path baseContentRoot);
+    [[nodiscard]] const std::filesystem::path& BaseContentRoot() const noexcept {
         return m_baseContentRoot;
     }
 
     /// Mounts a patch directory (optionally verifying `manifestFilePath` against
     /// `entry.expectedManifestHashHex` when non-empty). Rejects duplicate patch IDs or
     /// mismatched integrity digests.
-    [[nodiscard]] bool MountPatchUVE(MountedPatchEntryUVE entry,
+    [[nodiscard]] bool MountPatch(MountedPatchEntry entry,
                                      const std::filesystem::path& manifestFilePath = {});
 
     /// Cleanly rolls back and unmounts `patchId`. Returns true if it was mounted.
-    bool RollbackPatchUVE(std::string_view patchId);
+    bool RollbackPatch(std::string_view patchId);
 
     /// Resolves `relativeAssetPath` against mounted patches in descending priority order,
     /// falling back to `baseContentRoot`. Returns empty path if not found anywhere.
-    [[nodiscard]] std::filesystem::path ResolvePatchedAssetPathUVE(
+    [[nodiscard]] std::filesystem::path ResolvePatchedAssetPath(
         const std::filesystem::path& relativeAssetPath) const;
 
-    [[nodiscard]] const std::vector<MountedPatchEntryUVE>& MountedPatchesUVE() const noexcept {
+    [[nodiscard]] const std::vector<MountedPatchEntry>& MountedPatches() const noexcept {
         return m_patches;
     }
 
 private:
     std::filesystem::path m_baseContentRoot;
-    std::vector<MountedPatchEntryUVE> m_patches;
+    std::vector<MountedPatchEntry> m_patches;
 };
 
 } // namespace UVE::Pack

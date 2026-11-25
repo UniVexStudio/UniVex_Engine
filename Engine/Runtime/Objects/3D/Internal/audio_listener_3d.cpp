@@ -10,129 +10,129 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsEarlierEntityIdUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
+[[nodiscard]] bool IsEarlierEntityId(const Entity lhs, const Entity rhs) noexcept {
     if (lhs.index != rhs.index) {
         return lhs.index < rhs.index;
     }
     return lhs.generation < rhs.generation;
 }
 
-[[nodiscard]] bool IsEligibleListenerEntityUVE(const IEntityManagerUVE& entityManager,
-                                               const EntityUVE entity) noexcept {
-    return entityManager.IsAliveUVE(entity) &&
-           !entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) &&
-           !entityManager.HasComponentUVE<DisabledComponentUVE>(entity) &&
-           entityManager.HasComponentUVE<AudioListener3DComponentUVE>(entity);
+[[nodiscard]] bool IsEligibleListenerEntity(const IEntityManager& entityManager,
+                                               const Entity entity) noexcept {
+    return entityManager.IsAlive(entity) &&
+           !entityManager.HasComponent<EditorInternalEntityComponent>(entity) &&
+           !entityManager.HasComponent<DisabledComponent>(entity) &&
+           entityManager.HasComponent<AudioListener3DComponent>(entity);
 }
 
 } // namespace
 
-bool IsAudioListener3DComponentValidUVE(const AudioListener3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.positionOffset);
+bool IsAudioListener3DComponentValid(const AudioListener3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.positionOffset);
 }
 
-AudioListener3DComponentUVE SanitizeAudioListener3DComponentUVE(
-    const AudioListener3DComponentUVE& value) noexcept {
-    AudioListener3DComponentUVE out = value;
-    if (!IsFinite3DObjectVectorUVE(out.positionOffset)) {
-        out.positionOffset = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+AudioListener3DComponent SanitizeAudioListener3DComponent(
+    const AudioListener3DComponent& value) noexcept {
+    AudioListener3DComponent out = value;
+    if (!IsFinite3DObjectVector(out.positionOffset)) {
+        out.positionOffset = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     return out;
 }
 
-bool IsAudioListener3DObjectDefinitionValidUVE(
-    const AudioListener3DObjectDefinitionUVE& value) noexcept {
-    return IsAudioListener3DComponentValidUVE(value.listener);
+bool IsAudioListener3DObjectDefinitionValid(
+    const AudioListener3DObjectDefinition& value) noexcept {
+    return IsAudioListener3DComponentValid(value.listener);
 }
 
-void ApplyAudioListener3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                             const EntityUVE entity,
-                                             const AudioListener3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, AudioListener3DObjectDefinitionUVE::defaultName);
-    const AudioListener3DComponentUVE sanitized =
-        SanitizeAudioListener3DComponentUVE(value.listener);
-    entityManager.AddComponentUVE<AudioListener3DComponentUVE>(entity, sanitized);
+void ApplyAudioListener3DObjectDefinition(IEntityManager& entityManager,
+                                             const Entity entity,
+                                             const AudioListener3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, AudioListener3DObjectDefinition::defaultName);
+    const AudioListener3DComponent sanitized =
+        SanitizeAudioListener3DComponent(value.listener);
+    entityManager.AddComponent<AudioListener3DComponent>(entity, sanitized);
     if (sanitized.current) {
-        AudioListener3DUVE::MakeCurrentUVE(entityManager, entity);
+        AudioListener3D::MakeCurrent(entityManager, entity);
     }
 }
 
-void AudioListener3DUVE::MakeCurrentUVE(IEntityManagerUVE& entityManager,
-                                        const EntityUVE listenerEntity) {
-    if (!entityManager.IsAliveUVE(listenerEntity) ||
-        !entityManager.HasComponentUVE<AudioListener3DComponentUVE>(listenerEntity)) {
+void AudioListener3D::MakeCurrent(IEntityManager& entityManager,
+                                        const Entity listenerEntity) {
+    if (!entityManager.IsAlive(listenerEntity) ||
+        !entityManager.HasComponent<AudioListener3DComponent>(listenerEntity)) {
         return;
     }
-    entityManager.ForEachUVE<AudioListener3DComponentUVE>(
-        [&](const EntityUVE entity, AudioListener3DComponentUVE& listener) {
-            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity)) {
+    entityManager.ForEach<AudioListener3DComponent>(
+        [&](const Entity entity, AudioListener3DComponent& listener) {
+            if (entityManager.HasComponent<EditorInternalEntityComponent>(entity)) {
                 return;
             }
             listener.current = (entity == listenerEntity);
         });
 }
 
-ResolvedAudioListener3DPoseUVE AudioListener3DUVE::ResolvePoseFromWorldTransformUVE(
-    const EntityUVE entity, const AudioListener3DComponentUVE& listener,
-    const WorldTransformComponentUVE& worldTransform) noexcept {
-    const AudioListener3DComponentUVE safe = SanitizeAudioListener3DComponentUVE(listener);
-    ResolvedAudioListener3DPoseUVE resolved{};
+ResolvedAudioListener3DPose AudioListener3D::ResolvePoseFromWorldTransform(
+    const Entity entity, const AudioListener3DComponent& listener,
+    const WorldTransformComponent& worldTransform) noexcept {
+    const AudioListener3DComponent safe = SanitizeAudioListener3DComponent(listener);
+    ResolvedAudioListener3DPose resolved{};
     resolved.entity = entity;
-    if (!IsWorldTransformComponentValidUVE(worldTransform)) {
+    if (!IsWorldTransformComponentValid(worldTransform)) {
         return resolved;
     }
     if (safe.ignoreRotation) {
         resolved.position = worldTransform.worldPosition + safe.positionOffset;
-        resolved.forward = Math::Vector3UVE{0.0F, 0.0F, -1.0F};
-        resolved.up = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+        resolved.forward = Math::Vector3{0.0F, 0.0F, -1.0F};
+        resolved.up = Math::Vector3{0.0F, 1.0F, 0.0F};
         return resolved;
     }
     resolved.position =
         worldTransform.worldPosition +
-        Math::RotateVectorUVE(worldTransform.worldRotation, safe.positionOffset);
-    resolved.forward = ResolveWorldForwardUVE(worldTransform);
-    resolved.up = ResolveWorldUpUVE(worldTransform);
+        Math::RotateVector(worldTransform.worldRotation, safe.positionOffset);
+    resolved.forward = ResolveWorldForward(worldTransform);
+    resolved.up = ResolveWorldUp(worldTransform);
     return resolved;
 }
 
-bool AudioListener3DUVE::TryResolveActiveListenerPoseUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE fallbackCameraEntity,
-    ResolvedAudioListener3DPoseUVE& outPose) {
-    EntityUVE chosenListener = kInvalidEntityUVE;
-    entityManager.ForEachUVE<AudioListener3DComponentUVE>(
-        [&](const EntityUVE entity, const AudioListener3DComponentUVE& listener) {
-            if (!listener.current || !IsAudioListener3DComponentValidUVE(listener) ||
-                !IsEligibleListenerEntityUVE(entityManager, entity) ||
-                !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+bool AudioListener3D::TryResolveActiveListenerPose(
+    IEntityManager& entityManager, const Entity fallbackCameraEntity,
+    ResolvedAudioListener3DPose& outPose) {
+    Entity chosenListener = kInvalidEntity;
+    entityManager.ForEach<AudioListener3DComponent>(
+        [&](const Entity entity, const AudioListener3DComponent& listener) {
+            if (!listener.current || !IsAudioListener3DComponentValid(listener) ||
+                !IsEligibleListenerEntity(entityManager, entity) ||
+                !entityManager.HasComponent<WorldTransformComponent>(entity)) {
                 return;
             }
-            const WorldTransformComponentUVE& worldTransform =
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-            if (!IsWorldTransformComponentValidUVE(worldTransform)) {
+            const WorldTransformComponent& worldTransform =
+                entityManager.GetComponent<WorldTransformComponent>(entity);
+            if (!IsWorldTransformComponentValid(worldTransform)) {
                 return;
             }
-            if (chosenListener == kInvalidEntityUVE ||
-                IsEarlierEntityIdUVE(entity, chosenListener)) {
+            if (chosenListener == kInvalidEntity ||
+                IsEarlierEntityId(entity, chosenListener)) {
                 chosenListener = entity;
             }
         });
 
-    if (chosenListener != kInvalidEntityUVE) {
-        outPose = ResolvePoseFromWorldTransformUVE(
+    if (chosenListener != kInvalidEntity) {
+        outPose = ResolvePoseFromWorldTransform(
             chosenListener,
-            entityManager.GetComponentUVE<AudioListener3DComponentUVE>(chosenListener),
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(chosenListener));
+            entityManager.GetComponent<AudioListener3DComponent>(chosenListener),
+            entityManager.GetComponent<WorldTransformComponent>(chosenListener));
         return true;
     }
 
-    if (fallbackCameraEntity != kInvalidEntityUVE &&
-        entityManager.IsAliveUVE(fallbackCameraEntity) &&
-        entityManager.HasComponentUVE<WorldTransformComponentUVE>(fallbackCameraEntity)) {
-        const WorldTransformComponentUVE& cameraWorld =
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(fallbackCameraEntity);
-        if (IsWorldTransformComponentValidUVE(cameraWorld)) {
-            outPose = ResolvePoseFromWorldTransformUVE(
-                fallbackCameraEntity, AudioListener3DComponentUVE{}, cameraWorld);
+    if (fallbackCameraEntity != kInvalidEntity &&
+        entityManager.IsAlive(fallbackCameraEntity) &&
+        entityManager.HasComponent<WorldTransformComponent>(fallbackCameraEntity)) {
+        const WorldTransformComponent& cameraWorld =
+            entityManager.GetComponent<WorldTransformComponent>(fallbackCameraEntity);
+        if (IsWorldTransformComponentValid(cameraWorld)) {
+            outPose = ResolvePoseFromWorldTransform(
+                fallbackCameraEntity, AudioListener3DComponent{}, cameraWorld);
             return true;
         }
     }

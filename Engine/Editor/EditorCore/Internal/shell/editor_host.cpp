@@ -38,26 +38,26 @@
 namespace UVE::Editor {
 namespace {
 
-EditorHostUVE* g_activeHostUVE = nullptr;
+EditorHost* g_activeHost = nullptr;
 
-using ViewKeyUVE = EditorViewportInputUVE::KeyUVE;
-using ViewCursorUVE = EditorViewportInputUVE::CursorUVE;
+using ViewKey = EditorViewportInput::Key;
+using ViewCursor = EditorViewportInput::Cursor;
 
-constexpr double kDoubleClickSecondsUVE = 0.4;
-constexpr float kResizeBorderUVE = 5.0F;
+constexpr double kDoubleClickSeconds = 0.4;
+constexpr float kResizeBorder = 5.0F;
 /// Platforms with one full-screen surface and no OS windows: every extra window is a page over the
 /// main one.
 #if defined(__ANDROID__)
-constexpr bool kSingleSurfaceUVE = true;
+constexpr bool kSingleSurface = true;
 #else
-constexpr bool kSingleSurfaceUVE = false;
+constexpr bool kSingleSurface = false;
 #endif
 /// How far a double-click's second press may land from the first: a finger never taps the same pixel.
-constexpr float kDoubleClickSlopUVE = kSingleSurfaceUVE ? 12.0F : 4.0F;
+constexpr float kDoubleClickSlop = kSingleSurface ? 12.0F : 4.0F;
 /// Bytes kept of a compositor shader or program info log.
-constexpr std::size_t kShaderLogCapacityUVE = 1024;
+constexpr std::size_t kShaderLogCapacity = 1024;
 
-[[nodiscard]] prism::Key ToPrismKeyUVE(const int key) {
+[[nodiscard]] prism::Key ToPrismKey(const int key) {
     if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
         return static_cast<prism::Key>(static_cast<int>(prism::Key::A) + (key - GLFW_KEY_A));
     }
@@ -86,34 +86,34 @@ constexpr std::size_t kShaderLogCapacityUVE = 1024;
     }
 }
 
-/// Viewport hotkeys (EditorViewportInputUVE::KeyUVE) for a GLFW key, or Count.
-[[nodiscard]] ViewKeyUVE ToViewKeyUVE(const int key) {
+/// Viewport hotkeys (EditorViewportInput::Key) for a GLFW key, or Count.
+[[nodiscard]] ViewKey ToViewKey(const int key) {
     if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
-        return static_cast<ViewKeyUVE>(static_cast<int>(ViewKeyUVE::Num0) + (key - GLFW_KEY_0));
+        return static_cast<ViewKey>(static_cast<int>(ViewKey::Num0) + (key - GLFW_KEY_0));
     }
     switch (key) {
-        case GLFW_KEY_KP_1: return ViewKeyUVE::Keypad1;
-        case GLFW_KEY_KP_3: return ViewKeyUVE::Keypad3;
-        case GLFW_KEY_KP_5: return ViewKeyUVE::Keypad5;
-        case GLFW_KEY_KP_7: return ViewKeyUVE::Keypad7;
-        case GLFW_KEY_A: return ViewKeyUVE::A;
-        case GLFW_KEY_C: return ViewKeyUVE::C;
-        case GLFW_KEY_D: return ViewKeyUVE::D;
-        case GLFW_KEY_F: return ViewKeyUVE::F;
-        case GLFW_KEY_S: return ViewKeyUVE::S;
-        case GLFW_KEY_W: return ViewKeyUVE::W;
-        case GLFW_KEY_E: return ViewKeyUVE::E;
-        case GLFW_KEY_Q: return ViewKeyUVE::Q;
-        case GLFW_KEY_SPACE: return ViewKeyUVE::Space;
-        case GLFW_KEY_HOME: return ViewKeyUVE::Home;
-        case GLFW_KEY_ESCAPE: return ViewKeyUVE::Escape;
-        case GLFW_KEY_LEFT_SHIFT: return ViewKeyUVE::LeftShift;
-        case GLFW_KEY_LEFT_CONTROL: return ViewKeyUVE::LeftCtrl;
-        default: return ViewKeyUVE::Count;
+        case GLFW_KEY_KP_1: return ViewKey::Keypad1;
+        case GLFW_KEY_KP_3: return ViewKey::Keypad3;
+        case GLFW_KEY_KP_5: return ViewKey::Keypad5;
+        case GLFW_KEY_KP_7: return ViewKey::Keypad7;
+        case GLFW_KEY_A: return ViewKey::A;
+        case GLFW_KEY_C: return ViewKey::C;
+        case GLFW_KEY_D: return ViewKey::D;
+        case GLFW_KEY_F: return ViewKey::F;
+        case GLFW_KEY_S: return ViewKey::S;
+        case GLFW_KEY_W: return ViewKey::W;
+        case GLFW_KEY_E: return ViewKey::E;
+        case GLFW_KEY_Q: return ViewKey::Q;
+        case GLFW_KEY_SPACE: return ViewKey::Space;
+        case GLFW_KEY_HOME: return ViewKey::Home;
+        case GLFW_KEY_ESCAPE: return ViewKey::Escape;
+        case GLFW_KEY_LEFT_SHIFT: return ViewKey::LeftShift;
+        case GLFW_KEY_LEFT_CONTROL: return ViewKey::LeftCtrl;
+        default: return ViewKey::Count;
     }
 }
 
-[[nodiscard]] std::uint8_t ToPrismModsUVE(const int mods) {
+[[nodiscard]] std::uint8_t ToPrismMods(const int mods) {
     std::uint8_t out = prism::ModNone;
     if ((mods & GLFW_MOD_SHIFT) != 0) { out |= prism::ModShift; }
     if ((mods & GLFW_MOD_CONTROL) != 0) { out |= prism::ModCtrl; }
@@ -121,8 +121,8 @@ constexpr std::size_t kShaderLogCapacityUVE = 1024;
     return out;
 }
 
-/// GLFW button -> EditorViewportInputUVE button slot (Left, Right, Middle), or -1.
-[[nodiscard]] int ToViewButtonUVE(const int button) {
+/// GLFW button -> EditorViewportInput button slot (Left, Right, Middle), or -1.
+[[nodiscard]] int ToViewButton(const int button) {
     switch (button) {
         case GLFW_MOUSE_BUTTON_LEFT: return 0;
         case GLFW_MOUSE_BUTTON_RIGHT: return 1;
@@ -131,7 +131,7 @@ constexpr std::size_t kShaderLogCapacityUVE = 1024;
     }
 }
 
-[[nodiscard]] prism::MouseButton ToPrismButtonUVE(const int button) {
+[[nodiscard]] prism::MouseButton ToPrismButton(const int button) {
     switch (button) {
         case GLFW_MOUSE_BUTTON_LEFT: return prism::MouseButton::Left;
         case GLFW_MOUSE_BUTTON_RIGHT: return prism::MouseButton::Right;
@@ -140,7 +140,7 @@ constexpr std::size_t kShaderLogCapacityUVE = 1024;
     }
 }
 
-void AppendUtf8UVE(std::string& out, const char32_t cp) {
+void AppendUtf8(std::string& out, const char32_t cp) {
     if (cp < 0x80) {
         out.push_back(static_cast<char>(cp));
     } else if (cp < 0x800) {
@@ -158,13 +158,13 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
     }
 }
 
-[[nodiscard]] void* GlLoaderUVE(const char* name) {
+[[nodiscard]] void* GlLoader(const char* name) {
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
 /// Logical UI scale: 1.0 on desktop (pixel-exact), or the display density scale on single-surface
 /// mobile screens, clamped so the shorter logical edge stays at least 360 layout units wide.
-[[nodiscard]] float ComputeUiScaleUVE(GLFWwindow* const window, const int fbWidth, const int fbHeight,
+[[nodiscard]] float ComputeUiScale(GLFWwindow* const window, const int fbWidth, const int fbHeight,
                                       const bool singleSurface) {
     if (!singleSurface || window == nullptr || fbWidth <= 0 || fbHeight <= 0) {
         return 1.0F;
@@ -173,8 +173,8 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
     float sy = 1.0F;
     glfwGetWindowContentScale(window, &sx, &sy);
     const float rawScale = std::isfinite(sx) && sx > 0.0F ? sx : 1.0F;
-    constexpr float kMinLogicalShortEdgeUVE = 500.0F;
-    const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdgeUVE);
+    constexpr float kMinLogicalShortEdge = 500.0F;
+    const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdge);
     return std::clamp(rawScale, 1.0F, maxScale);
 }
 
@@ -184,8 +184,8 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
 
 /// One OS window: its GLFW window, framebuffer size, drag areas and the raw input state its
 /// viewports read. Window 0 is the engine's main window; the others belong to this host.
-struct EditorHostUVE::WindowUVE final {
-    EditorHostUVE* host = nullptr;
+struct EditorHost::Window final {
+    EditorHost* host = nullptr;
     int id = 0;
     GLFWwindow* window = nullptr;
     int fbWidth = 1;
@@ -210,20 +210,20 @@ struct EditorHostUVE::WindowUVE final {
     // vertex array the compositor draws with in that window's context (not shared).
     std::shared_ptr<prism::GlBackend> backend;
     GLuint vao = 0;
-    EditorHostUVE::WindowScopeUVE scope;
+    EditorHost::WindowScope scope;
 
     prism::Vec2 mouse{0.0F, 0.0F};
     prism::Vec2 frameStartMouse{0.0F, 0.0F};
     bool mouseInside = true;
     float wheel = 0.0F;
     std::uint8_t mods = 0;
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> down{};
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> clicked{};
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> released{};
-    std::array<prism::Vec2, EditorViewportInputUVE::kButtonCountUVE> pressPos{};
-    std::array<float, EditorViewportInputUVE::kButtonCountUVE> dragDistance{};
-    std::bitset<EditorViewportInputUVE::kKeyCountUVE> keysDown;
-    std::bitset<EditorViewportInputUVE::kKeyCountUVE> keysPressed;
+    std::array<bool, EditorViewportInput::kButtonCount> down{};
+    std::array<bool, EditorViewportInput::kButtonCount> clicked{};
+    std::array<bool, EditorViewportInput::kButtonCount> released{};
+    std::array<prism::Vec2, EditorViewportInput::kButtonCount> pressPos{};
+    std::array<float, EditorViewportInput::kButtonCount> dragDistance{};
+    std::bitset<EditorViewportInput::kKeyCount> keysDown;
+    std::bitset<EditorViewportInput::kKeyCount> keysPressed;
     double lastFrameTime = 0.0;
     float deltaTime = 1.0F / 60.0F;
 
@@ -233,8 +233,8 @@ struct EditorHostUVE::WindowUVE final {
     int clickCount = 0;
 
     // Window drag (title strip) and edge resize, done here because GLFW has no hit-test hook.
-    enum class DragModeUVE : std::uint8_t { None, Move, Resize };
-    DragModeUVE dragMode = DragModeUVE::None;
+    enum class DragMode : std::uint8_t { None, Move, Resize };
+    DragMode dragMode = DragMode::None;
     int resizeEdges = 0; // bit 0 left, 1 right, 2 top, 3 bottom
     double dragStartScreenX = 0.0;
     double dragStartScreenY = 0.0;
@@ -243,7 +243,7 @@ struct EditorHostUVE::WindowUVE final {
     int dragStartWinW = 0;
     int dragStartWinH = 0;
 
-    [[nodiscard]] bool CaptionContainsUVE(const prism::Vec2 p) const noexcept {
+    [[nodiscard]] bool CaptionContains(const prism::Vec2 p) const noexcept {
         for (const auto& [captionId, r] : captions) {
             if (r.w > 0.0F && p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h) {
                 return true;
@@ -255,9 +255,9 @@ struct EditorHostUVE::WindowUVE final {
 
 // ------------------------------------------------------------------------------------- platform
 
-class EditorHostUVE::PlatformUVE final : public prism::Platform {
+class EditorHost::Platform final : public prism::Platform {
 public:
-    PlatformUVE(EditorHostUVE& host, GLFWwindow* window) : m_host(host), m_window(window) {
+    Platform(EditorHost& host, GLFWwindow* window) : m_host(host), m_window(window) {
         m_cursors[static_cast<int>(prism::Cursor::Arrow)] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
         m_cursors[static_cast<int>(prism::Cursor::IBeam)] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
         m_cursors[static_cast<int>(prism::Cursor::SizeWE)] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
@@ -269,7 +269,7 @@ public:
 #endif
         m_cursors[static_cast<int>(prism::Cursor::Hand)] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
     }
-    ~PlatformUVE() override {
+    ~Platform() override {
         for (GLFWcursor* cursor : m_cursors) {
             if (cursor != nullptr) {
                 glfwDestroyCursor(cursor);
@@ -286,29 +286,29 @@ public:
     void setCursor(const prism::Cursor c) override {
         const int window = m_host.m_app != nullptr ? m_host.m_app->currentWindow() : 0;
         m_uiCursor[window] = c;
-        ApplyCursorUVE(window, m_cursors[static_cast<int>(c)]);
+        ApplyCursor(window, m_cursors[static_cast<int>(c)]);
     }
     void setTextInputActive(const bool active) override {
         m_textInput = active;
 #if defined(__ANDROID__)
-        Window::SetAndroidGlfwTextInputUVE(active);   // the app shows or hides the soft keyboard
+        UVE::Window::SetAndroidGlfwTextInput(active);   // the app shows or hides the soft keyboard
 #endif
     }
     float dpiScale() const override { return m_host.m_main != nullptr ? m_host.m_main->uiScale : 1.0F; }
     void requestQuit() override { glfwSetWindowShouldClose(m_window, GLFW_TRUE); }
     void* nativeWindowHandle() const override { return m_window; }
-    /// Drag areas: id < kExtraCaptionIdUVE is a window's title strip (the window's own id); ids
-    /// from kExtraCaptionIdUVE up are further empty title-bar space (ExtraCaptionIdUVE).
+    /// Drag areas: id < kExtraCaptionId is a window's title strip (the window's own id); ids
+    /// from kExtraCaptionId up are further empty title-bar space (ExtraCaptionId).
     void setWindowCaption(const int id, const prism::Rect dragArea) override {
-        const int window = id < kExtraCaptionIdUVE ? id : (id - kExtraCaptionIdUVE) / 100;
-        if (WindowUVE* w = m_host.FindUVE(window)) {
+        const int window = id < kExtraCaptionId ? id : (id - kExtraCaptionId) / 100;
+        if (Window* w = m_host.Find(window)) {
             w->captions[id] = dragArea;
         }
     }
     void minimizeWindow(const int id) override {
-        if (WindowUVE* w = m_host.FindUVE(id)) {
+        if (Window* w = m_host.Find(id)) {
             if (w->page) {
-                m_host.HidePageUVE(id);
+                m_host.HidePage(id);
             } else {
                 glfwIconifyWindow(w->window);
             }
@@ -316,14 +316,14 @@ public:
     }
     bool singleSurface() const override { return m_host.m_singleSurface; }
     void toggleMaximizeWindow(const int id) override {
-        WindowUVE* w = m_host.FindUVE(id);
-        if (w == nullptr || (id == kMainWindowUVE && m_host.m_singleSurface)) {
+        Window* w = m_host.Find(id);
+        if (w == nullptr || (id == kMainWindow && m_host.m_singleSurface)) {
             return;
         }
         if (w->page) {
             w->pageFloating = !w->pageFloating;
             w->pageDragging = false;
-            m_host.ApplyPageLayoutUVE(*w);
+            m_host.ApplyPageLayout(*w);
             if (m_host.m_app != nullptr) {
                 m_host.m_app->invalidate();
             }
@@ -336,7 +336,7 @@ public:
         }
     }
     bool windowMaximized(const int id) const override {
-        const WindowUVE* w = m_host.FindUVE(id);
+        const Window* w = m_host.Find(id);
         if (w == nullptr) {
             return false;
         }
@@ -346,38 +346,38 @@ public:
         return glfwGetWindowAttrib(w->window, GLFW_MAXIMIZED) != 0;
     }
 
-    [[nodiscard]] bool TextInputActiveUVE() const noexcept { return m_textInput; }
+    [[nodiscard]] bool TextInputActive() const noexcept { return m_textInput; }
 
-    void SetViewCursorUVE(const int window, const ViewCursorUVE cursor) {
+    void SetViewCursor(const int window, const ViewCursor cursor) {
         prism::Cursor mapped = prism::Cursor::Arrow;
         switch (cursor) {
-            case ViewCursorUVE::Arrow: mapped = prism::Cursor::Arrow; break;
-            case ViewCursorUVE::Hand: mapped = prism::Cursor::Hand; break;
-            case ViewCursorUVE::ResizeAll: mapped = prism::Cursor::SizeAll; break;
-            case ViewCursorUVE::ResizeNS: mapped = prism::Cursor::SizeNS; break;
-            case ViewCursorUVE::ResizeEW: mapped = prism::Cursor::SizeWE; break;
-            case ViewCursorUVE::ResizeNWSE: mapped = prism::Cursor::SizeAll; break;
-            case ViewCursorUVE::ResizeNESW: mapped = prism::Cursor::SizeAll; break;
+            case ViewCursor::Arrow: mapped = prism::Cursor::Arrow; break;
+            case ViewCursor::Hand: mapped = prism::Cursor::Hand; break;
+            case ViewCursor::ResizeAll: mapped = prism::Cursor::SizeAll; break;
+            case ViewCursor::ResizeNS: mapped = prism::Cursor::SizeNS; break;
+            case ViewCursor::ResizeEW: mapped = prism::Cursor::SizeWE; break;
+            case ViewCursor::ResizeNWSE: mapped = prism::Cursor::SizeAll; break;
+            case ViewCursor::ResizeNESW: mapped = prism::Cursor::SizeAll; break;
         }
-        ApplyCursorUVE(window, m_cursors[static_cast<int>(mapped)]);
+        ApplyCursor(window, m_cursors[static_cast<int>(mapped)]);
     }
-    void SetResizeCursorUVE(const int window, const int edges) {
+    void SetResizeCursor(const int window, const int edges) {
         const bool horizontal = (edges & 3) != 0;
         const bool vertical = (edges & 12) != 0;
         prism::Cursor c = prism::Cursor::Arrow;
         if (horizontal && vertical) { c = prism::Cursor::SizeAll; }
         else if (horizontal) { c = prism::Cursor::SizeWE; }
         else if (vertical) { c = prism::Cursor::SizeNS; }
-        ApplyCursorUVE(window, m_cursors[static_cast<int>(c)]);
+        ApplyCursor(window, m_cursors[static_cast<int>(c)]);
     }
-    void ForgetWindowUVE(const int window) {
+    void ForgetWindow(const int window) {
         m_applied.erase(window);
         m_uiCursor.erase(window);
     }
 
 private:
-    void ApplyCursorUVE(const int window, GLFWcursor* cursor) {
-        WindowUVE* w = m_host.FindUVE(window);
+    void ApplyCursor(const int window, GLFWcursor* cursor) {
+        Window* w = m_host.Find(window);
         if (w == nullptr) {
             return;
         }
@@ -388,7 +388,7 @@ private:
         }
     }
 
-    EditorHostUVE& m_host;
+    EditorHost& m_host;
     GLFWwindow* m_window = nullptr;
     std::array<GLFWcursor*, 6> m_cursors{};
     std::map<int, GLFWcursor*> m_applied;
@@ -400,7 +400,7 @@ private:
 
 /// Draws textured rectangles into the default framebuffer: engine view textures into their holes,
 /// then the PRISM frame (premultiplied, transparent in the holes) over the whole window.
-struct EditorHostUVE::CompositorUVE final {
+struct EditorHost::Compositor final {
     PFNGLCREATESHADERPROC glCreateShader = nullptr;
     PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
     PFNGLCOMPILESHADERPROC glCompileShader = nullptr;
@@ -433,42 +433,42 @@ struct EditorHostUVE::CompositorUVE final {
     GLint texLoc = -1;
 
     template <typename T>
-    bool LoadUVE(T& fn, const char* name) {
+    bool Load(T& fn, const char* name) {
         fn = reinterpret_cast<T>(glfwGetProcAddress(name));
         return fn != nullptr;
     }
 
-    [[nodiscard]] bool InitializeUVE() {
+    [[nodiscard]] bool Initialize() {
         bool ok = true;
-        ok &= LoadUVE(glCreateShader, "glCreateShader");
-        ok &= LoadUVE(glShaderSource, "glShaderSource");
-        ok &= LoadUVE(glCompileShader, "glCompileShader");
-        ok &= LoadUVE(glGetShaderiv, "glGetShaderiv");
-        ok &= LoadUVE(glDeleteShader, "glDeleteShader");
-        ok &= LoadUVE(glCreateProgram, "glCreateProgram");
-        ok &= LoadUVE(glAttachShader, "glAttachShader");
-        ok &= LoadUVE(glLinkProgram, "glLinkProgram");
-        ok &= LoadUVE(glGetProgramiv, "glGetProgramiv");
-        ok &= LoadUVE(glDeleteProgram, "glDeleteProgram");
-        ok &= LoadUVE(glUseProgram, "glUseProgram");
-        ok &= LoadUVE(glGetUniformLocation, "glGetUniformLocation");
-        ok &= LoadUVE(glUniform4f, "glUniform4f");
-        ok &= LoadUVE(glUniform1i, "glUniform1i");
-        ok &= LoadUVE(glGenVertexArrays, "glGenVertexArrays");
-        ok &= LoadUVE(glBindVertexArray, "glBindVertexArray");
-        ok &= LoadUVE(glDeleteVertexArrays, "glDeleteVertexArrays");
-        ok &= LoadUVE(glBindFramebuffer, "glBindFramebuffer");
-        ok &= LoadUVE(glActiveTexture, "glActiveTexture");
-        ok &= LoadUVE(glBlendFuncSeparate, "glBlendFuncSeparate");
-        ok &= LoadUVE(glGetShaderInfoLog, "glGetShaderInfoLog");
-        ok &= LoadUVE(glGetProgramInfoLog, "glGetProgramInfoLog");
+        ok &= Load(glCreateShader, "glCreateShader");
+        ok &= Load(glShaderSource, "glShaderSource");
+        ok &= Load(glCompileShader, "glCompileShader");
+        ok &= Load(glGetShaderiv, "glGetShaderiv");
+        ok &= Load(glDeleteShader, "glDeleteShader");
+        ok &= Load(glCreateProgram, "glCreateProgram");
+        ok &= Load(glAttachShader, "glAttachShader");
+        ok &= Load(glLinkProgram, "glLinkProgram");
+        ok &= Load(glGetProgramiv, "glGetProgramiv");
+        ok &= Load(glDeleteProgram, "glDeleteProgram");
+        ok &= Load(glUseProgram, "glUseProgram");
+        ok &= Load(glGetUniformLocation, "glGetUniformLocation");
+        ok &= Load(glUniform4f, "glUniform4f");
+        ok &= Load(glUniform1i, "glUniform1i");
+        ok &= Load(glGenVertexArrays, "glGenVertexArrays");
+        ok &= Load(glBindVertexArray, "glBindVertexArray");
+        ok &= Load(glDeleteVertexArrays, "glDeleteVertexArrays");
+        ok &= Load(glBindFramebuffer, "glBindFramebuffer");
+        ok &= Load(glActiveTexture, "glActiveTexture");
+        ok &= Load(glBlendFuncSeparate, "glBlendFuncSeparate");
+        ok &= Load(glGetShaderInfoLog, "glGetShaderInfoLog");
+        ok &= Load(glGetProgramInfoLog, "glGetProgramInfoLog");
         if (!ok) {
             UVE_ERROR("Editor host: the GL context lacks a function the compositor needs");
             return false;
         }
         glslHeader = prism::glslHeaderFor(reinterpret_cast<const char*>(glGetString(GL_VERSION)));
         // A quad from gl_VertexID: uRect = NDC (x0, y0, x1, y1), uUv = texture (u0, v0, u1, v1).
-        // No #version line: CompileUVE puts the context's header first (desktop core or GLES).
+        // No #version line: Compile puts the context's header first (desktop core or GLES).
         static const char* const kVertex = R"(
 uniform vec4 uRect;
 uniform vec4 uUv;
@@ -483,8 +483,8 @@ uniform sampler2D uTex;
 in vec2 vUv;
 out vec4 fragColor;
 void main() { fragColor = texture(uTex, vUv); })";
-        const GLuint vs = CompileUVE(GL_VERTEX_SHADER, kVertex);
-        const GLuint fs = CompileUVE(GL_FRAGMENT_SHADER, kFragment);
+        const GLuint vs = Compile(GL_VERTEX_SHADER, kVertex);
+        const GLuint fs = Compile(GL_FRAGMENT_SHADER, kFragment);
         if (vs == 0 || fs == 0) {
             return false;
         }
@@ -497,7 +497,7 @@ void main() { fragColor = texture(uTex, vUv); })";
         GLint linked = 0;
         glGetProgramiv(program, GL_LINK_STATUS, &linked);
         if (linked == 0) {
-            std::array<char, kShaderLogCapacityUVE> log{};
+            std::array<char, kShaderLogCapacity> log{};
             glGetProgramInfoLog(program, static_cast<GLsizei>(log.size()), nullptr, log.data());
             UVE_ERROR("Editor host: the compositor program did not link: {}", log.data());
             glDeleteProgram(program);
@@ -511,7 +511,7 @@ void main() { fragColor = texture(uTex, vUv); })";
         return true;
     }
 
-    [[nodiscard]] GLuint CompileUVE(const GLenum type, const char* source) {
+    [[nodiscard]] GLuint Compile(const GLenum type, const char* source) {
         const GLuint shader = glCreateShader(type);
         const std::array<const char*, 2> parts{glslHeader, source};
         glShaderSource(shader, static_cast<GLsizei>(parts.size()), parts.data(), nullptr);
@@ -519,7 +519,7 @@ void main() { fragColor = texture(uTex, vUv); })";
         GLint compiled = 0;
         glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
         if (compiled == 0) {
-            std::array<char, kShaderLogCapacityUVE> log{};
+            std::array<char, kShaderLogCapacity> log{};
             glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
             UVE_ERROR("Editor host: a compositor shader did not compile: {}", log.data());
             glDeleteShader(shader);
@@ -528,7 +528,7 @@ void main() { fragColor = texture(uTex, vUv); })";
         return shader;
     }
 
-    void ShutdownUVE() {
+    void Shutdown() {
         if (vao != 0 && glDeleteVertexArrays != nullptr) {
             glDeleteVertexArrays(1, &vao);
             vao = 0;
@@ -540,7 +540,7 @@ void main() { fragColor = texture(uTex, vUv); })";
     }
 
     /// Draws `texture` (bottom-up) into window rect `r` (top-left origin, window `w` x `h`).
-    void DrawUVE(const GLuint texture, const prism::Rect& r, const int w, const int h, const float u1,
+    void Draw(const GLuint texture, const prism::Rect& r, const int w, const int h, const float u1,
                  const float v1) {
         const float x0 = (r.x / static_cast<float>(w)) * 2.0F - 1.0F;
         const float x1 = ((r.x + r.w) / static_cast<float>(w)) * 2.0F - 1.0F;
@@ -558,13 +558,13 @@ void main() { fragColor = texture(uTex, vUv); })";
 /// The GPU time of the main window's frame: a ring of time-elapsed queries, each read only once the
 /// GPU reports it finished, so the CPU never waits for a result. Nothing is measured where the GL
 /// has no timer queries (desktop GL before 3.3, GLES without GL_EXT_disjoint_timer_query).
-struct EditorHostUVE::GpuTimerUVE final {
-    static constexpr std::size_t kSlotsUVE = 4U;
+struct EditorHost::GpuTimer final {
+    static constexpr std::size_t kSlots = 4U;
 #if defined(__ANDROID__)
-    static constexpr GLenum kTargetUVE = GL_TIME_ELAPSED_EXT;
+    static constexpr GLenum kTarget = GL_TIME_ELAPSED_EXT;
     PFNGLGETQUERYOBJECTUI64VEXTPROC getQueryObjectui64v = nullptr;
 #else
-    static constexpr GLenum kTargetUVE = GL_TIME_ELAPSED;
+    static constexpr GLenum kTarget = GL_TIME_ELAPSED;
     PFNGLGETQUERYOBJECTUI64VPROC getQueryObjectui64v = nullptr;
 #endif
     PFNGLGENQUERIESPROC genQueries = nullptr;
@@ -573,17 +573,17 @@ struct EditorHostUVE::GpuTimerUVE final {
     PFNGLENDQUERYPROC endQuery = nullptr;
     PFNGLGETQUERYOBJECTUIVPROC getQueryObjectuiv = nullptr;
 
-    std::array<GLuint, kSlotsUVE> queries{};
-    std::array<bool, kSlotsUVE> pending{};
+    std::array<GLuint, kSlots> queries{};
+    std::array<bool, kSlots> pending{};
     /// The GPU's clock jumped (power state change, context reset) while the query ran: no result.
-    std::array<bool, kSlotsUVE> tainted{};
+    std::array<bool, kSlots> tainted{};
     std::size_t next = 0U;   ///< the slot the next frame uses, which is also the oldest one issued
     bool supported = false;
     bool active = false;
     float lastMs = 0.0F;
 
     template <typename T>
-    static bool LoadUVE(T& fn, const std::string& name) {
+    static bool Load(T& fn, const std::string& name) {
 #if defined(__ANDROID__)
         // GLES: the extension's own entry point, else the ES 3 core one it aliases.
         fn = reinterpret_cast<T>(glfwGetProcAddress((name + "EXT").c_str()));
@@ -595,7 +595,7 @@ struct EditorHostUVE::GpuTimerUVE final {
         return fn != nullptr;
     }
 
-    void InitializeUVE() {
+    void Initialize() {
 #if defined(__ANDROID__)
         const char* const extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
         if (extensions == nullptr ||
@@ -611,27 +611,27 @@ struct EditorHostUVE::GpuTimerUVE final {
             return;
         }
 #endif
-        bool ok = LoadUVE(genQueries, "glGenQueries");
-        ok &= LoadUVE(deleteQueries, "glDeleteQueries");
-        ok &= LoadUVE(beginQuery, "glBeginQuery");
-        ok &= LoadUVE(endQuery, "glEndQuery");
-        ok &= LoadUVE(getQueryObjectuiv, "glGetQueryObjectuiv");
-        ok &= LoadUVE(getQueryObjectui64v, "glGetQueryObjectui64v");
+        bool ok = Load(genQueries, "glGenQueries");
+        ok &= Load(deleteQueries, "glDeleteQueries");
+        ok &= Load(beginQuery, "glBeginQuery");
+        ok &= Load(endQuery, "glEndQuery");
+        ok &= Load(getQueryObjectuiv, "glGetQueryObjectuiv");
+        ok &= Load(getQueryObjectui64v, "glGetQueryObjectui64v");
         if (!ok) {
             return;
         }
-        genQueries(static_cast<GLsizei>(kSlotsUVE), queries.data());
+        genQueries(static_cast<GLsizei>(kSlots), queries.data());
         supported = true;
     }
 
     /// Takes every finished result, oldest first, so lastMs ends on the newest one.
-    void PollUVE() {
+    void Poll() {
 #if defined(__ANDROID__)
         GLint disjoint = 0;
         glGetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint);
 #endif
-        for (std::size_t k = 0U; k < kSlotsUVE; ++k) {
-            const std::size_t i = (next + k) % kSlotsUVE;
+        for (std::size_t k = 0U; k < kSlots; ++k) {
+            const std::size_t i = (next + k) % kSlots;
             if (!pending[i]) {
                 continue;
             }
@@ -654,33 +654,33 @@ struct EditorHostUVE::GpuTimerUVE final {
         }
     }
 
-    void BeginUVE() {
+    void Begin() {
         if (!supported || active) {
             return;
         }
-        PollUVE();
+        Poll();
         if (pending[next]) {
             return;   // the GPU is a whole ring behind: this frame goes untimed rather than waited for
         }
         tainted[next] = false;
-        beginQuery(kTargetUVE, queries[next]);
+        beginQuery(kTarget, queries[next]);
         active = true;
     }
 
-    void EndUVE() {
+    void End() {
         if (!active) {
             return;
         }
-        endQuery(kTargetUVE);
+        endQuery(kTarget);
         pending[next] = true;
-        next = (next + 1U) % kSlotsUVE;
+        next = (next + 1U) % kSlots;
         active = false;
     }
 
-    void ShutdownUVE() {
-        EndUVE();
+    void Shutdown() {
+        End();
         if (supported) {
-            deleteQueries(static_cast<GLsizei>(kSlotsUVE), queries.data());
+            deleteQueries(static_cast<GLsizei>(kSlots), queries.data());
             supported = false;
         }
     }
@@ -689,7 +689,7 @@ struct EditorHostUVE::GpuTimerUVE final {
 // ------------------------------------------------------------------------------- GLFW callbacks
 
 /// The main window's callbacks, chained to what the engine installed before.
-struct EditorHostUVE::ChainUVE final {
+struct EditorHost::Chain final {
     GLFWcursorposfun cursorPos = nullptr;
     GLFWmousebuttonfun mouseButton = nullptr;
     GLFWscrollfun scroll = nullptr;
@@ -700,14 +700,14 @@ struct EditorHostUVE::ChainUVE final {
     GLFWdropfun drop = nullptr;
 #endif
 
-    [[nodiscard]] static EditorHostUVE::WindowUVE* MainUVE() {
-        return g_activeHostUVE != nullptr ? g_activeHostUVE->m_main.get() : nullptr;
+    [[nodiscard]] static EditorHost::Window* Main() {
+        return g_activeHost != nullptr ? g_activeHost->m_main.get() : nullptr;
     }
     /// On a single surface the page on screen takes the main window's input; runs `fn` on it (in its
     /// scope) and returns true, or false when the main window has the screen.
     template <typename F>
-    [[nodiscard]] static bool ToPageUVE(F&& fn) {
-        WindowUVE* const page = g_activeHostUVE != nullptr ? g_activeHostUVE->VisiblePageUVE() : nullptr;
+    [[nodiscard]] static bool ToPage(F&& fn) {
+        Window* const page = g_activeHost != nullptr ? g_activeHost->VisiblePage() : nullptr;
         if (page == nullptr) {
             return false;
         }
@@ -722,17 +722,17 @@ struct EditorHostUVE::ChainUVE final {
     /// bounds (or while dragging / holding a button / showing a blocking popup) so the main editor
     /// underneath stays interactive beside it.
     template <typename F>
-    [[nodiscard]] static bool PointerToPageUVE(const double x, const double y, F&& fn) {
-        WindowUVE* const page = g_activeHostUVE != nullptr ? g_activeHostUVE->VisiblePageUVE() : nullptr;
+    [[nodiscard]] static bool PointerToPage(const double x, const double y, F&& fn) {
+        Window* const page = g_activeHost != nullptr ? g_activeHost->VisiblePage() : nullptr;
         if (page == nullptr) {
             return false;
         }
-        if (page->pageFloating && g_activeHostUVE->m_main != nullptr) {
-            const prism::Vec2 mp = g_activeHostUVE->ToUiUVE(*g_activeHostUVE->m_main, x, y);
+        if (page->pageFloating && g_activeHost->m_main != nullptr) {
+            const prism::Vec2 mp = g_activeHost->ToUi(*g_activeHost->m_main, x, y);
             const bool held = page->down[0] || page->down[1] || page->down[2];
             const bool inside = page->pageBounds.contains(mp);
-            const bool popup = g_activeHostUVE->m_app != nullptr &&
-                               g_activeHostUVE->m_app->windowHasBlockingPopup(page->id);
+            const bool popup = g_activeHost->m_app != nullptr &&
+                               g_activeHost->m_app->windowHasBlockingPopup(page->id);
             if (!page->pageDragging && !held && !inside && !popup) {
                 return false;
             }
@@ -744,76 +744,76 @@ struct EditorHostUVE::ChainUVE final {
         }
         return true;
     }
-    static void CursorPosUVE(GLFWwindow* w, const double x, const double y) {
-        if (PointerToPageUVE(x, y, [x, y](WindowUVE& page) { g_activeHostUVE->OnCursorPosUVE(page, x, y); })) {
+    static void CursorPos(GLFWwindow* w, const double x, const double y) {
+        if (PointerToPage(x, y, [x, y](Window& page) { g_activeHost->OnCursorPos(page, x, y); })) {
             return;
         }
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->cursorPos != nullptr) { g_activeHostUVE->m_chain->cursorPos(w, x, y); }
-            g_activeHostUVE->OnCursorPosUVE(*main, x, y);
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->cursorPos != nullptr) { g_activeHost->m_chain->cursorPos(w, x, y); }
+            g_activeHost->OnCursorPos(*main, x, y);
         }
     }
-    static void MouseButtonUVE(GLFWwindow* w, const int button, const int action, const int mods) {
+    static void MouseButton(GLFWwindow* w, const int button, const int action, const int mods) {
         double cx = 0.0;
         double cy = 0.0;
         if (w != nullptr) {
             glfwGetCursorPos(w, &cx, &cy);
         }
-        if (PointerToPageUVE(cx, cy, [=](WindowUVE& page) { g_activeHostUVE->OnMouseButtonUVE(page, button, action, mods); })) {
+        if (PointerToPage(cx, cy, [=](Window& page) { g_activeHost->OnMouseButton(page, button, action, mods); })) {
             return;
         }
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->mouseButton != nullptr) {
-                g_activeHostUVE->m_chain->mouseButton(w, button, action, mods);
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->mouseButton != nullptr) {
+                g_activeHost->m_chain->mouseButton(w, button, action, mods);
             }
-            g_activeHostUVE->OnMouseButtonUVE(*main, button, action, mods);
+            g_activeHost->OnMouseButton(*main, button, action, mods);
         }
     }
-    static void ScrollUVE(GLFWwindow* w, const double dx, const double dy) {
+    static void Scroll(GLFWwindow* w, const double dx, const double dy) {
         double cx = 0.0;
         double cy = 0.0;
         if (w != nullptr) {
             glfwGetCursorPos(w, &cx, &cy);
         }
-        if (PointerToPageUVE(cx, cy, [=](WindowUVE& page) { g_activeHostUVE->OnScrollUVE(page, dx, dy); })) {
+        if (PointerToPage(cx, cy, [=](Window& page) { g_activeHost->OnScroll(page, dx, dy); })) {
             return;
         }
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->scroll != nullptr) { g_activeHostUVE->m_chain->scroll(w, dx, dy); }
-            g_activeHostUVE->OnScrollUVE(*main, dx, dy);
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->scroll != nullptr) { g_activeHost->m_chain->scroll(w, dx, dy); }
+            g_activeHost->OnScroll(*main, dx, dy);
         }
     }
-    static void KeyUVE(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
-        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnKeyUVE(page, key, scancode, action, mods); })) {
+    static void Key(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
+        if (ToPage([=](Window& page) { g_activeHost->OnKey(page, key, scancode, action, mods); })) {
             return;
         }
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->key != nullptr) { g_activeHostUVE->m_chain->key(w, key, scancode, action, mods); }
-            g_activeHostUVE->OnKeyUVE(*main, key, scancode, action, mods);
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->key != nullptr) { g_activeHost->m_chain->key(w, key, scancode, action, mods); }
+            g_activeHost->OnKey(*main, key, scancode, action, mods);
         }
     }
-    static void CharUVE(GLFWwindow* w, const unsigned int codepoint) {
-        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnCharUVE(page, codepoint); })) {
+    static void Char(GLFWwindow* w, const unsigned int codepoint) {
+        if (ToPage([=](Window& page) { g_activeHost->OnChar(page, codepoint); })) {
             return;
         }
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->character != nullptr) { g_activeHostUVE->m_chain->character(w, codepoint); }
-            g_activeHostUVE->OnCharUVE(*main, codepoint);
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->character != nullptr) { g_activeHost->m_chain->character(w, codepoint); }
+            g_activeHost->OnChar(*main, codepoint);
         }
     }
-    static void CursorEnterUVE(GLFWwindow* w, const int entered) {
-        if (WindowUVE* main = MainUVE()) {
-            if (g_activeHostUVE->m_chain->cursorEnter != nullptr) { g_activeHostUVE->m_chain->cursorEnter(w, entered); }
-            g_activeHostUVE->OnCursorEnterUVE(*main, entered);
+    static void CursorEnter(GLFWwindow* w, const int entered) {
+        if (Window* main = Main()) {
+            if (g_activeHost->m_chain->cursorEnter != nullptr) { g_activeHost->m_chain->cursorEnter(w, entered); }
+            g_activeHost->OnCursorEnter(*main, entered);
         }
     }
 #if !defined(__ANDROID__)
-    static void DropUVE(GLFWwindow* w, const int count, const char** paths) {
-        if (g_activeHostUVE == nullptr) {
+    static void Drop(GLFWwindow* w, const int count, const char** paths) {
+        if (g_activeHost == nullptr) {
             return;
         }
-        if (g_activeHostUVE->m_chain->drop != nullptr) { g_activeHostUVE->m_chain->drop(w, count, paths); }
-        if (!g_activeHostUVE->onFilesDropped || count <= 0 || paths == nullptr) {
+        if (g_activeHost->m_chain->drop != nullptr) { g_activeHost->m_chain->drop(w, count, paths); }
+        if (!g_activeHost->onFilesDropped || count <= 0 || paths == nullptr) {
             return;
         }
         std::vector<std::filesystem::path> files;
@@ -823,57 +823,57 @@ struct EditorHostUVE::ChainUVE final {
                 files.emplace_back(std::u8string(utf8.begin(), utf8.end()));
             }
         }
-        g_activeHostUVE->onFilesDropped(std::move(files));
+        g_activeHost->onFilesDropped(std::move(files));
     }
 #endif
 };
 
 namespace {
 
-/// A secondary window's callbacks: its GLFW user pointer is its WindowUVE.
-using HostWindowUVE = EditorHostUVE::WindowUVE;
-[[nodiscard]] HostWindowUVE* OwnerUVE(GLFWwindow* w) {
-    return static_cast<HostWindowUVE*>(glfwGetWindowUserPointer(w));
+/// A secondary window's callbacks: its GLFW user pointer is its Window.
+using HostWindow = EditorHost::Window;
+[[nodiscard]] HostWindow* Owner(GLFWwindow* w) {
+    return static_cast<HostWindow*>(glfwGetWindowUserPointer(w));
 }
 /// Runs `fn` inside the window's scope, when it has one.
 template <typename F>
-void ScopedUVE(HostWindowUVE& o, F&& fn) {
+void Scoped(HostWindow& o, F&& fn) {
     if (o.scope) {
         o.scope(std::function<void()>(std::forward<F>(fn)));
     } else {
         fn();
     }
 }
-void SecondaryCursorPosUVE(GLFWwindow* w, const double x, const double y) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, x, y] { o->host->OnCursorPosUVE(*o, x, y); }); }
+void SecondaryCursorPos(GLFWwindow* w, const double x, const double y) {
+    if (HostWindow* o = Owner(w)) { Scoped(*o, [o, x, y] { o->host->OnCursorPos(*o, x, y); }); }
 }
-void SecondaryMouseButtonUVE(GLFWwindow* w, const int button, const int action, const int mods) {
-    if (HostWindowUVE* o = OwnerUVE(w)) {
-        ScopedUVE(*o, [o, button, action, mods] { o->host->OnMouseButtonUVE(*o, button, action, mods); });
+void SecondaryMouseButton(GLFWwindow* w, const int button, const int action, const int mods) {
+    if (HostWindow* o = Owner(w)) {
+        Scoped(*o, [o, button, action, mods] { o->host->OnMouseButton(*o, button, action, mods); });
     }
 }
-void SecondaryScrollUVE(GLFWwindow* w, const double dx, const double dy) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, dx, dy] { o->host->OnScrollUVE(*o, dx, dy); }); }
+void SecondaryScroll(GLFWwindow* w, const double dx, const double dy) {
+    if (HostWindow* o = Owner(w)) { Scoped(*o, [o, dx, dy] { o->host->OnScroll(*o, dx, dy); }); }
 }
-void SecondaryKeyUVE(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
-    if (HostWindowUVE* o = OwnerUVE(w)) {
-        ScopedUVE(*o, [o, key, scancode, action, mods] { o->host->OnKeyUVE(*o, key, scancode, action, mods); });
+void SecondaryKey(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
+    if (HostWindow* o = Owner(w)) {
+        Scoped(*o, [o, key, scancode, action, mods] { o->host->OnKey(*o, key, scancode, action, mods); });
     }
 }
-void SecondaryCharUVE(GLFWwindow* w, const unsigned int codepoint) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, codepoint] { o->host->OnCharUVE(*o, codepoint); }); }
+void SecondaryChar(GLFWwindow* w, const unsigned int codepoint) {
+    if (HostWindow* o = Owner(w)) { Scoped(*o, [o, codepoint] { o->host->OnChar(*o, codepoint); }); }
 }
-void SecondaryCursorEnterUVE(GLFWwindow* w, const int entered) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, entered] { o->host->OnCursorEnterUVE(*o, entered); }); }
+void SecondaryCursorEnter(GLFWwindow* w, const int entered) {
+    if (HostWindow* o = Owner(w)) { Scoped(*o, [o, entered] { o->host->OnCursorEnter(*o, entered); }); }
 }
-void SecondaryCloseUVE(GLFWwindow* w) {
+void SecondaryClose(GLFWwindow* w) {
     // The editor decides (unsaved changes ask first); the window stays until it closes it.
     glfwSetWindowShouldClose(w, GLFW_FALSE);
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->closeRequested = true; }
+    if (HostWindow* o = Owner(w)) { o->closeRequested = true; }
 }
-void SecondaryFocusUVE(GLFWwindow* w, const int focused) {
-    if (HostWindowUVE* o = OwnerUVE(w); o != nullptr && focused != 0) {
-        o->host->FocusWindowUVE(o->id);
+void SecondaryFocus(GLFWwindow* w, const int focused) {
+    if (HostWindow* o = Owner(w); o != nullptr && focused != 0) {
+        o->host->FocusWindow(o->id);
     }
 }
 
@@ -881,14 +881,14 @@ void SecondaryFocusUVE(GLFWwindow* w, const int focused) {
 
 // ------------------------------------------------------------------------------------------ host
 
-EditorHostUVE::EditorHostUVE() = default;
+EditorHost::EditorHost() = default;
 
-EditorHostUVE::~EditorHostUVE() {
-    ShutdownUVE();
+EditorHost::~EditorHost() {
+    Shutdown();
 }
 
-EditorHostUVE::WindowUVE* EditorHostUVE::FindUVE(const int id) const {
-    if (id == kMainWindowUVE) {
+EditorHost::Window* EditorHost::Find(const int id) const {
+    if (id == kMainWindow) {
         return m_main.get();
     }
     const auto it = m_windows.find(id);
@@ -898,21 +898,21 @@ EditorHostUVE::WindowUVE* EditorHostUVE::FindUVE(const int id) const {
 namespace {
 
 /// The UniVex mark every PRISM window shows in its title bar, inside PRISM's asset directory.
-inline constexpr std::string_view kBrandMarkFileUVE = "images/univex_logo.png";
+inline constexpr std::string_view kBrandMarkFile = "images/univex_logo.png";
 
 /// Hands the brand mark to PRISM; a missing or unreadable image leaves the title bars without one.
-void LoadBrandMarkUVE(const std::filesystem::path& file) {
+void LoadBrandMark(const std::filesystem::path& file) {
     std::ifstream input(file, std::ios::binary);
     const std::vector<char> raw{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     std::vector<std::byte> bytes(raw.size());
     std::transform(raw.begin(), raw.end(), bytes.begin(), [](const char value) { return static_cast<std::byte>(value); });
-    UVE::Asset::PngRgba8ImageUVE image;
-    if (bytes.empty() || !UVE::Asset::DecodePngRgba8ImageUVE(bytes, image) || image.width == 0U || image.height == 0U) {
+    UVE::Asset::PngRgba8Image image;
+    if (bytes.empty() || !UVE::Asset::DecodePngRgba8Image(bytes, image) || image.width == 0U || image.height == 0U) {
         return;
     }
     std::vector<std::uint32_t> argb(static_cast<std::size_t>(image.width) * image.height);
     for (std::size_t index = 0U; index < argb.size(); ++index) {
-        const std::byte* const pixel = image.pixels.data() + index * UVE::Asset::kPngRgba8ChannelsUVE;
+        const std::byte* const pixel = image.pixels.data() + index * UVE::Asset::kPngRgba8Channels;
         argb[index] = prism::Color(std::to_integer<std::uint8_t>(pixel[0]), std::to_integer<std::uint8_t>(pixel[1]),
                                    std::to_integer<std::uint8_t>(pixel[2]), std::to_integer<std::uint8_t>(pixel[3]))
                           .argb();
@@ -922,23 +922,23 @@ void LoadBrandMarkUVE(const std::filesystem::path& file) {
 
 } // namespace
 
-bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesystem::path& assetDir) {
-    if (m_ready || window == nullptr || g_activeHostUVE != nullptr) {
+bool EditorHost::Initialize(GLFWwindow* const window, const std::filesystem::path& assetDir) {
+    if (m_ready || window == nullptr || g_activeHost != nullptr) {
         return false;
     }
-    m_main = std::make_unique<WindowUVE>();
+    m_main = std::make_unique<Window>();
     m_main->host = this;
-    m_main->id = kMainWindowUVE;
+    m_main->id = kMainWindow;
     m_main->window = window;
-    m_singleSurface = kSingleSurfaceUVE;
+    m_singleSurface = kSingleSurface;
     glfwGetFramebufferSize(window, &m_main->fbWidth, &m_main->fbHeight);
     m_main->fbWidth = std::max(1, m_main->fbWidth);
     m_main->fbHeight = std::max(1, m_main->fbHeight);
-    m_main->uiScale = ComputeUiScaleUVE(window, m_main->fbWidth, m_main->fbHeight, m_singleSurface);
+    m_main->uiScale = ComputeUiScale(window, m_main->fbWidth, m_main->fbHeight, m_singleSurface);
     m_main->uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbWidth) / m_main->uiScale)));
     m_main->uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbHeight) / m_main->uiScale)));
 
-    m_platform = std::make_shared<PlatformUVE>(*this, window);
+    m_platform = std::make_shared<Platform>(*this, window);
     m_app = std::make_unique<prism::Application>();
     prism::HostDesc desc{};
     desc.width = m_main->uiWidth;
@@ -973,10 +973,10 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
         }
     }
 
-    LoadBrandMarkUVE(assetDir / kBrandMarkFileUVE);
+    LoadBrandMark(assetDir / kBrandMarkFile);
 
     std::string error;
-    m_backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
+    m_backend = prism::GlBackend::create(&GlLoader, {}, /*blitToScreen*/ false, &error);
     if (m_backend == nullptr) {
         std::fprintf(stderr, "PRISM: OpenGL backend unavailable: %s\n", error.c_str());
         m_app.reset();
@@ -987,8 +987,8 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
     m_backend->resize(m_main->fbWidth, m_main->fbHeight);
     m_app->setRenderBackend(m_backend);
 
-    m_compositor = std::make_unique<CompositorUVE>();
-    if (!m_compositor->InitializeUVE()) {
+    m_compositor = std::make_unique<Compositor>();
+    if (!m_compositor->Initialize()) {
         std::fprintf(stderr, "PRISM: compositor shaders unavailable\n");
         m_compositor.reset();
         m_backend.reset();
@@ -997,34 +997,34 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
         return false;
     }
 
-    g_activeHostUVE = this;
-    m_chain = std::make_unique<ChainUVE>();
-    m_chain->cursorPos = glfwSetCursorPosCallback(window, &ChainUVE::CursorPosUVE);
-    m_chain->mouseButton = glfwSetMouseButtonCallback(window, &ChainUVE::MouseButtonUVE);
-    m_chain->scroll = glfwSetScrollCallback(window, &ChainUVE::ScrollUVE);
-    m_chain->key = glfwSetKeyCallback(window, &ChainUVE::KeyUVE);
-    m_chain->character = glfwSetCharCallback(window, &ChainUVE::CharUVE);
-    m_chain->cursorEnter = glfwSetCursorEnterCallback(window, &ChainUVE::CursorEnterUVE);
+    g_activeHost = this;
+    m_chain = std::make_unique<Chain>();
+    m_chain->cursorPos = glfwSetCursorPosCallback(window, &Chain::CursorPos);
+    m_chain->mouseButton = glfwSetMouseButtonCallback(window, &Chain::MouseButton);
+    m_chain->scroll = glfwSetScrollCallback(window, &Chain::Scroll);
+    m_chain->key = glfwSetKeyCallback(window, &Chain::Key);
+    m_chain->character = glfwSetCharCallback(window, &Chain::Char);
+    m_chain->cursorEnter = glfwSetCursorEnterCallback(window, &Chain::CursorEnter);
 #if !defined(__ANDROID__)
-    m_chain->drop = glfwSetDropCallback(window, &ChainUVE::DropUVE);
+    m_chain->drop = glfwSetDropCallback(window, &Chain::Drop);
 #endif
 
     double x = 0.0;
     double y = 0.0;
     glfwGetCursorPos(window, &x, &y);
-    m_main->mouse = ToUiUVE(*m_main, x, y);
+    m_main->mouse = ToUi(*m_main, x, y);
     m_main->frameStartMouse = m_main->mouse;
     m_main->lastFrameTime = glfwGetTime();
     m_ready = true;
     return true;
 }
 
-void EditorHostUVE::ShutdownUVE() {
+void EditorHost::Shutdown() {
     if (!m_ready) {
         return;
     }
     while (!m_windows.empty()) {
-        CloseWindowUVE(m_windows.begin()->first);
+        CloseWindow(m_windows.begin()->first);
     }
     GLFWwindow* const window = m_main->window;
     if (window != nullptr && m_chain != nullptr) {
@@ -1038,16 +1038,16 @@ void EditorHostUVE::ShutdownUVE() {
         glfwSetDropCallback(window, m_chain->drop);
 #endif
     }
-    if (g_activeHostUVE == this) {
-        g_activeHostUVE = nullptr;
+    if (g_activeHost == this) {
+        g_activeHost = nullptr;
     }
     m_chain.reset();
     if (m_gpuTimer != nullptr) {
-        m_gpuTimer->ShutdownUVE();
+        m_gpuTimer->Shutdown();
         m_gpuTimer.reset();
     }
     if (m_compositor != nullptr) {
-        m_compositor->ShutdownUVE();
+        m_compositor->Shutdown();
         m_compositor.reset();
     }
     if (m_app != nullptr) {
@@ -1061,13 +1061,13 @@ void EditorHostUVE::ShutdownUVE() {
     m_ready = false;
 }
 
-void EditorHostUVE::SetRootUVE(prism::Ref<prism::Widget> root) {
+void EditorHost::SetRoot(prism::Ref<prism::Widget> root) {
     if (m_app != nullptr) {
         m_app->setRoot(std::move(root));
     }
 }
 
-int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::string& title, const int width,
+int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& title, const int width,
                                       const int height) {
     if (!m_ready || root == nullptr) {
         return 0;
@@ -1075,7 +1075,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     if (m_singleSurface) {
         // A page over the main window: the same surface and context, the full screen, and the main
         // window's input while it is on top.
-        auto w = std::make_unique<WindowUVE>();
+        auto w = std::make_unique<Window>();
         w->host = this;
         w->window = m_main->window;
         w->page = true;
@@ -1085,7 +1085,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
         w->uiWidth = m_main->uiWidth;
         w->uiHeight = m_main->uiHeight;
         std::string error;
-        w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
+        w->backend = prism::GlBackend::create(&GlLoader, {}, /*blitToScreen*/ false, &error);
         if (w->backend == nullptr) {
             UVE_ERROR("Editor host: no renderer for the page {}: {}", title, error);
             return 0;
@@ -1106,7 +1106,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
         w->lastFrameTime = glfwGetTime();
         m_app->windowResize(id, w->uiWidth, w->uiHeight);
         m_windows.emplace(id, std::move(w));
-        ShowPageUVE(id);
+        ShowPage(id);
         return id;
     }
     GLFWwindow* const main = m_main->window;
@@ -1126,7 +1126,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
         return 0;
     }
 
-    auto w = std::make_unique<WindowUVE>();
+    auto w = std::make_unique<Window>();
     w->host = this;
     w->window = window;
     glfwGetFramebufferSize(window, &w->fbWidth, &w->fbHeight);
@@ -1136,7 +1136,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     w->uiWidth = w->fbWidth;
     w->uiHeight = w->fbHeight;
     std::string error;
-    w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
+    w->backend = prism::GlBackend::create(&GlLoader, {}, /*blitToScreen*/ false, &error);
     if (w->backend == nullptr) {
         glfwDestroyWindow(window);
         return 0;
@@ -1161,37 +1161,37 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     }
     w->id = id;
     glfwSetWindowUserPointer(window, w.get());
-    glfwSetCursorPosCallback(window, &SecondaryCursorPosUVE);
-    glfwSetMouseButtonCallback(window, &SecondaryMouseButtonUVE);
-    glfwSetScrollCallback(window, &SecondaryScrollUVE);
-    glfwSetKeyCallback(window, &SecondaryKeyUVE);
-    glfwSetCharCallback(window, &SecondaryCharUVE);
-    glfwSetCursorEnterCallback(window, &SecondaryCursorEnterUVE);
-    glfwSetWindowCloseCallback(window, &SecondaryCloseUVE);
-    glfwSetWindowFocusCallback(window, &SecondaryFocusUVE);
+    glfwSetCursorPosCallback(window, &SecondaryCursorPos);
+    glfwSetMouseButtonCallback(window, &SecondaryMouseButton);
+    glfwSetScrollCallback(window, &SecondaryScroll);
+    glfwSetKeyCallback(window, &SecondaryKey);
+    glfwSetCharCallback(window, &SecondaryChar);
+    glfwSetCursorEnterCallback(window, &SecondaryCursorEnter);
+    glfwSetWindowCloseCallback(window, &SecondaryClose);
+    glfwSetWindowFocusCallback(window, &SecondaryFocus);
     w->lastFrameTime = glfwGetTime();
     m_app->windowResize(id, w->fbWidth, w->fbHeight);
     m_windows.emplace(id, std::move(w));
     return id;
 }
 
-void EditorHostUVE::CloseWindowUVE(const int id) {
+void EditorHost::CloseWindow(const int id) {
     const auto it = m_windows.find(id);
     if (it == m_windows.end()) {
         return;
     }
-    std::unique_ptr<WindowUVE> w = std::move(it->second);
+    std::unique_ptr<Window> w = std::move(it->second);
     m_windows.erase(it);
     m_app->closeWindow(id);
-    m_platform->ForgetWindowUVE(id);
+    m_platform->ForgetWindow(id);
     if (w->page) {
         // The main surface stays; the page only had its own UI renderer.
         m_pageOrder.erase(std::remove(m_pageOrder.begin(), m_pageOrder.end(), id), m_pageOrder.end());
         w->backend.reset();
-        if (WindowUVE* const shown = VisiblePageUVE()) {
+        if (Window* const shown = VisiblePage()) {
             m_app->activateWindow(shown->id);
         } else {
-            m_app->activateWindow(kMainWindowUVE);
+            m_app->activateWindow(kMainWindow);
         }
         return;
     }
@@ -1207,34 +1207,34 @@ void EditorHostUVE::CloseWindowUVE(const int id) {
     glfwMakeContextCurrent(m_main->window);
 }
 
-void EditorHostUVE::SetWindowScopeUVE(const int id, WindowScopeUVE scope) {
-    if (WindowUVE* w = id != kMainWindowUVE ? FindUVE(id) : nullptr) {
+void EditorHost::SetWindowScope(const int id, WindowScope scope) {
+    if (Window* w = id != kMainWindow ? Find(id) : nullptr) {
         w->scope = std::move(scope);
     }
 }
 
-bool EditorHostUVE::HasWindowUVE(const int id) const {
-    return FindUVE(id) != nullptr;
+bool EditorHost::HasWindow(const int id) const {
+    return Find(id) != nullptr;
 }
 
-bool EditorHostUVE::WindowCloseRequestedUVE(const int id) const {
-    const WindowUVE* w = FindUVE(id);
+bool EditorHost::WindowCloseRequested(const int id) const {
+    const Window* w = Find(id);
     return w != nullptr && w->closeRequested;
 }
 
-void EditorHostUVE::ClearCloseRequestUVE(const int id) {
-    if (WindowUVE* w = FindUVE(id)) {
+void EditorHost::ClearCloseRequest(const int id) {
+    if (Window* w = Find(id)) {
         w->closeRequested = false;
     }
 }
 
-void EditorHostUVE::FocusWindowUVE(const int id) {
-    WindowUVE* w = FindUVE(id);
+void EditorHost::FocusWindow(const int id) {
+    Window* w = Find(id);
     if (w == nullptr) {
         return;
     }
     if (w->page) {
-        ShowPageUVE(id);
+        ShowPage(id);
         return;
     }
     m_app->activateWindow(id);
@@ -1247,9 +1247,9 @@ void EditorHostUVE::FocusWindowUVE(const int id) {
     }
 }
 
-prism::Vec2 EditorHostUVE::ToUiUVE(const WindowUVE& w, const double x, const double y) const {
+prism::Vec2 EditorHost::ToUi(const Window& w, const double x, const double y) const {
     if (w.page && w.pageFloating && m_main != nullptr) {
-        const prism::Vec2 mp = ToUiUVE(*m_main, x, y);
+        const prism::Vec2 mp = ToUi(*m_main, x, y);
         return prism::Vec2{mp.x - w.pageBounds.x, mp.y - w.pageBounds.y};
     }
     int winW = 0;
@@ -1260,7 +1260,7 @@ prism::Vec2 EditorHostUVE::ToUiUVE(const WindowUVE& w, const double x, const dou
     return prism::Vec2{static_cast<float>(x) * sx, static_cast<float>(y) * sy};
 }
 
-bool EditorHostUVE::InTargetScopeUVE(const WindowUVE& source, const WindowUVE& target, const std::function<void()>& fn) {
+bool EditorHost::InTargetScope(const Window& source, const Window& target, const std::function<void()>& fn) {
     // Input of `source` runs inside its scope already; `fn` must run in `target`'s. A scope cannot be
     // left from inside, so a drag out of a scoped window into an unscoped one is not delivered.
     if (target.scope && !source.scope) {
@@ -1274,14 +1274,14 @@ bool EditorHostUVE::InTargetScopeUVE(const WindowUVE& source, const WindowUVE& t
     return true;
 }
 
-EditorHostUVE::WindowUVE* EditorHostUVE::DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const {
+EditorHost::Window* EditorHost::DragTarget(const Window& source, prism::Vec2& local) const {
     // A PRISM drag (a Asset Table item, say) can end over another of the editor's windows. The
     // OS keeps sending the pointer to the window the press started in; GLFW_HOVERED asks the OS which
     // window is really under the pointer (its own stacking, not PRISM's order).
     if (!m_app || !m_app->isDragging() || source.window == nullptr || glfwGetWindowAttrib(source.window, GLFW_HOVERED) != 0) {
         return nullptr;
     }
-    const auto hovered = [&](WindowUVE* const target) -> WindowUVE* {
+    const auto hovered = [&](Window* const target) -> Window* {
         if (target == nullptr || target == &source || target->window == nullptr ||
             glfwGetWindowAttrib(target->window, GLFW_HOVERED) == 0) {
             return nullptr;
@@ -1289,21 +1289,21 @@ EditorHostUVE::WindowUVE* EditorHostUVE::DragTargetUVE(const WindowUVE& source, 
         double cx = 0.0;
         double cy = 0.0;
         glfwGetCursorPos(target->window, &cx, &cy);
-        local = ToUiUVE(*target, cx, cy);
+        local = ToUi(*target, cx, cy);
         return target;
     };
-    if (WindowUVE* const target = hovered(m_main.get())) {
+    if (Window* const target = hovered(m_main.get())) {
         return target;
     }
     for (const auto& [id, window] : m_windows) {
-        if (WindowUVE* const target = hovered(window.get())) {
+        if (Window* const target = hovered(window.get())) {
             return target;
         }
     }
     return nullptr;
 }
 
-void EditorHostUVE::ApplyPageLayoutUVE(WindowUVE& w) {
+void EditorHost::ApplyPageLayout(Window& w) {
     if (!w.page || m_main == nullptr) {
         return;
     }
@@ -1349,9 +1349,9 @@ void EditorHostUVE::ApplyPageLayoutUVE(WindowUVE& w) {
     }
 }
 
-void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
+void EditorHost::SyncSize(Window& w) {
     if (w.page) {
-        ApplyPageLayoutUVE(w);
+        ApplyPageLayout(w);
         return;
     }
     int width = 0;
@@ -1360,7 +1360,7 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
     if (width <= 0 || height <= 0) {
         return; // minimized
     }
-    const float scale = ComputeUiScaleUVE(w.window, width, height, m_singleSurface);
+    const float scale = ComputeUiScale(w.window, width, height, m_singleSurface);
     const int uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(width) / scale)));
     const int uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(height) / scale)));
     if (width != w.fbWidth || height != w.fbHeight || uiWidth != w.uiWidth || uiHeight != w.uiHeight ||
@@ -1372,7 +1372,7 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
         w.uiHeight = uiHeight;
         w.paintedGen = ~0ULL;
         m_app->windowResize(w.id, uiWidth, uiHeight);
-        if (w.id == kMainWindowUVE) {
+        if (w.id == kMainWindow) {
             if (m_backend != nullptr) {
                 m_backend->setPixelScale(scale);
                 m_backend->resize(width, height);
@@ -1384,20 +1384,20 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
     }
 }
 
-void EditorHostUVE::BeginFrameUVE() {
+void EditorHost::BeginFrame() {
     if (!m_ready) {
         return;
     }
     const double now = glfwGetTime();
-    const auto stamp = [now](WindowUVE& w) {
+    const auto stamp = [now](Window& w) {
         w.deltaTime = static_cast<float>(std::clamp(now - w.lastFrameTime, 1.0 / 1000.0, 0.25));
         w.lastFrameTime = now;
     };
     stamp(*m_main);
-    SyncSizeUVE(*m_main);
+    SyncSize(*m_main);
     for (auto& [id, w] : m_windows) {
         stamp(*w);
-        SyncSizeUVE(*w);
+        SyncSize(*w);
     }
     static_cast<void>(m_app->tick());
     for (auto& [id, w] : m_windows) {
@@ -1405,22 +1405,22 @@ void EditorHostUVE::BeginFrameUVE() {
     }
 }
 
-EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const prism::Rect& rect) const {
-    EditorViewportInputUVE input{};
-    const WindowUVE* found = FindUVE(id);
+EditorViewportInput EditorHost::CaptureViewInput(const int id, const prism::Rect& rect) const {
+    EditorViewportInput input{};
+    const Window* found = Find(id);
     if (found == nullptr) {
         return input;
     }
-    const WindowUVE& w = *found;
+    const Window& w = *found;
     const float scale = std::max(1.0F, w.uiScale);
     const bool inside = w.mouseInside && w.mouse.x >= rect.x && w.mouse.y >= rect.y && w.mouse.x < rect.x + rect.w &&
                         w.mouse.y < rect.y + rect.h;
     // A floating panel (Details torn off, ...) leaves the viewport usable; a menu or a modal does not.
-    input.hovered = inside && w.dragMode == WindowUVE::DragModeUVE::None && !w.pageDragging &&
+    input.hovered = inside && w.dragMode == Window::DragMode::None && !w.pageDragging &&
                     !m_app->windowHasBlockingPopup(id) && !m_app->windowWantsPointerAt(id, w.mouse);
-    input.imageOrigin = Math::Vector2UVE{rect.x * scale, rect.y * scale};
-    input.mousePos = Math::Vector2UVE{w.mouse.x * scale, w.mouse.y * scale};
-    input.mouseDelta = Math::Vector2UVE{(w.mouse.x - w.frameStartMouse.x) * scale,
+    input.imageOrigin = Math::Vector2{rect.x * scale, rect.y * scale};
+    input.mousePos = Math::Vector2{w.mouse.x * scale, w.mouse.y * scale};
+    input.mouseDelta = Math::Vector2{(w.mouse.x - w.frameStartMouse.x) * scale,
                                         (w.mouse.y - w.frameStartMouse.y) * scale};
     input.wheel = w.wheel;
     input.deltaTime = w.deltaTime;
@@ -1428,19 +1428,19 @@ EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const pr
     input.ctrl = (w.mods & prism::ModCtrl) != 0;
     input.alt = (w.mods & prism::ModAlt) != 0;
 #if defined(__ANDROID__)
-    input.touchNavigation = m_singleSurface && !Window::AndroidGlfwHasHardwareInputUVE();
+    input.touchNavigation = m_singleSurface && !UVE::Window::AndroidGlfwHasHardwareInput();
 #else
     input.touchNavigation = m_singleSurface;
 #endif
     input.dpiScale = scale;
     // Keys reach the view only while its window has the keyboard.
     const bool windowHasKeys = m_app->activeWindow() == id;
-    input.wantTextInput = !windowHasKeys || m_app->windowWantsKeyboard(id) || m_platform->TextInputActiveUVE();
-    for (std::size_t i = 0; i < EditorViewportInputUVE::kButtonCountUVE; ++i) {
+    input.wantTextInput = !windowHasKeys || m_app->windowWantsKeyboard(id) || m_platform->TextInputActive();
+    for (std::size_t i = 0; i < EditorViewportInput::kButtonCount; ++i) {
         input.down[i] = w.down[i];
         input.clicked[i] = w.clicked[i];
         input.released[i] = w.released[i];
-        input.pressPos[i] = Math::Vector2UVE{w.pressPos[i].x * scale, w.pressPos[i].y * scale};
+        input.pressPos[i] = Math::Vector2{w.pressPos[i].x * scale, w.pressPos[i].y * scale};
         input.dragDistance[i] = w.dragDistance[i] * scale;
     }
     if (!input.wantTextInput) {
@@ -1450,19 +1450,19 @@ EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const pr
     return input;
 }
 
-void EditorHostUVE::ApplyViewCursorUVE(const int id, const EditorViewportInputUVE& input) {
-    const WindowUVE* w = FindUVE(id);
-    if (!m_ready || w == nullptr || w->dragMode != WindowUVE::DragModeUVE::None) {
+void EditorHost::ApplyViewCursor(const int id, const EditorViewportInput& input) {
+    const Window* w = Find(id);
+    if (!m_ready || w == nullptr || w->dragMode != Window::DragMode::None) {
         return;
     }
     if (input.hovered && input.cursorRequested) {
-        m_platform->SetViewCursorUVE(id, input.requestedCursor);
+        m_platform->SetViewCursor(id, input.requestedCursor);
     }
 }
 
-void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, const std::uint32_t vao,
-                                      const std::span<const ViewImageUVE> views) {
-    CompositorUVE& c = *m_compositor;
+void EditorHost::Composite(Window& w, const std::uint32_t uiTexture, const std::uint32_t vao,
+                                      const std::span<const ViewImage> views) {
+    Compositor& c = *m_compositor;
     c.glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, w.fbWidth, w.fbHeight);
     glDisable(GL_SCISSOR_TEST);
@@ -1477,7 +1477,7 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
     glDisable(GL_BLEND);
     const float scaleX = w.uiWidth > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(w.uiWidth) : 1.0F;
     const float scaleY = w.uiHeight > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(w.uiHeight) : 1.0F;
-    for (const ViewImageUVE& view : views) {
+    for (const ViewImage& view : views) {
         if (view.texture == 0U || view.rect.w <= 0.0F || view.rect.h <= 0.0F) {
             continue;
         }
@@ -1485,11 +1485,11 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
         const float v1 = view.textureHeight > 0.0F ? view.usedHeight / view.textureHeight : 1.0F;
         const prism::Rect shown{view.rect.x * scaleX, view.rect.y * scaleY, view.rect.w * scaleX,
                                 view.rect.h * scaleY};
-        c.DrawUVE(view.texture, shown, w.fbWidth, w.fbHeight, u1, v1);
+        c.Draw(view.texture, shown, w.fbWidth, w.fbHeight, u1, v1);
     }
     glEnable(GL_BLEND);
     c.glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    c.DrawUVE(uiTexture, prism::Rect{0.0F, 0.0F, static_cast<float>(w.fbWidth), static_cast<float>(w.fbHeight)},
+    c.Draw(uiTexture, prism::Rect{0.0F, 0.0F, static_cast<float>(w.fbWidth), static_cast<float>(w.fbHeight)},
               w.fbWidth, w.fbHeight, 1.0F, 1.0F);
     glDisable(GL_BLEND);
     c.glBindVertexArray(0);
@@ -1497,12 +1497,12 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void EditorHostUVE::CompositePageOverlayUVE(WindowUVE& w, const std::uint32_t uiTexture,
-                                            const std::span<const ViewImageUVE> views) {
+void EditorHost::CompositePageOverlay(Window& w, const std::uint32_t uiTexture,
+                                            const std::span<const ViewImage> views) {
     if (m_main == nullptr) {
         return;
     }
-    CompositorUVE& c = *m_compositor;
+    Compositor& c = *m_compositor;
     const int mainFbW = m_main->fbWidth;
     const int mainFbH = m_main->fbHeight;
     const float mainScaleX = m_main->uiWidth > 0 ? static_cast<float>(mainFbW) / static_cast<float>(m_main->uiWidth) : 1.0F;
@@ -1535,7 +1535,7 @@ void EditorHostUVE::CompositePageOverlayUVE(WindowUVE& w, const std::uint32_t ui
     glDisable(GL_BLEND);
     const float localScaleX = w.uiWidth > 0 ? dst.w / static_cast<float>(w.uiWidth) : mainScaleX;
     const float localScaleY = w.uiHeight > 0 ? dst.h / static_cast<float>(w.uiHeight) : mainScaleY;
-    for (const ViewImageUVE& view : views) {
+    for (const ViewImage& view : views) {
         if (view.texture == 0U || view.rect.w <= 0.0F || view.rect.h <= 0.0F) {
             continue;
         }
@@ -1543,18 +1543,18 @@ void EditorHostUVE::CompositePageOverlayUVE(WindowUVE& w, const std::uint32_t ui
         const float v1 = view.textureHeight > 0.0F ? view.usedHeight / view.textureHeight : 1.0F;
         const prism::Rect shown{dst.x + view.rect.x * localScaleX, dst.y + view.rect.y * localScaleY,
                                 view.rect.w * localScaleX, view.rect.h * localScaleY};
-        c.DrawUVE(view.texture, shown, mainFbW, mainFbH, u1, v1);
+        c.Draw(view.texture, shown, mainFbW, mainFbH, u1, v1);
     }
     glEnable(GL_BLEND);
     c.glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    c.DrawUVE(uiTexture, dst, mainFbW, mainFbH, 1.0F, 1.0F);
+    c.Draw(uiTexture, dst, mainFbW, mainFbH, 1.0F, 1.0F);
     glDisable(GL_BLEND);
     c.glBindVertexArray(0);
     c.glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void EditorHostUVE::EndInputFrameUVE(WindowUVE& w) {
+void EditorHost::EndInputFrame(Window& w) {
     // Edges are per frame.
     w.clicked.fill(false);
     w.released.fill(false);
@@ -1563,7 +1563,7 @@ void EditorHostUVE::EndInputFrameUVE(WindowUVE& w) {
     w.frameStartMouse = w.mouse;
 }
 
-void EditorHostUVE::RenderUVE(const std::span<const ViewImageUVE> views) {
+void EditorHost::Render(const std::span<const ViewImage> views) {
     if (!m_ready) {
         return;
     }
@@ -1577,37 +1577,37 @@ void EditorHostUVE::RenderUVE(const std::span<const ViewImageUVE> views) {
         m_mainPaintedGen = m_app->paintGeneration();
         m_mainPaintedAt = now;
     }
-    CompositeUVE(*m_main, m_backend->colorTexture(), m_compositor->vao, views);
-    EndInputFrameUVE(*m_main);
+    Composite(*m_main, m_backend->colorTexture(), m_compositor->vao, views);
+    EndInputFrame(*m_main);
 }
 
-void EditorHostUVE::BeginGpuTimerUVE() {
+void EditorHost::BeginGpuTimer() {
     if (!m_ready) {
         return;
     }
     if (m_gpuTimer == nullptr) {
-        m_gpuTimer = std::make_unique<GpuTimerUVE>();
-        m_gpuTimer->InitializeUVE();
+        m_gpuTimer = std::make_unique<GpuTimer>();
+        m_gpuTimer->Initialize();
     }
-    m_gpuTimer->BeginUVE();
+    m_gpuTimer->Begin();
 }
 
-void EditorHostUVE::EndGpuTimerUVE() {
+void EditorHost::EndGpuTimer() {
     if (m_gpuTimer != nullptr) {
-        m_gpuTimer->EndUVE();
+        m_gpuTimer->End();
     }
 }
 
-float EditorHostUVE::GpuFrameMsUVE() const noexcept {
+float EditorHost::GpuFrameMs() const noexcept {
     return m_gpuTimer != nullptr ? m_gpuTimer->lastMs : 0.0F;
 }
 
-void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImageUVE> views) {
-    WindowUVE* found = id != kMainWindowUVE ? FindUVE(id) : nullptr;
+void EditorHost::RenderWindow(const int id, const std::span<const ViewImage> views) {
+    Window* found = id != kMainWindow ? Find(id) : nullptr;
     if (!m_ready || found == nullptr) {
         return;
     }
-    WindowUVE& w = *found;
+    Window& w = *found;
     const auto now = std::chrono::steady_clock::now();
     const auto paintIfNeeded = [&] {
         if (m_app->windowNeedsRender(id) || m_app->paintGeneration() != w.paintedGen ||
@@ -1619,19 +1619,19 @@ void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImag
     };
     if (w.page) {
         // Only the top visible page is drawn over the shared surface.
-        if (VisiblePageUVE() == &w) {
+        if (VisiblePage() == &w) {
             paintIfNeeded();
             if (w.pageFloating) {
-                CompositePageOverlayUVE(w, w.backend->colorTexture(), views);
+                CompositePageOverlay(w, w.backend->colorTexture(), views);
             } else {
-                CompositeUVE(w, w.backend->colorTexture(), m_compositor->vao, views);
+                Composite(w, w.backend->colorTexture(), m_compositor->vao, views);
             }
         }
-        EndInputFrameUVE(w);
+        EndInputFrame(w);
         return;
     }
     if (glfwGetWindowAttrib(w.window, GLFW_ICONIFIED) != 0) {
-        EndInputFrameUVE(w);
+        EndInputFrame(w);
         return;
     }
     // The UI is rendered in the main context (where its backend's objects live) ...
@@ -1643,13 +1643,13 @@ void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImag
         glfwSwapInterval(0);   // the main window paces the loop
         m_compositor->glGenVertexArrays(1, &w.vao);
     }
-    CompositeUVE(w, uiTexture, w.vao, views);
+    Composite(w, uiTexture, w.vao, views);
     glfwSwapBuffers(w.window);
     glfwMakeContextCurrent(m_main->window);
-    EndInputFrameUVE(w);
+    EndInputFrame(w);
 }
 
-EditorHostUVE::WindowUVE* EditorHostUVE::VisiblePageUVE() const {
+EditorHost::Window* EditorHost::VisiblePage() const {
     for (auto order = m_pageOrder.rbegin(); order != m_pageOrder.rend(); ++order) {
         const auto found = m_windows.find(*order);
         if (found != m_windows.end() && !found->second->pageHidden) {
@@ -1659,8 +1659,8 @@ EditorHostUVE::WindowUVE* EditorHostUVE::VisiblePageUVE() const {
     return nullptr;
 }
 
-void EditorHostUVE::ShowPageUVE(const int id) {
-    WindowUVE* const w = FindUVE(id);
+void EditorHost::ShowPage(const int id) {
+    Window* const w = Find(id);
     if (w == nullptr || !w->page) {
         return;
     }
@@ -1670,45 +1670,45 @@ void EditorHostUVE::ShowPageUVE(const int id) {
     m_app->activateWindow(id);
 }
 
-void EditorHostUVE::HidePageUVE(const int id) {
-    WindowUVE* const w = FindUVE(id);
+void EditorHost::HidePage(const int id) {
+    Window* const w = Find(id);
     if (w == nullptr || !w->page) {
         return;
     }
     w->pageHidden = true;
     w->pageDragging = false;
     w->down.fill(false);
-    if (WindowUVE* const shown = VisiblePageUVE()) {
+    if (Window* const shown = VisiblePage()) {
         m_app->activateWindow(shown->id);
     } else {
-        m_app->activateWindow(kMainWindowUVE);
+        m_app->activateWindow(kMainWindow);
     }
 }
 
-bool EditorHostUVE::HasOpaqueFullPageUVE() const {
+bool EditorHost::HasOpaqueFullPage() const {
     if (!m_singleSurface) {
         return false;
     }
-    const WindowUVE* const page = VisiblePageUVE();
+    const Window* const page = VisiblePage();
     return page != nullptr && !page->pageFloating;
 }
 
-bool EditorHostUVE::IsWindowFocusedUVE(const int id) const {
+bool EditorHost::IsWindowFocused(const int id) const {
     const auto found = m_windows.find(id);
     if (m_ready && found != m_windows.end() && found->second->page) {
-        return VisiblePageUVE() == found->second.get() && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) != 0;
+        return VisiblePage() == found->second.get() && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) != 0;
     }
     return m_ready && found != m_windows.end() && found->second->window != nullptr &&
            glfwGetWindowAttrib(found->second->window, GLFW_FOCUSED) != 0;
 }
 
-bool EditorHostUVE::QuitRequestedUVE() const noexcept {
+bool EditorHost::QuitRequested() const noexcept {
     return m_main != nullptr && m_main->window != nullptr && glfwWindowShouldClose(m_main->window) != 0;
 }
 
 namespace {
 
-[[nodiscard]] bool WriteFramebufferPngUVE(const std::filesystem::path& path, const int width, const int height) {
+[[nodiscard]] bool WriteFramebufferPng(const std::filesystem::path& path, const int width, const int height) {
     std::vector<std::uint8_t> rgba(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
@@ -1727,16 +1727,16 @@ namespace {
 
 } // namespace
 
-bool EditorHostUVE::SaveScreenshotUVE(const std::filesystem::path& path) {
+bool EditorHost::SaveScreenshot(const std::filesystem::path& path) {
     if (!m_ready) {
         return false;
     }
     m_compositor->glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return WriteFramebufferPngUVE(path, m_main->fbWidth, m_main->fbHeight);
+    return WriteFramebufferPng(path, m_main->fbWidth, m_main->fbHeight);
 }
 
-bool EditorHostUVE::SaveWindowScreenshotUVE(const int id, const std::filesystem::path& path) {
-    WindowUVE* w = id != kMainWindowUVE ? FindUVE(id) : nullptr;
+bool EditorHost::SaveWindowScreenshot(const int id, const std::filesystem::path& path) {
+    Window* w = id != kMainWindow ? Find(id) : nullptr;
     if (!m_ready || w == nullptr) {
         return false;
     }
@@ -1747,21 +1747,21 @@ bool EditorHostUVE::SaveWindowScreenshotUVE(const int id, const std::filesystem:
     if (w->vao == 0) {
         m_compositor->glGenVertexArrays(1, &w->vao);
     }
-    CompositeUVE(*w, uiTexture, w->vao, {});
-    const bool ok = WriteFramebufferPngUVE(path, w->fbWidth, w->fbHeight);
+    Composite(*w, uiTexture, w->vao, {});
+    const bool ok = WriteFramebufferPng(path, w->fbWidth, w->fbHeight);
     glfwMakeContextCurrent(m_main->window);
     return ok;
 }
 
 // ----------------------------------------------------------------------------------------- input
 
-void EditorHostUVE::SetKeyHookUVE(std::function<bool(int key, int action)> hook) {
+void EditorHost::SetKeyHook(std::function<bool(int key, int action)> hook) {
     m_keyHook = std::move(hook);
 }
 
-void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y) {
+void EditorHost::OnCursorPos(Window& w, const double x, const double y) {
     if (w.page && w.pageFloating && w.pageDragging && m_main != nullptr) {
-        const prism::Vec2 mp = ToUiUVE(*m_main, x, y);
+        const prism::Vec2 mp = ToUi(*m_main, x, y);
         const float maxX = std::max(4.0F, static_cast<float>(m_main->uiWidth) - w.pageBounds.w - 4.0F);
         const float maxY = std::max(4.0F, static_cast<float>(m_main->uiHeight) - w.pageBounds.h - 4.0F);
         w.pageBounds.x = std::clamp(std::floor(mp.x - w.pageDragGrab.x), 4.0F, maxX);
@@ -1772,7 +1772,7 @@ void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y)
         }
         return;
     }
-    w.mouse = ToUiUVE(w, x, y);
+    w.mouse = ToUi(w, x, y);
     w.mouseInside = true;
     for (std::size_t i = 0; i < w.down.size(); ++i) {
         if (w.down[i]) {
@@ -1781,8 +1781,8 @@ void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y)
             w.dragDistance[i] = std::max(w.dragDistance[i], std::sqrt((dx * dx) + (dy * dy)));
         }
     }
-    if (w.dragMode != WindowUVE::DragModeUVE::None) {
-        UpdateWindowDragUVE(w);
+    if (w.dragMode != Window::DragMode::None) {
+        UpdateWindowDrag(w);
         return;
     }
     // Edge-resize affordance on an undecorated, restored desktop window.
@@ -1790,46 +1790,46 @@ void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y)
     if (!w.page && glfwGetWindowAttrib(w.window, GLFW_DECORATED) == 0 && glfwGetWindowAttrib(w.window, GLFW_MAXIMIZED) == 0) {
         const float width = static_cast<float>(w.fbWidth);
         const float height = static_cast<float>(w.fbHeight);
-        if (w.mouse.x < kResizeBorderUVE) { edges |= 1; }
-        if (w.mouse.x >= width - kResizeBorderUVE) { edges |= 2; }
-        if (w.mouse.y < kResizeBorderUVE) { edges |= 4; }
-        if (w.mouse.y >= height - kResizeBorderUVE) { edges |= 8; }
+        if (w.mouse.x < kResizeBorder) { edges |= 1; }
+        if (w.mouse.x >= width - kResizeBorder) { edges |= 2; }
+        if (w.mouse.y < kResizeBorder) { edges |= 4; }
+        if (w.mouse.y >= height - kResizeBorder) { edges |= 8; }
     }
     prism::Vec2 dragLocal{};
-    if (WindowUVE* const target = DragTargetUVE(w, dragLocal)) {
+    if (Window* const target = DragTarget(w, dragLocal)) {
         // Dragging over another window: that window's widgets see the drag; this one sees it leave.
         if (w.dragOverWindow != target->id) {
             m_app->windowMouseLeave(w.id);
             w.dragOverWindow = target->id;
         }
         target->mouse = dragLocal;
-        static_cast<void>(InTargetScopeUVE(w, *target, [this, target, dragLocal] { m_app->windowMouseMove(target->id, dragLocal); }));
+        static_cast<void>(InTargetScope(w, *target, [this, target, dragLocal] { m_app->windowMouseMove(target->id, dragLocal); }));
         return;
     }
     if (w.dragOverWindow >= 0) {
-        if (WindowUVE* const previous = FindUVE(w.dragOverWindow)) {
+        if (Window* const previous = Find(w.dragOverWindow)) {
             m_app->windowMouseLeave(previous->id);
         }
         w.dragOverWindow = -1;
     }
     m_app->windowMouseMove(w.id, w.mouse);
     if (edges != 0) {
-        m_platform->SetResizeCursorUVE(w.id, edges);
+        m_platform->SetResizeCursor(w.id, edges);
     }
 }
 
-void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int action, const int mods) {
+void EditorHost::OnMouseButton(Window& w, const int button, const int action, const int mods) {
     const std::uint32_t bit = (button >= 0 && button < 32) ? (1U << static_cast<unsigned>(button)) : 0U;
-    w.mods = ToPrismModsUVE(mods);
+    w.mods = ToPrismMods(mods);
     m_app->hostSetModifiers(w.mods);
-    const int slot = ToViewButtonUVE(button);
-    const prism::MouseButton prismButton = ToPrismButtonUVE(button);
+    const int slot = ToViewButton(button);
+    const prism::MouseButton prismButton = ToPrismButton(button);
     if (action == GLFW_PRESS) {
         const double now = glfwGetTime();
         const float dx = w.mouse.x - w.lastClickPos.x;
         const float dy = w.mouse.y - w.lastClickPos.y;
-        if (now - w.lastClickTime <= kDoubleClickSecondsUVE && std::abs(dx) <= kDoubleClickSlopUVE &&
-            std::abs(dy) <= kDoubleClickSlopUVE) {
+        if (now - w.lastClickTime <= kDoubleClickSeconds && std::abs(dx) <= kDoubleClickSlop &&
+            std::abs(dy) <= kDoubleClickSlop) {
             ++w.clickCount;
         } else {
             w.clickCount = 1;
@@ -1845,7 +1845,7 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
             w.dragDistance[i] = 0.0F;
         }
 
-        if (w.page && w.pageFloating && button == GLFW_MOUSE_BUTTON_LEFT && w.CaptionContainsUVE(w.mouse) &&
+        if (w.page && w.pageFloating && button == GLFW_MOUSE_BUTTON_LEFT && w.CaptionContains(w.mouse) &&
             w.clickCount == 1) {
             w.pageDragging = true;
             w.pageDragGrab = w.mouse;
@@ -1859,18 +1859,18 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
             if (!maximized) {
                 const float width = static_cast<float>(w.fbWidth);
                 const float height = static_cast<float>(w.fbHeight);
-                if (w.mouse.x < kResizeBorderUVE) { edges |= 1; }
-                if (w.mouse.x >= width - kResizeBorderUVE) { edges |= 2; }
-                if (w.mouse.y < kResizeBorderUVE) { edges |= 4; }
-                if (w.mouse.y >= height - kResizeBorderUVE) { edges |= 8; }
+                if (w.mouse.x < kResizeBorder) { edges |= 1; }
+                if (w.mouse.x >= width - kResizeBorder) { edges |= 2; }
+                if (w.mouse.y < kResizeBorder) { edges |= 4; }
+                if (w.mouse.y >= height - kResizeBorder) { edges |= 8; }
             }
-            const bool inCaption = w.CaptionContainsUVE(w.mouse);
+            const bool inCaption = w.CaptionContains(w.mouse);
 #if defined(_WIN32)
             // Windows moves and sizes the window itself from here: the native drag snaps to the screen
             // edges, restores a maximized window as it is dragged off, and keeps following the cursor
             // however fast it moves. The call returns once the button is released.
             if (edges != 0 || (inCaption && w.clickCount == 1)) {
-                static constexpr std::array<WPARAM, 16> kHitUVE{
+                static constexpr std::array<WPARAM, 16> kHit{
                     HTCAPTION, HTLEFT, HTRIGHT, HTCAPTION, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTCAPTION,
                     HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCAPTION, HTCAPTION, HTCAPTION, HTCAPTION};
                 HWND hwnd = glfwGetWin32Window(w.window);
@@ -1878,7 +1878,7 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
                     w.down[static_cast<std::size_t>(slot)] = false;
                 }
                 ReleaseCapture();
-                SendMessageW(hwnd, WM_NCLBUTTONDOWN, kHitUVE[static_cast<std::size_t>(edges & 15)], 0);
+                SendMessageW(hwnd, WM_NCLBUTTONDOWN, kHit[static_cast<std::size_t>(edges & 15)], 0);
                 return;
             }
 #endif
@@ -1911,7 +1911,7 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
                 glfwGetWindowSize(w.window, &w.dragStartWinW, &w.dragStartWinH);
                 w.dragStartScreenX = w.dragStartWinX + cx;
                 w.dragStartScreenY = w.dragStartWinY + cy;
-                w.dragMode = edges != 0 ? WindowUVE::DragModeUVE::Resize : WindowUVE::DragModeUVE::Move;
+                w.dragMode = edges != 0 ? Window::DragMode::Resize : Window::DragMode::Move;
                 w.resizeEdges = edges;
                 if (edges != 0) {
                     return; // the resize ring belongs to the OS frame, not to the UI below it
@@ -1927,19 +1927,19 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
             w.down[i] = false;
             w.released[i] = true;
         }
-        const bool wasResize = w.dragMode == WindowUVE::DragModeUVE::Resize;
+        const bool wasResize = w.dragMode == Window::DragMode::Resize;
         const bool wasPageDrag = w.pageDragging;
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
-            w.dragMode = WindowUVE::DragModeUVE::None;
+            w.dragMode = Window::DragMode::None;
             w.pageDragging = false;
         }
         if (!wasResize && !wasPageDrag && prismButton != prism::MouseButton::None) {
             prism::Vec2 dragLocal{};
-            if (WindowUVE* const target = DragTargetUVE(w, dragLocal)) {
+            if (Window* const target = DragTarget(w, dragLocal)) {
                 // The drop lands in the window under the pointer; the press's own window then sees
                 // its release (outside its widgets) so its capture ends.
                 const int clicks = w.clickCount;
-                static_cast<void>(InTargetScopeUVE(w, *target, [this, target, dragLocal, prismButton, clicks] {
+                static_cast<void>(InTargetScope(w, *target, [this, target, dragLocal, prismButton, clicks] {
                     m_app->windowMouseButton(target->id, dragLocal, prismButton, false, clicks);
                 }));
                 m_app->cancelDragDrop();
@@ -1950,7 +1950,7 @@ void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int a
     }
 }
 
-void EditorHostUVE::UpdateWindowDragUVE(WindowUVE& w) {
+void EditorHost::UpdateWindowDrag(Window& w) {
     double cx = 0.0;
     double cy = 0.0;
     glfwGetCursorPos(w.window, &cx, &cy);
@@ -1961,7 +1961,7 @@ void EditorHostUVE::UpdateWindowDragUVE(WindowUVE& w) {
     const double screenY = winY + cy;
     const int dx = static_cast<int>(std::lround(screenX - w.dragStartScreenX));
     const int dy = static_cast<int>(std::lround(screenY - w.dragStartScreenY));
-    if (w.dragMode == WindowUVE::DragModeUVE::Move) {
+    if (w.dragMode == Window::DragMode::Move) {
         glfwSetWindowPos(w.window, w.dragStartWinX + dx, w.dragStartWinY + dy);
         return;
     }
@@ -1979,19 +1979,19 @@ void EditorHostUVE::UpdateWindowDragUVE(WindowUVE& w) {
     glfwSetWindowSize(w.window, width, height);
 }
 
-void EditorHostUVE::OnScrollUVE(WindowUVE& w, const double dx, const double dy) {
+void EditorHost::OnScroll(Window& w, const double dx, const double dy) {
     w.wheel += static_cast<float>(dy);
     m_app->windowMouseWheel(w.id, w.mouse, prism::Vec2{static_cast<float>(dx), static_cast<float>(dy)});
 }
 
-void EditorHostUVE::OnKeyUVE(WindowUVE& w, const int key, const int /*scancode*/, const int action, const int mods) {
-    if (w.id == kMainWindowUVE && m_keyHook && m_keyHook(key, action)) {
+void EditorHost::OnKey(Window& w, const int key, const int /*scancode*/, const int action, const int mods) {
+    if (w.id == kMainWindow && m_keyHook && m_keyHook(key, action)) {
         return;   // taken before the UI sees it (Escape giving the editor its mouse back)
     }
-    w.mods = ToPrismModsUVE(mods);
+    w.mods = ToPrismMods(mods);
     m_app->hostSetModifiers(w.mods);
-    const ViewKeyUVE viewKey = ToViewKeyUVE(key);
-    if (viewKey != ViewKeyUVE::Count) {
+    const ViewKey viewKey = ToViewKey(key);
+    if (viewKey != ViewKey::Count) {
         const auto index = static_cast<std::size_t>(viewKey);
         if (action == GLFW_PRESS) {
             w.keysDown.set(index);
@@ -2000,7 +2000,7 @@ void EditorHostUVE::OnKeyUVE(WindowUVE& w, const int key, const int /*scancode*/
             w.keysDown.reset(index);
         }
     }
-    const prism::Key prismKey = ToPrismKeyUVE(key);
+    const prism::Key prismKey = ToPrismKey(key);
     if (prismKey == prism::Key::Unknown) {
         return;
     }
@@ -2011,20 +2011,20 @@ void EditorHostUVE::OnKeyUVE(WindowUVE& w, const int key, const int /*scancode*/
     }
 }
 
-void EditorHostUVE::OnCharUVE(WindowUVE& w, const unsigned int codepoint) {
+void EditorHost::OnChar(Window& w, const unsigned int codepoint) {
     std::string utf8;
-    AppendUtf8UVE(utf8, static_cast<char32_t>(codepoint));
+    AppendUtf8(utf8, static_cast<char32_t>(codepoint));
     m_app->windowText(w.id, utf8);
 }
 
-void EditorHostUVE::OnCursorEnterUVE(WindowUVE& w, const int entered) {
+void EditorHost::OnCursorEnter(Window& w, const int entered) {
     w.mouseInside = entered != 0;
-    if (!w.mouseInside && w.dragMode == WindowUVE::DragModeUVE::None) {
+    if (!w.mouseInside && w.dragMode == Window::DragMode::None) {
         m_app->windowMouseLeave(w.id);
     }
 }
 
-bool EditorHostUVE::IsAnyWindowFocusedUVE() const {
+bool EditorHost::IsAnyWindowFocused() const {
     if (m_main != nullptr && m_main->window != nullptr && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) == GLFW_TRUE) {
         return true;
     }

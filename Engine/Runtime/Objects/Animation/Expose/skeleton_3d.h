@@ -20,23 +20,23 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::size_t kMaximumSkeletonBonesUVE = 256U;
+inline constexpr std::size_t kMaximumSkeletonBones = 256U;
 
 /// The sentinel bone index: "no bone named or resolved". Kept as a named constant because the
 /// components built on a skeleton carry two of these (the authored request and the runtime answer)
 /// and a bare `UINT32_MAX` in either place reads as an accident.
-inline constexpr std::uint32_t kInvalidSkeletonBoneIndexUVE = std::numeric_limits<std::uint32_t>::max();
+inline constexpr std::uint32_t kInvalidSkeletonBoneIndex = std::numeric_limits<std::uint32_t>::max();
 
-struct SkeletonBoneUVE final {
+struct SkeletonBone final {
     std::string name;
     std::int32_t parentIndex = -1;
-    Math::Vector3UVE localPosition{};
-    Math::QuaternionUVE localRotation{};
-    Math::Vector3UVE localScale{1.0F, 1.0F, 1.0F};
+    Math::Vector3 localPosition{};
+    Math::Quaternion localRotation{};
+    Math::Vector3 localScale{1.0F, 1.0F, 1.0F};
 
-    [[nodiscard]] bool operator==(const SkeletonBoneUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const SkeletonBone& other) const noexcept {
         return name == other.name && parentIndex == other.parentIndex &&
                localPosition.x == other.localPosition.x && localPosition.y == other.localPosition.y &&
                localPosition.z == other.localPosition.z && localRotation.x == other.localRotation.x &&
@@ -49,51 +49,51 @@ struct SkeletonBoneUVE final {
 /// Skeleton3D: a bone hierarchy in its rest pose. A new one is empty - bones are authored in a DCC
 /// tool (a Blender armature, say) and arrive with the model they were exported with; this object
 /// never invents them. `skeletonAssetPath` names that model, content-relative.
-/// One bone's pose right now: local to its parent bone, like SkeletonBoneUVE's rest pose.
-struct SkeletonBonePoseUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+/// One bone's pose right now: local to its parent bone, like SkeletonBone's rest pose.
+struct SkeletonBonePose final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
 };
 
-struct Skeleton3DComponentUVE final {
+struct Skeleton3DComponent final {
     std::string skeletonAssetPath;
-    std::vector<SkeletonBoneUVE> bones;
+    std::vector<SkeletonBone> bones;
     bool enabled = true;
 
     // ---- Runtime state, written by animation; never saved --------------------------------------
     /// One entry per bone while something animates the skeleton; empty means the rest pose.
-    std::vector<SkeletonBonePoseUVE> pose;
+    std::vector<SkeletonBonePose> pose;
 
     /// Authored data only: a playing skeleton equals its saved self.
-    [[nodiscard]] bool operator==(const Skeleton3DComponentUVE& other) const {
+    [[nodiscard]] bool operator==(const Skeleton3DComponent& other) const {
         return skeletonAssetPath == other.skeletonAssetPath && bones == other.bones && enabled == other.enabled;
     }
 };
 
 /// The pose a renderer should draw: `pose` when it covers every bone, else the rest pose.
-[[nodiscard]] std::vector<SkeletonBonePoseUVE> GetSkeletonCurrentPoseUVE(const Skeleton3DComponentUVE& skeleton);
+[[nodiscard]] std::vector<SkeletonBonePose> GetSkeletonCurrentPose(const Skeleton3DComponent& skeleton);
 
-[[nodiscard]] bool IsSkeleton3DObjectComponentValidUVE(const Skeleton3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsSkeleton3DObjectComponentValid(const Skeleton3DComponent& value) noexcept;
 
-/// A world-space TRS frame: the same {position, rotation, scale} a TransformComponentUVE carries,
+/// A world-space TRS frame: the same {position, rotation, scale} a TransformComponent carries,
 /// but composed all the way down a chain rather than authored on one object.
 ///
 /// It is named for the shape, not for the owner, because several of them meet in one resolution -
 /// the skeleton's, the bone's, and the object's - and they are interchangeable values. The scene
-/// graph composes local transforms into exactly these, TryResolveSkeletonBoneWorldFrameUVE()
-/// composes a bone chain into one, and TryMakeBoneAttachmentLocalTransformUVE() inverts that
+/// graph composes local transforms into exactly these, TryResolveSkeletonBoneWorldFrame()
+/// composes a bone chain into one, and TryMakeBoneAttachmentLocalTransform() inverts that
 /// arithmetic to go back the other way.
-struct ObjectWorldFrameUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+struct ObjectWorldFrame final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
 };
 
 /// Finds a bone by name, writing its index to `outIndex`. Exact, case-sensitive match; the first
 /// bone with that name wins (duplicate names in one skeleton are an asset defect, and picking the
 /// first is the only answer that does not depend on iteration order).
-[[nodiscard]] bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton,
+[[nodiscard]] bool TryFindSkeletonBoneIndex(const Skeleton3DComponent& skeleton,
                                                std::string_view boneName,
                                                std::uint32_t& outIndex) noexcept;
 
@@ -119,19 +119,19 @@ struct ObjectWorldFrameUVE final {
 /// The lookup borrows the skeleton: it must not outlive it, and it holds views into its bone
 /// names. Not thread-safe for concurrent mutation of the skeleton; read-only use from several
 /// threads is fine.
-class SkeletonBoneLookupUVE final {
+class SkeletonBoneLookup final {
 public:
     /// Prepares the lookup. Cheap to call again after the skeleton's bones change; an empty
     /// skeleton leaves it answering nothing.
-    void BuildUVE(const Skeleton3DComponentUVE& skeleton);
+    void Build(const Skeleton3DComponent& skeleton);
 
     /// Writes the index of the bone `jointName` names, or leaves `outBoneIndex` untouched and
     /// returns false. An empty name names no bone.
-    [[nodiscard]] bool TryFindUVE(std::string_view jointName,
+    [[nodiscard]] bool TryFind(std::string_view jointName,
                                   std::uint32_t& outBoneIndex) const noexcept;
 
 private:
-    const Skeleton3DComponentUVE* m_skeleton = nullptr;
+    const Skeleton3DComponent* m_skeleton = nullptr;
     std::unordered_map<std::string_view, std::uint32_t> m_boneOfName;
 };
 
@@ -152,9 +152,9 @@ private:
 /// Returns false, leaving `outSkin` untouched, when the mesh has no joints, the skeleton has no
 /// bones, or not one joint's name answers a bone - in each of those cases there is no binding to
 /// record, and a Skin of all-invalid entries would only be a different way of saying so.
-[[nodiscard]] bool TryBuildSkinFromMeshJointsUVE(const Asset::MeshAssetUVE& mesh,
-                                                 const Skeleton3DComponentUVE& skeleton,
-                                                 SkinComponentUVE& outSkin);
+[[nodiscard]] bool TryBuildSkinFromMeshJoints(const Asset::MeshAsset& mesh,
+                                                 const Skeleton3DComponent& skeleton,
+                                                 SkinComponent& outSkin);
 
 /// The world frame of one bone, given the skeleton object's own world frame.
 ///
@@ -165,35 +165,35 @@ private:
 /// deeper than the bone limit is refused rather than walked forever.
 /// The skeleton's own world frame is passed as a frame rather than as three loose values on
 /// purpose: an empty `{}` for a scale would silently mean zero and collapse every bone to a point,
-/// while an empty ObjectWorldFrameUVE means the identity - the frame a skeleton at the origin is in.
-[[nodiscard]] bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton,
+/// while an empty ObjectWorldFrame means the identity - the frame a skeleton at the origin is in.
+[[nodiscard]] bool TryResolveSkeletonBoneWorldFrame(const Skeleton3DComponent& skeleton,
                                                        std::uint32_t boneIndex,
-                                                       const ObjectWorldFrameUVE& skeletonWorldFrame,
-                                                       ObjectWorldFrameUVE& outFrame) noexcept;
+                                                       const ObjectWorldFrame& skeletonWorldFrame,
+                                                       ObjectWorldFrame& outFrame) noexcept;
 
 /// Applies only an explicit authored/imported skeleton asset payload. This function deliberately
 /// rejects an empty asset or empty hierarchy so retarget metadata cannot hydrate a Skeleton3D object.
-[[nodiscard]] inline bool TryBindExplicitSkeleton3DAssetUVE(
-    Skeleton3DComponentUVE& target, std::string assetPath, std::vector<SkeletonBoneUVE> bones) {
-    Skeleton3DComponentUVE candidate;
+[[nodiscard]] inline bool TryBindExplicitSkeleton3DAsset(
+    Skeleton3DComponent& target, std::string assetPath, std::vector<SkeletonBone> bones) {
+    Skeleton3DComponent candidate;
     candidate.skeletonAssetPath = std::move(assetPath);
     candidate.bones = std::move(bones);
     candidate.enabled = target.enabled;
     if (candidate.skeletonAssetPath.empty() || candidate.bones.empty() ||
-        !IsSkeleton3DObjectComponentValidUVE(candidate)) {
+        !IsSkeleton3DObjectComponentValid(candidate)) {
         return false;
     }
     target = std::move(candidate);
     return true;
 }
 
-struct Skeleton3DObjectDefinitionUVE final {
+struct Skeleton3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Skeleton3D";
-    Skeleton3DComponentUVE skeleton{};
+    Skeleton3DComponent skeleton{};
 };
 
 /// The Object3D recipe under this object's name, then the skeleton component.
-void ApplySkeleton3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                      const Skeleton3DObjectDefinitionUVE& value);
+void ApplySkeleton3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                      const Skeleton3DObjectDefinition& value);
 
 } // namespace UVE::Scene

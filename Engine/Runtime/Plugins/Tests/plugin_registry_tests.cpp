@@ -6,156 +6,156 @@
 
 namespace UVE::Plugins::Tests {
 
-TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_ReportsBoundedStructuredDiagnostics) {
-    NativePluginManifestUVE valid{"uve.valid", "Valid", {1U, 0U, 0U},
-                                 kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
-    EXPECT_TRUE(ValidateNativePluginManifestUVE(valid).IsValidUVE());
+TEST(NativePluginManifestValidationTest, ValidateNativePluginManifest_ReportsBoundedStructuredDiagnostics) {
+    NativePluginManifest valid{"uve.valid", "Valid", {1U, 0U, 0U},
+                                 kNativePluginProtocolVersion, {"object.types", "editor.window"}};
+    EXPECT_TRUE(ValidateNativePluginManifest(valid).IsValid());
 
-    NativePluginManifestUVE duplicate = valid;
+    NativePluginManifest duplicate = valid;
     duplicate.capabilityIds = {"object.types", "object.types"};
-    const NativePluginManifestValidationResultUVE duplicateResult = ValidateNativePluginManifestUVE(duplicate);
-    ASSERT_FALSE(duplicateResult.IsValidUVE());
+    const NativePluginManifestValidationResult duplicateResult = ValidateNativePluginManifest(duplicate);
+    ASSERT_FALSE(duplicateResult.IsValid());
     ASSERT_EQ(duplicateResult.diagnostics.size(), 1U);
     EXPECT_EQ(duplicateResult.diagnostics[0].code,
-              NativePluginManifestValidationCodeUVE::DuplicateCapabilityId);
+              NativePluginManifestValidationCode::DuplicateCapabilityId);
     EXPECT_EQ(duplicateResult.diagnostics[0].capabilityIndex, 1U);
 
-    NativePluginManifestUVE invalidProtocol = valid;
+    NativePluginManifest invalidProtocol = valid;
     invalidProtocol.requiredEngineProtocol = 99U;
-    const NativePluginManifestValidationResultUVE protocolResult =
-        ValidateNativePluginManifestUVE(invalidProtocol);
-    ASSERT_FALSE(protocolResult.IsValidUVE());
+    const NativePluginManifestValidationResult protocolResult =
+        ValidateNativePluginManifest(invalidProtocol);
+    ASSERT_FALSE(protocolResult.IsValid());
     EXPECT_EQ(protocolResult.diagnostics[0].code,
-              NativePluginManifestValidationCodeUVE::UnsupportedProtocol);
+              NativePluginManifestValidationCode::UnsupportedProtocol);
 
-    NativePluginManifestUVE tooManyCapabilities = valid;
+    NativePluginManifest tooManyCapabilities = valid;
     tooManyCapabilities.capabilityIds.assign(
-        NativePluginRegistryUVE::kMaximumCapabilitiesPerPluginUVE + 1U, "capability");
-    const NativePluginManifestValidationResultUVE limitResult =
-        ValidateNativePluginManifestUVE(tooManyCapabilities);
-    ASSERT_FALSE(limitResult.IsValidUVE());
+        NativePluginRegistry::kMaximumCapabilitiesPerPlugin + 1U, "capability");
+    const NativePluginManifestValidationResult limitResult =
+        ValidateNativePluginManifest(tooManyCapabilities);
+    ASSERT_FALSE(limitResult.IsValid());
     EXPECT_EQ(limitResult.diagnostics[0].code,
-              NativePluginManifestValidationCodeUVE::TooManyCapabilities);
+              NativePluginManifestValidationCode::TooManyCapabilities);
 }
 
-TEST(NativePluginManifestValidationUVETest, NegotiateNativePluginAbiUVE_ReportsCompatibilityAndProtocolFailures) {
-    const NativePluginManifestUVE compatible{"uve.compatible", "Compatible", {1U, 0U, 0U}, 7U, {}};
-    const NativePluginAbiNegotiationResultUVE accepted = NegotiateNativePluginAbiUVE(compatible, 7U);
-    EXPECT_TRUE(accepted.IsCompatibleUVE());
+TEST(NativePluginManifestValidationTest, NegotiateNativePluginAbi_ReportsCompatibilityAndProtocolFailures) {
+    const NativePluginManifest compatible{"uve.compatible", "Compatible", {1U, 0U, 0U}, 7U, {}};
+    const NativePluginAbiNegotiationResult accepted = NegotiateNativePluginAbi(compatible, 7U);
+    EXPECT_TRUE(accepted.IsCompatible());
     EXPECT_EQ(accepted.engineProtocol, 7U);
     EXPECT_EQ(accepted.pluginProtocol, 7U);
 
-    const NativePluginAbiNegotiationResultUVE invalidEngine = NegotiateNativePluginAbiUVE(compatible, 0U);
-    EXPECT_EQ(invalidEngine.code, NativePluginAbiNegotiationCodeUVE::InvalidEngineProtocol);
-    EXPECT_FALSE(invalidEngine.IsCompatibleUVE());
+    const NativePluginAbiNegotiationResult invalidEngine = NegotiateNativePluginAbi(compatible, 0U);
+    EXPECT_EQ(invalidEngine.code, NativePluginAbiNegotiationCode::InvalidEngineProtocol);
+    EXPECT_FALSE(invalidEngine.IsCompatible());
 
-    const NativePluginManifestUVE incompatible{"uve.incompatible", "Incompatible", {1U, 0U, 0U}, 8U, {}};
-    const NativePluginAbiNegotiationResultUVE rejected = NegotiateNativePluginAbiUVE(incompatible, 7U);
-    EXPECT_EQ(rejected.code, NativePluginAbiNegotiationCodeUVE::UnsupportedPluginProtocol);
-    EXPECT_FALSE(rejected.IsCompatibleUVE());
+    const NativePluginManifest incompatible{"uve.incompatible", "Incompatible", {1U, 0U, 0U}, 8U, {}};
+    const NativePluginAbiNegotiationResult rejected = NegotiateNativePluginAbi(incompatible, 7U);
+    EXPECT_EQ(rejected.code, NativePluginAbiNegotiationCode::UnsupportedPluginProtocol);
+    EXPECT_FALSE(rejected.IsCompatible());
 }
 
-TEST(NativePluginManifestValidationUVETest, ValidateNativePluginManifestUVE_AppliesExplicitCapabilityPolicy) {
-    const NativePluginManifestUVE manifest{"uve.policy", "Policy", {1U, 0U, 0U},
-                                           kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
-    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"object.types", "editor.window"}};
-    EXPECT_TRUE(ValidateNativePluginManifestUVE(manifest, allowPolicy).IsValidUVE());
+TEST(NativePluginManifestValidationTest, ValidateNativePluginManifest_AppliesExplicitCapabilityPolicy) {
+    const NativePluginManifest manifest{"uve.policy", "Policy", {1U, 0U, 0U},
+                                           kNativePluginProtocolVersion, {"object.types", "editor.window"}};
+    const NativePluginCapabilityPolicy allowPolicy{false, {"object.types", "editor.window"}};
+    EXPECT_TRUE(ValidateNativePluginManifest(manifest, allowPolicy).IsValid());
 
-    const NativePluginCapabilityPolicyUVE denyPolicy{false, {"object.types"}};
-    const NativePluginManifestValidationResultUVE denied =
-        ValidateNativePluginManifestUVE(manifest, denyPolicy);
-    ASSERT_FALSE(denied.IsValidUVE());
+    const NativePluginCapabilityPolicy denyPolicy{false, {"object.types"}};
+    const NativePluginManifestValidationResult denied =
+        ValidateNativePluginManifest(manifest, denyPolicy);
+    ASSERT_FALSE(denied.IsValid());
     ASSERT_EQ(denied.diagnostics.size(), 1U);
-    EXPECT_EQ(denied.diagnostics[0].code, NativePluginManifestValidationCodeUVE::CapabilityNotAllowed);
+    EXPECT_EQ(denied.diagnostics[0].code, NativePluginManifestValidationCode::CapabilityNotAllowed);
     EXPECT_EQ(denied.diagnostics[0].capabilityIndex, 1U);
 
-    const NativePluginCapabilityPolicyUVE duplicatePolicy{false, {"object.types", "object.types"}};
-    const NativePluginManifestValidationResultUVE duplicate =
-        ValidateNativePluginManifestUVE(manifest, duplicatePolicy);
-    ASSERT_FALSE(duplicate.IsValidUVE());
+    const NativePluginCapabilityPolicy duplicatePolicy{false, {"object.types", "object.types"}};
+    const NativePluginManifestValidationResult duplicate =
+        ValidateNativePluginManifest(manifest, duplicatePolicy);
+    ASSERT_FALSE(duplicate.IsValid());
     EXPECT_EQ(duplicate.diagnostics[0].code,
-              NativePluginManifestValidationCodeUVE::DuplicatePolicyCapabilityId);
+              NativePluginManifestValidationCode::DuplicatePolicyCapabilityId);
     EXPECT_EQ(duplicate.diagnostics[0].capabilityIndex, 1U);
 
-    const NativePluginCapabilityPolicyUVE invalidPolicy{false, {"bad id"}};
-    const NativePluginManifestValidationResultUVE invalid =
-        ValidateNativePluginManifestUVE(manifest, invalidPolicy);
-    ASSERT_FALSE(invalid.IsValidUVE());
-    EXPECT_EQ(invalid.diagnostics[0].code, NativePluginManifestValidationCodeUVE::InvalidCapabilityId);
+    const NativePluginCapabilityPolicy invalidPolicy{false, {"bad id"}};
+    const NativePluginManifestValidationResult invalid =
+        ValidateNativePluginManifest(manifest, invalidPolicy);
+    ASSERT_FALSE(invalid.IsValid());
+    EXPECT_EQ(invalid.diagnostics[0].code, NativePluginManifestValidationCode::InvalidCapabilityId);
 }
 
-TEST(NativePluginRegistryUVETest, RegisterManifestUVE_ExplicitPolicyRejectsBeforeMutation) {
-    NativePluginRegistryUVE registry;
-    const NativePluginManifestUVE manifest{"uve.restricted", "Restricted", {1U, 0U, 0U},
-                                           kNativePluginProtocolVersionUVE, {"object.types", "filesystem.read"}};
-    const NativePluginCapabilityPolicyUVE policy{false, {"object.types"}};
-    const NativePluginRegistryResultUVE rejected = registry.RegisterManifestUVE(manifest, policy);
-    EXPECT_FALSE(rejected.IsAcceptedUVE());
-    EXPECT_EQ(registry.GetManifestCountUVE(), 0U);
-    EXPECT_EQ(registry.GetOpenScopeCountUVE(), 0U);
-    EXPECT_EQ(registry.FindManifestUVE("uve.restricted"), nullptr);
+TEST(NativePluginRegistryTest, RegisterManifest_ExplicitPolicyRejectsBeforeMutation) {
+    NativePluginRegistry registry;
+    const NativePluginManifest manifest{"uve.restricted", "Restricted", {1U, 0U, 0U},
+                                           kNativePluginProtocolVersion, {"object.types", "filesystem.read"}};
+    const NativePluginCapabilityPolicy policy{false, {"object.types"}};
+    const NativePluginRegistryResult rejected = registry.RegisterManifest(manifest, policy);
+    EXPECT_FALSE(rejected.IsAccepted());
+    EXPECT_EQ(registry.GetManifestCount(), 0U);
+    EXPECT_EQ(registry.GetOpenScopeCount(), 0U);
+    EXPECT_EQ(registry.FindManifest("uve.restricted"), nullptr);
 
-    const NativePluginCapabilityPolicyUVE allowPolicy{false, {"object.types", "filesystem.read"}};
-    const NativePluginRegistryResultUVE accepted = registry.RegisterManifestUVE(manifest, allowPolicy);
-    ASSERT_TRUE(accepted.IsAcceptedUVE()) << accepted.message;
-    EXPECT_EQ(registry.GetManifestCountUVE(), 1U);
-    ASSERT_TRUE(registry.OpenScopeUVE("uve.restricted").has_value());
+    const NativePluginCapabilityPolicy allowPolicy{false, {"object.types", "filesystem.read"}};
+    const NativePluginRegistryResult accepted = registry.RegisterManifest(manifest, allowPolicy);
+    ASSERT_TRUE(accepted.IsAccepted()) << accepted.message;
+    EXPECT_EQ(registry.GetManifestCount(), 1U);
+    ASSERT_TRUE(registry.OpenScope("uve.restricted").has_value());
 }
 
-TEST(NativePluginRegistryUVETest, RegisterManifestUVE_ValidatesIdentityProtocolAndCapabilities) {
-    NativePluginRegistryUVE registry;
-    NativePluginManifestUVE manifest{"uve.terrain", "Terrain", {1U, 2U, 0U},
-                                     kNativePluginProtocolVersionUVE, {"object.types", "editor.window"}};
-    const NativePluginRegistryResultUVE registered = registry.RegisterManifestUVE(manifest);
-    ASSERT_TRUE(registered.IsAcceptedUVE()) << registered.message;
-    EXPECT_EQ(registry.GetManifestCountUVE(), 1U);
-    ASSERT_NE(registry.FindManifestUVE("uve.terrain"), nullptr);
-    EXPECT_EQ(registry.FindManifestUVE("uve.terrain")->displayName, "Terrain");
-    EXPECT_FALSE(registry.RegisterManifestUVE(manifest).IsAcceptedUVE());
-    EXPECT_FALSE(registry.RegisterManifestUVE({"bad id", "Bad", {}, 1U, {}}).IsAcceptedUVE());
-    EXPECT_FALSE(registry.RegisterManifestUVE({"uve.future", "Future", {}, 99U, {}}).IsAcceptedUVE());
+TEST(NativePluginRegistryTest, RegisterManifest_ValidatesIdentityProtocolAndCapabilities) {
+    NativePluginRegistry registry;
+    NativePluginManifest manifest{"uve.terrain", "Terrain", {1U, 2U, 0U},
+                                     kNativePluginProtocolVersion, {"object.types", "editor.window"}};
+    const NativePluginRegistryResult registered = registry.RegisterManifest(manifest);
+    ASSERT_TRUE(registered.IsAccepted()) << registered.message;
+    EXPECT_EQ(registry.GetManifestCount(), 1U);
+    ASSERT_NE(registry.FindManifest("uve.terrain"), nullptr);
+    EXPECT_EQ(registry.FindManifest("uve.terrain")->displayName, "Terrain");
+    EXPECT_FALSE(registry.RegisterManifest(manifest).IsAccepted());
+    EXPECT_FALSE(registry.RegisterManifest({"bad id", "Bad", {}, 1U, {}}).IsAccepted());
+    EXPECT_FALSE(registry.RegisterManifest({"uve.future", "Future", {}, 99U, {}}).IsAccepted());
 }
 
-TEST(NativePluginRegistryUVETest, ScopesAreGenerationCheckedAndExplicitlyClosed) {
-    NativePluginRegistryUVE registry;
-    const NativePluginRegistryResultUVE registered = registry.RegisterManifestUVE({"uve.test", "Test", {}, 1U, {}});
-    ASSERT_TRUE(registered.IsAcceptedUVE()) << registered.message;
-    const auto scope = registry.OpenScopeUVE("uve.test");
+TEST(NativePluginRegistryTest, ScopesAreGenerationCheckedAndExplicitlyClosed) {
+    NativePluginRegistry registry;
+    const NativePluginRegistryResult registered = registry.RegisterManifest({"uve.test", "Test", {}, 1U, {}});
+    ASSERT_TRUE(registered.IsAccepted()) << registered.message;
+    const auto scope = registry.OpenScope("uve.test");
     ASSERT_TRUE(scope.has_value());
-    EXPECT_TRUE(scope->IsValidUVE());
-    EXPECT_TRUE(registry.IsScopeOpenUVE("uve.test"));
-    EXPECT_FALSE(registry.OpenScopeUVE("uve.test").has_value());
-    ASSERT_TRUE(registry.CloseScopeUVE(*scope).IsAcceptedUVE());
-    EXPECT_FALSE(registry.IsScopeOpenUVE("uve.test"));
-    EXPECT_EQ(registry.CloseScopeUVE(*scope).code, NativePluginRegistryCodeUVE::InvalidScope);
-    EXPECT_EQ(registry.GetOpenScopeCountUVE(), 0U);
+    EXPECT_TRUE(scope->IsValid());
+    EXPECT_TRUE(registry.IsScopeOpen("uve.test"));
+    EXPECT_FALSE(registry.OpenScope("uve.test").has_value());
+    ASSERT_TRUE(registry.CloseScope(*scope).IsAccepted());
+    EXPECT_FALSE(registry.IsScopeOpen("uve.test"));
+    EXPECT_EQ(registry.CloseScope(*scope).code, NativePluginRegistryCode::InvalidScope);
+    EXPECT_EQ(registry.GetOpenScopeCount(), 0U);
 }
 
-TEST(NativePluginRegistryUVETest, UnregisterManifestUVE_RejectsOpenScopeAndRemovesAfterClose) {
-    NativePluginRegistryUVE registry;
-    ASSERT_TRUE(registry.RegisterManifestUVE({"uve.unload", "Unload", {}, 1U, {}}).IsAcceptedUVE());
-    const auto scope = registry.OpenScopeUVE("uve.unload");
+TEST(NativePluginRegistryTest, UnregisterManifest_RejectsOpenScopeAndRemovesAfterClose) {
+    NativePluginRegistry registry;
+    ASSERT_TRUE(registry.RegisterManifest({"uve.unload", "Unload", {}, 1U, {}}).IsAccepted());
+    const auto scope = registry.OpenScope("uve.unload");
     ASSERT_TRUE(scope.has_value());
 
-    const NativePluginRegistryResultUVE busy = registry.UnregisterManifestUVE("uve.unload");
-    EXPECT_EQ(busy.code, NativePluginRegistryCodeUVE::Busy);
-    EXPECT_NE(registry.FindManifestUVE("uve.unload"), nullptr);
-    EXPECT_EQ(registry.GetManifestCountUVE(), 1U);
+    const NativePluginRegistryResult busy = registry.UnregisterManifest("uve.unload");
+    EXPECT_EQ(busy.code, NativePluginRegistryCode::Busy);
+    EXPECT_NE(registry.FindManifest("uve.unload"), nullptr);
+    EXPECT_EQ(registry.GetManifestCount(), 1U);
 
-    ASSERT_TRUE(registry.CloseScopeUVE(*scope).IsAcceptedUVE());
-    const NativePluginRegistryResultUVE removed = registry.UnregisterManifestUVE("uve.unload");
-    EXPECT_TRUE(removed.IsAcceptedUVE());
-    EXPECT_EQ(registry.FindManifestUVE("uve.unload"), nullptr);
-    EXPECT_EQ(registry.GetManifestCountUVE(), 0U);
-    EXPECT_EQ(registry.UnregisterManifestUVE("uve.unload").code, NativePluginRegistryCodeUVE::NotFound);
+    ASSERT_TRUE(registry.CloseScope(*scope).IsAccepted());
+    const NativePluginRegistryResult removed = registry.UnregisterManifest("uve.unload");
+    EXPECT_TRUE(removed.IsAccepted());
+    EXPECT_EQ(registry.FindManifest("uve.unload"), nullptr);
+    EXPECT_EQ(registry.GetManifestCount(), 0U);
+    EXPECT_EQ(registry.UnregisterManifest("uve.unload").code, NativePluginRegistryCode::NotFound);
 }
 
-TEST(NativePluginRegistryUVETest, InvalidAndUnknownScopesAreRejectedWithoutMutation) {
-    NativePluginRegistryUVE registry;
-    EXPECT_FALSE(registry.OpenScopeUVE("missing").has_value());
-    EXPECT_EQ(registry.CloseScopeUVE({}).code, NativePluginRegistryCodeUVE::InvalidScope);
-    EXPECT_EQ(registry.UnregisterManifestUVE("").code, NativePluginRegistryCodeUVE::NotFound);
-    EXPECT_EQ(registry.GetManifestCountUVE(), 0U);
+TEST(NativePluginRegistryTest, InvalidAndUnknownScopesAreRejectedWithoutMutation) {
+    NativePluginRegistry registry;
+    EXPECT_FALSE(registry.OpenScope("missing").has_value());
+    EXPECT_EQ(registry.CloseScope({}).code, NativePluginRegistryCode::InvalidScope);
+    EXPECT_EQ(registry.UnregisterManifest("").code, NativePluginRegistryCode::NotFound);
+    EXPECT_EQ(registry.GetManifestCount(), 0U);
 }
 
 } // namespace UVE::Plugins::Tests

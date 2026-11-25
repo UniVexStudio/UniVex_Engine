@@ -19,442 +19,442 @@ namespace {
 
 constexpr float kEpsilon = 1e-5F;
 
-class InputSystemUVETest : public ::testing::Test {
+class InputSystemTest : public ::testing::Test {
 protected:
-    Events::EventSystemUVE eventSystem;
-    InputSystemUVE inputSystem{eventSystem};
+    Events::EventSystem eventSystem;
+    InputSystem inputSystem{eventSystem};
 };
 
-TEST_F(InputSystemUVETest, SetKeyStateUVE_IsKeyDownUVE_RoundTrips) {
-    EXPECT_FALSE(inputSystem.IsKeyDownUVE(KeyCodeUVE::A));
+TEST_F(InputSystemTest, SetKeyState_IsKeyDown_RoundTrips) {
+    EXPECT_FALSE(inputSystem.IsKeyDown(KeyCode::A));
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::A, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsKeyDownUVE(KeyCodeUVE::A));
+    inputSystem.SetKeyState(KeyCode::A, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsKeyDown(KeyCode::A));
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::A, false);
-    inputSystem.UpdateUVE();
-    EXPECT_FALSE(inputSystem.IsKeyDownUVE(KeyCodeUVE::A));
+    inputSystem.SetKeyState(KeyCode::A, false);
+    inputSystem.Update();
+    EXPECT_FALSE(inputSystem.IsKeyDown(KeyCode::A));
 }
 
-TEST_F(InputSystemUVETest, KeyEdgeDetection_PressedHeldReleasedNotHeld) {
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::Space));
-    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrameUVE(KeyCodeUVE::Space));
-    EXPECT_TRUE(inputSystem.IsKeyDownUVE(KeyCodeUVE::Space));
+TEST_F(InputSystemTest, KeyEdgeDetection_PressedHeldReleasedNotHeld) {
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.WasKeyPressedThisFrame(KeyCode::Space));
+    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrame(KeyCode::Space));
+    EXPECT_TRUE(inputSystem.IsKeyDown(KeyCode::Space));
 
-    inputSystem.UpdateUVE(); // held, no new Set call
-    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::Space));
-    EXPECT_TRUE(inputSystem.IsKeyDownUVE(KeyCodeUVE::Space));
+    inputSystem.Update(); // held, no new Set call
+    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrame(KeyCode::Space));
+    EXPECT_TRUE(inputSystem.IsKeyDown(KeyCode::Space));
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, false);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.WasKeyReleasedThisFrameUVE(KeyCodeUVE::Space));
-    EXPECT_FALSE(inputSystem.IsKeyDownUVE(KeyCodeUVE::Space));
+    inputSystem.SetKeyState(KeyCode::Space, false);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.WasKeyReleasedThisFrame(KeyCode::Space));
+    EXPECT_FALSE(inputSystem.IsKeyDown(KeyCode::Space));
 
-    inputSystem.UpdateUVE(); // not held, no new Set call
-    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrameUVE(KeyCodeUVE::Space));
+    inputSystem.Update(); // not held, no new Set call
+    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrame(KeyCode::Space));
 }
 
-TEST_F(InputSystemUVETest, MouseButtonEdgeDetection_PressedHeldReleased) {
-    inputSystem.SetMouseButtonStateUVE(MouseButtonUVE::Left, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.WasMouseButtonPressedThisFrameUVE(MouseButtonUVE::Left));
-    EXPECT_TRUE(inputSystem.IsMouseButtonDownUVE(MouseButtonUVE::Left));
+TEST_F(InputSystemTest, MouseButtonEdgeDetection_PressedHeldReleased) {
+    inputSystem.SetMouseButtonState(MouseButton::Left, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.WasMouseButtonPressedThisFrame(MouseButton::Left));
+    EXPECT_TRUE(inputSystem.IsMouseButtonDown(MouseButton::Left));
 
-    inputSystem.UpdateUVE();
-    EXPECT_FALSE(inputSystem.WasMouseButtonPressedThisFrameUVE(MouseButtonUVE::Left));
+    inputSystem.Update();
+    EXPECT_FALSE(inputSystem.WasMouseButtonPressedThisFrame(MouseButton::Left));
 
-    inputSystem.SetMouseButtonStateUVE(MouseButtonUVE::Left, false);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.WasMouseButtonReleasedThisFrameUVE(MouseButtonUVE::Left));
-    EXPECT_FALSE(inputSystem.IsMouseButtonDownUVE(MouseButtonUVE::Left));
+    inputSystem.SetMouseButtonState(MouseButton::Left, false);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.WasMouseButtonReleasedThisFrame(MouseButton::Left));
+    EXPECT_FALSE(inputSystem.IsMouseButtonDown(MouseButton::Left));
 }
 
-TEST_F(InputSystemUVETest, MousePositionAndDelta_ComputedAcrossUpdateUVE) {
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{10.0F, 20.0F});
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetMousePositionUVE().x, 10.0F, kEpsilon);
-    EXPECT_NEAR(inputSystem.GetMousePositionUVE().y, 20.0F, kEpsilon);
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().x, 10.0F, kEpsilon); // moved from default (0,0)
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().y, 20.0F, kEpsilon);
+TEST_F(InputSystemTest, MousePositionAndDelta_ComputedAcrossUpdate) {
+    inputSystem.SetMousePosition(Math::Vector2{10.0F, 20.0F});
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetMousePosition().x, 10.0F, kEpsilon);
+    EXPECT_NEAR(inputSystem.GetMousePosition().y, 20.0F, kEpsilon);
+    EXPECT_NEAR(inputSystem.GetMouseDelta().x, 10.0F, kEpsilon); // moved from default (0,0)
+    EXPECT_NEAR(inputSystem.GetMouseDelta().y, 20.0F, kEpsilon);
 
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{13.0F, 15.0F});
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().x, 3.0F, kEpsilon);
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().y, -5.0F, kEpsilon);
+    inputSystem.SetMousePosition(Math::Vector2{13.0F, 15.0F});
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetMouseDelta().x, 3.0F, kEpsilon);
+    EXPECT_NEAR(inputSystem.GetMouseDelta().y, -5.0F, kEpsilon);
 
-    inputSystem.UpdateUVE(); // no movement this frame
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().x, 0.0F, kEpsilon);
-    EXPECT_NEAR(inputSystem.GetMouseDeltaUVE().y, 0.0F, kEpsilon);
+    inputSystem.Update(); // no movement this frame
+    EXPECT_NEAR(inputSystem.GetMouseDelta().x, 0.0F, kEpsilon);
+    EXPECT_NEAR(inputSystem.GetMouseDelta().y, 0.0F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, MousePosition_RejectsNonFiniteAndPreservesLastValidState) {
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{4.0F, 7.0F});
-    inputSystem.UpdateUVE();
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{std::numeric_limits<float>::quiet_NaN(), 9.0F});
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{10.0F, std::numeric_limits<float>::infinity()});
-    inputSystem.UpdateUVE();
+TEST_F(InputSystemTest, MousePosition_RejectsNonFiniteAndPreservesLastValidState) {
+    inputSystem.SetMousePosition(Math::Vector2{4.0F, 7.0F});
+    inputSystem.Update();
+    inputSystem.SetMousePosition(Math::Vector2{std::numeric_limits<float>::quiet_NaN(), 9.0F});
+    inputSystem.SetMousePosition(Math::Vector2{10.0F, std::numeric_limits<float>::infinity()});
+    inputSystem.Update();
 
-    EXPECT_FLOAT_EQ(inputSystem.GetMousePositionUVE().x, 4.0F);
-    EXPECT_FLOAT_EQ(inputSystem.GetMousePositionUVE().y, 7.0F);
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseDeltaUVE().x, 0.0F);
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseDeltaUVE().y, 0.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMousePosition().x, 4.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMousePosition().y, 7.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseDelta().x, 0.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseDelta().y, 0.0F);
 }
 
-TEST_F(InputSystemUVETest, MouseDelta_OverflowFailsClosedWithoutPublishingNonFiniteValue) {
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{-std::numeric_limits<float>::max(), 0.0F});
-    inputSystem.UpdateUVE();
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{std::numeric_limits<float>::max(), 0.0F});
-    inputSystem.UpdateUVE();
+TEST_F(InputSystemTest, MouseDelta_OverflowFailsClosedWithoutPublishingNonFiniteValue) {
+    inputSystem.SetMousePosition(Math::Vector2{-std::numeric_limits<float>::max(), 0.0F});
+    inputSystem.Update();
+    inputSystem.SetMousePosition(Math::Vector2{std::numeric_limits<float>::max(), 0.0F});
+    inputSystem.Update();
 
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseDeltaUVE().x, 0.0F);
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseDeltaUVE().y, 0.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseDelta().x, 0.0F);
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseDelta().y, 0.0F);
 }
 
-TEST_F(InputSystemUVETest, ScrollDelta_AccumulatesThenResetsAfterUpdateUVE) {
-    inputSystem.SetMouseScrollDeltaUVE(1.0F);
-    inputSystem.SetMouseScrollDeltaUVE(0.5F);
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetMouseScrollDeltaUVE(), 1.5F, kEpsilon);
+TEST_F(InputSystemTest, ScrollDelta_AccumulatesThenResetsAfterUpdate) {
+    inputSystem.SetMouseScrollDelta(1.0F);
+    inputSystem.SetMouseScrollDelta(0.5F);
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetMouseScrollDelta(), 1.5F, kEpsilon);
 
-    inputSystem.UpdateUVE(); // no new scroll input
-    EXPECT_NEAR(inputSystem.GetMouseScrollDeltaUVE(), 0.0F, kEpsilon);
+    inputSystem.Update(); // no new scroll input
+    EXPECT_NEAR(inputSystem.GetMouseScrollDelta(), 0.0F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, ScrollDelta_RejectsNonFiniteAndOverflowingInput) {
-    inputSystem.SetMouseScrollDeltaUVE(1.0F);
-    inputSystem.SetMouseScrollDeltaUVE(std::numeric_limits<float>::quiet_NaN());
-    inputSystem.SetMouseScrollDeltaUVE(std::numeric_limits<float>::infinity());
-    inputSystem.UpdateUVE();
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseScrollDeltaUVE(), 1.0F);
+TEST_F(InputSystemTest, ScrollDelta_RejectsNonFiniteAndOverflowingInput) {
+    inputSystem.SetMouseScrollDelta(1.0F);
+    inputSystem.SetMouseScrollDelta(std::numeric_limits<float>::quiet_NaN());
+    inputSystem.SetMouseScrollDelta(std::numeric_limits<float>::infinity());
+    inputSystem.Update();
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseScrollDelta(), 1.0F);
 
-    inputSystem.SetMouseScrollDeltaUVE(std::numeric_limits<float>::max());
-    inputSystem.SetMouseScrollDeltaUVE(std::numeric_limits<float>::max());
-    inputSystem.UpdateUVE();
-    EXPECT_FLOAT_EQ(inputSystem.GetMouseScrollDeltaUVE(), std::numeric_limits<float>::max());
+    inputSystem.SetMouseScrollDelta(std::numeric_limits<float>::max());
+    inputSystem.SetMouseScrollDelta(std::numeric_limits<float>::max());
+    inputSystem.Update();
+    EXPECT_FLOAT_EQ(inputSystem.GetMouseScrollDelta(), std::numeric_limits<float>::max());
 }
 
-TEST_F(InputSystemUVETest, RegisterActionUVE_RejectsUnboundedAndMalformedNames) {
-    const std::string maximumName(kMaximumInputActionNameBytesUVE, 'M');
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{maximumName, InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
-    EXPECT_TRUE(inputSystem.RemapActionUVE(maximumName, {KeyBindingUVE(KeyCodeUVE::Enter)}, {}));
+TEST_F(InputSystemTest, RegisterAction_RejectsUnboundedAndMalformedNames) {
+    const std::string maximumName(kMaximumInputActionNameBytes, 'M');
+    inputSystem.RegisterAction(
+        InputAction{maximumName, InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
+    EXPECT_TRUE(inputSystem.RemapAction(maximumName, {KeyBinding(KeyCode::Enter)}, {}));
 
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{maximumName + "X", InputActionTypeUVE::Button, {}, {}});
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE(maximumName + "X"));
-    inputSystem.RegisterActionUVE(InputActionUVE{"", InputActionTypeUVE::Button, {}, {}});
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE(""));
+    inputSystem.RegisterAction(
+        InputAction{maximumName + "X", InputActionType::Button, {}, {}});
+    EXPECT_FALSE(inputSystem.IsActionHeld(maximumName + "X"));
+    inputSystem.RegisterAction(InputAction{"", InputActionType::Button, {}, {}});
+    EXPECT_FALSE(inputSystem.IsActionHeld(""));
     const std::string nulName = std::string("bad") + '\0' + "name";
-    inputSystem.RegisterActionUVE(InputActionUVE{nulName, InputActionTypeUVE::Button, {}, {}});
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE(nulName));
+    inputSystem.RegisterAction(InputAction{nulName, InputActionType::Button, {}, {}});
+    EXPECT_FALSE(inputSystem.IsActionHeld(nulName));
 
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"InvalidType", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
-    inputSystem.RegisterActionUVE(InputActionUVE{"InvalidType", static_cast<InputActionTypeUVE>(99), {}, {}});
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("InvalidType"));
+    inputSystem.RegisterAction(
+        InputAction{"InvalidType", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
+    inputSystem.RegisterAction(InputAction{"InvalidType", static_cast<InputActionType>(99), {}, {}});
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionHeld("InvalidType"));
 }
 
-TEST_F(InputSystemUVETest, RegisterActionUVE_RejectsNewEntriesAtCountCapButAllowsReplacement) {
-    for (std::size_t index = 0U; index < kMaximumInputActionsUVE; ++index) {
-        inputSystem.RegisterActionUVE(
-            InputActionUVE{"Action_" + std::to_string(index), InputActionTypeUVE::Button, {}, {}});
+TEST_F(InputSystemTest, RegisterAction_RejectsNewEntriesAtCountCapButAllowsReplacement) {
+    for (std::size_t index = 0U; index < kMaximumInputActions; ++index) {
+        inputSystem.RegisterAction(
+            InputAction{"Action_" + std::to_string(index), InputActionType::Button, {}, {}});
     }
 
-    const std::string overflowName = "Action_" + std::to_string(kMaximumInputActionsUVE);
-    inputSystem.RegisterActionUVE(InputActionUVE{overflowName, InputActionTypeUVE::Button, {}, {}});
-    EXPECT_FALSE(inputSystem.RemapActionUVE(overflowName, {KeyBindingUVE(KeyCodeUVE::Enter)}, {}));
+    const std::string overflowName = "Action_" + std::to_string(kMaximumInputActions);
+    inputSystem.RegisterAction(InputAction{overflowName, InputActionType::Button, {}, {}});
+    EXPECT_FALSE(inputSystem.RemapAction(overflowName, {KeyBinding(KeyCode::Enter)}, {}));
 
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Action_0", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Enter)}, {}});
-    EXPECT_TRUE(inputSystem.RemapActionUVE("Action_0", {KeyBindingUVE(KeyCodeUVE::Space)}, {}));
+    inputSystem.RegisterAction(
+        InputAction{"Action_0", InputActionType::Button, {KeyBinding(KeyCode::Enter)}, {}});
+    EXPECT_TRUE(inputSystem.RemapAction("Action_0", {KeyBinding(KeyCode::Space)}, {}));
 }
 
-TEST_F(InputSystemUVETest, ButtonAction_SingleBinding_TriggeredHeldReleased) {
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
+TEST_F(InputSystemTest, ButtonAction_SingleBinding_TriggeredHeldReleased) {
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
-    EXPECT_FALSE(inputSystem.IsActionReleasedUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
+    EXPECT_FALSE(inputSystem.IsActionReleased("Jump"));
 
-    inputSystem.UpdateUVE(); // still held
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
+    inputSystem.Update(); // still held
+    EXPECT_FALSE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, false);
-    inputSystem.UpdateUVE();
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE("Jump"));
-    EXPECT_TRUE(inputSystem.IsActionReleasedUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, false);
+    inputSystem.Update();
+    EXPECT_FALSE(inputSystem.IsActionHeld("Jump"));
+    EXPECT_TRUE(inputSystem.IsActionReleased("Jump"));
 }
 
-TEST_F(InputSystemUVETest, ButtonAction_MultiBindingOr_DoesNotRetriggerOnSecondKey) {
-    inputSystem.RegisterActionUVE(InputActionUVE{"Jump",
-                                                   InputActionTypeUVE::Button,
-                                                   {KeyBindingUVE(KeyCodeUVE::Space), KeyBindingUVE(KeyCodeUVE::Enter)},
+TEST_F(InputSystemTest, ButtonAction_MultiBindingOr_DoesNotRetriggerOnSecondKey) {
+    inputSystem.RegisterAction(InputAction{"Jump",
+                                                   InputActionType::Button,
+                                                   {KeyBinding(KeyCode::Space), KeyBinding(KeyCode::Enter)},
                                                    {}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionTriggeredUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionTriggered("Jump"));
 
     // Enter goes down too while Space is still held — must not re-trigger.
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Enter, true);
-    inputSystem.UpdateUVE();
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Enter, true);
+    inputSystem.Update();
+    EXPECT_FALSE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
 }
 
-TEST_F(InputSystemUVETest, ButtonAction_GamepadBinding_TriggeredHeldReleased) {
-    GamepadInputSystemUVE gamepad;
-    InputSystemUVE gamepadInputSystem{eventSystem, &gamepad};
-    gamepadInputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button,
-                       {GamepadButtonBindingUVE(0U, GamepadButtonUVE::South)}, {}});
+TEST_F(InputSystemTest, ButtonAction_GamepadBinding_TriggeredHeldReleased) {
+    GamepadInputSystem gamepad;
+    InputSystem gamepadInputSystem{eventSystem, &gamepad};
+    gamepadInputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button,
+                       {GamepadButtonBinding(0U, GamepadButton::South)}, {}});
 
-    gamepad.SetConnectedUVE(0U, true);
-    gamepad.SetButtonStateUVE(0U, GamepadButtonUVE::South, true);
-    gamepad.UpdateUVE();
-    gamepadInputSystem.UpdateUVE();
-    EXPECT_TRUE(gamepadInputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(gamepadInputSystem.IsActionHeldUVE("Jump"));
+    gamepad.SetConnected(0U, true);
+    gamepad.SetButtonState(0U, GamepadButton::South, true);
+    gamepad.Update();
+    gamepadInputSystem.Update();
+    EXPECT_TRUE(gamepadInputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(gamepadInputSystem.IsActionHeld("Jump"));
 
-    gamepadInputSystem.UpdateUVE();
-    EXPECT_FALSE(gamepadInputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(gamepadInputSystem.IsActionHeldUVE("Jump"));
+    gamepadInputSystem.Update();
+    EXPECT_FALSE(gamepadInputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(gamepadInputSystem.IsActionHeld("Jump"));
 
-    gamepad.SetButtonStateUVE(0U, GamepadButtonUVE::South, false);
-    gamepad.UpdateUVE();
-    gamepadInputSystem.UpdateUVE();
-    EXPECT_FALSE(gamepadInputSystem.IsActionHeldUVE("Jump"));
-    EXPECT_TRUE(gamepadInputSystem.IsActionReleasedUVE("Jump"));
+    gamepad.SetButtonState(0U, GamepadButton::South, false);
+    gamepad.Update();
+    gamepadInputSystem.Update();
+    EXPECT_FALSE(gamepadInputSystem.IsActionHeld("Jump"));
+    EXPECT_TRUE(gamepadInputSystem.IsActionReleased("Jump"));
 }
 
-TEST_F(InputSystemUVETest, AxisAction_GamepadBindingUsesScaledClampedAxisValue) {
-    GamepadInputSystemUVE gamepad{0.0F};
-    InputSystemUVE gamepadInputSystem{eventSystem, &gamepad};
-    gamepadInputSystem.RegisterActionUVE(
-        InputActionUVE{"MoveHorizontal", InputActionTypeUVE::Axis1D,
-                       {GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 0.5F)},
-                       {GamepadAxisBindingUVE(0U, GamepadAxisUVE::RightX, 2.0F)}});
+TEST_F(InputSystemTest, AxisAction_GamepadBindingUsesScaledClampedAxisValue) {
+    GamepadInputSystem gamepad{0.0F};
+    InputSystem gamepadInputSystem{eventSystem, &gamepad};
+    gamepadInputSystem.RegisterAction(
+        InputAction{"MoveHorizontal", InputActionType::Axis1D,
+                       {GamepadAxisBinding(0U, GamepadAxis::LeftX, 0.5F)},
+                       {GamepadAxisBinding(0U, GamepadAxis::RightX, 2.0F)}});
 
-    gamepad.SetConnectedUVE(0U, true);
-    gamepad.SetAxisStateUVE(0U, GamepadAxisUVE::LeftX, 0.8F);
-    gamepad.SetAxisStateUVE(0U, GamepadAxisUVE::RightX, -0.25F);
-    gamepad.UpdateUVE();
-    gamepadInputSystem.UpdateUVE();
+    gamepad.SetConnected(0U, true);
+    gamepad.SetAxisState(0U, GamepadAxis::LeftX, 0.8F);
+    gamepad.SetAxisState(0U, GamepadAxis::RightX, -0.25F);
+    gamepad.Update();
+    gamepadInputSystem.Update();
 
-    EXPECT_NEAR(gamepadInputSystem.GetAxisValueUVE("MoveHorizontal"), 0.9F, kEpsilon);
+    EXPECT_NEAR(gamepadInputSystem.GetAxisValue("MoveHorizontal"), 0.9F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, AxisAction_ComputesPositiveNegativeBothNeither) {
-    inputSystem.RegisterActionUVE(InputActionUVE{"MoveHorizontal",
-                                                   InputActionTypeUVE::Axis1D,
-                                                   {KeyBindingUVE(KeyCodeUVE::D)},
-                                                   {KeyBindingUVE(KeyCodeUVE::A)}});
+TEST_F(InputSystemTest, AxisAction_ComputesPositiveNegativeBothNeither) {
+    inputSystem.RegisterAction(InputAction{"MoveHorizontal",
+                                                   InputActionType::Axis1D,
+                                                   {KeyBinding(KeyCode::D)},
+                                                   {KeyBinding(KeyCode::A)}});
 
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("MoveHorizontal"), 0.0F, kEpsilon);
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetAxisValue("MoveHorizontal"), 0.0F, kEpsilon);
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::D, true);
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("MoveHorizontal"), 1.0F, kEpsilon);
+    inputSystem.SetKeyState(KeyCode::D, true);
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetAxisValue("MoveHorizontal"), 1.0F, kEpsilon);
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::D, false);
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::A, true);
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("MoveHorizontal"), -1.0F, kEpsilon);
+    inputSystem.SetKeyState(KeyCode::D, false);
+    inputSystem.SetKeyState(KeyCode::A, true);
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetAxisValue("MoveHorizontal"), -1.0F, kEpsilon);
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::D, true); // both held
-    inputSystem.UpdateUVE();
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("MoveHorizontal"), 0.0F, kEpsilon);
+    inputSystem.SetKeyState(KeyCode::D, true); // both held
+    inputSystem.Update();
+    EXPECT_NEAR(inputSystem.GetAxisValue("MoveHorizontal"), 0.0F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, UnregisteredActionName_ReturnsFalseOrZeroWithoutAsserting) {
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("DoesNotExist"));
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE("DoesNotExist"));
-    EXPECT_FALSE(inputSystem.IsActionReleasedUVE("DoesNotExist"));
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("DoesNotExist"), 0.0F, kEpsilon);
-    EXPECT_FALSE(inputSystem.HasActionUVE("DoesNotExist"));
+TEST_F(InputSystemTest, UnregisteredActionName_ReturnsFalseOrZeroWithoutAsserting) {
+    EXPECT_FALSE(inputSystem.IsActionTriggered("DoesNotExist"));
+    EXPECT_FALSE(inputSystem.IsActionHeld("DoesNotExist"));
+    EXPECT_FALSE(inputSystem.IsActionReleased("DoesNotExist"));
+    EXPECT_NEAR(inputSystem.GetAxisValue("DoesNotExist"), 0.0F, kEpsilon);
+    EXPECT_FALSE(inputSystem.HasAction("DoesNotExist"));
 }
 
-TEST_F(InputSystemUVETest, HasActionUVE_IsTrueAfterRegister) {
-    EXPECT_FALSE(inputSystem.HasActionUVE("Jump"));
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
-    EXPECT_TRUE(inputSystem.HasActionUVE("Jump"));
+TEST_F(InputSystemTest, HasAction_IsTrueAfterRegister) {
+    EXPECT_FALSE(inputSystem.HasAction("Jump"));
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
+    EXPECT_TRUE(inputSystem.HasAction("Jump"));
 }
 
-TEST_F(InputSystemUVETest, UnregisterActionUVE_RemovesActionAndReportsWhetherItExisted) {
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
+TEST_F(InputSystemTest, UnregisterAction_RemovesActionAndReportsWhetherItExisted) {
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
 
-    EXPECT_TRUE(inputSystem.UnregisterActionUVE("Jump"));
-    EXPECT_FALSE(inputSystem.UnregisterActionUVE("Jump")); // already gone
+    EXPECT_TRUE(inputSystem.UnregisterAction("Jump"));
+    EXPECT_FALSE(inputSystem.UnregisterAction("Jump")); // already gone
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_FALSE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_FALSE(inputSystem.IsActionHeld("Jump"));
 }
 
-TEST_F(InputSystemUVETest, ActionRemap_ReplacesBindingsOnNextFrameAndRejectsInvalidCandidateAtomically) {
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
+TEST_F(InputSystemTest, ActionRemap_ReplacesBindingsOnNextFrameAndRejectsInvalidCandidateAtomically) {
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
 
-    EXPECT_TRUE(inputSystem.RemapActionUVE("Jump", {KeyBindingUVE(KeyCodeUVE::Enter)}, {}));
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE("Jump"));
+    EXPECT_TRUE(inputSystem.RemapAction("Jump", {KeyBinding(KeyCode::Enter)}, {}));
+    EXPECT_FALSE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_FALSE(inputSystem.IsActionHeld("Jump"));
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, false);
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Enter, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionTriggeredUVE("Jump"));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
+    inputSystem.SetKeyState(KeyCode::Space, false);
+    inputSystem.SetKeyState(KeyCode::Enter, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionTriggered("Jump"));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
 
-    EXPECT_FALSE(inputSystem.RemapActionUVE(
-        "Jump", {GamepadButtonBindingUVE(kMaximumGamepadCountUVE, GamepadButtonUVE::South)}, {}));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
-    EXPECT_FALSE(inputSystem.RemapActionUVE("Missing", {KeyBindingUVE(KeyCodeUVE::A)}, {}));
+    EXPECT_FALSE(inputSystem.RemapAction(
+        "Jump", {GamepadButtonBinding(kMaximumGamepadCount, GamepadButton::South)}, {}));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
+    EXPECT_FALSE(inputSystem.RemapAction("Missing", {KeyBinding(KeyCode::A)}, {}));
 }
 
-TEST_F(InputSystemUVETest, KeyboardAndMouseSentinelInputsAreIgnoredSafely) {
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Count, true);
-    inputSystem.SetMouseButtonStateUVE(MouseButtonUVE::Count, true);
-    inputSystem.UpdateUVE();
+TEST_F(InputSystemTest, KeyboardAndMouseSentinelInputsAreIgnoredSafely) {
+    inputSystem.SetKeyState(KeyCode::Count, true);
+    inputSystem.SetMouseButtonState(MouseButton::Count, true);
+    inputSystem.Update();
 
-    EXPECT_FALSE(inputSystem.IsKeyDownUVE(KeyCodeUVE::Count));
-    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::Count));
-    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrameUVE(KeyCodeUVE::Count));
-    EXPECT_FALSE(inputSystem.IsMouseButtonDownUVE(MouseButtonUVE::Count));
-    EXPECT_FALSE(inputSystem.WasMouseButtonPressedThisFrameUVE(MouseButtonUVE::Count));
-    EXPECT_FALSE(inputSystem.WasMouseButtonReleasedThisFrameUVE(MouseButtonUVE::Count));
+    EXPECT_FALSE(inputSystem.IsKeyDown(KeyCode::Count));
+    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrame(KeyCode::Count));
+    EXPECT_FALSE(inputSystem.WasKeyReleasedThisFrame(KeyCode::Count));
+    EXPECT_FALSE(inputSystem.IsMouseButtonDown(MouseButton::Count));
+    EXPECT_FALSE(inputSystem.WasMouseButtonPressedThisFrame(MouseButton::Count));
+    EXPECT_FALSE(inputSystem.WasMouseButtonReleasedThisFrame(MouseButton::Count));
 }
 
-TEST_F(InputSystemUVETest, InvalidInitialBindingsAreRejectedAtomically) {
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Invalid", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Count),
-                                                                  MouseBindingUVE(MouseButtonUVE::Count)}, {}});
+TEST_F(InputSystemTest, InvalidInitialBindingsAreRejectedAtomically) {
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
+    inputSystem.RegisterAction(
+        InputAction{"Invalid", InputActionType::Button, {KeyBinding(KeyCode::Count),
+                                                                  MouseBinding(MouseButton::Count)}, {}});
 
-    std::vector<InputBindingUVE> overCapBindings(33U, KeyBindingUVE(KeyCodeUVE::Space));
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"OverCap", InputActionTypeUVE::Axis1D, std::move(overCapBindings), {}});
+    std::vector<InputBinding> overCapBindings(33U, KeyBinding(KeyCode::Space));
+    inputSystem.RegisterAction(
+        InputAction{"OverCap", InputActionType::Axis1D, std::move(overCapBindings), {}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
-    EXPECT_FALSE(inputSystem.IsActionTriggeredUVE("Invalid"));
-    EXPECT_FALSE(inputSystem.IsActionHeldUVE("Invalid"));
-    EXPECT_NEAR(inputSystem.GetAxisValueUVE("OverCap"), 0.0F, kEpsilon);
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
+    EXPECT_FALSE(inputSystem.IsActionTriggered("Invalid"));
+    EXPECT_FALSE(inputSystem.IsActionHeld("Invalid"));
+    EXPECT_NEAR(inputSystem.GetAxisValue("OverCap"), 0.0F, kEpsilon);
 
-    EXPECT_FALSE(inputSystem.RemapActionUVE("Jump", {KeyBindingUVE(KeyCodeUVE::Count)}, {}));
-    EXPECT_FALSE(inputSystem.RemapActionUVE("Jump", {MouseBindingUVE(MouseButtonUVE::Count)}, {}));
-    EXPECT_TRUE(inputSystem.IsActionHeldUVE("Jump"));
+    EXPECT_FALSE(inputSystem.RemapAction("Jump", {KeyBinding(KeyCode::Count)}, {}));
+    EXPECT_FALSE(inputSystem.RemapAction("Jump", {MouseBinding(MouseButton::Count)}, {}));
+    EXPECT_TRUE(inputSystem.IsActionHeld("Jump"));
 }
 
-TEST_F(InputSystemUVETest, ButtonActionTriggered_QueuesAndDeliversInputActionTriggeredEventUVE) {
+TEST_F(InputSystemTest, ButtonActionTriggered_QueuesAndDeliversInputActionTriggeredEvent) {
     std::string receivedActionName;
-    InputActionTypeUVE receivedType = InputActionTypeUVE::Axis1D;
+    InputActionType receivedType = InputActionType::Axis1D;
     float receivedAxisValue = -1.0F;
     int receivedCount = 0;
-    eventSystem.Subscribe<InputActionTriggeredEventUVE>(
-        [&](const InputActionTriggeredEventUVE& event) {
+    eventSystem.Subscribe<InputActionTriggeredEvent>(
+        [&](const InputActionTriggeredEvent& event) {
             receivedActionName = event.actionName;
             receivedType = event.type;
             receivedAxisValue = event.axisValue;
             ++receivedCount;
         });
 
-    inputSystem.RegisterActionUVE(
-        InputActionUVE{"Jump", InputActionTypeUVE::Button, {KeyBindingUVE(KeyCodeUVE::Space)}, {}});
+    inputSystem.RegisterAction(
+        InputAction{"Jump", InputActionType::Button, {KeyBinding(KeyCode::Space)}, {}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::Space, true);
-    inputSystem.UpdateUVE();
+    inputSystem.SetKeyState(KeyCode::Space, true);
+    inputSystem.Update();
     ASSERT_EQ(receivedCount, 0); // queued, not yet dispatched
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(receivedCount, 1);
     EXPECT_EQ(receivedActionName, "Jump");
-    EXPECT_EQ(receivedType, InputActionTypeUVE::Button);
+    EXPECT_EQ(receivedType, InputActionType::Button);
     EXPECT_NEAR(receivedAxisValue, 0.0F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, AxisActionCrossingThreshold_QueuesCopiedAxisEvent) {
+TEST_F(InputSystemTest, AxisActionCrossingThreshold_QueuesCopiedAxisEvent) {
     int receivedCount = 0;
-    InputActionTypeUVE receivedType = InputActionTypeUVE::Button;
+    InputActionType receivedType = InputActionType::Button;
     float receivedAxisValue = 0.0F;
-    eventSystem.Subscribe<InputActionTriggeredEventUVE>(
-        [&](const InputActionTriggeredEventUVE& event) {
+    eventSystem.Subscribe<InputActionTriggeredEvent>(
+        [&](const InputActionTriggeredEvent& event) {
             ++receivedCount;
             receivedType = event.type;
             receivedAxisValue = event.axisValue;
         });
 
-    inputSystem.RegisterActionUVE(InputActionUVE{"MoveHorizontal",
-                                                   InputActionTypeUVE::Axis1D,
-                                                   {KeyBindingUVE(KeyCodeUVE::D)},
-                                                   {KeyBindingUVE(KeyCodeUVE::A)}});
+    inputSystem.RegisterAction(InputAction{"MoveHorizontal",
+                                                   InputActionType::Axis1D,
+                                                   {KeyBinding(KeyCode::D)},
+                                                   {KeyBinding(KeyCode::A)}});
 
-    inputSystem.SetKeyStateUVE(KeyCodeUVE::D, true);
-    inputSystem.UpdateUVE();
+    inputSystem.SetKeyState(KeyCode::D, true);
+    inputSystem.Update();
     EXPECT_EQ(receivedCount, 0); // queued, not yet dispatched
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(receivedCount, 1);
-    EXPECT_EQ(receivedType, InputActionTypeUVE::Axis1D);
+    EXPECT_EQ(receivedType, InputActionType::Axis1D);
     EXPECT_NEAR(receivedAxisValue, 1.0F, kEpsilon);
 }
 
-TEST_F(InputSystemUVETest, AxisActionBelowThreshold_DoesNotQueueEvent) {
-    GamepadInputSystemUVE gamepad{0.0F};
-    InputSystemUVE gamepadInputSystem{eventSystem, &gamepad};
+TEST_F(InputSystemTest, AxisActionBelowThreshold_DoesNotQueueEvent) {
+    GamepadInputSystem gamepad{0.0F};
+    InputSystem gamepadInputSystem{eventSystem, &gamepad};
     int receivedCount = 0;
-    eventSystem.Subscribe<InputActionTriggeredEventUVE>(
-        [&receivedCount](const InputActionTriggeredEventUVE&) { ++receivedCount; });
-    gamepadInputSystem.RegisterActionUVE(InputActionUVE{
-        "MoveHorizontal", InputActionTypeUVE::Axis1D,
-        {GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 1.0F)}, {}});
+    eventSystem.Subscribe<InputActionTriggeredEvent>(
+        [&receivedCount](const InputActionTriggeredEvent&) { ++receivedCount; });
+    gamepadInputSystem.RegisterAction(InputAction{
+        "MoveHorizontal", InputActionType::Axis1D,
+        {GamepadAxisBinding(0U, GamepadAxis::LeftX, 1.0F)}, {}});
 
-    gamepad.SetConnectedUVE(0U, true);
-    gamepad.SetAxisStateUVE(0U, GamepadAxisUVE::LeftX, 0.5F);
-    gamepad.UpdateUVE();
-    gamepadInputSystem.UpdateUVE();
-    eventSystem.DispatchQueuedUVE();
+    gamepad.SetConnected(0U, true);
+    gamepad.SetAxisState(0U, GamepadAxis::LeftX, 0.5F);
+    gamepad.Update();
+    gamepadInputSystem.Update();
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(receivedCount, 0);
 }
 
-TEST_F(InputSystemUVETest, AxisActionGamepadCrossingThreshold_UsesPreviousAxisSnapshot) {
-    GamepadInputSystemUVE gamepad{0.0F};
-    InputSystemUVE gamepadInputSystem{eventSystem, &gamepad};
+TEST_F(InputSystemTest, AxisActionGamepadCrossingThreshold_UsesPreviousAxisSnapshot) {
+    GamepadInputSystem gamepad{0.0F};
+    InputSystem gamepadInputSystem{eventSystem, &gamepad};
     float receivedAxisValue = 0.0F;
     int receivedCount = 0;
-    eventSystem.Subscribe<InputActionTriggeredEventUVE>(
-        [&](const InputActionTriggeredEventUVE& event) {
+    eventSystem.Subscribe<InputActionTriggeredEvent>(
+        [&](const InputActionTriggeredEvent& event) {
             ++receivedCount;
             receivedAxisValue = event.axisValue;
         });
-    gamepadInputSystem.RegisterActionUVE(InputActionUVE{
-        "MoveHorizontal", InputActionTypeUVE::Axis1D,
-        {GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 1.0F)}, {}});
+    gamepadInputSystem.RegisterAction(InputAction{
+        "MoveHorizontal", InputActionType::Axis1D,
+        {GamepadAxisBinding(0U, GamepadAxis::LeftX, 1.0F)}, {}});
 
-    gamepad.SetConnectedUVE(0U, true);
-    gamepad.SetAxisStateUVE(0U, GamepadAxisUVE::LeftX, 0.8F);
-    gamepad.UpdateUVE();
-    gamepadInputSystem.UpdateUVE();
-    eventSystem.DispatchQueuedUVE();
+    gamepad.SetConnected(0U, true);
+    gamepad.SetAxisState(0U, GamepadAxis::LeftX, 0.8F);
+    gamepad.Update();
+    gamepadInputSystem.Update();
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(receivedCount, 1);
     EXPECT_NEAR(receivedAxisValue, 0.8F, kEpsilon);

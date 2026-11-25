@@ -24,25 +24,25 @@ namespace UVE::Scene {
 ///
 /// At play entry the editor resolves exactly one enabled spawn point deterministically (stable
 /// content order, not whatever order the pool happens to iterate in), moves the player entity
-/// there (the entity carrying a CharacterControllerComponentUVE), and a point authored with
+/// there (the entity carrying a CharacterControllerComponent), and a point authored with
 /// `oneShot = true` disables itself after firing - so a checkpoint-style chain spends each
 /// point once per session. All of it happens after the play-mode document snapshot is captured,
 /// so leaving Play restores the player's authored pose and every spent one-shot untouched.
-struct SpawnPoint3DComponentUVE final {
+struct SpawnPoint3DComponent final {
 
     std::string spawnTag = "spawn";
-    Math::Vector3UVE localPosition{};
-    Math::QuaternionUVE localRotation{};
+    Math::Vector3 localPosition{};
+    Math::Quaternion localRotation{};
     bool enabled = true;
     bool oneShot = false;
 };
 
-[[nodiscard]] bool IsSpawnPoint3DObjectComponentValidUVE(const SpawnPoint3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsSpawnPoint3DObjectComponentValid(const SpawnPoint3DComponent& value) noexcept;
 
 /// One spawn point as the selection resolver sees it: already filtered for enabled+valid by the
 /// caller (that filtering needs the ECS, which this file deliberately never touches).
-struct SpawnPoint3DCandidateUVE final {
-    EntityUVE entity = kInvalidEntityUVE;
+struct SpawnPoint3DCandidate final {
+    Entity entity = kInvalidEntity;
     bool oneShot = false;
 };
 
@@ -52,21 +52,21 @@ struct SpawnPoint3DCandidateUVE final {
 /// two consumers that must never disagree: the selection resolver below, and the result order of
 /// the spawn query (uve/scene/spawn_point_query_uve.h), where "the first spawn point" is read
 /// straight off the returned list.
-[[nodiscard]] bool SortsBeforeSpawnPointUVE(EntityUVE lhs, EntityUVE rhs) noexcept;
+[[nodiscard]] bool SortsBeforeSpawnPoint(Entity lhs, Entity rhs) noexcept;
 
 /// Deterministic play-entry selection: the enabled candidate that sorts FIRST in stable content
 /// order ((index, generation) lexicographic - pool iteration order and creation timestamps are
 /// both wrong answers on purpose, because a saved scene must spawn the same way every time on
 /// every machine). Empty input yields no spawn; any rule richer than this (per-player tags,
 /// teams) lands here as a new resolver when the gameplay data for it actually exists.
-[[nodiscard]] std::optional<EntityUVE> ResolveSpawnPoint3DSelectionUVE(
-    std::span<const SpawnPoint3DCandidateUVE> candidates) noexcept;
+[[nodiscard]] std::optional<Entity> ResolveSpawnPoint3DSelection(
+    std::span<const SpawnPoint3DCandidate> candidates) noexcept;
 
 /// A composed pose: position + rotation. Frame-agnostic by design - the same shape answers both
 /// "where in the world the player spawns" and "what local pose realises that under its parent".
-struct SpawnPoint3DPoseUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
+struct SpawnPoint3DPose final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
 };
 
 /// Composes the spawn point's object world pose with its authored local offset (same convention
@@ -74,9 +74,9 @@ struct SpawnPoint3DPoseUVE final {
 /// via quaternion multiplication, then normalizes). Object scale is deliberately not applied -
 /// see the component's doc. Any non-finite input, or a rotation too degenerate to normalize,
 /// yields no pose rather than teleporting the player into a garbage transform.
-[[nodiscard]] std::optional<SpawnPoint3DPoseUVE> ComposeSpawnPointPoseUVE(
-    Math::Vector3UVE objectPosition, Math::QuaternionUVE objectRotation, Math::Vector3UVE localPosition,
-    Math::QuaternionUVE localRotation) noexcept;
+[[nodiscard]] std::optional<SpawnPoint3DPose> ComposeSpawnPointPose(
+    Math::Vector3 objectPosition, Math::Quaternion objectRotation, Math::Vector3 localPosition,
+    Math::Quaternion localRotation) noexcept;
 
 /// The exact inverse of the scene sweep's parent composition
 /// (`worldPos = parentPos + Rotate(parentRot, parentScale * localPos)`): recovers the LOCAL pose
@@ -85,8 +85,8 @@ struct SpawnPoint3DPoseUVE final {
 /// parent scale; a zero (or denormal) parent scale axis refuses the move, because a player
 /// under a scaled-out ancestor has no meaningful local pose to solve for. With no parent at
 /// all, call it with identity parent TRS and the world pose falls straight through.
-[[nodiscard]] std::optional<SpawnPoint3DPoseUVE> ResolveSpawnPointPlayerLocalUVE(
-    const SpawnPoint3DPoseUVE& spawnPose, Math::Vector3UVE parentPosition,
-    Math::QuaternionUVE parentRotation, Math::Vector3UVE parentScale) noexcept;
+[[nodiscard]] std::optional<SpawnPoint3DPose> ResolveSpawnPointPlayerLocal(
+    const SpawnPoint3DPose& spawnPose, Math::Vector3 parentPosition,
+    Math::Quaternion parentRotation, Math::Vector3 parentScale) noexcept;
 
 } // namespace UVE::Scene

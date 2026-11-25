@@ -11,11 +11,11 @@
 
 namespace UVE::App::Viewports {
 
-ViewportStudioCameraUVE::ViewportStudioCameraUVE() {
+ViewportStudioCamera::ViewportStudioCamera() {
     m_camera.Settings().allowFullOrbit = true;
 }
 
-void ViewportStudioCameraUVE::ApplyStudioFramingUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+void ViewportStudioCamera::ApplyStudioFraming(const Editor::Editor::ViewportOverlayState& overlayState) {
     m_camera.SetOrthographic(false);
     if (overlayState.studioFramingSerial != m_appliedStudioFramingSerial) {
         m_appliedStudioFramingSerial = overlayState.studioFramingSerial;
@@ -30,37 +30,37 @@ void ViewportStudioCameraUVE::ApplyStudioFramingUVE(const Editor::EditorUVE::Vie
     }
 }
 
-void ViewportStudioCameraUVE::HandleWheelDollyUVE(const Editor::EditorViewportInputUVE& input) {
+void ViewportStudioCamera::HandleWheelDolly(const Editor::EditorViewportInput& input) {
     if (input.hovered && input.wheel != 0.0F) {
         m_camera.Dolly(input.wheel);
     }
     m_camera.Update(input.deltaTime);
 }
 
-void ViewportStudioCameraUVE::UploadBoneOverlaysUVE(univex::app::ViewportRenderPass& renderPass,
-                                                    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+void ViewportStudioCamera::UploadBoneOverlays(univex::app::ViewportRenderPass& renderPass,
+                                                    const Editor::Editor::ViewportOverlayState& overlayState) {
     const auto toVec3 = [](const std::array<float, 3>& value) {
         return univex::math::Vec3{value[0], value[1], value[2]};
     };
-    std::vector<univex::gizmo::BoneOverlayUVE> bones;
+    std::vector<univex::gizmo::BoneOverlay> bones;
     bones.reserve(overlayState.bones.size());
     for (const auto& bone : overlayState.bones) {
-        bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
+        bones.push_back(univex::gizmo::BoneOverlay{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
                                                       bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
                                                       bone.boneSelected, bone.hasColour, toVec3(bone.colour),
                                                       bone.jointOnly, bone.helper});
     }
-    renderPass.SetBonesUVE(std::move(bones));
+    renderPass.SetBones(std::move(bones));
 }
 
-void ViewportStudioCameraUVE::UploadColliderLinesUVE(univex::app::ViewportRenderPass& renderPass,
-                                                     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-    constexpr float kColliderWireRedUVE = 0.20F;
-    constexpr float kColliderWireGreenUVE = 0.95F;
-    constexpr float kColliderWireBlueUVE = 0.45F;
-    constexpr float kColliderWireWidthPixelsUVE = 1.5F;
-    constexpr float kColliderHighlightWidthPixelsUVE = 2.5F;
-    const univex::math::Vec3 wireColour{kColliderWireRedUVE, kColliderWireGreenUVE, kColliderWireBlueUVE};
+void ViewportStudioCamera::UploadColliderLines(univex::app::ViewportRenderPass& renderPass,
+                                                     const Editor::Editor::ViewportOverlayState& overlayState) {
+    constexpr float kColliderWireRed = 0.20F;
+    constexpr float kColliderWireGreen = 0.95F;
+    constexpr float kColliderWireBlue = 0.45F;
+    constexpr float kColliderWireWidthPixels = 1.5F;
+    constexpr float kColliderHighlightWidthPixels = 2.5F;
+    const univex::math::Vec3 wireColour{kColliderWireRed, kColliderWireGreen, kColliderWireBlue};
     const univex::math::Vec3 highlightColour{0.70F, 1.00F, 0.82F};
     const auto toVec3 = [](const std::array<float, 3>& value) {
         return univex::math::Vec3{value[0], value[1], value[2]};
@@ -70,13 +70,13 @@ void ViewportStudioCameraUVE::UploadColliderLinesUVE(univex::app::ViewportRender
     for (const auto& line : overlayState.colliderLines) {
         lines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
                                                  line.highlighted ? highlightColour : wireColour,
-                                                 line.highlighted ? kColliderHighlightWidthPixelsUVE
-                                                                  : kColliderWireWidthPixelsUVE});
+                                                 line.highlighted ? kColliderHighlightWidthPixels
+                                                                  : kColliderWireWidthPixels});
     }
-    renderPass.SetColliderWireframesUVE(std::move(lines));
+    renderPass.SetColliderWireframes(std::move(lines));
 }
 
-void ViewportStudioCameraUVE::ExportCameraForHostUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportStudioCamera::ExportCameraForHost(const Editor::Editor::ViewportOverlayState& overlayState,
                                                      const int width,
                                                      const int height) const {
     auto& cam = overlayState.viewCamera;

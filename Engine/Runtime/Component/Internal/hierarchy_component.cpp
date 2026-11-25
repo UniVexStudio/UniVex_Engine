@@ -6,48 +6,48 @@
 
 namespace UVE::Scene {
 
-std::int64_t NextSiblingOrderUVE() noexcept {
+std::int64_t NextSiblingOrder() noexcept {
     // One counter for the process. Orders are compared only between siblings, so any strictly
     // increasing source works; 64 bits cannot run out in a session.
     static std::atomic<std::int64_t> next{0};
     return next.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
-bool IsHierarchyRootUVE(const HierarchyComponentUVE& component) noexcept {
-    return component.parent == kInvalidEntityUVE;
+bool IsHierarchyRoot(const HierarchyComponent& component) noexcept {
+    return component.parent == kInvalidEntity;
 }
 
-bool IsHierarchyComponentValidForEntityUVE(const HierarchyComponentUVE& component,
-                                           const EntityUVE selfEntity) noexcept {
-    if (selfEntity == kInvalidEntityUVE) {
+bool IsHierarchyComponentValidForEntity(const HierarchyComponent& component,
+                                           const Entity selfEntity) noexcept {
+    if (selfEntity == kInvalidEntity) {
         return true;
     }
     return component.parent != selfEntity;
 }
 
-bool CompareEntityHandleOrderUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
+bool CompareEntityHandleOrder(const Entity lhs, const Entity rhs) noexcept {
     if (lhs.index != rhs.index) {
         return lhs.index < rhs.index;
     }
     return lhs.generation < rhs.generation;
 }
 
-bool CompareSiblingHierarchyOrderUVE(const std::int64_t lhsOrder, const EntityUVE lhsEntity,
+bool CompareSiblingHierarchyOrder(const std::int64_t lhsOrder, const Entity lhsEntity,
                                      const std::int64_t rhsOrder,
-                                     const EntityUVE rhsEntity) noexcept {
+                                     const Entity rhsEntity) noexcept {
     if (lhsOrder != rhsOrder) {
         return lhsOrder < rhsOrder;
     }
-    return CompareEntityHandleOrderUVE(lhsEntity, rhsEntity);
+    return CompareEntityHandleOrder(lhsEntity, rhsEntity);
 }
 
-bool AssignParentAndAdvanceSiblingOrderUVE(HierarchyComponentUVE& component,
-                                           const EntityUVE newParent) noexcept {
+bool AssignParentAndAdvanceSiblingOrder(HierarchyComponent& component,
+                                           const Entity newParent) noexcept {
     if (component.parent == newParent) {
         return false;
     }
     component.parent = newParent;
-    component.siblingOrder = NextSiblingOrderUVE();
+    component.siblingOrder = NextSiblingOrder();
     return true;
 }
 

@@ -20,29 +20,29 @@ namespace UVE::Math {
 /// validators reject negatives, not brightness); albedo additionally clamps at ITS validator.
 /// The display boundary is explicit and one-directional per call: display-authored values (the
 /// inspector picker, MTL `Kd`/`Ke`, hex triplets) enter linear storage through
-/// ColorFromDisplayUVE(), and stored linear values leave for display through DisplayFromColorUVE().
+/// ColorFromDisplay(), and stored linear values leave for display through DisplayFromColor().
 /// There are deliberately no implicit conversions either way — the old bug was a display value
 /// silently consumed as linear, and this type exists to make that a compile error instead.
 /// Thread-safety: value type; safe to copy/pass freely, no shared state.
-struct ColorUVE {
+struct Color {
     float r = 0.0F;
     float g = 0.0F;
     float b = 0.0F;
 };
 
-[[nodiscard]] constexpr bool operator==(const ColorUVE& lhs, const ColorUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator==(const Color& lhs, const Color& rhs) noexcept {
     return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b;
 }
 
-[[nodiscard]] constexpr bool operator!=(const ColorUVE& lhs, const ColorUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator!=(const Color& lhs, const Color& rhs) noexcept {
     return !(lhs == rhs);
 }
 
 /// Lossless channel shuffle into a Vector3, for the vec3-only sinks this color still feeds (the
-/// `SetVector3UVE` uniform upload, renderer staging, decals). No colorspace change: linear stays
-/// linear, exactly as the old `Vector3UVE` color fields consumed it.
-[[nodiscard]] constexpr Vector3UVE ToVector3UVE(const ColorUVE& color) noexcept {
-    return Vector3UVE{color.r, color.g, color.b};
+/// `SetVector3` uniform upload, renderer staging, decals). No colorspace change: linear stays
+/// linear, exactly as the old `Vector3` color fields consumed it.
+[[nodiscard]] constexpr Vector3 ToVector3(const Color& color) noexcept {
+    return Vector3{color.r, color.g, color.b};
 }
 
 /// sRGB display-encoded `value` to linear, per the sRGB transfer function (piecewise, matching
@@ -50,21 +50,21 @@ struct ColorUVE {
 /// past [0,1] in both directions (the formula is continuous through 0 and monotonic past 1), and
 /// never clamped: clamping is the caller's policy, and HDR emissives legitimately exceed 1.
 /// Non-constexpr: uses std::pow.
-[[nodiscard]] float DisplayToLinearUVE(float value) noexcept;
+[[nodiscard]] float DisplayToLinear(float value) noexcept;
 
-/// Linear `value` to sRGB display-encoded, the inverse of DisplayToLinearUVE(). Same honest
+/// Linear `value` to sRGB display-encoded, the inverse of DisplayToLinear(). Same honest
 /// extension, same no-clamping contract. Non-constexpr: uses std::pow.
-[[nodiscard]] float LinearToDisplayUVE(float value) noexcept;
+[[nodiscard]] float LinearToDisplay(float value) noexcept;
 
-/// Per-channel DisplayToLinearUVE(): the single front door through which display-authored RGB
+/// Per-channel DisplayToLinear(): the single front door through which display-authored RGB
 /// enters linear storage.
-[[nodiscard]] ColorUVE ColorFromDisplayUVE(const Vector3UVE& displayColor) noexcept;
+[[nodiscard]] Color ColorFromDisplay(const Vector3& displayColor) noexcept;
 
-/// Per-channel LinearToDisplayUVE(): stored linear out to a display triple (for the inspector
+/// Per-channel LinearToDisplay(): stored linear out to a display triple (for the inspector
 /// picker, thumbnails, anything an author looks at).
-[[nodiscard]] Vector3UVE DisplayFromColorUVE(const ColorUVE& color) noexcept;
+[[nodiscard]] Vector3 DisplayFromColor(const Color& color) noexcept;
 
 /// Formats `color` as `"(r, g, b)"`, for logging/debugging.
-[[nodiscard]] std::string ToStringUVE(const ColorUVE& color);
+[[nodiscard]] std::string ToString(const Color& color);
 
 } // namespace UVE::Math

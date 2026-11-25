@@ -25,10 +25,10 @@
 #                               C_INCLUDE_PATH / CPLUS_INCLUDE_PATH / LIBRARY_PATH (tests that
 #                               include <GL/gl.h> and <GLFW/glfw3.h> directly expect a system
 #                               install) and MESA_GL_VERSION_OVERRIDE=4.6 / MESA_GLSL_VERSION_OVERRIDE=460
-#                               (softpipe is really GL 3.3; WindowDescUVE asks for a 4.6 Core context)
+#                               (softpipe is really GL 3.3; WindowDesc asks for a 4.6 Core context)
 #
 # Afterwards the engine configures with UVE_HAS_DESKTOP_GL=ON and every GL-gated target
-# (uve_rhi_opengl, the GLFW WindowManagerUVE, the editor viewport) compiles AND runs headless.
+# (uve_rhi_opengl, the GLFW WindowManager, the editor viewport) compiles AND runs headless.
 # FindOpenGL has to run in LEGACY mode: there is no GLVND libOpenGL/libGLX, only libGL -> OSMesa.
 #   source ~/.univex_env
 #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUVE_BUILD_TESTS=ON \
@@ -91,7 +91,7 @@ export LD_LIBRARY_PATH="\$UVE_TOOLCHAIN/vulkan:\$UVE_TOOLCHAIN/lib\${LD_LIBRARY_
 # CPU Vulkan device (SwiftShader). Both spellings: VK_ICD_FILENAMES is the legacy name.
 export VK_ICD_FILENAMES="\$UVE_TOOLCHAIN/vulkan/vk_swiftshader_icd.json"
 export VK_DRIVER_FILES="\$UVE_TOOLCHAIN/vulkan/vk_swiftshader_icd.json"
-# softpipe (no LLVM, no tessellation) tops out at OpenGL 3.3 Core, but WindowDescUVE defaults to
+# softpipe (no LLVM, no tessellation) tops out at OpenGL 3.3 Core, but WindowDesc defaults to
 # a 4.6 Core request, which OSMesa would refuse. Mesa's own overrides make it advertise 4.6 / GLSL
 # 4.60 instead; compute, SSBO, image load/store and indirect draw are genuinely there, tessellation
 # and a few 4.x extras (texture_barrier, shader_draw_parameters, polygon_offset_clamp) are not.
@@ -212,7 +212,7 @@ fi
 
 # ---------------------------------------------------------------------------------------------
 # 5. GLFW 3.4, Null platform only. Upstream refuses to auto-select Null under GLFW_ANY_PLATFORM
-#    ("This binary only supports the Null platform"); the engine's WindowManagerUVE calls plain
+#    ("This binary only supports the Null platform"); the engine's WindowManager calls plain
 #    glfwInit(), so make that case connect Null instead. Null + the default (native) context API
 #    creates contexts through OSMesa (dlopen libOSMesa.so.8 - hence LD_LIBRARY_PATH above).
 # ---------------------------------------------------------------------------------------------

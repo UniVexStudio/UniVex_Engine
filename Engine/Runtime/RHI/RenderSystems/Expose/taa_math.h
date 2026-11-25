@@ -11,10 +11,10 @@
 
 namespace UVE::Render {
 
-inline constexpr std::uint32_t kTaaJitterSampleCountUVE = 16U;
+inline constexpr std::uint32_t kTaaJitterSampleCount = 16U;
 
 /// Radical-inverse Halton sequence in (0, 1) for low-discrepancy temporal sub-pixel jitter.
-[[nodiscard]] inline float HaltonSequenceUVE(std::uint32_t index, const std::uint32_t base) noexcept {
+[[nodiscard]] inline float HaltonSequence(std::uint32_t index, const std::uint32_t base) noexcept {
     if (base < 2U) {
         return 0.0F;
     }
@@ -29,15 +29,15 @@ inline constexpr std::uint32_t kTaaJitterSampleCountUVE = 16U;
 }
 
 /// Returns a deterministic sub-pixel NDC offset in (-1/width, +1/width) x (-1/height, +1/height).
-[[nodiscard]] inline std::array<float, 2> ComputeTaaJitterNdcUVE(const std::uint32_t frameIndex,
+[[nodiscard]] inline std::array<float, 2> ComputeTaaJitterNdc(const std::uint32_t frameIndex,
                                                                  const std::uint32_t width,
                                                                  const std::uint32_t height) noexcept {
     if (width == 0U || height == 0U) {
         return {0.0F, 0.0F};
     }
-    const std::uint32_t sample = (frameIndex % kTaaJitterSampleCountUVE) + 1U;
-    const float jitterPixelX = HaltonSequenceUVE(sample, 2U) - 0.5F;
-    const float jitterPixelY = HaltonSequenceUVE(sample, 3U) - 0.5F;
+    const std::uint32_t sample = (frameIndex % kTaaJitterSampleCount) + 1U;
+    const float jitterPixelX = HaltonSequence(sample, 2U) - 0.5F;
+    const float jitterPixelY = HaltonSequence(sample, 3U) - 0.5F;
     return {
         (2.0F * jitterPixelX) / static_cast<float>(width),
         (2.0F * jitterPixelY) / static_cast<float>(height),
@@ -45,12 +45,12 @@ inline constexpr std::uint32_t kTaaJitterSampleCountUVE = 16U;
 }
 
 /// Applies sub-pixel TAA jitter directly to a projection matrix without modifying clip planes.
-[[nodiscard]] inline Math::Matrix4x4UVE ApplyTaaProjectionJitterUVE(const Math::Matrix4x4UVE& projection,
+[[nodiscard]] inline Math::Matrix4x4 ApplyTaaProjectionJitter(const Math::Matrix4x4& projection,
                                                                     const std::uint32_t frameIndex,
                                                                     const std::uint32_t width,
                                                                     const std::uint32_t height) noexcept {
-    Math::Matrix4x4UVE jittered = projection;
-    const std::array<float, 2> ndc = ComputeTaaJitterNdcUVE(frameIndex, width, height);
+    Math::Matrix4x4 jittered = projection;
+    const std::array<float, 2> ndc = ComputeTaaJitterNdc(frameIndex, width, height);
     const bool isPerspective = std::abs(projection.m[3][2]) > 1.0e-5F;
     if (isPerspective) {
         jittered.m[0][2] += ndc[0];

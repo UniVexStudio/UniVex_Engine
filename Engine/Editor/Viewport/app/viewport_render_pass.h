@@ -7,7 +7,7 @@
 //   bones, collision wireframes and camera frustums
 //
 // Scene geometry is NOT drawn here: entities are rendered by the host
-// engine's own renderer (Renderer3DUVE, via EditorMeshLayerUVE) and
+// engine's own renderer (Renderer3D, via EditorMeshLayer) and
 // composited against this image. This pass owns only the things the
 // renderer has no concept of - the editor's grid, overlays and backdrop.
 // The transform and orientation gizmos are the editor shell's own.
@@ -61,14 +61,14 @@ public:
     // with them afterwards, and the gizmos - which must never be occluded by the
     // object they manipulate - go last of all.
     //
-    // Expected order: ClearUVE, RenderBackgroundUVE, [host scene geometry],
-    // RenderGridUVE, RenderOverlayUVE.
-    void ClearUVE(int framebufferWidth, int framebufferHeight) const;
+    // Expected order: Clear, RenderBackground, [host scene geometry],
+    // RenderGrid, RenderOverlay.
+    void Clear(int framebufferWidth, int framebufferHeight) const;
     /// `neutralEditorFallback` is reserved for Main's empty authoring scene. It must not alter
     /// Entity Editor, Retarget, standalone viewport, or authored WorldEnvironment presentation.
-    void RenderBackgroundUVE(bool neutralEditorFallback = false) const;
-    void RenderGridUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
-    void RenderOverlayUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+    void RenderBackground(bool neutralEditorFallback = false) const;
+    void RenderGrid(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
+    void RenderOverlay(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
     [[nodiscard]] univex::render::InfiniteGridRenderer& Grid() { return grid_; }
     [[nodiscard]] const univex::render::InfiniteGridRenderer& Grid() const { return grid_; }
@@ -82,47 +82,47 @@ public:
     // ---- axis colours -----------------------------------------------------
     // The one way to change the X/Y/Z hues, because they have two consumers that must not drift:
     // the gizmo's own axes and the grid's axis lines, which run through the same origin. Setting
-    // both here, with the grid taking AxisPaletteUVE's darker variant, keeps that relationship a
+    // both here, with the grid taking AxisPalette's darker variant, keeps that relationship a
     // single rule rather than something each caller has to remember.
     //
-    // An invalid palette (a channel outside 0..1, or NaN - see IsAxisPaletteValidUVE) is refused
+    // An invalid palette (a channel outside 0..1, or NaN - see IsAxisPaletteValid) is refused
     // outright and nothing changes, so a corrupt settings file cannot leave the viewport drawing
     // axes in colours nobody picked. Returns whether the palette was applied.
-    bool SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette);
+    bool SetAxisPalette(const univex::viewport::AxisPalette& palette);
     /// Overall strength of the ground grid, clamped to 0..1.
-    void SetGridOpacityUVE(float opacity);
+    void SetGridOpacity(float opacity);
     /// Which world plane the grid is drawn on (see univex::render::GridPlane).
-    void SetGridPlaneUVE(univex::render::GridPlane plane);
+    void SetGridPlane(univex::render::GridPlane plane);
     /// The grid's finest spacing in world units (GridSettings::baseSpacing). A size that is not
     /// finite or not positive is ignored and the grid keeps its current spacing.
-    void SetGridCellSizeUVE(float cellSize);
+    void SetGridCellSize(float cellSize);
     /// How the selection outline looks (colour clamped to 0..1, thickness to 1..6 px).
-    void SetSelectionOutlineUVE(const univex::render::SelectionOutlineSettings& settings);
+    void SetSelectionOutline(const univex::render::SelectionOutlineSettings& settings);
     /// Draws the outline of the selected meshes' world-space triangles. Call after the scene and
-    /// the grid, before RenderOverlayUVE, so the gizmos stay on top.
-    void RenderSelectionOutlineUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
+    /// the grid, before RenderOverlay, so the gizmos stay on top.
+    void RenderSelectionOutline(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
                                    const std::vector<univex::render::SelectionOutlineVertex>& triangles);
     /// The selection silhouette mask only, read back (top-down, one byte per pixel), for a host
     /// that draws the outline band itself. False when there is nothing to outline.
-    [[nodiscard]] bool ReadSelectionMaskUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
+    [[nodiscard]] bool ReadSelectionMask(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
                                             const std::vector<univex::render::SelectionOutlineVertex>& triangles,
                                             std::vector<std::uint8_t>& outMask);
-    [[nodiscard]] const univex::render::SelectionOutlineSettings& SelectionOutlineSettingsUVE() const {
+    [[nodiscard]] const univex::render::SelectionOutlineSettings& SelectionOutlineSettings() const {
         return selectionOutlineSettings_;
     }
-    [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
+    [[nodiscard]] univex::viewport::AxisPalette GetAxisPalette() const;
 
     // The Skeleton3D bones to draw this frame, in world space (empty: none). Drawn over the
     // scene, so a rig inside its mesh is still visible and editable.
-    void SetBonesUVE(std::vector<univex::gizmo::BoneOverlayUVE> bones) { bones_ = std::move(bones); }
+    void SetBones(std::vector<univex::gizmo::BoneOverlay> bones) { bones_ = std::move(bones); }
 
-    void SetCameraFrustumMeshUVE(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
+    void SetCameraFrustumMesh(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
 
     // Collision shapes to draw this frame (the standard "Show Collision"): world-space line segments,
     // empty for none. Unlike the bones, these are DEPTH-TESTED against the scene and drawn before
     // the depth buffer is cleared - a collider behind a wall is behind a wall, which is the whole
     // point of looking at it from the camera the player will use.
-    void SetColliderWireframesUVE(std::vector<univex::gizmo::GizmoLine> lines) {
+    void SetColliderWireframes(std::vector<univex::gizmo::GizmoLine> lines) {
         colliderLines_ = std::move(lines);
     }
 
@@ -144,7 +144,7 @@ private:
 
     univex::viewport::ViewportSettings settings_{};
     GizmoStyle style_{};
-    std::vector<univex::gizmo::BoneOverlayUVE> bones_;
+    std::vector<univex::gizmo::BoneOverlay> bones_;
     std::vector<univex::gizmo::GizmoLine> colliderLines_;
     univex::gizmo::GizmoMesh cameraFrustumMesh_;
 };

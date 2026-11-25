@@ -18,37 +18,37 @@ namespace UVE::Editor {
 /// capture: a key, a mouse button (only with `includeMouse`, so clicking the window's own buttons
 /// binds nothing), a gamepad button, or a gamepad stick or trigger pushed past half way (bound in
 /// the direction it was pushed). Escape is never captured - it cancels listening.
-[[nodiscard]] std::optional<Input::InputBindingUVE> CaptureInputBindingUVE(const Input::IInputSystemUVE& input,
-                                                                         const Input::IGamepadInputSystemUVE& gamepads,
+[[nodiscard]] std::optional<Input::InputBinding> CaptureInputBinding(const Input::IInputSystem& input,
+                                                                         const Input::IGamepadInputSystem& gamepads,
                                                                          bool includeMouse);
 
 /// The other actions in `actions` that also use the input `binding` names - on either side of an
 /// axis - in map order. Empty when `actionIndex` is the only one.
-[[nodiscard]] std::vector<std::string> FindInputConflictsUVE(const std::vector<Input::InputActionUVE>& actions,
+[[nodiscard]] std::vector<std::string> FindInputConflicts(const std::vector<Input::InputAction>& actions,
                                                              std::size_t actionIndex,
-                                                             const Input::InputBindingUVE& binding);
+                                                             const Input::InputBinding& binding);
 
 /// `base`, or `base_2`, `base_3`... - the first name no action in `actions` has.
-[[nodiscard]] std::string MakeUniqueActionNameUVE(const std::vector<Input::InputActionUVE>& actions,
+[[nodiscard]] std::string MakeUniqueActionName(const std::vector<Input::InputAction>& actions,
                                                   std::string_view base);
 
 /// Restores one named action in `actions` from `projectDefaults`. Returns false if `actionName`
 /// is not present in `projectDefaults`.
-bool ResetActionToProjectDefaultUVE(std::vector<Input::InputActionUVE>& actions,
-                                    const std::vector<Input::InputActionUVE>& projectDefaults,
+bool ResetActionToProjectDefault(std::vector<Input::InputAction>& actions,
+                                    const std::vector<Input::InputAction>& projectDefaults,
                                     std::string_view actionName);
 
 /// Replaces `actions` with `projectDefaults`.
-void ResetInputMapToProjectDefaultsUVE(std::vector<Input::InputActionUVE>& actions,
-                                       const std::vector<Input::InputActionUVE>& projectDefaults);
+void ResetInputMapToProjectDefaults(std::vector<Input::InputAction>& actions,
+                                       const std::vector<Input::InputAction>& projectDefaults);
 
-/// Applies a player-facing runtime rebinding on `input` via `RemapActionUVE`.
-bool ApplyRuntimeActionRebindUVE(Input::IInputSystemUVE& input, std::string_view actionName,
-                                 const Input::InputBindingUVE& newBinding);
+/// Applies a player-facing runtime rebinding on `input` via `RemapAction`.
+bool ApplyRuntimeActionRebind(Input::IInputSystem& input, std::string_view actionName,
+                                 const Input::InputBinding& newBinding);
 
 /// Returns actions belonging to `actionSetPrefix` (e.g. "gameplay" matches "gameplay.*" or
 /// unprefixed actions when `actionSetPrefix == "gameplay"`).
-[[nodiscard]] std::vector<Input::InputActionUVE> FilterActionsBySetPrefixUVE(
-    const std::vector<Input::InputActionUVE>& actions, std::string_view actionSetPrefix);
+[[nodiscard]] std::vector<Input::InputAction> FilterActionsBySetPrefix(
+    const std::vector<Input::InputAction>& actions, std::string_view actionSetPrefix);
 
 } // namespace UVE::Editor

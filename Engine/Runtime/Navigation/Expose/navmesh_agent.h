@@ -18,7 +18,7 @@ namespace UVE::Navigation {
 /// There is no "searching" state: a path search is a synchronous walk over the mesh, so the step
 /// that decides to search is the step that has the route. A state nothing can ever be in is a state
 /// every consumer would have to handle for nothing.
-enum class NavAgentStatusUVE : std::uint8_t {
+enum class NavAgentStatus : std::uint8_t {
     /// No target, or the agent is switched off. It publishes no velocity.
     Idle = 0,
     /// Walking the path. `nextPathPosition` is the waypoint being approached.
@@ -35,7 +35,7 @@ enum class NavAgentStatusUVE : std::uint8_t {
 /// agent that will walk it, and an agent whose size disagrees with the bake is standing on a mesh
 /// that was eroded for somebody else. They are carried here so the mismatch is visible to whoever
 /// wires the two together.
-struct NavAgentSettingsUVE final {
+struct NavAgentSettings final {
     float radius = 0.5F;
     float height = 1.8F;
     /// Top speed on a straight leg, in metres per second.
@@ -62,19 +62,19 @@ struct NavAgentSettingsUVE final {
     /// How far either end of the request may sit off the mesh and still be brought onto it.
     float offMeshToleranceMetres = 2.0F;
     /// Another agent whose centre is closer than this pushes this one away, as a velocity offset on
-    /// top of the steering (see StepUVE's neighbour overload). 0 switches the rule off for this
+    /// top of the steering (see Step's neighbour overload). 0 switches the rule off for this
     /// agent whether or not the caller passes neighbours.
     float avoidanceRadiusMetres = 2.0F;
     /// The search budget one replan gets, reported back so a truncated search is visible as one.
-    /// One node is one doorway the chain stepped through; see NavPathRequestUVE.
+    /// One node is one doorway the chain stepped through; see NavPathRequest.
     std::size_t maximumExpandedNodes = 4096U;
 };
 
 /// Another agent, as this one's steering sees it: where it is and how wide it is. A caller that
 /// wants avoidance passes every agent in the scene, itself included - the steering recognises its
 /// own position and ignores it.
-struct NavAgentObstacleUVE final {
-    Math::Vector3UVE position{};
+struct NavAgentObstacle final {
+    Math::Vector3 position{};
     float radius = 0.5F;
 };
 
@@ -85,37 +85,37 @@ struct NavAgentObstacleUVE final {
 /// Character3D mover, a kinematic body, a script - is what actually moves the body and hands the new
 /// position back on the next step. The agent never writes a transform, which is what keeps it usable
 /// under whichever mover a project already has.
-class NavAgentUVE final {
+class NavAgent final {
 public:
-    void ConfigureUVE(const NavAgentSettingsUVE& settings) noexcept { m_settings = settings; }
-    [[nodiscard]] const NavAgentSettingsUVE& GetSettingsUVE() const noexcept { return m_settings; }
+    void Configure(const NavAgentSettings& settings) noexcept { m_settings = settings; }
+    [[nodiscard]] const NavAgentSettings& GetSettings() const noexcept { return m_settings; }
 
     /// A new target. Setting one that differs from the current target invalidates the route and arms
     /// the next step to search, so a script that changes the target every frame still gets a path to
     /// the newest one rather than walking to the first. Setting the SAME target - which is what a
     /// per-frame pass does, reading it out of a component - is not a new order and leaves the
     /// update interval alone.
-    void SetTargetUVE(const Math::Vector3UVE& target) noexcept;
-    void ClearTargetUVE() noexcept;
+    void SetTarget(const Math::Vector3& target) noexcept;
+    void ClearTarget() noexcept;
 
     /// The body's own position, handed back by whatever moved it. The next step plans from here.
-    void SetPositionUVE(const Math::Vector3UVE& position) noexcept;
+    void SetPosition(const Math::Vector3& position) noexcept;
 
-    void SetEnabledUVE(const bool enabled) noexcept;
+    void SetEnabled(const bool enabled) noexcept;
 
     /// Switches the layers this agent walks and drops the current route: a path found for the old
     /// layers may cross ground the new ones do not allow.
-    void SetNavigationLayersUVE(std::uint32_t navigationLayers) noexcept;
+    void SetNavigationLayers(std::uint32_t navigationLayers) noexcept;
 
     /// Forgets everything, including the target, and publishes no velocity.
-    void ResetUVE() noexcept;
+    void Reset() noexcept;
 
     /// One step of the agent: replan if the interval has elapsed or the target moved, walk the route
     /// towards the next waypoint, and publish the velocity the mover should apply.
     ///
     /// `deltaTimeSeconds` is simulation time, not real time: a paused game freezes agents with
     /// everything else, and the same step count produces the same route the second time.
-    void StepUVE(const NavmeshUVE& mesh, float deltaTimeSeconds) noexcept;
+    void Step(const Navmesh& mesh, float deltaTimeSeconds) noexcept;
 
     /// The same step with the other agents in the scene: each one inside the avoidance radius pushes
     /// this agent away by a falloff of the distance, on top of the steering and clamped to the same
@@ -126,50 +126,50 @@ public:
     /// the other with right of way. What it does guarantee is the ordinary corridor case: two agents
     /// on the same route end up beside each other rather than inside each other, and it never breaks
     /// the route or the published status.
-    void StepUVE(const NavmeshUVE& mesh, std::span<const NavAgentObstacleUVE> neighbours,
+    void Step(const Navmesh& mesh, std::span<const NavAgentObstacle> neighbours,
                  float deltaTimeSeconds) noexcept;
 
-    [[nodiscard]] const Math::Vector3UVE& GetPositionUVE() const noexcept { return m_position; }
-    [[nodiscard]] const Math::Vector3UVE& GetTargetUVE() const noexcept { return m_target; }
-    [[nodiscard]] bool HasTargetUVE() const noexcept { return m_hasTarget; }
-    [[nodiscard]] bool IsEnabledUVE() const noexcept { return m_enabled; }
+    [[nodiscard]] const Math::Vector3& GetPosition() const noexcept { return m_position; }
+    [[nodiscard]] const Math::Vector3& GetTarget() const noexcept { return m_target; }
+    [[nodiscard]] bool HasTarget() const noexcept { return m_hasTarget; }
+    [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled; }
 
     /// The velocity the mover should apply this step. Zero when there is nothing to walk to.
-    [[nodiscard]] const Math::Vector3UVE& GetDesiredVelocityUVE() const noexcept { return m_desiredVelocity; }
+    [[nodiscard]] const Math::Vector3& GetDesiredVelocity() const noexcept { return m_desiredVelocity; }
     /// The waypoint being approached, or the agent's own position when it is not following a route.
-    [[nodiscard]] const Math::Vector3UVE& GetNextPathPositionUVE() const noexcept { return m_nextPathPosition; }
-    [[nodiscard]] NavAgentStatusUVE GetStatusUVE() const noexcept { return m_status; }
+    [[nodiscard]] const Math::Vector3& GetNextPathPosition() const noexcept { return m_nextPathPosition; }
+    [[nodiscard]] NavAgentStatus GetStatus() const noexcept { return m_status; }
     /// True on the step a new route replaced the old one, and on the step a route was found where
     /// there was none: the flag a script listens to when it wants to know the agent changed its mind.
-    [[nodiscard]] bool GetPathChangedUVE() const noexcept { return m_pathChanged; }
-    [[nodiscard]] bool HasReachedTargetUVE() const noexcept { return m_status == NavAgentStatusUVE::Finished; }
-    [[nodiscard]] bool HasPathUVE() const noexcept { return !m_path.waypoints.empty(); }
+    [[nodiscard]] bool GetPathChanged() const noexcept { return m_pathChanged; }
+    [[nodiscard]] bool HasReachedTarget() const noexcept { return m_status == NavAgentStatus::Finished; }
+    [[nodiscard]] bool HasPath() const noexcept { return !m_path.waypoints.empty(); }
 
     /// What is left of the route the last search returned, in metres. Zero before one has run.
-    [[nodiscard]] float GetRemainingDistanceUVE() const noexcept { return m_remainingDistance; }
-    [[nodiscard]] const NavPathUVE& GetPathUVE() const noexcept { return m_path; }
+    [[nodiscard]] float GetRemainingDistance() const noexcept { return m_remainingDistance; }
+    [[nodiscard]] const NavPath& GetPath() const noexcept { return m_path; }
     /// Index of the waypoint being approached, or `waypoints.size()` when the route is done.
-    [[nodiscard]] std::size_t GetWaypointIndexUVE() const noexcept { return m_waypointIndex; }
+    [[nodiscard]] std::size_t GetWaypointIndex() const noexcept { return m_waypointIndex; }
 
 private:
     /// Runs the search and adopts what it found, reporting whether the route changed.
-    void ReplanUVE(const NavmeshUVE& mesh) noexcept;
+    void Replan(const Navmesh& mesh) noexcept;
 
     /// Walks the route forward to the waypoint the agent should be steering at, and stops it when
     /// the agent stands on the target.
-    void FollowUVE(std::span<const NavAgentObstacleUVE> neighbours, float deltaTimeSeconds) noexcept;
+    void Follow(std::span<const NavAgentObstacle> neighbours, float deltaTimeSeconds) noexcept;
 
-    NavAgentSettingsUVE m_settings{};
-    NavPathUVE m_path{};
-    Math::Vector3UVE m_position{};
-    Math::Vector3UVE m_target{};
-    Math::Vector3UVE m_desiredVelocity{};
-    Math::Vector3UVE m_nextPathPosition{};
+    NavAgentSettings m_settings{};
+    NavPath m_path{};
+    Math::Vector3 m_position{};
+    Math::Vector3 m_target{};
+    Math::Vector3 m_desiredVelocity{};
+    Math::Vector3 m_nextPathPosition{};
     /// Time left before the next search, counted in the simulation's own seconds.
     float m_timeUntilReplan = 0.0F;
     float m_remainingDistance = 0.0F;
     std::size_t m_waypointIndex = 0U;
-    NavAgentStatusUVE m_status = NavAgentStatusUVE::Idle;
+    NavAgentStatus m_status = NavAgentStatus::Idle;
     bool m_enabled = true;
     bool m_hasTarget = false;
     bool m_pathChanged = false;

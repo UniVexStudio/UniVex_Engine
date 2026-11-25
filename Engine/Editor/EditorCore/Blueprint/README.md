@@ -19,7 +19,7 @@ Blueprint visual scripting, graph model, node catalog, compiler, virtual machine
 | `Serialization/` | `blueprint_asset.cpp`, `widget_blueprint_asset.cpp`, `blueprint_serialization.{h,cpp}` | `.uvbp` / `.uvwbp` persistence, pin/node/wire/library JSON serialization, schema versioning, migration pipeline, import/export |
 | `Assets/` | `blueprint_asset.h`, `widget_blueprint_asset.h`, `blueprint_asset_types.{h,cpp}`, `blueprint_asset_registry.{h,cpp}` | Blueprint Class, Widget Blueprint, FunctionLibrary, MacroLibrary, Interface definitions, asset registry, dependency resolver, and detailed validation |
 | `Plugins/` | `blueprint_plugin_api.{h,cpp}` | Plugin API versioning/compatibility, extension interface, `.uvbpplugin` manifest validation & discovery, dependency-ordered loading & node registration |
-| `Debug/` | `blueprint_debugger.{h,cpp}` | Breakpoints manager, Watch evaluation, LiveValues snapshots, CallStack frames, ExecutionTrace recorder, Diagnostics, and `BlueprintDebugSessionUVE` |
+| `Debug/` | `blueprint_debugger.{h,cpp}` | Breakpoints manager, Watch evaluation, LiveValues snapshots, CallStack frames, ExecutionTrace recorder, Diagnostics, and `BlueprintDebugSession` |
 | `Profiling/` | `blueprint_profiler.{h,cpp}` | Execution profiler + RAII scoped timing, Memory footprint estimator, Graph complexity analyzer, and Performance report formatter |
 | `Resources/` | `blueprint_resources.{h,cpp}` | Studio themes (`DarkStudio`, `LightStudio`, `HighContrast`), pin/node styles, category/pin icons, and starter Blueprint templates |
 | `Platform/` | `blueprint_platform.{h,cpp}` | Platform capability profiles (`Linux`, `Windows`, `Android`, `Common`), cross-platform asset path normalization, and cache directory resolution |

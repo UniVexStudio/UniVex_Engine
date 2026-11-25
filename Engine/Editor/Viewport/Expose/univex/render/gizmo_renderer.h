@@ -91,12 +91,12 @@ public:
 private:
     // Which half of the solid geometry a triangle pass covers. They are drawn as two passes
     // with different depth-mask and ordering rules; see GizmoDrawParams::depthWrite.
-    enum class TrianglePassUVE { Opaque, Translucent };
+    enum class TrianglePass { Opaque, Translucent };
 
     void Destroy() noexcept;
     void UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawParams& params) const;
     void UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDrawParams& params,
-                                TrianglePassUVE pass) const;
+                                TrianglePass pass) const;
 
     ShaderProgram lineProgram_;
     ShaderProgram solidProgram_;

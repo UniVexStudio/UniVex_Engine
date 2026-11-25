@@ -16,133 +16,133 @@ namespace UVE::Editor {
 namespace {
 
 namespace fs = std::filesystem;
-using namespace Retarget::TestRigUVE;
-using Retarget::JointStatusUVE;
-using Retarget::RetargetAnimationStateUVE;
+using namespace Retarget::TestRig;
+using Retarget::JointStatus;
+using Retarget::RetargetAnimationState;
 
-struct PlanFixtureUVE {
-    fs::path dir = Tests::MakeTestCaseDirectoryUVE();
-    TPoseRigUVE rig;
+struct PlanFixture {
+    fs::path dir = Tests::MakeTestCaseDirectory();
+    TPoseRig rig;
     fs::path model = dir / "hero.uvmodel";
     std::vector<fs::path> animations;
 
-    PlanFixtureUVE() {
-        EXPECT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(rig), model));
-        Asset::AnimationClipAssetUVE fresh = MakeClipUVE(rig, "idle");
-        Asset::AnimationClipAssetUVE noSkeleton = MakeClipUVE(rig, "old");
+    PlanFixture() {
+        EXPECT_TRUE(Asset::SaveMeshAsset(MakeMesh(rig), model));
+        Asset::AnimationClipAsset fresh = MakeClip(rig, "idle");
+        Asset::AnimationClipAsset noSkeleton = MakeClip(rig, "old");
         noSkeleton.rest.clear();
-        Asset::AnimationClipAssetUVE done = MakeClipUVE(rig, "done");
+        Asset::AnimationClipAsset done = MakeClip(rig, "done");
         done.conformed = true;
         for (const auto& [name, clip] : {std::pair{"idle", fresh}, std::pair{"old", noSkeleton}, std::pair{"done", done}}) {
             const fs::path path = dir / (std::string{name} + ".uvanim");
-            EXPECT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, path));
+            EXPECT_TRUE(Asset::SaveAnimationClipAsset(clip, path));
             animations.push_back(path);
         }
     }
 };
 
-TEST(RetargetPlanUVETest, TheHumanoidsBonesAreGradedAgainstTheCharacter) {
-    const PlanFixtureUVE fixture;
-    const RetargetPlanUVE plan = PlanRetargetUVE(fixture.model, fixture.animations);
+TEST(RetargetPlanTest, TheHumanoidsBonesAreGradedAgainstTheCharacter) {
+    const PlanFixture fixture;
+    const RetargetPlan plan = PlanRetarget(fixture.model, fixture.animations);
     ASSERT_TRUE(plan.modelReadable) << plan.modelError;
     EXPECT_FALSE(plan.modelAlreadyConformed);
     EXPECT_NEAR(plan.heightScale, 1.1F, 1e-3F);
-    ASSERT_EQ(plan.joints.size(), Retarget::GetHumanoidReferenceUVE().skeleton.bones.size());
+    ASSERT_EQ(plan.joints.size(), Retarget::GetHumanoidReference().skeleton.bones.size());
     EXPECT_EQ(plan.joints[0].depth, 0);
     EXPECT_GT(plan.joints[1].depth, 0) << "the hips sit under the root";
     // The auto-rigger's character has the main bones (green) and lacks the humanoid's helpers (grey).
-    EXPECT_GT(plan.CountUVE(JointStatusUVE::Good), 20U);
-    EXPECT_GT(plan.CountUVE(JointStatusUVE::Missing), 100U);
-    EXPECT_EQ(plan.CountUVE(JointStatusUVE::Broken), 0U);
+    EXPECT_GT(plan.Count(JointStatus::Good), 20U);
+    EXPECT_GT(plan.Count(JointStatus::Missing), 100U);
+    EXPECT_EQ(plan.Count(JointStatus::Broken), 0U);
     std::size_t rows = 0U;
-    for (const RetargetJointRowUVE& joint : plan.joints) {
+    for (const RetargetJointRow& joint : plan.joints) {
         ++rows;
-        if (joint.status == JointStatusUVE::Good) {
+        if (joint.status == JointStatus::Good) {
             EXPECT_FALSE(joint.characterName.empty());
-        } else if (joint.status == JointStatusUVE::Missing) {
+        } else if (joint.status == JointStatus::Missing) {
             EXPECT_TRUE(joint.characterName.empty());
         }
     }
     EXPECT_EQ(rows, plan.joints.size());
     EXPECT_EQ(plan.keptBones, (std::vector<std::string>{"HeadTop_End"}));
-    EXPECT_STREQ(GetRetargetStatusLabelUVE(JointStatusUVE::Missing), "missing");
+    EXPECT_STREQ(GetRetargetStatusLabel(JointStatus::Missing), "missing");
 }
 
-TEST(RetargetPlanUVETest, EachAnimationSaysWhetherItWillBeConformedAndWhyNot) {
-    const PlanFixtureUVE fixture;
-    const RetargetPlanUVE plan = PlanRetargetUVE(fixture.model, fixture.animations);
+TEST(RetargetPlanTest, EachAnimationSaysWhetherItWillBeConformedAndWhyNot) {
+    const PlanFixture fixture;
+    const RetargetPlan plan = PlanRetarget(fixture.model, fixture.animations);
     ASSERT_EQ(plan.animations.size(), 3U);
-    EXPECT_EQ(plan.animations[0].state, RetargetAnimationStateUVE::Ready);
-    EXPECT_EQ(plan.animations[1].state, RetargetAnimationStateUVE::NoSkeleton);
+    EXPECT_EQ(plan.animations[0].state, RetargetAnimationState::Ready);
+    EXPECT_EQ(plan.animations[1].state, RetargetAnimationState::NoSkeleton);
     EXPECT_NE(plan.animations[1].note.find("import the FBX again"), std::string::npos);
-    EXPECT_EQ(plan.animations[2].state, RetargetAnimationStateUVE::AlreadyConformed);
-    EXPECT_EQ(plan.ReadyAnimationsUVE(), 1U);
-    EXPECT_TRUE(plan.CanGenerateUVE());
+    EXPECT_EQ(plan.animations[2].state, RetargetAnimationState::AlreadyConformed);
+    EXPECT_EQ(plan.ReadyAnimations(), 1U);
+    EXPECT_TRUE(plan.CanGenerate());
 }
 
-TEST(RetargetPlanUVETest, ACharacterThatCannotBeReadCannotBeGenerated) {
-    const PlanFixtureUVE fixture;
-    const RetargetPlanUVE missing = PlanRetargetUVE(fixture.dir / "nobody.uvmodel", fixture.animations);
+TEST(RetargetPlanTest, ACharacterThatCannotBeReadCannotBeGenerated) {
+    const PlanFixture fixture;
+    const RetargetPlan missing = PlanRetarget(fixture.dir / "nobody.uvmodel", fixture.animations);
     EXPECT_FALSE(missing.modelReadable);
     EXPECT_NE(missing.modelError.find("nobody.uvmodel"), std::string::npos);
-    EXPECT_FALSE(missing.CanGenerateUVE());
+    EXPECT_FALSE(missing.CanGenerate());
     EXPECT_TRUE(missing.joints.empty());
 
     // A static mesh has no skeleton to conform.
-    Asset::MeshAssetUVE plain = MakeMeshUVE(fixture.rig);
+    Asset::MeshAsset plain = MakeMesh(fixture.rig);
     plain.joints.clear();
     plain.skinningInfluences.clear();
     const fs::path prop = fixture.dir / "prop.uvmodel";
-    ASSERT_TRUE(Asset::SaveMeshAssetUVE(plain, prop));
-    const RetargetPlanUVE staticPlan = PlanRetargetUVE(prop, fixture.animations);
+    ASSERT_TRUE(Asset::SaveMeshAsset(plain, prop));
+    const RetargetPlan staticPlan = PlanRetarget(prop, fixture.animations);
     EXPECT_FALSE(staticPlan.modelReadable);
     EXPECT_FALSE(staticPlan.modelError.empty());
 }
 
-TEST(RetargetPlanUVETest, AConformedCharacterIsRecognisedAndNeedsNothingWithoutAnimations) {
-    const PlanFixtureUVE fixture;
-    Retarget::RetargetFilesRequestUVE request;
+TEST(RetargetPlanTest, AConformedCharacterIsRecognisedAndNeedsNothingWithoutAnimations) {
+    const PlanFixture fixture;
+    Retarget::RetargetFilesRequest request;
     request.model = fixture.model;
     request.backupRoot = fixture.dir / ".backup";
-    ASSERT_TRUE(Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE()).ok);
-    const RetargetPlanUVE plan = PlanRetargetUVE(fixture.model, {});
+    ASSERT_TRUE(Retarget::RetargetFiles(request, Retarget::GetHumanoidReference()).ok);
+    const RetargetPlan plan = PlanRetarget(fixture.model, {});
     ASSERT_TRUE(plan.modelReadable) << plan.modelError;
     EXPECT_TRUE(plan.modelAlreadyConformed);
-    EXPECT_EQ(plan.CountUVE(JointStatusUVE::Missing), 0U);
-    EXPECT_EQ(plan.CountUVE(JointStatusUVE::Good), plan.joints.size());
-    EXPECT_FALSE(plan.CanGenerateUVE()) << "nothing to conform";
+    EXPECT_EQ(plan.Count(JointStatus::Missing), 0U);
+    EXPECT_EQ(plan.Count(JointStatus::Good), plan.joints.size());
+    EXPECT_FALSE(plan.CanGenerate()) << "nothing to conform";
 }
 
-TEST(RetargetPlanUVETest, EmbeddedAnimationsAreDiscoveredEvenWhenCharacterIsAlreadyConformed) {
-    const PlanFixtureUVE fixture;
-    Retarget::RetargetFilesRequestUVE request;
+TEST(RetargetPlanTest, EmbeddedAnimationsAreDiscoveredEvenWhenCharacterIsAlreadyConformed) {
+    const PlanFixture fixture;
+    Retarget::RetargetFilesRequest request;
     request.model = fixture.model;
     request.backupRoot = fixture.dir / ".backup";
     request.useBrain = false;
-    ASSERT_TRUE(Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE()).ok);
+    ASSERT_TRUE(Retarget::RetargetFiles(request, Retarget::GetHumanoidReference()).ok);
 
     // Embed 10 un-conformed takes into the already-conformed .uvmodel.
-    std::vector<Asset::AnimationClipAssetUVE> takes;
+    std::vector<Asset::AnimationClipAsset> takes;
     for (std::size_t i = 0U; i < 10U; ++i) {
-        takes.push_back(MakeClipUVE(fixture.rig, "Take_" + std::to_string(i)));
+        takes.push_back(MakeClip(fixture.rig, "Take_" + std::to_string(i)));
     }
-    ASSERT_TRUE(Asset::SaveModelAnimationsUVE(fixture.model, takes, 7U));
+    ASSERT_TRUE(Asset::SaveModelAnimations(fixture.model, takes, 7U));
 
-    const RetargetPlanUVE plan = PlanRetargetUVE(fixture.model, {});
+    const RetargetPlan plan = PlanRetarget(fixture.model, {});
     ASSERT_TRUE(plan.modelReadable) << plan.modelError;
     EXPECT_TRUE(plan.modelAlreadyConformed);
     ASSERT_EQ(plan.animations.size(), 10U);
-    EXPECT_EQ(plan.ReadyAnimationsUVE(), 10U);
-    EXPECT_TRUE(plan.CanGenerateUVE()) << "embedded animations still need conforming";
+    EXPECT_EQ(plan.ReadyAnimations(), 10U);
+    EXPECT_TRUE(plan.CanGenerate()) << "embedded animations still need conforming";
 
     // Animation-only plan with all clips already conformed cannot generate.
-    const RetargetPlanUVE allDoneAnimOnly = PlanRetargetUVE({}, std::span<const fs::path>(&fixture.animations[2], 1U));
-    EXPECT_EQ(allDoneAnimOnly.ReadyAnimationsUVE(), 0U);
-    EXPECT_FALSE(allDoneAnimOnly.CanGenerateUVE());
+    const RetargetPlan allDoneAnimOnly = PlanRetarget({}, std::span<const fs::path>(&fixture.animations[2], 1U));
+    EXPECT_EQ(allDoneAnimOnly.ReadyAnimations(), 0U);
+    EXPECT_FALSE(allDoneAnimOnly.CanGenerate());
 
     // Pre-set cancel flag exits immediately without scanning animations.
     std::atomic<bool> cancel{true};
-    const RetargetPlanUVE cancelled = PlanRetargetUVE(fixture.model, {}, {}, &cancel);
+    const RetargetPlan cancelled = PlanRetarget(fixture.model, {}, {}, &cancel);
     EXPECT_TRUE(cancelled.animations.empty());
 }
 

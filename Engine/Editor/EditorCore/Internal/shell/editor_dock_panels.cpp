@@ -29,19 +29,19 @@ namespace {
 
 /// Lines waiting between refreshes beyond this are dropped (and counted), so a log storm while
 /// the editor is busy cannot grow without bound.
-constexpr std::size_t kMaximumPendingLogLinesUVE = 4096U;
+constexpr std::size_t kMaximumPendingLogLines = 4096U;
 /// Profiler tables refresh at this pace while shown, not every frame.
-constexpr std::chrono::milliseconds kProfilerRefreshUVE{250};
+constexpr std::chrono::milliseconds kProfilerRefresh{250};
 
 /// Hands every engine log message to the Output Log's buffer. The logger owns the sink, so the
 /// buffer is shared: the panel may go away first and the sink just keeps filling a buffer nobody
-/// reads, bounded by kMaximumPendingLogLinesUVE.
-class OutputLogSinkUVE final : public Debug::ILogSinkUVE {
+/// reads, bounded by kMaximumPendingLogLines.
+class OutputLogSink final : public Debug::ILogSink {
 public:
-    explicit OutputLogSinkUVE(std::shared_ptr<EditorDockPanelsUVE::LogBufferUVE> buffer)
+    explicit OutputLogSink(std::shared_ptr<EditorDockPanels::LogBuffer> buffer)
         : m_buffer(std::move(buffer)) {}
-    void Write(const Debug::LogMessageUVE& message) override {
-        EditorDockPanelsUVE::LogLineUVE line;
+    void Write(const Debug::LogMessage& message) override {
+        EditorDockPanels::LogLine line;
         line.level = message.level;
         line.category = message.category;
         line.text = message.message;
@@ -55,7 +55,7 @@ public:
             line.text += "  (" + file + ":" + std::to_string(message.sourceLine) + ")";
         }
         const std::lock_guard<std::mutex> lock(m_buffer->mutex);
-        if (m_buffer->pending.size() >= kMaximumPendingLogLinesUVE) {
+        if (m_buffer->pending.size() >= kMaximumPendingLogLines) {
             m_buffer->pending.pop_front();
             ++m_buffer->dropped;
         }
@@ -64,25 +64,25 @@ public:
     void Flush() override {}
 
 private:
-    std::shared_ptr<EditorDockPanelsUVE::LogBufferUVE> m_buffer;
+    std::shared_ptr<EditorDockPanels::LogBuffer> m_buffer;
 };
 
-[[nodiscard]] prism::LogLevel ToPrismLevelUVE(const Debug::LogLevelUVE level) {
+[[nodiscard]] prism::LogLevel ToPrismLevel(const Debug::LogLevel level) {
     switch (level) {
-        case Debug::LogLevelUVE::Warning: return prism::LogLevel::Warning;
-        case Debug::LogLevelUVE::Error:
-        case Debug::LogLevelUVE::Fatal: return prism::LogLevel::Error;
+        case Debug::LogLevel::Warning: return prism::LogLevel::Warning;
+        case Debug::LogLevel::Error:
+        case Debug::LogLevel::Fatal: return prism::LogLevel::Error;
         default: return prism::LogLevel::Info;
     }
 }
 
-[[nodiscard]] prism::Ref<prism::Button> BarButtonUVE(const prism::Icon icon, std::string tooltip, std::string text = {}) {
+[[nodiscard]] prism::Ref<prism::Button> BarButton(const prism::Icon icon, std::string tooltip, std::string text = {}) {
     auto button = prism::make<prism::Button>(std::move(text), icon, prism::ButtonStyle::Toolbar);
     button->setTooltip(std::move(tooltip));
     return button;
 }
 
-[[nodiscard]] prism::Ref<prism::Widget> BarUVE(prism::Ref<prism::Widget> row) {
+[[nodiscard]] prism::Ref<prism::Widget> Bar(prism::Ref<prism::Widget> row) {
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::header));
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
@@ -90,18 +90,18 @@ private:
     return border;
 }
 
-[[nodiscard]] prism::Ref<prism::Label> DimLabelUVE(std::string text = {}) {
+[[nodiscard]] prism::Ref<prism::Label> DimLabel(std::string text = {}) {
     auto label = prism::make<prism::Label>(std::move(text), prism::FontRole::Small);
     label->setColor(prism::ThemeColor(&prism::Theme::textDim));
     return label;
 }
 
-constexpr prism::Slot kCentreSlotUVE{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
+constexpr prism::Slot kCentreSlot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
 
 /// The console's command line: Enter runs it, Up / Down walk the history, Tab completes.
-class ConsoleInputUVE final : public prism::TextInput {
+class ConsoleInput final : public prism::TextInput {
 public:
-    ConsoleInputUVE() : prism::TextInput("", "command  (Enter: run, Up/Down: history, Tab: complete)") {}
+    ConsoleInput() : prism::TextInput("", "command  (Enter: run, Up/Down: history, Tab: complete)") {}
     std::function<void(int)> onHistory;
     std::function<void()> onComplete;
     bool onKeyDown(const prism::KeyEvent& e) override {
@@ -123,27 +123,27 @@ public:
 
 } // namespace
 
-EditorDockPanelsUVE::EditorDockPanelsUVE(EditorUVE& editor)
-    : m_editor(editor), m_logBuffer(std::make_shared<LogBufferUVE>()) {}
+EditorDockPanels::EditorDockPanels(Editor& editor)
+    : m_editor(editor), m_logBuffer(std::make_shared<LogBuffer>()) {}
 
-EditorDockPanelsUVE::~EditorDockPanelsUVE() = default;
+EditorDockPanels::~EditorDockPanels() = default;
 
-void EditorDockPanelsUVE::AttachLogUVE() {
+void EditorDockPanels::AttachLog() {
     if (m_logAttached || m_editor.m_services == nullptr) {
         return;
     }
-    m_editor.m_services->GetLoggerUVE().AddSink(std::make_unique<OutputLogSinkUVE>(m_logBuffer));
+    m_editor.m_services->GetLogger().AddSink(std::make_unique<OutputLogSink>(m_logBuffer));
     m_logAttached = true;
 }
 
 // ------------------------------------------------------------------------------------ output log
 
-prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildOutputLogUVE() {
+prism::Ref<prism::Widget> EditorDockPanels::BuildOutputLog() {
     m_log = prism::make<prism::LogView>();
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
     const auto levelToggle = [this](const prism::Icon icon, std::string tip, const prism::LogLevel level) {
-        auto button = BarButtonUVE(icon, std::move(tip));
+        auto button = BarButton(icon, std::move(tip));
         button->setCheckable(true);
         button->setChecked(true);
         button->onToggle = [this, level](const bool on) {
@@ -156,9 +156,9 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildOutputLogUVE() {
     m_logInfo = levelToggle(prism::Icon::Info, "Show messages", prism::LogLevel::Info);
     m_logWarnings = levelToggle(prism::Icon::Warning, "Show warnings", prism::LogLevel::Warning);
     m_logErrors = levelToggle(prism::Icon::Error, "Show errors", prism::LogLevel::Error);
-    row->add(m_logInfo, kCentreSlotUVE);
-    row->add(m_logWarnings, kCentreSlotUVE);
-    row->add(m_logErrors, kCentreSlotUVE);
+    row->add(m_logInfo, kCentreSlot);
+    row->add(m_logWarnings, kCentreSlot);
+    row->add(m_logErrors, kCentreSlot);
     auto search = prism::make<prism::TextInput>("", "Search the log");
     search->setLeadingIcon(prism::Icon::Search);
     search->setClearable(true);
@@ -168,36 +168,36 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildOutputLogUVE() {
         }
     };
     row->add(search, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    m_logCounts = DimLabelUVE("0 messages");
-    row->add(m_logCounts, kCentreSlotUVE);
-    auto copy = BarButtonUVE(prism::Icon::Copy, "Copy the shown lines");
+    m_logCounts = DimLabel("0 messages");
+    row->add(m_logCounts, kCentreSlot);
+    auto copy = BarButton(prism::Icon::Copy, "Copy the shown lines");
     copy->onClick = [this] {
         if (m_log && prism::Application::exists()) {
             prism::Application::get().platform().setClipboard(m_log->visibleText());
         }
     };
-    auto clear = BarButtonUVE(prism::Icon::Trash, "Clear the log");
+    auto clear = BarButton(prism::Icon::Trash, "Clear the log");
     clear->onClick = [this] {
         if (m_log) {
             m_log->clear();
-            UpdateLogCountsUVE();
+            UpdateLogCounts();
         }
     };
-    row->add(copy, kCentreSlotUVE);
-    row->add(clear, kCentreSlotUVE);
+    row->add(copy, kCentreSlot);
+    row->add(clear, kCentreSlot);
 
-    m_log->onCountsChanged = [this] { UpdateLogCountsUVE(); };
+    m_log->onCountsChanged = [this] { UpdateLogCounts(); };
     m_log->onSourceClick = [this](const std::string& file, const int line) {
         m_editor.m_contentStatusMessage = "Source: " + file + ":" + std::to_string(line);
     };
     auto page = prism::vbox();
-    page->add(BarUVE(row));
+    page->add(Bar(row));
     page->add(m_log, prism::Slot{1.0F});
-    PullLogUVE();
+    PullLog();
     return page;
 }
 
-void EditorDockPanelsUVE::UpdateLogCountsUVE() {
+void EditorDockPanels::UpdateLogCounts() {
     if (!m_log || !m_logCounts) {
         return;
     }
@@ -216,8 +216,8 @@ void EditorDockPanelsUVE::UpdateLogCountsUVE() {
     m_logCounts->setText(text);
 }
 
-void EditorDockPanelsUVE::PullLogUVE() {
-    std::deque<LogLineUVE> lines;
+void EditorDockPanels::PullLog() {
+    std::deque<LogLine> lines;
     std::uint64_t dropped = 0U;
     {
         const std::lock_guard<std::mutex> lock(m_logBuffer->mutex);
@@ -238,37 +238,37 @@ void EditorDockPanelsUVE::PullLogUVE() {
         return;
     }
     const bool follow = m_log->atBottom();
-    for (LogLineUVE& line : lines) {
-        m_log->add(ToPrismLevelUVE(line.level), std::move(line.text), std::move(line.category));
+    for (LogLine& line : lines) {
+        m_log->add(ToPrismLevel(line.level), std::move(line.text), std::move(line.category));
     }
     m_logDroppedShown = dropped;
     if (follow) {
         m_log->scrollToEnd();
     }
-    UpdateLogCountsUVE();
+    UpdateLogCounts();
 }
 
 // --------------------------------------------------------------------------------------- console
 
-prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildConsoleUVE() {
+prism::Ref<prism::Widget> EditorDockPanels::BuildConsole() {
     m_consoleOutput = prism::make<prism::LogView>();
-    auto input = prism::make<ConsoleInputUVE>();
+    auto input = prism::make<ConsoleInput>();
     input->setLeadingIcon(prism::Icon::Terminal);
-    input->onCommit = [this](const std::string&) { ExecuteConsoleUVE(); };
-    input->onHistory = [this](const int delta) { ShowConsoleHistoryUVE(delta); };
-    input->onComplete = [this] { CompleteConsoleUVE(); };
+    input->onCommit = [this](const std::string&) { ExecuteConsole(); };
+    input->onHistory = [this](const int delta) { ShowConsoleHistory(delta); };
+    input->onComplete = [this] { CompleteConsole(); };
     m_consoleInput = input;
-    m_consoleHint = DimLabelUVE();
+    m_consoleHint = DimLabel();
 
-    auto clear = BarButtonUVE(prism::Icon::Trash, "Clear the console");
+    auto clear = BarButton(prism::Icon::Trash, "Clear the console");
     clear->onClick = [this] {
-        static_cast<void>(m_editor.m_developerConsole.ClearUVE());
-        RefreshConsoleUVE();
+        static_cast<void>(m_editor.m_developerConsole.Clear());
+        RefreshConsole();
     };
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
     row->add(m_consoleInput, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    row->add(clear, kCentreSlotUVE);
+    row->add(clear, kCentreSlot);
 
     auto page = prism::vbox();
     page->add(m_consoleOutput, prism::Slot{1.0F});
@@ -276,26 +276,26 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildConsoleUVE() {
     hint->setPadding(prism::Margin(8.0F, 0.0F, 8.0F, 0.0F));
     hint->add(m_consoleHint, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     page->add(hint);
-    page->add(BarUVE(row));
-    RefreshConsoleUVE();
+    page->add(Bar(row));
+    RefreshConsole();
     return page;
 }
 
-void EditorDockPanelsUVE::RefreshConsoleUVE() {
+void EditorDockPanels::RefreshConsole() {
     if (!m_consoleOutput) {
         return;
     }
-    const DeveloperConsoleSnapshotUVE snapshot = m_editor.m_developerConsole.GetSnapshotUVE();
+    const DeveloperConsoleSnapshot snapshot = m_editor.m_developerConsole.GetSnapshot();
     if (snapshot.generation == m_consoleGeneration) {
         return;
     }
     m_consoleGeneration = snapshot.generation;
     m_consoleOutput->clear();
-    for (const DeveloperConsoleEntryUVE& entry : snapshot.output) {
+    for (const DeveloperConsoleEntry& entry : snapshot.output) {
         prism::LogLevel level = prism::LogLevel::Info;
-        if (entry.severity == DeveloperConsoleSeverityUVE::Warning) {
+        if (entry.severity == DeveloperConsoleSeverity::Warning) {
             level = prism::LogLevel::Warning;
-        } else if (entry.severity == DeveloperConsoleSeverityUVE::Error) {
+        } else if (entry.severity == DeveloperConsoleSeverity::Error) {
             level = prism::LogLevel::Error;
         } else if (!entry.text.empty() && entry.text.front() == '>') {
             level = prism::LogLevel::Command;
@@ -311,7 +311,7 @@ void EditorDockPanelsUVE::RefreshConsoleUVE() {
     m_consoleOutput->scrollToEnd();
 }
 
-void EditorDockPanelsUVE::ExecuteConsoleUVE() {
+void EditorDockPanels::ExecuteConsole() {
     if (!m_consoleInput) {
         return;
     }
@@ -319,34 +319,34 @@ void EditorDockPanelsUVE::ExecuteConsoleUVE() {
     if (command.empty()) {
         return;
     }
-    static_cast<void>(m_editor.m_developerConsole.ExecuteUVE(command));
+    static_cast<void>(m_editor.m_developerConsole.Execute(command));
     m_consoleInput->setText("");
     m_consoleHint->setText("");
-    RefreshConsoleUVE();
+    RefreshConsole();
 }
 
-void EditorDockPanelsUVE::ShowConsoleHistoryUVE(const int delta) {
-    if (!m_editor.m_developerConsole.MoveHistoryUVE(delta)) {
+void EditorDockPanels::ShowConsoleHistory(const int delta) {
+    if (!m_editor.m_developerConsole.MoveHistory(delta)) {
         return;
     }
-    const DeveloperConsoleSnapshotUVE snapshot = m_editor.m_developerConsole.GetSnapshotUVE();
+    const DeveloperConsoleSnapshot snapshot = m_editor.m_developerConsole.GetSnapshot();
     m_consoleInput->setText(snapshot.historyEntry);
 }
 
-void EditorDockPanelsUVE::CompleteConsoleUVE() {
+void EditorDockPanels::CompleteConsole() {
     const std::string typed = m_consoleInput->text();
     if (typed.find(' ') != std::string::npos ||
-        !m_editor.m_developerConsole.SetCompletionPrefixUVE(typed)) {
+        !m_editor.m_developerConsole.SetCompletionPrefix(typed)) {
         return;
     }
-    const DeveloperConsoleSnapshotUVE snapshot = m_editor.m_developerConsole.GetSnapshotUVE();
+    const DeveloperConsoleSnapshot snapshot = m_editor.m_developerConsole.GetSnapshot();
     if (snapshot.completions.size() == 1U) {
         m_consoleInput->setText(snapshot.completions.front().identifier + " ");
         m_consoleHint->setText(snapshot.completions.front().help);
         return;
     }
     std::string hint;
-    for (const DeveloperConsoleCompletionUVE& completion : snapshot.completions) {
+    for (const DeveloperConsoleCompletion& completion : snapshot.completions) {
         hint += (hint.empty() ? "" : "   ") + completion.identifier;
         if (hint.size() > 240U) {
             hint += "   ...";
@@ -358,26 +358,26 @@ void EditorDockPanelsUVE::CompleteConsoleUVE() {
 
 // -------------------------------------------------------------------------------------- profiler
 
-prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildProfilerUVE() {
-    m_captureButton = BarButtonUVE(prism::Icon::Play, "Begin or end a capture of spans, counters and breadcrumbs",
+prism::Ref<prism::Widget> EditorDockPanels::BuildProfiler() {
+    m_captureButton = BarButton(prism::Icon::Play, "Begin or end a capture of spans, counters and breadcrumbs",
                                    "Begin capture");
     m_captureButton->onClick = [this] {
-        if (m_editor.m_profilerCapture.IsActiveUVE()) {
-            m_editor.EndProfilerCaptureUVE();
+        if (m_editor.m_profilerCapture.IsActive()) {
+            m_editor.EndProfilerCapture();
         } else {
-            m_editor.BeginProfilerCaptureUVE();
+            m_editor.BeginProfilerCapture();
         }
         m_lastProfilerRefresh = {};
-        RefreshProfilerUVE();
+        RefreshProfiler();
     };
-    m_profilerStatus = DimLabelUVE();
-    m_profilerSummary = DimLabelUVE();
+    m_profilerStatus = DimLabel();
+    m_profilerSummary = DimLabel();
     auto row = prism::hbox(6.0F);
     row->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
-    row->add(m_captureButton, kCentreSlotUVE);
-    row->add(m_profilerStatus, kCentreSlotUVE);
+    row->add(m_captureButton, kCentreSlot);
+    row->add(m_profilerStatus, kCentreSlot);
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    row->add(m_profilerSummary, kCentreSlotUVE);
+    row->add(m_profilerSummary, kCentreSlot);
 
     const auto table = [](std::initializer_list<std::pair<const char*, float>> columns) {
         auto t = prism::make<prism::TableView>();
@@ -396,14 +396,14 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildProfilerUVE() {
         if (r < 0 || static_cast<std::size_t>(r) >= m_frameRows.size()) {
             return {};
         }
-        const EditorRenderStatRowUVE& row = m_frameRows[static_cast<std::size_t>(r)];
+        const EditorRenderStatRow& row = m_frameRows[static_cast<std::size_t>(r)];
         return c == 0 ? row.section : c == 1 ? row.label : row.value;
     };
     m_frameTable->paintCell = [this](prism::Canvas& canvas, const int r, const int c, const prism::Rect rect, bool) {
         if (r < 0 || static_cast<std::size_t>(r) >= m_frameRows.size()) {
             return;
         }
-        const EditorRenderStatRowUVE& row = m_frameRows[static_cast<std::size_t>(r)];
+        const EditorRenderStatRow& row = m_frameRows[static_cast<std::size_t>(r)];
         const prism::Theme& t = prism::theme();
         const std::string& text = c == 0 ? row.section : c == 1 ? row.label : row.value;
         const prism::Color colour = row.isConcerning && c != 0 ? prism::Color(242, 178, 64)
@@ -416,12 +416,12 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildProfilerUVE() {
         if (r < 0 || static_cast<std::size_t>(r) >= m_spanRows.size()) {
             return {};
         }
-        const Core::ProfilerSpanRowUVE& row = m_spanRows[static_cast<std::size_t>(r)];
+        const Core::ProfilerSpanRow& row = m_spanRows[static_cast<std::size_t>(r)];
         switch (c) {
             case 0: return row.name;
-            case 1: return std::string(Core::ProfilerCategoryNameUVE(row.category));
+            case 1: return std::string(Core::ProfilerCategoryName(row.category));
             case 2: return std::to_string(row.beginNanoseconds);
-            default: return Core::FormatProfilerDurationUVE(row.durationNanoseconds);
+            default: return Core::FormatProfilerDuration(row.durationNanoseconds);
         }
     };
     m_counterTable = table({{"Counter", 260.0F}, {"Category", 110.0F}, {"Value", 150.0F}});
@@ -429,15 +429,15 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildProfilerUVE() {
         if (r < 0 || static_cast<std::size_t>(r) >= m_counterRows.size()) {
             return {};
         }
-        const Core::ProfilerCounterRowUVE& row = m_counterRows[static_cast<std::size_t>(r)];
+        const Core::ProfilerCounterRow& row = m_counterRows[static_cast<std::size_t>(r)];
         switch (c) {
             case 0: return row.name;
-            case 1: return std::string(Core::ProfilerCategoryNameUVE(row.category));
-            default: return Core::FormatProfilerCounterUVE(row.value);
+            case 1: return std::string(Core::ProfilerCategoryName(row.category));
+            default: return Core::FormatProfilerCounter(row.value);
         }
     };
     m_breadcrumbs = prism::make<prism::LogView>();
-    m_profilerRuntime = DimLabelUVE();
+    m_profilerRuntime = DimLabel();
 
     m_timeline = prism::make<prism::Profiler>();
     m_timeline->setTargetMs(1000.0F / 60.0F);
@@ -453,35 +453,35 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildProfilerUVE() {
     runtime->add(m_profilerRuntime, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
 
     auto page = prism::vbox();
-    page->add(BarUVE(row));
+    page->add(Bar(row));
     page->add(tabs, prism::Slot{1.0F});
     page->add(runtime);
-    RefreshProfilerUVE();
+    RefreshProfiler();
     return page;
 }
 
-void EditorDockPanelsUVE::RefreshProfilerUVE() {
+void EditorDockPanels::RefreshProfiler() {
     if (!m_frameTable) {
         return;
     }
     const auto now = std::chrono::steady_clock::now();
-    if (now - m_lastProfilerRefresh < kProfilerRefreshUVE) {
+    if (now - m_lastProfilerRefresh < kProfilerRefresh) {
         return;
     }
     m_lastProfilerRefresh = now;
 
-    m_frameRows = BuildEditorRenderStatRowsUVE(m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE());
+    m_frameRows = BuildEditorRenderStatRows(m_editor.m_services->GetRenderer3D().GetLastFrameDiagnostics());
     m_frameTable->setRowCount(static_cast<int>(m_frameRows.size()));
 
-    const bool active = m_editor.m_profilerCapture.IsActiveUVE();
+    const bool active = m_editor.m_profilerCapture.IsActive();
     m_captureButton->setText(active ? "End capture" : "Begin capture");
     m_captureButton->setIcon(active ? prism::Icon::Stop : prism::Icon::Play);
-    m_profilerStatus->setText(m_editor.ProfilerStatusUVE());
+    m_profilerStatus->setText(m_editor.ProfilerStatus());
 
     // Live while capturing, frozen on the last completed bundle otherwise.
-    const Core::DiagnosticCaptureBundleUVE live =
-        active ? m_editor.m_profilerCapture.SnapshotUVE() : Core::DiagnosticCaptureBundleUVE{};
-    const Core::DiagnosticCaptureBundleUVE& shown =
+    const Core::DiagnosticCaptureBundle live =
+        active ? m_editor.m_profilerCapture.Snapshot() : Core::DiagnosticCaptureBundle{};
+    const Core::DiagnosticCaptureBundle& shown =
         active ? live : (m_editor.m_profilerHasBundle ? m_editor.m_profilerBundle : live);
     if (shown.sessionId.empty()) {
         m_spanRows.clear();
@@ -489,8 +489,8 @@ void EditorDockPanelsUVE::RefreshProfilerUVE() {
         m_profilerSummary->setText("No capture yet: begin one to profile this session.");
         m_profilerRuntime->setText("");
     } else {
-        m_spanRows = Core::BuildProfilerSpanRowsUVE(shown.spans);
-        m_counterRows = Core::BuildProfilerCounterRowsUVE(shown.counters);
+        m_spanRows = Core::BuildProfilerSpanRows(shown.spans);
+        m_counterRows = Core::BuildProfilerCounterRows(shown.counters);
         m_profilerSummary->setText(shown.sessionId + (active ? " (live): " : " (ended): ") +
                                    std::to_string(shown.spans.size()) + " spans, " +
                                    std::to_string(shown.counters.size()) + " counters, " +
@@ -498,7 +498,7 @@ void EditorDockPanelsUVE::RefreshProfilerUVE() {
                                    std::to_string(shown.droppedSpanCount) + "/" +
                                    std::to_string(shown.droppedCounterCount) + "/" +
                                    std::to_string(shown.droppedBreadcrumbCount) + " dropped)");
-        m_profilerRuntime->setText(FormatProfilerRuntimeLineUVE(shown.runtimeSnapshot));
+        m_profilerRuntime->setText(FormatProfilerRuntimeLine(shown.runtimeSnapshot));
     }
     m_spanTable->setRowCount(static_cast<int>(m_spanRows.size()));
     m_counterTable->setRowCount(static_cast<int>(m_counterRows.size()));
@@ -509,14 +509,14 @@ void EditorDockPanelsUVE::RefreshProfilerUVE() {
         m_breadcrumbSession = shown.sessionId;
     }
     for (std::size_t i = m_breadcrumbsShown; i < shown.breadcrumbs.size(); ++i) {
-        const Core::DiagnosticBreadcrumbUVE& crumb = shown.breadcrumbs[i];
+        const Core::DiagnosticBreadcrumb& crumb = shown.breadcrumbs[i];
         m_breadcrumbs->add(prism::LogLevel::Info, "[" + std::to_string(crumb.sequence) + "] " + crumb.message,
-                           std::string(Core::ProfilerCategoryNameUVE(crumb.category)));
+                           std::string(Core::ProfilerCategoryName(crumb.category)));
     }
     m_breadcrumbsShown = shown.breadcrumbs.size();
 }
 
-void EditorDockPanelsUVE::FeedTimelineUVE(const bool shown, const float gpuMs) {
+void EditorDockPanels::FeedTimeline(const bool shown, const float gpuMs) {
     // One frame for PRISM's profiler: the frame's time, the renderer's draw counts, and - while a
     // capture runs - the spans the engine recorded for its latest frame (CPU / Render / GPU tracks).
     if (!m_timeline) {
@@ -529,33 +529,33 @@ void EditorDockPanelsUVE::FeedTimelineUVE(const bool shown, const float gpuMs) {
     if (first) {
         return;
     }
-    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
-        m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    const Render::Renderer3DFrameDiagnostics diagnostics =
+        m_editor.m_services->GetRenderer3D().GetLastFrameDiagnostics();
     prism::ProfileFrame frame;
     frame.cpuMs = frameMs;
     frame.gpuMs = gpuMs;
     frame.drawCalls = static_cast<int>(diagnostics.meshDrawCallsRecorded + diagnostics.decalDrawCallsRecorded +
                                        diagnostics.primitiveItemsExtracted);
     frame.triangles = static_cast<int>(diagnostics.decalTrianglesExtracted);
-    if (m_editor.m_profilerCapture.IsActiveUVE()) {
-        const Core::DiagnosticCaptureBundleUVE live = m_editor.m_profilerCapture.SnapshotUVE();
+    if (m_editor.m_profilerCapture.IsActive()) {
+        const Core::DiagnosticCaptureBundle live = m_editor.m_profilerCapture.Snapshot();
         std::uint64_t latest = 0U;
-        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+        for (const Core::DiagnosticSpan& span : live.spans) {
             latest = std::max(latest, span.frameNumber);
         }
         std::uint64_t start = ~std::uint64_t{0};
-        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+        for (const Core::DiagnosticSpan& span : live.spans) {
             if (span.frameNumber == latest) {
                 start = std::min(start, span.beginTimestampNanoseconds);
             }
         }
-        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+        for (const Core::DiagnosticSpan& span : live.spans) {
             if (span.frameNumber != latest || span.endTimestampNanoseconds < span.beginTimestampNanoseconds) {
                 continue;
             }
             prism::ProfileScope scope;
             scope.name = span.name;
-            scope.track = span.category == Core::DiagnosticCategoryUVE::Render ? 1 : 0;
+            scope.track = span.category == Core::DiagnosticCategory::Render ? 1 : 0;
             scope.startMs = static_cast<float>(span.beginTimestampNanoseconds - start) / 1.0e6F;
             scope.durMs = static_cast<float>(span.endTimestampNanoseconds - span.beginTimestampNanoseconds) / 1.0e6F;
             frame.scopes.push_back(std::move(scope));
@@ -565,20 +565,20 @@ void EditorDockPanelsUVE::FeedTimelineUVE(const bool shown, const float gpuMs) {
     m_timeline->pushFrame(std::move(frame), shown);
 }
 
-void EditorDockPanelsUVE::RefreshUVE(const bool consoleShown, const bool profilerShown, const float gpuMs) {
-    PullLogUVE();
-    FeedTimelineUVE(profilerShown, gpuMs);
+void EditorDockPanels::Refresh(const bool consoleShown, const bool profilerShown, const float gpuMs) {
+    PullLog();
+    FeedTimeline(profilerShown, gpuMs);
     if (consoleShown) {
-        RefreshConsoleUVE();
+        RefreshConsole();
     }
     if (profilerShown) {
-        RefreshProfilerUVE();
+        RefreshProfiler();
     }
 }
 
-prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildSearchUVE() {
+prism::Ref<prism::Widget> EditorDockPanels::BuildSearch() {
     auto results = prism::make<prism::LogView>();
-    auto status = DimLabelUVE("Type a query to search scenes, materials, scripts, and assets.");
+    auto status = DimLabel("Type a query to search scenes, materials, scripts, and assets.");
     auto queryInput = prism::make<prism::TextInput>("", "Find in project...");
     queryInput->setLeadingIcon(prism::Icon::Search);
 
@@ -594,9 +594,9 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildSearchUVE() {
             lbl->setText("0 matches");
             return;
         }
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-        const auto hits = SearchProjectContentUVE(root, q, 200U);
-        for (const EditorProjectSearchHitUVE& hit : hits) {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+        const auto hits = SearchProjectContent(root, q, 200U);
+        for (const EditorProjectSearchHit& hit : hits) {
             std::string line = hit.relativePath;
             if (hit.lineNumber > 0U) {
                 line += ":" + std::to_string(hit.lineNumber);
@@ -608,7 +608,7 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildSearchUVE() {
     };
 
     queryInput->onCommit = runSearch;
-    auto searchBtn = BarButtonUVE(prism::Icon::Search, "Run project search", "Find");
+    auto searchBtn = BarButton(prism::Icon::Search, "Run project search", "Find");
     searchBtn->onClick = [weakInput = std::weak_ptr<prism::TextInput>(queryInput), runSearch] {
         if (auto inp = weakInput.lock()) {
             runSearch(inp->text());
@@ -618,11 +618,11 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildSearchUVE() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
     row->add(queryInput, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    row->add(searchBtn, kCentreSlotUVE);
-    row->add(status, kCentreSlotUVE);
+    row->add(searchBtn, kCentreSlot);
+    row->add(status, kCentreSlot);
 
     auto page = prism::vbox();
-    page->add(BarUVE(row));
+    page->add(Bar(row));
     page->add(results, prism::Slot{1.0F});
     return page;
 }

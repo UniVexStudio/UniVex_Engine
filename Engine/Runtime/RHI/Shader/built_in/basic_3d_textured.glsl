@@ -19,8 +19,8 @@ void main() {
 in vec2 vTexCoord;
 out vec4 FragColor;
 
-// Placeholder only - no CreateTextureUVE-backed binding exists yet this increment
-// (MaterialSystemUVE, a future increment, is what actually binds a real texture here).
+// Placeholder only - no CreateTexture-backed binding exists yet this increment
+// (MaterialSystem, a future increment, is what actually binds a real texture here).
 uniform sampler2D uTexture;
 
 void main() {

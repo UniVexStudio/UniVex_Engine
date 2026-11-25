@@ -12,63 +12,63 @@
 #include "object_3d.h"
 
 namespace UVE::Scene {
-void ApplyObject3DRecipeUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view name) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyObject3DRecipe(IEntityManager& entityManager, const Entity entity, const std::string_view name) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    EnsureObject3DBaselineUVE(entityManager, entity, name);
-    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<VisibilityComponentUVE>(entity, VisibilityComponentUVE{});
+    EnsureObject3DBaseline(entityManager, entity, name);
+    if (!entityManager.HasComponent<VisibilityComponent>(entity)) {
+        entityManager.AddComponent<VisibilityComponent>(entity, VisibilityComponent{});
     }
-    EnsureCommonObjectSectionUVE(entityManager, entity);
+    EnsureCommonObjectSection(entityManager, entity);
 }
 
 namespace {
 
 /// The Object3D recipe under the child's name, then the base component.
 template <typename BaseComponentT>
-void ApplyBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const std::string_view nameFallback) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyBase(IEntityManager& entityManager, const Entity entity, const std::string_view nameFallback) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    ApplyObject3DRecipeUVE(entityManager, entity, nameFallback);
-    if (!entityManager.HasComponentUVE<BaseComponentT>(entity)) {
-        entityManager.AddComponentUVE<BaseComponentT>(entity, BaseComponentT{});
+    ApplyObject3DRecipe(entityManager, entity, nameFallback);
+    if (!entityManager.HasComponent<BaseComponentT>(entity)) {
+        entityManager.AddComponent<BaseComponentT>(entity, BaseComponentT{});
     }
 }
 
 template <typename ComponentT>
-void EnsureUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<ComponentT>(entity)) {
-        entityManager.AddComponentUVE<ComponentT>(entity, ComponentT{});
+void Ensure(IEntityManager& entityManager, const Entity entity) {
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<ComponentT>(entity)) {
+        entityManager.AddComponent<ComponentT>(entity, ComponentT{});
     }
 }
 
 } // namespace
 
-void ApplyRenderInstance3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyRenderInstance3DBase(IEntityManager& entityManager, const Entity entity,
                                   const std::string_view nameFallback) {
-    ApplyBaseUVE<RenderInstanceComponentUVE>(entityManager, entity, nameFallback);
+    ApplyBase<RenderInstanceComponent>(entityManager, entity, nameFallback);
 }
 
-void ApplySurfaceInstance3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplySurfaceInstance3DBase(IEntityManager& entityManager, const Entity entity,
                                    const std::string_view nameFallback) {
-    ApplyRenderInstance3DBaseUVE(entityManager, entity, nameFallback);
-    EnsureUVE<SurfaceInstanceComponentUVE>(entityManager, entity);
+    ApplyRenderInstance3DBase(entityManager, entity, nameFallback);
+    Ensure<SurfaceInstanceComponent>(entityManager, entity);
 }
 
-void ApplyLightEmitter3DBaseUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyLightEmitter3DBase(IEntityManager& entityManager, const Entity entity,
                                 const std::string_view nameFallback) {
-    ApplyRenderInstance3DBaseUVE(entityManager, entity, nameFallback);
-    EnsureUVE<LightEmitterComponentUVE>(entityManager, entity);
+    ApplyRenderInstance3DBase(entityManager, entity, nameFallback);
+    Ensure<LightEmitterComponent>(entityManager, entity);
 }
 
-bool IsSurfaceInstance3DOutsideVisibilityRangeUVE(const SurfaceInstanceComponentUVE& surface,
+bool IsSurfaceInstance3DOutsideVisibilityRange(const SurfaceInstanceComponent& surface,
                                                   const float cameraDistance) noexcept {
-    if (!IsSurfaceInstanceComponentValidUVE(surface) || !std::isfinite(cameraDistance) || cameraDistance < 0.0F) {
+    if (!IsSurfaceInstanceComponentValid(surface) || !std::isfinite(cameraDistance) || cameraDistance < 0.0F) {
         return true;
     }
-    const bool fadeSelf = surface.visibilityRangeFadeMode == SurfaceFadeModeUVE::Self;
+    const bool fadeSelf = surface.visibilityRangeFadeMode == SurfaceFadeMode::Self;
     float nearLimit = surface.visibilityRangeBegin;
     if (fadeSelf) {
         nearLimit = surface.visibilityRangeBegin - surface.visibilityRangeBeginMargin;
@@ -90,7 +90,7 @@ bool IsSurfaceInstance3DOutsideVisibilityRangeUVE(const SurfaceInstanceComponent
     return cameraDistance > farLimit;
 }
 
-void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& surface, Math::AabbUVE& bounds) noexcept {
+void ExpandSurfaceInstance3DCullBounds(const SurfaceInstanceComponent& surface, Math::Aabb& bounds) noexcept {
     const float margin = surface.extraCullMargin;
     if (!std::isfinite(margin) || margin <= 0.0F || !std::isfinite(bounds.min.x) || !std::isfinite(bounds.min.y) ||
         !std::isfinite(bounds.min.z) || !std::isfinite(bounds.max.x) || !std::isfinite(bounds.max.y) ||
@@ -105,24 +105,24 @@ void ExpandSurfaceInstance3DCullBoundsUVE(const SurfaceInstanceComponentUVE& sur
     bounds.max.z += margin;
 }
 
-bool SurfaceInstance3DCastsShadowUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
-    return CastsSurfaceShadowUVE(surface);
+bool SurfaceInstance3DCastsShadow(const SurfaceInstanceComponent& surface) noexcept {
+    return CastsSurfaceShadow(surface);
 }
 
-bool SurfaceInstance3DDrawsInViewUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
-    return surface.castShadow != SurfaceShadowModeUVE::ShadowsOnly;
+bool SurfaceInstance3DDrawsInView(const SurfaceInstanceComponent& surface) noexcept {
+    return surface.castShadow != SurfaceShadowMode::ShadowsOnly;
 }
 
-float SurfaceInstance3DOpacityUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
-    return ResolveSurfaceInstanceOpacityUVE(surface);
+float SurfaceInstance3DOpacity(const SurfaceInstanceComponent& surface) noexcept {
+    return ResolveSurfaceInstanceOpacity(surface);
 }
 
-float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE& surface,
+float SurfaceInstance3DVisibilityFadeWeight(const SurfaceInstanceComponent& surface,
                                               const float cameraDistance) noexcept {
-    if (IsSurfaceInstance3DOutsideVisibilityRangeUVE(surface, cameraDistance)) {
+    if (IsSurfaceInstance3DOutsideVisibilityRange(surface, cameraDistance)) {
         return 0.0F;
     }
-    if (surface.visibilityRangeFadeMode != SurfaceFadeModeUVE::Self) {
+    if (surface.visibilityRangeFadeMode != SurfaceFadeMode::Self) {
         return 1.0F;
     }
     const float begin = surface.visibilityRangeBegin;
@@ -160,18 +160,18 @@ float SurfaceInstance3DVisibilityFadeWeightUVE(const SurfaceInstanceComponentUVE
     return 1.0F;
 }
 
-bool SurfaceInstance3DHasOverlayUVE(const SurfaceInstanceComponentUVE& surface) noexcept {
+bool SurfaceInstance3DHasOverlay(const SurfaceInstanceComponent& surface) noexcept {
     return !surface.materialOverlayPath.empty();
 }
 
-float ApplySurfaceInstance3DOverlaySortBiasUVE(const float baseDepth) noexcept {
+float ApplySurfaceInstance3DOverlaySortBias(const float baseDepth) noexcept {
     if (!std::isfinite(baseDepth)) {
         return baseDepth;
     }
     return baseDepth - 0.001F;
 }
 
-float SurfaceInstance3DLodDistanceUVE(const SurfaceInstanceComponentUVE& surface,
+float SurfaceInstance3DLodDistance(const SurfaceInstanceComponent& surface,
                                       const float cameraDistance) noexcept {
     if (!std::isfinite(cameraDistance)) {
         return cameraDistance;
@@ -183,23 +183,23 @@ float SurfaceInstance3DLodDistanceUVE(const SurfaceInstanceComponentUVE& surface
     return cameraDistance / bias;
 }
 
-bool IsRenderInstance3DOnViewLayersUVE(const std::uint32_t renderLayers,
+bool IsRenderInstance3DOnViewLayers(const std::uint32_t renderLayers,
                                        const std::uint32_t viewLayerMask) noexcept {
     return (renderLayers & viewLayerMask) != 0U;
 }
 
-float ApplyRenderInstance3DSortingOffsetUVE(const float baseDepth, const float sortingOffset) noexcept {
+float ApplyRenderInstance3DSortingOffset(const float baseDepth, const float sortingOffset) noexcept {
     if (!std::isfinite(sortingOffset)) {
         return baseDepth;
     }
     return baseDepth + sortingOffset;
 }
 
-bool IsLightEmitter3DLightingLayersUVE(const std::uint32_t cullMask, const std::uint32_t renderLayers) noexcept {
+bool IsLightEmitter3DLightingLayers(const std::uint32_t cullMask, const std::uint32_t renderLayers) noexcept {
     return (cullMask & renderLayers) != 0U;
 }
 
-float LightEmitter3DDistanceFadeWeightUVE(const float distance, const float begin, const float length) noexcept {
+float LightEmitter3DDistanceFadeWeight(const float distance, const float begin, const float length) noexcept {
     if (!std::isfinite(distance) || distance < 0.0F || !std::isfinite(begin) || begin < 0.0F ||
         !std::isfinite(length) || length < 0.0F) {
         return 0.0F;

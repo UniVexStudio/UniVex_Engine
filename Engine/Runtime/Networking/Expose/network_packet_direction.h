@@ -12,6 +12,6 @@
 namespace UVE::Network {
 
 // Which way the datagram traveled from the watched endpoint's point of view.
-enum class PacketDirectionUVE : std::uint8_t { Outbound, Inbound };
+enum class PacketDirection : std::uint8_t { Outbound, Inbound };
 
 } // namespace UVE::Network

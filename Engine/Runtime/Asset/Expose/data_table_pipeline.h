@@ -4,11 +4,11 @@
 
 namespace UVE::Asset {
 
-class IAssetImporterUVE;
-class IAssetManagerUVE;
+class IAssetImporter;
+class IAssetManager;
 
 /// Registers the Data Table source importers and typed asset-manager loader on existing services.
 /// This helper owns no service, queue, cache, registry, path, worker, or loaded table state.
-void RegisterDataTablePipelineUVE(IAssetImporterUVE& importer, IAssetManagerUVE& assetManager);
+void RegisterDataTablePipeline(IAssetImporter& importer, IAssetManager& assetManager);
 
 } // namespace UVE::Asset

@@ -8,12 +8,12 @@
 #include "i_entity_manager.h"
 
 namespace UVE::Physics {
-class IRaycastSystemUVE;
+class IRaycastSystem;
 } // namespace UVE::Physics
 
 namespace UVE::Core {
 
-/// Physics-driven occlusion: the concrete IAudioOcclusionProviderUVE that turns the raycast system
+/// Physics-driven occlusion: the concrete IAudioOcclusionProvider that turns the raycast system
 /// into an occlusion answer.
 ///
 /// It lives in uve_core rather than uve_audio because the dependency only points one way - audio
@@ -28,31 +28,31 @@ namespace UVE::Core {
 /// continuous curve.
 ///
 /// Cost: three raycasts per source per query, and the audio system only queries at
-/// kAudioOcclusionQueryIntervalSecondsUVE (10 Hz), so a scene with fifty occluded sources costs at
+/// kAudioOcclusionQueryIntervalSeconds (10 Hz), so a scene with fifty occluded sources costs at
 /// most 1500 raycasts a second - two orders of magnitude below a frame's render work.
 ///
-/// Thread-safety: read-only once constructed. RaycastUVE() performs no mutation, so the provider is
+/// Thread-safety: read-only once constructed. Raycast() performs no mutation, so the provider is
 /// safe to call from the engine thread alongside the rest of the audio update; the borrows it takes
 /// (entity manager, raycast system) must outlive it.
-class RaycastAudioOcclusionUVE final : public Audio::IAudioOcclusionProviderUVE {
+class RaycastAudioOcclusion final : public Audio::IAudioOcclusionProvider {
 public:
-    RaycastAudioOcclusionUVE(Scene::IEntityManagerUVE& entityManager,
-                             const Physics::IRaycastSystemUVE& raycastSystem) noexcept;
+    RaycastAudioOcclusion(Scene::IEntityManager& entityManager,
+                             const Physics::IRaycastSystem& raycastSystem) noexcept;
 
     /// Distance in metres either side of the listener centre that the ear rays start from. 0.1 m is
     /// roughly an adult head; it is a constant rather than a knob because a source that is blocked
     /// for one ear and clear for the other is exactly the partial occlusion this is meant to model.
-    static constexpr float kEarOffsetMetersUVE = 0.1F;
+    static constexpr float kEarOffsetMeters = 0.1F;
 
     /// Shorter than any audible path: a source sitting on the listener has nothing between them, and
     /// tracing a zero-length ray would only ask the physics system about an undefined direction.
-    static constexpr float kMinimumTraceDistanceMetersUVE = 0.01F;
+    static constexpr float kMinimumTraceDistanceMeters = 0.01F;
 
-    [[nodiscard]] float QueryOcclusionUVE(const Audio::AudioOcclusionQueryUVE& query) const override;
+    [[nodiscard]] float QueryOcclusion(const Audio::AudioOcclusionQuery& query) const override;
 
 private:
-    Scene::IEntityManagerUVE& m_entityManager;
-    const Physics::IRaycastSystemUVE& m_raycastSystem;
+    Scene::IEntityManager& m_entityManager;
+    const Physics::IRaycastSystem& m_raycastSystem;
 };
 
 } // namespace UVE::Core

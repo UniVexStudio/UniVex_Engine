@@ -4,54 +4,54 @@
 #include <gtest/gtest.h>
 namespace UVE::Window::Tests {
 namespace {
-TEST(DisplayModeValidationUVETest, AcceptsDefaultAndBoundedModes) {
-    EXPECT_TRUE(ValidateDisplayModeDescUVE(DisplayModeDescUVE{}));
-    EXPECT_TRUE(ValidateDisplayModeDescUVE({3840U, 2160U, 144U}));
-    EXPECT_TRUE(ValidateDisplayModeDescUVE({kMaximumDisplayModeAxisUVE, kMaximumDisplayModeAxisUVE,
-                                            kMaximumDisplayModeRefreshRateUVE}));
+TEST(DisplayModeValidationTest, AcceptsDefaultAndBoundedModes) {
+    EXPECT_TRUE(ValidateDisplayModeDesc(DisplayModeDesc{}));
+    EXPECT_TRUE(ValidateDisplayModeDesc({3840U, 2160U, 144U}));
+    EXPECT_TRUE(ValidateDisplayModeDesc({kMaximumDisplayModeAxis, kMaximumDisplayModeAxis,
+                                            kMaximumDisplayModeRefreshRate}));
 }
-TEST(DisplayModeValidationUVETest, AcceptsZeroRefreshAsBackendAutoMode) {
-    EXPECT_TRUE(ValidateDisplayModeDescUVE({1280U, 720U, 0U}));
+TEST(DisplayModeValidationTest, AcceptsZeroRefreshAsBackendAutoMode) {
+    EXPECT_TRUE(ValidateDisplayModeDesc({1280U, 720U, 0U}));
 }
-TEST(DisplayModeValidationUVETest, RejectsZeroOrOversizedDimensions) {
-    EXPECT_FALSE(ValidateDisplayModeDescUVE({0U, 1080U, 60U}));
-    EXPECT_FALSE(ValidateDisplayModeDescUVE({1920U, 0U, 60U}));
-    EXPECT_FALSE(ValidateDisplayModeDescUVE({kMaximumDisplayModeAxisUVE + 1U, 1080U, 60U}));
-    EXPECT_FALSE(ValidateDisplayModeDescUVE({1920U, kMaximumDisplayModeAxisUVE + 1U, 60U}));
+TEST(DisplayModeValidationTest, RejectsZeroOrOversizedDimensions) {
+    EXPECT_FALSE(ValidateDisplayModeDesc({0U, 1080U, 60U}));
+    EXPECT_FALSE(ValidateDisplayModeDesc({1920U, 0U, 60U}));
+    EXPECT_FALSE(ValidateDisplayModeDesc({kMaximumDisplayModeAxis + 1U, 1080U, 60U}));
+    EXPECT_FALSE(ValidateDisplayModeDesc({1920U, kMaximumDisplayModeAxis + 1U, 60U}));
 }
-TEST(DisplayModeValidationUVETest, RejectsExcessiveRefreshRate) {
-    EXPECT_FALSE(ValidateDisplayModeDescUVE({1920U, 1080U, kMaximumDisplayModeRefreshRateUVE + 1U}));
+TEST(DisplayModeValidationTest, RejectsExcessiveRefreshRate) {
+    EXPECT_FALSE(ValidateDisplayModeDesc({1920U, 1080U, kMaximumDisplayModeRefreshRate + 1U}));
 }
 
-TEST(WindowModePolicyUVETest, FallsBackToWindowedOnlyWhenFullscreenLacksMonitorMode) {
-    using Platform::WindowModeUVE;
-    for (const WindowModeUVE mode : {WindowModeUVE::Windowed, WindowModeUVE::Maximized,
-                                     WindowModeUVE::Borderless, WindowModeUVE::Fullscreen,
-                                     WindowModeUVE::ExclusiveFullscreen}) {
-        EXPECT_EQ(ResolveInitialWindowModeUVE(mode, true), mode);
+TEST(WindowModePolicyTest, FallsBackToWindowedOnlyWhenFullscreenLacksMonitorMode) {
+    using Platform::WindowMode;
+    for (const WindowMode mode : {WindowMode::Windowed, WindowMode::Maximized,
+                                     WindowMode::Borderless, WindowMode::Fullscreen,
+                                     WindowMode::ExclusiveFullscreen}) {
+        EXPECT_EQ(ResolveInitialWindowMode(mode, true), mode);
     }
 
-    EXPECT_EQ(ResolveInitialWindowModeUVE(WindowModeUVE::Windowed, false), WindowModeUVE::Windowed);
-    EXPECT_EQ(ResolveInitialWindowModeUVE(WindowModeUVE::Maximized, false), WindowModeUVE::Maximized);
-    EXPECT_EQ(ResolveInitialWindowModeUVE(WindowModeUVE::Borderless, false), WindowModeUVE::Borderless);
-    EXPECT_EQ(ResolveInitialWindowModeUVE(WindowModeUVE::Fullscreen, false), WindowModeUVE::Windowed);
-    EXPECT_EQ(ResolveInitialWindowModeUVE(WindowModeUVE::ExclusiveFullscreen, false), WindowModeUVE::Windowed);
+    EXPECT_EQ(ResolveInitialWindowMode(WindowMode::Windowed, false), WindowMode::Windowed);
+    EXPECT_EQ(ResolveInitialWindowMode(WindowMode::Maximized, false), WindowMode::Maximized);
+    EXPECT_EQ(ResolveInitialWindowMode(WindowMode::Borderless, false), WindowMode::Borderless);
+    EXPECT_EQ(ResolveInitialWindowMode(WindowMode::Fullscreen, false), WindowMode::Windowed);
+    EXPECT_EQ(ResolveInitialWindowMode(WindowMode::ExclusiveFullscreen, false), WindowMode::Windowed);
 }
 
-TEST(WindowModePolicyUVETest, ClassifiesOnlyMonitorFullscreenModesAsFullscreen) {
-    using Platform::WindowModeUVE;
-    EXPECT_TRUE(IsFullscreenWindowModeUVE(WindowModeUVE::Fullscreen));
-    EXPECT_TRUE(IsFullscreenWindowModeUVE(WindowModeUVE::ExclusiveFullscreen));
-    EXPECT_FALSE(IsFullscreenWindowModeUVE(WindowModeUVE::Windowed));
-    EXPECT_FALSE(IsFullscreenWindowModeUVE(WindowModeUVE::Maximized));
-    EXPECT_FALSE(IsFullscreenWindowModeUVE(WindowModeUVE::Borderless));
+TEST(WindowModePolicyTest, ClassifiesOnlyMonitorFullscreenModesAsFullscreen) {
+    using Platform::WindowMode;
+    EXPECT_TRUE(IsFullscreenWindowMode(WindowMode::Fullscreen));
+    EXPECT_TRUE(IsFullscreenWindowMode(WindowMode::ExclusiveFullscreen));
+    EXPECT_FALSE(IsFullscreenWindowMode(WindowMode::Windowed));
+    EXPECT_FALSE(IsFullscreenWindowMode(WindowMode::Maximized));
+    EXPECT_FALSE(IsFullscreenWindowMode(WindowMode::Borderless));
 }
 
-TEST(WindowModePolicyUVETest, PreservesRestoreBoundsWhileMaximizedOrFullscreen) {
-    EXPECT_TRUE(ShouldCaptureWindowedGeometryUVE(false, false));
-    EXPECT_FALSE(ShouldCaptureWindowedGeometryUVE(false, true));
-    EXPECT_FALSE(ShouldCaptureWindowedGeometryUVE(true, false));
-    EXPECT_FALSE(ShouldCaptureWindowedGeometryUVE(true, true));
+TEST(WindowModePolicyTest, PreservesRestoreBoundsWhileMaximizedOrFullscreen) {
+    EXPECT_TRUE(ShouldCaptureWindowedGeometry(false, false));
+    EXPECT_FALSE(ShouldCaptureWindowedGeometry(false, true));
+    EXPECT_FALSE(ShouldCaptureWindowedGeometry(true, false));
+    EXPECT_FALSE(ShouldCaptureWindowedGeometry(true, true));
 }
 } // namespace
 } // namespace UVE::Window::Tests

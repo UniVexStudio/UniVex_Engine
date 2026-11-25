@@ -11,7 +11,7 @@
 
 namespace UVE::Core {
 
-struct TelemetryEventUVE final {
+struct TelemetryEvent final {
     std::string eventName;
     std::string sessionId;
     std::uint64_t timestampUnixMs = 0U;
@@ -19,44 +19,44 @@ struct TelemetryEventUVE final {
 };
 
 /// Pluggable analytics / crash-breadcrumb telemetry sink (file, HTTP, or test double).
-class ITelemetrySinkUVE {
+class ITelemetrySink {
 public:
-    virtual ~ITelemetrySinkUVE() = default;
-    virtual void WriteBatchUVE(const std::vector<TelemetryEventUVE>& events) = 0;
+    virtual ~ITelemetrySink() = default;
+    virtual void WriteBatch(const std::vector<TelemetryEvent>& events) = 0;
 };
 
 /// Writes telemetry events as newline-delimited JSON (JSONL) for offline diagnostics or upload.
-class JsonFileTelemetrySinkUVE final : public ITelemetrySinkUVE {
+class JsonFileTelemetrySink final : public ITelemetrySink {
 public:
-    explicit JsonFileTelemetrySinkUVE(std::filesystem::path outputFile);
-    void WriteBatchUVE(const std::vector<TelemetryEventUVE>& events) override;
-    [[nodiscard]] const std::filesystem::path& OutputFileUVE() const noexcept { return m_outputFile; }
+    explicit JsonFileTelemetrySink(std::filesystem::path outputFile);
+    void WriteBatch(const std::vector<TelemetryEvent>& events) override;
+    [[nodiscard]] const std::filesystem::path& OutputFile() const noexcept { return m_outputFile; }
 
 private:
     std::filesystem::path m_outputFile;
 };
 
 /// Consent-gated structured telemetry & session analytics recorder.
-class TelemetryServiceUVE final {
+class TelemetryService final {
 public:
-    explicit TelemetryServiceUVE(std::string sessionId = "local-session");
+    explicit TelemetryService(std::string sessionId = "local-session");
 
-    void SetConsentEnabledUVE(bool enabled) noexcept { m_consentEnabled = enabled; }
-    [[nodiscard]] bool IsConsentEnabledUVE() const noexcept { return m_consentEnabled; }
+    void SetConsentEnabled(bool enabled) noexcept { m_consentEnabled = enabled; }
+    [[nodiscard]] bool IsConsentEnabled() const noexcept { return m_consentEnabled; }
 
-    void AddSinkUVE(std::shared_ptr<ITelemetrySinkUVE> sink);
-    void RecordEventUVE(std::string eventName, std::map<std::string, std::string> properties = {});
-    void FlushUVE();
+    void AddSink(std::shared_ptr<ITelemetrySink> sink);
+    void RecordEvent(std::string eventName, std::map<std::string, std::string> properties = {});
+    void Flush();
 
-    [[nodiscard]] std::size_t PendingEventCountUVE() const noexcept { return m_pending.size(); }
-    [[nodiscard]] std::uint64_t TotalRecordedEventsUVE() const noexcept { return m_totalRecorded; }
+    [[nodiscard]] std::size_t PendingEventCount() const noexcept { return m_pending.size(); }
+    [[nodiscard]] std::uint64_t TotalRecordedEvents() const noexcept { return m_totalRecorded; }
 
 private:
     std::string m_sessionId;
     bool m_consentEnabled = false;
     std::uint64_t m_totalRecorded = 0U;
-    std::vector<TelemetryEventUVE> m_pending;
-    std::vector<std::shared_ptr<ITelemetrySinkUVE>> m_sinks;
+    std::vector<TelemetryEvent> m_pending;
+    std::vector<std::shared_ptr<ITelemetrySink>> m_sinks;
 };
 
 } // namespace UVE::Core

@@ -10,35 +10,35 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsUsableVelocityUVE(const Math::Vector3UVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value);
+[[nodiscard]] bool IsUsableVelocity(const Math::Vector3& value) noexcept {
+    return IsFinite3DObjectVector(value);
 }
 
 } // namespace
 
-bool IsKinematic3DObjectComponentValidUVE(const Kinematic3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.targetVelocity) && std::isfinite(value.interpolation) &&
+bool IsKinematic3DObjectComponentValid(const Kinematic3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.targetVelocity) && std::isfinite(value.interpolation) &&
            value.interpolation >= 0.0F && value.interpolation <= 1.0F;
 }
 
-bool IsKinematic3DObjectDefinitionValidUVE(const Kinematic3DObjectDefinitionUVE& value) noexcept {
-    return IsColliderComponentValidUVE(value.collider) && IsRigid3DComponentValidUVE(value.body) &&
-           value.body.isKinematic && IsKinematic3DObjectComponentValidUVE(value.animatableBody);
+bool IsKinematic3DObjectDefinitionValid(const Kinematic3DObjectDefinition& value) noexcept {
+    return IsColliderComponentValid(value.collider) && IsRigid3DComponentValid(value.body) &&
+           value.body.isKinematic && IsKinematic3DObjectComponentValid(value.animatableBody);
 }
 
-void ApplyKinematic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                            const Kinematic3DObjectDefinitionUVE& value) {
-    ApplyPhysicsObject3DBaseUVE(entityManager, entity, Kinematic3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
-    entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, value.body);
-    entityManager.AddComponentUVE<Kinematic3DComponentUVE>(entity, value.animatableBody);
+void ApplyKinematic3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                            const Kinematic3DObjectDefinition& value) {
+    ApplyPhysicsObject3DBase(entityManager, entity, Kinematic3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ColliderComponent>(entity, value.collider);
+    entityManager.AddComponent<Rigid3DComponent>(entity, value.body);
+    entityManager.AddComponent<Kinematic3DComponent>(entity, value.animatableBody);
 }
 
-bool Kinematic3DUVE::IsDrivingUVE(const Kinematic3DComponentUVE& kinematic) noexcept {
+bool Kinematic3D::IsDriving(const Kinematic3DComponent& kinematic) noexcept {
     return kinematic.active;
 }
 
-float Kinematic3DUVE::EaseBlendUVE(const float interpolation, const float deltaTimeSeconds) noexcept {
+float Kinematic3D::EaseBlend(const float interpolation, const float deltaTimeSeconds) noexcept {
     if (!std::isfinite(interpolation) || interpolation <= 0.0F) {
         return 0.0F;
     }
@@ -51,30 +51,30 @@ float Kinematic3DUVE::EaseBlendUVE(const float interpolation, const float deltaT
     return 1.0F - std::pow(1.0F - interpolation, deltaTimeSeconds);
 }
 
-Math::Vector3UVE Kinematic3DUVE::ResolveWorldTargetUVE(const Math::Vector3UVE& localTarget,
-                                                       const Math::QuaternionUVE& worldRotation) noexcept {
-    if (!IsUsableVelocityUVE(localTarget)) {
+Math::Vector3 Kinematic3D::ResolveWorldTarget(const Math::Vector3& localTarget,
+                                                       const Math::Quaternion& worldRotation) noexcept {
+    if (!IsUsableVelocity(localTarget)) {
         return {};
     }
-    Math::QuaternionUVE rotation{};
-    if (!Math::TryNormalizeUVE(worldRotation, rotation)) {
+    Math::Quaternion rotation{};
+    if (!Math::TryNormalize(worldRotation, rotation)) {
         rotation = {};
     }
-    return Math::RotateVectorUVE(rotation, localTarget);
+    return Math::RotateVector(rotation, localTarget);
 }
 
-Math::Vector3UVE Kinematic3DUVE::EaseVelocityUVE(const Math::Vector3UVE& currentWorldVelocity,
-                                                 const Math::Vector3UVE& worldTarget, const float interpolation,
+Math::Vector3 Kinematic3D::EaseVelocity(const Math::Vector3& currentWorldVelocity,
+                                                 const Math::Vector3& worldTarget, const float interpolation,
                                                  const float deltaTimeSeconds) noexcept {
-    Math::Vector3UVE velocity = IsUsableVelocityUVE(currentWorldVelocity) ? currentWorldVelocity : Math::Vector3UVE{};
-    const Math::Vector3UVE target = IsUsableVelocityUVE(worldTarget) ? worldTarget : Math::Vector3UVE{};
-    const float blend = EaseBlendUVE(interpolation, deltaTimeSeconds);
+    Math::Vector3 velocity = IsUsableVelocity(currentWorldVelocity) ? currentWorldVelocity : Math::Vector3{};
+    const Math::Vector3 target = IsUsableVelocity(worldTarget) ? worldTarget : Math::Vector3{};
+    const float blend = EaseBlend(interpolation, deltaTimeSeconds);
     if (blend >= 1.0F) {
         velocity = target;
     } else if (blend > 0.0F) {
         velocity += (target - velocity) * blend;
     }
-    return IsUsableVelocityUVE(velocity) ? velocity : Math::Vector3UVE{};
+    return IsUsableVelocity(velocity) ? velocity : Math::Vector3{};
 }
 
 } // namespace UVE::Scene

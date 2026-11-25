@@ -11,51 +11,51 @@
 
 namespace UVE::Editor {
 
-class DeveloperConsoleUVE;
-using DeveloperConsoleCommandHandlerUVE = std::function<void(DeveloperConsoleUVE&, std::string_view)>;
+class DeveloperConsole;
+using DeveloperConsoleCommandHandler = std::function<void(DeveloperConsole&, std::string_view)>;
 
-enum class DeveloperConsoleSeverityUVE : std::uint8_t {
+enum class DeveloperConsoleSeverity : std::uint8_t {
     Info = 0,
     Warning,
     Error,
 };
 
-enum class DeveloperConsoleSeverityFilterUVE : std::uint8_t {
+enum class DeveloperConsoleSeverityFilter : std::uint8_t {
     All = 0,
     Info,
     Warning,
     Error,
 };
 
-enum class DeveloperConsoleBuildPolicyUVE : std::uint8_t {
+enum class DeveloperConsoleBuildPolicy : std::uint8_t {
     Development = 0,
     Shipping,
 };
 
-enum class DeveloperConsoleAccessUVE : std::uint8_t {
+enum class DeveloperConsoleAccess : std::uint8_t {
     Denied = 0,
     ReadOnly,
     Full,
 };
 
-enum class DeveloperConsoleAuthorizationCodeUVE : std::uint8_t {
+enum class DeveloperConsoleAuthorizationCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     Unavailable,
     InvalidAccess,
 };
 
-struct DeveloperConsoleAuthorizationResultUVE final {
-    DeveloperConsoleAuthorizationCodeUVE code = DeveloperConsoleAuthorizationCodeUVE::Applied;
+struct DeveloperConsoleAuthorizationResult final {
+    DeveloperConsoleAuthorizationCode code = DeveloperConsoleAuthorizationCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleAuthorizationCodeUVE::Applied ||
-               code == DeveloperConsoleAuthorizationCodeUVE::Unchanged;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleAuthorizationCode::Applied ||
+               code == DeveloperConsoleAuthorizationCode::Unchanged;
     }
 };
 
-enum class DeveloperConsoleCommandRegistrationCodeUVE : std::uint8_t {
+enum class DeveloperConsoleCommandRegistrationCode : std::uint8_t {
     Accepted = 0,
     InvalidIdentifier,
     InvalidHelp,
@@ -66,16 +66,16 @@ enum class DeveloperConsoleCommandRegistrationCodeUVE : std::uint8_t {
     Unavailable,
 };
 
-struct DeveloperConsoleCommandRegistrationResultUVE final {
-    DeveloperConsoleCommandRegistrationCodeUVE code = DeveloperConsoleCommandRegistrationCodeUVE::Accepted;
+struct DeveloperConsoleCommandRegistrationResult final {
+    DeveloperConsoleCommandRegistrationCode code = DeveloperConsoleCommandRegistrationCode::Accepted;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleCommandRegistrationCodeUVE::Accepted;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleCommandRegistrationCode::Accepted;
     }
 };
 
-enum class DeveloperConsoleCVarRegistrationCodeUVE : std::uint8_t {
+enum class DeveloperConsoleCVarRegistrationCode : std::uint8_t {
     Accepted = 0,
     InvalidName,
     InvalidValue,
@@ -85,16 +85,16 @@ enum class DeveloperConsoleCVarRegistrationCodeUVE : std::uint8_t {
     Unavailable,
 };
 
-struct DeveloperConsoleCVarRegistrationResultUVE final {
-    DeveloperConsoleCVarRegistrationCodeUVE code = DeveloperConsoleCVarRegistrationCodeUVE::Accepted;
+struct DeveloperConsoleCVarRegistrationResult final {
+    DeveloperConsoleCVarRegistrationCode code = DeveloperConsoleCVarRegistrationCode::Accepted;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleCVarRegistrationCodeUVE::Accepted;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleCVarRegistrationCode::Accepted;
     }
 };
 
-enum class DeveloperConsoleCVarMutationCodeUVE : std::uint8_t {
+enum class DeveloperConsoleCVarMutationCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     Unavailable,
@@ -104,17 +104,17 @@ enum class DeveloperConsoleCVarMutationCodeUVE : std::uint8_t {
     InvalidValue,
 };
 
-struct DeveloperConsoleCVarMutationResultUVE final {
-    DeveloperConsoleCVarMutationCodeUVE code = DeveloperConsoleCVarMutationCodeUVE::Applied;
+struct DeveloperConsoleCVarMutationResult final {
+    DeveloperConsoleCVarMutationCode code = DeveloperConsoleCVarMutationCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleCVarMutationCodeUVE::Applied ||
-               code == DeveloperConsoleCVarMutationCodeUVE::Unchanged;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleCVarMutationCode::Applied ||
+               code == DeveloperConsoleCVarMutationCode::Unchanged;
     }
 };
 
-enum class DeveloperConsoleExecutionCodeUVE : std::uint8_t {
+enum class DeveloperConsoleExecutionCode : std::uint8_t {
     Executed = 0,
     Unavailable,
     InvalidInput,
@@ -122,50 +122,50 @@ enum class DeveloperConsoleExecutionCodeUVE : std::uint8_t {
     Unauthorized,
 };
 
-struct DeveloperConsoleExecutionResultUVE final {
-    DeveloperConsoleExecutionCodeUVE code = DeveloperConsoleExecutionCodeUVE::Executed;
+struct DeveloperConsoleExecutionResult final {
+    DeveloperConsoleExecutionCode code = DeveloperConsoleExecutionCode::Executed;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleExecutionCodeUVE::Executed;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleExecutionCode::Executed;
     }
 };
 
-enum class DeveloperConsoleSeverityFilterCodeUVE : std::uint8_t {
+enum class DeveloperConsoleSeverityFilterCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     Unavailable,
     InvalidFilter,
 };
 
-struct DeveloperConsoleSeverityFilterResultUVE final {
-    DeveloperConsoleSeverityFilterCodeUVE code = DeveloperConsoleSeverityFilterCodeUVE::Applied;
+struct DeveloperConsoleSeverityFilterResult final {
+    DeveloperConsoleSeverityFilterCode code = DeveloperConsoleSeverityFilterCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleSeverityFilterCodeUVE::Applied ||
-               code == DeveloperConsoleSeverityFilterCodeUVE::Unchanged;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleSeverityFilterCode::Applied ||
+               code == DeveloperConsoleSeverityFilterCode::Unchanged;
     }
 };
 
-enum class DeveloperConsoleCompletionPrefixCodeUVE : std::uint8_t {
+enum class DeveloperConsoleCompletionPrefixCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     Unavailable,
     InvalidPrefix,
 };
 
-struct DeveloperConsoleCompletionPrefixResultUVE final {
-    DeveloperConsoleCompletionPrefixCodeUVE code = DeveloperConsoleCompletionPrefixCodeUVE::Applied;
+struct DeveloperConsoleCompletionPrefixResult final {
+    DeveloperConsoleCompletionPrefixCode code = DeveloperConsoleCompletionPrefixCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleCompletionPrefixCodeUVE::Applied ||
-               code == DeveloperConsoleCompletionPrefixCodeUVE::Unchanged;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleCompletionPrefixCode::Applied ||
+               code == DeveloperConsoleCompletionPrefixCode::Unchanged;
     }
 };
 
-enum class DeveloperConsoleHistoryNavigationCodeUVE : std::uint8_t {
+enum class DeveloperConsoleHistoryNavigationCode : std::uint8_t {
     Applied = 0,
     Unavailable,
     InvalidDelta,
@@ -173,195 +173,195 @@ enum class DeveloperConsoleHistoryNavigationCodeUVE : std::uint8_t {
     Boundary,
 };
 
-struct DeveloperConsoleHistoryNavigationResultUVE final {
-    DeveloperConsoleHistoryNavigationCodeUVE code = DeveloperConsoleHistoryNavigationCodeUVE::Applied;
+struct DeveloperConsoleHistoryNavigationResult final {
+    DeveloperConsoleHistoryNavigationCode code = DeveloperConsoleHistoryNavigationCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleHistoryNavigationCodeUVE::Applied;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleHistoryNavigationCode::Applied;
     }
 };
 
-enum class DeveloperConsoleClearCodeUVE : std::uint8_t {
+enum class DeveloperConsoleClearCode : std::uint8_t {
     Applied = 0,
     Unavailable,
     Unauthorized,
     Unchanged,
 };
 
-struct DeveloperConsoleClearResultUVE final {
-    DeveloperConsoleClearCodeUVE code = DeveloperConsoleClearCodeUVE::Applied;
+struct DeveloperConsoleClearResult final {
+    DeveloperConsoleClearCode code = DeveloperConsoleClearCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleClearCodeUVE::Applied;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleClearCode::Applied;
     }
 };
 
-enum class DeveloperConsoleBuildPolicyCodeUVE : std::uint8_t {
+enum class DeveloperConsoleBuildPolicyCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     Locked,
 };
 
-struct DeveloperConsoleBuildPolicyResultUVE final {
-    DeveloperConsoleBuildPolicyCodeUVE code = DeveloperConsoleBuildPolicyCodeUVE::Applied;
+struct DeveloperConsoleBuildPolicyResult final {
+    DeveloperConsoleBuildPolicyCode code = DeveloperConsoleBuildPolicyCode::Applied;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == DeveloperConsoleBuildPolicyCodeUVE::Applied;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == DeveloperConsoleBuildPolicyCode::Applied;
     }
 };
 
-enum class DeveloperConsoleAuditActionUVE : std::uint8_t {
+enum class DeveloperConsoleAuditAction : std::uint8_t {
     CommandExecution = 0,
     CVarMutation,
     AccessChange,
     BuildPolicyChange,
 };
 
-struct DeveloperConsolePrincipalUVE final {
+struct DeveloperConsolePrincipal final {
     std::string subject = "local";
     std::string session = "default";
 
-    [[nodiscard]] bool operator==(const DeveloperConsolePrincipalUVE&) const = default;
+    [[nodiscard]] bool operator==(const DeveloperConsolePrincipal&) const = default;
 };
 
-struct DeveloperConsoleAuditRecordUVE final {
+struct DeveloperConsoleAuditRecord final {
     std::uint64_t sequence = 0U;
-    DeveloperConsoleAuditActionUVE action = DeveloperConsoleAuditActionUVE::CommandExecution;
-    DeveloperConsolePrincipalUVE principal;
+    DeveloperConsoleAuditAction action = DeveloperConsoleAuditAction::CommandExecution;
+    DeveloperConsolePrincipal principal;
     std::string target;
     std::string detail;
     bool accepted = false;
 
-    [[nodiscard]] bool operator==(const DeveloperConsoleAuditRecordUVE&) const = default;
+    [[nodiscard]] bool operator==(const DeveloperConsoleAuditRecord&) const = default;
 };
 
-using DeveloperConsoleAuditSinkUVE = std::function<void(const DeveloperConsoleAuditRecordUVE&)>;
+using DeveloperConsoleAuditSink = std::function<void(const DeveloperConsoleAuditRecord&)>;
 
-struct DeveloperConsoleCompletionUVE final {
+struct DeveloperConsoleCompletion final {
     std::string identifier;
     std::string help;
-    [[nodiscard]] bool operator==(const DeveloperConsoleCompletionUVE&) const = default;
+    [[nodiscard]] bool operator==(const DeveloperConsoleCompletion&) const = default;
 };
 
-struct DeveloperConsoleEntryUVE final {
-    DeveloperConsoleSeverityUVE severity = DeveloperConsoleSeverityUVE::Info;
+struct DeveloperConsoleEntry final {
+    DeveloperConsoleSeverity severity = DeveloperConsoleSeverity::Info;
     std::string text;
-    [[nodiscard]] bool operator==(const DeveloperConsoleEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const DeveloperConsoleEntry&) const = default;
 };
 
-struct DeveloperConsoleCVarUVE final {
+struct DeveloperConsoleCVar final {
     std::string name;
     std::string value;
     bool readOnly = false;
-    [[nodiscard]] bool operator==(const DeveloperConsoleCVarUVE&) const = default;
+    [[nodiscard]] bool operator==(const DeveloperConsoleCVar&) const = default;
 };
 
-struct DeveloperConsoleSnapshotUVE final {
+struct DeveloperConsoleSnapshot final {
     std::uint64_t generation = 0U;
     bool available = true;
     bool developmentOnly = true;
-    DeveloperConsoleAccessUVE access = DeveloperConsoleAccessUVE::Full;
-    DeveloperConsoleSeverityFilterUVE severityFilter = DeveloperConsoleSeverityFilterUVE::All;
+    DeveloperConsoleAccess access = DeveloperConsoleAccess::Full;
+    DeveloperConsoleSeverityFilter severityFilter = DeveloperConsoleSeverityFilter::All;
     std::int32_t historyCursor = -1;
     std::string historyEntry;
     bool outputTruncated = false;
     bool historyTruncated = false;
     bool cvarsTruncated = false;
     bool completionTruncated = false;
-    std::vector<DeveloperConsoleEntryUVE> output;
+    std::vector<DeveloperConsoleEntry> output;
     std::vector<std::string> history;
-    std::vector<DeveloperConsoleCVarUVE> cvars;
-    std::vector<DeveloperConsoleCompletionUVE> completions;
-    [[nodiscard]] bool operator==(const DeveloperConsoleSnapshotUVE&) const = default;
+    std::vector<DeveloperConsoleCVar> cvars;
+    std::vector<DeveloperConsoleCompletion> completions;
+    [[nodiscard]] bool operator==(const DeveloperConsoleSnapshot&) const = default;
 };
 
-class DeveloperConsoleUVE final {
+class DeveloperConsole final {
 public:
-    static constexpr std::size_t kMaximumCommandsUVE = 64U;
-    static constexpr std::size_t kMaximumHistoryUVE = 128U;
-    static constexpr std::size_t kMaximumOutputUVE = 128U;
-    static constexpr std::size_t kMaximumCVarsUVE = 128U;
-    static constexpr std::size_t kMaximumCompletionsUVE = 128U;
-    static constexpr std::size_t kMaximumIdentifierBytesUVE = 64U;
-    static constexpr std::size_t kMaximumValueBytesUVE = 256U;
-    static constexpr std::size_t kMaximumPrincipalBytesUVE = 64U;
+    static constexpr std::size_t kMaximumCommands = 64U;
+    static constexpr std::size_t kMaximumHistory = 128U;
+    static constexpr std::size_t kMaximumOutput = 128U;
+    static constexpr std::size_t kMaximumCVars = 128U;
+    static constexpr std::size_t kMaximumCompletions = 128U;
+    static constexpr std::size_t kMaximumIdentifierBytes = 64U;
+    static constexpr std::size_t kMaximumValueBytes = 256U;
+    static constexpr std::size_t kMaximumPrincipalBytes = 64U;
 
-    explicit DeveloperConsoleUVE(DeveloperConsoleBuildPolicyUVE policy = DeveloperConsoleBuildPolicyUVE::Development);
-    DeveloperConsoleUVE(const DeveloperConsoleUVE&) = delete;
-    DeveloperConsoleUVE& operator=(const DeveloperConsoleUVE&) = delete;
+    explicit DeveloperConsole(DeveloperConsoleBuildPolicy policy = DeveloperConsoleBuildPolicy::Development);
+    DeveloperConsole(const DeveloperConsole&) = delete;
+    DeveloperConsole& operator=(const DeveloperConsole&) = delete;
 
-    [[nodiscard]] DeveloperConsoleCommandRegistrationResultUVE RegisterCommandUVE(
-        std::string identifier, std::string help, DeveloperConsoleCommandHandlerUVE handler);
+    [[nodiscard]] DeveloperConsoleCommandRegistrationResult RegisterCommandDetailed(
+        std::string identifier, std::string help, DeveloperConsoleCommandHandler handler);
     [[nodiscard]] bool RegisterCommand(std::string identifier, std::string help,
-                                       DeveloperConsoleCommandHandlerUVE handler);
-    [[nodiscard]] DeveloperConsoleCVarRegistrationResultUVE RegisterCVarUVE(
+                                       DeveloperConsoleCommandHandler handler);
+    [[nodiscard]] DeveloperConsoleCVarRegistrationResult RegisterCVarDetailed(
         std::string name, std::string value, bool readOnly = false);
     [[nodiscard]] bool RegisterCVar(std::string name, std::string value, bool readOnly = false);
-    [[nodiscard]] DeveloperConsoleExecutionResultUVE ExecuteDetailedUVE(std::string commandLine);
-    [[nodiscard]] bool ExecuteUVE(std::string commandLine);
-    [[nodiscard]] DeveloperConsoleClearResultUVE ClearDetailedUVE() noexcept;
-    [[nodiscard]] bool ClearUVE() noexcept;
-    [[nodiscard]] DeveloperConsoleCVarMutationResultUVE SetCVarDetailedUVE(std::string_view name,
+    [[nodiscard]] DeveloperConsoleExecutionResult ExecuteDetailed(std::string commandLine);
+    [[nodiscard]] bool Execute(std::string commandLine);
+    [[nodiscard]] DeveloperConsoleClearResult ClearDetailed() noexcept;
+    [[nodiscard]] bool Clear() noexcept;
+    [[nodiscard]] DeveloperConsoleCVarMutationResult SetCVarDetailed(std::string_view name,
                                                                             std::string_view value);
-    [[nodiscard]] bool SetCVarUVE(std::string_view name, std::string_view value);
-    [[nodiscard]] DeveloperConsoleBuildPolicyResultUVE SetBuildPolicyDetailedUVE(
-        DeveloperConsoleBuildPolicyUVE policy) noexcept;
-    [[nodiscard]] bool SetBuildPolicyUVE(DeveloperConsoleBuildPolicyUVE policy) noexcept;
-    [[nodiscard]] DeveloperConsoleAuthorizationResultUVE SetAccessDetailedUVE(
-        DeveloperConsoleAccessUVE access) noexcept;
-    [[nodiscard]] bool SetAccessUVE(DeveloperConsoleAccessUVE access) noexcept;
-    [[nodiscard]] DeveloperConsoleSeverityFilterResultUVE SetSeverityFilterDetailedUVE(
-        DeveloperConsoleSeverityFilterUVE filter) noexcept;
-    [[nodiscard]] bool SetSeverityFilterUVE(DeveloperConsoleSeverityFilterUVE filter) noexcept;
-    [[nodiscard]] DeveloperConsoleCompletionPrefixResultUVE SetCompletionPrefixDetailedUVE(std::string prefix);
-    [[nodiscard]] bool SetCompletionPrefixUVE(std::string prefix);
-    [[nodiscard]] DeveloperConsoleHistoryNavigationResultUVE MoveHistoryDetailedUVE(std::int32_t delta) noexcept;
-    [[nodiscard]] bool MoveHistoryUVE(std::int32_t delta) noexcept;
-    [[nodiscard]] bool IsAvailableUVE() const noexcept;
-    [[nodiscard]] DeveloperConsoleSnapshotUVE GetSnapshotUVE() const;
+    [[nodiscard]] bool SetCVar(std::string_view name, std::string_view value);
+    [[nodiscard]] DeveloperConsoleBuildPolicyResult SetBuildPolicyDetailed(
+        DeveloperConsoleBuildPolicy policy) noexcept;
+    [[nodiscard]] bool SetBuildPolicy(DeveloperConsoleBuildPolicy policy) noexcept;
+    [[nodiscard]] DeveloperConsoleAuthorizationResult SetAccessDetailed(
+        DeveloperConsoleAccess access) noexcept;
+    [[nodiscard]] bool SetAccess(DeveloperConsoleAccess access) noexcept;
+    [[nodiscard]] DeveloperConsoleSeverityFilterResult SetSeverityFilterDetailed(
+        DeveloperConsoleSeverityFilter filter) noexcept;
+    [[nodiscard]] bool SetSeverityFilter(DeveloperConsoleSeverityFilter filter) noexcept;
+    [[nodiscard]] DeveloperConsoleCompletionPrefixResult SetCompletionPrefixDetailed(std::string prefix);
+    [[nodiscard]] bool SetCompletionPrefix(std::string prefix);
+    [[nodiscard]] DeveloperConsoleHistoryNavigationResult MoveHistoryDetailed(std::int32_t delta) noexcept;
+    [[nodiscard]] bool MoveHistory(std::int32_t delta) noexcept;
+    [[nodiscard]] bool IsAvailable() const noexcept;
+    [[nodiscard]] DeveloperConsoleSnapshot GetSnapshot() const;
 
     /// Sets a copied caller-owned principal/session label for subsequent audit records.
     /// This does not authenticate or resolve the principal.
-    [[nodiscard]] bool SetAuditPrincipalUVE(DeveloperConsolePrincipalUVE principal);
-    void SetAuditSinkUVE(DeveloperConsoleAuditSinkUVE sink) noexcept;
-    [[nodiscard]] DeveloperConsolePrincipalUVE GetAuditPrincipalUVE() const;
+    [[nodiscard]] bool SetAuditPrincipal(DeveloperConsolePrincipal principal);
+    void SetAuditSink(DeveloperConsoleAuditSink sink) noexcept;
+    [[nodiscard]] DeveloperConsolePrincipal GetAuditPrincipal() const;
 
-    void AppendUVE(DeveloperConsoleSeverityUVE severity, std::string text);
+    void Append(DeveloperConsoleSeverity severity, std::string text);
 
 private:
-    struct CommandUVE final {
+    struct Command final {
         std::string help;
-        DeveloperConsoleCommandHandlerUVE handler;
+        DeveloperConsoleCommandHandler handler;
     };
 
-    [[nodiscard]] static bool IsBoundedIdentifierUVE(std::string_view value) noexcept;
-    [[nodiscard]] static bool IsBoundedValueUVE(std::string_view value) noexcept;
-    [[nodiscard]] static bool IsBoundedPrincipalUVE(std::string_view value) noexcept;
-    [[nodiscard]] static std::string TrimUVE(std::string_view value);
-    void EmitAuditUVE(DeveloperConsoleAuditActionUVE action, std::string_view target,
+    [[nodiscard]] static bool IsBoundedIdentifier(std::string_view value) noexcept;
+    [[nodiscard]] static bool IsBoundedValue(std::string_view value) noexcept;
+    [[nodiscard]] static bool IsBoundedPrincipal(std::string_view value) noexcept;
+    [[nodiscard]] static std::string Trim(std::string_view value);
+    void EmitAudit(DeveloperConsoleAuditAction action, std::string_view target,
                       std::string_view detail, bool accepted) noexcept;
-    void RegisterBuiltInsUVE();
-    void AddHistoryUVE(std::string value);
-    [[nodiscard]] bool ExecuteCVarUVE(std::string_view arguments);
+    void RegisterBuiltIns();
+    void AddHistory(std::string value);
+    [[nodiscard]] bool ExecuteCVar(std::string_view arguments);
 
-    std::map<std::string, CommandUVE, std::less<>> m_commands;
-    std::map<std::string, DeveloperConsoleCVarUVE, std::less<>> m_cvars;
+    std::map<std::string, Command, std::less<>> m_commands;
+    std::map<std::string, DeveloperConsoleCVar, std::less<>> m_cvars;
     std::vector<std::string> m_history;
-    std::vector<DeveloperConsoleEntryUVE> m_output;
-    DeveloperConsoleBuildPolicyUVE m_policy = DeveloperConsoleBuildPolicyUVE::Development;
-    DeveloperConsoleAccessUVE m_access = DeveloperConsoleAccessUVE::Full;
-    DeveloperConsoleSeverityFilterUVE m_severityFilter = DeveloperConsoleSeverityFilterUVE::All;
+    std::vector<DeveloperConsoleEntry> m_output;
+    DeveloperConsoleBuildPolicy m_policy = DeveloperConsoleBuildPolicy::Development;
+    DeveloperConsoleAccess m_access = DeveloperConsoleAccess::Full;
+    DeveloperConsoleSeverityFilter m_severityFilter = DeveloperConsoleSeverityFilter::All;
     std::string m_completionPrefix;
     std::int32_t m_historyCursor = -1;
     bool m_completionTruncated = false;
     bool m_outputTruncated = false;
     bool m_historyTruncated = false;
     bool m_cvarsTruncated = false;
-    DeveloperConsolePrincipalUVE m_auditPrincipal;
-    DeveloperConsoleAuditSinkUVE m_auditSink;
+    DeveloperConsolePrincipal m_auditPrincipal;
+    DeveloperConsoleAuditSink m_auditSink;
     std::uint64_t m_generation = 1U;
     std::uint64_t m_auditSequence = 0U;
 };

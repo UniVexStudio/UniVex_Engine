@@ -11,7 +11,7 @@
 namespace UVE::VFX {
 
 /// Built-in authored particle system templates available from the asset creator and tests.
-enum class ParticleTemplateKindUVE : std::uint8_t {
+enum class ParticleTemplateKind : std::uint8_t {
     Empty = 0,
     Fountain,
     Sparks,
@@ -19,16 +19,16 @@ enum class ParticleTemplateKindUVE : std::uint8_t {
     Smoke,
 };
 
-struct ParticleTemplateInfoUVE final {
-    ParticleTemplateKindUVE kind = ParticleTemplateKindUVE::Empty;
+struct ParticleTemplateInfo final {
+    ParticleTemplateKind kind = ParticleTemplateKind::Empty;
     std::string_view name;
     std::string_view description;
 };
 
 /// Returns metadata for all built-in particle system templates.
-[[nodiscard]] const std::vector<ParticleTemplateInfoUVE>& GetParticleTemplatesUVE() noexcept;
+[[nodiscard]] const std::vector<ParticleTemplateInfo>& GetParticleTemplates() noexcept;
 
-/// Builds a complete, valid `ParticleSystemAssetUVE` for `kind`.
-[[nodiscard]] Asset::ParticleSystemAssetUVE CreateParticleTemplateUVE(ParticleTemplateKindUVE kind);
+/// Builds a complete, valid `ParticleSystemAsset` for `kind`.
+[[nodiscard]] Asset::ParticleSystemAsset CreateParticleTemplate(ParticleTemplateKind kind);
 
 } // namespace UVE::VFX

@@ -4,7 +4,7 @@
 // every body an entity can start as; Create makes that body's `.uventity`, selects it in Content and
 // opens it in the Entity Editor. Nothing is written until Create.
 //
-// The list is the content catalogue's (GetContentCatalogueEntityClassesUVE), not a second menu.
+// The list is the content catalogue's (GetContentCatalogueEntityClasses), not a second menu.
 #include "editor.h"
 
 #include "editor_content_catalogue.h"
@@ -20,35 +20,35 @@
 
 namespace UVE::Editor {
 
-void EditorUVE::OpenEntityClassPickerUVE(std::filesystem::path directory) {
-    EntityClassPickerStateUVE montage;
+void Editor::OpenEntityClassPicker(std::filesystem::path directory) {
+    EntityClassPickerState montage;
     montage.directory = std::move(directory);
     // The first body is picked for the author rather than opening on an empty pane: the window is a
     // choice, and a choice with nothing chosen reads as broken.
-    const std::span<const ContentCatalogueEntityClassUVE> entries = GetContentCatalogueEntityClassesUVE();
+    const std::span<const ContentCatalogueEntityClass> entries = GetContentCatalogueEntityClasses();
     if (!entries.empty()) {
         montage.pickedItemId = std::string{entries.front().itemId};
     }
     m_entityClassPicker = std::move(montage);
 }
 
-void EditorUVE::CloseEntityClassPickerUVE() {
+void Editor::CloseEntityClassPicker() {
     m_entityClassPicker.reset();
 }
 
-bool EditorUVE::CreateEntityClassUVE(const std::string_view itemId) {
+bool Editor::CreateEntityClass(const std::string_view itemId) {
     if (!m_entityClassPicker.has_value()) {
         return false;
     }
-    EntityClassPickerStateUVE& montage = *m_entityClassPicker;
-    const ContentCatalogueItemUVE* const item = FindContentCatalogueItemUVE(itemId);
-    if (item == nullptr || item->action != ContentCatalogueActionUVE::EntityAsset ||
-        !IsContentCatalogueEntityClassUVE(itemId)) {
+    EntityClassPickerState& montage = *m_entityClassPicker;
+    const ContentCatalogueItem* const item = FindContentCatalogueItem(itemId);
+    if (item == nullptr || item->action != ContentCatalogueAction::EntityAsset ||
+        !IsContentCatalogueEntityClass(itemId)) {
         montage.status = "That is not an entity class.";
         montage.statusIsError = true;
         return false;
     }
-    if (!IsAuthoringCommandAllowedUVE()) {
+    if (!IsAuthoringCommandAllowed()) {
         montage.status = "Stop Play to make an entity.";
         montage.statusIsError = true;
         return false;
@@ -64,7 +64,7 @@ bool EditorUVE::CreateEntityClassUVE(const std::string_view itemId) {
 
     std::error_code error;
     std::filesystem::create_directories(montage.directory, error);
-    const std::optional<std::filesystem::path> created = CreateContentCatalogueItemUVE(itemId, montage.directory);
+    const std::optional<std::filesystem::path> created = CreateContentCatalogueItem(itemId, montage.directory);
     if (!created.has_value()) {
         montage.status = "Could not create " + std::string{item->label} + ".";
         montage.statusIsError = true;
@@ -73,21 +73,21 @@ bool EditorUVE::CreateEntityClassUVE(const std::string_view itemId) {
 
     // Made here, so it counts as recently used and Content shows it selected - the same footing as a
     // body made straight from "+ Add".
-    PushContentCreateRecentUVE(m_contentCreateRecent, itemId);
+    PushContentCreateRecent(m_contentCreateRecent, itemId);
     m_projectFileSnapshotInitialized = false;
-    RefreshProjectFileIndexUVE();
-    const std::filesystem::path contentRoot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    RefreshProjectFileIndex();
+    const std::filesystem::path contentRoot = m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
     const std::filesystem::path relative = created->lexically_relative(contentRoot);
     if (!relative.empty() && !relative.generic_string().starts_with("..")) {
         m_selectedProjectFile =
-            Asset::ProjectFileEntryUVE{relative, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
+            Asset::ProjectFileEntry{relative, Asset::ProjectFileEntryKind::File, std::nullopt};
         m_selectedAsset.reset();
     }
 
     const std::filesystem::path body = *created;
     // Closed first: the body exists now, and the Entity Editor opens on it.
     m_entityClassPicker.reset();
-    if (!OpenEntityEditorUVE(body)) {
+    if (!OpenEntityEditor(body)) {
         m_contentStatusMessage = "Made " + body.filename().string() + " but could not open it in the Entity Editor.";
         return false;
     }

@@ -5,7 +5,7 @@
 // Shared C ABI between UniVex Hub (libunivex_hub.so) and the dynamically loaded Android Engine
 // Editor library (uve_editor inside univex-engine-*-android-<abi>.uvpackage).
 //
-// Both repositories carry an identical copy of this header under contracts/v1/.
+// Both repositories carry an identical copy of this header under contracts/v2/.
 
 #include <stdint.h>
 
@@ -15,17 +15,22 @@ struct android_app;
 extern "C" {
 #endif
 
-#define UVE_ANDROID_EDITOR_ABI_VERSION 1U
-#define UVE_ANDROID_EDITOR_ENTRY_SYMBOL "UveEditorRunUVE"
-#define UVE_ANDROID_EDITOR_ABI_VERSION_SYMBOL "UveEditorAbiVersionUVE"
+#define UVE_ANDROID_EDITOR_ABI_VERSION 2U
+#define UVE_ANDROID_EDITOR_ENTRY_SYMBOL "UveEditorRun"
+#define UVE_ANDROID_EDITOR_ABI_VERSION_SYMBOL "UveEditorAbiVersion"
+
+// Legacy v1 symbol names kept so UniVex Hub can still open older installed v1 engine packages.
+#define UVE_ANDROID_EDITOR_ABI_VERSION_V1 1U
+#define UVE_ANDROID_EDITOR_ENTRY_SYMBOL_V1 "UveEditorRunUVE"
+#define UVE_ANDROID_EDITOR_ABI_VERSION_SYMBOL_V1 "UveEditorAbiVersionUVE"
 
 /// Mandatory C entry point exported by the Android editor library.
 /// Runs the editor on `app`'s NativeActivity using argv[0] as the path to the loaded editor
 /// library and argv[1..argc-1] as desktop-compatible CLI options, returning the editor exit code.
-typedef int (*UveEditorRunFnUVE)(struct android_app* app, int argc, char** argv);
+typedef int (*UveEditorRunFn)(struct android_app* app, int argc, char** argv);
 
 /// Optional ABI version probe. When exported, must return UVE_ANDROID_EDITOR_ABI_VERSION.
-typedef uint32_t (*UveEditorAbiVersionFnUVE)(void);
+typedef uint32_t (*UveEditorAbiVersionFn)(void);
 
 #ifdef __cplusplus
 }

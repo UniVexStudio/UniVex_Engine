@@ -6,42 +6,42 @@
 
 namespace UVE::Scene {
 
-bool IsAnimationProcessCallbackValidUVE(const AnimationProcessCallbackUVE callback) noexcept {
-    return callback <= AnimationProcessCallbackUVE::Physics;
+bool IsAnimationProcessCallbackValid(const AnimationProcessCallback callback) noexcept {
+    return callback <= AnimationProcessCallback::Physics;
 }
 
-bool IsAnimationRootMotionModeValidUVE(const AnimationRootMotionModeUVE mode) noexcept {
-    return mode <= AnimationRootMotionModeUVE::ApplyToTarget;
+bool IsAnimationRootMotionModeValid(const AnimationRootMotionMode mode) noexcept {
+    return mode <= AnimationRootMotionMode::ApplyToTarget;
 }
 
-bool IsAnimationTransitionModeValidUVE(const AnimationTransitionModeUVE mode) noexcept {
-    return mode <= AnimationTransitionModeUVE::Crossfade;
+bool IsAnimationTransitionModeValid(const AnimationTransitionMode mode) noexcept {
+    return mode <= AnimationTransitionMode::Crossfade;
 }
 
-bool IsAnimationDriverComponentValidUVE(const AnimationDriverComponentUVE& component) noexcept {
+bool IsAnimationDriverComponentValid(const AnimationDriverComponent& component) noexcept {
     return std::isfinite(component.speedScale) && component.speedScale >= 0.0F &&
-           IsAnimationProcessCallbackValidUVE(component.processCallback) &&
-           IsAnimationRootMotionModeValidUVE(component.rootMotion) &&
-           IsAnimationTransitionModeValidUVE(component.transition);
+           IsAnimationProcessCallbackValid(component.processCallback) &&
+           IsAnimationRootMotionModeValid(component.rootMotion) &&
+           IsAnimationTransitionModeValid(component.transition);
 }
 
-bool HasAnyAnimatedTransformChannelUVE(const AnimationDriverComponentUVE& component) noexcept {
+bool HasAnyAnimatedTransformChannel(const AnimationDriverComponent& component) noexcept {
     return component.animatePosition || component.animateRotation || component.animateScale;
 }
 
-bool ShouldStepAnimationDriverOnClockUVE(const AnimationDriverComponentUVE& component,
-                                         const AnimationProcessCallbackUVE clock) noexcept {
+bool ShouldStepAnimationDriverOnClock(const AnimationDriverComponent& component,
+                                         const AnimationProcessCallback clock) noexcept {
     return component.active && component.processCallback == clock &&
            std::isfinite(component.speedScale) && component.speedScale >= 0.0F;
 }
 
-EntityUVE ResolveAnimationDriverTargetEntityUVE(
-    const AnimationDriverComponentUVE& component,
-    const EntityUVE fallbackParentEntity) noexcept {
-    return component.target != kInvalidEntityUVE ? component.target : fallbackParentEntity;
+Entity ResolveAnimationDriverTargetEntity(
+    const AnimationDriverComponent& component,
+    const Entity fallbackParentEntity) noexcept {
+    return component.target != kInvalidEntity ? component.target : fallbackParentEntity;
 }
 
-float ComputeScaledAnimationDeltaTimeUVE(const AnimationDriverComponentUVE& component,
+float ComputeScaledAnimationDeltaTime(const AnimationDriverComponent& component,
                                          const float deltaSeconds) noexcept {
     if (!component.active || !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0F ||
         !std::isfinite(component.speedScale) || component.speedScale <= 0.0F) {
@@ -50,20 +50,20 @@ float ComputeScaledAnimationDeltaTimeUVE(const AnimationDriverComponentUVE& comp
     return deltaSeconds * component.speedScale;
 }
 
-AnimationDriverComponentUVE SanitizeAnimationDriverComponentUVE(
-    const AnimationDriverComponentUVE& component) {
-    AnimationDriverComponentUVE out = component;
+AnimationDriverComponent SanitizeAnimationDriverComponent(
+    const AnimationDriverComponent& component) {
+    AnimationDriverComponent out = component;
     if (!std::isfinite(out.speedScale) || out.speedScale < 0.0F) {
         out.speedScale = 1.0F;
     }
-    if (!IsAnimationProcessCallbackValidUVE(out.processCallback)) {
-        out.processCallback = AnimationProcessCallbackUVE::Frame;
+    if (!IsAnimationProcessCallbackValid(out.processCallback)) {
+        out.processCallback = AnimationProcessCallback::Frame;
     }
-    if (!IsAnimationRootMotionModeValidUVE(out.rootMotion)) {
-        out.rootMotion = AnimationRootMotionModeUVE::Off;
+    if (!IsAnimationRootMotionModeValid(out.rootMotion)) {
+        out.rootMotion = AnimationRootMotionMode::Off;
     }
-    if (!IsAnimationTransitionModeValidUVE(out.transition)) {
-        out.transition = AnimationTransitionModeUVE::Inertialize;
+    if (!IsAnimationTransitionModeValid(out.transition)) {
+        out.transition = AnimationTransitionMode::Inertialize;
     }
     return out;
 }

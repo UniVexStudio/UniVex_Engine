@@ -10,8 +10,8 @@
 namespace UVE::Samples::Tests {
 namespace {
 
-TEST(PacketCaptureSampleUVE, FullStoryPasses) {
-    const PacketCaptureSampleResultUVE result = RunPacketCaptureSampleUVE();
+TEST(PacketCaptureSample, FullStoryPasses) {
+    const PacketCaptureSampleResult result = RunPacketCaptureSample();
     for (const std::string& failure : result.failures) {
         ADD_FAILURE() << failure;
     }
@@ -31,9 +31,9 @@ TEST(PacketCaptureSampleUVE, FullStoryPasses) {
     EXPECT_EQ(result.stats.hexdumpBytes, 38U);
 }
 
-TEST(PacketCaptureSampleUVE, RunsAreDeterministic) {
-    const PacketCaptureSampleResultUVE first = RunPacketCaptureSampleUVE();
-    const PacketCaptureSampleResultUVE second = RunPacketCaptureSampleUVE();
+TEST(PacketCaptureSample, RunsAreDeterministic) {
+    const PacketCaptureSampleResult first = RunPacketCaptureSample();
+    const PacketCaptureSampleResult second = RunPacketCaptureSample();
     for (const std::string& failure : first.failures) {
         ADD_FAILURE() << failure;
     }
@@ -52,11 +52,11 @@ TEST(PacketCaptureSampleUVE, RunsAreDeterministic) {
     EXPECT_EQ(first.stats.hexdumpBytes, second.stats.hexdumpBytes);
 }
 
-TEST(PacketCaptureSampleUVE, LogSinkSeesTheStory) {
-    PacketCaptureSampleConfigUVE config;
+TEST(PacketCaptureSample, LogSinkSeesTheStory) {
+    PacketCaptureSampleConfig config;
     std::vector<std::string> lines;
     config.log = [&](const std::string& line) { lines.push_back(line); };
-    const PacketCaptureSampleResultUVE result = RunPacketCaptureSampleUVE(config);
+    const PacketCaptureSampleResult result = RunPacketCaptureSample(config);
     EXPECT_TRUE(result.success);
     ASSERT_GE(lines.size(), 10U);
     bool sawFire = false;

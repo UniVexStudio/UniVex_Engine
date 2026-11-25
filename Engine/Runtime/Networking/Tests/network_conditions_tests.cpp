@@ -13,171 +13,171 @@
 namespace UVE::Network::Tests {
 namespace {
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-struct ConditionsHarnessUVE final {
-    LoopbackTransportPairUVE link;
-    LoopbackEndpointUVE rawB;
-    // Shared (not a plain field): the simulator's clock lambda outlives MakeUVE's locals, so it
+struct ConditionsHarness final {
+    LoopbackTransportPair link;
+    LoopbackEndpoint rawB;
+    // Shared (not a plain field): the simulator's clock lambda outlives Make's locals, so it
     // must not capture them by reference.
     std::shared_ptr<std::uint64_t> nowMs;
-    SimulatedTransportUVE sim;
+    SimulatedTransport sim;
 
-    void AdvanceUVE(const std::uint64_t timeMs) { *nowMs = timeMs; }
+    void Advance(const std::uint64_t timeMs) { *nowMs = timeMs; }
 
-    [[nodiscard]] static ConditionsHarnessUVE MakeUVE(SimulatedTransportConfigUVE config) {
-        LoopbackTransportPairUVE pair = CreateLoopbackTransportPairUVE(64U);
-        LoopbackEndpointUVE rawB = pair.b;
+    [[nodiscard]] static ConditionsHarness Make(SimulatedTransportConfig config) {
+        LoopbackTransportPair pair = CreateLoopbackTransportPair(64U);
+        LoopbackEndpoint rawB = pair.b;
         auto nowMs = std::make_shared<std::uint64_t>(1000U);
-        TransportClockUVE clock = [nowMs]() { return *nowMs; };
-        SimulatedTransportUVE sim(std::make_unique<LoopbackEndpointUVE>(pair.a), std::move(clock),
+        TransportClock clock = [nowMs]() { return *nowMs; };
+        SimulatedTransport sim(std::make_unique<LoopbackEndpoint>(pair.a), std::move(clock),
                                   config);
-        return ConditionsHarnessUVE{std::move(pair), rawB, nowMs, std::move(sim)};
+        return ConditionsHarness{std::move(pair), rawB, nowMs, std::move(sim)};
     }
 };
 
-TEST(SimulatedTransportUVETest, Passthrough_DefaultConfigIsInvisible) {
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(SimulatedTransportConfigUVE{});
+TEST(SimulatedTransportTest, Passthrough_DefaultConfigIsInvisible) {
+    ConditionsHarness harness = ConditionsHarness::Make(SimulatedTransportConfig{});
 
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("a-to-b")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b-to-a")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("a-to-b")));
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("b-to-a")));
-    EXPECT_EQ(harness.sim.StatsUVE(), SimulatedTransportStatsUVE{});
+    ASSERT_TRUE(harness.sim.Send(Bytes("a-to-b")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b-to-a")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("a-to-b")));
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("b-to-a")));
+    EXPECT_EQ(harness.sim.Stats(), SimulatedTransportStats{});
 }
 
-TEST(SimulatedTransportUVETest, OutboundDrop_EveryNthReportsSuccess) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, OutboundDrop_EveryNthReportsSuccess) {
+    SimulatedTransportConfig config;
     config.outboundDropPeriod = 2U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("m1")));
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("m2-dropped")));
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("m3")));
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("m4-dropped")));
+    EXPECT_TRUE(harness.sim.Send(Bytes("m1")));
+    EXPECT_TRUE(harness.sim.Send(Bytes("m2-dropped")));
+    EXPECT_TRUE(harness.sim.Send(Bytes("m3")));
+    EXPECT_TRUE(harness.sim.Send(Bytes("m4-dropped")));
 
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("m1")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("m3")));
-    EXPECT_FALSE(harness.rawB.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.sim.StatsUVE().outboundDropped, 2U);
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("m1")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("m3")));
+    EXPECT_FALSE(harness.rawB.TryReceive().has_value());
+    EXPECT_EQ(harness.sim.Stats().outboundDropped, 2U);
 }
 
-TEST(SimulatedTransportUVETest, InboundDrop) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, InboundDrop) {
+    SimulatedTransportConfig config;
     config.inboundDropPeriod = 3U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b1")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b2")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b3-dropped")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b1")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b2")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b3-dropped")));
 
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("b1")));
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("b2")));
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.sim.StatsUVE().inboundDropped, 1U);
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("b1")));
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("b2")));
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_EQ(harness.sim.Stats().inboundDropped, 1U);
 }
 
-TEST(SimulatedTransportUVETest, OutboundDelay_HeldUntilDue) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, OutboundDelay_HeldUntilDue) {
+    SimulatedTransportConfig config;
     config.outboundDelayMs = 100U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("held")));
-    EXPECT_FALSE(harness.rawB.TryReceiveUVE().has_value());
+    ASSERT_TRUE(harness.sim.Send(Bytes("held")));
+    EXPECT_FALSE(harness.rawB.TryReceive().has_value());
 
-    harness.AdvanceUVE(1099U);
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_FALSE(harness.rawB.TryReceiveUVE().has_value());
+    harness.Advance(1099U);
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_FALSE(harness.rawB.TryReceive().has_value());
 
-    harness.AdvanceUVE(1100U);
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("held")));
+    harness.Advance(1100U);
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("held")));
 }
 
-TEST(SimulatedTransportUVETest, InboundDelay_HeldUntilDue) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, InboundDelay_HeldUntilDue) {
+    SimulatedTransportConfig config;
     config.inboundDelayMs = 100U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("held")));
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
+    ASSERT_TRUE(harness.rawB.Send(Bytes("held")));
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
 
-    harness.AdvanceUVE(1100U);
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("held")));
+    harness.Advance(1100U);
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("held")));
 }
 
-TEST(SimulatedTransportUVETest, DelayPreservesFifoOrder) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, DelayPreservesFifoOrder) {
+    SimulatedTransportConfig config;
     config.outboundDelayMs = 50U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("first")));
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("second")));
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("third")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("first")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("second")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("third")));
 
-    harness.AdvanceUVE(1050U);
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("first")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("second")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("third")));
+    harness.Advance(1050U);
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("first")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("second")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("third")));
 }
 
-TEST(SimulatedTransportUVETest, DelayQueueFull_ReportsFalse) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, DelayQueueFull_ReportsFalse) {
+    SimulatedTransportConfig config;
     config.outboundDelayMs = 10000U;
     config.maxPendingDatagrams = 1U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("first")));
-    EXPECT_FALSE(harness.sim.SendUVE(BytesUVE("second")));
-    EXPECT_EQ(harness.sim.StatsUVE().outboundDroppedFull, 1U);
+    EXPECT_TRUE(harness.sim.Send(Bytes("first")));
+    EXPECT_FALSE(harness.sim.Send(Bytes("second")));
+    EXPECT_EQ(harness.sim.Stats().outboundDroppedFull, 1U);
 
-    harness.AdvanceUVE(11000U);
-    EXPECT_FALSE(harness.sim.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("first")));
-    EXPECT_FALSE(harness.rawB.TryReceiveUVE().has_value());
+    harness.Advance(11000U);
+    EXPECT_FALSE(harness.sim.TryReceive().has_value());
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("first")));
+    EXPECT_FALSE(harness.rawB.TryReceive().has_value());
 }
 
-TEST(SimulatedTransportUVETest, SetConfig_Midstream) {
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(SimulatedTransportConfigUVE{});
+TEST(SimulatedTransportTest, SetConfig_Midstream) {
+    ConditionsHarness harness = ConditionsHarness::Make(SimulatedTransportConfig{});
 
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("before")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("before")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("before")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("before")));
 
-    SimulatedTransportConfigUVE blackout;
+    SimulatedTransportConfig blackout;
     blackout.outboundDropPeriod = 1U;
-    harness.sim.SetConfigUVE(blackout);
-    EXPECT_TRUE(harness.sim.SendUVE(BytesUVE("lost")));
-    EXPECT_FALSE(harness.rawB.TryReceiveUVE().has_value());
-    EXPECT_EQ(harness.sim.StatsUVE().outboundDropped, 1U);
+    harness.sim.SetConfig(blackout);
+    EXPECT_TRUE(harness.sim.Send(Bytes("lost")));
+    EXPECT_FALSE(harness.rawB.TryReceive().has_value());
+    EXPECT_EQ(harness.sim.Stats().outboundDropped, 1U);
 
-    harness.sim.SetConfigUVE(SimulatedTransportConfigUVE{});
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("after")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("after")));
+    harness.sim.SetConfig(SimulatedTransportConfig{});
+    ASSERT_TRUE(harness.sim.Send(Bytes("after")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("after")));
 }
 
-TEST(SimulatedTransportUVETest, Stats_MixedExchange) {
-    SimulatedTransportConfigUVE config;
+TEST(SimulatedTransportTest, Stats_MixedExchange) {
+    SimulatedTransportConfig config;
     config.outboundDropPeriod = 2U;
     config.inboundDropPeriod = 3U;
-    ConditionsHarnessUVE harness = ConditionsHarnessUVE::MakeUVE(config);
+    ConditionsHarness harness = ConditionsHarness::Make(config);
 
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("m1")));
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("m2-dropped")));
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("m3")));
-    ASSERT_TRUE(harness.sim.SendUVE(BytesUVE("m4-dropped")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b1")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b2")));
-    ASSERT_TRUE(harness.rawB.SendUVE(BytesUVE("b3-dropped")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("m1")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("m2-dropped")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("m3")));
+    ASSERT_TRUE(harness.sim.Send(Bytes("m4-dropped")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b1")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b2")));
+    ASSERT_TRUE(harness.rawB.Send(Bytes("b3-dropped")));
 
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("m1")));
-    EXPECT_EQ(harness.rawB.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("m3")));
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("b1")));
-    EXPECT_EQ(harness.sim.TryReceiveUVE(), std::optional<std::vector<std::uint8_t>>(BytesUVE("b2")));
-    EXPECT_EQ(harness.sim.StatsUVE(), (SimulatedTransportStatsUVE{2U, 0U, 1U, 0U}));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("m1")));
+    EXPECT_EQ(harness.rawB.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("m3")));
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("b1")));
+    EXPECT_EQ(harness.sim.TryReceive(), std::optional<std::vector<std::uint8_t>>(Bytes("b2")));
+    EXPECT_EQ(harness.sim.Stats(), (SimulatedTransportStats{2U, 0U, 1U, 0U}));
 }
 
 } // namespace

@@ -7,22 +7,22 @@
 
 namespace UVE::Asset {
 
-/// AssetBundleUVE is the concrete, engine-standard implementation of IAssetBundleUVE. Holds no
+/// AssetBundle is the concrete, engine-standard implementation of IAssetBundle. Holds no
 /// persistent members of its own (same "stateless, dependencies passed per-call" shape as
-/// SceneSerializerUVE) — the payload layout (entry count, then per-entry
+/// SceneSerializer) — the payload layout (entry count, then per-entry
 /// guid/name/data-length/data) is entirely private to asset_bundle_uve.cpp.
-class AssetBundleUVE final : public IAssetBundleUVE {
+class AssetBundle final : public IAssetBundle {
 public:
-    AssetBundleUVE() = default;
+    AssetBundle() = default;
 
-    [[nodiscard]] bool PackUVE(const std::vector<AssetBundleEntryUVE>& entries,
+    [[nodiscard]] bool Pack(const std::vector<AssetBundleEntry>& entries,
                                 const std::filesystem::path& bundlePath) override;
-    [[nodiscard]] bool UnpackUVE(const std::filesystem::path& bundlePath,
+    [[nodiscard]] bool Unpack(const std::filesystem::path& bundlePath,
                                   const std::filesystem::path& outputDirectory) override;
-    [[nodiscard]] bool HasEntryUVE(const std::filesystem::path& bundlePath,
+    [[nodiscard]] bool HasEntry(const std::filesystem::path& bundlePath,
                                     std::string_view entryName) const override;
     [[nodiscard]] std::optional<std::vector<std::byte>>
-    ReadEntryUVE(const std::filesystem::path& bundlePath, std::string_view entryName) const override;
+    ReadEntry(const std::filesystem::path& bundlePath, std::string_view entryName) const override;
 };
 
 } // namespace UVE::Asset

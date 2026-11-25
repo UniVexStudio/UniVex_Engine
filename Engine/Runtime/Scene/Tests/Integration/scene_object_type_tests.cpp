@@ -30,130 +30,130 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-using Kind = Objects::SceneObjectKindUVE;
+using Kind = Objects::SceneObjectKind;
 
-class SceneObjectTypeUVETest : public ::testing::Test {
+class SceneObjectTypeTest : public ::testing::Test {
 protected:
-    [[nodiscard]] EntityUVE MakeUVE() {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<NameComponentUVE>(entity, NameComponentUVE{"Object"});
+    [[nodiscard]] Entity Make() {
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<NameComponent>(entity, NameComponent{"Object"});
         return entity;
     }
 
     template <typename... Components>
-    [[nodiscard]] EntityUVE MakeWithUVE(Components... components) {
-        const EntityUVE entity = MakeUVE();
-        (entityManager.AddComponentUVE<Components>(entity, components), ...);
+    [[nodiscard]] Entity MakeWith(Components... components) {
+        const Entity entity = Make();
+        (entityManager.AddComponent<Components>(entity, components), ...);
         return entity;
     }
 
-    [[nodiscard]] SceneSnapshotUVE SnapshotFromPayloadUVE(const std::string& payload) const {
+    [[nodiscard]] SceneSnapshot SnapshotFromPayload(const std::string& payload) const {
         const auto* const bytes = reinterpret_cast<const std::byte*>(payload.data());
-        return SceneSnapshotUVE{Asset::EncodeUveFileEnvelopeUVE(SceneAssetTypeUVE::Scene,
+        return SceneSnapshot{Asset::EncodeUveFileEnvelope(SceneAssetType::Scene,
                                                                 std::vector<std::byte>{bytes, bytes + payload.size()}),
-                                SceneAssetTypeUVE::Scene};
+                                SceneAssetType::Scene};
     }
 
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneSerializerUVE serializer;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneSerializer serializer;
 };
 
-TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeUVE()), Kind::Object3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(SceneRootComponentUVE{})), Kind::SceneRoot);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(CameraComponentUVE{})), Kind::Camera3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{})), Kind::MeshInstance3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Marker3DComponentUVE{})), Kind::Marker3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(AreaComponentUVE{})), Kind::Area3D);
+TEST_F(SceneObjectTypeTest, InferenceReadsEveryKindThatHasComponentsOfItsOwn) {
+    EXPECT_EQ(InferSceneObjectKind(entityManager, Make()), Kind::Object3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(SceneRootComponent{})), Kind::SceneRoot);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(CameraComponent{})), Kind::Camera3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(MeshComponent{})), Kind::MeshInstance3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(Marker3DComponent{})), Kind::Marker3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(AreaComponent{})), Kind::Area3D);
 
     // A primitive carries a collider too, and still reads as its shape.
-    for (const auto& [primitive, kind] : {std::pair{PrimitiveMeshKindUVE::Cube, Kind::BoxMesh3D},
-                                         std::pair{PrimitiveMeshKindUVE::UVSphere, Kind::SphereMesh3D},
-                                         std::pair{PrimitiveMeshKindUVE::Plane, Kind::PlaneMesh3D}}) {
-        PrimitiveMeshComponentUVE mesh;
+    for (const auto& [primitive, kind] : {std::pair{PrimitiveMeshKind::Cube, Kind::BoxMesh3D},
+                                         std::pair{PrimitiveMeshKind::UVSphere, Kind::SphereMesh3D},
+                                         std::pair{PrimitiveMeshKind::Plane, Kind::PlaneMesh3D}}) {
+        PrimitiveMeshComponent mesh;
         mesh.kind = primitive;
-        EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(mesh, ColliderComponentUVE{})), kind);
+        EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(mesh, ColliderComponent{})), kind);
     }
 
     // Bodies are read from what they combine; an Kinematic3D's own component outranks both. A
     // collider on a body is a shape on a Rigid3D - what makes a character a character is its
-    // CharacterControllerComponentUVE, which is one of the own-components checked above.
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{})),
+    // CharacterControllerComponent, which is one of the own-components checked above.
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(ColliderComponent{}, Rigid3DComponent{})),
               Kind::Rigid3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager,
-                                      MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
-                                                  CharacterControllerComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKind(entityManager,
+                                      MakeWith(ColliderComponent{}, Rigid3DComponent{},
+                                                  CharacterControllerComponent{})),
               Kind::Character3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(PlayerComponentUVE{}, CharacterControllerComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(PlayerComponent{}, CharacterControllerComponent{})),
               Kind::Player3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Rigid3DComponentUVE{})), Kind::Rigid3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{})), Kind::Collider3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ColliderComponentUVE{}, Rigid3DComponentUVE{},
-                                                               Kinematic3DComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(Rigid3DComponent{})), Kind::Rigid3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(ColliderComponent{})), Kind::Collider3D);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(ColliderComponent{}, Rigid3DComponent{},
+                                                               Kinematic3DComponent{})),
               Kind::Kinematic3D);
 
     // A script names the object only when nothing else does.
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(ScriptComponentUVE{})), Kind::Script);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{}, ScriptComponentUVE{})),
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(ScriptComponent{})), Kind::Script);
+    EXPECT_EQ(InferSceneObjectKind(entityManager, MakeWith(MeshComponent{}, ScriptComponent{})),
               Kind::MeshInstance3D);
 }
 
-TEST_F(SceneObjectTypeUVETest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
+TEST_F(SceneObjectTypeTest, AStoredTypeWinsOverWhatTheComponentsSuggest) {
     // A Static3D is built exactly like a Collider3D; only the stored type tells them apart.
-    const EntityUVE body = MakeWithUVE(ColliderComponentUVE{});
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, body), Kind::Collider3D);
-    SetSceneObjectKindUVE(entityManager, body, Kind::Static3D);
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, body), Kind::Static3D);
-    SetSceneObjectKindUVE(entityManager, body, Kind::Collider3D);
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, body), Kind::Collider3D);
+    const Entity body = MakeWith(ColliderComponent{});
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, body), Kind::Collider3D);
+    SetSceneObjectKind(entityManager, body, Kind::Static3D);
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, body), Kind::Static3D);
+    SetSceneObjectKind(entityManager, body, Kind::Collider3D);
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, body), Kind::Collider3D);
 
     // A stored value no descriptor knows is ignored rather than trusted.
-    const EntityUVE corrupt = MakeWithUVE(CameraComponentUVE{});
-    SetSceneObjectKindUVE(entityManager, corrupt, static_cast<Kind>(250));
-    EXPECT_FALSE(IsSceneObjectTypeComponentValidUVE(entityManager.GetComponentUVE<SceneObjectTypeComponentUVE>(corrupt)));
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, corrupt), Kind::Camera3D);
+    const Entity corrupt = MakeWith(CameraComponent{});
+    SetSceneObjectKind(entityManager, corrupt, static_cast<Kind>(250));
+    EXPECT_FALSE(IsSceneObjectTypeComponentValid(entityManager.GetComponent<SceneObjectTypeComponent>(corrupt)));
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, corrupt), Kind::Camera3D);
 
-    const EntityUVE dead = MakeUVE();
-    entityManager.DestroyEntityUVE(dead);
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, dead), Kind::Object3D);
+    const Entity dead = Make();
+    entityManager.DestroyEntity(dead);
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, dead), Kind::Object3D);
 }
 
-TEST_F(SceneObjectTypeUVETest, TheTypeSurvivesASaveByItsStableId) {
-    const EntityUVE body = MakeWithUVE(ColliderComponentUVE{});
-    SetSceneObjectKindUVE(entityManager, body, Kind::Static3D);
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {body}, SceneAssetTypeUVE::Scene);
+TEST_F(SceneObjectTypeTest, TheTypeSurvivesASaveByItsStableId) {
+    const Entity body = MakeWith(ColliderComponent{});
+    SetSceneObjectKind(entityManager, body, Kind::Static3D);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {body}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
     const std::string text(reinterpret_cast<const char*>(snapshot->bytes.data()), snapshot->bytes.size());
     EXPECT_NE(text.find("\"static_3d\""), std::string::npos);
     EXPECT_EQ(text.find("\"static_body_3d\""), std::string::npos);
 
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, restored.front()), Kind::Static3D);
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, restored.front()), Kind::Static3D);
 }
 
-TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
+TEST_F(SceneObjectTypeTest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
     const auto restoreWithType = [this](const std::string_view type) {
         const std::string payload =
-            std::string(R"({"entities":[{"localId":0,"components":{"NameComponentUVE":{"name":"Object"},)") +
-            R"("SceneObjectTypeComponentUVE":{"type":")" + std::string(type) + R"("}}}]})";
-        return serializer.RestoreUVE(entityManager, SnapshotFromPayloadUVE(payload));
+            std::string(R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Object"},)") +
+            R"("SceneObjectTypeComponent":{"type":")" + std::string(type) + R"("}}}]})";
+        return serializer.Restore(entityManager, SnapshotFromPayload(payload));
     };
 
     // A type from a newer build: the object loads, untyped, and reads from its components.
-    const std::vector<EntityUVE> future = restoreWithType("hover_car_3d");
+    const std::vector<Entity> future = restoreWithType("hover_car_3d");
     ASSERT_EQ(future.size(), 1U);
-    EXPECT_FALSE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(future.front()));
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, future.front()), Kind::Object3D);
+    EXPECT_FALSE(entityManager.HasComponent<SceneObjectTypeComponent>(future.front()));
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, future.front()), Kind::Object3D);
 
     // The id Object3D had before it was renamed still names it.
-    const std::vector<EntityUVE> legacy = restoreWithType("empty");
+    const std::vector<Entity> legacy = restoreWithType("empty");
     ASSERT_EQ(legacy.size(), 1U);
-    ASSERT_TRUE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(legacy.front()));
-    EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, legacy.front()), Kind::Object3D);
+    ASSERT_TRUE(entityManager.HasComponent<SceneObjectTypeComponent>(legacy.front()));
+    EXPECT_EQ(ResolveSceneObjectKind(entityManager, legacy.front()), Kind::Object3D);
 
     // Scenes saved before a rename keep naming a kind by its old id: the alias has to land on the
     // same kind, not on an untyped object.
@@ -169,10 +169,10 @@ TEST_F(SceneObjectTypeUVETest, UnknownAndLegacyIdsLoadWithoutFailingTheScene) {
         {"viewport", Kind::Viewport3D},
     };
     for (const auto& [oldId, expected] : renamed) {
-        const std::vector<EntityUVE> aliased = restoreWithType(oldId);
+        const std::vector<Entity> aliased = restoreWithType(oldId);
         ASSERT_EQ(aliased.size(), 1U) << oldId;
-        ASSERT_TRUE(entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(aliased.front())) << oldId;
-        EXPECT_EQ(ResolveSceneObjectKindUVE(entityManager, aliased.front()), expected) << oldId;
+        ASSERT_TRUE(entityManager.HasComponent<SceneObjectTypeComponent>(aliased.front())) << oldId;
+        EXPECT_EQ(ResolveSceneObjectKind(entityManager, aliased.front()), expected) << oldId;
     }
 }
 

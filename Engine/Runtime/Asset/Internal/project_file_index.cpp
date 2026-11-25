@@ -18,34 +18,34 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool ProjectFileEntryLessUVE(const ProjectFileEntryUVE& left, const ProjectFileEntryUVE& right) {
+[[nodiscard]] bool ProjectFileEntryLess(const ProjectFileEntry& left, const ProjectFileEntry& right) {
     if (left.kind != right.kind) {
-        return left.kind == ProjectFileEntryKindUVE::Directory;
+        return left.kind == ProjectFileEntryKind::Directory;
     }
     return left.relativePath.generic_string() < right.relativePath.generic_string();
 }
 
 } // namespace
 
-struct ProjectFileIndexUVE::ImplUVE {
-    explicit ImplUVE(std::filesystem::path configuredContentRoot)
-        : contentRoot(Detail::NormalizeProjectContentRootUVE(std::move(configuredContentRoot))) {
+struct ProjectFileIndex::Impl {
+    explicit Impl(std::filesystem::path configuredContentRoot)
+        : contentRoot(Detail::NormalizeProjectContentRoot(std::move(configuredContentRoot))) {
         snapshot.contentRoot = contentRoot;
     }
 
     std::filesystem::path contentRoot;
     mutable std::mutex mutex;
-    ProjectFileSnapshotUVE snapshot;
+    ProjectFileSnapshot snapshot;
 };
 
-ProjectFileIndexUVE::ProjectFileIndexUVE(std::filesystem::path contentRoot)
-    : m_impl(std::make_unique<ImplUVE>(std::move(contentRoot))) {}
+ProjectFileIndex::ProjectFileIndex(std::filesystem::path contentRoot)
+    : m_impl(std::make_unique<Impl>(std::move(contentRoot))) {}
 
-ProjectFileIndexUVE::~ProjectFileIndexUVE() = default;
+ProjectFileIndex::~ProjectFileIndex() = default;
 
-bool ProjectFileIndexUVE::RefreshUVE(const IAssetDatabaseUVE& assetDatabase) {
+bool ProjectFileIndex::Refresh(const IAssetDatabase& assetDatabase) {
     const std::filesystem::path configuredContentRoot = m_impl->contentRoot;
-    ProjectFileSnapshotUVE refreshedSnapshot;
+    ProjectFileSnapshot refreshedSnapshot;
     refreshedSnapshot.contentRoot = configuredContentRoot;
 
     // An empty configured root never means the process working directory. It is
@@ -80,21 +80,21 @@ bool ProjectFileIndexUVE::RefreshUVE(const IAssetDatabaseUVE& assetDatabase) {
     }
     refreshedSnapshot.contentRootExists = true;
 
-    const std::map<std::string, AssetGuidUVE> registeredAssetsByRelativePath =
-        Detail::BuildRegisteredAssetsByRelativePathUVE(absoluteContentRoot, assetDatabase);
+    const std::map<std::string, AssetGuid> registeredAssetsByRelativePath =
+        Detail::BuildRegisteredAssetsByRelativePath(absoluteContentRoot, assetDatabase);
 
     // The traversal itself - iterator lifecycle, symlink fencing, root-boundary checks - is
-    // shared with ProjectChangeWatcherUVE (Detail::WalkProjectContentTreeUVE); the index keeps
+    // shared with ProjectChangeWatcher (Detail::WalkProjectContentTree); the index keeps
     // its historical silent-failure contract and discards the diagnostic.
     std::string walkDiagnostic;
     const auto indexOneEntry = [&refreshedSnapshot, &registeredAssetsByRelativePath](
                                    const std::filesystem::path& /*absoluteEntryPath*/,
                                    const std::filesystem::path& relativePath,
-                                   const ProjectFileEntryKindUVE kind) {
-        ProjectFileEntryUVE indexedEntry;
+                                   const ProjectFileEntryKind kind) {
+        ProjectFileEntry indexedEntry;
         indexedEntry.relativePath = relativePath;
         indexedEntry.kind = kind;
-        if (kind == ProjectFileEntryKindUVE::File) {
+        if (kind == ProjectFileEntryKind::File) {
             const auto registeredIt =
                 registeredAssetsByRelativePath.find(relativePath.generic_string());
             if (registeredIt != registeredAssetsByRelativePath.end()) {
@@ -104,11 +104,11 @@ bool ProjectFileIndexUVE::RefreshUVE(const IAssetDatabaseUVE& assetDatabase) {
         refreshedSnapshot.entries.push_back(std::move(indexedEntry));
         return true;
     };
-    if (!Detail::WalkProjectContentTreeUVE(absoluteContentRoot, walkDiagnostic, indexOneEntry)) {
+    if (!Detail::WalkProjectContentTree(absoluteContentRoot, walkDiagnostic, indexOneEntry)) {
         return false;
     }
 
-    std::sort(refreshedSnapshot.entries.begin(), refreshedSnapshot.entries.end(), ProjectFileEntryLessUVE);
+    std::sort(refreshedSnapshot.entries.begin(), refreshedSnapshot.entries.end(), ProjectFileEntryLess);
     {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
         refreshedSnapshot.refreshGeneration = m_impl->snapshot.refreshGeneration + 1U;
@@ -117,12 +117,12 @@ bool ProjectFileIndexUVE::RefreshUVE(const IAssetDatabaseUVE& assetDatabase) {
     return true;
 }
 
-ProjectFileSnapshotUVE ProjectFileIndexUVE::GetSnapshotUVE() const {
+ProjectFileSnapshot ProjectFileIndex::GetSnapshot() const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->snapshot;
 }
 
-std::uint64_t ProjectFileIndexUVE::GetRefreshGenerationUVE() const {
+std::uint64_t ProjectFileIndex::GetRefreshGeneration() const {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->snapshot.refreshGeneration;
 }

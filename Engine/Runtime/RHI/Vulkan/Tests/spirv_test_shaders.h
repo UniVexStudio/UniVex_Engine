@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 //
-// Test-only baked SPIR-V for VulkanRenderDeviceUVETest. Produced 2026-09-17 from the two GLSL
+// Test-only baked SPIR-V for VulkanRenderDeviceTest. Produced 2026-09-17 from the two GLSL
 // snippets below (kept beside the bytes they generated so a reader never has to trust the
 // binary), using glslangValidator from the local sandbox glslang build (KhronosGroup/glslang
 // @ vulkan-sdk-1.4.321.0, built in-sandbox since no system shader toolchain is packaged).
@@ -22,7 +22,7 @@ namespace UVE::Render::Tests {
 // Byte-array form first: C++ string literals DO retain every byte (including NUL bytes)
 // inside a char[] with sizeof-derived length, which a std::string cstring-construction would
 // truncate at the first embedded NUL — that truncation was caught and fixed before commit.
-inline const char kTriangleVertexSpirvUVEBytes[] =
+inline const char kTriangleVertexSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x1f\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x09\x00\x00\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0b\x00\x00\x00\x13\x00\x00\x00"
@@ -55,7 +55,7 @@ inline const char kTriangleVertexSpirvUVEBytes[] =
     "\x1b\x00\x00\x00\x18\x00\x00\x00\x41\x00\x05\x00\x1d\x00\x00\x00\x1e\x00\x00\x00\x13\x00\x00\x00\x15\x00\x00\x00\x3e\x00\x03\x00"
     "\x1e\x00\x00\x00\x1c\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
 // Length comes from sizeof() (all literal bytes), NOT from strlen().
-inline const std::string kTriangleVertexSpirvUVE(kTriangleVertexSpirvUVEBytes, sizeof(kTriangleVertexSpirvUVEBytes) - 1U);
+inline const std::string kTriangleVertexSpirv(kTriangleVertexSpirvBytes, sizeof(kTriangleVertexSpirvBytes) - 1U);
 
 
 // Fragment shader (GLSL):
@@ -66,7 +66,7 @@ inline const std::string kTriangleVertexSpirvUVE(kTriangleVertexSpirvUVEBytes, s
 // Byte-array form first: C++ string literals DO retain every byte (including NUL bytes)
 // inside a char[] with sizeof-derived length, which a std::string cstring-construction would
 // truncate at the first embedded NUL — that truncation was caught and fixed before commit.
-inline const char kTriangleFragmentSpirvUVEBytes[] =
+inline const char kTriangleFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x13\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0c\x00\x00\x00\x10\x00\x03\x00"
@@ -84,7 +84,7 @@ inline const char kTriangleFragmentSpirvUVEBytes[] =
     "\x50\x00\x07\x00\x07\x00\x00\x00\x12\x00\x00\x00\x0f\x00\x00\x00\x10\x00\x00\x00\x11\x00\x00\x00\x0e\x00\x00\x00\x3e\x00\x03\x00"
     "\x09\x00\x00\x00\x12\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
 // Length comes from sizeof() (all literal bytes), NOT from strlen().
-inline const std::string kTriangleFragmentSpirvUVE(kTriangleFragmentSpirvUVEBytes, sizeof(kTriangleFragmentSpirvUVEBytes) - 1U);
+inline const std::string kTriangleFragmentSpirv(kTriangleFragmentSpirvBytes, sizeof(kTriangleFragmentSpirvBytes) - 1U);
 
 
 // --- M2b depth+uniform pair (2026-09-17): proves UBO reflection + push constants + depth ---
@@ -101,10 +101,10 @@ inline const std::string kTriangleFragmentSpirvUVE(kTriangleFragmentSpirvUVEByte
 //       vColor = ubo.uColorTri;
 //       gl_Position = vec4(aPosition.xy + vec2(push.uOffsetX, push.uOffsetY), ubo.uDepth, 1.0);
 //   }
-// Fragment: passthrough of vColor (same body as kTriangleFragmentSpirvUVE's source).
+// Fragment: passthrough of vColor (same body as kTriangleFragmentSpirv's source).
 // Compiled with the same sandbox glslang (KhronosGroup/glslang @ vulkan-sdk-1.4.321.0);
 // same byte-array-form rule as the pair above applies.
-inline const char kDepthUniformVertexSpirvUVEBytes[] =
+inline const char kDepthUniformVertexSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x32\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x08\x00\x00\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x18\x00\x00\x00\x1b\x00\x00\x00"
@@ -155,10 +155,10 @@ inline const char kDepthUniformVertexSpirvUVEBytes[] =
     "\x50\x00\x07\x00\x12\x00\x00\x00\x2f\x00\x00\x00\x2d\x00\x00\x00\x2e\x00\x00\x00\x2b\x00\x00\x00\x2c\x00\x00\x00\x41\x00\x05\x00"
     "\x30\x00\x00\x00\x31\x00\x00\x00\x18\x00\x00\x00\x19\x00\x00\x00\x3e\x00\x03\x00\x31\x00\x00\x00\x2f\x00\x00\x00\xfd\x00\x01\x00"
     "\x38\x00\x01\x00";
-inline const std::string kDepthUniformVertexSpirvUVE(kDepthUniformVertexSpirvUVEBytes,
-                                                     sizeof(kDepthUniformVertexSpirvUVEBytes) - 1U);
+inline const std::string kDepthUniformVertexSpirv(kDepthUniformVertexSpirvBytes,
+                                                     sizeof(kDepthUniformVertexSpirvBytes) - 1U);
 
-inline const char kDepthUniformFragmentSpirvUVEBytes[] =
+inline const char kDepthUniformFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x13\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0c\x00\x00\x00\x10\x00\x03\x00"
@@ -175,8 +175,8 @@ inline const char kDepthUniformFragmentSpirvUVEBytes[] =
     "\x10\x00\x00\x00\x0d\x00\x00\x00\x01\x00\x00\x00\x51\x00\x05\x00\x06\x00\x00\x00\x11\x00\x00\x00\x0d\x00\x00\x00\x02\x00\x00\x00"
     "\x50\x00\x07\x00\x07\x00\x00\x00\x12\x00\x00\x00\x0f\x00\x00\x00\x10\x00\x00\x00\x11\x00\x00\x00\x0e\x00\x00\x00\x3e\x00\x03\x00"
     "\x09\x00\x00\x00\x12\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kDepthUniformFragmentSpirvUVE(kDepthUniformFragmentSpirvUVEBytes,
-                                                       sizeof(kDepthUniformFragmentSpirvUVEBytes) - 1U);
+inline const std::string kDepthUniformFragmentSpirv(kDepthUniformFragmentSpirvBytes,
+                                                       sizeof(kDepthUniformFragmentSpirvBytes) - 1U);
 
 
 // --- M2c textured-quad pair (2026-09-17): proves staging upload + combined image sampler ----
@@ -194,7 +194,7 @@ inline const std::string kDepthUniformFragmentSpirvUVE(kDepthUniformFragmentSpir
 //   void main() { outColor = texture(uTex, vUv); }
 // Compiled with the same sandbox glslang (KhronosGroup/glslang @ vulkan-sdk-1.4.321.0);
 // same byte-array-form rule as the pairs above applies.
-inline const char kTexturedVertexSpirvUVEBytes[] =
+inline const char kTexturedVertexSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x21\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x09\x00\x00\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0b\x00\x00\x00\x13\x00\x00\x00"
@@ -227,10 +227,10 @@ inline const char kTexturedVertexSpirvUVEBytes[] =
     "\x02\x00\x00\x00\x50\x00\x07\x00\x0d\x00\x00\x00\x1e\x00\x00\x00\x1b\x00\x00\x00\x1c\x00\x00\x00\x1d\x00\x00\x00\x1a\x00\x00\x00"
     "\x41\x00\x05\x00\x1f\x00\x00\x00\x20\x00\x00\x00\x13\x00\x00\x00\x15\x00\x00\x00\x3e\x00\x03\x00\x20\x00\x00\x00\x1e\x00\x00\x00"
     "\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kTexturedVertexSpirvUVE(kTexturedVertexSpirvUVEBytes,
-                                                 sizeof(kTexturedVertexSpirvUVEBytes) - 1U);
+inline const std::string kTexturedVertexSpirv(kTexturedVertexSpirvBytes,
+                                                 sizeof(kTexturedVertexSpirvBytes) - 1U);
 
-inline const char kTexturedFragmentSpirvUVEBytes[] =
+inline const char kTexturedFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x14\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x11\x00\x00\x00\x10\x00\x03\x00"
@@ -249,10 +249,10 @@ inline const char kTexturedFragmentSpirvUVEBytes[] =
     "\x3d\x00\x04\x00\x0b\x00\x00\x00\x0e\x00\x00\x00\x0d\x00\x00\x00\x3d\x00\x04\x00\x0f\x00\x00\x00\x12\x00\x00\x00\x11\x00\x00\x00"
     "\x57\x00\x05\x00\x07\x00\x00\x00\x13\x00\x00\x00\x0e\x00\x00\x00\x12\x00\x00\x00\x3e\x00\x03\x00\x09\x00\x00\x00\x13\x00\x00\x00"
     "\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kTexturedFragmentSpirvUVE(kTexturedFragmentSpirvUVEBytes,
-                                                     sizeof(kTexturedFragmentSpirvUVEBytes) - 1U);
+inline const std::string kTexturedFragmentSpirv(kTexturedFragmentSpirvBytes,
+                                                     sizeof(kTexturedFragmentSpirvBytes) - 1U);
 
-// Points-topology vertex shader (GLSL) - kTriangleVertexSpirvUVE plus a 16px gl_PointSize, so a
+// Points-topology vertex shader (GLSL) - kTriangleVertexSpirv plus a 16px gl_PointSize, so a
 // VK_PRIMITIVE_TOPOLOGY_POINT_LIST draw rasterises a 16x16 block the readback can measure.
 // Baked 2026-10-14 in-sandbox with glslangValidator (shaderc-bundled glslang, `-V`):
 //   #version 450
@@ -260,7 +260,7 @@ inline const std::string kTexturedFragmentSpirvUVE(kTexturedFragmentSpirvUVEByte
 //   layout(location = 1) in vec3 aColor;
 //   layout(location = 0) out vec3 vColor;
 //   void main() { vColor = aColor; gl_Position = vec4(aPosition, 1.0); gl_PointSize = 16.0; }
-inline const char kPointVertexSpirvUVEBytes[] =
+inline const char kPointVertexSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x01\x00\x08\x00\x23\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x09\x00\x00\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0b\x00\x00\x00\x13\x00\x00\x00"
@@ -294,7 +294,7 @@ inline const char kPointVertexSpirvUVEBytes[] =
     "\x0d\x00\x00\x00\x1c\x00\x00\x00\x19\x00\x00\x00\x1a\x00\x00\x00\x1b\x00\x00\x00\x18\x00\x00\x00\x41\x00\x05\x00\x1d\x00\x00\x00"
     "\x1e\x00\x00\x00\x13\x00\x00\x00\x15\x00\x00\x00\x3e\x00\x03\x00\x1e\x00\x00\x00\x1c\x00\x00\x00\x41\x00\x05\x00\x21\x00\x00\x00"
     "\x22\x00\x00\x00\x13\x00\x00\x00\x1f\x00\x00\x00\x3e\x00\x03\x00\x22\x00\x00\x00\x20\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kPointVertexSpirvUVE(kPointVertexSpirvUVEBytes, sizeof(kPointVertexSpirvUVEBytes) - 1U);
+inline const std::string kPointVertexSpirv(kPointVertexSpirvBytes, sizeof(kPointVertexSpirvBytes) - 1U);
 
 // Integer-attribute vertex shader (GLSL) - location 1 is a uvec4, so only an integer vertex
 // format (UShort4 / UInt4 -> VK_FORMAT_R16G16B16A16_UINT / R32G32B32A32_UINT) feeds it; the
@@ -308,7 +308,7 @@ inline const std::string kPointVertexSpirvUVE(kPointVertexSpirvUVEBytes, sizeof(
 //       vColor = vec3(float(aJoints.x & 255u), float(aJoints.y & 255u), float(aJoints.z & 255u)) / 255.0;
 //       gl_Position = vec4(aPosition, 1.0);
 //   }
-inline const char kIntegerJointsVertexSpirvUVEBytes[] =
+inline const char kIntegerJointsVertexSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x01\x00\x08\x00\x34\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x09\x00\x00\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x0d\x00\x00\x00\x27\x00\x00\x00"
@@ -352,8 +352,8 @@ inline const char kIntegerJointsVertexSpirvUVEBytes[] =
     "\x2c\x00\x00\x00\x02\x00\x00\x00\x50\x00\x07\x00\x23\x00\x00\x00\x31\x00\x00\x00\x2e\x00\x00\x00\x2f\x00\x00\x00\x30\x00\x00\x00"
     "\x2d\x00\x00\x00\x41\x00\x05\x00\x32\x00\x00\x00\x33\x00\x00\x00\x27\x00\x00\x00\x29\x00\x00\x00\x3e\x00\x03\x00\x33\x00\x00\x00"
     "\x31\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kIntegerJointsVertexSpirvUVE(kIntegerJointsVertexSpirvUVEBytes,
-                                                      sizeof(kIntegerJointsVertexSpirvUVEBytes) - 1U);
+inline const std::string kIntegerJointsVertexSpirv(kIntegerJointsVertexSpirvBytes,
+                                                      sizeof(kIntegerJointsVertexSpirvBytes) - 1U);
 
 // Tier 2.3 cube-strip fragment (GLSL):
 //   #version 450
@@ -371,14 +371,14 @@ inline const std::string kIntegerJointsVertexSpirvUVE(kIntegerJointsVertexSpirvU
 //       else { dir = vec3(0.0, 0.0, -1.0); }
 //       outColor = texture(uCube, dir);
 //   }
-// Pairs with kTexturedVertexSpirvUVE above (same vUv/location layout, binding 0).
+// Pairs with kTexturedVertexSpirv above (same vUv/location layout, binding 0).
 // CHECKER: bake with the pinned sandbox glslang (KhronosGroup/glslang @
 // vulkan-sdk-1.4.321.0) and paste the bytes below in the same "\x.." array form as the pairs
 // above. The consuming test GTEST_SKIPs while this string is empty, so the suite stays green
 // until the bake lands.
-inline const char kCubeStripFragmentSpirvUVEBytes[] = "";
-inline const std::string kCubeStripFragmentSpirvUVE(kCubeStripFragmentSpirvUVEBytes,
-                                                    sizeof(kCubeStripFragmentSpirvUVEBytes) - 1U);
+inline const char kCubeStripFragmentSpirvBytes[] = "";
+inline const std::string kCubeStripFragmentSpirv(kCubeStripFragmentSpirvBytes,
+                                                    sizeof(kCubeStripFragmentSpirvBytes) - 1U);
 
 
 
@@ -396,7 +396,7 @@ inline const std::string kCubeStripFragmentSpirvUVE(kCubeStripFragmentSpirvUVEBy
 //   layout(set = 0, binding = 0) uniform Params { int uIndex; };
 //   layout(set = 0, binding = 1) readonly buffer Palette { vec4 uColors[]; };
 //   void main() { outColor = uColors[uIndex]; }
-inline const char kSsboPaletteFragmentSpirvUVEBytes[] =
+inline const char kSsboPaletteFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x1c\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x1b\x00\x00\x00\x10\x00\x03\x00"
@@ -425,8 +425,8 @@ inline const char kSsboPaletteFragmentSpirvUVEBytes[] =
     "\x0f\x00\x00\x00\x3d\x00\x04\x00\x0e\x00\x00\x00\x15\x00\x00\x00\x14\x00\x00\x00\x41\x00\x06\x00\x16\x00\x00\x00\x17\x00\x00\x00"
     "\x0d\x00\x00\x00\x0f\x00\x00\x00\x15\x00\x00\x00\x3d\x00\x04\x00\x07\x00\x00\x00\x18\x00\x00\x00\x17\x00\x00\x00\x3e\x00\x03\x00"
     "\x09\x00\x00\x00\x18\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kSsboPaletteFragmentSpirvUVE(kSsboPaletteFragmentSpirvUVEBytes,
-                                                                                         sizeof(kSsboPaletteFragmentSpirvUVEBytes) - 1U);
+inline const std::string kSsboPaletteFragmentSpirv(kSsboPaletteFragmentSpirvBytes,
+                                                                                         sizeof(kSsboPaletteFragmentSpirvBytes) - 1U);
 
 // M2f fragment shader (GLSL) - separate sampled-image + sampler pair: the split form of
 // the M2c combined image sampler; the device writes the sampled view into binding 0 and
@@ -437,7 +437,7 @@ inline const std::string kSsboPaletteFragmentSpirvUVE(kSsboPaletteFragmentSpirvU
 //   layout(set = 0, binding = 0) uniform texture2D uTex;
 //   layout(set = 0, binding = 1) uniform sampler uSamp;
 //   void main() { outColor = texture(sampler2D(uTex, uSamp), vUv); }
-inline const char kSeparateSamplerFragmentSpirvUVEBytes[] =
+inline const char kSeparateSamplerFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x19\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x16\x00\x00\x00\x10\x00\x03\x00"
@@ -460,8 +460,8 @@ inline const char kSeparateSamplerFragmentSpirvUVEBytes[] =
     "\x13\x00\x00\x00\x0d\x00\x00\x00\x11\x00\x00\x00\x3d\x00\x04\x00\x14\x00\x00\x00\x17\x00\x00\x00\x16\x00\x00\x00\x57\x00\x05\x00"
     "\x07\x00\x00\x00\x18\x00\x00\x00\x13\x00\x00\x00\x17\x00\x00\x00\x3e\x00\x03\x00\x09\x00\x00\x00\x18\x00\x00\x00\xfd\x00\x01\x00"
     "\x38\x00\x01\x00";
-inline const std::string kSeparateSamplerFragmentSpirvUVE(kSeparateSamplerFragmentSpirvUVEBytes,
-                                                                                                 sizeof(kSeparateSamplerFragmentSpirvUVEBytes) - 1U);
+inline const std::string kSeparateSamplerFragmentSpirv(kSeparateSamplerFragmentSpirvBytes,
+                                                                                                 sizeof(kSeparateSamplerFragmentSpirvBytes) - 1U);
 
 // M2f fragment shader (GLSL) - storage image. Originally the REJECTION fixture for the
 // M2f loud refusal; since M5b the refusal is lifted and this shader builds into a real
@@ -470,7 +470,7 @@ inline const std::string kSeparateSamplerFragmentSpirvUVE(kSeparateSamplerFragme
 //   layout(location = 0) out vec4 outColor;
 //   layout(set = 0, binding = 0, rgba8) uniform image2D uImg;
 //   void main() { outColor = imageLoad(uImg, ivec2(0, 0)); }
-inline const char kStorageImageFragmentSpirvUVEBytes[] =
+inline const char kStorageImageFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x13\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x06\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x10\x00\x03\x00\x04\x00\x00\x00"
@@ -487,8 +487,8 @@ inline const char kStorageImageFragmentSpirvUVEBytes[] =
     "\x11\x00\x00\x00\x10\x00\x00\x00\x10\x00\x00\x00\x36\x00\x05\x00\x02\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00"
     "\xf8\x00\x02\x00\x05\x00\x00\x00\x3d\x00\x04\x00\x0a\x00\x00\x00\x0d\x00\x00\x00\x0c\x00\x00\x00\x62\x00\x05\x00\x07\x00\x00\x00"
     "\x12\x00\x00\x00\x0d\x00\x00\x00\x11\x00\x00\x00\x3e\x00\x03\x00\x09\x00\x00\x00\x12\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kStorageImageFragmentSpirvUVE(kStorageImageFragmentSpirvUVEBytes,
-                                                                                           sizeof(kStorageImageFragmentSpirvUVEBytes) - 1U);
+inline const std::string kStorageImageFragmentSpirv(kStorageImageFragmentSpirvBytes,
+                                                                                           sizeof(kStorageImageFragmentSpirvBytes) - 1U);
 
 
 // ---------------------------------------------------------------------------
@@ -514,7 +514,7 @@ inline const std::string kStorageImageFragmentSpirvUVE(kStorageImageFragmentSpir
 //       uColors[gid] = c;
 //   }
 
-inline const char kFillPaletteComputeSpirvUVEBytes[] =
+inline const char kFillPaletteComputeSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x3e\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -612,8 +612,8 @@ inline const char kFillPaletteComputeSpirvUVEBytes[] =
     "\x41\x00\x06\x00\x3a\x00\x00\x00\x3b\x00\x00\x00\x35\x00\x00\x00"
     "\x37\x00\x00\x00\x38\x00\x00\x00\x3e\x00\x03\x00\x3b\x00\x00\x00"
     "\x39\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kFillPaletteComputeSpirvUVE(kFillPaletteComputeSpirvUVEBytes,
-                                                     sizeof(kFillPaletteComputeSpirvUVEBytes) - 1U);
+inline const std::string kFillPaletteComputeSpirv(kFillPaletteComputeSpirvBytes,
+                                                     sizeof(kFillPaletteComputeSpirvBytes) - 1U);
 
 // M5a boundary shader (GLSL) - a STORAGE_IMAGE compute shader. Originally the fixture for
 // the M5a loud refusal naming M5b; since M5b compute pipeline creation ACCEPTS it and it
@@ -623,7 +623,7 @@ inline const std::string kFillPaletteComputeSpirvUVE(kFillPaletteComputeSpirvUVE
 //   layout(set = 0, binding = 0, rgba8) uniform image2D uImage;
 //   void main() { imageStore(uImage, ivec2(0, 0), vec4(1.0, 0.0, 0.0, 1.0)); }
 
-inline const char kStorageImageComputeSpirvUVEBytes[] =
+inline const char kStorageImageComputeSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x17\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -661,8 +661,8 @@ inline const char kStorageImageComputeSpirvUVEBytes[] =
     "\x3d\x00\x04\x00\x07\x00\x00\x00\x0a\x00\x00\x00\x09\x00\x00\x00"
     "\x63\x00\x04\x00\x0a\x00\x00\x00\x0e\x00\x00\x00\x12\x00\x00\x00"
     "\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kStorageImageComputeSpirvUVE(kStorageImageComputeSpirvUVEBytes,
-                                                      sizeof(kStorageImageComputeSpirvUVEBytes) - 1U);
+inline const std::string kStorageImageComputeSpirv(kStorageImageComputeSpirvBytes,
+                                                      sizeof(kStorageImageComputeSpirvBytes) - 1U);
 
 // ---------------------------------------------------------------------------
 // M5b additions (generated 2026-09-18 from the same pinned glslang build as the
@@ -682,7 +682,7 @@ inline const std::string kStorageImageComputeSpirvUVE(kStorageImageComputeSpirvU
 //       ivec2 c = ivec2(gl_GlobalInvocationID.xy);
 //       imageStore(uImage, c, vec4(0.0, 1.0, 0.0, 1.0));
 //   }
-inline const char kImageFillComputeSpirvUVEBytes[] =
+inline const char kImageFillComputeSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x1f\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -733,8 +733,8 @@ inline const char kImageFillComputeSpirvUVEBytes[] =
     "\x15\x00\x00\x00\x3d\x00\x04\x00\x07\x00\x00\x00\x17\x00\x00\x00"
     "\x09\x00\x00\x00\x63\x00\x04\x00\x16\x00\x00\x00\x17\x00\x00\x00"
     "\x1b\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kImageFillComputeSpirvUVE(kImageFillComputeSpirvUVEBytes,
-                                                   sizeof(kImageFillComputeSpirvUVEBytes) - 1U);
+inline const std::string kImageFillComputeSpirv(kImageFillComputeSpirvBytes,
+                                                   sizeof(kImageFillComputeSpirvBytes) - 1U);
 
 // M5b fragment shader (GLSL) - graphics-side storage-image writer: every fragment
 // imageStores RED into texel (fragCoord % 4) of the rgba8 image (a full-coverage quad
@@ -748,7 +748,7 @@ inline const std::string kImageFillComputeSpirvUVE(kImageFillComputeSpirvUVEByte
 //       imageStore(uImage, c, vec4(1.0, 0.0, 0.0, 1.0));
 //       outColor = vec4(0.0, 0.0, 0.0, 1.0);
 //   }
-inline const char kImageStoreFragmentSpirvUVEBytes[] =
+inline const char kImageStoreFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x20\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -802,11 +802,11 @@ inline const char kImageStoreFragmentSpirvUVEBytes[] =
     "\x09\x00\x00\x00\x63\x00\x04\x00\x18\x00\x00\x00\x19\x00\x00\x00"
     "\x1c\x00\x00\x00\x3e\x00\x03\x00\x1e\x00\x00\x00\x1f\x00\x00\x00"
     "\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline const std::string kImageStoreFragmentSpirvUVE(kImageStoreFragmentSpirvUVEBytes,
-                                                     sizeof(kImageStoreFragmentSpirvUVEBytes) - 1U);
+inline const std::string kImageStoreFragmentSpirv(kImageStoreFragmentSpirvBytes,
+                                                     sizeof(kImageStoreFragmentSpirvBytes) - 1U);
 
 // --- Texture3D sampling fragment (usage flags + Texture3D slice, 2026-10-14) -----------------
-// Pairs with kTexturedVertexSpirvUVE (POSITION + TEXCOORD): the quad's u coordinate becomes the
+// Pairs with kTexturedVertexSpirv (POSITION + TEXCOORD): the quad's u coordinate becomes the
 // volume's w, so a left-to-right scan of the presented frame walks the slices in order. Baked
 // in-sandbox with glslangValidator (`-V`):
 //   #version 450
@@ -814,7 +814,7 @@ inline const std::string kImageStoreFragmentSpirvUVE(kImageStoreFragmentSpirvUVE
 //   layout(set = 0, binding = 0) uniform sampler3D uVolume;
 //   layout(location = 0) out vec4 outColor;
 //   void main() { outColor = texture(uVolume, vec3(0.5, 0.5, vUv.x)); }
-inline const char kVolumeSampleFragmentSpirvUVEBytes[] =
+inline const char kVolumeSampleFragmentSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x01\x00\x08\x00\x1b\x00\x00\x00\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30\x00\x00\x00\x00\x0e\x00\x03\x00\x00\x00\x00\x00\x01\x00\x00\x00"
     "\x0f\x00\x07\x00\x04\x00\x00\x00\x04\x00\x00\x00\x6d\x61\x69\x6e\x00\x00\x00\x00\x09\x00\x00\x00\x12\x00\x00\x00\x10\x00\x03\x00"
@@ -837,7 +837,7 @@ inline const char kVolumeSampleFragmentSpirvUVEBytes[] =
     "\x16\x00\x00\x00\x50\x00\x06\x00\x18\x00\x00\x00\x19\x00\x00\x00\x0f\x00\x00\x00\x0f\x00\x00\x00\x17\x00\x00\x00\x57\x00\x05\x00"
     "\x07\x00\x00\x00\x1a\x00\x00\x00\x0e\x00\x00\x00\x19\x00\x00\x00\x3e\x00\x03\x00\x09\x00\x00\x00\x1a\x00\x00\x00\xfd\x00\x01\x00"
     "\x38\x00\x01\x00";
-inline const std::string kVolumeSampleFragmentSpirvUVE(kVolumeSampleFragmentSpirvUVEBytes,
-                                                       sizeof(kVolumeSampleFragmentSpirvUVEBytes) - 1U);
+inline const std::string kVolumeSampleFragmentSpirv(kVolumeSampleFragmentSpirvBytes,
+                                                       sizeof(kVolumeSampleFragmentSpirvBytes) - 1U);
 
 } // namespace UVE::Render::Tests

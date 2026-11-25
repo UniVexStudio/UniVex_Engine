@@ -23,10 +23,10 @@ namespace univex::integration {
 /// kSelectionOutlineOtherWeight. A mesh reached both ways takes the stronger.
 ///
 /// Skipped, matching what the renderer draws and the picker can hit: entities without a clean
-/// world transform or a valid PrimitiveMeshComponentUVE, objects hidden in the hierarchy, and the
+/// world transform or a valid PrimitiveMeshComponent, objects hidden in the hierarchy, and the
 /// editor's own internal entities.
-[[nodiscard]] std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrianglesUVE(
-    UVE::Scene::IEntityManagerUVE& entityManager, const std::vector<UVE::Scene::EntityUVE>& selection,
-    UVE::Scene::EntityUVE active);
+[[nodiscard]] std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTriangles(
+    UVE::Scene::IEntityManager& entityManager, const std::vector<UVE::Scene::Entity>& selection,
+    UVE::Scene::Entity active);
 
 } // namespace univex::integration

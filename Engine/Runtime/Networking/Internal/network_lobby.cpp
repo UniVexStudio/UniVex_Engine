@@ -15,7 +15,7 @@ namespace UVE::Network {
 namespace {
 
 // Reads an int64 value as a u32 within [low, high]; false on wrong type or out of range.
-[[nodiscard]] bool AsUint32UVE(const Blueprint::ValueUVE& value, const std::int64_t low,
+[[nodiscard]] bool AsUint32(const Blueprint::Value& value, const std::int64_t low,
                                const std::int64_t high, std::uint32_t& out) {
     const std::int64_t* number = std::get_if<std::int64_t>(&value);
     if (number == nullptr || *number < low || *number > high) {
@@ -26,11 +26,11 @@ namespace {
 }
 
 // Reads a collection value's items; false unless the value holds that kind.
-[[nodiscard]] bool AsCollectionItemsUVE(
-    const Blueprint::ValueUVE& value, const Blueprint::CollectionValueUVE::KindUVE kind,
-    const std::vector<Blueprint::ValueUVE>*& items) {
+[[nodiscard]] bool AsCollectionItems(
+    const Blueprint::Value& value, const Blueprint::CollectionValue::Kind kind,
+    const std::vector<Blueprint::Value>*& items) {
     const auto* collection =
-        std::get_if<std::shared_ptr<const Blueprint::CollectionValueUVE>>(&value);
+        std::get_if<std::shared_ptr<const Blueprint::CollectionValue>>(&value);
     if (collection == nullptr || *collection == nullptr || (*collection)->kind != kind) {
         return false;
     }
@@ -38,14 +38,14 @@ namespace {
     return true;
 }
 
-[[nodiscard]] bool ParseRosterUVE(const Blueprint::ValueUVE& value,
+[[nodiscard]] bool ParseRoster(const Blueprint::Value& value,
                                   std::vector<std::string>& roster) {
-    const std::vector<Blueprint::ValueUVE>* items = nullptr;
-    if (!AsCollectionItemsUVE(value, Blueprint::CollectionValueUVE::KindUVE::List, items)) {
+    const std::vector<Blueprint::Value>* items = nullptr;
+    if (!AsCollectionItems(value, Blueprint::CollectionValue::Kind::List, items)) {
         return false;
     }
     std::vector<std::string> parsed;
-    for (const Blueprint::ValueUVE& item : *items) {
+    for (const Blueprint::Value& item : *items) {
         const std::string* name = std::get_if<std::string>(&item);
         if (name == nullptr) {
             return false;
@@ -58,20 +58,20 @@ namespace {
 
 // One room descriptor: exactly the four known keys, any order, duplicates refused. Strict
 // both ways - a skewed descriptor fails loud instead of half-parsing.
-[[nodiscard]] bool ParseRoomListUVE(const Blueprint::ValueUVE& value,
-                                    std::vector<LobbyRoomInfoUVE>& rooms) {
-    const std::vector<Blueprint::ValueUVE>* items = nullptr;
-    if (!AsCollectionItemsUVE(value, Blueprint::CollectionValueUVE::KindUVE::List, items)) {
+[[nodiscard]] bool ParseRoomList(const Blueprint::Value& value,
+                                    std::vector<LobbyRoomInfo>& rooms) {
+    const std::vector<Blueprint::Value>* items = nullptr;
+    if (!AsCollectionItems(value, Blueprint::CollectionValue::Kind::List, items)) {
         return false;
     }
-    std::vector<LobbyRoomInfoUVE> parsed;
-    for (const Blueprint::ValueUVE& entry : *items) {
-        const std::vector<Blueprint::ValueUVE>* pairs = nullptr;
-        if (!AsCollectionItemsUVE(entry, Blueprint::CollectionValueUVE::KindUVE::Map, pairs) ||
+    std::vector<LobbyRoomInfo> parsed;
+    for (const Blueprint::Value& entry : *items) {
+        const std::vector<Blueprint::Value>* pairs = nullptr;
+        if (!AsCollectionItems(entry, Blueprint::CollectionValue::Kind::Map, pairs) ||
             pairs->size() != 8U) {
             return false;
         }
-        LobbyRoomInfoUVE info;
+        LobbyRoomInfo info;
         bool hasId = false;
         bool hasName = false;
         bool hasPlayers = false;
@@ -82,7 +82,7 @@ namespace {
                 return false;
             }
             if (*key == "id") {
-                if (hasId || !AsUint32UVE((*pairs)[i + 1U], 1LL, 4294967295LL, info.id)) {
+                if (hasId || !AsUint32((*pairs)[i + 1U], 1LL, 4294967295LL, info.id)) {
                     return false;
                 }
                 hasId = true;
@@ -95,12 +95,12 @@ namespace {
                 hasName = true;
             } else if (*key == "players") {
                 if (hasPlayers ||
-                    !AsUint32UVE((*pairs)[i + 1U], 0LL, 4294967295LL, info.players)) {
+                    !AsUint32((*pairs)[i + 1U], 0LL, 4294967295LL, info.players)) {
                     return false;
                 }
                 hasPlayers = true;
             } else if (*key == "max") {
-                if (hasMax || !AsUint32UVE((*pairs)[i + 1U], 1LL, 4294967295LL, info.maxPlayers)) {
+                if (hasMax || !AsUint32((*pairs)[i + 1U], 1LL, 4294967295LL, info.maxPlayers)) {
                     return false;
                 }
                 hasMax = true;
@@ -117,63 +117,63 @@ namespace {
     return true;
 }
 
-[[nodiscard]] Blueprint::ValueUVE RoomInfoValueUVE(const LobbyRoomIdUVE id, const std::string& name,
+[[nodiscard]] Blueprint::Value RoomInfoValue(const LobbyRoomId id, const std::string& name,
                                                  const std::uint32_t players,
                                                  const std::uint32_t maxPlayers) {
-    return Blueprint::MakeMapValueUVE(
-        {Blueprint::ValueUVE{std::string{"id"}}, Blueprint::ValueUVE{static_cast<std::int64_t>(id)},
-         Blueprint::ValueUVE{std::string{"name"}}, Blueprint::ValueUVE{name},
-         Blueprint::ValueUVE{std::string{"players"}},
-         Blueprint::ValueUVE{static_cast<std::int64_t>(players)},
-         Blueprint::ValueUVE{std::string{"max"}},
-         Blueprint::ValueUVE{static_cast<std::int64_t>(maxPlayers)}});
+    return Blueprint::MakeMapValue(
+        {Blueprint::Value{std::string{"id"}}, Blueprint::Value{static_cast<std::int64_t>(id)},
+         Blueprint::Value{std::string{"name"}}, Blueprint::Value{name},
+         Blueprint::Value{std::string{"players"}},
+         Blueprint::Value{static_cast<std::int64_t>(players)},
+         Blueprint::Value{std::string{"max"}},
+         Blueprint::Value{static_cast<std::int64_t>(maxPlayers)}});
 }
 
-[[nodiscard]] Blueprint::ValueUVE RosterValueUVE(
-    const std::map<LobbyClientIdUVE, std::string>& members) {
-    std::vector<Blueprint::ValueUVE> names;
+[[nodiscard]] Blueprint::Value RosterValue(
+    const std::map<LobbyClientId, std::string>& members) {
+    std::vector<Blueprint::Value> names;
     for (const auto& member : members) {
-        names.push_back(Blueprint::ValueUVE{member.second});
+        names.push_back(Blueprint::Value{member.second});
     }
-    return Blueprint::MakeListValueUVE(std::move(names));
+    return Blueprint::MakeListValue(std::move(names));
 }
 
 } // namespace
 
-LobbyClientIdUVE NetworkLobbyUVE::AddClientUVE(NetworkSessionUVE&& session) {
-    const LobbyClientIdUVE id = m_nextClientId++;
-    if (m_nextClientId == kInvalidLobbyClientIdUVE) {
+LobbyClientId NetworkLobby::AddClient(NetworkSession&& session) {
+    const LobbyClientId id = m_nextClientId++;
+    if (m_nextClientId == kInvalidLobbyClientId) {
         ++m_nextClientId;
     }
-    NetworkRpcUVE rpc(std::move(session));
-    RegisterPeerHandlersUVE(rpc, id);
+    NetworkRpc rpc(std::move(session));
+    RegisterPeerHandlers(rpc, id);
     m_clients.emplace(id, std::move(rpc));
     return id;
 }
 
-bool NetworkLobbyUVE::RemoveClientUVE(const LobbyClientIdUVE id) noexcept {
+bool NetworkLobby::RemoveClient(const LobbyClientId id) noexcept {
     const auto peer = m_clients.find(id);
     if (peer == m_clients.end()) {
         return false;
     }
     // Kicked with notice: leaving counts and survivors hear it, like any other leave.
-    LeaveRoomUVE(id);
+    LeaveRoom(id);
     m_clientRoom.erase(id);
     m_clients.erase(peer);
     return true;
 }
 
-NetworkLobbyUVE::NetworkLobbyUVE(NetworkLobbyUVE&& other)
+NetworkLobby::NetworkLobby(NetworkLobby&& other)
     : m_rooms(std::move(other.m_rooms)),
       m_clientRoom(std::move(other.m_clientRoom)),
       m_nextClientId(other.m_nextClientId),
       m_nextRoomId(other.m_nextRoomId),
       m_stats(other.m_stats),
       m_clients(std::move(other.m_clients)) {
-    RebindPeerHandlersUVE();
+    RebindPeerHandlers();
 }
 
-NetworkLobbyUVE& NetworkLobbyUVE::operator=(NetworkLobbyUVE&& other) {
+NetworkLobby& NetworkLobby::operator=(NetworkLobby&& other) {
     if (this == &other) {
         return *this;
     }
@@ -183,52 +183,52 @@ NetworkLobbyUVE& NetworkLobbyUVE::operator=(NetworkLobbyUVE&& other) {
     m_nextRoomId = other.m_nextRoomId;
     m_stats = other.m_stats;
     m_clients = std::move(other.m_clients);
-    RebindPeerHandlersUVE();
+    RebindPeerHandlers();
     return *this;
 }
 
-void NetworkLobbyUVE::RegisterPeerHandlersUVE(NetworkRpcUVE& peer,
-                                               const LobbyClientIdUVE id) {
-    static_cast<void>(peer.UnregisterMethodUVE(kLobbyListMethodUVE));
-    static_cast<void>(peer.UnregisterMethodUVE(kLobbyCreateMethodUVE));
-    static_cast<void>(peer.UnregisterMethodUVE(kLobbyJoinMethodUVE));
-    static_cast<void>(peer.UnregisterMethodUVE(kLobbyLeaveMethodUVE));
-    static_cast<void>(peer.UnregisterMethodUVE(kLobbyRosterMethodUVE));
-    static_cast<void>(peer.RegisterMethodUVE(kLobbyListMethodUVE,
-                                             [this](std::span<const Blueprint::ValueUVE> args) {
-                                                 return HandleListUVE(args);
+void NetworkLobby::RegisterPeerHandlers(NetworkRpc& peer,
+                                               const LobbyClientId id) {
+    static_cast<void>(peer.UnregisterMethod(kLobbyListMethod));
+    static_cast<void>(peer.UnregisterMethod(kLobbyCreateMethod));
+    static_cast<void>(peer.UnregisterMethod(kLobbyJoinMethod));
+    static_cast<void>(peer.UnregisterMethod(kLobbyLeaveMethod));
+    static_cast<void>(peer.UnregisterMethod(kLobbyRosterMethod));
+    static_cast<void>(peer.RegisterMethod(kLobbyListMethod,
+                                             [this](std::span<const Blueprint::Value> args) {
+                                                 return HandleList(args);
                                              }));
-    static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyCreateMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
-            return HandleCreateUVE(id, args);
+    static_cast<void>(peer.RegisterMethod(
+        kLobbyCreateMethod, [this, id](std::span<const Blueprint::Value> args) {
+            return HandleCreate(id, args);
         }));
-    static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyJoinMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
-            return HandleJoinUVE(id, args);
+    static_cast<void>(peer.RegisterMethod(
+        kLobbyJoinMethod, [this, id](std::span<const Blueprint::Value> args) {
+            return HandleJoin(id, args);
         }));
-    static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyLeaveMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
-            return HandleLeaveUVE(id, args);
+    static_cast<void>(peer.RegisterMethod(
+        kLobbyLeaveMethod, [this, id](std::span<const Blueprint::Value> args) {
+            return HandleLeave(id, args);
         }));
-    static_cast<void>(peer.RegisterMethodUVE(kLobbyRosterMethodUVE,
-                                             [this](std::span<const Blueprint::ValueUVE> args) {
-                                                 return HandleRosterUVE(args);
+    static_cast<void>(peer.RegisterMethod(kLobbyRosterMethod,
+                                             [this](std::span<const Blueprint::Value> args) {
+                                                 return HandleRoster(args);
                                              }));
 }
 
-void NetworkLobbyUVE::RebindPeerHandlersUVE() {
+void NetworkLobby::RebindPeerHandlers() {
     for (auto& peer : m_clients) {
-        RegisterPeerHandlersUVE(peer.second, peer.first);
+        RegisterPeerHandlers(peer.second, peer.first);
     }
 }
 
-void NetworkLobbyUVE::UpdateUVE(const std::uint64_t nowMs) {
+void NetworkLobby::Update(const std::uint64_t nowMs) {
     for (auto& peer : m_clients) {
-        peer.second.UpdateUVE(nowMs);
+        peer.second.Update(nowMs);
     }
 }
 
-NetworkRpcUVE* NetworkLobbyUVE::ClientRpcUVE(const LobbyClientIdUVE id) noexcept {
+NetworkRpc* NetworkLobby::ClientRpc(const LobbyClientId id) noexcept {
     const auto peer = m_clients.find(id);
     if (peer == m_clients.end()) {
         return nullptr;
@@ -236,8 +236,8 @@ NetworkRpcUVE* NetworkLobbyUVE::ClientRpcUVE(const LobbyClientIdUVE id) noexcept
     return &peer->second;
 }
 
-const NetworkRpcUVE* NetworkLobbyUVE::ClientRpcUVE(
-    const LobbyClientIdUVE id) const noexcept {
+const NetworkRpc* NetworkLobby::ClientRpc(
+    const LobbyClientId id) const noexcept {
     const auto peer = m_clients.find(id);
     if (peer == m_clients.end()) {
         return nullptr;
@@ -245,60 +245,60 @@ const NetworkRpcUVE* NetworkLobbyUVE::ClientRpcUVE(
     return &peer->second;
 }
 
-LobbyRoomIdUVE NetworkLobbyUVE::ClientRoomUVE(const LobbyClientIdUVE id) const noexcept {
+LobbyRoomId NetworkLobby::ClientRoom(const LobbyClientId id) const noexcept {
     const auto current = m_clientRoom.find(id);
     if (current == m_clientRoom.end()) {
-        return kInvalidLobbyRoomIdUVE;
+        return kInvalidLobbyRoomId;
     }
     return current->second;
 }
 
-RpcOutcomeUVE NetworkLobbyUVE::HandleListUVE(
-    const std::span<const Blueprint::ValueUVE> args) const {
+RpcOutcome NetworkLobby::HandleList(
+    const std::span<const Blueprint::Value> args) const {
     if (!args.empty()) {
-        return RpcErrorUVE("lobby.list takes no arguments");
+        return RpcError("lobby.list takes no arguments");
     }
-    std::vector<Blueprint::ValueUVE> rooms;
+    std::vector<Blueprint::Value> rooms;
     for (const auto& [id, room] : m_rooms) {
-        rooms.push_back(RoomInfoValueUVE(id, room.name,
+        rooms.push_back(RoomInfoValue(id, room.name,
                                          static_cast<std::uint32_t>(room.members.size()),
                                          room.maxPlayers));
     }
-    return RpcOkUVE(Blueprint::MakeListValueUVE(std::move(rooms)));
+    return RpcOk(Blueprint::MakeListValue(std::move(rooms)));
 }
 
-RpcOutcomeUVE NetworkLobbyUVE::HandleCreateUVE(const LobbyClientIdUVE caller,
-                                               const std::span<const Blueprint::ValueUVE> args) {
+RpcOutcome NetworkLobby::HandleCreate(const LobbyClientId caller,
+                                               const std::span<const Blueprint::Value> args) {
     if (args.size() != 3U) {
         ++m_stats.createsRejected;
-        return RpcErrorUVE("lobby.create takes (name, player, max)");
+        return RpcError("lobby.create takes (name, player, max)");
     }
     const std::string* name = std::get_if<std::string>(&args[0]);
     const std::string* player = std::get_if<std::string>(&args[1]);
     const std::int64_t* maxArg = std::get_if<std::int64_t>(&args[2]);
     if (name == nullptr || player == nullptr || maxArg == nullptr) {
         ++m_stats.createsRejected;
-        return RpcErrorUVE("lobby.create takes (name, player, max)");
+        return RpcError("lobby.create takes (name, player, max)");
     }
     if (name->empty()) {
         ++m_stats.createsRejected;
-        return RpcErrorUVE("room name is empty");
+        return RpcError("room name is empty");
     }
     if (player->empty()) {
         ++m_stats.createsRejected;
-        return RpcErrorUVE("player name is empty");
+        return RpcError("player name is empty");
     }
     if (*maxArg < 1LL || *maxArg > 4294967295LL) {
         ++m_stats.createsRejected;
-        return RpcErrorUVE("max players must be at least 1");
+        return RpcError("max players must be at least 1");
     }
     // Validated before mutating: a refused create never kicks you from your room.
-    LeaveRoomUVE(caller);
-    const LobbyRoomIdUVE id = m_nextRoomId++;
-    if (m_nextRoomId == kInvalidLobbyRoomIdUVE) {
+    LeaveRoom(caller);
+    const LobbyRoomId id = m_nextRoomId++;
+    if (m_nextRoomId == kInvalidLobbyRoomId) {
         ++m_nextRoomId;
     }
-    LobbyRoomUVE room;
+    LobbyRoom room;
     room.id = id;
     room.name = *name;
     room.maxPlayers = static_cast<std::uint32_t>(*maxArg);
@@ -306,32 +306,32 @@ RpcOutcomeUVE NetworkLobbyUVE::HandleCreateUVE(const LobbyClientIdUVE caller,
     m_rooms.emplace(id, std::move(room));
     m_clientRoom[caller] = id;
     ++m_stats.roomsCreated;
-    return RpcOkUVE(Blueprint::ValueUVE{static_cast<std::int64_t>(id)});
+    return RpcOk(Blueprint::Value{static_cast<std::int64_t>(id)});
 }
 
-RpcOutcomeUVE NetworkLobbyUVE::HandleJoinUVE(const LobbyClientIdUVE caller,
-                                             const std::span<const Blueprint::ValueUVE> args) {
+RpcOutcome NetworkLobby::HandleJoin(const LobbyClientId caller,
+                                             const std::span<const Blueprint::Value> args) {
     if (args.size() != 2U) {
         ++m_stats.joinsRejected;
-        return RpcErrorUVE("lobby.join takes (room id, player)");
+        return RpcError("lobby.join takes (room id, player)");
     }
     const std::int64_t* roomArg = std::get_if<std::int64_t>(&args[0]);
     const std::string* player = std::get_if<std::string>(&args[1]);
     if (roomArg == nullptr || player == nullptr) {
         ++m_stats.joinsRejected;
-        return RpcErrorUVE("lobby.join takes (room id, player)");
+        return RpcError("lobby.join takes (room id, player)");
     }
-    std::uint32_t roomId = kInvalidLobbyRoomIdUVE;
-    const auto room = AsUint32UVE(args[0], 1LL, 4294967295LL, roomId)
+    std::uint32_t roomId = kInvalidLobbyRoomId;
+    const auto room = AsUint32(args[0], 1LL, 4294967295LL, roomId)
                           ? m_rooms.find(roomId)
                           : m_rooms.end();
     if (room == m_rooms.end()) {
         ++m_stats.joinsRejected;
-        return RpcErrorUVE("unknown room '" + std::to_string(*roomArg) + "'");
+        return RpcError("unknown room '" + std::to_string(*roomArg) + "'");
     }
     if (player->empty()) {
         ++m_stats.joinsRejected;
-        return RpcErrorUVE("player name is empty");
+        return RpcError("player name is empty");
     }
     // Rejoining your own room just ensures the name: the same name is a quiet success, a new
     // one renames (taken-checked against the others) and notifies.
@@ -340,73 +340,73 @@ RpcOutcomeUVE NetworkLobbyUVE::HandleJoinUVE(const LobbyClientIdUVE caller,
         const std::string& mine = room->second.members.find(caller)->second;
         if (mine == *player) {
             ++m_stats.joinsAccepted;
-            return RpcOkUVE(RosterValueUVE(room->second.members));
+            return RpcOk(RosterValue(room->second.members));
         }
         for (const auto& member : room->second.members) {
             if (member.first != caller && member.second == *player) {
                 ++m_stats.joinsRejected;
-                return RpcErrorUVE("name '" + *player + "' is taken in room '" +
+                return RpcError("name '" + *player + "' is taken in room '" +
                                    std::to_string(roomId) + "'");
             }
         }
         room->second.members[caller] = *player;
         ++m_stats.joinsAccepted;
-        NotifyRoomUVE(roomId, caller);
-        return RpcOkUVE(RosterValueUVE(room->second.members));
+        NotifyRoom(roomId, caller);
+        return RpcOk(RosterValue(room->second.members));
     }
     for (const auto& member : room->second.members) {
         if (member.second == *player) {
             ++m_stats.joinsRejected;
-            return RpcErrorUVE("name '" + *player + "' is taken in room '" +
+            return RpcError("name '" + *player + "' is taken in room '" +
                                std::to_string(roomId) + "'");
         }
     }
     if (room->second.members.size() >= room->second.maxPlayers) {
         ++m_stats.joinsRejected;
-        return RpcErrorUVE("room '" + std::to_string(roomId) + "' is full");
+        return RpcError("room '" + std::to_string(roomId) + "' is full");
     }
-    LeaveRoomUVE(caller);
+    LeaveRoom(caller);
     room->second.members.emplace(caller, *player);
     m_clientRoom[caller] = roomId;
     ++m_stats.joinsAccepted;
-    NotifyRoomUVE(roomId, caller);
-    return RpcOkUVE(RosterValueUVE(room->second.members));
+    NotifyRoom(roomId, caller);
+    return RpcOk(RosterValue(room->second.members));
 }
 
-RpcOutcomeUVE NetworkLobbyUVE::HandleLeaveUVE(const LobbyClientIdUVE caller,
-                                              const std::span<const Blueprint::ValueUVE> args) {
+RpcOutcome NetworkLobby::HandleLeave(const LobbyClientId caller,
+                                              const std::span<const Blueprint::Value> args) {
     if (!args.empty()) {
         ++m_stats.leavesRejected;
-        return RpcErrorUVE("lobby.leave takes no arguments");
+        return RpcError("lobby.leave takes no arguments");
     }
-    if (!LeaveRoomUVE(caller)) {
+    if (!LeaveRoom(caller)) {
         ++m_stats.leavesRejected;
-        return RpcErrorUVE("not in a room");
+        return RpcError("not in a room");
     }
-    return RpcOkUVE(Blueprint::ValueUVE{true});
+    return RpcOk(Blueprint::Value{true});
 }
 
-RpcOutcomeUVE NetworkLobbyUVE::HandleRosterUVE(
-    const std::span<const Blueprint::ValueUVE> args) const {
+RpcOutcome NetworkLobby::HandleRoster(
+    const std::span<const Blueprint::Value> args) const {
     if (args.size() != 1U || std::get_if<std::int64_t>(&args[0]) == nullptr) {
-        return RpcErrorUVE("lobby.roster takes (room id)");
+        return RpcError("lobby.roster takes (room id)");
     }
     const std::int64_t roomArg = std::get<std::int64_t>(args[0]);
-    std::uint32_t roomId = kInvalidLobbyRoomIdUVE;
-    const auto room = AsUint32UVE(args[0], 1LL, 4294967295LL, roomId) ? m_rooms.find(roomId)
+    std::uint32_t roomId = kInvalidLobbyRoomId;
+    const auto room = AsUint32(args[0], 1LL, 4294967295LL, roomId) ? m_rooms.find(roomId)
                                                                       : m_rooms.end();
     if (room == m_rooms.end()) {
-        return RpcErrorUVE("unknown room '" + std::to_string(roomArg) + "'");
+        return RpcError("unknown room '" + std::to_string(roomArg) + "'");
     }
-    return RpcOkUVE(RosterValueUVE(room->second.members));
+    return RpcOk(RosterValue(room->second.members));
 }
 
-bool NetworkLobbyUVE::LeaveRoomUVE(const LobbyClientIdUVE caller) {
+bool NetworkLobby::LeaveRoom(const LobbyClientId caller) {
     const auto current = m_clientRoom.find(caller);
     if (current == m_clientRoom.end()) {
         return false;
     }
-    const LobbyRoomIdUVE roomId = current->second;
+    const LobbyRoomId roomId = current->second;
     m_clientRoom.erase(current);
     const auto room = m_rooms.find(roomId);
     if (room == m_rooms.end()) {
@@ -415,7 +415,7 @@ bool NetworkLobbyUVE::LeaveRoomUVE(const LobbyClientIdUVE caller) {
     }
     room->second.members.erase(caller);
     ++m_stats.leavesAccepted;
-    NotifyRoomUVE(roomId, caller);
+    NotifyRoom(roomId, caller);
     if (room->second.members.empty()) {
         m_rooms.erase(room);
         ++m_stats.roomsRemoved;
@@ -423,13 +423,13 @@ bool NetworkLobbyUVE::LeaveRoomUVE(const LobbyClientIdUVE caller) {
     return true;
 }
 
-void NetworkLobbyUVE::NotifyRoomUVE(const LobbyRoomIdUVE roomId,
-                                    const LobbyClientIdUVE exceptClient) {
+void NetworkLobby::NotifyRoom(const LobbyRoomId roomId,
+                                    const LobbyClientId exceptClient) {
     const auto room = m_rooms.find(roomId);
     if (room == m_rooms.end()) {
         return;
     }
-    const Blueprint::ValueUVE roster = RosterValueUVE(room->second.members);
+    const Blueprint::Value roster = RosterValue(room->second.members);
     for (const auto& member : room->second.members) {
         if (member.first == exceptClient) {
             continue;
@@ -440,11 +440,11 @@ void NetworkLobbyUVE::NotifyRoomUVE(const LobbyRoomIdUVE roomId,
         }
         // Fire-and-forget: the outcome is ignored (a member without the handler is
         // tolerated, not punished), and retention self-evicts past the cap.
-        const RpcCallIdUVE call = peer->second.CallUVE(
-            kLobbyRosterChangedMethodUVE,
-            {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}, roster},
-            [](RpcCallIdUVE, const RpcOutcomeUVE&) {});
-        if (call == kInvalidRpcCallIdUVE) {
+        const RpcCallId call = peer->second.Call(
+            kLobbyRosterChangedMethod,
+            {Blueprint::Value{static_cast<std::int64_t>(roomId)}, roster},
+            [](RpcCallId, const RpcOutcome&) {});
+        if (call == kInvalidRpcCallId) {
             ++m_stats.notificationsDropped;
         } else {
             ++m_stats.notificationsSent;
@@ -452,94 +452,94 @@ void NetworkLobbyUVE::NotifyRoomUVE(const LobbyRoomIdUVE roomId,
     }
 }
 
-NetworkLobbyClientUVE::NetworkLobbyClientUVE(NetworkSessionUVE&& session)
-    : m_rpc(std::move(session)), m_state(std::make_shared<ClientStateUVE>()) {
-    static_cast<void>(m_rpc.RegisterMethodUVE(
-        kLobbyRosterChangedMethodUVE,
-        [state = m_state](std::span<const Blueprint::ValueUVE> args) {
-            return HandleRosterChangedUVE(*state, args);
+NetworkLobbyClient::NetworkLobbyClient(NetworkSession&& session)
+    : m_rpc(std::move(session)), m_state(std::make_shared<ClientState>()) {
+    static_cast<void>(m_rpc.RegisterMethod(
+        kLobbyRosterChangedMethod,
+        [state = m_state](std::span<const Blueprint::Value> args) {
+            return HandleRosterChanged(*state, args);
         }));
 }
 
-void NetworkLobbyClientUVE::ListRoomsUVE(LobbyRoomsCallbackUVE callback) {
+void NetworkLobbyClient::ListRooms(LobbyRoomsCallback callback) {
     if (callback == nullptr) {
         return;
     }
-    const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyListMethodUVE, {},
-        [state = m_state, callback](const RpcCallIdUVE callId,
-                                    const RpcOutcomeUVE& outcome) {
+    const RpcCallId call = m_rpc.Call(
+        kLobbyListMethod, {},
+        [state = m_state, callback](const RpcCallId callId,
+                                    const RpcOutcome& outcome) {
             state->pending.erase(callId);
             if (!outcome.ok) {
                 callback({}, outcome.error);
                 return;
             }
-            std::vector<LobbyRoomInfoUVE> rooms;
-            if (!ParseRoomListUVE(outcome.value, rooms)) {
+            std::vector<LobbyRoomInfo> rooms;
+            if (!ParseRoomList(outcome.value, rooms)) {
                 callback({}, "bad lobby.list reply");
                 return;
             }
             callback(std::move(rooms), {});
         });
-    if (call == kInvalidRpcCallIdUVE) {
+    if (call == kInvalidRpcCallId) {
         callback({}, "lobby.list failed to send");
     } else {
         m_state->pending.insert(call);
     }
 }
 
-void NetworkLobbyClientUVE::CreateRoomUVE(const std::string& roomName,
+void NetworkLobbyClient::CreateRoom(const std::string& roomName,
                                           const std::string& playerName,
                                           const std::uint32_t maxPlayers,
-                                          LobbyRoomCallbackUVE callback) {
+                                          LobbyRoomCallback callback) {
     if (callback == nullptr) {
         return;
     }
-    const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyCreateMethodUVE,
-        {Blueprint::ValueUVE{roomName}, Blueprint::ValueUVE{playerName},
-         Blueprint::ValueUVE{static_cast<std::int64_t>(maxPlayers)}},
-        [state = m_state, callback, playerName](const RpcCallIdUVE callId,
-                                                const RpcOutcomeUVE& outcome) {
+    const RpcCallId call = m_rpc.Call(
+        kLobbyCreateMethod,
+        {Blueprint::Value{roomName}, Blueprint::Value{playerName},
+         Blueprint::Value{static_cast<std::int64_t>(maxPlayers)}},
+        [state = m_state, callback, playerName](const RpcCallId callId,
+                                                const RpcOutcome& outcome) {
             state->pending.erase(callId);
             if (!outcome.ok) {
-                callback(kInvalidLobbyRoomIdUVE, outcome.error);
+                callback(kInvalidLobbyRoomId, outcome.error);
                 return;
             }
-            LobbyRoomIdUVE id = kInvalidLobbyRoomIdUVE;
-            if (!AsUint32UVE(outcome.value, 1LL, 4294967295LL, id)) {
-                callback(kInvalidLobbyRoomIdUVE, "bad lobby.create reply");
+            LobbyRoomId id = kInvalidLobbyRoomId;
+            if (!AsUint32(outcome.value, 1LL, 4294967295LL, id)) {
+                callback(kInvalidLobbyRoomId, "bad lobby.create reply");
                 return;
             }
             state->currentRoom = id;
             state->cachedRoster = {playerName};
             callback(id, {});
         });
-    if (call == kInvalidRpcCallIdUVE) {
-        callback(kInvalidLobbyRoomIdUVE, "lobby.create failed to send");
+    if (call == kInvalidRpcCallId) {
+        callback(kInvalidLobbyRoomId, "lobby.create failed to send");
     } else {
         m_state->pending.insert(call);
     }
 }
 
-void NetworkLobbyClientUVE::JoinRoomUVE(const LobbyRoomIdUVE roomId,
+void NetworkLobbyClient::JoinRoom(const LobbyRoomId roomId,
                                         const std::string& playerName,
-                                        LobbyRosterCallbackUVE callback) {
+                                        LobbyRosterCallback callback) {
     if (callback == nullptr) {
         return;
     }
-    const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyJoinMethodUVE,
-        {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}, Blueprint::ValueUVE{playerName}},
-        [state = m_state, callback, roomId](const RpcCallIdUVE callId,
-                                            const RpcOutcomeUVE& outcome) {
+    const RpcCallId call = m_rpc.Call(
+        kLobbyJoinMethod,
+        {Blueprint::Value{static_cast<std::int64_t>(roomId)}, Blueprint::Value{playerName}},
+        [state = m_state, callback, roomId](const RpcCallId callId,
+                                            const RpcOutcome& outcome) {
             state->pending.erase(callId);
             if (!outcome.ok) {
                 callback({}, outcome.error);
                 return;
             }
             std::vector<std::string> roster;
-            if (!ParseRosterUVE(outcome.value, roster)) {
+            if (!ParseRoster(outcome.value, roster)) {
                 callback({}, "bad lobby.join reply");
                 return;
             }
@@ -547,21 +547,21 @@ void NetworkLobbyClientUVE::JoinRoomUVE(const LobbyRoomIdUVE roomId,
             state->cachedRoster = roster;
             callback(std::move(roster), {});
         });
-    if (call == kInvalidRpcCallIdUVE) {
+    if (call == kInvalidRpcCallId) {
         callback({}, "lobby.join failed to send");
     } else {
         m_state->pending.insert(call);
     }
 }
 
-void NetworkLobbyClientUVE::LeaveRoomUVE(LobbyLeaveCallbackUVE callback) {
+void NetworkLobbyClient::LeaveRoom(LobbyLeaveCallback callback) {
     if (callback == nullptr) {
         return;
     }
-    const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyLeaveMethodUVE, {},
-        [state = m_state, callback](const RpcCallIdUVE callId,
-                                    const RpcOutcomeUVE& outcome) {
+    const RpcCallId call = m_rpc.Call(
+        kLobbyLeaveMethod, {},
+        [state = m_state, callback](const RpcCallId callId,
+                                    const RpcOutcome& outcome) {
             state->pending.erase(callId);
             if (!outcome.ok) {
                 callback(false, outcome.error);
@@ -572,80 +572,80 @@ void NetworkLobbyClientUVE::LeaveRoomUVE(LobbyLeaveCallbackUVE callback) {
                 callback(false, "bad lobby.leave reply");
                 return;
             }
-            state->currentRoom = kInvalidLobbyRoomIdUVE;
+            state->currentRoom = kInvalidLobbyRoomId;
             state->cachedRoster.clear();
             callback(true, {});
         });
-    if (call == kInvalidRpcCallIdUVE) {
+    if (call == kInvalidRpcCallId) {
         callback(false, "lobby.leave failed to send");
     } else {
         m_state->pending.insert(call);
     }
 }
 
-void NetworkLobbyClientUVE::QueryRosterUVE(const LobbyRoomIdUVE roomId,
-                                            LobbyRosterCallbackUVE callback) {
+void NetworkLobbyClient::QueryRoster(const LobbyRoomId roomId,
+                                            LobbyRosterCallback callback) {
     if (callback == nullptr) {
         return;
     }
-    const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyRosterMethodUVE, {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}},
-        [state = m_state, callback](const RpcCallIdUVE callId,
-                                    const RpcOutcomeUVE& outcome) {
+    const RpcCallId call = m_rpc.Call(
+        kLobbyRosterMethod, {Blueprint::Value{static_cast<std::int64_t>(roomId)}},
+        [state = m_state, callback](const RpcCallId callId,
+                                    const RpcOutcome& outcome) {
             state->pending.erase(callId);
             if (!outcome.ok) {
                 callback({}, outcome.error);
                 return;
             }
             std::vector<std::string> roster;
-            if (!ParseRosterUVE(outcome.value, roster)) {
+            if (!ParseRoster(outcome.value, roster)) {
                 callback({}, "bad lobby.roster reply");
                 return;
             }
             callback(std::move(roster), {});
         });
-    if (call == kInvalidRpcCallIdUVE) {
+    if (call == kInvalidRpcCallId) {
         callback({}, "lobby.roster failed to send");
     } else {
         m_state->pending.insert(call);
     }
 }
 
-std::size_t NetworkLobbyClientUVE::CancelPendingUVE() {
-    for (const RpcCallIdUVE id : m_state->pending) {
-        static_cast<void>(m_rpc.CancelUVE(id));
+std::size_t NetworkLobbyClient::CancelPending() {
+    for (const RpcCallId id : m_state->pending) {
+        static_cast<void>(m_rpc.Cancel(id));
     }
     const std::size_t abandoned = m_state->pending.size();
     m_state->pending.clear();
     return abandoned;
 }
 
-void NetworkLobbyClientUVE::SetRosterHandlerUVE(LobbyRosterHandlerUVE handler) {
+void NetworkLobbyClient::SetRosterHandler(LobbyRosterHandler handler) {
     m_state->handler = std::move(handler);
 }
 
-void NetworkLobbyClientUVE::UpdateUVE(const std::uint64_t nowMs) {
-    m_rpc.UpdateUVE(nowMs);
+void NetworkLobbyClient::Update(const std::uint64_t nowMs) {
+    m_rpc.Update(nowMs);
 }
 
-RpcOutcomeUVE NetworkLobbyClientUVE::HandleRosterChangedUVE(
-    ClientStateUVE& state, const std::span<const Blueprint::ValueUVE> args) {
+RpcOutcome NetworkLobbyClient::HandleRosterChanged(
+    ClientState& state, const std::span<const Blueprint::Value> args) {
     if (args.size() != 2U) {
-        return RpcErrorUVE("lobby.rosterChanged takes (room id, roster)");
+        return RpcError("lobby.rosterChanged takes (room id, roster)");
     }
-    LobbyRoomIdUVE roomId = kInvalidLobbyRoomIdUVE;
+    LobbyRoomId roomId = kInvalidLobbyRoomId;
     std::vector<std::string> roster;
-    if (!AsUint32UVE(args[0], 1LL, 4294967295LL, roomId) || !ParseRosterUVE(args[1], roster)) {
-        return RpcErrorUVE("lobby.rosterChanged takes (room id, roster)");
+    if (!AsUint32(args[0], 1LL, 4294967295LL, roomId) || !ParseRoster(args[1], roster)) {
+        return RpcError("lobby.rosterChanged takes (room id, roster)");
     }
     if (roomId != state.currentRoom) {
-        return RpcOkUVE(Blueprint::ValueUVE{});
+        return RpcOk(Blueprint::Value{});
     }
     state.cachedRoster = roster;
     if (state.handler != nullptr) {
         state.handler(roomId, roster);
     }
-    return RpcOkUVE(Blueprint::ValueUVE{});
+    return RpcOk(Blueprint::Value{});
 }
 
 } // namespace UVE::Network

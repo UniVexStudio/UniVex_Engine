@@ -29,7 +29,7 @@ namespace {
 
 // An ASCII FBX 7.4 file authored the way many DCC tools write them: Z up, and in centimetres
 // (UnitScaleFactor 1 means one file unit is one centimetre).
-[[nodiscard]] std::string MakeFbxUVE(const std::string_view objects, const std::string_view connections) {
+[[nodiscard]] std::string MakeFbx(const std::string_view objects, const std::string_view connections) {
     std::string text = R"(; FBX 7.4.0 project file
 FBXHeaderExtension:  {
 	FBXHeaderVersion: 1003
@@ -57,7 +57,7 @@ Objects:  {
 }
 
 // A one-metre square lying on the ground (the XY plane, in a Z-up file), in centimetres.
-constexpr std::string_view kFloorGeometryUVE = R"(	Geometry: 1000, "Geometry::Floor", "Mesh" {
+constexpr std::string_view kFloorGeometry = R"(	Geometry: 1000, "Geometry::Floor", "Mesh" {
 		Vertices: *12 {
 			a: 0,0,0,100,0,0,100,100,0,0,100,0
 		}
@@ -70,37 +70,37 @@ constexpr std::string_view kFloorGeometryUVE = R"(	Geometry: 1000, "Geometry::Fl
 		Version: 232
 	}
 )";
-constexpr std::string_view kFloorConnectionsUVE = "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n";
+constexpr std::string_view kFloorConnections = "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n";
 
-[[nodiscard]] std::span<const std::byte> BytesUVE(const std::string& text) {
+[[nodiscard]] std::span<const std::byte> Bytes(const std::string& text) {
     return std::as_bytes(std::span<const char>(text.data(), text.size()));
 }
 
-[[nodiscard]] bool NearUVE(const float value, const float expected) {
+[[nodiscard]] bool Near(const float value, const float expected) {
     return std::abs(value - expected) < 1.0e-5F;
 }
 
-TEST(FbxMeshConverterUVETest, AZUpCentimetreFileArrivesInMetresStandingOnY) {
-    const std::string fbx = MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE);
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+TEST(FbxMeshConverterTest, AZUpCentimetreFileArrivesInMetresStandingOnY) {
+    const std::string fbx = MakeFbx(kFloorGeometry, kFloorConnections);
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh));
 
     // One quad: two triangles over four shared corners.
     EXPECT_EQ(mesh.vertices.size(), 4U);
     EXPECT_EQ(mesh.indices.size(), 6U);
     // 100 cm is one metre, and the Z-up ground plane is the Y-up ground plane.
-    EXPECT_TRUE(NearUVE(mesh.localBounds.max.x - mesh.localBounds.min.x, 1.0F));
-    EXPECT_TRUE(NearUVE(mesh.localBounds.max.y - mesh.localBounds.min.y, 0.0F));
-    EXPECT_TRUE(NearUVE(mesh.localBounds.max.z - mesh.localBounds.min.z, 1.0F));
-    for (const MeshVertexUVE& vertex : mesh.vertices) {
+    EXPECT_TRUE(Near(mesh.localBounds.max.x - mesh.localBounds.min.x, 1.0F));
+    EXPECT_TRUE(Near(mesh.localBounds.max.y - mesh.localBounds.min.y, 0.0F));
+    EXPECT_TRUE(Near(mesh.localBounds.max.z - mesh.localBounds.min.z, 1.0F));
+    for (const MeshVertex& vertex : mesh.vertices) {
         // No normals in the file: generated, and facing up.
-        EXPECT_TRUE(NearUVE(vertex.normal.y, 1.0F)) << vertex.normal.x << ", " << vertex.normal.y;
+        EXPECT_TRUE(Near(vertex.normal.y, 1.0F)) << vertex.normal.x << ", " << vertex.normal.y;
         EXPECT_TRUE(std::isfinite(vertex.tangent.x) && std::isfinite(vertex.tangentHandedness));
     }
 }
 
-TEST(FbxMeshConverterUVETest, TextureCoordinatesInvertVToReconcileBottomLeftFBXOriginWithTopLeftImageMemory) {
-    constexpr std::string_view kUvGeometryUVE = R"(	Geometry: 1000, "Geometry::Quad", "Mesh" {
+TEST(FbxMeshConverterTest, TextureCoordinatesInvertVToReconcileBottomLeftFBXOriginWithTopLeftImageMemory) {
+    constexpr std::string_view kUvGeometry = R"(	Geometry: 1000, "Geometry::Quad", "Mesh" {
 		Vertices: *12 {
 			a: 0,0,0,100,0,0,100,100,0,0,100,0
 		}
@@ -122,23 +122,23 @@ TEST(FbxMeshConverterUVETest, TextureCoordinatesInvertVToReconcileBottomLeftFBXO
 		Version: 232
 	}
 )";
-    const std::string fbx = MakeFbxUVE(kUvGeometryUVE, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n");
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+    const std::string fbx = MakeFbx(kUvGeometry, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n");
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh));
     ASSERT_EQ(mesh.vertices.size(), 4U);
     // FBX authors V=0.25 at the bottom; top-row-first image buffers sample that at V=0.75 (1.0 - 0.25).
-    EXPECT_TRUE(NearUVE(mesh.vertices[0].u, 0.0F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[0].v, 0.75F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[1].u, 1.0F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[1].v, 0.75F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[2].u, 1.0F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[2].v, 0.25F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[3].u, 0.0F));
-    EXPECT_TRUE(NearUVE(mesh.vertices[3].v, 0.25F));
+    EXPECT_TRUE(Near(mesh.vertices[0].u, 0.0F));
+    EXPECT_TRUE(Near(mesh.vertices[0].v, 0.75F));
+    EXPECT_TRUE(Near(mesh.vertices[1].u, 1.0F));
+    EXPECT_TRUE(Near(mesh.vertices[1].v, 0.75F));
+    EXPECT_TRUE(Near(mesh.vertices[2].u, 1.0F));
+    EXPECT_TRUE(Near(mesh.vertices[2].v, 0.25F));
+    EXPECT_TRUE(Near(mesh.vertices[3].u, 0.0F));
+    EXPECT_TRUE(Near(mesh.vertices[3].v, 0.25F));
 }
 
-TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMirroredOneStaysFacingOut) {
-    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 2001, "Model::Mirrored", "Mesh" {
+TEST(FbxMeshConverterTest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMirroredOneStaysFacingOut) {
+    const std::string objects = std::string(kFloorGeometry) + R"(	Model: 2001, "Model::Mirrored", "Mesh" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",300,0,0
@@ -147,20 +147,20 @@ TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMir
 	}
 )";
     const std::string fbx =
-        MakeFbxUVE(objects, std::string(kFloorConnectionsUVE) + "\tC: \"OO\",1000,2001\n\tC: \"OO\",2001,0\n");
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+        MakeFbx(objects, std::string(kFloorConnections) + "\tC: \"OO\",1000,2001\n\tC: \"OO\",2001,0\n");
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh));
 
     EXPECT_EQ(mesh.vertices.size(), 8U);
     EXPECT_EQ(mesh.indices.size(), 12U);
     // The second copy sits 3 m away, flipped back over it: 0..1 m and 2..3 m along X.
-    EXPECT_TRUE(NearUVE(mesh.localBounds.min.x, 0.0F));
-    EXPECT_TRUE(NearUVE(mesh.localBounds.max.x, 3.0F));
+    EXPECT_TRUE(Near(mesh.localBounds.min.x, 0.0F));
+    EXPECT_TRUE(Near(mesh.localBounds.max.x, 3.0F));
     // Each triangle's winding agrees with its normals, the mirrored copy's included.
     for (std::size_t first = 0U; first < mesh.indices.size(); first += 3U) {
-        const Math::Vector3UVE& a = mesh.vertices[mesh.indices[first]].position;
-        const Math::Vector3UVE& b = mesh.vertices[mesh.indices[first + 1U]].position;
-        const Math::Vector3UVE& c = mesh.vertices[mesh.indices[first + 2U]].position;
+        const Math::Vector3& a = mesh.vertices[mesh.indices[first]].position;
+        const Math::Vector3& b = mesh.vertices[mesh.indices[first + 1U]].position;
+        const Math::Vector3& c = mesh.vertices[mesh.indices[first + 2U]].position;
         const float faceY = ((b.z - a.z) * (c.x - a.x)) - ((b.x - a.x) * (c.z - a.z));
         const float normalY = mesh.vertices[mesh.indices[first]].normal.y;
         EXPECT_GT(faceY * normalY, 0.0F) << "triangle " << first / 3U << " is inside out";
@@ -171,7 +171,7 @@ TEST(FbxMeshConverterUVETest, EveryInstanceIsMergedWhereItsObjectPlacesItAndAMir
 // is one contiguous run, because a run is what the renderer can draw with one material binding.
 // Note the PolygonVertexIndex encoding: the negative entry ends a polygon and means
 // -(lastVertex + 1), so a triangle's last index is -3, -6, -9... and never -2 with an index gap.
-constexpr std::string_view kTwoMaterialObjectsUVE = R"(	Geometry: 1000, "Geometry::TwoTris", "Mesh" {
+constexpr std::string_view kTwoMaterialObjects = R"(	Geometry: 1000, "Geometry::TwoTris", "Mesh" {
 		Vertices: *27 {
 			a: 0,0,0,100,0,0,100,100,0,200,0,0,300,0,0,300,100,0,400,0,0,500,0,0,500,100,0
 		}
@@ -207,14 +207,14 @@ constexpr std::string_view kTwoMaterialObjectsUVE = R"(	Geometry: 1000, "Geometr
 		}
 	}
 )";
-constexpr std::string_view kTwoMaterialConnectionsUVE =
+constexpr std::string_view kTwoMaterialConnections =
     "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n\tC: \"OO\",3501,1000\n";
 
-TEST(FbxMeshConverterUVETest, FacesAreGroupedByMaterialInFirstUseOrder) {
-    const std::string fbx = MakeFbxUVE(kTwoMaterialObjectsUVE, kTwoMaterialConnectionsUVE);
-    MeshAssetUVE mesh;
-    std::vector<FbxSurfaceRangeUVE> surfaces;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh, &surfaces));
+TEST(FbxMeshConverterTest, FacesAreGroupedByMaterialInFirstUseOrder) {
+    const std::string fbx = MakeFbx(kTwoMaterialObjects, kTwoMaterialConnections);
+    MeshAsset mesh;
+    std::vector<FbxSurfaceRange> surfaces;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh, &surfaces));
 
     ASSERT_EQ(mesh.indices.size(), 9U);
     // Blue (source index 1) is used by the first face the file lists, so it opens the buffer;
@@ -235,7 +235,7 @@ TEST(FbxMeshConverterUVETest, FacesAreGroupedByMaterialInFirstUseOrder) {
     }
 }
 
-TEST(FbxMeshConverterUVETest, OneMaterialForEveryFaceIsTheWholeBufferAndNotARange) {
+TEST(FbxMeshConverterTest, OneMaterialForEveryFaceIsTheWholeBufferAndNotARange) {
     // A single-material model drawing through a one-entry surface table would take the per-surface
     // path for nothing, so the converter emits no table - the same bytes version 1 wrote.
     const std::string objects = R"(	Geometry: 1000, "Geometry::OneMaterial", "Mesh" {
@@ -267,17 +267,17 @@ TEST(FbxMeshConverterUVETest, OneMaterialForEveryFaceIsTheWholeBufferAndNotARang
 		}
 	}
 )";
-    const std::string fbx = MakeFbxUVE(
+    const std::string fbx = MakeFbx(
         objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n");
-    MeshAssetUVE mesh;
-    std::vector<FbxSurfaceRangeUVE> surfaces;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh, &surfaces));
+    MeshAsset mesh;
+    std::vector<FbxSurfaceRange> surfaces;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh, &surfaces));
     EXPECT_EQ(mesh.indices.size(), 6U);
     EXPECT_TRUE(surfaces.empty());
 }
 
-TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
-    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Bone", "LimbNode" {
+TEST(FbxMeshConverterTest, ASkinIsWhatMakesItRigged) {
+    const std::string objects = std::string(kFloorGeometry) + R"(	Model: 3000, "Model::Bone", "LimbNode" {
 		Version: 232
 	}
 	NodeAttribute: 3100, "NodeAttribute::Bone", "LimbNode" {
@@ -302,48 +302,48 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
 		}
 	}
 )";
-    const std::string rigged = MakeFbxUVE(
-        objects, std::string(kFloorConnectionsUVE) +
+    const std::string rigged = MakeFbx(
+        objects, std::string(kFloorConnections) +
                      "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n"
                      "\tC: \"OO\",3000,0\n");
-    const std::optional<FbxSourceSummaryUVE> riggedSummary = DescribeFbxSourceUVE(BytesUVE(rigged));
+    const std::optional<FbxSourceSummary> riggedSummary = DescribeFbxSource(Bytes(rigged));
     ASSERT_TRUE(riggedSummary.has_value());
     EXPECT_TRUE(riggedSummary->hasSkin);
     EXPECT_EQ(riggedSummary->meshCount, 1U);
     EXPECT_EQ(riggedSummary->boneCount, 1U);
-    EXPECT_FALSE(riggedSummary->IsAnimationOnlyUVE());
-    const std::optional<FbxSourceSummaryUVE> staticSummary =
-        DescribeFbxSourceUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)));
+    EXPECT_FALSE(riggedSummary->IsAnimationOnly());
+    const std::optional<FbxSourceSummary> staticSummary =
+        DescribeFbxSource(Bytes(MakeFbx(kFloorGeometry, kFloorConnections)));
     ASSERT_TRUE(staticSummary.has_value());
     EXPECT_FALSE(staticSummary->hasSkin);
-    EXPECT_FALSE(staticSummary->IsAnimationOnlyUVE());
+    EXPECT_FALSE(staticSummary->IsAnimationOnly());
 
     // The mesh imports with its skin: one joint per bone, named like the skeleton's.
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), mesh));
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(rigged), mesh));
     EXPECT_EQ(mesh.vertices.size(), 4U);
-    ASSERT_TRUE(mesh.IsSkinnedUVE());
-    EXPECT_TRUE(IsMeshSkinningDataValidUVE(mesh));
-    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(rigged), 16U);
+    ASSERT_TRUE(mesh.IsSkinned());
+    EXPECT_TRUE(IsMeshSkinningDataValid(mesh));
+    const std::optional<GltfSkeleton> skeleton = ReadFbxSkeleton(Bytes(rigged), 16U);
     ASSERT_TRUE(skeleton.has_value());
     ASSERT_EQ(mesh.joints.size(), skeleton->joints.size());
     EXPECT_EQ(mesh.joints[0].name, skeleton->joints[0].name);
-    for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+    for (const MeshSkinningInfluence& influence : mesh.skinningInfluences) {
         EXPECT_EQ(influence.joints[0], 0U);
         EXPECT_FLOAT_EQ(influence.weights[0], 1.0F);
     }
 
     // Skinned in the skeleton's rest pose, the floor stays exactly where the static import puts it.
-    std::vector<Math::Matrix4x4UVE> localPose;
-    for (const GltfJointUVE& joint : skeleton->joints) {
-        localPose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(joint.translation, joint.rotation, joint.scale));
+    std::vector<Math::Matrix4x4> localPose;
+    for (const GltfJoint& joint : skeleton->joints) {
+        localPose.push_back(Math::Matrix4x4::ComposeTrs(joint.translation, joint.rotation, joint.scale));
     }
-    std::vector<Math::Matrix4x4UVE> skinning;
-    ASSERT_TRUE(TryResolvePoseUVE(mesh.joints, localPose, skinning));
-    std::vector<MeshVertexUVE> posed;
-    ASSERT_TRUE(TrySkinMeshUVE(mesh, skinning, posed));
-    MeshAssetUVE plain;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), plain));
+    std::vector<Math::Matrix4x4> skinning;
+    ASSERT_TRUE(TryResolvePose(mesh.joints, localPose, skinning));
+    std::vector<MeshVertex> posed;
+    ASSERT_TRUE(TrySkinMesh(mesh, skinning, posed));
+    MeshAsset plain;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(MakeFbx(kFloorGeometry, kFloorConnections)), plain));
     ASSERT_EQ(posed.size(), plain.vertices.size());
     for (std::size_t index = 0U; index < posed.size(); ++index) {
         EXPECT_NEAR(posed[index].position.x, plain.vertices[index].position.x, 1.0e-4F);
@@ -352,26 +352,26 @@ TEST(FbxMeshConverterUVETest, ASkinIsWhatMakesItRigged) {
     }
 
     // Lifting the bone lifts the floor with it.
-    localPose[0] = Math::Matrix4x4UVE::ComposeTrsUVE(
-        Math::Vector3UVE{skeleton->joints[0].translation.x, skeleton->joints[0].translation.y + 1.0F,
+    localPose[0] = Math::Matrix4x4::ComposeTrs(
+        Math::Vector3{skeleton->joints[0].translation.x, skeleton->joints[0].translation.y + 1.0F,
                          skeleton->joints[0].translation.z},
         skeleton->joints[0].rotation, skeleton->joints[0].scale);
-    ASSERT_TRUE(TryResolvePoseUVE(mesh.joints, localPose, skinning));
-    ASSERT_TRUE(TrySkinMeshUVE(mesh, skinning, posed));
+    ASSERT_TRUE(TryResolvePose(mesh.joints, localPose, skinning));
+    ASSERT_TRUE(TrySkinMesh(mesh, skinning, posed));
     EXPECT_NEAR(posed[0].position.y, plain.vertices[0].position.y + 1.0F, 1.0e-4F);
 
     // And the skin survives a save and load, names included.
-    const std::filesystem::path path = ::UVE::Tests::ScratchRootUVE() / "uve_fbx_skinned_floor.uvmodel";
-    ASSERT_TRUE(SaveMeshAssetUVE(mesh, path));
-    MeshAssetUVE loaded;
-    ASSERT_TRUE(LoadMeshAssetUVE(path, loaded));
+    const std::filesystem::path path = ::UVE::Tests::ScratchRoot() / "uve_fbx_skinned_floor.uvmodel";
+    ASSERT_TRUE(SaveMeshAsset(mesh, path));
+    MeshAsset loaded;
+    ASSERT_TRUE(LoadMeshAsset(path, loaded));
     ASSERT_EQ(loaded.joints.size(), mesh.joints.size());
     EXPECT_EQ(loaded.joints[0].name, mesh.joints[0].name);
     EXPECT_EQ(loaded.skinningInfluences.size(), mesh.skinningInfluences.size());
     std::filesystem::remove(path);
 }
 
-TEST(FbxMeshConverterUVETest, ASkinnedVertexIsLitByTheSameBindThatPlacesIt) {
+TEST(FbxMeshConverterTest, ASkinnedVertexIsLitByTheSameBindThatPlacesIt) {
     // The mesh node is turned 90 degrees about X, but the skin binds the floor with an identity matrix, so
     // the skin - not the node - decides where the floor stands: flat on the ground. Its normals have to
     // follow the same bind, and point up; turning them by the node's rotation would light it from the side.
@@ -415,15 +415,15 @@ TEST(FbxMeshConverterUVETest, ASkinnedVertexIsLitByTheSameBindThatPlacesIt) {
 		}
 	}
 )";
-    const std::string fbx = MakeFbxUVE(
-        objects, std::string(kFloorConnectionsUVE) +
+    const std::string fbx = MakeFbx(
+        objects, std::string(kFloorConnections) +
                      "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n"
                      "\tC: \"OO\",3000,0\n");
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
-    ASSERT_TRUE(mesh.IsSkinnedUVE());
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), mesh));
+    ASSERT_TRUE(mesh.IsSkinned());
     ASSERT_EQ(mesh.vertices.size(), 4U);
-    for (const MeshVertexUVE& vertex : mesh.vertices) {
+    for (const MeshVertex& vertex : mesh.vertices) {
         EXPECT_NEAR(vertex.position.y, 0.0F, 1.0e-4F);
         EXPECT_NEAR(vertex.normal.x, 0.0F, 1.0e-4F);
         EXPECT_NEAR(vertex.normal.y, 1.0F, 1.0e-4F);
@@ -431,11 +431,11 @@ TEST(FbxMeshConverterUVETest, ASkinnedVertexIsLitByTheSameBindThatPlacesIt) {
     }
 }
 
-TEST(FbxMeshConverterUVETest, ARigOverTheBoneLimitLosesBonesNotTheWholeMesh) {
+TEST(FbxMeshConverterTest, ARigOverTheBoneLimitLosesBonesNotTheWholeMesh) {
     // A two-bone chain skinned to its SECOND bone. The joint cap is one, so the bone the skin
     // actually names is the one that has to go - the harshest version of the case, and the one that
     // decides whether a character imports at all.
-    const std::string objects = std::string(kFloorGeometryUVE) + R"(	Model: 3000, "Model::Root", "LimbNode" {
+    const std::string objects = std::string(kFloorGeometry) + R"(	Model: 3000, "Model::Root", "LimbNode" {
 		Version: 232
 	}
 	NodeAttribute: 3100, "NodeAttribute::Root", "LimbNode" {
@@ -466,40 +466,40 @@ TEST(FbxMeshConverterUVETest, ARigOverTheBoneLimitLosesBonesNotTheWholeMesh) {
 		}
 	}
 )";
-    const std::string rigged = MakeFbxUVE(
-        objects, std::string(kFloorConnectionsUVE) +
+    const std::string rigged = MakeFbx(
+        objects, std::string(kFloorConnections) +
                      "\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n\tC: \"OO\",3001,4100\n"
                      "\tC: \"OO\",3000,0\n\tC: \"OO\",3001,3000\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3101,3001\n");
 
     // Refuse by default: a caller that cannot represent a partial rig must not be handed one.
-    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(rigged), 1U).has_value());
+    EXPECT_FALSE(ReadFbxSkeleton(Bytes(rigged), 1U).has_value());
 
     // Convert with a cap of one: the mesh still comes out, and it is still valid to skin.
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), mesh, nullptr, 1U)) << "a wide rig must not fail the mesh";
+    MeshAsset mesh;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(rigged), mesh, nullptr, 1U)) << "a wide rig must not fail the mesh";
     EXPECT_EQ(mesh.vertices.size(), 4U);
     ASSERT_EQ(mesh.joints.size(), 1U) << "the first bone is kept";
     EXPECT_EQ(mesh.joints[0].name, "Root");
-    ASSERT_TRUE(mesh.IsSkinnedUVE());
-    EXPECT_TRUE(IsMeshSkinningDataValidUVE(mesh)) << "dropping a bone must leave normalised weights behind";
+    ASSERT_TRUE(mesh.IsSkinned());
+    EXPECT_TRUE(IsMeshSkinningDataValid(mesh)) << "dropping a bone must leave normalised weights behind";
     // The skin named the dropped bone, so its weight was skipped: the vertex still has a weight, on
     // the bone that remains, and the mesh still moves with the rig.
-    for (const MeshSkinningInfluenceUVE& influence : mesh.skinningInfluences) {
+    for (const MeshSkinningInfluence& influence : mesh.skinningInfluences) {
         EXPECT_EQ(influence.joints[0], 0U);
         EXPECT_FLOAT_EQ(influence.weights[0], 1.0F);
     }
 
     // A cap of two is the whole rig, unchanged.
-    MeshAssetUVE full;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(rigged), full, nullptr, 8U));
+    MeshAsset full;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(rigged), full, nullptr, 8U));
     EXPECT_EQ(full.joints.size(), 2U);
     EXPECT_EQ(full.joints[1].name, "Finger");
 }
 
-TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {
+TEST(FbxMeshConverterTest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAModel) {
     // The shape exported motion usually takes: bones and a take, nothing to draw. One second long
     // (FBX time counts 46186158000 ticks a second).
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+    const std::string fbx = MakeFbx(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 	}
 	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
@@ -515,24 +515,24 @@ TEST(FbxMeshConverterUVETest, ASkeletonWithAnimationAndNoMeshIsAnAnimationNotAMo
 	}
 )",
                                        "\tC: \"OO\",5100,5000\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n");
-    const std::optional<FbxSourceSummaryUVE> summary = DescribeFbxSourceUVE(BytesUVE(fbx));
+    const std::optional<FbxSourceSummary> summary = DescribeFbxSource(Bytes(fbx));
     ASSERT_TRUE(summary.has_value());
     EXPECT_EQ(summary->meshCount, 0U);
     EXPECT_EQ(summary->boneCount, 1U);
     EXPECT_EQ(summary->animationCount, 1U);
     EXPECT_NEAR(summary->longestAnimationSeconds, 1.0, 1.0e-6);
     EXPECT_FALSE(summary->hasSkin);
-    EXPECT_TRUE(summary->IsAnimationOnlyUVE());
+    EXPECT_TRUE(summary->IsAnimationOnly());
 
     // And there is no mesh in it to convert.
-    MeshAssetUVE mesh;
-    EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(fbx), mesh));
+    MeshAsset mesh;
+    EXPECT_FALSE(ConvertFbxMesh(Bytes(fbx), mesh));
 }
 
-TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst) {
+TEST(FbxMeshConverterTest, TheSkeletonComesOutInMetresUprightWithParentsFirst) {
     // Hips one metre up (100 cm along Z in this Z-up file) with a spine child, under a null the
     // exporter put between them: the null is folded into the spine's pose so the chain still meets.
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+    const std::string fbx = MakeFbx(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
@@ -559,12 +559,12 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
 )",
                                        "\tC: \"OO\",3100,3000\n\tC: \"OO\",3400,3300\n\tC: \"OO\",3300,3200\n"
                                        "\tC: \"OO\",3200,3000\n\tC: \"OO\",3000,0\n");
-    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(fbx), 16U);
+    const std::optional<GltfSkeleton> skeleton = ReadFbxSkeleton(Bytes(fbx), 16U);
     ASSERT_TRUE(skeleton.has_value());
     ASSERT_EQ(skeleton->joints.size(), 2U);
     EXPECT_EQ(skeleton->skinCount, 0U);
-    const GltfJointUVE& hips = skeleton->joints[0];
-    const GltfJointUVE& spine = skeleton->joints[1];
+    const GltfJoint& hips = skeleton->joints[0];
+    const GltfJoint& spine = skeleton->joints[1];
     EXPECT_EQ(hips.parentIndex, -1);
     EXPECT_EQ(spine.parentIndex, 0);
     // Two bones with one name: the second is made unique, the way the glTF reader does it.
@@ -572,11 +572,11 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
     EXPECT_EQ(spine.name, "Hips_1");
 
     // Hips stand one metre up, along +Y, and the spine continues straight up from them.
-    const auto rotate = [](const Math::QuaternionUVE& q, const Math::Vector3UVE& v) {
-        const Math::Vector3UVE u{q.x, q.y, q.z};
-        const Math::Vector3UVE t{2.0F * ((u.y * v.z) - (u.z * v.y)), 2.0F * ((u.z * v.x) - (u.x * v.z)),
+    const auto rotate = [](const Math::Quaternion& q, const Math::Vector3& v) {
+        const Math::Vector3 u{q.x, q.y, q.z};
+        const Math::Vector3 t{2.0F * ((u.y * v.z) - (u.z * v.y)), 2.0F * ((u.z * v.x) - (u.x * v.z)),
                                  2.0F * ((u.x * v.y) - (u.y * v.x))};
-        return Math::Vector3UVE{v.x + (q.w * t.x) + ((u.y * t.z) - (u.z * t.y)),
+        return Math::Vector3{v.x + (q.w * t.x) + ((u.y * t.z) - (u.z * t.y)),
                                 v.y + (q.w * t.y) + ((u.z * t.x) - (u.x * t.z)),
                                 v.z + (q.w * t.z) + ((u.x * t.y) - (u.y * t.x))};
     };
@@ -584,22 +584,22 @@ TEST(FbxMeshConverterUVETest, TheSkeletonComesOutInMetresUprightWithParentsFirst
     EXPECT_NEAR(hips.translation.y, 1.0F, 1.0e-4F);
     EXPECT_NEAR(hips.translation.z, 0.0F, 1.0e-4F);
     // 0.1 m of null and 0.2 m of spine, in the hips' frame.
-    const Math::Vector3UVE spineOffset = rotate(hips.rotation, spine.translation);
+    const Math::Vector3 spineOffset = rotate(hips.rotation, spine.translation);
     EXPECT_NEAR(spineOffset.x, 0.0F, 1.0e-4F);
     EXPECT_NEAR(spineOffset.y, 0.3F, 1.0e-4F);
     EXPECT_NEAR(spineOffset.z, 0.0F, 1.0e-4F);
 
     // A limit it does not fit in, bytes that are not FBX, and a file with no bones: nothing.
-    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(fbx), 1U).has_value());
+    EXPECT_FALSE(ReadFbxSkeleton(Bytes(fbx), 1U).has_value());
     const std::string garbage = "not an fbx";
-    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(garbage), 16U).has_value());
-    EXPECT_FALSE(ReadFbxSkeletonUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).has_value());
+    EXPECT_FALSE(ReadFbxSkeleton(Bytes(garbage), 16U).has_value());
+    EXPECT_FALSE(ReadFbxSkeleton(Bytes(MakeFbx(kFloorGeometry, kFloorConnections)), 16U).has_value());
 }
 
-TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) {
+TEST(FbxMeshConverterTest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) {
     // Hips one metre up with a spine above it; the take "Armature|Walk" slides the hips 100 cm
     // along the file's X over one second. The spine never moves.
-    const std::string fbx = MakeFbxUVE(R"(	Model: 3000, "Model::Hips", "LimbNode" {
+    const std::string fbx = MakeFbx(R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,100
@@ -655,15 +655,15 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
                                        "\tC: \"OO\",3100,3000\n\tC: \"OO\",3400,3300\n\tC: \"OO\",3300,3000\n"
                                        "\tC: \"OO\",3000,0\n\tC: \"OO\",5100,5000\n\tC: \"OO\",6000,5100\n"
                                        "\tC: \"OP\",6000,3000,\"Lcl Translation\"\n\tC: \"OP\",7000,6000,\"d|X\"\n");
-    const std::optional<GltfSkeletonUVE> skeleton = ReadFbxSkeletonUVE(BytesUVE(fbx), 16U);
+    const std::optional<GltfSkeleton> skeleton = ReadFbxSkeleton(Bytes(fbx), 16U);
     ASSERT_TRUE(skeleton.has_value());
-    const std::vector<AnimationClipAssetUVE> clips = ReadFbxAnimationsUVE(BytesUVE(fbx), 16U);
+    const std::vector<AnimationClipAsset> clips = ReadFbxAnimations(Bytes(fbx), 16U);
     ASSERT_EQ(clips.size(), 1U);
-    const AnimationClipAssetUVE& walk = clips[0];
+    const AnimationClipAsset& walk = clips[0];
     EXPECT_EQ(walk.clipId, "Walk") << "the armature prefix is not part of the take's name";
     EXPECT_NEAR(walk.durationSeconds, 1.0, 1.0e-6);
-    EXPECT_TRUE(walk.IsSkeletalUVE());
-    EXPECT_TRUE(IsAnimationClipAssetValidUVE(walk));
+    EXPECT_TRUE(walk.IsSkeletal());
+    EXPECT_TRUE(IsAnimationClipAssetValid(walk));
     ASSERT_EQ(walk.bones.size(), skeleton->joints.size());
     for (std::size_t index = 0U; index < walk.bones.size(); ++index) {
         EXPECT_EQ(walk.bones[index].bone, skeleton->joints[index].name) << "tracks follow the skeleton's bones";
@@ -679,7 +679,7 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
     EXPECT_FALSE(walk.conformed);
 
     // The hips: sampled every frame, starting at the rest pose and ending one metre along X.
-    const AnimationAssetBoneTrackUVE& hips = walk.bones[0];
+    const AnimationAssetBoneTrack& hips = walk.bones[0];
     ASSERT_GT(hips.samples.size(), 2U);
     EXPECT_DOUBLE_EQ(hips.samples.front().timeSeconds, 0.0);
     EXPECT_DOUBLE_EQ(hips.samples.back().timeSeconds, walk.durationSeconds);
@@ -689,19 +689,19 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
     EXPECT_NEAR(hips.samples.back().pose.position.y, 1.0F, 1.0e-4F);
 
     // The spine never moves: one sample, its rest pose.
-    const AnimationAssetBoneTrackUVE& spine = walk.bones[1];
+    const AnimationAssetBoneTrack& spine = walk.bones[1];
     ASSERT_EQ(spine.samples.size(), 1U);
     EXPECT_NEAR(spine.samples[0].pose.position.x, skeleton->joints[1].translation.x, 1.0e-4F);
     EXPECT_NEAR(spine.samples[0].pose.position.y, skeleton->joints[1].translation.y, 1.0e-4F);
     EXPECT_NEAR(spine.samples[0].pose.position.z, skeleton->joints[1].translation.z, 1.0e-4F);
 
     // No bones or no FBX: no clips.
-    EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE)), 16U).empty());
+    EXPECT_TRUE(ReadFbxAnimations(Bytes(MakeFbx(kFloorGeometry, kFloorConnections)), 16U).empty());
     const std::string garbage = "not an fbx";
-    EXPECT_TRUE(ReadFbxAnimationsUVE(BytesUVE(garbage), 16U).empty());
+    EXPECT_TRUE(ReadFbxAnimations(Bytes(garbage), 16U).empty());
 }
 
-[[nodiscard]] std::string MakeTwoMeshFbxUVE() {
+[[nodiscard]] std::string MakeTwoMeshFbx() {
     const std::string objects = R"(	Geometry: 1000, "Geometry::Left", "Mesh" {
 		Vertices: *12 {
 			a: 0,0,0,100,0,0,100,100,0,0,100,0
@@ -727,13 +727,13 @@ TEST(FbxMeshConverterUVETest, EveryTakeBecomesASkeletalClipOnTheSkeletonsBones) 
 		Version: 232
 	}
 )";
-    return MakeFbxUVE(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,0\n");
+    return MakeFbx(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,0\n");
 }
 
-TEST(FbxMeshConverterUVETest, EveryMeshNodeIsAPartOfItsOwnAndTheMergedMeshIsTheirSum) {
-    const std::string fbx = MakeTwoMeshFbxUVE();
-    std::vector<FbxMeshPartUVE> parts;
-    ASSERT_TRUE(ConvertFbxMeshPartsUVE(BytesUVE(fbx), parts));
+TEST(FbxMeshConverterTest, EveryMeshNodeIsAPartOfItsOwnAndTheMergedMeshIsTheirSum) {
+    const std::string fbx = MakeTwoMeshFbx();
+    std::vector<FbxMeshPart> parts;
+    ASSERT_TRUE(ConvertFbxMeshParts(Bytes(fbx), parts));
     ASSERT_EQ(parts.size(), 2U);
     EXPECT_EQ(parts[0].name, "Left");
     EXPECT_EQ(parts[1].name, "Right");
@@ -741,15 +741,15 @@ TEST(FbxMeshConverterUVETest, EveryMeshNodeIsAPartOfItsOwnAndTheMergedMeshIsThei
     EXPECT_EQ(parts[0].mesh.indices.size(), 6U);
     EXPECT_EQ(parts[1].mesh.vertices.size(), 3U);
     EXPECT_EQ(parts[1].mesh.indices.size(), 3U);
-    MeshAssetUVE merged;
-    ASSERT_TRUE(ConvertFbxMeshUVE(BytesUVE(fbx), merged));
+    MeshAsset merged;
+    ASSERT_TRUE(ConvertFbxMesh(Bytes(fbx), merged));
     EXPECT_EQ(merged.vertices.size(), parts[0].mesh.vertices.size() + parts[1].mesh.vertices.size());
     // A file with nothing to draw has no parts, and says so by failing.
-    EXPECT_FALSE(ConvertFbxMeshPartsUVE(BytesUVE(MakeFbxUVE("", "")), parts));
+    EXPECT_FALSE(ConvertFbxMeshParts(Bytes(MakeFbx("", "")), parts));
     EXPECT_TRUE(parts.empty());
 }
 
-TEST(FbxMeshConverterUVETest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheSkeleton) {
+TEST(FbxMeshConverterTest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheSkeleton) {
     // Group > { Left, Right }, the shape of a character with a `Geo` node over its head and body.
     const std::string objects = R"(	Geometry: 1000, "Geometry::Left", "Mesh" {
 		Vertices: *12 {
@@ -785,10 +785,10 @@ TEST(FbxMeshConverterUVETest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheS
 		TypeFlags: "Skeleton"
 	}
 )";
-    const std::string fbx = MakeFbxUVE(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,2500\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,2500\n"
+    const std::string fbx = MakeFbx(objects, "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,2500\n\tC: \"OO\",1001,2001\n\tC: \"OO\",2001,2500\n"
                                                "\tC: \"OO\",2500,0\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n");
-    std::vector<FbxHierarchyEntryUVE> hierarchy;
-    ASSERT_TRUE(ReadFbxHierarchyUVE(BytesUVE(fbx), hierarchy));
+    std::vector<FbxHierarchyEntry> hierarchy;
+    ASSERT_TRUE(ReadFbxHierarchy(Bytes(fbx), hierarchy));
     ASSERT_EQ(hierarchy.size(), 3U) << "the group and its two meshes; the bone is the skeleton's";
     EXPECT_EQ(hierarchy[0].name, "Group");
     EXPECT_EQ(hierarchy[0].parent, -1);
@@ -801,7 +801,7 @@ TEST(FbxMeshConverterUVETest, TheNodeTreeIsTheFilesOwnGroupsAndMeshesWithoutTheS
     EXPECT_EQ(hierarchy[2].part, 1);
 }
 
-TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMergedOne) {
+TEST(FbxMeshConverterTest, TheImporterPublishesOneModelPerMeshNodeBesideTheMergedOne) {
     const std::filesystem::path sourcePath = "uve_fbx_importer_tests_two.fbx";
     const std::filesystem::path destinationPath = "uve_fbx_importer_tests_two.uvmodel";
     const std::filesystem::path leftPath = "uve_fbx_importer_tests_two.part-Left.uvmodel";
@@ -810,24 +810,24 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMe
         std::filesystem::remove(path);
     }
     {
-        const std::string fbx = MakeTwoMeshFbxUVE();
+        const std::string fbx = MakeTwoMeshFbx();
         std::ofstream output(sourcePath, std::ios::binary | std::ios::trunc);
         output.write(fbx.data(), static_cast<std::streamsize>(fbx.size()));
         ASSERT_TRUE(output.good());
     }
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    ASSERT_NE(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
-    MeshAssetUVE merged;
-    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, merged));
+    AssetImporter importer;
+    AssetDatabase database;
+    ASSERT_NE(importer.Import(sourcePath, destinationPath, database), kInvalidAssetGuid);
+    MeshAsset merged;
+    ASSERT_TRUE(LoadMeshAsset(destinationPath, merged));
     EXPECT_EQ(merged.vertices.size(), 7U);
-    MeshAssetUVE left;
-    MeshAssetUVE right;
-    ASSERT_TRUE(LoadMeshAssetUVE(leftPath, left));
-    ASSERT_TRUE(LoadMeshAssetUVE(rightPath, right));
+    MeshAsset left;
+    MeshAsset right;
+    ASSERT_TRUE(LoadMeshAsset(leftPath, left));
+    ASSERT_TRUE(LoadMeshAsset(rightPath, right));
     EXPECT_EQ(left.vertices.size(), 4U);
     EXPECT_EQ(right.vertices.size(), 3U);
-    EXPECT_NE(database.RegisterUVE(leftPath), kInvalidAssetGuidUVE);
+    EXPECT_NE(database.Register(leftPath), kInvalidAssetGuid);
     // The file's object hierarchy is written beside them, naming each part.
     const std::filesystem::path hierarchyPath = "uve_fbx_importer_tests_two.uvhierarchy";
     std::ifstream hierarchyFile(hierarchyPath);
@@ -841,64 +841,64 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesOneModelPerMeshNodeBesideTheMe
     }
 }
 
-TEST(FbxMeshConverterUVETest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
-    MeshAssetUVE mesh;
+TEST(FbxMeshConverterTest, WhatIsNotAnFbxWithTrianglesIsRefusedAndLeavesTheMeshAlone) {
+    MeshAsset mesh;
     mesh.indices = {7U};
-    EXPECT_FALSE(ConvertFbxMeshUVE({}, mesh));
+    EXPECT_FALSE(ConvertFbxMesh({}, mesh));
     const std::string garbage = "definitely not an fbx file";
-    EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(garbage), mesh));
+    EXPECT_FALSE(ConvertFbxMesh(Bytes(garbage), mesh));
     // OBJ has its own importer; the FBX path does not quietly take it.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
-    EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(obj), mesh));
+    EXPECT_FALSE(ConvertFbxMesh(Bytes(obj), mesh));
     // A valid FBX with nothing to draw.
-    const std::string empty = MakeFbxUVE("", "");
-    EXPECT_FALSE(ConvertFbxMeshUVE(BytesUVE(empty), mesh));
-    EXPECT_FALSE(DescribeFbxSourceUVE(BytesUVE(garbage)).has_value());
+    const std::string empty = MakeFbx("", "");
+    EXPECT_FALSE(ConvertFbxMesh(Bytes(empty), mesh));
+    EXPECT_FALSE(DescribeFbxSource(Bytes(garbage)).has_value());
     EXPECT_EQ(mesh.indices, (std::vector<std::uint32_t>{7U}));
 }
 
-TEST(FbxMeshConverterUVETest, TheImporterPublishesAUveModelAndRegistersIt) {
+TEST(FbxMeshConverterTest, TheImporterPublishesAUveModelAndRegistersIt) {
     const std::filesystem::path sourcePath = "uve_fbx_importer_tests_floor.fbx";
     const std::filesystem::path destinationPath = "uve_fbx_importer_tests_floor.uvmodel";
     std::filesystem::remove(destinationPath);
     {
-        const std::string fbx = MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE);
+        const std::string fbx = MakeFbx(kFloorGeometry, kFloorConnections);
         std::ofstream output(sourcePath, std::ios::binary | std::ios::trunc);
         output.write(fbx.data(), static_cast<std::streamsize>(fbx.size()));
         ASSERT_TRUE(output.good());
     }
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(guid), destinationPath);
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destinationPath, mesh));
+    AssetImporter importer;
+    AssetDatabase database;
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(guid), destinationPath);
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destinationPath, mesh));
     EXPECT_EQ(mesh.vertices.size(), 4U);
     EXPECT_EQ(mesh.indices.size(), 6U);
 
     // A destination that is not a .uvmodel is refused before anything is written.
-    EXPECT_EQ(importer.ImportUVE(sourcePath, "uve_fbx_importer_tests_floor.uvtex", database), kInvalidAssetGuidUVE);
+    EXPECT_EQ(importer.Import(sourcePath, "uve_fbx_importer_tests_floor.uvtex", database), kInvalidAssetGuid);
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST(FbxMeshConverterUVETest, ExtractFbxImportBundleUVE_MatchesIndividualReadersOnMultiMeshScene) {
-    const std::string fbx = MakeTwoMeshFbxUVE();
-    const std::span<const std::byte> bytes = BytesUVE(fbx);
+TEST(FbxMeshConverterTest, ExtractFbxImportBundle_MatchesIndividualReadersOnMultiMeshScene) {
+    const std::string fbx = MakeTwoMeshFbx();
+    const std::span<const std::byte> bytes = Bytes(fbx);
 
-    FbxSceneImportBundleUVE bundle;
-    ASSERT_TRUE(ExtractFbxImportBundleUVE(bytes, bundle));
+    FbxSceneImportBundle bundle;
+    ASSERT_TRUE(ExtractFbxImportBundle(bytes, bundle));
 
-    MeshAssetUVE individualMerged;
-    std::vector<FbxSurfaceRangeUVE> individualSurfaces;
-    ASSERT_TRUE(ConvertFbxMeshUVE(bytes, individualMerged, &individualSurfaces));
-    std::vector<FbxMeshPartUVE> individualParts;
-    ASSERT_TRUE(ConvertFbxMeshPartsUVE(bytes, individualParts));
-    std::vector<FbxHierarchyEntryUVE> individualHierarchy;
-    ASSERT_TRUE(ReadFbxHierarchyUVE(bytes, individualHierarchy));
+    MeshAsset individualMerged;
+    std::vector<FbxSurfaceRange> individualSurfaces;
+    ASSERT_TRUE(ConvertFbxMesh(bytes, individualMerged, &individualSurfaces));
+    std::vector<FbxMeshPart> individualParts;
+    ASSERT_TRUE(ConvertFbxMeshParts(bytes, individualParts));
+    std::vector<FbxHierarchyEntry> individualHierarchy;
+    ASSERT_TRUE(ReadFbxHierarchy(bytes, individualHierarchy));
 
     EXPECT_EQ(bundle.mergedMesh.vertices.size(), individualMerged.vertices.size());
     EXPECT_EQ(bundle.mergedMesh.indices, individualMerged.indices);
@@ -918,11 +918,11 @@ TEST(FbxMeshConverterUVETest, ExtractFbxImportBundleUVE_MatchesIndividualReaders
         EXPECT_EQ(bundle.hierarchy[i].part, individualHierarchy[i].part);
     }
 
-    ModelImportSettingsUVE compatSettings;
+    ModelImportSettings compatSettings;
     compatSettings.maxEmbeddedTextureResolution = 1024U;
-    ModelImportSettingsUVE desktopSettings;
+    ModelImportSettings desktopSettings;
     desktopSettings.maxEmbeddedTextureResolution = 2048U;
-    EXPECT_NE(compatSettings.GetCacheVersionUVE(), desktopSettings.GetCacheVersionUVE());
+    EXPECT_NE(compatSettings.GetCacheVersion(), desktopSettings.GetCacheVersion());
 }
 
 } // namespace

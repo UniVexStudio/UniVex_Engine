@@ -4,7 +4,7 @@
 // holds, so the preview works the way the Entity Editor does: a small world of its own (a sun and
 // the character alone, in the middle - the source skeleton is drawn in the window's source box,
 // not here), and the level is never touched. The sky, the ground and the floor with
-// its fog are the viewport's studio view (ViewportOverlayStateUVE::studioView), not objects.
+// its fog are the viewport's studio view (ViewportOverlayState::studioView), not objects.
 
 #include <algorithm>
 #include <array>
@@ -38,25 +38,25 @@ namespace UVE::Editor {
 namespace {
 
 
-[[nodiscard]] Math::QuaternionUVE EulerUVE(const float x, const float y, const float z) {
-    Math::QuaternionUVE rotation;
-    static_cast<void>(Math::TryMakeEulerUVE(Math::Vector3UVE{x, y, z}, rotation));
+[[nodiscard]] Math::Quaternion Euler(const float x, const float y, const float z) {
+    Math::Quaternion rotation;
+    static_cast<void>(Math::TryMakeEuler(Math::Vector3{x, y, z}, rotation));
     return rotation;
 }
 
-[[nodiscard]] std::vector<Scene::SkeletonBoneUVE> BonesOfUVE(const Retarget::RetargetSkeletonUVE& rig) {
-    std::vector<Scene::SkeletonBoneUVE> bones;
+[[nodiscard]] std::vector<Scene::SkeletonBone> BonesOf(const Retarget::RetargetSkeleton& rig) {
+    std::vector<Scene::SkeletonBone> bones;
     bones.reserve(rig.bones.size());
-    for (const Retarget::RetargetBoneUVE& bone : rig.bones) {
-        bones.push_back(Scene::SkeletonBoneUVE{bone.name, bone.parent, bone.position, bone.rotation,
-                                               Math::Vector3UVE{bone.scale, bone.scale, bone.scale}});
+    for (const Retarget::RetargetBone& bone : rig.bones) {
+        bones.push_back(Scene::SkeletonBone{bone.name, bone.parent, bone.position, bone.rotation,
+                                               Math::Vector3{bone.scale, bone.scale, bone.scale}});
     }
     return bones;
 }
 
 } // namespace
 
-bool EditorUVE::BeginRetargetPreviewUVE() {
+bool Editor::BeginRetargetPreview() {
     if (m_retargetPreview.has_value()) {
         return true;
     }
@@ -64,8 +64,8 @@ bool EditorUVE::BeginRetargetPreviewUVE() {
         return false;
     }
     // A world of its own beside the level (as the Motion Montage Editor's): the level is not touched.
-    RetargetPreviewUVE preview;
-    preview.scene = std::shared_ptr<Core::DocumentSceneUVE>(m_documentSceneFactory());
+    RetargetPreview preview;
+    preview.scene = std::shared_ptr<Core::DocumentScene>(m_documentSceneFactory());
     if (preview.scene == nullptr) {
         return false;
     }
@@ -73,30 +73,30 @@ bool EditorUVE::BeginRetargetPreviewUVE() {
     return true;
 }
 
-bool EditorUVE::EndRetargetPreviewUVE() {
+bool Editor::EndRetargetPreview() {
     if (!m_retargetPreview.has_value()) {
         return true;
     }
     if (m_retargetPreview->scene != nullptr && m_documentSceneClosing) {
-        m_documentSceneClosing(m_retargetPreview->scene->GetServicesUVE());
+        m_documentSceneClosing(m_retargetPreview->scene->GetServices());
     }
     m_retargetPreview.reset();
     m_retargetViewportOverlayState.bones.clear();
     return true;
 }
 
-void EditorUVE::WithRetargetSceneUVE(const std::function<void()>& work) {
+void Editor::WithRetargetScene(const std::function<void()>& work) {
     if (!m_retargetPreview.has_value() || m_retargetPreview->scene == nullptr || m_retargetSceneActive) {
         return;
     }
     // Only the services are borrowed; the level's selection and dirty flag come back as they were.
-    Core::EngineServicesUVE* const services = m_services;
-    const std::vector<Scene::EntityUVE> selected = m_selectedEntities;
-    const Scene::EntityUVE selectedEntity = m_selectedEntity;
+    Core::EngineServices* const services = m_services;
+    const std::vector<Scene::Entity> selected = m_selectedEntities;
+    const Scene::Entity selectedEntity = m_selectedEntity;
     const bool dirty = m_sceneDirty;
-    m_services = &m_retargetPreview->scene->GetServicesUVE();
+    m_services = &m_retargetPreview->scene->GetServices();
     m_selectedEntities.clear();
-    m_selectedEntity = Scene::kInvalidEntityUVE;
+    m_selectedEntity = Scene::kInvalidEntity;
     m_retargetSceneActive = true;
     const auto restore = [&] {
         m_retargetSceneActive = false;
@@ -114,15 +114,15 @@ void EditorUVE::WithRetargetSceneUVE(const std::function<void()>& work) {
     restore();
 }
 
-std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
-                                                 const EditorViewportInputUVE& input) {
-    outUsed = Math::Vector2UVE{0.0F, 0.0F};
+std::uint64_t Editor::RenderRetargetPreview(const Math::Vector2& size, Math::Vector2& outUsed,
+                                                 const EditorViewportInput& input) {
+    outUsed = Math::Vector2{0.0F, 0.0F};
     std::uint64_t texture = 0U;
     if (!m_retargetPreview.has_value() || !m_viewports.retarget) {
         return texture;
     }
-    RetargetPreviewUVE& preview = *m_retargetPreview;
-    ViewportOverlayStateUVE& state = m_retargetViewportOverlayState;
+    RetargetPreview& preview = *m_retargetPreview;
+    ViewportOverlayState& state = m_retargetViewportOverlayState;
     // The camera faces the character from the front, its whole height in view.
     if (preview.frameRequested) {
         const float height = std::clamp(preview.figureHeight, 0.2F, 50.0F);
@@ -131,7 +131,7 @@ std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, 
         ++state.studioFramingSerial;
         preview.frameRequested = false;
     }
-    WithRetargetSceneUVE([&] {
+    WithRetargetScene([&] {
         state.studioView = true;
         state.entityAuthoringView = false;
         state.gameWorkspaceActive = false;
@@ -139,76 +139,76 @@ std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, 
         state.pointerOverOverlay = false;
         state.bones.clear();
         state.colliderLines.clear();
-        BuildSkeletonOverlayUVE(state.bones);
+        BuildSkeletonOverlay(state.bones);
         state.input = input;
         texture = m_viewports.retarget(size, outUsed, state);
     });
     return texture;
 }
 
-void EditorUVE::RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile) {
-    WithRetargetSceneUVE([&] { BuildRetargetPreviewWorldUVE(plan, modelFile); });
+void Editor::RebuildRetargetPreview(const RetargetPlan& plan, const std::filesystem::path& modelFile) {
+    WithRetargetScene([&] { BuildRetargetPreviewWorld(plan, modelFile); });
 }
 
-void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile) {
+void Editor::BuildRetargetPreviewWorld(const RetargetPlan& plan, const std::filesystem::path& modelFile) {
     if (!m_retargetPreview.has_value()) {
         return;
     }
-    RetargetPreviewUVE& preview = *m_retargetPreview;
-    ClearDocumentSceneUVE();
-    preview.frameRoot = preview.figures = preview.sourceSkeleton = preview.targetSkeleton = Scene::kInvalidEntityUVE;
+    RetargetPreview& preview = *m_retargetPreview;
+    ClearDocumentScene();
+    preview.frameRoot = preview.figures = preview.sourceSkeleton = preview.targetSkeleton = Scene::kInvalidEntity;
     preview.sourceColours.clear();
     preview.figureHeight = 1.8F;
     preview.targetColours.clear();
 
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
-    const Scene::EntityUVE sceneRoot = EnsureDocumentSceneRootUVE();
-    if (sceneRoot == Scene::kInvalidEntityUVE) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = m_services->GetSceneGraph();
+    const Scene::Entity sceneRoot = EnsureDocumentSceneRoot();
+    if (sceneRoot == Scene::kInvalidEntity) {
         return;
     }
-    using Kind = Scene::Objects::SceneObjectKindUVE;
-    const auto place = [&](const Scene::EntityUVE entity, const std::string& name, const Kind kind, const Scene::EntityUVE parent,
-                           const Math::Vector3UVE position = {}, const Math::QuaternionUVE rotation = {},
-                           const Math::Vector3UVE scale = {1.0F, 1.0F, 1.0F}) {
-        if (entity == Scene::kInvalidEntityUVE) {
+    using Kind = Scene::Objects::SceneObjectKind;
+    const auto place = [&](const Scene::Entity entity, const std::string& name, const Kind kind, const Scene::Entity parent,
+                           const Math::Vector3 position = {}, const Math::Quaternion rotation = {},
+                           const Math::Vector3 scale = {1.0F, 1.0F, 1.0F}) {
+        if (entity == Scene::kInvalidEntity) {
             return entity;
         }
-        entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name = name;
-        Scene::SetSceneObjectKindUVE(entityManager, entity, kind);
-        sceneGraph.SetParentUVE(entityManager, entity, parent);
-        Scene::TransformComponentUVE transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        entityManager.GetComponent<Scene::NameComponent>(entity).name = name;
+        Scene::SetSceneObjectKind(entityManager, entity, kind);
+        sceneGraph.SetParent(entityManager, entity, parent);
+        Scene::TransformComponent transform = entityManager.GetComponent<Scene::TransformComponent>(entity);
         transform.localPosition = position;
         transform.localRotation = rotation;
         transform.localScale = scale;
-        sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+        sceneGraph.SetLocalTransform(entityManager, entity, transform);
         return entity;
     };
-    const auto shell = [&](const std::string& name) { return CreateDocumentEntityShellInternalUVE(name); };
+    const auto shell = [&](const std::string& name) { return CreateDocumentEntityShellInternal(name); };
 
-    preview.frameRoot = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Retarget Preview", Kind::Object3D, sceneRoot);
-    if (preview.frameRoot == Scene::kInvalidEntityUVE) {
+    preview.frameRoot = place(CreateSceneObjectEntityInternal(Kind::Object3D), "Retarget Preview", Kind::Object3D, sceneRoot);
+    if (preview.frameRoot == Scene::kInvalidEntity) {
         return;
     }
     // The sun leans over one shoulder, so the figures are shaded rather than flat.
-    place(CreateSceneObjectEntityInternalUVE(Kind::Light3D), "Sun", Kind::Light3D, preview.frameRoot, Math::Vector3UVE{0.0F, 4.0F, 0.0F},
-          EulerUVE(-0.95F, 0.55F, 0.0F));
+    place(CreateSceneObjectEntityInternal(Kind::Light3D), "Sun", Kind::Light3D, preview.frameRoot, Math::Vector3{0.0F, 4.0F, 0.0F},
+          Euler(-0.95F, 0.55F, 0.0F));
 
     // The viewport frames the figures, not the floor under them.
-    const Scene::EntityUVE figures = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Figures", Kind::Object3D, preview.frameRoot);
+    const Scene::Entity figures = place(CreateSceneObjectEntityInternal(Kind::Object3D), "Figures", Kind::Object3D, preview.frameRoot);
     preview.figures = figures;
 
     // The joint colours, by the character's own bone names (the humanoid itself is drawn in the
     // window's source box).
     for (std::size_t bone = 0U; bone < plan.joints.size(); ++bone) {
         if (!plan.joints[bone].characterName.empty()) {
-            preview.targetColours[plan.joints[bone].characterName] = GetRetargetStatusColourUVE(plan.joints[bone].status);
+            preview.targetColours[plan.joints[bone].characterName] = GetRetargetStatusColour(plan.joints[bone].status);
         }
     }
 
     // ---- The character, in the middle --------------------------------------------------------------
     preview.builtFor = modelFile;
-    Asset::MeshAssetUVE mesh;
+    Asset::MeshAsset mesh;
     std::error_code error;
     const auto loadPreviewMesh = [&]() -> bool {
         if (modelFile.empty() || !std::filesystem::is_regular_file(modelFile, error)) {
@@ -221,27 +221,27 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
             mesh = m_inspectorMeshAssetCache->meshAsset;
             return true;
         }
-        if (!Asset::LoadMeshAssetUVE(modelFile, mesh)) {
+        if (!Asset::LoadMeshAsset(modelFile, mesh)) {
             return false;
         }
         if (!error) {
-            m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{modelFile, writeTime, mesh};
+            m_inspectorMeshAssetCache = EntityEditorMeshCacheEntry{modelFile, writeTime, mesh};
         }
         return true;
     };
     if (loadPreviewMesh()) {
-        const Scene::EntityUVE figure = shell("Character");
-        Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
+        const Scene::Entity figure = shell("Character");
+        Scene::ApplyObject3DObjectDefinition(entityManager, figure, Scene::Object3DObjectDefinition{});
         place(figure, "Character", Kind::Object3D, figures);
-        Scene::EntityUVE meshParent = figure;
+        Scene::Entity meshParent = figure;
         // The character's own skeleton file when it describes this mesh (a retargeted character rests
         // in the A-pose there), else the mesh's bind.
-        std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
+        std::optional<Retarget::RetargetSkeleton> rig = Retarget::RigFromMesh(mesh);
         {
             std::filesystem::path skeletonFile = modelFile;
             skeletonFile.replace_extension(".uvskel");
-            Asset::SkeletonAssetUVE skeleton;
-            if (rig.has_value() && std::filesystem::is_regular_file(skeletonFile, error) && Asset::LoadSkeletonAssetUVE(skeletonFile, skeleton) &&
+            Asset::SkeletonAsset skeleton;
+            if (rig.has_value() && std::filesystem::is_regular_file(skeletonFile, error) && Asset::LoadSkeletonAsset(skeletonFile, skeleton) &&
                 skeleton.joints.size() == rig->bones.size()) {
                 bool same = true;
                 for (std::size_t joint = 0U; joint < skeleton.joints.size() && same; ++joint) {
@@ -257,27 +257,27 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
             }
         }
         preview.figureHeight = std::max(0.2F, mesh.localBounds.max.y - std::min(0.0F, mesh.localBounds.min.y));
-        if (rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {
-            Scene::Skeleton3DObjectDefinitionUVE definition;
-            definition.skeleton.bones = BonesOfUVE(*rig);
-            const Scene::EntityUVE skeleton = shell("Character Skeleton");
-            Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
+        if (rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBones) {
+            Scene::Skeleton3DObjectDefinition definition;
+            definition.skeleton.bones = BonesOf(*rig);
+            const Scene::Entity skeleton = shell("Character Skeleton");
+            Scene::ApplySkeleton3DObjectDefinition(entityManager, skeleton, definition);
             preview.targetSkeleton = place(skeleton, "Character Skeleton", Kind::Skeleton3D, figure);
             meshParent = preview.targetSkeleton;
         }
-        Scene::MeshInstance3DObjectDefinitionUVE meshDefinition;
-        meshDefinition.mesh.meshGuid = RegisterImportedModelArtifactsUVE(modelFile);
-        const Scene::EntityUVE meshEntity = shell("Character Mesh");
-        Scene::ApplyMeshInstance3DObjectDefinitionUVE(entityManager, meshEntity, meshDefinition);
+        Scene::MeshInstance3DObjectDefinition meshDefinition;
+        meshDefinition.mesh.meshGuid = RegisterImportedModelArtifacts(modelFile);
+        const Scene::Entity meshEntity = shell("Character Mesh");
+        Scene::ApplyMeshInstance3DObjectDefinition(entityManager, meshEntity, meshDefinition);
         place(meshEntity, "Character Mesh", Kind::MeshInstance3D, meshParent);
     } else if (m_retargetWindow.has_value()) {
         for (const std::filesystem::path& animPath : m_retargetWindow->animations) {
-            Asset::AnimationClipAssetUVE clip;
-            if (Asset::LoadAnimationClipAssetUVE(animPath, clip) && !clip.rest.empty() &&
-                clip.rest.size() <= Scene::kMaximumSkeletonBonesUVE) {
-                Retarget::RetargetSkeletonUVE rig;
-                for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
-                    Retarget::RetargetBoneUVE bone;
+            Asset::AnimationClipAsset clip;
+            if (Asset::LoadAnimationClipAsset(animPath, clip) && !clip.rest.empty() &&
+                clip.rest.size() <= Scene::kMaximumSkeletonBones) {
+                Retarget::RetargetSkeleton rig;
+                for (const Asset::AnimationAssetRestBone& rest : clip.rest) {
+                    Retarget::RetargetBone bone;
                     bone.name = rest.bone;
                     bone.parent = rest.parent;
                     bone.position = rest.position;
@@ -285,13 +285,13 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
                     bone.scale = rest.scale.x;
                     rig.bones.push_back(std::move(bone));
                 }
-                const Scene::EntityUVE figure = shell("Character");
-                Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
+                const Scene::Entity figure = shell("Character");
+                Scene::ApplyObject3DObjectDefinition(entityManager, figure, Scene::Object3DObjectDefinition{});
                 place(figure, "Character", Kind::Object3D, figures);
-                Scene::Skeleton3DObjectDefinitionUVE definition;
-                definition.skeleton.bones = BonesOfUVE(rig);
-                const Scene::EntityUVE skeleton = shell("Character Skeleton");
-                Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
+                Scene::Skeleton3DObjectDefinition definition;
+                definition.skeleton.bones = BonesOf(rig);
+                const Scene::Entity skeleton = shell("Character Skeleton");
+                Scene::ApplySkeleton3DObjectDefinition(entityManager, skeleton, definition);
                 preview.targetSkeleton = place(skeleton, "Character Skeleton", Kind::Skeleton3D, figure);
                 break;
             }

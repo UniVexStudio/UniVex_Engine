@@ -7,7 +7,7 @@
 namespace UVE::Editor {
 
 /// When the hierarchy draws a row's visibility eye.
-enum class HierarchyVisibilityColumnUVE {
+enum class HierarchyVisibilityColumn {
     Always,
     /// While the row is hovered, and always for a hidden object, so a hidden object never looks shown.
     OnHover,
@@ -15,14 +15,14 @@ enum class HierarchyVisibilityColumnUVE {
 };
 
 /// What a double-click on a hierarchy row does. F2 renames whichever is chosen.
-enum class HierarchyDoubleClickUVE {
+enum class HierarchyDoubleClick {
     Rename,
     FocusInViewport,
     ExpandCollapse,
 };
 
 /// The lines that join a row to its parent.
-enum class HierarchyTreeLinesUVE {
+enum class HierarchyTreeLines {
     None,
     /// Down to the last child, with a stub to each child.
     ToEachChild,
@@ -33,19 +33,19 @@ enum class HierarchyTreeLinesUVE {
 /// How the hierarchy panel looks and responds. Every field is an editor preference
 /// (editor_settings_uve.cpp); apart from showTypeName, which came with object types, the defaults
 /// are how the panel behaved before they existed.
-struct HierarchyViewSettingsUVE final {
+struct HierarchyViewSettings final {
     bool revealSelection = true;
     bool showIcons = true;
     bool showTypeName = true;
-    HierarchyVisibilityColumnUVE visibilityColumn = HierarchyVisibilityColumnUVE::Always;
-    HierarchyDoubleClickUVE doubleClick = HierarchyDoubleClickUVE::Rename;
+    HierarchyVisibilityColumn visibilityColumn = HierarchyVisibilityColumn::Always;
+    HierarchyDoubleClick doubleClick = HierarchyDoubleClick::Rename;
     bool dragToReparent = true;
-    HierarchyTreeLinesUVE treeLines = HierarchyTreeLinesUVE::ToEachChild;
+    HierarchyTreeLines treeLines = HierarchyTreeLines::ToEachChild;
     /// Pixels each level is indented by.
     float indentWidth = 12.0F;
 };
 
-inline constexpr float kMinimumHierarchyIndentUVE = 12.0F;
-inline constexpr float kMaximumHierarchyIndentUVE = 40.0F;
+inline constexpr float kMinimumHierarchyIndent = 12.0F;
+inline constexpr float kMaximumHierarchyIndent = 40.0F;
 
 } // namespace UVE::Editor

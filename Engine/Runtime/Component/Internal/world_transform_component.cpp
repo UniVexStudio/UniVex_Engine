@@ -6,25 +6,25 @@
 
 namespace UVE::Scene {
 
-bool IsWorldTransformComponentValidUVE(const WorldTransformComponentUVE& transform) noexcept {
+bool IsWorldTransformComponentValid(const WorldTransformComponent& transform) noexcept {
     return std::isfinite(transform.worldPosition.x) && std::isfinite(transform.worldPosition.y) &&
-           std::isfinite(transform.worldPosition.z) && Math::IsFiniteUVE(transform.worldRotation) &&
+           std::isfinite(transform.worldPosition.z) && Math::IsFinite(transform.worldRotation) &&
            std::isfinite(transform.worldScale.x) && std::isfinite(transform.worldScale.y) &&
            std::isfinite(transform.worldScale.z);
 }
 
-bool HasSameWorldPoseUVE(const WorldTransformComponentUVE& lhs,
-                         const WorldTransformComponentUVE& rhs) noexcept {
+bool HasSameWorldPose(const WorldTransformComponent& lhs,
+                         const WorldTransformComponent& rhs) noexcept {
     return lhs.worldPosition == rhs.worldPosition && lhs.worldRotation == rhs.worldRotation &&
            lhs.worldScale == rhs.worldScale;
 }
 
-Math::TrsUVE ToWorldTrsUVE(const WorldTransformComponentUVE& transform) noexcept {
-    return Math::TrsUVE{transform.worldPosition, transform.worldRotation, transform.worldScale};
+Math::Trs ToWorldTrs(const WorldTransformComponent& transform) noexcept {
+    return Math::Trs{transform.worldPosition, transform.worldRotation, transform.worldScale};
 }
 
-WorldTransformComponentUVE FromWorldTrsUVE(const Math::TrsUVE& trs, const bool dirty) noexcept {
-    return WorldTransformComponentUVE{
+WorldTransformComponent FromWorldTrs(const Math::Trs& trs, const bool dirty) noexcept {
+    return WorldTransformComponent{
         .worldPosition = trs.translation,
         .worldRotation = trs.rotation,
         .worldScale = trs.scale,
@@ -32,9 +32,9 @@ WorldTransformComponentUVE FromWorldTrsUVE(const Math::TrsUVE& trs, const bool d
     };
 }
 
-WorldTransformComponentUVE MakeWorldTransformFromLocalUVE(const TransformComponentUVE& local,
+WorldTransformComponent MakeWorldTransformFromLocal(const TransformComponent& local,
                                                           const bool dirty) noexcept {
-    return WorldTransformComponentUVE{
+    return WorldTransformComponent{
         .worldPosition = local.localPosition,
         .worldRotation = local.localRotation,
         .worldScale = local.localScale,
@@ -42,57 +42,57 @@ WorldTransformComponentUVE MakeWorldTransformFromLocalUVE(const TransformCompone
     };
 }
 
-WorldTransformComponentUVE ComposeWorldTransformUVE(const WorldTransformComponentUVE& parentWorld,
-                                                    const TransformComponentUVE& local,
+WorldTransformComponent ComposeWorldTransform(const WorldTransformComponent& parentWorld,
+                                                    const TransformComponent& local,
                                                     const bool dirty) noexcept {
-    const Math::TrsUVE composed = Math::ComposeUVE(
-        ToWorldTrsUVE(parentWorld),
-        Math::TrsUVE{local.localPosition, local.localRotation, local.localScale});
-    return FromWorldTrsUVE(composed, dirty);
+    const Math::Trs composed = Math::Compose(
+        ToWorldTrs(parentWorld),
+        Math::Trs{local.localPosition, local.localRotation, local.localScale});
+    return FromWorldTrs(composed, dirty);
 }
 
-Math::Matrix4x4UVE BuildWorldTransformMatrixUVE(
-    const WorldTransformComponentUVE& transform) noexcept {
-    return Math::Matrix4x4UVE::ComposeTrsUVE(transform.worldPosition, transform.worldRotation,
+Math::Matrix4x4 BuildWorldTransformMatrix(
+    const WorldTransformComponent& transform) noexcept {
+    return Math::Matrix4x4::ComposeTrs(transform.worldPosition, transform.worldRotation,
                                              transform.worldScale);
 }
 
-Math::Vector3UVE TransformWorldPointUVE(const WorldTransformComponentUVE& transform,
-                                        const Math::Vector3UVE& localPoint) noexcept {
-    return Math::TransformPointUVE(ToWorldTrsUVE(transform), localPoint);
+Math::Vector3 TransformWorldPoint(const WorldTransformComponent& transform,
+                                        const Math::Vector3& localPoint) noexcept {
+    return Math::TransformPoint(ToWorldTrs(transform), localPoint);
 }
 
-bool TryInverseTransformWorldPointUVE(const WorldTransformComponentUVE& transform,
-                                      const Math::Vector3UVE& worldPoint,
-                                      Math::Vector3UVE& outLocalPoint) noexcept {
-    return Math::TryInverseTransformPointUVE(ToWorldTrsUVE(transform), worldPoint, outLocalPoint);
+bool TryInverseTransformWorldPoint(const WorldTransformComponent& transform,
+                                      const Math::Vector3& worldPoint,
+                                      Math::Vector3& outLocalPoint) noexcept {
+    return Math::TryInverseTransformPoint(ToWorldTrs(transform), worldPoint, outLocalPoint);
 }
 
-Math::Vector3UVE ResolveWorldForwardUVE(const WorldTransformComponentUVE& transform) noexcept {
-    constexpr Math::Vector3UVE kForward{0.0F, 0.0F, -1.0F};
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(transform.worldRotation, normalized)) {
+Math::Vector3 ResolveWorldForward(const WorldTransformComponent& transform) noexcept {
+    constexpr Math::Vector3 kForward{0.0F, 0.0F, -1.0F};
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(transform.worldRotation, normalized)) {
         return kForward;
     }
-    return Math::RotateVectorUVE(normalized, kForward);
+    return Math::RotateVector(normalized, kForward);
 }
 
-Math::Vector3UVE ResolveWorldRightUVE(const WorldTransformComponentUVE& transform) noexcept {
-    constexpr Math::Vector3UVE kRight{1.0F, 0.0F, 0.0F};
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(transform.worldRotation, normalized)) {
+Math::Vector3 ResolveWorldRight(const WorldTransformComponent& transform) noexcept {
+    constexpr Math::Vector3 kRight{1.0F, 0.0F, 0.0F};
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(transform.worldRotation, normalized)) {
         return kRight;
     }
-    return Math::RotateVectorUVE(normalized, kRight);
+    return Math::RotateVector(normalized, kRight);
 }
 
-Math::Vector3UVE ResolveWorldUpUVE(const WorldTransformComponentUVE& transform) noexcept {
-    constexpr Math::Vector3UVE kUp{0.0F, 1.0F, 0.0F};
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(transform.worldRotation, normalized)) {
+Math::Vector3 ResolveWorldUp(const WorldTransformComponent& transform) noexcept {
+    constexpr Math::Vector3 kUp{0.0F, 1.0F, 0.0F};
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(transform.worldRotation, normalized)) {
         return kUp;
     }
-    return Math::RotateVectorUVE(normalized, kUp);
+    return Math::RotateVector(normalized, kUp);
 }
 
 } // namespace UVE::Scene

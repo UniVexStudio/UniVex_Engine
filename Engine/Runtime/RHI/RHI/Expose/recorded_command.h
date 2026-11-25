@@ -20,111 +20,111 @@
 
 namespace UVE::Render {
 
-/// One call recorded by NullCommandBufferUVE (engine/render/src/, module-private), in the exact
-/// shape and order it was issued. Public (unlike NullCommandBufferUVE itself) because test code
-/// — and NullRenderDeviceUVE::GetLastSubmittedCommandsUVE(), its one intentional test-only public
+/// One call recorded by NullCommandBuffer (engine/render/src/, module-private), in the exact
+/// shape and order it was issued. Public (unlike NullCommandBuffer itself) because test code
+/// — and NullRenderDevice::GetLastSubmittedCommands(), its one intentional test-only public
 /// hook — needs to name this type to assert exactly what a real backend would have received.
-struct BeginRenderPassCommandUVE {
-    RenderPassDescUVE desc;
+struct BeginRenderPassCommand {
+    RenderPassDesc desc;
 };
-struct EndRenderPassCommandUVE {};
-struct BindPipelineCommandUVE {
-    PipelineHandleUVE pipeline;
+struct EndRenderPassCommand {};
+struct BindPipelineCommand {
+    PipelineHandle pipeline;
 };
-struct BindVertexBufferCommandUVE {
-    BufferHandleUVE buffer;
+struct BindVertexBufferCommand {
+    BufferHandle buffer;
     std::uint32_t slot = 0;
 };
-struct BindIndexBufferCommandUVE {
-    BufferHandleUVE buffer;
+struct BindIndexBufferCommand {
+    BufferHandle buffer;
 };
-struct BindTextureCommandUVE {
-    TextureHandleUVE texture;
+struct BindTextureCommand {
+    TextureHandle texture;
     std::uint32_t slot = 0;
 };
-struct BindSamplerCommandUVE {
-    SamplerHandleUVE sampler;
+struct BindSamplerCommand {
+    SamplerHandle sampler;
     std::uint32_t slot = 0;
 };
-struct BindUniformBufferCommandUVE {
-    BufferHandleUVE buffer;
+struct BindUniformBufferCommand {
+    BufferHandle buffer;
     std::uint32_t slot = 0;
 };
-struct BindStorageBufferCommandUVE {
-    BufferHandleUVE buffer;
+struct BindStorageBufferCommand {
+    BufferHandle buffer;
     std::uint32_t slot = 0;
 };
-struct DrawIndexedCommandUVE {
+struct DrawIndexedCommand {
     std::uint32_t indexCount = 0;
     std::uint32_t instanceCount = 1;
     /// First index of the draw's range, in indices. Non-zero only for a mesh surface.
     std::uint32_t firstIndex = 0;
 };
-struct DrawCommandUVE {
+struct DrawCommand {
     std::uint32_t vertexCount = 0;
     std::uint32_t instanceCount = 1;
 };
 /// CS7: one indexed indirect draw. The buffer must be an IndirectStorage buffer holding at least
-/// one DrawIndexedIndirectCommandUVE at `offsetBytes`; the GPU reads the parameters from there at
+/// one DrawIndexedIndirectCommand at `offsetBytes`; the GPU reads the parameters from there at
 /// execution time, which is the whole point - nothing on the CPU need know the index count.
-struct DrawIndexedIndirectCommandRecordUVE {
-    BufferHandleUVE buffer;
+struct DrawIndexedIndirectCommandRecord {
+    BufferHandle buffer;
     std::uint64_t offsetBytes = 0;
 };
-struct DispatchCommandUVE {
+struct DispatchCommand {
     std::uint32_t groupCountX = 0;
     std::uint32_t groupCountY = 0;
     std::uint32_t groupCountZ = 0;
 };
-struct SetUniformFloatCommandUVE {
+struct SetUniformFloatCommand {
     std::string name;
     float value = 0.0F;
 };
-struct SetUniformIntCommandUVE {
+struct SetUniformIntCommand {
     std::string name;
     std::int32_t value = 0;
 };
-struct SetUniformBoolCommandUVE {
+struct SetUniformBoolCommand {
     std::string name;
     bool value = false;
 };
-struct SetUniformVector2CommandUVE {
+struct SetUniformVector2Command {
     std::string name;
-    Math::Vector2UVE value;
+    Math::Vector2 value;
 };
-struct SetUniformVector3CommandUVE {
+struct SetUniformVector3Command {
     std::string name;
-    Math::Vector3UVE value;
+    Math::Vector3 value;
 };
-struct SetUniformVector4CommandUVE {
+struct SetUniformVector4Command {
     std::string name;
-    Math::Vector4UVE value;
+    Math::Vector4 value;
 };
-struct SetUniformMatrix4x4CommandUVE {
+struct SetUniformMatrix4x4Command {
     std::string name;
-    Math::Matrix4x4UVE value;
+    Math::Matrix4x4 value;
 };
 
 /// Recorded query brackets and timestamps (Foundation WP3): the backend brackets the draws
 /// recorded between Begin and End with the query at replay/issue time.
-struct BeginQueryCommandUVE {
-    QueryHandleUVE query;
+struct BeginQueryCommand {
+    QueryHandle query;
 };
-struct EndQueryCommandUVE {
-    QueryHandleUVE query;
+struct EndQueryCommand {
+    QueryHandle query;
 };
-struct WriteTimestampCommandUVE {
-    QueryHandleUVE query;
+struct WriteTimestampCommand {
+    QueryHandle query;
 };
 
-/// A single recorded ICommandBufferUVE call, tagged by which method it came from.
-using RecordedCommandUVE = std::variant<
-    BeginRenderPassCommandUVE, EndRenderPassCommandUVE, BindPipelineCommandUVE, BindVertexBufferCommandUVE,
-    BindIndexBufferCommandUVE, BindTextureCommandUVE, BindSamplerCommandUVE, BindUniformBufferCommandUVE,
-    BindStorageBufferCommandUVE, DrawIndexedCommandUVE, DrawCommandUVE, DrawIndexedIndirectCommandRecordUVE,
-    DispatchCommandUVE, SetUniformFloatCommandUVE, SetUniformIntCommandUVE, SetUniformBoolCommandUVE,
-    SetUniformVector2CommandUVE, SetUniformVector3CommandUVE, SetUniformVector4CommandUVE,
-    SetUniformMatrix4x4CommandUVE, MemoryBarrierCommandUVE,
-    BeginQueryCommandUVE, EndQueryCommandUVE, WriteTimestampCommandUVE>;
+/// A single recorded ICommandBuffer call, tagged by which method it came from.
+using RecordedCommand = std::variant<
+    BeginRenderPassCommand, EndRenderPassCommand, BindPipelineCommand, BindVertexBufferCommand,
+    BindIndexBufferCommand, BindTextureCommand, BindSamplerCommand, BindUniformBufferCommand,
+    BindStorageBufferCommand, DrawIndexedCommand, DrawCommand, DrawIndexedIndirectCommandRecord,
+    DispatchCommand, SetUniformFloatCommand, SetUniformIntCommand, SetUniformBoolCommand,
+    SetUniformVector2Command, SetUniformVector3Command, SetUniformVector4Command,
+    SetUniformMatrix4x4Command, MemoryBarrierCommand,
+    BeginQueryCommand, EndQueryCommand, WriteTimestampCommand>;
 
 } // namespace UVE::Render

@@ -10,7 +10,7 @@ namespace UVE::Core {
 /// explicit parent traversal so project settings cannot directly point the cache outside the process
 /// working directory. Cache creation remains best-effort; this is lexical containment, not a sandbox
 /// against symlinks created inside the working tree.
-[[nodiscard]] inline bool IsSafeShaderCachePathUVE(const std::filesystem::path& path) {
+[[nodiscard]] inline bool IsSafeShaderCachePath(const std::filesystem::path& path) {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) {
         return false;
     }

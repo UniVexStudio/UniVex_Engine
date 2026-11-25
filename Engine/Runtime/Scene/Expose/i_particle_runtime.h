@@ -12,7 +12,7 @@
 
 namespace UVE::Scene {
 
-enum class ParticleRuntimeCodeUVE : std::uint8_t {
+enum class ParticleRuntimeCode : std::uint8_t {
     Applied = 0,
     Unchanged,
     InvalidEntity,
@@ -26,33 +26,33 @@ enum class ParticleRuntimeCodeUVE : std::uint8_t {
     NonFiniteSimulation,
 };
 
-struct ParticleRuntimeResultUVE final {
-    ParticleRuntimeCodeUVE code = ParticleRuntimeCodeUVE::InvalidComponent;
+struct ParticleRuntimeResult final {
+    ParticleRuntimeCode code = ParticleRuntimeCode::InvalidComponent;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == ParticleRuntimeCodeUVE::Applied || code == ParticleRuntimeCodeUVE::Unchanged;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == ParticleRuntimeCode::Applied || code == ParticleRuntimeCode::Unchanged;
     }
 };
 
-struct ParticleEmissionUVE final {
+struct ParticleEmission final {
     std::uint32_t count = 0U;
-    Math::Vector3UVE position{};
-    Math::Vector3UVE velocity{};
+    Math::Vector3 position{};
+    Math::Vector3 velocity{};
     float lifetimeSeconds = 0.0F;
 };
 
-struct ParticleStateUVE final {
-    Math::Vector3UVE position{};
-    Math::Vector3UVE velocity{};
+struct ParticleState final {
+    Math::Vector3 position{};
+    Math::Vector3 velocity{};
     float remainingLifetimeSeconds = 0.0F;
     std::uint64_t sequence = 0U;
 
-    [[nodiscard]] bool operator==(const ParticleStateUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleState&) const = default;
 };
 
-struct ParticleRuntimeInstanceSnapshotUVE final {
-    EntityUVE entity;
+struct ParticleRuntimeInstanceSnapshot final {
+    Entity entity;
     std::uint32_t maxParticles = 0U;
     std::uint32_t liveParticles = 0U;
     std::uint64_t generation = 0U;
@@ -61,58 +61,58 @@ struct ParticleRuntimeInstanceSnapshotUVE final {
     /// resolved Thread Group mode, as the engine last set it.
     bool workerEligible = false;
 
-    [[nodiscard]] bool operator==(const ParticleRuntimeInstanceSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleRuntimeInstanceSnapshot&) const = default;
 };
 
-struct ParticleRuntimeSnapshotUVE final {
+struct ParticleRuntimeSnapshot final {
     std::size_t instanceCount = 0U;
     std::uint64_t totalBudget = 0U;
-    std::vector<ParticleRuntimeInstanceSnapshotUVE> instances;
+    std::vector<ParticleRuntimeInstanceSnapshot> instances;
 
-    [[nodiscard]] bool operator==(const ParticleRuntimeSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleRuntimeSnapshot&) const = default;
 };
 
-struct ParticleStateSnapshotUVE final {
-    EntityUVE entity;
+struct ParticleStateSnapshot final {
+    Entity entity;
     std::uint64_t generation = 0U;
-    std::vector<ParticleStateUVE> particles;
+    std::vector<ParticleState> particles;
 
-    [[nodiscard]] bool operator==(const ParticleStateSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const ParticleStateSnapshot&) const = default;
 };
 
-/// IParticleRuntimeUVE is the gameplay/content-facing boundary for bounded CPU particle state.
+/// IParticleRuntime is the gameplay/content-facing boundary for bounded CPU particle state.
 /// Implementations own only explicitly emitted particle values and deterministic integration;
 /// GPU resources, renderer registration, asset lifetime, and backend selection remain outside.
 /// Thread-safety: not thread-safe; callers use it from the scene/runtime thread.
-class IParticleRuntimeUVE {
+class IParticleRuntime {
 public:
-    virtual ~IParticleRuntimeUVE() = default;
+    virtual ~IParticleRuntime() = default;
 
-    [[nodiscard]] virtual ParticleRuntimeResultUVE AttachDetailedUVE(
-        EntityUVE entity, const ParticleEmitterComponentUVE& component) = 0;
-    [[nodiscard]] bool AttachUVE(EntityUVE entity, const ParticleEmitterComponentUVE& component) {
-        return AttachDetailedUVE(entity, component).IsAcceptedUVE();
+    [[nodiscard]] virtual ParticleRuntimeResult AttachDetailed(
+        Entity entity, const ParticleEmitterComponent& component) = 0;
+    [[nodiscard]] bool Attach(Entity entity, const ParticleEmitterComponent& component) {
+        return AttachDetailed(entity, component).IsAccepted();
     }
 
-    [[nodiscard]] virtual ParticleRuntimeResultUVE DetachDetailedUVE(EntityUVE entity) noexcept = 0;
-    [[nodiscard]] bool DetachUVE(EntityUVE entity) noexcept {
-        return DetachDetailedUVE(entity).IsAcceptedUVE();
+    [[nodiscard]] virtual ParticleRuntimeResult DetachDetailed(Entity entity) noexcept = 0;
+    [[nodiscard]] bool Detach(Entity entity) noexcept {
+        return DetachDetailed(entity).IsAccepted();
     }
 
-    [[nodiscard]] virtual ParticleRuntimeResultUVE SetEnabledDetailedUVE(
-        EntityUVE entity, bool enabled) noexcept = 0;
-    [[nodiscard]] virtual ParticleRuntimeResultUVE SetLiveParticleCountDetailedUVE(
-        EntityUVE entity, std::uint32_t liveParticles) noexcept = 0;
-    [[nodiscard]] virtual ParticleRuntimeResultUVE EmitDetailedUVE(
-        EntityUVE entity, const ParticleEmissionUVE& emission) = 0;
-    [[nodiscard]] virtual ParticleRuntimeResultUVE SimulateDetailedUVE(
-        float deltaSeconds, const Math::Vector3UVE& acceleration) noexcept = 0;
-    [[nodiscard]] virtual ParticleRuntimeSnapshotUVE GetSnapshotUVE() const = 0;
-    [[nodiscard]] virtual std::optional<ParticleStateSnapshotUVE> GetParticleSnapshotUVE(
-        EntityUVE entity) const = 0;
-    [[nodiscard]] virtual bool HasInstanceUVE(EntityUVE entity) const noexcept = 0;
-    [[nodiscard]] virtual std::size_t GetInstanceCountUVE() const noexcept = 0;
-    [[nodiscard]] virtual std::uint64_t GetTotalBudgetUVE() const noexcept = 0;
+    [[nodiscard]] virtual ParticleRuntimeResult SetEnabledDetailed(
+        Entity entity, bool enabled) noexcept = 0;
+    [[nodiscard]] virtual ParticleRuntimeResult SetLiveParticleCountDetailed(
+        Entity entity, std::uint32_t liveParticles) noexcept = 0;
+    [[nodiscard]] virtual ParticleRuntimeResult EmitDetailed(
+        Entity entity, const ParticleEmission& emission) = 0;
+    [[nodiscard]] virtual ParticleRuntimeResult SimulateDetailed(
+        float deltaSeconds, const Math::Vector3& acceleration) noexcept = 0;
+    [[nodiscard]] virtual ParticleRuntimeSnapshot GetSnapshot() const = 0;
+    [[nodiscard]] virtual std::optional<ParticleStateSnapshot> GetParticleSnapshot(
+        Entity entity) const = 0;
+    [[nodiscard]] virtual bool HasInstance(Entity entity) const noexcept = 0;
+    [[nodiscard]] virtual std::size_t GetInstanceCount() const noexcept = 0;
+    [[nodiscard]] virtual std::uint64_t GetTotalBudget() const noexcept = 0;
 };
 
 } // namespace UVE::Scene

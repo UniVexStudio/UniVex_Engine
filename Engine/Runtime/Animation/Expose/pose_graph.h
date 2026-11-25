@@ -4,10 +4,10 @@
 //
 // Two graph vocabularies live in this engine and they are easy to mistake for each other:
 //
-//   UVE::Scene::AnimationGraphComponentUVE  the authored graph - what the editor draws, what the
+//   UVE::Scene::AnimationGraphComponent  the authored graph - what the editor draws, what the
 //                                           serializer writes, 12 node kinds, asset GUIDs, N
 //                                           inputs, editor positions, blend spaces.
-//   UVE::Core::PoseGraphUVE (this file)     the evaluation model - 11 node kinds, string clipId,
+//   UVE::Core::PoseGraph (this file)     the evaluation model - 11 node kinds, string clipId,
 //                                           fixed inputA/inputB, no editor state.
 //
 // Each has kinds the other lacks: this one has Sync, Subtree and PoseCache; the authored graph has
@@ -26,7 +26,7 @@
 
 namespace UVE::Core {
 
-enum class PoseGraphNodeKindUVE : std::uint8_t {
+enum class PoseGraphNodeKind : std::uint8_t {
     ClipPlayer = 0,
     Blend,
     Parameter,
@@ -40,9 +40,9 @@ enum class PoseGraphNodeKindUVE : std::uint8_t {
     OutputPose,
 };
 
-struct PoseGraphNodeUVE final {
+struct PoseGraphNode final {
     std::uint32_t id = 0U;
-    PoseGraphNodeKindUVE kind = PoseGraphNodeKindUVE::OutputPose;
+    PoseGraphNodeKind kind = PoseGraphNodeKind::OutputPose;
     std::string name;
     std::string clipId;
     std::string parameterId;
@@ -53,15 +53,15 @@ struct PoseGraphNodeUVE final {
     bool enabled = true;
 };
 
-struct PoseGraphUVE final {
-    static constexpr std::size_t kMaximumNodesUVE = 512U;
-    static constexpr std::size_t kMaximumParametersUVE = 128U;
+struct PoseGraph final {
+    static constexpr std::size_t kMaximumNodes = 512U;
+    static constexpr std::size_t kMaximumParameters = 128U;
 
-    std::vector<PoseGraphNodeUVE> nodes;
-    std::vector<AnimationClipUVE> clips;
+    std::vector<PoseGraphNode> nodes;
+    std::vector<AnimationClip> clips;
 };
 
-enum class PoseGraphValidationCodeUVE : std::uint8_t {
+enum class PoseGraphValidationCode : std::uint8_t {
     Valid = 0,
     EmptyTree,
     CapacityExceeded,
@@ -75,38 +75,38 @@ enum class PoseGraphValidationCodeUVE : std::uint8_t {
     MissingOutput,
 };
 
-struct PoseGraphValidationResultUVE final {
-    PoseGraphValidationCodeUVE code = PoseGraphValidationCodeUVE::EmptyTree;
+struct PoseGraphValidationResult final {
+    PoseGraphValidationCode code = PoseGraphValidationCode::EmptyTree;
     std::uint32_t nodeId = 0U;
     std::string message;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == PoseGraphValidationCodeUVE::Valid;
+    [[nodiscard]] bool IsValid() const noexcept {
+        return code == PoseGraphValidationCode::Valid;
     }
 };
 
-struct PoseGraphParameterUVE final {
+struct PoseGraphParameter final {
     std::string parameterId;
     float value = 0.0F;
 };
 
-struct PoseGraphEvaluationResultUVE final {
-    TransformPoseUVE pose;
+struct PoseGraphEvaluationResult final {
+    TransformPose pose;
     bool usedOutputNode = false;
     std::size_t evaluatedNodeCount = 0U;
     std::string message;
 
-    [[nodiscard]] bool IsSuccessUVE() const noexcept {
+    [[nodiscard]] bool IsSuccess() const noexcept {
         return usedOutputNode && evaluatedNodeCount > 0U;
     }
 };
 
-[[nodiscard]] PoseGraphValidationResultUVE ValidatePoseGraphUVE(
-    const PoseGraphUVE& tree) noexcept;
+[[nodiscard]] PoseGraphValidationResult ValidatePoseGraph(
+    const PoseGraph& tree) noexcept;
 
 /// Evaluates shared nodes independently for distinct local times; memoization is keyed by node ID
 /// and exact local evaluation time, while active recursion remains cycle-checked by node ID.
-[[nodiscard]] PoseGraphEvaluationResultUVE EvaluatePoseGraphUVE(
-    const PoseGraphUVE& tree, double timeSeconds, const std::vector<PoseGraphParameterUVE>& parameters = {});
+[[nodiscard]] PoseGraphEvaluationResult EvaluatePoseGraph(
+    const PoseGraph& tree, double timeSeconds, const std::vector<PoseGraphParameter>& parameters = {});
 
 } // namespace UVE::Core

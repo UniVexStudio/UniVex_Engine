@@ -20,10 +20,10 @@ namespace {
 
 /// The mesh an agent gets when there is no region under it: empty, so the search answers NoMesh and
 /// the steering reports Failed instead of the agent keeping a route from wherever it used to be.
-const NavmeshUVE kNoMeshUVE{};
+const Navmesh kNoMesh{};
 
-[[nodiscard]] NavmeshBakeSettingsUVE SettingsFromRegionUVE(const Scene::NavMeshVolume3DComponentUVE& region) noexcept {
-    NavmeshBakeSettingsUVE settings{};
+[[nodiscard]] NavmeshBakeSettings SettingsFromRegion(const Scene::NavMeshVolume3DComponent& region) noexcept {
+    NavmeshBakeSettings settings{};
     settings.cellSize = region.cellSize;
     settings.agentRadius = region.agentRadius;
     settings.agentHeight = region.agentHeight;
@@ -36,8 +36,8 @@ const NavmeshUVE kNoMeshUVE{};
     return settings;
 }
 
-[[nodiscard]] bool SameBakeSettingsUVE(const NavmeshBakeSettingsUVE& left,
-                                       const NavmeshBakeSettingsUVE& right) noexcept {
+[[nodiscard]] bool SameBakeSettings(const NavmeshBakeSettings& left,
+                                       const NavmeshBakeSettings& right) noexcept {
     return left.cellSize == right.cellSize && left.agentRadius == right.agentRadius &&
            left.agentHeight == right.agentHeight && left.maximumSlopeDegrees == right.maximumSlopeDegrees &&
            left.maximumStepHeight == right.maximumStepHeight &&
@@ -46,15 +46,15 @@ const NavmeshUVE kNoMeshUVE{};
            left.maximumCells == right.maximumCells;
 }
 
-[[nodiscard]] bool SameBoundsUVE(const Math::AabbUVE& left, const Math::AabbUVE& right) noexcept {
+[[nodiscard]] bool SameBounds(const Math::Aabb& left, const Math::Aabb& right) noexcept {
     return left.min.x == right.min.x && left.min.y == right.min.y && left.min.z == right.min.z &&
            left.max.x == right.max.x && left.max.y == right.max.y && left.max.z == right.max.z;
 }
 
-[[nodiscard]] NavAgentSettingsUVE SettingsFromSeekerUVE(
-    const Scene::NavSeeker3DComponentUVE& seeker,
-    const NavigationRuntimeConfigUVE& runtimeConfig) noexcept {
-    NavAgentSettingsUVE settings{};
+[[nodiscard]] NavAgentSettings SettingsFromSeeker(
+    const Scene::NavSeeker3DComponent& seeker,
+    const NavigationRuntimeConfig& runtimeConfig) noexcept {
+    NavAgentSettings settings{};
     settings.radius = seeker.radius;
     settings.height = seeker.height;
     settings.maxSpeed = seeker.maxSpeed;
@@ -67,28 +67,28 @@ const NavmeshUVE kNoMeshUVE{};
     // Avoidance off is a zero radius, which is the steering's own way of saying "no push": the flag
     // and the number never disagree about whether this agent steps aside.
     settings.avoidanceRadiusMetres = runtimeConfig.globalAvoidanceEnabled
-                                         ? Scene::NavSeeker3DUVE::EffectiveAvoidanceRadiusUVE(seeker)
+                                         ? Scene::NavSeeker3D::EffectiveAvoidanceRadius(seeker)
                                          : 0.0F;
     return settings;
 }
 
-[[nodiscard]] Scene::NavigationAgentPathStatusUVE StatusFromAgentUVE(const NavAgentStatusUVE status) noexcept {
+[[nodiscard]] Scene::NavigationAgentPathStatus StatusFromAgent(const NavAgentStatus status) noexcept {
     switch (status) {
-    case NavAgentStatusUVE::Following:
-        return Scene::NavigationAgentPathStatusUVE::Following;
-    case NavAgentStatusUVE::Finished:
-        return Scene::NavigationAgentPathStatusUVE::Finished;
-    case NavAgentStatusUVE::Failed:
-        return Scene::NavigationAgentPathStatusUVE::Failed;
-    case NavAgentStatusUVE::Idle:
+    case NavAgentStatus::Following:
+        return Scene::NavigationAgentPathStatus::Following;
+    case NavAgentStatus::Finished:
+        return Scene::NavigationAgentPathStatus::Finished;
+    case NavAgentStatus::Failed:
+        return Scene::NavigationAgentPathStatus::Failed;
+    case NavAgentStatus::Idle:
         break;
     }
-    return Scene::NavigationAgentPathStatusUVE::Idle;
+    return Scene::NavigationAgentPathStatus::Idle;
 }
 
 } // namespace
 
-const NavmeshUVE* NavigationRuntimeUVE::FindRegionMeshUVE(const Scene::EntityUVE region) const noexcept {
+const Navmesh* NavigationRuntime::FindRegionMesh(const Scene::Entity region) const noexcept {
     const auto found = m_regions.find(region);
     if (found == m_regions.end() || !found->second.baked) {
         return nullptr;
@@ -96,7 +96,7 @@ const NavmeshUVE* NavigationRuntimeUVE::FindRegionMeshUVE(const Scene::EntityUVE
     return &found->second.mesh;
 }
 
-const NavmeshBakeReportUVE* NavigationRuntimeUVE::FindRegionBakeReportUVE(const Scene::EntityUVE region) const noexcept {
+const NavmeshBakeReport* NavigationRuntime::FindRegionBakeReport(const Scene::Entity region) const noexcept {
     const auto found = m_regions.find(region);
     if (found == m_regions.end() || !found->second.baked) {
         return nullptr;
@@ -104,11 +104,11 @@ const NavmeshBakeReportUVE* NavigationRuntimeUVE::FindRegionBakeReportUVE(const 
     return &found->second.report;
 }
 
-Scene::EntityUVE NavigationRuntimeUVE::FindRegionForPositionUVE(const Math::Vector3UVE& position,
+Scene::Entity NavigationRuntime::FindRegionForPosition(const Math::Vector3& position,
                                                                const float maximumDistanceMetres) const noexcept {
-    Scene::EntityUVE nearest = Scene::kInvalidEntityUVE;
+    Scene::Entity nearest = Scene::kInvalidEntity;
     float nearestDistance = maximumDistanceMetres;
-    for (const Scene::EntityUVE region : m_regionOrder) {
+    for (const Scene::Entity region : m_regionOrder) {
         const auto found = m_regions.find(region);
         if (found == m_regions.end() || found->second.mesh.polygons.empty()) {
             // A region that baked to nothing, or one whose mesh is gone, is not somewhere an agent
@@ -116,7 +116,7 @@ Scene::EntityUVE NavigationRuntimeUVE::FindRegionForPositionUVE(const Math::Vect
             continue;
         }
         const float distance =
-            Scene::NavMeshVolume3DUVE::DistanceToVolumeBoundsUVE(found->second.mesh.bounds, position);
+            Scene::NavMeshVolume3D::DistanceToVolumeBounds(found->second.mesh.bounds, position);
         if (distance <= 0.0F) {
             // Inside a region's own volume. First one wins, in the order regions were seen, so
             // overlapping volumes resolve the same way every run.
@@ -130,23 +130,23 @@ Scene::EntityUVE NavigationRuntimeUVE::FindRegionForPositionUVE(const Math::Vect
     return nearest;
 }
 
-void NavigationRuntimeUVE::ClearUVE() noexcept {
+void NavigationRuntime::Clear() noexcept {
     m_regions.clear();
     m_regionOrder.clear();
     m_agents.clear();
 }
 
-NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& entityManager,
-                                                      const Physics::IRaycastSystemUVE& raycasts,
-                                                      const std::span<const Scene::EntityUVE> agentsInStepOrder,
+NavigationSyncReport NavigationRuntime::Sync(Scene::IEntityManager& entityManager,
+                                                      const Physics::IRaycastSystem& raycasts,
+                                                      const std::span<const Scene::Entity> agentsInStepOrder,
                                                       const float deltaTimeSeconds) {
-    NavigationSyncReportUVE report{};
+    NavigationSyncReport report{};
 
     // ------------------------------------------------------------------ regions
-    std::vector<Scene::EntityUVE> liveRegions;
-    entityManager.ForEachUVE<Scene::NavMeshVolume3DComponentUVE>(
+    std::vector<Scene::Entity> liveRegions;
+    entityManager.ForEach<Scene::NavMeshVolume3DComponent>(
         [this, &entityManager, &raycasts, &report, &liveRegions](
-            const Scene::EntityUVE entity, Scene::NavMeshVolume3DComponentUVE& region) {
+            const Scene::Entity entity, Scene::NavMeshVolume3DComponent& region) {
             if (!region.enabled) {
                 // A region switched off has no mesh: an agent standing on it must fail rather than
                 // walk the ground the author just took away. Its cache is dropped, not kept warm, so
@@ -154,7 +154,7 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
                 m_regions.erase(entity);
                 return;
             }
-            if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+            if (!entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
                 // No pose, no volume: a bake needs somewhere in the world to rasterize. The region
                 // keeps whatever mesh it had, because nothing about it changed.
                 return;
@@ -162,22 +162,22 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
             ++report.regions;
             liveRegions.push_back(entity);
 
-            const Scene::WorldTransformComponentUVE& world =
-                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            const Math::AabbUVE bounds =
-                Scene::NavMeshVolume3DUVE::ResolveWorldBoundsUVE(region, world.worldPosition);
-            const NavmeshBakeSettingsUVE settings = SettingsFromRegionUVE(region);
+            const Scene::WorldTransformComponent& world =
+                entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+            const Math::Aabb bounds =
+                Scene::NavMeshVolume3D::ResolveWorldBounds(region, world.worldPosition);
+            const NavmeshBakeSettings settings = SettingsFromRegion(region);
 
-            RegionEntryUVE& entry = m_regions[entity];
-            const bool inputsChanged = !entry.baked || !SameBakeSettingsUVE(entry.bakedSettings, settings) ||
-                                       !SameBoundsUVE(entry.bakedBounds, bounds);
+            RegionEntry& entry = m_regions[entity];
+            const bool inputsChanged = !entry.baked || !SameBakeSettings(entry.bakedSettings, settings) ||
+                                       !SameBounds(entry.bakedBounds, bounds);
             // An explicit request is an author saying the collision world moved under a region whose
             // own volume did not, so it is honoured even when every input this class can see is
             // identical - that is the whole reason the field exists.
-            if (!inputsChanged && !Scene::NavMeshVolume3DUVE::ConsumeRebuildRequestUVE(region)) {
+            if (!inputsChanged && !Scene::NavMeshVolume3D::ConsumeRebuildRequest(region)) {
                 return;
             }
-            entry.report = BakeNavmeshUVE(entityManager, raycasts, settings, bounds, entry.mesh);
+            entry.report = BakeNavmesh(entityManager, raycasts, settings, bounds, entry.mesh);
             entry.bakedSettings = settings;
             entry.bakedBounds = bounds;
             entry.baked = true;
@@ -201,75 +201,75 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
 
     // ------------------------------------------------------------------ agents
     for (auto it = m_agents.begin(); it != m_agents.end();) {
-        const bool live = entityManager.IsAliveUVE(it->first) &&
-                          entityManager.HasComponentUVE<Scene::NavSeeker3DComponentUVE>(it->first);
+        const bool live = entityManager.IsAlive(it->first) &&
+                          entityManager.HasComponent<Scene::NavSeeker3DComponent>(it->first);
         it = live ? std::next(it) : m_agents.erase(it);
     }
 
     // The neighbour list is built once for the whole step: every listed agent that has somewhere to
     // stand contributes its position and width, and each agent's own entry is recognised and ignored
     // by the steering (two agents cannot be at the same point unless they already overlap).
-    std::vector<NavAgentObstacleUVE> neighbours;
+    std::vector<NavAgentObstacle> neighbours;
     neighbours.reserve(agentsInStepOrder.size());
-    for (const Scene::EntityUVE entity : agentsInStepOrder) {
-        if (!entityManager.HasComponentUVE<Scene::NavSeeker3DComponentUVE>(entity) ||
-            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+    for (const Scene::Entity entity : agentsInStepOrder) {
+        if (!entityManager.HasComponent<Scene::NavSeeker3DComponent>(entity) ||
+            !entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
             continue;
         }
-        const Scene::NavSeeker3DComponentUVE& seeker = entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(entity);
-        const Scene::WorldTransformComponentUVE& world =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-        neighbours.push_back(NavAgentObstacleUVE{world.worldPosition, seeker.radius});
+        const Scene::NavSeeker3DComponent& seeker = entityManager.GetComponent<Scene::NavSeeker3DComponent>(entity);
+        const Scene::WorldTransformComponent& world =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+        neighbours.push_back(NavAgentObstacle{world.worldPosition, seeker.radius});
     }
 
-    for (const Scene::EntityUVE entity : agentsInStepOrder) {
-        if (!entityManager.IsAliveUVE(entity) ||
-            !entityManager.HasComponentUVE<Scene::NavSeeker3DComponentUVE>(entity)) {
+    for (const Scene::Entity entity : agentsInStepOrder) {
+        if (!entityManager.IsAlive(entity) ||
+            !entityManager.HasComponent<Scene::NavSeeker3DComponent>(entity)) {
             continue;
         }
-        Scene::NavSeeker3DComponentUVE& seeker = entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(entity);
+        Scene::NavSeeker3DComponent& seeker = entityManager.GetComponent<Scene::NavSeeker3DComponent>(entity);
         if (!seeker.enabled) {
             // Switched off: the cached steering is dropped so a later enable starts from a clean
             // search, and the component is told plainly that nothing is being published.
             m_agents.erase(entity);
-            const Math::Vector3UVE position =
-                entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)
-                    ? entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition
-                    : Math::Vector3UVE{};
-            Scene::NavSeeker3DUVE::PublishIdleStateUVE(seeker, position);
+            const Math::Vector3 position =
+                entityManager.HasComponent<Scene::WorldTransformComponent>(entity)
+                    ? entityManager.GetComponent<Scene::WorldTransformComponent>(entity).worldPosition
+                    : Math::Vector3{};
+            Scene::NavSeeker3D::PublishIdleState(seeker, position);
             continue;
         }
-        if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        if (!entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
             // A body with nowhere to be cannot be steered, and this pass never adds the component it
             // would need: leave the entity exactly as authored.
             continue;
         }
 
-        const Math::Vector3UVE position =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
-        const NavAgentSettingsUVE settings = SettingsFromSeekerUVE(seeker, m_config);
-        const Scene::EntityUVE region = FindRegionForPositionUVE(position, settings.offMeshToleranceMetres);
-        const NavmeshUVE* mesh = region == Scene::kInvalidEntityUVE ? &kNoMeshUVE : FindRegionMeshUVE(region);
+        const Math::Vector3 position =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(entity).worldPosition;
+        const NavAgentSettings settings = SettingsFromSeeker(seeker, m_config);
+        const Scene::Entity region = FindRegionForPosition(position, settings.offMeshToleranceMetres);
+        const Navmesh* mesh = region == Scene::kInvalidEntity ? &kNoMesh : FindRegionMesh(region);
         if (mesh == nullptr) {
-            mesh = &kNoMeshUVE;
+            mesh = &kNoMesh;
         }
-        if (region == Scene::kInvalidEntityUVE) {
+        if (region == Scene::kInvalidEntity) {
             ++report.agentsWithoutMesh;
         }
 
-        NavAgentUVE& agent = m_agents[entity];
-        agent.ConfigureUVE(settings);
-        agent.SetPositionUVE(position);
-        agent.SetTargetUVE(seeker.targetPosition);
+        NavAgent& agent = m_agents[entity];
+        agent.Configure(settings);
+        agent.SetPosition(position);
+        agent.SetTarget(seeker.targetPosition);
         if (m_config.maxAvoidanceNeighbors > 0U && neighbours.size() > m_config.maxAvoidanceNeighbors) {
             const float maxDist = std::isfinite(m_config.maxNeighborDistanceMetres) &&
                                           m_config.maxNeighborDistanceMetres > 0.0F
                                       ? m_config.maxNeighborDistanceMetres
                                       : 15.0F;
             const float maxDistSq = maxDist * maxDist;
-            std::vector<std::pair<float, NavAgentObstacleUVE>> candidateNeighbours;
+            std::vector<std::pair<float, NavAgentObstacle>> candidateNeighbours;
             candidateNeighbours.reserve(neighbours.size());
-            for (const NavAgentObstacleUVE& obstacle : neighbours) {
+            for (const NavAgentObstacle& obstacle : neighbours) {
                 const float dx = obstacle.position.x - position.x;
                 const float dy = obstacle.position.y - position.y;
                 const float dz = obstacle.position.z - position.z;
@@ -286,22 +286,22 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
                     [](const auto& lhs, const auto& rhs) noexcept { return lhs.first < rhs.first; });
                 candidateNeighbours.resize(m_config.maxAvoidanceNeighbors);
             }
-            std::vector<NavAgentObstacleUVE> localNeighbours;
+            std::vector<NavAgentObstacle> localNeighbours;
             localNeighbours.reserve(candidateNeighbours.size());
             for (const auto& [distSq, obstacle] : candidateNeighbours) {
                 static_cast<void>(distSq);
                 localNeighbours.push_back(obstacle);
             }
-            agent.StepUVE(*mesh, localNeighbours, deltaTimeSeconds);
+            agent.Step(*mesh, localNeighbours, deltaTimeSeconds);
         } else {
-            agent.StepUVE(*mesh, neighbours, deltaTimeSeconds);
+            agent.Step(*mesh, neighbours, deltaTimeSeconds);
         }
 
-        seeker.nextPathPosition = agent.GetNextPathPositionUVE();
-        seeker.desiredVelocity = agent.GetDesiredVelocityUVE();
-        seeker.pathStatus = StatusFromAgentUVE(agent.GetStatusUVE());
-        seeker.pathChanged = agent.GetPathChangedUVE();
-        seeker.targetReached = agent.HasReachedTargetUVE();
+        seeker.nextPathPosition = agent.GetNextPathPosition();
+        seeker.desiredVelocity = agent.GetDesiredVelocity();
+        seeker.pathStatus = StatusFromAgent(agent.GetStatus());
+        seeker.pathChanged = agent.GetPathChanged();
+        seeker.targetReached = agent.HasReachedTarget();
         ++report.agents;
     }
 
