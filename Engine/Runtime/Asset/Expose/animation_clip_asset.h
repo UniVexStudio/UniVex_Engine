@@ -134,6 +134,8 @@ struct AnimationClipSummary final {
     bool conformed = false;
     bool hasRest = false;
     bool hasBones = false;
+    double durationSeconds = 0.0;
+    std::string clipId;
 };
 
 /// Inspects a serialized clip payload via streaming SAX without allocating DOM nodes or keyframe arrays.

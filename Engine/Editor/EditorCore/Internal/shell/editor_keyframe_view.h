@@ -2,6 +2,7 @@
 #pragma once
 
 #include "animation_clip_asset.h"
+#include "asset_guid.h"
 #include "editor_timeline_draw.h"
 
 #include "prism/Widget.h"
@@ -100,8 +101,10 @@ private:
         [[nodiscard]] float Value(float y, int channel) const noexcept;
     };
     [[nodiscard]] CurvePlot BuildCurvePlot() const;
+    void SyncClipChange();
 
     EditorSequencerPanel& m_panel;
+    Asset::AssetGuid m_lastClipGuid{};
     float m_scrollY = 0.0F;
     Drag m_drag = Drag::None;
     prism::Vec2 m_dragFrom{};

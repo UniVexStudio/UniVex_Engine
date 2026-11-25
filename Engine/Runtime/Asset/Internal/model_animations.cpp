@@ -251,7 +251,8 @@ bool SaveModelAnimations(const std::filesystem::path& model, const std::vector<A
 }
 
 bool SplitEmbeddedClipPath(const std::filesystem::path& path, std::filesystem::path& outModel, std::string& outTake) {
-    const std::string text = path.generic_string();
+    const std::u8string u8 = path.generic_u8string();
+    const std::string text(reinterpret_cast<const char*>(u8.data()), u8.size());
     const std::size_t hash = text.rfind('#');
     if (hash == std::string::npos || hash + 1U >= text.size()) {
         return false;
@@ -260,28 +261,36 @@ bool SplitEmbeddedClipPath(const std::filesystem::path& path, std::filesystem::p
     if (file.size() < 8U || file.compare(file.size() - 8U, 8U, ".uvmodel") != 0) {
         return false;
     }
-    outModel = std::filesystem::path{file};
+    outModel = std::filesystem::path{std::u8string_view{reinterpret_cast<const char8_t*>(file.data()), file.size()}};
     outTake = text.substr(hash + 1U);
     return true;
 }
 
 std::string AssetDisplayName(const std::filesystem::path& path) {
+    const auto utf8Of = [](const std::filesystem::path& p) {
+        const std::u8string u8 = p.u8string();
+        return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+    };
     std::filesystem::path model;
     std::string take;
     if (!SplitEmbeddedClipPath(path, model, take)) {
-        return path.stem().string();
+        return utf8Of(path.stem());
     }
     // "Hero.fbx.uvmodel" reads as "Hero".
     std::filesystem::path owner = model.stem();
     while (owner.has_extension()) {
         owner = owner.stem();
     }
-    const std::string name = owner.string();
+    const std::string name = utf8Of(owner);
     return take.empty() || take == name ? name : name + " / " + take;
 }
 
 std::filesystem::path MakeEmbeddedClipPath(const std::filesystem::path& model, const std::string& take) {
-    return std::filesystem::path{model.generic_string() + "#" + take};
+    const std::u8string u8 = model.generic_u8string();
+    std::string combined(reinterpret_cast<const char*>(u8.data()), u8.size());
+    combined.push_back('#');
+    combined += take;
+    return std::filesystem::path{std::u8string_view{reinterpret_cast<const char8_t*>(combined.data()), combined.size()}};
 }
 
 } // namespace UVE::Asset

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <limits>
+#include <list>
 #include <map>
 #include <memory>
 #include <atomic>
@@ -1166,6 +1167,24 @@ public:
     /// load and whose GUIDs are not already listed join. Returns how many entries were added.
     std::size_t AppendClipsToAnimationLibrary(const std::filesystem::path& libraryAbsolute,
                                                  const std::vector<std::filesystem::path>& clipAbsolutePaths);
+    /// Enqueues `clipAbsolutePaths` for paced one-by-one low-RAM ingestion into `libraryAbsolute`
+    /// (matching the asset importer's smooth incremental loading).
+    void QueueClipsForAnimationLibrary(const std::filesystem::path& libraryAbsolute,
+                                       const std::vector<std::filesystem::path>& clipAbsolutePaths);
+    /// Processes up to `maxClips` within `maxBudgetSeconds` from the active Animation Library add queue.
+    /// Returns true while more clips remain in the queue.
+    bool PollAnimationLibraryAddQueue(std::size_t maxClips = 1U, double maxBudgetSeconds = 0.004);
+    [[nodiscard]] bool IsAnimationLibraryAddQueueActive() const noexcept;
+    /// Collects `.uvanim` animation files directly inside `relativeFolder` (non-recursive: nested
+    /// subfolders are excluded).
+    [[nodiscard]] std::vector<std::filesystem::path> CollectAnimationClipsInFolder(
+        const std::filesystem::path& relativeFolder) const;
+    /// Creates a unique `.uvanimlib` inside `relativeFolder` from the direct `.uvanim` files in that
+    /// folder, opens the Animation Library window, and queues paced 1-by-1 ingestion. Returns nullopt
+    /// when authoring is disallowed or `relativeFolder` has no direct `.uvanim` files.
+    [[nodiscard]] std::optional<std::filesystem::path> CreateAnimationLibraryFromFolder(
+        const std::filesystem::path& relativeFolder);
+    [[nodiscard]] std::size_t CachedAnimationIconCount() const noexcept { return m_animationIcons.size(); }
     /// The open entity's file, or empty.
     [[nodiscard]] std::filesystem::path GetEntityEditorAssetPath() const;
     /// The open entity's root object (the one child of the scene root), or kInvalidEntity.
@@ -2096,6 +2115,7 @@ public:
     struct AnimationIcon final {
         std::filesystem::file_time_type written{};
         std::vector<std::uint32_t> pixels;
+        std::shared_ptr<const std::vector<std::uint32_t>> sharedPixels;
         int width = 0;
         int height = 0;
         double durationSeconds = 0.0;
@@ -2104,6 +2124,7 @@ public:
         /// Bumped each time it is drawn again, so a view that copied it copies it again.
         std::uint64_t serial = 0U;
     };
+    static constexpr std::size_t kMaxCachedAnimationIcons = 192U;
 private:
     /// Never blocks: a clip not drawn yet is read and drawn on a worker thread (newest asked first)
     /// and kept on disk under the project's .uvcache, so the next session has it at once; until then
@@ -2115,7 +2136,10 @@ private:
     /// The icons asked for next go ahead of those already waiting, in the order asked (a view about
     /// to list its clips calls it first).
     void BeginAnimationIconBatch();
+    void TouchAnimationIconLru(const std::string& key);
     std::unordered_map<std::string, AnimationIcon> m_animationIcons;
+    std::list<std::string> m_animationIconLru;
+    std::unordered_map<std::string, std::list<std::string>::iterator> m_animationIconLruMap;
     std::shared_ptr<struct AnimationIconWorker> m_animationIconWorker;
     std::uint64_t m_animationIconGeneration = 0U;
     std::filesystem::path m_animationIconCacheDir;
@@ -2982,7 +3006,18 @@ private:
     Math::Vector2 m_playBootSplashImageDimensions{};
     std::optional<EntityEditSession> m_entityEditSession;
     std::optional<RetargetWindowState> m_retargetWindow;
+    struct AnimationLibraryAddQueueState final {
+        std::filesystem::path libraryPath;
+        Asset::AnimationLibraryAsset library;
+        std::deque<std::filesystem::path> pendingClips;
+        std::size_t totalCount = 0U;
+        std::size_t processedCount = 0U;
+        std::size_t addedCount = 0U;
+        std::size_t dirtyUnsavedCount = 0U;
+        bool databaseTouched = false;
+    };
     std::optional<AnimationLibraryWindowState> m_animationLibraryWindow;
+    std::optional<AnimationLibraryAddQueueState> m_animLibraryAddQueue;
     std::optional<FilePickerState> m_filePicker;
     std::optional<EntityClassPickerState> m_entityClassPicker;
     /// Browse picks waiting for their widget: widget id (kept as uint32_t like
@@ -3217,6 +3252,8 @@ private:
         struct ClipCard final {
             std::string name;
             std::filesystem::path path;
+            std::filesystem::file_time_type written{};
+            bool hasWritten = false;
             double durationSeconds = 0.0;
             bool skeletal = false;
             bool readable = false;
@@ -3279,6 +3316,7 @@ private:
         Scene::Entity player = Scene::kInvalidEntity;
         Scene::Entity skeleton = Scene::kInvalidEntity;
         Scene::Entity previewRoot = Scene::kInvalidEntity;
+        std::shared_ptr<const Asset::AnimationClipAsset> clipOwner;
         const Asset::AnimationClipAsset* clip = nullptr;
         double durationSeconds = 1.0;
         double frameRate = 30.0;
