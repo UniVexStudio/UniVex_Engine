@@ -368,6 +368,9 @@ void Editor::Tick() {
     if (!m_pendingModelAnimations.empty()) {
         ProcessPendingModelAnimationImports(m_startupLoading ? 0.12 : 0.025);
     }
+    if (m_animLibraryAddQueue.has_value()) {
+        static_cast<void>(PollAnimationLibraryAddQueue(1U, 0.004));
+    }
     if (m_startupLoading) {
         UpdateStartupLoading();
     }
@@ -8227,6 +8230,23 @@ Editor::EditorLoadingState Editor::GetLoadingState() const {
         state.step = phaseLabel.empty() ? "Importing assets" : std::move(phaseLabel);
         state.detail = countText;
         state.progress = work;
+    } else if (m_animLibraryAddQueue.has_value() && !m_animLibraryAddQueue->pendingClips.empty()) {
+        const AnimationLibraryAddQueueState& q = *m_animLibraryAddQueue;
+        const std::u8string u8 = q.pendingClips.front().stem().u8string();
+        state.busy = true;
+        state.cancellable = false;
+        state.done = q.processedCount;
+        state.total = q.totalCount;
+        state.currentItem = std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+        state.step = "Adding animations to library";
+        state.detail = q.totalCount > 0U
+                           ? (std::to_string(std::min(q.processedCount + 1U, q.totalCount)) + " / " +
+                              std::to_string(q.totalCount))
+                           : std::string{};
+        state.progress = q.totalCount > 0U
+                             ? std::clamp(static_cast<float>(q.processedCount) / static_cast<float>(q.totalCount),
+                                          0.0F, 1.0F)
+                             : 1.0F;
     }
     return state;
 }

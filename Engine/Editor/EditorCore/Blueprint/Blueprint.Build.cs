@@ -18,6 +18,7 @@ public class BlueprintModule : ModuleRules
             "Core",
             "Debug",
             "Nodes",
+            "Nodes/Categories",
             "Nodes/Networking",
             "Platform",
             "Plugins",

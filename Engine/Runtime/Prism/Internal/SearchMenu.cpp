@@ -247,7 +247,14 @@ private:
     if (m_subRow == i && m_sub) return;
     closeSub();
     m_subRow = i;
-    m_sub = showSubmenu(m_entries[size_t(m_rows[size_t(i)].entry)].item.sub, rowRectOf(i), [this] { m_sub.reset(); m_subRow = -1; });
+    std::weak_ptr<Widget> self = weak_from_this();
+    m_sub = showSubmenu(m_entries[size_t(m_rows[size_t(i)].entry)].item.sub, rowRectOf(i), [self] {
+      if (auto locked = self.lock()) {
+        auto* p = static_cast<SearchMenuPopup*>(locked.get());
+        p->m_sub.reset();
+        p->m_subRow = -1;
+      }
+    });
   }
   void closeSub() {
     if (m_sub) { auto sub = m_sub; m_sub.reset(); Application::get().closePopup(sub.get()); }

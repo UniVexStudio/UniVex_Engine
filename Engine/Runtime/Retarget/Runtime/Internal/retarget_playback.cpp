@@ -36,11 +36,12 @@ struct World final {
 /// A bone's world position, walking down from its root; false when the parents do not lead to it.
 [[nodiscard]] bool WorldOf(std::span<const RestBoneView> skeleton, const std::size_t bone, Math::Vector3& out) {
     std::vector<std::size_t> chain;
-    for (std::int32_t at = static_cast<std::int32_t>(bone); at >= 0; at = skeleton[static_cast<std::size_t>(at)].parent) {
-        if (chain.size() > skeleton.size()) {
-            return false; // a loop
+    for (std::int32_t at = static_cast<std::int32_t>(bone); at >= 0;) {
+        if (static_cast<std::size_t>(at) >= skeleton.size() || chain.size() > skeleton.size()) {
+            return false; // out-of-range parent or a loop
         }
         chain.push_back(static_cast<std::size_t>(at));
+        at = skeleton[static_cast<std::size_t>(at)].parent;
     }
     World world;
     world.rotation = Math::Quaternion{};

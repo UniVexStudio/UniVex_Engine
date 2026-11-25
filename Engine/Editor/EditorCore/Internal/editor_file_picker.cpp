@@ -82,21 +82,31 @@ FilePickerListing Editor::BuildFilePickerListing(const std::vector<Asset::Projec
 }
 
 void Editor::OpenFilePicker(FilePickerRequest request) {
-    if (m_filePickerHost) {
-        // A pick made for the open entity lands on the entity, whatever is active when it fires.
-        if (m_entityDocumentActive && request.onPick) {
-            request.onPick = [this, pick = std::move(request.onPick)](const std::filesystem::path& chosen) {
+    // A pick made for the open entity lands on that exact entity document, whatever is active when
+    // it fires (both in the hosted PRISM picker and in headless/test picker sessions).
+    if (m_entityDocumentActive && m_entityEditSession.has_value()) {
+        const std::filesystem::path openedEntity = m_entityEditSession->assetPath;
+        if (request.onPick) {
+            request.onPick = [this, openedEntity, pick = std::move(request.onPick)](const std::filesystem::path& chosen) {
+                if (!m_entityEditSession.has_value() || m_entityEditSession->assetPath != openedEntity) {
+                    return;
+                }
                 const EntityDocumentScope scope(*this);
                 pick(chosen);
             };
         }
-        if (m_entityDocumentActive && request.onPickMany) {
-            request.onPickMany = [this, pickMany = std::move(request.onPickMany)](
+        if (request.onPickMany) {
+            request.onPickMany = [this, openedEntity, pickMany = std::move(request.onPickMany)](
                                      const std::vector<std::filesystem::path>& chosen) {
+                if (!m_entityEditSession.has_value() || m_entityEditSession->assetPath != openedEntity) {
+                    return;
+                }
                 const EntityDocumentScope scope(*this);
                 pickMany(chosen);
             };
         }
+    }
+    if (m_filePickerHost) {
         m_filePickerHost(std::move(request));
         return;
     }

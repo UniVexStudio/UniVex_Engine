@@ -376,6 +376,8 @@ struct AnimationClipSummarySax final : nlohmann::json_sax<Json> {
     bool conformed = false;
     bool hasRest = false;
     bool hasBones = false;
+    double durationSeconds = 0.0;
+    std::string clipId;
 
     bool null() override {
         if (depth == 1) {
@@ -394,16 +396,22 @@ struct AnimationClipSummarySax final : nlohmann::json_sax<Json> {
     }
     bool number_integer(const number_integer_t val) override {
         if (depth == 1 && topKey == "durationSeconds") {
-            hasDuration = val >= 0;
+            hasDuration = val > 0;
+            if (hasDuration) {
+                durationSeconds = static_cast<double>(val);
+            }
         }
         if (depth == 1) {
             topKey.clear();
         }
         return true;
     }
-    bool number_unsigned(const number_unsigned_t) override {
+    bool number_unsigned(const number_unsigned_t val) override {
         if (depth == 1 && topKey == "durationSeconds") {
-            hasDuration = true;
+            hasDuration = val > 0U;
+            if (hasDuration) {
+                durationSeconds = static_cast<double>(val);
+            }
         }
         if (depth == 1) {
             topKey.clear();
@@ -412,7 +420,10 @@ struct AnimationClipSummarySax final : nlohmann::json_sax<Json> {
     }
     bool number_float(const number_float_t val, const string_t&) override {
         if (depth == 1 && topKey == "durationSeconds") {
-            hasDuration = std::isfinite(val) && val >= 0.0;
+            hasDuration = std::isfinite(val) && val > 0.0;
+            if (hasDuration) {
+                durationSeconds = val;
+            }
         }
         if (depth == 1) {
             topKey.clear();
@@ -427,7 +438,10 @@ struct AnimationClipSummarySax final : nlohmann::json_sax<Json> {
                                val == kAnimationSchema || val == kAnimationSchemaV1);
                 v3OrHigher = (val == kAnimationSchemaV4 || val == kAnimationSchemaV3);
             } else if (topKey == "clipId") {
-                hasClipId = !val.empty();
+                hasClipId = !val.empty() && val.size() <= kMaximumAnimationAssetIdentifierBytes;
+                if (hasClipId) {
+                    clipId = val;
+                }
             }
             topKey.clear();
         }
@@ -514,6 +528,8 @@ AnimationClipSummary InspectAnimationClipSummary(const std::span<const std::byte
     summary.conformed = sax.v3OrHigher && sax.conformed;
     summary.hasRest = sax.v3OrHigher && sax.hasRest;
     summary.hasBones = sax.hasBones;
+    summary.durationSeconds = sax.durationSeconds;
+    summary.clipId = std::move(sax.clipId);
     return summary;
 }
 

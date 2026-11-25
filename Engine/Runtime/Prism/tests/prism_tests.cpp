@@ -19,6 +19,7 @@
 #include <prism/TextLayout.h>
 #include <prism/Gizmo.h>
 #include <prism/GpuDevice.h>
+#include <prism/SearchMenu.h>
 #include <sstream>
 #include <fstream>
 #include <prism/BlueprintVM.h>
@@ -3534,6 +3535,69 @@ static void testGhostTouchAndSmoothSplitterResize(Application& app, TestPlatform
   app.hostResize(600, 400);
 }
 
+static void testSubmenuReverseCloseAndSequencerToolbarClamp(Application& app) {
+  SECTION("submenu_reverse_close_and_toolbar_clamp");
+  // 1. Submenu close-order lifetime safety: opening a MenuPopup with a submenu and calling
+  // closeAllPopups() destroys parent before child; weak_from_this() prevents use-after-free.
+  {
+    std::vector<MenuItem> subItems;
+    subItems.push_back(MenuItem::Item("Duplicate", {}));
+    subItems.push_back(MenuItem::Item("Remove", {}));
+    std::vector<MenuItem> rootItems;
+    rootItems.push_back(MenuItem::Sub("Current Animation", std::move(subItems), Icon::AnimClip));
+    showContextMenu(std::move(rootItems), Vec2{40.0f, 40.0f});
+    app.tick();
+    app.render();
+    // Hover over row 0 to spawn the submenu popup, then close all popups at once.
+    app.injectMouseMove(Vec2{60.0f, 52.0f});
+    app.tick();
+    app.closeAllPopups();
+    app.tick();
+    CHECK(true);
+  }
+  // 2. SearchMenu flyout submenu closeAllPopups safety.
+  {
+    std::vector<MenuItem> subItems;
+    subItems.push_back(MenuItem::Item("Walk", {}));
+    std::vector<MenuItem> rootItems;
+    rootItems.push_back(MenuItem::Sub("Locomotion", std::move(subItems)));
+    showSearchMenu(std::move(rootItems), Rect{40.0f, 40.0f, 120.0f, 26.0f}, PopupPlacement::Below, "Search", true);
+    app.tick();
+    app.render();
+    app.injectMouseMove(Vec2{80.0f, 115.0f});
+    app.tick();
+    app.closeAllPopups();
+    app.tick();
+    CHECK(true);
+  }
+  // 3. Sequencer toolbar long animation name clamping: right-side Dope/Curves/Settings stay in-bounds.
+  {
+    auto row = hbox(3.0f);
+    row->setPadding(Margin(6.0f, 3.0f, 6.0f, 3.0f));
+    auto clipBtn = make<Button>(
+        "VeryLongCharacterLocomotionSprintForwardWithHeavyShieldAndSwordAnimation_Take001_FinalMasteredLoop  *",
+        Icon::AnimClip, ButtonStyle::Toolbar);
+    clipBtn->setMaxSize(168.0f, 26.0f);
+    row->add(clipBtn, Slot{0.0f, {}, HAlign::Left, VAlign::Center});
+    row->add(make<Spacer>(), Slot{1.0f});
+    auto dopeBtn = make<Button>("Dope", Icon::DopeSheet, ButtonStyle::Toolbar);
+    auto curvesBtn = make<Button>("Curves", Icon::Curve, ButtonStyle::Toolbar);
+    auto settingsBtn = make<Button>("", Icon::Settings, ButtonStyle::Toolbar);
+    row->add(dopeBtn, Slot{0.0f, {}, HAlign::Left, VAlign::Center});
+    row->add(curvesBtn, Slot{0.0f, {}, HAlign::Left, VAlign::Center});
+    row->add(settingsBtn, Slot{0.0f, {}, HAlign::Left, VAlign::Center});
+
+    row->measure(Vec2{640.0f, 32.0f});
+    row->arrange(Rect{0.0f, 0.0f, 640.0f, 32.0f});
+
+    CHECK(clipBtn->rect().w <= 168.5f);
+    CHECK(dopeBtn->rect().x >= clipBtn->rect().right());
+    CHECK(curvesBtn->rect().right() <= 640.0f);
+    CHECK(settingsBtn->rect().right() <= 640.0f);
+    CHECK(settingsBtn->rect().w > 10.0f);
+  }
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3608,6 +3672,7 @@ int main(int argc, char** argv) {
   testDeviceBackend(app);
   testGoldenImages(app, assets);
   testFuzzLoaders(app, assets);
+  testSubmenuReverseCloseAndSequencerToolbarClamp(app);
   std::printf("%d checks, %d failed\n", g_run, g_fail);
   return g_fail ? 1 : 0;
 }

@@ -159,8 +159,8 @@ void Hash(std::uint64_t& h, const std::string& s) {
 }
 
 /// Data columns of the Details table, and the sort key each one stands for.
-/// The narrowest the sidebar gets side by side: its create row ("+ Add | Save All | Import") fits.
-constexpr float kSidebarMinWidth = 262.0F;
+/// The narrowest the sidebar gets side by side: its create row ("+ Add | Save All") fits.
+constexpr float kSidebarMinWidth = 196.0F;
 
 constexpr std::array<std::pair<const char*, ContentSortKey>, 5> kDetailsColumns{{
     {"Name", ContentSortKey::Name},
@@ -545,9 +545,9 @@ prism::Ref<prism::Widget> EditorAssetTable::Build() {
     };
 
     // The create row: "+ Add" opens the whole catalogue as a menu (the same menu as a right click
-    // on empty space), with Save All and Import beside it.
+    // on empty space, including Import and Import Folder), with Save All beside it.
     auto addButton = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Success);
-    addButton->setTooltip("Create in this folder: folders, scenes, entities, scripts, materials ...");
+    addButton->setTooltip("Create or import in this folder: folders, scenes, entities, scripts, materials ...");
     std::weak_ptr<prism::Button> weakAdd = addButton;
     addButton->onClick = [this, weakAdd] {
         const auto anchor = weakAdd.lock();
@@ -561,20 +561,6 @@ prism::Ref<prism::Widget> EditorAssetTable::Build() {
     createRow->setPadding(prism::Margin(4.0F, 3.0F, 4.0F, 3.0F));
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(saveAllButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
-    importButton->setTooltip("Import one or more models, animations, textures, or sounds into this folder");
-    importButton->onClick = [this] {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
-        static_cast<void>(m_editor.PromptImportFiles(root / m_editor.m_assetTableDirectory));
-    };
-    auto importFolderButton = prism::make<prism::Button>("Import Folder", prism::Icon::FolderOpen, prism::ButtonStyle::Toolbar);
-    importFolderButton->setTooltip("Import an entire folder (preserving subfolders) into this directory");
-    importFolderButton->onClick = [this] {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
-        static_cast<void>(m_editor.PromptImportFolder(root / m_editor.m_assetTableDirectory));
-    };
-    createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    createRow->add(importFolderButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto createBar = prism::make<prism::Border>();
     createBar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -665,8 +651,23 @@ prism::Ref<prism::Widget> EditorAssetTable::Build() {
                 }
             }
         }
+        const std::size_t directAnimCount = m_editor.CollectAnimationClipsInFolder(relFolder).size();
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Open", [this, relFolder] { GoToFolder(relFolder); }, "", prism::Icon::FolderOpen));
+        if (directAnimCount > 0U) {
+            prism::MenuItem createLib = prism::MenuItem::Item(
+                "Create Animation Library (" + std::to_string(directAnimCount) + ")",
+                [this, relFolder] {
+                    if (m_editor.CreateAnimationLibraryFromFolder(relFolder).has_value()) {
+                        Changed();
+                    }
+                },
+                "", prism::Icon::AnimLibrary);
+            if (!m_editor.IsAuthoringCommandAllowed()) {
+                createLib.disabled();
+            }
+            items.push_back(std::move(createLib));
+        }
         if (animCount > 0U) {
             prism::MenuItem retarget = prism::MenuItem::Item(
                 "Retarget Folder (" + std::to_string(animCount) + ")...",
@@ -2355,6 +2356,18 @@ void EditorAssetTable::ShowItemMenu(const std::size_t entryIndex, const prism::V
                 allowed);
         }
     } else if (directory) {
+        const std::size_t directAnimCount = m_editor.CollectAnimationClipsInFolder(entry.relativePath).size();
+        if (directAnimCount > 0U) {
+            add(prism::MenuItem::Item(
+                    "Create Animation Library (" + std::to_string(directAnimCount) + ")",
+                    [this, rel = entry.relativePath] {
+                        if (m_editor.CreateAnimationLibraryFromFolder(rel).has_value()) {
+                            Changed();
+                        }
+                    },
+                    "", prism::Icon::AnimLibrary),
+                allowed);
+        }
         const std::size_t folderCount = countInFolder(entry.relativePath);
         if (folderCount > 0U) {
             add(prism::MenuItem::Item(

@@ -23,6 +23,24 @@
 #include "blueprint_platform.h"
 #include "blueprint_resources.h"
 
+#include "blueprint_ai_nodes.h"
+#include "blueprint_animation_nodes.h"
+#include "blueprint_audio_nodes.h"
+#include "blueprint_character_nodes.h"
+#include "blueprint_events_nodes.h"
+#include "blueprint_flow_nodes.h"
+#include "blueprint_game_nodes.h"
+#include "blueprint_gameplay_nodes.h"
+#include "blueprint_input_nodes.h"
+#include "blueprint_math_nodes.h"
+#include "blueprint_physics_nodes.h"
+#include "blueprint_rendering_nodes.h"
+#include "blueprint_transform_nodes.h"
+#include "blueprint_ui_nodes.h"
+#include "blueprint_utilities_nodes.h"
+#include "blueprint_variables_nodes.h"
+#include "blueprint_world_nodes.h"
+
 namespace UVE::Blueprint::Tests {
 namespace {
 
@@ -256,6 +274,54 @@ TEST(BlueprintResourcesAndPlatformUnitTest, ThemesIconsTemplatesAndPlatformPaths
     const std::filesystem::path cacheDir =
         Platform::GetBlueprintCacheDirectory("/tmp/project", Platform::BlueprintPlatformKind::Linux);
     EXPECT_EQ(cacheDir.filename(), "linux");
+}
+
+TEST(BlueprintNodesUnitTest, PerCategoryNodeModulesRegisterUniqueCompleteCatalogue) {
+    struct CategoryModuleCheck final {
+        const char* label;
+        void (*registerFn)(std::vector<Asset::BlueprintNodeType>&);
+        std::size_t expectedCount;
+    };
+    constexpr std::array<CategoryModuleCheck, 17> kModules{{
+        {"Events", &Nodes::RegisterEventsBlueprintNodes, 20U},
+        {"Flow", &Nodes::RegisterFlowBlueprintNodes, 18U},
+        {"Utilities", &Nodes::RegisterUtilitiesBlueprintNodes, 63U},
+        {"Transform", &Nodes::RegisterTransformBlueprintNodes, 19U},
+        {"Physics", &Nodes::RegisterPhysicsBlueprintNodes, 6U},
+        {"Input", &Nodes::RegisterInputBlueprintNodes, 6U},
+        {"Character", &Nodes::RegisterCharacterBlueprintNodes, 8U},
+        {"Rendering", &Nodes::RegisterRenderingBlueprintNodes, 13U},
+        {"Audio", &Nodes::RegisterAudioBlueprintNodes, 7U},
+        {"Animation", &Nodes::RegisterAnimationBlueprintNodes, 18U},
+        {"World", &Nodes::RegisterWorldBlueprintNodes, 28U},
+        {"Game", &Nodes::RegisterGameBlueprintNodes, 23U},
+        {"AI", &Nodes::RegisterAiBlueprintNodes, 4U},
+        {"UI", &Nodes::RegisterUiBlueprintNodes, 32U},
+        {"Gameplay", &Nodes::RegisterGameplayBlueprintNodes, 8U},
+        {"Math", &Nodes::RegisterMathBlueprintNodes, 59U},
+        {"Variables", &Nodes::RegisterVariablesBlueprintNodes, 2U},
+    }};
+
+    std::size_t categorySum = 0U;
+    for (const CategoryModuleCheck& mod : kModules) {
+        std::vector<Asset::BlueprintNodeType> local;
+        mod.registerFn(local);
+        EXPECT_EQ(local.size(), mod.expectedCount) << mod.label;
+        categorySum += local.size();
+    }
+    EXPECT_EQ(categorySum, 334U);
+
+    const auto& all = Asset::GetBlueprintNodeTypes();
+    EXPECT_GT(all.size(), categorySum);
+    std::set<std::string> uniqueKeys;
+    for (const Asset::BlueprintNodeType& type : all) {
+        EXPECT_FALSE(type.key.empty());
+        EXPECT_FALSE(type.title.empty()) << type.key;
+        EXPECT_FALSE(type.category.empty()) << type.key;
+        EXPECT_TRUE(uniqueKeys.insert(type.key).second) << "Duplicate Blueprint node key: " << type.key;
+        EXPECT_EQ(Asset::FindBlueprintNodeType(type.key), &type) << type.key;
+    }
+    EXPECT_EQ(Asset::FindBlueprintNodeType("definitely_not_a_registered_node_key"), nullptr);
 }
 
 } // namespace

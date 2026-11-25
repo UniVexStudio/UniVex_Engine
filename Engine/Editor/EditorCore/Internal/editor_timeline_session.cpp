@@ -201,8 +201,6 @@ void Editor::PreviewAnimationTimelineMorphs(const Asset::AnimationClipAsset& cli
 
 Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
     AnimationTimelineView view;
-    // Last call's replaced clip is no longer read by anything.
-    m_timeline.retired.reset();
     Scene::IEntityManager& entityManager = m_services->GetEntityManager();
     Scene::ISceneGraph& sceneGraph = m_services->GetSceneGraph();
 
@@ -239,17 +237,26 @@ Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
 
     // ---- The clip, reloaded when the player's clip changes ----------------------------------------
     if (player.clip != m_timeline.clipGuid) {
+        const auto utf8Filename = [](const std::filesystem::path& p) {
+            const std::u8string u8 = p.filename().u8string();
+            return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+        };
         // Switching away keeps the work: edits not yet saved are written to their clip first.
         if (m_timeline.dirty && m_timeline.clip != nullptr) {
             const std::filesystem::path previous = m_services->GetAssetDatabase().Resolve(m_timeline.clipGuid);
             if (!previous.empty() && Asset::SaveAnimationClipAsset(*m_timeline.clip, previous)) {
-                m_timeline.status = "Saved your edits to " + previous.filename().string();
+                m_timeline.status = "Saved your edits to " + utf8Filename(previous);
             }
         }
         const Scene::Entity keep = m_timeline.player;
         StopAnimationTimelinePreview();
         m_timeline.player = keep;
         m_timeline.clipGuid = player.clip;
+        // Retain the outgoing clip in `retired` until the next frame step so any caller still
+        // finishing a paint or input pass in the current frame never reads freed memory.
+        if (m_timeline.clip != nullptr) {
+            m_timeline.retired = std::move(m_timeline.clip);
+        }
         m_timeline.clip.reset();
         m_timeline.selectedKeys.clear();
         m_timeline.selectedEvent = -1;
@@ -257,7 +264,11 @@ Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
         m_timeline.redo.clear();
         m_timeline.dirty = false;
         m_timeline.draggingKeys = false;
+        m_timeline.draggingEvent = false;
         m_timeline.boxSelecting = false;
+        m_timeline.curveDragging = false;
+        m_timeline.curveChannel = -1;
+        m_timeline.curveComponent = 0;
         m_timeline.loadError.clear();
         m_timeline.timeSeconds = 0.0;
         m_timeline.scrollSeconds = 0.0;
@@ -268,10 +279,11 @@ Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
         if (player.clip != Asset::AssetGuid{}) {
             auto loaded = std::make_shared<Asset::AnimationClipAsset>();
             const std::filesystem::path path = m_services->GetAssetDatabase().Resolve(player.clip);
-            if (Asset::LoadAnimationClipAsset(path, *loaded)) {
+            if (!path.empty() && Asset::LoadAnimationClipAsset(path, *loaded)) {
                 m_timeline.clip = std::move(loaded);
             } else {
-                m_timeline.loadError = "Could not read " + path.filename().string() + ".";
+                m_timeline.loadError = path.empty() ? std::string{"Could not locate animation clip."}
+                                                    : "Could not read " + utf8Filename(path) + ".";
             }
         }
     }
@@ -298,7 +310,8 @@ Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
         queue.insert(queue.end(), children.begin(), children.end());
     }
 
-    view.clip = m_timeline.clip.get();
+    view.clipOwner = m_timeline.clip;
+    view.clip = view.clipOwner.get();
     if (view.clip != nullptr) {
         view.durationSeconds = std::max(view.clip->durationSeconds, 1.0e-3);
         view.frameRate = EstimateTimelineFrameRate(*view.clip);
@@ -307,6 +320,8 @@ Editor::AnimationTimelineView Editor::SyncAnimationTimeline() {
 }
 
 void Editor::StepAnimationTimeline(const double deltaSeconds) {
+    // Release any clip retired on a previous frame now that a new frame step is starting.
+    m_timeline.retired.reset();
     const AnimationTimelineView view = SyncAnimationTimeline();
     if (view.player == Scene::kInvalidEntity) {
         return;
