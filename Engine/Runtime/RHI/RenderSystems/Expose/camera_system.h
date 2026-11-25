@@ -7,26 +7,26 @@
 
 namespace UVE::Render {
 
-/// CameraSystemUVE is the concrete, engine-standard implementation of ICameraSystemUVE.
-/// Deliberately stateless (no members, no PIMPL) — matches SceneGraphUVE's precedent for
-/// utility services that always take the IEntityManagerUVE& they operate on as an explicit
+/// CameraSystem is the concrete, engine-standard implementation of ICameraSystem.
+/// Deliberately stateless (no members, no PIMPL) — matches SceneGraph's precedent for
+/// utility services that always take the IEntityManager& they operate on as an explicit
 /// parameter rather than owning a reference to one.
-class CameraSystemUVE final : public ICameraSystemUVE {
+class CameraSystem final : public ICameraSystem {
 public:
-    [[nodiscard]] Math::Matrix4x4UVE ComputeViewMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
-                                                            Scene::EntityUVE cameraEntity) const override;
-    [[nodiscard]] Math::Matrix4x4UVE ComputeProjectionMatrixUVE(const Scene::IEntityManagerUVE& entityManager,
-                                                                  Scene::EntityUVE cameraEntity,
+    [[nodiscard]] Math::Matrix4x4 ComputeViewMatrix(const Scene::IEntityManager& entityManager,
+                                                            Scene::Entity cameraEntity) const override;
+    [[nodiscard]] Math::Matrix4x4 ComputeProjectionMatrix(const Scene::IEntityManager& entityManager,
+                                                                  Scene::Entity cameraEntity,
                                                                   float aspectRatio) const override;
-    [[nodiscard]] Math::Matrix4x4UVE ComputeViewProjectionUVE(const Scene::IEntityManagerUVE& entityManager,
-                                                                Scene::EntityUVE cameraEntity,
+    [[nodiscard]] Math::Matrix4x4 ComputeViewProjection(const Scene::IEntityManager& entityManager,
+                                                                Scene::Entity cameraEntity,
                                                                 float aspectRatio) const override;
-    [[nodiscard]] Math::FrustumUVE ExtractFrustumUVE(const Math::Matrix4x4UVE& viewProjection) const override;
-    [[nodiscard]] CameraFrustumCornersUVE ComputeFrustumCornersUVE(const Scene::IEntityManagerUVE& entityManager,
-                                                                     Scene::EntityUVE cameraEntity,
+    [[nodiscard]] Math::Frustum ExtractFrustum(const Math::Matrix4x4& viewProjection) const override;
+    [[nodiscard]] CameraFrustumCorners ComputeFrustumCorners(const Scene::IEntityManager& entityManager,
+                                                                     Scene::Entity cameraEntity,
                                                                      float aspectRatio) const override;
-    [[nodiscard]] Math::Vector3UVE GetWorldPositionUVE(const Scene::IEntityManagerUVE& entityManager,
-                                                          Scene::EntityUVE cameraEntity) const override;
+    [[nodiscard]] Math::Vector3 GetWorldPosition(const Scene::IEntityManager& entityManager,
+                                                          Scene::Entity cameraEntity) const override;
 };
 
 } // namespace UVE::Render

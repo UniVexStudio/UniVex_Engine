@@ -31,17 +31,17 @@ namespace UVE::UI {
 
 namespace {
 
-struct OrderedContainerUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct OrderedContainer final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::size_t depth = 0U;
 };
 
-struct OrderedChildUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct OrderedChild final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::int64_t siblingOrder = 0;
 };
 
-[[nodiscard]] bool IsEarlierChildUVE(const OrderedChildUVE& lhs, const OrderedChildUVE& rhs) {
+[[nodiscard]] bool IsEarlierChild(const OrderedChild& lhs, const OrderedChild& rhs) {
     if (lhs.siblingOrder != rhs.siblingOrder) {
         return lhs.siblingOrder < rhs.siblingOrder;
     }
@@ -51,9 +51,9 @@ struct OrderedChildUVE final {
     return lhs.entity.generation < rhs.entity.generation;
 }
 
-struct PositionableChildUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-    Math::Vector2UVE extent{};
+struct PositionableChild final {
+    Scene::Entity entity = Scene::kInvalidEntity;
+    Math::Vector2 extent{};
     bool isButton = false;
     bool isImage = false;
     bool isContainer = false;
@@ -66,99 +66,99 @@ struct PositionableChildUVE final {
     bool isText = false;
 };
 
-void MoveChildUVE(Scene::IEntityManagerUVE& entityManager, const PositionableChildUVE& child,
-                  const Math::Vector2UVE position) {
+void MoveChild(Scene::IEntityManager& entityManager, const PositionableChild& child,
+                  const Math::Vector2 position) {
     if (child.isButton) {
-        entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UIButtonComponent>(child.entity).rect.position = position;
     }
     if (child.isImage) {
-        entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UIImageComponent>(child.entity).rect.position = position;
     }
     if (child.isContainer) {
-        entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UILayoutContainerComponent>(child.entity).rect.position = position;
     }
     if (child.isSlider) {
-        entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UISliderComponent>(child.entity).rect.position = position;
     }
     if (child.isProgress) {
-        entityManager.GetComponentUVE<Scene::UIProgressBarComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UIProgressBarComponent>(child.entity).rect.position = position;
     }
     if (child.isCheckbox) {
-        entityManager.GetComponentUVE<Scene::UICheckboxComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UICheckboxComponent>(child.entity).rect.position = position;
     }
     if (child.isDropdown) {
-        entityManager.GetComponentUVE<Scene::UIDropdownComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UIDropdownComponent>(child.entity).rect.position = position;
     }
     if (child.isTextInput) {
-        entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UITextInputComponent>(child.entity).rect.position = position;
     }
     if (child.isScrollContainer) {
-        entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(child.entity).rect.position = position;
+        entityManager.GetComponent<Scene::UIScrollContainerComponent>(child.entity).rect.position = position;
     }
     if (child.isText) {
-        entityManager.GetComponentUVE<Scene::UITextComponentUVE>(child.entity).positionPixels = position;
+        entityManager.GetComponent<Scene::UITextComponent>(child.entity).positionPixels = position;
     }
 }
 
-std::vector<OrderedChildUVE> CollectContainerChildrenUVE(Scene::IEntityManagerUVE& entityManager,
-                                                         const std::vector<OrderedChildUVE>& candidates,
-                                                         const Scene::EntityUVE container) {
-    std::vector<OrderedChildUVE> children;
-    for (const OrderedChildUVE& candidate : candidates) {
-        if (entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(candidate.entity).parent == container) {
+std::vector<OrderedChild> CollectContainerChildren(Scene::IEntityManager& entityManager,
+                                                         const std::vector<OrderedChild>& candidates,
+                                                         const Scene::Entity container) {
+    std::vector<OrderedChild> children;
+    for (const OrderedChild& candidate : candidates) {
+        if (entityManager.GetComponent<Scene::HierarchyComponent>(candidate.entity).parent == container) {
             children.push_back(candidate);
         }
     }
-    std::sort(children.begin(), children.end(), IsEarlierChildUVE);
+    std::sort(children.begin(), children.end(), IsEarlierChild);
     return children;
 }
 
-std::vector<PositionableChildUVE> CollectContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
-                                                           const std::vector<OrderedChildUVE>& children,
-                                                           const UIFontAtlasUVE& fontAtlas) {
-    std::vector<PositionableChildUVE> items;
-    for (const OrderedChildUVE& child : children) {
-        PositionableChildUVE item;
+std::vector<PositionableChild> CollectContainerItems(Scene::IEntityManager& entityManager,
+                                                           const std::vector<OrderedChild>& children,
+                                                           const UIFontAtlas& fontAtlas) {
+    std::vector<PositionableChild> items;
+    for (const OrderedChild& child : children) {
+        PositionableChild item;
         item.entity = child.entity;
-        item.isButton = entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(child.entity);
-        item.isImage = entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(child.entity);
-        item.isContainer = entityManager.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(child.entity);
-        item.isSlider = entityManager.HasComponentUVE<Scene::UISliderComponentUVE>(child.entity);
-        item.isProgress = entityManager.HasComponentUVE<Scene::UIProgressBarComponentUVE>(child.entity);
-        item.isCheckbox = entityManager.HasComponentUVE<Scene::UICheckboxComponentUVE>(child.entity);
-        item.isDropdown = entityManager.HasComponentUVE<Scene::UIDropdownComponentUVE>(child.entity);
-        item.isTextInput = entityManager.HasComponentUVE<Scene::UITextInputComponentUVE>(child.entity);
+        item.isButton = entityManager.HasComponent<Scene::UIButtonComponent>(child.entity);
+        item.isImage = entityManager.HasComponent<Scene::UIImageComponent>(child.entity);
+        item.isContainer = entityManager.HasComponent<Scene::UILayoutContainerComponent>(child.entity);
+        item.isSlider = entityManager.HasComponent<Scene::UISliderComponent>(child.entity);
+        item.isProgress = entityManager.HasComponent<Scene::UIProgressBarComponent>(child.entity);
+        item.isCheckbox = entityManager.HasComponent<Scene::UICheckboxComponent>(child.entity);
+        item.isDropdown = entityManager.HasComponent<Scene::UIDropdownComponent>(child.entity);
+        item.isTextInput = entityManager.HasComponent<Scene::UITextInputComponent>(child.entity);
         item.isScrollContainer =
-            entityManager.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(child.entity);
-        item.isText = entityManager.HasComponentUVE<Scene::UITextComponentUVE>(child.entity);
+            entityManager.HasComponent<Scene::UIScrollContainerComponent>(child.entity);
+        item.isText = entityManager.HasComponent<Scene::UITextComponent>(child.entity);
         if (!item.isButton && !item.isImage && !item.isContainer && !item.isSlider && !item.isProgress &&
             !item.isCheckbox && !item.isDropdown && !item.isTextInput && !item.isScrollContainer && !item.isText) {
             continue; // nothing positionable: ignored, not even spaced
         }
         if (item.isButton) {
-            item.extent = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UIButtonComponent>(child.entity).rect.size;
         } else if (item.isImage) {
-            item.extent = entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UIImageComponent>(child.entity).rect.size;
         } else if (item.isContainer) {
             item.extent =
-                entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(child.entity).rect.size;
+                entityManager.GetComponent<Scene::UILayoutContainerComponent>(child.entity).rect.size;
         } else if (item.isSlider) {
-            item.extent = entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UISliderComponent>(child.entity).rect.size;
         } else if (item.isProgress) {
-            item.extent = entityManager.GetComponentUVE<Scene::UIProgressBarComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UIProgressBarComponent>(child.entity).rect.size;
         } else if (item.isCheckbox) {
-            item.extent = entityManager.GetComponentUVE<Scene::UICheckboxComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UICheckboxComponent>(child.entity).rect.size;
         } else if (item.isDropdown) {
-            item.extent = entityManager.GetComponentUVE<Scene::UIDropdownComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UIDropdownComponent>(child.entity).rect.size;
         } else if (item.isTextInput) {
-            item.extent = entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(child.entity).rect.size;
+            item.extent = entityManager.GetComponent<Scene::UITextInputComponent>(child.entity).rect.size;
         } else if (item.isScrollContainer) {
             item.extent =
-                entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(child.entity).rect.size;
+                entityManager.GetComponent<Scene::UIScrollContainerComponent>(child.entity).rect.size;
         } else {
-            const Scene::UITextComponentUVE& text =
-                entityManager.GetComponentUVE<Scene::UITextComponentUVE>(child.entity);
-            item.extent = Math::Vector2UVE{fontAtlas.MeasureTextWidthUVE(text.text, text.fontSize), text.fontSize};
+            const Scene::UITextComponent& text =
+                entityManager.GetComponent<Scene::UITextComponent>(child.entity);
+            item.extent = Math::Vector2{fontAtlas.MeasureTextWidth(text.text, text.fontSize), text.fontSize};
         }
         items.push_back(item);
     }
@@ -168,14 +168,14 @@ std::vector<PositionableChildUVE> CollectContainerItemsUVE(Scene::IEntityManager
 /// The size the container's content asks for: children plus `spacing` between them, plus
 /// `padding` on both sides of each axis. Stacks sum the main axis and take the cross maximum;
 /// grids fit their cells, lines, and both-axis spacing. No items means padding only.
-[[nodiscard]] Math::Vector2UVE ContentSizeUVE(const Scene::UILayoutContainerComponentUVE& layout,
-                                             const std::vector<PositionableChildUVE>& items) {
-    const bool vertical = layout.direction == Scene::UILayoutDirectionUVE::Vertical;
+[[nodiscard]] Math::Vector2 ContentSize(const Scene::UILayoutContainerComponent& layout,
+                                             const std::vector<PositionableChild>& items) {
+    const bool vertical = layout.direction == Scene::UILayoutDirection::Vertical;
     float main = 0.0F;
     float cross = 0.0F;
     if (layout.wrapAfter != 0U) {
-        Math::Vector2UVE cell{};
-        for (const PositionableChildUVE& item : items) {
+        Math::Vector2 cell{};
+        for (const PositionableChild& item : items) {
             cell.x = std::max(cell.x, item.extent.x);
             cell.y = std::max(cell.y, item.extent.y);
         }
@@ -189,7 +189,7 @@ std::vector<PositionableChildUVE> CollectContainerItemsUVE(Scene::IEntityManager
         }
     } else {
         bool first = true;
-        for (const PositionableChildUVE& item : items) {
+        for (const PositionableChild& item : items) {
             if (!first) {
                 main += layout.spacing;
             }
@@ -198,17 +198,17 @@ std::vector<PositionableChildUVE> CollectContainerItemsUVE(Scene::IEntityManager
             cross = std::max(cross, vertical ? item.extent.x : item.extent.y);
         }
     }
-    const Math::Vector2UVE content =
-        vertical ? Math::Vector2UVE{cross, main} : Math::Vector2UVE{main, cross};
-    return Math::Vector2UVE{content.x + 2.0F * layout.padding, content.y + 2.0F * layout.padding};
+    const Math::Vector2 content =
+        vertical ? Math::Vector2{cross, main} : Math::Vector2{main, cross};
+    return Math::Vector2{content.x + 2.0F * layout.padding, content.y + 2.0F * layout.padding};
 }
 
-void AutoSizeContainerUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE container,
-                          const Scene::UILayoutContainerComponentUVE& layout,
-                          const std::vector<PositionableChildUVE>& items) {
-    const Math::Vector2UVE content = ContentSizeUVE(layout, items);
-    Scene::UILayoutContainerComponentUVE& stored =
-        entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(container);
+void AutoSizeContainer(Scene::IEntityManager& entityManager, const Scene::Entity container,
+                          const Scene::UILayoutContainerComponent& layout,
+                          const std::vector<PositionableChild>& items) {
+    const Math::Vector2 content = ContentSize(layout, items);
+    Scene::UILayoutContainerComponent& stored =
+        entityManager.GetComponent<Scene::UILayoutContainerComponent>(container);
     if (layout.autoSizeWidth) {
         stored.rect.size.x = content.x;
     }
@@ -217,22 +217,22 @@ void AutoSizeContainerUVE(Scene::IEntityManagerUVE& entityManager, const Scene::
     }
 }
 
-void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
-                               const Scene::UILayoutContainerComponentUVE& layout,
-                               const std::vector<PositionableChildUVE>& items) {
-    const bool vertical = layout.direction == Scene::UILayoutDirectionUVE::Vertical;
-    const Math::RectUVE innerRect = Scene::ResolveUILayoutContentRectUVE(layout);
+void PositionContainerItems(Scene::IEntityManager& entityManager,
+                               const Scene::UILayoutContainerComponent& layout,
+                               const std::vector<PositionableChild>& items) {
+    const bool vertical = layout.direction == Scene::UILayoutDirection::Vertical;
+    const Math::Rect innerRect = Scene::ResolveUILayoutContentRect(layout);
     const float innerMinX = innerRect.position.x;
     const float innerMinY = innerRect.position.y;
     const float innerWidth = innerRect.size.x;
     const float innerHeight = innerRect.size.y;
-    const float alignFactor = layout.alignment == Scene::UILayoutAlignmentUVE::Start
+    const float alignFactor = layout.alignment == Scene::UILayoutAlignment::Start
                                   ? 0.0F
-                                  : (layout.alignment == Scene::UILayoutAlignmentUVE::Center ? 0.5F : 1.0F);
+                                  : (layout.alignment == Scene::UILayoutAlignment::Center ? 0.5F : 1.0F);
 
     if (layout.wrapAfter != 0U) {
-        Math::Vector2UVE cell{};
-        for (const PositionableChildUVE& item : items) {
+        Math::Vector2 cell{};
+        for (const PositionableChild& item : items) {
             cell.x = std::max(cell.x, item.extent.x);
             cell.y = std::max(cell.y, item.extent.y);
         }
@@ -249,17 +249,17 @@ void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
             // Within the cell now, not the inner rect: a child larger than its cell clamps to the
             // cell's edge instead of spilling into the next one.
             const float crossOffset = std::max(0.0F, alignFactor * (cellCross - childCross));
-            const Math::Vector2UVE position =
-                vertical ? Math::Vector2UVE{crossBase + crossOffset, mainPos}
-                         : Math::Vector2UVE{mainPos, crossBase + crossOffset};
-            MoveChildUVE(entityManager, items[index], position);
+            const Math::Vector2 position =
+                vertical ? Math::Vector2{crossBase + crossOffset, mainPos}
+                         : Math::Vector2{mainPos, crossBase + crossOffset};
+            MoveChild(entityManager, items[index], position);
         }
         return;
     }
 
     float cursor = 0.0F;
     bool first = true;
-    for (const PositionableChildUVE& item : items) {
+    for (const PositionableChild& item : items) {
         if (!first) {
             cursor += layout.spacing;
         }
@@ -269,26 +269,26 @@ void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
         const float crossExtent = vertical ? item.extent.x : item.extent.y;
         // A child larger than the inner rect clamps to the inner edge instead of spilling past it.
         const float crossOffset = std::max(0.0F, alignFactor * (crossInner - crossExtent));
-        const Math::Vector2UVE position = vertical ? Math::Vector2UVE{innerMinX + crossOffset, innerMinY + cursor}
-                                                   : Math::Vector2UVE{innerMinX + cursor, innerMinY + crossOffset};
-        MoveChildUVE(entityManager, item, position);
+        const Math::Vector2 position = vertical ? Math::Vector2{innerMinX + crossOffset, innerMinY + cursor}
+                                                   : Math::Vector2{innerMinX + cursor, innerMinY + crossOffset};
+        MoveChild(entityManager, item, position);
         cursor += mainExtent;
     }
 }
 
-[[nodiscard]] bool HasScrollAncestorUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE entity) {
-    Scene::EntityUVE current = entity;
-    for (std::size_t depth = 0U; depth < kMaximumCanvasAncestorWalkUVE; ++depth) {
-        if (!entityManager.IsAliveUVE(current) ||
-            !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(current)) {
+[[nodiscard]] bool HasScrollAncestor(Scene::IEntityManager& entityManager, Scene::Entity entity) {
+    Scene::Entity current = entity;
+    for (std::size_t depth = 0U; depth < kMaximumCanvasAncestorWalk; ++depth) {
+        if (!entityManager.IsAlive(current) ||
+            !entityManager.HasComponent<Scene::HierarchyComponent>(current)) {
             return false;
         }
-        const Scene::EntityUVE parent =
-            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(current).parent;
-        if (parent == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(parent)) {
+        const Scene::Entity parent =
+            entityManager.GetComponent<Scene::HierarchyComponent>(current).parent;
+        if (parent == Scene::kInvalidEntity || !entityManager.IsAlive(parent)) {
             return false;
         }
-        if (entityManager.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(parent)) {
+        if (entityManager.HasComponent<Scene::UIScrollContainerComponent>(parent)) {
             return true;
         }
         if (parent == current) {
@@ -301,15 +301,15 @@ void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
 
 } // namespace
 
-void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& input,
-                                 const UIFontAtlasUVE& fontAtlas,
-                                 const std::optional<Math::Vector2UVE> pointerPositionInAuthoredSpace) {
-    std::vector<OrderedContainerUVE> containers;
-    entityManager.ForEachUVE<Scene::UIScrollContainerComponentUVE>(
-        [&entityManager, &containers](const Scene::EntityUVE entity, const Scene::UIScrollContainerComponentUVE&) {
-            containers.push_back(OrderedContainerUVE{entity, UIHierarchyDepthUVE(entityManager, entity)});
+void LayoutUIScrollContainers(Scene::IEntityManager& entityManager, const Input::IInputSystem& input,
+                                 const UIFontAtlas& fontAtlas,
+                                 const std::optional<Math::Vector2> pointerPositionInAuthoredSpace) {
+    std::vector<OrderedContainer> containers;
+    entityManager.ForEach<Scene::UIScrollContainerComponent>(
+        [&entityManager, &containers](const Scene::Entity entity, const Scene::UIScrollContainerComponent&) {
+            containers.push_back(OrderedContainer{entity, UIHierarchyDepth(entityManager, entity)});
         });
-    std::sort(containers.begin(), containers.end(), [](const OrderedContainerUVE& lhs, const OrderedContainerUVE& rhs) {
+    std::sort(containers.begin(), containers.end(), [](const OrderedContainer& lhs, const OrderedContainer& rhs) {
         if (lhs.depth != rhs.depth) {
             return lhs.depth < rhs.depth;
         }
@@ -319,34 +319,34 @@ void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const 
         return lhs.entity.generation < rhs.entity.generation;
     });
 
-    std::vector<OrderedChildUVE> candidates;
-    entityManager.ForEachUVE<Scene::HierarchyComponentUVE>(
-        [&candidates](const Scene::EntityUVE entity, const Scene::HierarchyComponentUVE& hierarchy) {
-            candidates.push_back(OrderedChildUVE{entity, hierarchy.siblingOrder});
+    std::vector<OrderedChild> candidates;
+    entityManager.ForEach<Scene::HierarchyComponent>(
+        [&candidates](const Scene::Entity entity, const Scene::HierarchyComponent& hierarchy) {
+            candidates.push_back(OrderedChild{entity, hierarchy.siblingOrder});
         });
 
-    const float wheel = input.GetMouseScrollDeltaUVE();
-    const Math::Vector2UVE mouse = pointerPositionInAuthoredSpace.value_or(input.GetMousePositionUVE());
-    const bool horizontal = input.IsKeyDownUVE(Input::KeyCodeUVE::LeftShift) ||
-                            input.IsKeyDownUVE(Input::KeyCodeUVE::RightShift);
-    for (const OrderedContainerUVE& container : containers) {
-        if (!entityManager.IsAliveUVE(container.entity) ||
-            !entityManager.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(container.entity)) {
+    const float wheel = input.GetMouseScrollDelta();
+    const Math::Vector2 mouse = pointerPositionInAuthoredSpace.value_or(input.GetMousePosition());
+    const bool horizontal = input.IsKeyDown(Input::KeyCode::LeftShift) ||
+                            input.IsKeyDown(Input::KeyCode::RightShift);
+    for (const OrderedContainer& container : containers) {
+        if (!entityManager.IsAlive(container.entity) ||
+            !entityManager.HasComponent<Scene::UIScrollContainerComponent>(container.entity)) {
             continue;
         }
-        const Scene::UIScrollContainerComponentUVE scroll =
-            entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(container.entity);
-        if (!IsUIScrollContainerComponentValidUVE(scroll)) {
+        const Scene::UIScrollContainerComponent scroll =
+            entityManager.GetComponent<Scene::UIScrollContainerComponent>(container.entity);
+        if (!IsUIScrollContainerComponentValid(scroll)) {
             continue;
         }
-        const std::vector<OrderedChildUVE> children =
-            CollectContainerChildrenUVE(entityManager, candidates, container.entity);
-        const std::vector<PositionableChildUVE> items =
-            CollectContainerItemsUVE(entityManager, children, fontAtlas);
+        const std::vector<OrderedChild> children =
+            CollectContainerChildren(entityManager, candidates, container.entity);
+        const std::vector<PositionableChild> items =
+            CollectContainerItems(entityManager, children, fontAtlas);
         float widest = 0.0F;
         float stacked = 0.0F;
         bool first = true;
-        for (const PositionableChildUVE& item : items) {
+        for (const PositionableChild& item : items) {
             if (!first) {
                 stacked += scroll.gap;
             }
@@ -354,36 +354,36 @@ void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const 
             widest = std::max(widest, item.extent.x);
             stacked += item.extent.y;
         }
-        Scene::UIScrollContainerComponentUVE& stored =
-            entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(container.entity);
+        Scene::UIScrollContainerComponent& stored =
+            entityManager.GetComponent<Scene::UIScrollContainerComponent>(container.entity);
         stored.contentSize =
-            Math::Vector2UVE{widest + 2.0F * scroll.padding, stacked + 2.0F * scroll.padding};
-        if (HasScrollAncestorUVE(entityManager, container.entity)) {
-            stored.scrollOffset = Math::Vector2UVE{0.0F, 0.0F};
+            Math::Vector2{widest + 2.0F * scroll.padding, stacked + 2.0F * scroll.padding};
+        if (HasScrollAncestor(entityManager, container.entity)) {
+            stored.scrollOffset = Math::Vector2{0.0F, 0.0F};
         } else {
-            if (wheel != 0.0F && Math::ContainsUVE(scroll.rect, mouse)) {
-                (void)Scene::ApplyUIScrollWheelDeltaUVE(stored, wheel, horizontal);
+            if (wheel != 0.0F && Math::Contains(scroll.rect, mouse)) {
+                (void)Scene::ApplyUIScrollWheelDelta(stored, wheel, horizontal);
             } else {
-                stored.scrollOffset = Scene::ClampUIScrollOffsetUVE(stored, stored.scrollOffset);
+                stored.scrollOffset = Scene::ClampUIScrollOffset(stored, stored.scrollOffset);
             }
         }
         float cursor = scroll.padding - stored.scrollOffset.y;
-        for (const PositionableChildUVE& item : items) {
-            MoveChildUVE(entityManager, item,
-                         Math::Vector2UVE{scroll.rect.position.x + scroll.padding - stored.scrollOffset.x,
+        for (const PositionableChild& item : items) {
+            MoveChild(entityManager, item,
+                         Math::Vector2{scroll.rect.position.x + scroll.padding - stored.scrollOffset.x,
                                            scroll.rect.position.y + cursor});
             cursor += item.extent.y + scroll.gap;
         }
     }
 }
 
-void LayoutUIContainersUVE(Scene::IEntityManagerUVE& entityManager, const UIFontAtlasUVE& fontAtlas) {
-    std::vector<OrderedContainerUVE> containers;
-    entityManager.ForEachUVE<Scene::UILayoutContainerComponentUVE>(
-        [&entityManager, &containers](const Scene::EntityUVE entity, const Scene::UILayoutContainerComponentUVE&) {
-            containers.push_back(OrderedContainerUVE{entity, UIHierarchyDepthUVE(entityManager, entity)});
+void LayoutUIContainers(Scene::IEntityManager& entityManager, const UIFontAtlas& fontAtlas) {
+    std::vector<OrderedContainer> containers;
+    entityManager.ForEach<Scene::UILayoutContainerComponent>(
+        [&entityManager, &containers](const Scene::Entity entity, const Scene::UILayoutContainerComponent&) {
+            containers.push_back(OrderedContainer{entity, UIHierarchyDepth(entityManager, entity)});
         });
-    std::sort(containers.begin(), containers.end(), [](const OrderedContainerUVE& lhs, const OrderedContainerUVE& rhs) {
+    std::sort(containers.begin(), containers.end(), [](const OrderedContainer& lhs, const OrderedContainer& rhs) {
         if (lhs.depth != rhs.depth) {
             return lhs.depth < rhs.depth;
         }
@@ -393,10 +393,10 @@ void LayoutUIContainersUVE(Scene::IEntityManagerUVE& entityManager, const UIFont
         return lhs.entity.generation < rhs.entity.generation;
     });
 
-    std::vector<OrderedChildUVE> candidates;
-    entityManager.ForEachUVE<Scene::HierarchyComponentUVE>(
-        [&candidates](const Scene::EntityUVE entity, const Scene::HierarchyComponentUVE& hierarchy) {
-            candidates.push_back(OrderedChildUVE{entity, hierarchy.siblingOrder});
+    std::vector<OrderedChild> candidates;
+    entityManager.ForEach<Scene::HierarchyComponent>(
+        [&candidates](const Scene::Entity entity, const Scene::HierarchyComponent& hierarchy) {
+            candidates.push_back(OrderedChild{entity, hierarchy.siblingOrder});
         });
     // Two passes over one ordering, each re-gathering items: the resize pass runs deepest-first
     // so an auto-sized container settles before its parent measures it, then the position pass
@@ -404,35 +404,35 @@ void LayoutUIContainersUVE(Scene::IEntityManagerUVE& entityManager, const UIFont
     // its own children. The resize pass exists to change the very sizes the position pass reads,
     // so sharing one gather between them would be a bug, not an optimization.
     for (auto container = containers.rbegin(); container != containers.rend(); ++container) {
-        if (!entityManager.IsAliveUVE(container->entity) ||
-            !entityManager.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(container->entity)) {
+        if (!entityManager.IsAlive(container->entity) ||
+            !entityManager.HasComponent<Scene::UILayoutContainerComponent>(container->entity)) {
             continue;
         }
-        const Scene::UILayoutContainerComponentUVE layout =
-            entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(container->entity);
-        if (!IsUILayoutContainerComponentValidUVE(layout) || (!layout.autoSizeWidth && !layout.autoSizeHeight)) {
+        const Scene::UILayoutContainerComponent layout =
+            entityManager.GetComponent<Scene::UILayoutContainerComponent>(container->entity);
+        if (!IsUILayoutContainerComponentValid(layout) || (!layout.autoSizeWidth && !layout.autoSizeHeight)) {
             continue;
         }
-        const std::vector<OrderedChildUVE> children =
-            CollectContainerChildrenUVE(entityManager, candidates, container->entity);
-        AutoSizeContainerUVE(entityManager, container->entity, layout,
-                             CollectContainerItemsUVE(entityManager, children, fontAtlas));
+        const std::vector<OrderedChild> children =
+            CollectContainerChildren(entityManager, candidates, container->entity);
+        AutoSizeContainer(entityManager, container->entity, layout,
+                             CollectContainerItems(entityManager, children, fontAtlas));
     }
     // One hierarchy scan shared by every container; each container filters its direct children.
-    for (const OrderedContainerUVE& container : containers) {
-        if (!entityManager.IsAliveUVE(container.entity) ||
-            !entityManager.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(container.entity)) {
+    for (const OrderedContainer& container : containers) {
+        if (!entityManager.IsAlive(container.entity) ||
+            !entityManager.HasComponent<Scene::UILayoutContainerComponent>(container.entity)) {
             continue;
         }
-        const std::vector<OrderedChildUVE> children =
-            CollectContainerChildrenUVE(entityManager, candidates, container.entity);
-        const Scene::UILayoutContainerComponentUVE layout =
-            entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(container.entity);
-        if (!IsUILayoutContainerComponentValidUVE(layout)) {
+        const std::vector<OrderedChild> children =
+            CollectContainerChildren(entityManager, candidates, container.entity);
+        const Scene::UILayoutContainerComponent layout =
+            entityManager.GetComponent<Scene::UILayoutContainerComponent>(container.entity);
+        if (!IsUILayoutContainerComponentValid(layout)) {
             continue;
         }
-        PositionContainerItemsUVE(entityManager, layout,
-                                  CollectContainerItemsUVE(entityManager, children, fontAtlas));
+        PositionContainerItems(entityManager, layout,
+                                  CollectContainerItems(entityManager, children, fontAtlas));
     }
 }
 

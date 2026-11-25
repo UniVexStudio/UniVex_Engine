@@ -17,7 +17,7 @@
 namespace UVE::Asset {
 
 /// How a material turns its mesh to face the camera. Disabled keeps the authored pose.
-enum class MaterialBillboardModeUVE : std::uint8_t {
+enum class MaterialBillboardMode : std::uint8_t {
     Disabled = 0,
     /// Local +Z faces the camera.
     Enabled,
@@ -25,7 +25,7 @@ enum class MaterialBillboardModeUVE : std::uint8_t {
     Y,
 };
 
-enum class MaterialTextureChannelUVE : std::uint8_t {
+enum class MaterialTextureChannel : std::uint8_t {
     Red = 0,
     Green = 1,
     Blue = 2,
@@ -33,19 +33,19 @@ enum class MaterialTextureChannelUVE : std::uint8_t {
     Rgb = 4,
 };
 
-enum class MaterialAlphaSourceUVE : std::uint8_t {
+enum class MaterialAlphaSource : std::uint8_t {
     AlbedoAlpha = 0,
     SeparateTextureChannel = 1,
     None = 2,
 };
 
-enum class MaterialCullModeUVE : std::uint8_t {
+enum class MaterialCullMode : std::uint8_t {
     Back = 0,
     Front = 1,
     Disabled = 2,
 };
 
-enum class MaterialBlendModeUVE : std::uint8_t {
+enum class MaterialBlendMode : std::uint8_t {
     Opaque = 0,
     AlphaBlend = 1,
     PremultipliedAlpha = 2,
@@ -58,11 +58,11 @@ enum class MaterialBlendModeUVE : std::uint8_t {
 /// single question both the render queue (which bucket draws after the opaque pass, back to front)
 /// and the renderer (which pipeline state, whether the material can cast into a shadow map) ask,
 /// so it lives here rather than being spelled out as `!= Opaque` in each of them.
-[[nodiscard]] constexpr bool IsMaterialBlendModeTranslucentUVE(const MaterialBlendModeUVE mode) noexcept {
-    return mode != MaterialBlendModeUVE::Opaque;
+[[nodiscard]] constexpr bool IsMaterialBlendModeTranslucent(const MaterialBlendMode mode) noexcept {
+    return mode != MaterialBlendMode::Opaque;
 }
 
-enum class MaterialDepthDrawModeUVE : std::uint8_t {
+enum class MaterialDepthDrawMode : std::uint8_t {
     OpaqueOnly = 0,
     Always = 1,
     Never = 2,
@@ -76,7 +76,7 @@ enum class MaterialDepthDrawModeUVE : std::uint8_t {
 /// occlusion 1) with the scalars acting as multipliers; Shader means the material supplies its own
 /// shader code (`useCustomShaderCode`). Persisted so the Inspector can show which preset a file was
 /// authored with; files written before this field existed load as Standard.
-enum class MaterialKindUVE : std::uint8_t {
+enum class MaterialKind : std::uint8_t {
     Standard = 0,
     Orm = 1,
     Shader = 2,
@@ -85,20 +85,20 @@ enum class MaterialKindUVE : std::uint8_t {
 /// How one texture map of a material is read, on top of the material's UV1/UV2 transform: its own
 /// tiling and offset, the channel it is read from, whether it is inverted, and how strongly it acts
 /// (0 leaves the map's neutral value - white, a flat normal or no emission - and 1 the map as authored).
-struct MaterialMapSettingsUVE final {
-    Math::Vector2UVE tiling{1.0F, 1.0F};
-    Math::Vector2UVE offset{0.0F, 0.0F};
+struct MaterialMapSettings final {
+    Math::Vector2 tiling{1.0F, 1.0F};
+    Math::Vector2 offset{0.0F, 0.0F};
     /// Rgb reads the map as it is; a single channel is read as grey (for a packed or mask map).
-    MaterialTextureChannelUVE channel = MaterialTextureChannelUVE::Rgb;
+    MaterialTextureChannel channel = MaterialTextureChannel::Rgb;
     bool invert = false;
     float strength = 1.0F;
     /// The map reads UV2 instead of UV1.
     bool onUv2 = false;
-    [[nodiscard]] bool operator==(const MaterialMapSettingsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const MaterialMapSettings&) const noexcept = default;
 };
 
-/// The maps whose reading MaterialMapSettingsUVE describes, in `MaterialAssetUVE::maps` order.
-enum class MaterialMapUVE : std::uint8_t {
+/// The maps whose reading MaterialMapSettings describes, in `MaterialAsset::maps` order.
+enum class MaterialMap : std::uint8_t {
     Albedo = 0,
     Normal = 1,
     MetallicRoughness = 2,
@@ -111,40 +111,40 @@ enum class MaterialMapUVE : std::uint8_t {
 
 /// The CPU-side, engine-native representation of a `.uvmat` asset (Part 2's file-format table):
 /// a PBR material — Albedo, Normal, Metallic, Roughness, AO, Emissive (Part 7.2's
-/// `MaterialSystemUVE` workflow). Textures and shaders are referenced by `AssetGuidUVE`, never a
+/// `MaterialSystem` workflow). Textures and shaders are referenced by `AssetGuid`, never a
 /// file path — matching the master spec's "No file path dependencies in scenes" rule
-/// (`IAssetDatabaseUVE`'s own contract). `kInvalidAssetGuidUVE` on any texture reference means
+/// (`IAssetDatabase`'s own contract). `kInvalidAssetGuid` on any texture reference means
 /// "unset, use the corresponding flat value/no effect instead" (there's no dedicated
 /// "has texture" flag — an invalid GUID already means exactly that). Referential integrity of
 /// these GUIDs (whether the referenced asset is actually loaded) is deliberately not this type's
 /// concern — a referenced texture/shader may simply not be loaded yet, which isn't an error here;
-/// a future `MeshRendererUVE` (Increment 13) is what decides how to handle that at render time.
-struct MaterialAssetUVE {
-    Math::ColorUVE albedoColor{1.0F, 1.0F, 1.0F};
-    AssetGuidUVE albedoTexture;
-    AssetGuidUVE normalTexture;
+/// a future `MeshRenderer` (Increment 13) is what decides how to handle that at render time.
+struct MaterialAsset {
+    Math::Color albedoColor{1.0F, 1.0F, 1.0F};
+    AssetGuid albedoTexture;
+    AssetGuid normalTexture;
     float metallic = 0.0F;
     float roughness = 0.5F;
-    AssetGuidUVE aoTexture;
-    Math::ColorUVE emissiveColor{0.0F, 0.0F, 0.0F};
-    AssetGuidUVE vertexShader;
-    AssetGuidUVE fragmentShader;
-    /// Drives `RenderQueueUVE`'s opaque/transparent bucketing (Increment 13).
+    AssetGuid aoTexture;
+    Math::Color emissiveColor{0.0F, 0.0F, 0.0F};
+    AssetGuid vertexShader;
+    AssetGuid fragmentShader;
+    /// Drives `RenderQueue`'s opaque/transparent bucketing (Increment 13).
     bool isTransparent = false;
     /// Appended: Disabled keeps the authored pose. Enabled / Y rewrite it at draw so a textured
     /// card faces the camera.
-    MaterialBillboardModeUVE billboardMode = MaterialBillboardModeUVE::Disabled;
+    MaterialBillboardMode billboardMode = MaterialBillboardMode::Disabled;
     /// Packed map: G roughness, B metallic. Multiplies the scalars. Unset is a white fallback.
-    AssetGuidUVE metallicRoughnessTexture;
-    AssetGuidUVE emissiveTexture;
+    AssetGuid metallicRoughnessTexture;
+    AssetGuid emissiveTexture;
     /// Multiplies `emissiveColor` (and the emissive texture). 1 leaves the colour as authored.
     float emissiveEnergy = 1.0F;
     /// Scales the tangent-space normal's XY. 1 is the map as authored; 0 flattens it.
     float normalScale = 1.0F;
     /// How much the AO map darkens cavities. 1 full, 0 ignores the map.
     float occlusionStrength = 1.0F;
-    Math::Vector2UVE uvScale{1.0F, 1.0F};
-    Math::Vector2UVE uvOffset{0.0F, 0.0F};
+    Math::Vector2 uvScale{1.0F, 1.0F};
+    Math::Vector2 uvOffset{0.0F, 0.0F};
     /// Albedo only, no lighting. For cards that should not pick up the scene lights.
     bool unshaded = false;
     /// Discard fragments whose albedo alpha is below this. 0 never discards.
@@ -152,15 +152,15 @@ struct MaterialAssetUVE {
 
     // Part 4 extended material properties (defaulted so existing aggregate initialisers stay valid).
     float albedoAlpha = 1.0F;
-    AssetGuidUVE metallicTexture;
-    AssetGuidUVE roughnessTexture;
-    MaterialAlphaSourceUVE alphaSource = MaterialAlphaSourceUVE::AlbedoAlpha;
+    AssetGuid metallicTexture;
+    AssetGuid roughnessTexture;
+    MaterialAlphaSource alphaSource = MaterialAlphaSource::AlbedoAlpha;
     bool alphaHashingEnabled = false;
     bool useVertexColorAsAlbedo = false;
     bool vertexColorIsSrgb = true;
-    MaterialCullModeUVE cullMode = MaterialCullModeUVE::Back;
-    MaterialBlendModeUVE blendMode = MaterialBlendModeUVE::Opaque;
-    MaterialDepthDrawModeUVE depthDrawMode = MaterialDepthDrawModeUVE::OpaqueOnly;
+    MaterialCullMode cullMode = MaterialCullMode::Back;
+    MaterialBlendMode blendMode = MaterialBlendMode::Opaque;
+    MaterialDepthDrawMode depthDrawMode = MaterialDepthDrawMode::OpaqueOnly;
     bool depthTestEnabled = true;
     bool depthWriteEnabled = true;
     std::int32_t renderPriority = 0;
@@ -169,12 +169,12 @@ struct MaterialAssetUVE {
     float dielectricSpecular = 0.5F;
     bool normalFlipGreen = false;
     bool aoAffectsDirectLight = false;
-    AssetGuidUVE heightTexture;
+    AssetGuid heightTexture;
     float heightScale = 0.05F;
     std::uint8_t parallaxMinLayers = 8U;
     std::uint8_t parallaxMaxLayers = 32U;
     float rimAmount = 0.0F;
-    Math::ColorUVE rimTint{1.0F, 1.0F, 1.0F};
+    Math::Color rimTint{1.0F, 1.0F, 1.0F};
     float clearcoatAmount = 0.0F;
     float clearcoatRoughness = 0.1F;
     float anisotropyAmount = 0.0F;
@@ -183,8 +183,8 @@ struct MaterialAssetUVE {
     // UV1 is uvScale / uvOffset with the three triplanar fields below; UV2 is the same texture
     // coordinates with their own scale, offset and triplanar mode (Godot's uv1 / uv2), used by AO
     // and Emission when they are "on UV2".
-    Math::Vector2UVE uv2Scale{1.0F, 1.0F};
-    Math::Vector2UVE uv2Offset{0.0F, 0.0F};
+    Math::Vector2 uv2Scale{1.0F, 1.0F};
+    Math::Vector2 uv2Offset{0.0F, 0.0F};
     /// UV1 triplanar: projected along the object's (or with worldSpaceTriplanar, the world's) axes.
     bool triplanarEnabled = false;
     bool worldSpaceTriplanar = false;
@@ -200,31 +200,31 @@ struct MaterialAssetUVE {
     float distanceFadeFar = 0.0F;
     bool receiveShadows = true;
     std::uint32_t renderLayerMask = 0xFFFFFFFFU;
-    AssetGuidUVE parentMaterial;
-    AssetGuidUVE nextPassMaterial;
+    AssetGuid parentMaterial;
+    AssetGuid nextPassMaterial;
 
     /// Advanced custom shader code injection and texture overrides
     bool useCustomShaderCode = false;
-    AssetGuidUVE customShader;
-    Math::ColorUVE textureTint{1.0F, 1.0F, 1.0F};
+    AssetGuid customShader;
+    Math::Color textureTint{1.0F, 1.0F, 1.0F};
     float textureTileX = 1.0F;
     float textureTileY = 1.0F;
 
-    /// The preset this material was authored as (see MaterialKindUVE). Appended so existing
+    /// The preset this material was authored as (see MaterialKind). Appended so existing
     /// aggregate initialisers stay valid.
-    MaterialKindUVE kind = MaterialKindUVE::Standard;
+    MaterialKind kind = MaterialKind::Standard;
 
-    /// Each map's own reading (tiling, offset, channel, invert, strength), by MaterialMapUVE. The
+    /// Each map's own reading (tiling, offset, channel, invert, strength), by MaterialMap. The
     /// separate Metallic and Roughness maps apply theirs when they are packed into the ORM map.
-    std::array<MaterialMapSettingsUVE, static_cast<std::size_t>(MaterialMapUVE::Count)> maps{};
-    [[nodiscard]] MaterialMapSettingsUVE& MapUVE(const MaterialMapUVE map) noexcept { return maps[static_cast<std::size_t>(map)]; }
-    [[nodiscard]] const MaterialMapSettingsUVE& MapUVE(const MaterialMapUVE map) const noexcept { return maps[static_cast<std::size_t>(map)]; }
+    std::array<MaterialMapSettings, static_cast<std::size_t>(MaterialMap::Count)> maps{};
+    [[nodiscard]] MaterialMapSettings& Map(const MaterialMap map) noexcept { return maps[static_cast<std::size_t>(map)]; }
+    [[nodiscard]] const MaterialMapSettings& Map(const MaterialMap map) const noexcept { return maps[static_cast<std::size_t>(map)]; }
 };
 
 /// Returns true when the material should be bucketed into the transparent render pass (Part 3.7 / 4.1).
-[[nodiscard]] constexpr bool ShouldBucketMaterialTransparentUVE(const MaterialAssetUVE& material) noexcept {
+[[nodiscard]] constexpr bool ShouldBucketMaterialTransparent(const MaterialAsset& material) noexcept {
     return material.isTransparent || material.albedoAlpha < 1.0F ||
-           material.blendMode != MaterialBlendModeUVE::Opaque;
+           material.blendMode != MaterialBlendMode::Opaque;
 }
 
 /// Validates the CPU material descriptor before persistence or renderer handoff. Albedo channels,
@@ -232,23 +232,23 @@ struct MaterialAssetUVE {
 /// and energy, and normal scale, are finite and nonnegative; UV scale/offset are finite; GUID
 /// references may be invalid to represent an intentionally unset texture or shader. Billboard is a
 /// known enumerator.
-[[nodiscard]] bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept;
+[[nodiscard]] bool IsMaterialAssetValid(const MaterialAsset& material) noexcept;
 
 /// Writes a rotation that points local +Z at the camera. Disabled, a degenerate view, or
 /// non-finite inputs return false and leave `outRotation` untouched.
-[[nodiscard]] bool TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE mode,
-                                                       const Math::Vector3UVE& objectPosition,
-                                                       const Math::Vector3UVE& cameraPosition,
-                                                       Math::QuaternionUVE& outRotation) noexcept;
+[[nodiscard]] bool TryMakeMaterialBillboardRotation(MaterialBillboardMode mode,
+                                                       const Math::Vector3& objectPosition,
+                                                       const Math::Vector3& cameraPosition,
+                                                       Math::Quaternion& outRotation) noexcept;
 
-/// Loads `path` as a `.uve*` envelope with `AssetKindUVE::Material`, filling `outMaterial`.
+/// Loads `path` as a `.uve*` envelope with `AssetKind::Material`, filling `outMaterial`.
 /// Returns false (logging the reason) if the file is missing/malformed, isn't actually a
 /// Material asset, or is missing an expected field.
-[[nodiscard]] bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& outMaterial);
+[[nodiscard]] bool LoadMaterialAsset(const std::filesystem::path& path, MaterialAsset& outMaterial);
 
-/// Writes `material` to `path` as a `.uve*` envelope with `AssetKindUVE::Material`. Returns false
+/// Writes `material` to `path` as a `.uve*` envelope with `AssetKind::Material`. Returns false
 /// (logging the reason) for invalid finite/range fields or a file publication failure; invalid
 /// descriptors are rejected before opening the destination.
-[[nodiscard]] bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesystem::path& path);
+[[nodiscard]] bool SaveMaterialAsset(const MaterialAsset& material, const std::filesystem::path& path);
 
 } // namespace UVE::Asset

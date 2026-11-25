@@ -17,9 +17,9 @@
 namespace UVE::Editor {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
-enum class FrameReadResultUVE : std::uint8_t {
+enum class FrameReadResult : std::uint8_t {
     Body,
     EndOfFile,
     TruncatedHeader,
@@ -28,17 +28,17 @@ enum class FrameReadResultUVE : std::uint8_t {
     Oversized,
 };
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeEntityRefUVE entity) {
-    return JsonUVE{{"index", entity.index}, {"generation", entity.generation}};
+[[nodiscard]] Json ToJson(const EditorBridgeEntityRef entity) {
+    return Json{{"index", entity.index}, {"generation", entity.generation}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeEntitySnapshotUVE& entity) {
-    return JsonUVE{{"entity", ToJsonUVE(entity.entity)}, {"displayLabel", entity.displayLabel}};
+[[nodiscard]] Json ToJson(const EditorBridgeEntitySnapshot& entity) {
+    return Json{{"entity", ToJson(entity.entity)}, {"displayLabel", entity.displayLabel}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeHierarchyEntryUVE& entry) {
-    return JsonUVE{{"entity", ToJsonUVE(entry.entity)},
-                   {"parent", entry.parent.has_value() ? ToJsonUVE(*entry.parent) : JsonUVE(nullptr)},
+[[nodiscard]] Json ToJson(const EditorBridgeHierarchyEntry& entry) {
+    return Json{{"entity", ToJson(entry.entity)},
+                   {"parent", entry.parent.has_value() ? ToJson(*entry.parent) : Json(nullptr)},
                    {"displayLabel", entry.displayLabel},
                    {"typeTag", entry.typeTag},
                    {"depth", entry.depth},
@@ -47,40 +47,40 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"active", entry.active}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeHierarchySnapshotUVE& snapshot) {
-    JsonUVE entries = JsonUVE::array();
-    for (const EditorBridgeHierarchyEntryUVE& entry : snapshot.entries) {
-        entries.push_back(ToJsonUVE(entry));
+[[nodiscard]] Json ToJson(const EditorBridgeHierarchySnapshot& snapshot) {
+    Json entries = Json::array();
+    for (const EditorBridgeHierarchyEntry& entry : snapshot.entries) {
+        entries.push_back(ToJson(entry));
     }
-    return JsonUVE{{"filter", snapshot.filter},
+    return Json{{"filter", snapshot.filter},
                    {"filterActive", snapshot.filterActive},
                    {"truncated", snapshot.truncated},
                    {"entries", std::move(entries)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeInspectorSnapshotUVE& snapshot) {
-    JsonUVE selectedEntities = JsonUVE::array();
-    for (const EditorBridgeEntitySnapshotUVE& entity : snapshot.selectedEntities) {
-        selectedEntities.push_back(ToJsonUVE(entity));
+[[nodiscard]] Json ToJson(const EditorBridgeInspectorSnapshot& snapshot) {
+    Json selectedEntities = Json::array();
+    for (const EditorBridgeEntitySnapshot& entity : snapshot.selectedEntities) {
+        selectedEntities.push_back(ToJson(entity));
     }
-    JsonUVE ancestry = JsonUVE::array();
-    for (const EditorBridgeEntitySnapshotUVE& entity : snapshot.ancestry) {
-        ancestry.push_back(ToJsonUVE(entity));
+    Json ancestry = Json::array();
+    for (const EditorBridgeEntitySnapshot& entity : snapshot.ancestry) {
+        ancestry.push_back(ToJson(entity));
     }
-    JsonUVE drawerIds = JsonUVE::array();
+    Json drawerIds = Json::array();
     for (const std::string& identifier : snapshot.eligibleDrawerIds) {
         drawerIds.push_back(identifier);
     }
-    JsonUVE attachedComponentIds = JsonUVE::array();
+    Json attachedComponentIds = Json::array();
     for (const std::string& identifier : snapshot.attachedComponentIds) {
         attachedComponentIds.push_back(identifier);
     }
-    JsonUVE assetBinding = JsonUVE(nullptr);
-    JsonUVE prefab = JsonUVE(nullptr);
+    Json assetBinding = Json(nullptr);
+    Json prefab = Json(nullptr);
     if (snapshot.prefab.has_value()) {
-        prefab = JsonUVE{{"sourcePrefabGuid", snapshot.prefab->sourcePrefabGuid.has_value()
-                                                    ? JsonUVE(*snapshot.prefab->sourcePrefabGuid)
-                                                    : JsonUVE(nullptr)},
+        prefab = Json{{"sourcePrefabGuid", snapshot.prefab->sourcePrefabGuid.has_value()
+                                                    ? Json(*snapshot.prefab->sourcePrefabGuid)
+                                                    : Json(nullptr)},
                          {"sourceRevision", snapshot.prefab->sourceRevision},
                          {"instanceRevision", snapshot.prefab->instanceRevision},
                          {"overrideCount", snapshot.prefab->overrideCount},
@@ -88,19 +88,19 @@ enum class FrameReadResultUVE : std::uint8_t {
                          {"canRefresh", snapshot.prefab->canRefresh}};
     }
     if (snapshot.assetBinding.has_value()) {
-        assetBinding = JsonUVE{{"meshGuid", snapshot.assetBinding->meshGuid.has_value()
-                                                   ? JsonUVE(*snapshot.assetBinding->meshGuid)
-                                                   : JsonUVE(nullptr)},
+        assetBinding = Json{{"meshGuid", snapshot.assetBinding->meshGuid.has_value()
+                                                   ? Json(*snapshot.assetBinding->meshGuid)
+                                                   : Json(nullptr)},
                                {"materialGuid", snapshot.assetBinding->materialGuid.has_value()
-                                                       ? JsonUVE(*snapshot.assetBinding->materialGuid)
-                                                       : JsonUVE(nullptr)}};
+                                                       ? Json(*snapshot.assetBinding->materialGuid)
+                                                       : Json(nullptr)}};
     }
-    return JsonUVE{{"mode", static_cast<std::uint8_t>(snapshot.mode)},
+    return Json{{"mode", static_cast<std::uint8_t>(snapshot.mode)},
                    {"selectedEntitiesTruncated", snapshot.selectedEntitiesTruncated},
                    {"selectedEntities", std::move(selectedEntities)},
-                   {"activeEntity", snapshot.activeEntity.has_value() ? ToJsonUVE(*snapshot.activeEntity)
-                                                                         : JsonUVE(nullptr)},
-                   {"parent", snapshot.parent.has_value() ? ToJsonUVE(*snapshot.parent) : JsonUVE(nullptr)},
+                   {"activeEntity", snapshot.activeEntity.has_value() ? ToJson(*snapshot.activeEntity)
+                                                                         : Json(nullptr)},
+                   {"parent", snapshot.parent.has_value() ? ToJson(*snapshot.parent) : Json(nullptr)},
                    {"ancestry", std::move(ancestry)},
                    {"eligibleDrawerIds", std::move(drawerIds)},
                    {"attachedComponentIds", std::move(attachedComponentIds)},
@@ -109,17 +109,17 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"canEditSelectedName", snapshot.canEditSelectedName}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeAssetTableEntryUVE& entry) {
-    return JsonUVE{{"relativePath", entry.relativePath},
+[[nodiscard]] Json ToJson(const EditorBridgeAssetTableEntry& entry) {
+    return Json{{"relativePath", entry.relativePath},
                    {"isDirectory", entry.isDirectory},
                    {"typeLabel", entry.typeLabel},
                    {"registeredAssetGuid", entry.registeredAssetGuid.has_value()
-                                               ? JsonUVE(*entry.registeredAssetGuid)
-                                               : JsonUVE(nullptr)}};
+                                               ? Json(*entry.registeredAssetGuid)
+                                               : Json(nullptr)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeContentImportActionSnapshotUVE& action) {
-    return JsonUVE{{"hasSelection", action.hasSelection},
+[[nodiscard]] Json ToJson(const EditorBridgeContentImportActionSnapshot& action) {
+    return Json{{"hasSelection", action.hasSelection},
                    {"canImport", action.canImport},
                    {"canReimport", action.canReimport},
                    {"importerRegistered", action.importerRegistered},
@@ -128,16 +128,16 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"diagnostic", action.diagnostic}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeAssetTableSnapshotUVE& snapshot) {
-    JsonUVE entries = JsonUVE::array();
-    for (const EditorBridgeAssetTableEntryUVE& entry : snapshot.entries) {
-        entries.push_back(ToJsonUVE(entry));
+[[nodiscard]] Json ToJson(const EditorBridgeAssetTableSnapshot& snapshot) {
+    Json entries = Json::array();
+    for (const EditorBridgeAssetTableEntry& entry : snapshot.entries) {
+        entries.push_back(ToJson(entry));
     }
-    JsonUVE breadcrumbs = JsonUVE::array();
+    Json breadcrumbs = Json::array();
     for (const std::string& breadcrumb : snapshot.breadcrumbs) {
         breadcrumbs.push_back(breadcrumb);
     }
-    return JsonUVE{{"contentRoot", snapshot.contentRoot},
+    return Json{{"contentRoot", snapshot.contentRoot},
                    {"currentDirectory", snapshot.currentDirectory},
                    {"filter", snapshot.filter},
                    {"typeFocus", snapshot.typeFocus},
@@ -150,41 +150,41 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"lastRefreshSucceeded", snapshot.lastRefreshSucceeded},
                    {"truncated", snapshot.truncated},
                    {"entries", std::move(entries)},
-                   {"selectedEntry", snapshot.selectedEntry.has_value() ? ToJsonUVE(*snapshot.selectedEntry)
-                                                                           : JsonUVE(nullptr)},
-                   {"importAction", ToJsonUVE(snapshot.importAction)}};
+                   {"selectedEntry", snapshot.selectedEntry.has_value() ? ToJson(*snapshot.selectedEntry)
+                                                                           : Json(nullptr)},
+                   {"importAction", ToJson(snapshot.importAction)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const DeveloperConsoleEntryUVE& entry) {
-    return JsonUVE{{"severity", static_cast<std::uint8_t>(entry.severity)}, {"text", entry.text}};
+[[nodiscard]] Json ToJson(const DeveloperConsoleEntry& entry) {
+    return Json{{"severity", static_cast<std::uint8_t>(entry.severity)}, {"text", entry.text}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const DeveloperConsoleCVarUVE& cvar) {
-    return JsonUVE{{"name", cvar.name}, {"value", cvar.value}, {"readOnly", cvar.readOnly}};
+[[nodiscard]] Json ToJson(const DeveloperConsoleCVar& cvar) {
+    return Json{{"name", cvar.name}, {"value", cvar.value}, {"readOnly", cvar.readOnly}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const DeveloperConsoleCompletionUVE& completion) {
-    return JsonUVE{{"identifier", completion.identifier}, {"help", completion.help}};
+[[nodiscard]] Json ToJson(const DeveloperConsoleCompletion& completion) {
+    return Json{{"identifier", completion.identifier}, {"help", completion.help}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDeveloperConsoleSnapshotUVE& snapshot) {
-    JsonUVE output = JsonUVE::array();
-    for (const DeveloperConsoleEntryUVE& entry : snapshot.console.output) {
-        output.push_back(ToJsonUVE(entry));
+[[nodiscard]] Json ToJson(const EditorBridgeDeveloperConsoleSnapshot& snapshot) {
+    Json output = Json::array();
+    for (const DeveloperConsoleEntry& entry : snapshot.console.output) {
+        output.push_back(ToJson(entry));
     }
-    JsonUVE history = JsonUVE::array();
+    Json history = Json::array();
     for (const std::string& command : snapshot.console.history) {
         history.push_back(command);
     }
-    JsonUVE cvars = JsonUVE::array();
-    for (const DeveloperConsoleCVarUVE& cvar : snapshot.console.cvars) {
-        cvars.push_back(ToJsonUVE(cvar));
+    Json cvars = Json::array();
+    for (const DeveloperConsoleCVar& cvar : snapshot.console.cvars) {
+        cvars.push_back(ToJson(cvar));
     }
-    JsonUVE completions = JsonUVE::array();
-    for (const DeveloperConsoleCompletionUVE& completion : snapshot.console.completions) {
-        completions.push_back(ToJsonUVE(completion));
+    Json completions = Json::array();
+    for (const DeveloperConsoleCompletion& completion : snapshot.console.completions) {
+        completions.push_back(ToJson(completion));
     }
-    return JsonUVE{{"generation", snapshot.console.generation},
+    return Json{{"generation", snapshot.console.generation},
                    {"available", snapshot.console.available},
                    {"developmentOnly", snapshot.console.developmentOnly},
                    {"access", static_cast<std::uint8_t>(snapshot.console.access)},
@@ -199,46 +199,46 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"cvars", std::move(cvars)}, {"completions", std::move(completions)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDataTableCatalogEntryUVE& entry) {
-    return JsonUVE{{"name", entry.name},
+[[nodiscard]] Json ToJson(const EditorBridgeDataTableCatalogEntry& entry) {
+    return Json{{"name", entry.name},
                    {"generation", entry.generation},
                    {"columnCount", entry.columnCount},
                    {"rowCount", entry.rowCount},
                    {"valid", entry.valid}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDataTableCatalogSnapshotUVE& snapshot) {
-    JsonUVE entries = JsonUVE::array();
-    for (const EditorBridgeDataTableCatalogEntryUVE& entry : snapshot.entries) {
-        entries.push_back(ToJsonUVE(entry));
+[[nodiscard]] Json ToJson(const EditorBridgeDataTableCatalogSnapshot& snapshot) {
+    Json entries = Json::array();
+    for (const EditorBridgeDataTableCatalogEntry& entry : snapshot.entries) {
+        entries.push_back(ToJson(entry));
     }
-    return JsonUVE{{"generation", snapshot.generation},
+    return Json{{"generation", snapshot.generation},
                    {"entriesTruncated", snapshot.entriesTruncated},
                    {"entries", std::move(entries)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDataTablePreviewColumnUVE& column) {
-    return JsonUVE{{"name", column.name}, {"type", static_cast<std::uint8_t>(column.type)}};
+[[nodiscard]] Json ToJson(const EditorBridgeDataTablePreviewColumn& column) {
+    return Json{{"name", column.name}, {"type", static_cast<std::uint8_t>(column.type)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDataTablePreviewRowUVE& row) {
-    JsonUVE values = JsonUVE::array();
+[[nodiscard]] Json ToJson(const EditorBridgeDataTablePreviewRow& row) {
+    Json values = Json::array();
     for (const std::string& value : row.values) {
         values.push_back(value);
     }
-    return JsonUVE{{"identifier", row.identifier}, {"values", std::move(values)}};
+    return Json{{"identifier", row.identifier}, {"values", std::move(values)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeDataTablePreviewSnapshotUVE& snapshot) {
-    JsonUVE columns = JsonUVE::array();
-    for (const EditorBridgeDataTablePreviewColumnUVE& column : snapshot.columns) {
-        columns.push_back(ToJsonUVE(column));
+[[nodiscard]] Json ToJson(const EditorBridgeDataTablePreviewSnapshot& snapshot) {
+    Json columns = Json::array();
+    for (const EditorBridgeDataTablePreviewColumn& column : snapshot.columns) {
+        columns.push_back(ToJson(column));
     }
-    JsonUVE rows = JsonUVE::array();
-    for (const EditorBridgeDataTablePreviewRowUVE& row : snapshot.rows) {
-        rows.push_back(ToJsonUVE(row));
+    Json rows = Json::array();
+    for (const EditorBridgeDataTablePreviewRow& row : snapshot.rows) {
+        rows.push_back(ToJson(row));
     }
-    return JsonUVE{{"available", snapshot.available},
+    return Json{{"available", snapshot.available},
                    {"generation", snapshot.generation},
                    {"name", snapshot.name},
                    {"totalColumnCount", snapshot.totalColumnCount},
@@ -251,8 +251,8 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"rows", std::move(rows)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeViewportSurfaceSnapshotUVE& surface) {
-    return JsonUVE{{"state", static_cast<std::uint8_t>(surface.state)},
+[[nodiscard]] Json ToJson(const EditorBridgeViewportSurfaceSnapshot& surface) {
+    return Json{{"state", static_cast<std::uint8_t>(surface.state)},
                    {"generation", surface.generation},
                    {"width", surface.width},
                    {"height", surface.height},
@@ -261,17 +261,17 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"reason", surface.reason}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeSnapshotUVE& snapshot) {
-    JsonUVE selectedEntities = JsonUVE::array();
-    for (const EditorBridgeEntitySnapshotUVE& entity : snapshot.selectedEntities) {
-        selectedEntities.push_back(ToJsonUVE(entity));
+[[nodiscard]] Json ToJson(const EditorBridgeSnapshot& snapshot) {
+    Json selectedEntities = Json::array();
+    for (const EditorBridgeEntitySnapshot& entity : snapshot.selectedEntities) {
+        selectedEntities.push_back(ToJson(entity));
     }
-    JsonUVE capabilities = JsonUVE::array();
-    for (const EditorBridgeCapabilityUVE capability : snapshot.capabilities) {
+    Json capabilities = Json::array();
+    for (const EditorBridgeCapability capability : snapshot.capabilities) {
         capabilities.push_back(static_cast<std::uint8_t>(capability));
     }
 
-    return JsonUVE{{"protocolVersion", snapshot.protocolVersion},
+    return Json{{"protocolVersion", snapshot.protocolVersion},
                    {"revision", snapshot.revision},
                    {"editorState", static_cast<std::uint8_t>(snapshot.editorState)},
                    {"playModeState", static_cast<std::uint8_t>(snapshot.playModeState)},
@@ -281,41 +281,41 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"activeScenePath", snapshot.activeScenePath.generic_string()},
                    {"selectedEntities", std::move(selectedEntities)},
                    {"selectedEntitiesTruncated", snapshot.selectedEntitiesTruncated},
-                   {"activeEntity", snapshot.activeEntity.has_value() ? ToJsonUVE(*snapshot.activeEntity)
-                                                                        : JsonUVE(nullptr)},
-                   {"hierarchy", ToJsonUVE(snapshot.hierarchy)},
-                   {"inspector", ToJsonUVE(snapshot.inspector)},
-                   {"assetTable", ToJsonUVE(snapshot.assetTable)},
-                   {"viewportSurface", ToJsonUVE(snapshot.viewportSurface)},
-                   {"developerConsole", ToJsonUVE(snapshot.developerConsole)},
-                   {"dataTableCatalog", ToJsonUVE(snapshot.dataTableCatalog)},
-                   {"dataTablePreview", ToJsonUVE(snapshot.dataTablePreview)},
+                   {"activeEntity", snapshot.activeEntity.has_value() ? ToJson(*snapshot.activeEntity)
+                                                                        : Json(nullptr)},
+                   {"hierarchy", ToJson(snapshot.hierarchy)},
+                   {"inspector", ToJson(snapshot.inspector)},
+                   {"assetTable", ToJson(snapshot.assetTable)},
+                   {"viewportSurface", ToJson(snapshot.viewportSurface)},
+                   {"developerConsole", ToJson(snapshot.developerConsole)},
+                   {"dataTableCatalog", ToJson(snapshot.dataTableCatalog)},
+                   {"dataTablePreview", ToJson(snapshot.dataTablePreview)},
                    {"capabilities", std::move(capabilities)}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeResponseUVE& response) {
-    return JsonUVE{{"protocolVersion", response.protocolVersion},
+[[nodiscard]] Json ToJson(const EditorBridgeResponse& response) {
+    return Json{{"protocolVersion", response.protocolVersion},
                    {"requestId", response.requestId},
                    {"applied", response.applied},
                    {"code", response.code},
                    {"message", response.message},
-                   {"snapshot", ToJsonUVE(response.snapshot)},
-                   {"createdEntity", response.createdEntity.has_value() ? ToJsonUVE(*response.createdEntity)
-                                                                         : JsonUVE(nullptr)},
+                   {"snapshot", ToJson(response.snapshot)},
+                   {"createdEntity", response.createdEntity.has_value() ? ToJson(*response.createdEntity)
+                                                                         : Json(nullptr)},
                    {"contentImportJobId", response.contentImportJobId.has_value()
-                                                ? JsonUVE(*response.contentImportJobId)
-                                                : JsonUVE(nullptr)}};
+                                                ? Json(*response.contentImportJobId)
+                                                : Json(nullptr)}};
 }
 
-[[nodiscard]] FrameReadResultUVE ReadFrameUVE(std::istream& input, std::string& body) {
+[[nodiscard]] FrameReadResult ReadFrame(std::istream& input, std::string& body) {
     std::array<char, 4U> header{};
     input.read(header.data(), static_cast<std::streamsize>(header.size()));
     const std::streamsize headerBytes = input.gcount();
     if (headerBytes == 0 && input.eof()) {
-        return FrameReadResultUVE::EndOfFile;
+        return FrameReadResult::EndOfFile;
     }
     if (headerBytes != static_cast<std::streamsize>(header.size())) {
-        return FrameReadResultUVE::TruncatedHeader;
+        return FrameReadResult::TruncatedHeader;
     }
 
     const std::uint32_t length =
@@ -324,24 +324,24 @@ enum class FrameReadResultUVE : std::uint8_t {
         (static_cast<std::uint32_t>(static_cast<unsigned char>(header[2])) << 8U) |
         static_cast<std::uint32_t>(static_cast<unsigned char>(header[3]));
     if (length == 0U) {
-        return FrameReadResultUVE::ZeroLength;
+        return FrameReadResult::ZeroLength;
     }
-    if (length > EditorBridgeStdioServerUVE::kMaximumFrameBytesUVE) {
-        return FrameReadResultUVE::Oversized;
+    if (length > EditorBridgeStdioServer::kMaximumFrameBytes) {
+        return FrameReadResult::Oversized;
     }
 
     body.assign(length, '\0');
     input.read(body.data(), static_cast<std::streamsize>(body.size()));
     if (input.gcount() != static_cast<std::streamsize>(body.size())) {
         body.clear();
-        return FrameReadResultUVE::TruncatedBody;
+        return FrameReadResult::TruncatedBody;
     }
-    return FrameReadResultUVE::Body;
+    return FrameReadResult::Body;
 }
 
-[[nodiscard]] bool WriteFrameUVE(std::ostream& output, const JsonUVE& payload) {
+[[nodiscard]] bool WriteFrame(std::ostream& output, const Json& payload) {
     const std::string body = payload.dump();
-    if (body.empty() || body.size() > EditorBridgeStdioServerUVE::kMaximumFrameBytesUVE) {
+    if (body.empty() || body.size() > EditorBridgeStdioServer::kMaximumFrameBytes) {
         return false;
     }
     const std::uint32_t length = static_cast<std::uint32_t>(body.size());
@@ -354,112 +354,112 @@ enum class FrameReadResultUVE : std::uint8_t {
     return static_cast<bool>(output);
 }
 
-[[nodiscard]] JsonUVE MakeErrorUVE(const JsonUVE& id, const std::string_view code, const std::string_view message) {
-    return JsonUVE{{"jsonrpc", "2.0"},
+[[nodiscard]] Json MakeError(const Json& id, const std::string_view code, const std::string_view message) {
+    return Json{{"jsonrpc", "2.0"},
                    {"id", id},
                    {"error", {{"code", -32600}, {"message", message}, {"data", {{"code", code}}}}}};
 }
 
-[[nodiscard]] JsonUVE MakeResultUVE(const JsonUVE& id, JsonUVE result) {
-    return JsonUVE{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}};
+[[nodiscard]] Json MakeResult(const Json& id, Json result) {
+    return Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}};
 }
 
-[[nodiscard]] std::optional<EditorBridgeRequestKindUVE> ParseRequestKindUVE(const std::string_view value) {
+[[nodiscard]] std::optional<EditorBridgeRequestKind> ParseRequestKind(const std::string_view value) {
     if (value == "readSnapshot") {
-        return EditorBridgeRequestKindUVE::ReadSnapshot;
+        return EditorBridgeRequestKind::ReadSnapshot;
     }
     if (value == "selectEntity") {
-        return EditorBridgeRequestKindUVE::SelectEntity;
+        return EditorBridgeRequestKind::SelectEntity;
     }
     if (value == "clearSelection") {
-        return EditorBridgeRequestKindUVE::ClearSelection;
+        return EditorBridgeRequestKind::ClearSelection;
     }
     if (value == "setSelectedEntityName") {
-        return EditorBridgeRequestKindUVE::SetSelectedEntityName;
+        return EditorBridgeRequestKind::SetSelectedEntityName;
     }
     if (value == "createDocumentEntity") {
-        return EditorBridgeRequestKindUVE::CreateDocumentEntity;
+        return EditorBridgeRequestKind::CreateDocumentEntity;
     }
     if (value == "undo") {
-        return EditorBridgeRequestKindUVE::Undo;
+        return EditorBridgeRequestKind::Undo;
     }
     if (value == "redo") {
-        return EditorBridgeRequestKindUVE::Redo;
+        return EditorBridgeRequestKind::Redo;
     }
     if (value == "toggleEntitySelection") {
-        return EditorBridgeRequestKindUVE::ToggleEntitySelection;
+        return EditorBridgeRequestKind::ToggleEntitySelection;
     }
     if (value == "setHierarchyFilter") {
-        return EditorBridgeRequestKindUVE::SetHierarchyFilter;
+        return EditorBridgeRequestKind::SetHierarchyFilter;
     }
     if (value == "setAssetTableDirectory") {
-        return EditorBridgeRequestKindUVE::SetAssetTableDirectory;
+        return EditorBridgeRequestKind::SetAssetTableDirectory;
     }
     if (value == "setAssetTableFilter") {
-        return EditorBridgeRequestKindUVE::SetAssetTableFilter;
+        return EditorBridgeRequestKind::SetAssetTableFilter;
     }
     if (value == "setAssetTableFocus") {
-        return EditorBridgeRequestKindUVE::SetAssetTableFocus;
+        return EditorBridgeRequestKind::SetAssetTableFocus;
     }
     if (value == "refreshAssetTable") {
-        return EditorBridgeRequestKindUVE::RefreshAssetTable;
+        return EditorBridgeRequestKind::RefreshAssetTable;
     }
     if (value == "selectAssetTableEntry") {
-        return EditorBridgeRequestKindUVE::SelectAssetTableEntry;
+        return EditorBridgeRequestKind::SelectAssetTableEntry;
     }
     if (value == "queueAssetTableImport") {
-        return EditorBridgeRequestKindUVE::QueueAssetTableImport;
+        return EditorBridgeRequestKind::QueueAssetTableImport;
     }
     if (value == "readDeveloperConsole") {
-        return EditorBridgeRequestKindUVE::ReadDeveloperConsole;
+        return EditorBridgeRequestKind::ReadDeveloperConsole;
     }
     if (value == "submitDeveloperConsoleCommand") {
-        return EditorBridgeRequestKindUVE::SubmitDeveloperConsoleCommand;
+        return EditorBridgeRequestKind::SubmitDeveloperConsoleCommand;
     }
     if (value == "clearDeveloperConsole") {
-        return EditorBridgeRequestKindUVE::ClearDeveloperConsole;
+        return EditorBridgeRequestKind::ClearDeveloperConsole;
     }
     if (value == "setDeveloperConsoleSeverityFilter") {
-        return EditorBridgeRequestKindUVE::SetDeveloperConsoleSeverityFilter;
+        return EditorBridgeRequestKind::SetDeveloperConsoleSeverityFilter;
     }
     if (value == "setDeveloperConsoleCompletionPrefix") {
-        return EditorBridgeRequestKindUVE::SetDeveloperConsoleCompletionPrefix;
+        return EditorBridgeRequestKind::SetDeveloperConsoleCompletionPrefix;
     }
     if (value == "moveDeveloperConsoleHistory") {
-        return EditorBridgeRequestKindUVE::MoveDeveloperConsoleHistory;
+        return EditorBridgeRequestKind::MoveDeveloperConsoleHistory;
     }
     if (value == "selectDataTablePreview") {
-        return EditorBridgeRequestKindUVE::SelectDataTablePreview;
+        return EditorBridgeRequestKind::SelectDataTablePreview;
     }
     return std::nullopt;
 }
 
 
-[[nodiscard]] std::optional<EditorBridgeEntityRefUVE> ParseEntityUVE(const JsonUVE& json) {
+[[nodiscard]] std::optional<EditorBridgeEntityRef> ParseEntity(const Json& json) {
     if (!json.is_object() || !json.contains("index") || !json.contains("generation")) {
         return std::nullopt;
     }
-    return EditorBridgeEntityRefUVE{json.at("index").get<std::uint32_t>(),
+    return EditorBridgeEntityRef{json.at("index").get<std::uint32_t>(),
                                     json.at("generation").get<std::uint32_t>()};
 }
 
 
 
-[[nodiscard]] std::optional<EditorBridgeRequestUVE> ParseBridgeRequestUVE(const JsonUVE& params) {
+[[nodiscard]] std::optional<EditorBridgeRequest> ParseBridgeRequest(const Json& params) {
     if (!params.is_object()) {
         return std::nullopt;
     }
-    EditorBridgeRequestUVE request{};
+    EditorBridgeRequest request{};
     request.protocolVersion = params.at("protocolVersion").get<std::uint32_t>();
     request.requestId = params.at("requestId").get<std::uint64_t>();
     request.expectedRevision = params.at("expectedRevision").get<std::uint64_t>();
-    const std::optional<EditorBridgeRequestKindUVE> kind = ParseRequestKindUVE(params.at("kind").get<std::string>());
+    const std::optional<EditorBridgeRequestKind> kind = ParseRequestKind(params.at("kind").get<std::string>());
     if (!kind.has_value()) {
         return std::nullopt;
     }
     request.kind = *kind;
     if (params.contains("entity") && !params.at("entity").is_null()) {
-        request.entity = ParseEntityUVE(params.at("entity"));
+        request.entity = ParseEntity(params.at("entity"));
         if (!request.entity.has_value()) {
             return std::nullopt;
         }
@@ -468,7 +468,7 @@ enum class FrameReadResultUVE : std::uint8_t {
         request.entityName = params.at("entityName").get<std::string>();
     }
     if (params.contains("entityKind") && !params.at("entityKind").is_null()) {
-        request.entityKind = ParseEditorEntityKindUVE(params.at("entityKind").get<std::string>());
+        request.entityKind = ParseEditorEntityKind(params.at("entityKind").get<std::string>());
         if (!request.entityKind.has_value()) {
             return std::nullopt;
         }
@@ -499,10 +499,10 @@ enum class FrameReadResultUVE : std::uint8_t {
     }
     if (params.contains("developerConsoleSeverityFilter") && !params.at("developerConsoleSeverityFilter").is_null()) {
         const std::uint8_t filter = params.at("developerConsoleSeverityFilter").get<std::uint8_t>();
-        if (filter > static_cast<std::uint8_t>(DeveloperConsoleSeverityFilterUVE::Error)) {
+        if (filter > static_cast<std::uint8_t>(DeveloperConsoleSeverityFilter::Error)) {
             return std::nullopt;
         }
-        request.developerConsoleSeverityFilter = static_cast<DeveloperConsoleSeverityFilterUVE>(filter);
+        request.developerConsoleSeverityFilter = static_cast<DeveloperConsoleSeverityFilter>(filter);
     }
     if (params.contains("developerConsoleCompletionPrefix") && !params.at("developerConsoleCompletionPrefix").is_null()) {
         request.developerConsoleCompletionPrefix = params.at("developerConsoleCompletionPrefix").get<std::string>();
@@ -513,59 +513,59 @@ enum class FrameReadResultUVE : std::uint8_t {
     return request;
 }
 
-[[nodiscard]] bool IsJsonRpcRequestUVE(const JsonUVE& request) {
+[[nodiscard]] bool IsJsonRpcRequest(const Json& request) {
     return request.is_object() && request.value("jsonrpc", "") == "2.0" && request.contains("method") &&
            request.at("method").is_string();
 }
 
-[[nodiscard]] JsonUVE DispatchJsonRequestUVE(EditorBridgeUVE& bridge, const JsonUVE& request) {
-    const JsonUVE id = request.value("id", JsonUVE(nullptr));
-    if (!IsJsonRpcRequestUVE(request)) {
-        return MakeErrorUVE(id, "bridge.request.invalid", "The request is not a JSON-RPC 2.0 object.");
+[[nodiscard]] Json DispatchJsonRequest(EditorBridge& bridge, const Json& request) {
+    const Json id = request.value("id", Json(nullptr));
+    if (!IsJsonRpcRequest(request)) {
+        return MakeError(id, "bridge.request.invalid", "The request is not a JSON-RPC 2.0 object.");
     }
 
     const std::string method = request.at("method").get<std::string>();
-    const JsonUVE params = request.value("params", JsonUVE::object());
+    const Json params = request.value("params", Json::object());
     try {
         if (method == "bridge.hello") {
             const std::uint32_t requestedVersion = params.at("protocolVersion").get<std::uint32_t>();
-            const EditorBridgeSnapshotUVE snapshot = bridge.GetSnapshotUVE();
-            const bool compatible = requestedVersion == kEditorBridgeProtocolVersionUVE;
-            return MakeResultUVE(id, JsonUVE{{"code", compatible ? "bridge.hello.compatible"
+            const EditorBridgeSnapshot snapshot = bridge.GetSnapshot();
+            const bool compatible = requestedVersion == kEditorBridgeProtocolVersion;
+            return MakeResult(id, Json{{"code", compatible ? "bridge.hello.compatible"
                                                                   : "bridge.protocol.unsupported"},
                                              {"compatible", compatible},
-                                             {"protocolVersion", kEditorBridgeProtocolVersionUVE},
-                                             {"snapshot", ToJsonUVE(snapshot)}});
+                                             {"protocolVersion", kEditorBridgeProtocolVersion},
+                                             {"snapshot", ToJson(snapshot)}});
         }
         if (method == "bridge.getSnapshot") {
-            return MakeResultUVE(id, JsonUVE{{"code", "bridge.snapshot.read"},
-                                             {"snapshot", ToJsonUVE(bridge.GetSnapshotUVE())}});
+            return MakeResult(id, Json{{"code", "bridge.snapshot.read"},
+                                             {"snapshot", ToJson(bridge.GetSnapshot())}});
         }
         if (method == "bridge.dispatch") {
-            const std::optional<EditorBridgeRequestUVE> parsed = ParseBridgeRequestUVE(params);
+            const std::optional<EditorBridgeRequest> parsed = ParseBridgeRequest(params);
             if (!parsed.has_value()) {
-                return MakeErrorUVE(id, "bridge.request.invalid", "The bridge dispatch payload is invalid.");
+                return MakeError(id, "bridge.request.invalid", "The bridge dispatch payload is invalid.");
             }
-            return MakeResultUVE(id, ToJsonUVE(bridge.DispatchUVE(*parsed)));
+            return MakeResult(id, ToJson(bridge.Dispatch(*parsed)));
         }
-    } catch (const JsonUVE::exception&) {
-        return MakeErrorUVE(id, "bridge.request.invalid", "The request contains invalid bridge field values.");
+    } catch (const Json::exception&) {
+        return MakeError(id, "bridge.request.invalid", "The request contains invalid bridge field values.");
     }
-    return MakeErrorUVE(id, "bridge.request.invalid", "The bridge method is not supported.");
+    return MakeError(id, "bridge.request.invalid", "The bridge method is not supported.");
 }
 
-[[nodiscard]] std::string_view FrameReadDiagnosticUVE(const FrameReadResultUVE result) {
+[[nodiscard]] std::string_view FrameReadDiagnostic(const FrameReadResult result) {
     switch (result) {
-        case FrameReadResultUVE::TruncatedHeader:
+        case FrameReadResult::TruncatedHeader:
             return "bridge.transport.frame.truncated_header";
-        case FrameReadResultUVE::TruncatedBody:
+        case FrameReadResult::TruncatedBody:
             return "bridge.transport.frame.truncated_body";
-        case FrameReadResultUVE::ZeroLength:
+        case FrameReadResult::ZeroLength:
             return "bridge.transport.frame.zero_length";
-        case FrameReadResultUVE::Oversized:
+        case FrameReadResult::Oversized:
             return "bridge.transport.frame.oversized";
-        case FrameReadResultUVE::Body:
-        case FrameReadResultUVE::EndOfFile:
+        case FrameReadResult::Body:
+        case FrameReadResult::EndOfFile:
             return "bridge.transport.frame.invalid";
     }
     return "bridge.transport.frame.invalid";
@@ -573,31 +573,31 @@ enum class FrameReadResultUVE : std::uint8_t {
 
 } // namespace
 
-EditorBridgeStdioServerUVE::EditorBridgeStdioServerUVE(EditorBridgeUVE& bridge) noexcept : m_bridge(&bridge) {}
+EditorBridgeStdioServer::EditorBridgeStdioServer(EditorBridge& bridge) noexcept : m_bridge(&bridge) {}
 
-int EditorBridgeStdioServerUVE::ServeUVE(std::istream& input, std::ostream& output, std::ostream& diagnostics) {
+int EditorBridgeStdioServer::Serve(std::istream& input, std::ostream& output, std::ostream& diagnostics) {
     while (true) {
         std::string body;
-        const FrameReadResultUVE frameResult = ReadFrameUVE(input, body);
-        if (frameResult == FrameReadResultUVE::EndOfFile) {
+        const FrameReadResult frameResult = ReadFrame(input, body);
+        if (frameResult == FrameReadResult::EndOfFile) {
             return 0;
         }
-        if (frameResult != FrameReadResultUVE::Body) {
-            diagnostics << FrameReadDiagnosticUVE(frameResult) << '\n';
-            static_cast<void>(WriteFrameUVE(output, MakeErrorUVE(JsonUVE(nullptr), FrameReadDiagnosticUVE(frameResult),
+        if (frameResult != FrameReadResult::Body) {
+            diagnostics << FrameReadDiagnostic(frameResult) << '\n';
+            static_cast<void>(WriteFrame(output, MakeError(Json(nullptr), FrameReadDiagnostic(frameResult),
                                                                   "The bridge frame is malformed or outside protocol bounds.")));
             return 2;
         }
 
         try {
-            const JsonUVE request = JsonUVE::parse(body);
-            if (!WriteFrameUVE(output, DispatchJsonRequestUVE(*m_bridge, request))) {
+            const Json request = Json::parse(body);
+            if (!WriteFrame(output, DispatchJsonRequest(*m_bridge, request))) {
                 diagnostics << "bridge.transport.write.failed\n";
                 return 3;
             }
-        } catch (const JsonUVE::exception&) {
+        } catch (const Json::exception&) {
             diagnostics << "bridge.transport.json.invalid\n";
-            if (!WriteFrameUVE(output, MakeErrorUVE(JsonUVE(nullptr), "bridge.transport.json.invalid",
+            if (!WriteFrame(output, MakeError(Json(nullptr), "bridge.transport.json.invalid",
                                                      "The bridge frame body is not valid UTF-8 JSON."))) {
                 return 3;
             }

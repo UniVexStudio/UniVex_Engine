@@ -17,9 +17,9 @@
 namespace UVE::Blueprint::Assets {
 
 /// Registry metadata for one Blueprint asset tracked in a project.
-struct BlueprintAssetDescriptorUVE final {
+struct BlueprintAssetDescriptor final {
     std::string assetPath;
-    BlueprintAssetKindUVE kind = BlueprintAssetKindUVE::BlueprintClass;
+    BlueprintAssetKind kind = BlueprintAssetKind::BlueprintClass;
     std::string parentKind = "Object3D";
     std::uint32_t schemaVersion = 1U;
     std::vector<std::string> dependencies;
@@ -27,69 +27,69 @@ struct BlueprintAssetDescriptorUVE final {
 };
 
 /// Central registry tracking Blueprint assets and their dependency graph.
-class BlueprintAssetRegistryUVE final {
+class BlueprintAssetRegistry final {
 public:
-    bool RegisterAssetUVE(BlueprintAssetDescriptorUVE descriptor);
-    bool UnregisterAssetUVE(std::string_view assetPath);
-    [[nodiscard]] const BlueprintAssetDescriptorUVE* FindAssetUVE(std::string_view assetPath) const noexcept;
-    [[nodiscard]] std::vector<BlueprintAssetDescriptorUVE> ListByKindUVE(BlueprintAssetKindUVE kind) const;
-    [[nodiscard]] std::size_t CountUVE() const noexcept { return m_assets.size(); }
-    void ClearUVE() noexcept { m_assets.clear(); }
+    bool RegisterAsset(BlueprintAssetDescriptor descriptor);
+    bool UnregisterAsset(std::string_view assetPath);
+    [[nodiscard]] const BlueprintAssetDescriptor* FindAsset(std::string_view assetPath) const noexcept;
+    [[nodiscard]] std::vector<BlueprintAssetDescriptor> ListByKind(BlueprintAssetKind kind) const;
+    [[nodiscard]] std::size_t Count() const noexcept { return m_assets.size(); }
+    void Clear() noexcept { m_assets.clear(); }
 
     /// Direct asset dependencies of `assetPath`.
-    [[nodiscard]] std::vector<std::string> GetDependenciesUVE(std::string_view assetPath) const;
+    [[nodiscard]] std::vector<std::string> GetDependencies(std::string_view assetPath) const;
 
     /// Reverse dependencies: registered assets that directly depend on `assetPath`.
-    [[nodiscard]] std::vector<std::string> GetDependentsUVE(std::string_view assetPath) const;
+    [[nodiscard]] std::vector<std::string> GetDependents(std::string_view assetPath) const;
 
     /// Transitive closure of dependencies of `assetPath` (excluding `assetPath` itself).
-    [[nodiscard]] std::vector<std::string> GetTransitiveDependenciesUVE(std::string_view assetPath) const;
+    [[nodiscard]] std::vector<std::string> GetTransitiveDependencies(std::string_view assetPath) const;
 
     /// Returns registered assets in topological dependency order (dependencies first), or empty if cyclic.
-    [[nodiscard]] std::vector<std::string> ComputeBuildOrderUVE() const;
+    [[nodiscard]] std::vector<std::string> ComputeBuildOrder() const;
 
     /// True if any dependency cycle exists among registered Blueprint assets.
-    [[nodiscard]] bool HasDependencyCycleUVE() const;
+    [[nodiscard]] bool HasDependencyCycle() const;
 
 private:
-    std::map<std::string, BlueprintAssetDescriptorUVE, std::less<>> m_assets;
+    std::map<std::string, BlueprintAssetDescriptor, std::less<>> m_assets;
 };
 
 // ---------------------------------------------------------------------------
 // Detailed Validation
 // ---------------------------------------------------------------------------
 
-enum class BlueprintAssetValidationSeverityUVE : std::uint8_t {
+enum class BlueprintAssetValidationSeverity : std::uint8_t {
     Warning = 0,
     Error,
 };
 
-struct BlueprintAssetValidationIssueUVE final {
-    BlueprintAssetValidationSeverityUVE severity = BlueprintAssetValidationSeverityUVE::Error;
+struct BlueprintAssetValidationIssue final {
+    BlueprintAssetValidationSeverity severity = BlueprintAssetValidationSeverity::Error;
     std::uint32_t nodeId = 0U;
     std::string code;
     std::string message;
 };
 
-struct BlueprintAssetValidationReportUVE final {
-    std::vector<BlueprintAssetValidationIssueUVE> issues;
+struct BlueprintAssetValidationReport final {
+    std::vector<BlueprintAssetValidationIssue> issues;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept;
-    [[nodiscard]] std::size_t ErrorCountUVE() const noexcept;
-    [[nodiscard]] std::size_t WarningCountUVE() const noexcept;
+    [[nodiscard]] bool IsValid() const noexcept;
+    [[nodiscard]] std::size_t ErrorCount() const noexcept;
+    [[nodiscard]] std::size_t WarningCount() const noexcept;
 };
 
 /// Performs thorough structural, node-catalog, variable, and wire-type validation of a Blueprint graph.
-[[nodiscard]] BlueprintAssetValidationReportUVE ValidateBlueprintAssetDetailedUVE(
-    const Asset::BlueprintAssetUVE& blueprint);
+[[nodiscard]] BlueprintAssetValidationReport ValidateBlueprintAssetDetailed(
+    const Asset::BlueprintAsset& blueprint);
 
-[[nodiscard]] BlueprintAssetValidationReportUVE ValidateFunctionLibraryAssetUVE(
-    const BlueprintFunctionLibraryAssetUVE& library);
+[[nodiscard]] BlueprintAssetValidationReport ValidateFunctionLibraryAsset(
+    const BlueprintFunctionLibraryAsset& library);
 
-[[nodiscard]] BlueprintAssetValidationReportUVE ValidateMacroLibraryAssetUVE(
-    const BlueprintMacroLibraryAssetUVE& library);
+[[nodiscard]] BlueprintAssetValidationReport ValidateMacroLibraryAsset(
+    const BlueprintMacroLibraryAsset& library);
 
-[[nodiscard]] BlueprintAssetValidationReportUVE ValidateInterfaceAssetUVE(
-    const BlueprintInterfaceAssetUVE& iface);
+[[nodiscard]] BlueprintAssetValidationReport ValidateInterfaceAsset(
+    const BlueprintInterfaceAsset& iface);
 
 } // namespace UVE::Blueprint::Assets

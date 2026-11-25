@@ -7,28 +7,28 @@
 
 namespace UVE::Render {
 
-std::size_t GetShaderDataTypeSizeBytesUVE(ShaderDataTypeUVE type) noexcept {
+std::size_t GetShaderDataTypeSizeBytes(ShaderDataType type) noexcept {
     switch (type) {
-        case ShaderDataTypeUVE::Float:
+        case ShaderDataType::Float:
             return 4U;
-        case ShaderDataTypeUVE::Vec2:
+        case ShaderDataType::Vec2:
             return 8U;
-        case ShaderDataTypeUVE::Vec3:
+        case ShaderDataType::Vec3:
             return 12U;
-        case ShaderDataTypeUVE::Vec4:
+        case ShaderDataType::Vec4:
             return 16U;
-        case ShaderDataTypeUVE::Mat3:
+        case ShaderDataType::Mat3:
             return 36U;
-        case ShaderDataTypeUVE::Mat4:
+        case ShaderDataType::Mat4:
             return 64U;
-        case ShaderDataTypeUVE::Int:
+        case ShaderDataType::Int:
             return 4U;
-        case ShaderDataTypeUVE::Bool:
+        case ShaderDataType::Bool:
             return 4U;
-        case ShaderDataTypeUVE::Unsupported:
+        case ShaderDataType::Unsupported:
             return 0U;
     }
-    UVE_ASSERT(false && "Unhandled ShaderDataTypeUVE");
+    UVE_ASSERT(false && "Unhandled ShaderDataType");
     return 0U;
 }
 

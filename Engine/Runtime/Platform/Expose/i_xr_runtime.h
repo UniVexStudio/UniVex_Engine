@@ -8,31 +8,31 @@
 
 namespace UVE::Platform {
 
-enum class XrEyeUVE : std::uint8_t { Left = 0, Right = 1 };
-enum class XrHandUVE : std::uint8_t { Left = 0, Right = 1 };
+enum class XrEye : std::uint8_t { Left = 0, Right = 1 };
+enum class XrHand : std::uint8_t { Left = 0, Right = 1 };
 
-struct XrPoseUVE final {
+struct XrPose final {
     std::array<float, 3> position{0.0F, 1.6F, 0.0F};
     std::array<float, 4> orientation{0.0F, 0.0F, 0.0F, 1.0F}; // xyzw
     bool tracked = false;
 };
 
-struct XrEyeViewUVE final {
-    XrPoseUVE pose{};
+struct XrEyeView final {
+    XrPose pose{};
     float fovLeftRad = -0.785398F;
     float fovRightRad = 0.785398F;
     float fovUpRad = 0.785398F;
     float fovDownRad = -0.785398F;
 };
 
-struct XrPlayAreaUVE final {
+struct XrPlayArea final {
     float widthMetres = 2.5F;
     float depthMetres = 2.5F;
     bool roomScale = true;
 };
 
-struct XrControllerStateUVE final {
-    XrPoseUVE pose{};
+struct XrControllerState final {
+    XrPose pose{};
     float trigger = 0.0F;
     float grip = 0.0F;
     std::array<float, 2> thumbstick{0.0F, 0.0F};
@@ -41,45 +41,45 @@ struct XrControllerStateUVE final {
 
 /// Stereo VR/AR runtime abstraction (OpenXR-compatible shape) with HMD stereo views, tracked
 /// controllers, and room-scale/seated play area reporting.
-class IXrRuntimeUVE {
+class IXrRuntime {
 public:
-    virtual ~IXrRuntimeUVE() = default;
-    [[nodiscard]] virtual std::string_view RuntimeNameUVE() const noexcept = 0;
-    [[nodiscard]] virtual bool IsSessionActiveUVE() const noexcept = 0;
-    virtual bool BeginFrameUVE() = 0;
-    virtual void EndFrameUVE() = 0;
+    virtual ~IXrRuntime() = default;
+    [[nodiscard]] virtual std::string_view RuntimeName() const noexcept = 0;
+    [[nodiscard]] virtual bool IsSessionActive() const noexcept = 0;
+    virtual bool BeginFrame() = 0;
+    virtual void EndFrame() = 0;
 
-    [[nodiscard]] virtual XrPoseUVE GetHeadPoseUVE() const noexcept = 0;
-    [[nodiscard]] virtual XrEyeViewUVE GetEyeViewUVE(XrEyeUVE eye) const noexcept = 0;
-    [[nodiscard]] virtual XrControllerStateUVE GetControllerStateUVE(XrHandUVE hand) const noexcept = 0;
-    [[nodiscard]] virtual XrPlayAreaUVE GetPlayAreaUVE() const noexcept = 0;
+    [[nodiscard]] virtual XrPose GetHeadPose() const noexcept = 0;
+    [[nodiscard]] virtual XrEyeView GetEyeView(XrEye eye) const noexcept = 0;
+    [[nodiscard]] virtual XrControllerState GetControllerState(XrHand hand) const noexcept = 0;
+    [[nodiscard]] virtual XrPlayArea GetPlayArea() const noexcept = 0;
 };
 
 /// Deterministic software XR/HMD simulator for stereo camera & tracked controller verification.
-class MockXrRuntimeUVE final : public IXrRuntimeUVE {
+class MockXrRuntime final : public IXrRuntime {
 public:
-    explicit MockXrRuntimeUVE(float ipdMetres = 0.064F) noexcept;
+    explicit MockXrRuntime(float ipdMetres = 0.064F) noexcept;
 
-    [[nodiscard]] std::string_view RuntimeNameUVE() const noexcept override { return "MockXR"; }
-    [[nodiscard]] bool IsSessionActiveUVE() const noexcept override { return m_active; }
-    bool BeginFrameUVE() override;
-    void EndFrameUVE() override;
+    [[nodiscard]] std::string_view RuntimeName() const noexcept override { return "MockXR"; }
+    [[nodiscard]] bool IsSessionActive() const noexcept override { return m_active; }
+    bool BeginFrame() override;
+    void EndFrame() override;
 
-    void SetHeadPoseUVE(const XrPoseUVE& pose) noexcept { m_headPose = pose; }
-    void SetControllerStateUVE(XrHandUVE hand, const XrControllerStateUVE& state) noexcept;
-    void SetPlayAreaUVE(const XrPlayAreaUVE& area) noexcept { m_playArea = area; }
+    void SetHeadPose(const XrPose& pose) noexcept { m_headPose = pose; }
+    void SetControllerState(XrHand hand, const XrControllerState& state) noexcept;
+    void SetPlayArea(const XrPlayArea& area) noexcept { m_playArea = area; }
 
-    [[nodiscard]] XrPoseUVE GetHeadPoseUVE() const noexcept override { return m_headPose; }
-    [[nodiscard]] XrEyeViewUVE GetEyeViewUVE(XrEyeUVE eye) const noexcept override;
-    [[nodiscard]] XrControllerStateUVE GetControllerStateUVE(XrHandUVE hand) const noexcept override;
-    [[nodiscard]] XrPlayAreaUVE GetPlayAreaUVE() const noexcept override { return m_playArea; }
+    [[nodiscard]] XrPose GetHeadPose() const noexcept override { return m_headPose; }
+    [[nodiscard]] XrEyeView GetEyeView(XrEye eye) const noexcept override;
+    [[nodiscard]] XrControllerState GetControllerState(XrHand hand) const noexcept override;
+    [[nodiscard]] XrPlayArea GetPlayArea() const noexcept override { return m_playArea; }
 
 private:
     float m_ipdMetres = 0.064F;
     bool m_active = true;
-    XrPoseUVE m_headPose{};
-    std::array<XrControllerStateUVE, 2> m_controllers{};
-    XrPlayAreaUVE m_playArea{};
+    XrPose m_headPose{};
+    std::array<XrControllerState, 2> m_controllers{};
+    XrPlayArea m_playArea{};
 };
 
 } // namespace UVE::Platform

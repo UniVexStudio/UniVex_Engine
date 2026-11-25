@@ -14,17 +14,17 @@ namespace {
 
 constexpr float kEpsilon = 1e-6F;
 
-TEST(ColorUVETest, DefaultConstruction_IsBlack) {
-    constexpr ColorUVE color{};
+TEST(ColorTest, DefaultConstruction_IsBlack) {
+    constexpr Color color{};
     EXPECT_EQ(color.r, 0.0F);
     EXPECT_EQ(color.g, 0.0F);
     EXPECT_EQ(color.b, 0.0F);
 }
 
-TEST(ColorUVETest, EqualityOperators_CompareAllChannels) {
-    constexpr ColorUVE a{0.1F, 0.2F, 0.3F};
-    constexpr ColorUVE b{0.1F, 0.2F, 0.3F};
-    constexpr ColorUVE c{0.1F, 0.2F, 0.4F};
+TEST(ColorTest, EqualityOperators_CompareAllChannels) {
+    constexpr Color a{0.1F, 0.2F, 0.3F};
+    constexpr Color b{0.1F, 0.2F, 0.3F};
+    constexpr Color c{0.1F, 0.2F, 0.4F};
 
     EXPECT_TRUE(a == b);
     EXPECT_FALSE(a != b);
@@ -32,61 +32,61 @@ TEST(ColorUVETest, EqualityOperators_CompareAllChannels) {
     EXPECT_FALSE(a == c);
 }
 
-TEST(ColorUVETest, ToVector3UVE_PreservesChannelsExactly) {
-    constexpr ColorUVE color{0.1F, 0.2F, 0.3F};
+TEST(ColorTest, ToVector3_PreservesChannelsExactly) {
+    constexpr Color color{0.1F, 0.2F, 0.3F};
 
-    EXPECT_EQ(ToVector3UVE(color), (Vector3UVE{0.1F, 0.2F, 0.3F}));
+    EXPECT_EQ(ToVector3(color), (Vector3{0.1F, 0.2F, 0.3F}));
 }
 
-TEST(ColorUVETest, DisplayToLinearUVE_KnownValues_MatchSrgbTransfer) {
-    EXPECT_FLOAT_EQ(DisplayToLinearUVE(0.0F), 0.0F);
-    EXPECT_FLOAT_EQ(DisplayToLinearUVE(1.0F), 1.0F);
+TEST(ColorTest, DisplayToLinear_KnownValues_MatchSrgbTransfer) {
+    EXPECT_FLOAT_EQ(DisplayToLinear(0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(DisplayToLinear(1.0F), 1.0F);
     // Power segment: ((0.5 + 0.055) / 1.055)^2.4.
-    EXPECT_NEAR(DisplayToLinearUVE(0.5F), 0.2140411F, kEpsilon);
+    EXPECT_NEAR(DisplayToLinear(0.5F), 0.2140411F, kEpsilon);
     // Low segment: 0.02 / 12.92.
-    EXPECT_NEAR(DisplayToLinearUVE(0.02F), 0.0015480F, kEpsilon);
+    EXPECT_NEAR(DisplayToLinear(0.02F), 0.0015480F, kEpsilon);
 }
 
-TEST(ColorUVETest, LinearToDisplayUVE_KnownValues_MatchSrgbTransfer) {
-    EXPECT_FLOAT_EQ(LinearToDisplayUVE(0.0F), 0.0F);
-    EXPECT_FLOAT_EQ(LinearToDisplayUVE(1.0F), 1.0F);
-    EXPECT_NEAR(LinearToDisplayUVE(0.2140411F), 0.5F, kEpsilon);
-    EXPECT_NEAR(LinearToDisplayUVE(0.0015480F), 0.02F, kEpsilon);
+TEST(ColorTest, LinearToDisplay_KnownValues_MatchSrgbTransfer) {
+    EXPECT_FLOAT_EQ(LinearToDisplay(0.0F), 0.0F);
+    EXPECT_FLOAT_EQ(LinearToDisplay(1.0F), 1.0F);
+    EXPECT_NEAR(LinearToDisplay(0.2140411F), 0.5F, kEpsilon);
+    EXPECT_NEAR(LinearToDisplay(0.0015480F), 0.02F, kEpsilon);
 }
 
-TEST(ColorUVETest, TransferRoundTrip_DisplayLinearDisplay_IsIdentity) {
+TEST(ColorTest, TransferRoundTrip_DisplayLinearDisplay_IsIdentity) {
     // Including black, white, both piecewise segments, and an HDR value past 1.
     for (const float display : {0.0F, 0.02F, 0.2F, 0.5F, 1.0F, 2.0F}) {
-        EXPECT_NEAR(LinearToDisplayUVE(DisplayToLinearUVE(display)), display, kEpsilon);
+        EXPECT_NEAR(LinearToDisplay(DisplayToLinear(display)), display, kEpsilon);
     }
 }
 
-TEST(ColorUVETest, ColorFromDisplay_MtlPrimaries_MatchHandComputedLinear) {
+TEST(ColorTest, ColorFromDisplay_MtlPrimaries_MatchHandComputedLinear) {
     // Pins the MTL import math at the math layer: the converter test pins the wiring.
-    const ColorUVE albedo = ColorFromDisplayUVE(Vector3UVE{0.2F, 0.4F, 0.6F});
+    const Color albedo = ColorFromDisplay(Vector3{0.2F, 0.4F, 0.6F});
     EXPECT_NEAR(albedo.r, 0.0331048F, kEpsilon);
     EXPECT_NEAR(albedo.g, 0.1328683F, kEpsilon);
     EXPECT_NEAR(albedo.b, 0.3185468F, kEpsilon);
 
-    const ColorUVE emissive = ColorFromDisplayUVE(Vector3UVE{1.0F, 2.0F, 3.0F});
+    const Color emissive = ColorFromDisplay(Vector3{1.0F, 2.0F, 3.0F});
     EXPECT_NEAR(emissive.r, 1.0F, kEpsilon);
     EXPECT_NEAR(emissive.g, 4.9538458F, 1e-4F);
     EXPECT_NEAR(emissive.b, 12.8298333F, 1e-3F);
 }
 
-TEST(ColorUVETest, DisplayFromColor_RoundTripsThroughColorFromDisplay) {
-    const ColorUVE color{0.0331048F, 0.5F, 1.0F};
-    const Vector3UVE display = DisplayFromColorUVE(color);
-    const ColorUVE back = ColorFromDisplayUVE(display);
+TEST(ColorTest, DisplayFromColor_RoundTripsThroughColorFromDisplay) {
+    const Color color{0.0331048F, 0.5F, 1.0F};
+    const Vector3 display = DisplayFromColor(color);
+    const Color back = ColorFromDisplay(display);
 
     EXPECT_NEAR(back.r, color.r, kEpsilon);
     EXPECT_NEAR(back.g, color.g, kEpsilon);
     EXPECT_NEAR(back.b, color.b, kEpsilon);
 }
 
-TEST(ColorUVETest, ToStringUVE_FormatsAllThreeChannels) {
-    const ColorUVE color{1.0F, 0.5F, 0.0F};
-    const std::string text = ToStringUVE(color);
+TEST(ColorTest, ToString_FormatsAllThreeChannels) {
+    const Color color{1.0F, 0.5F, 0.0F};
+    const std::string text = ToString(color);
 
     EXPECT_NE(text.find("1.000000"), std::string::npos);
     EXPECT_NE(text.find("0.500000"), std::string::npos);

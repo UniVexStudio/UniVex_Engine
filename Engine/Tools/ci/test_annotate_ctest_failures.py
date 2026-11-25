@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import annotate_ctest_failures as annotate  # noqa: E402
 
 
-class CollectUVETest(unittest.TestCase):
+class CollectTest(unittest.TestCase):
     def collect(self, text: str, keep_lines: int = 8):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "ctest-output.txt"
@@ -58,7 +58,7 @@ Expected: something
         self.assertEqual(len(failures[0][1].splitlines()), 3, "the header counts, and the cap holds")
 
 
-class EscapeUVETest(unittest.TestCase):
+class EscapeTest(unittest.TestCase):
     def test_workflow_commands_survive_newlines_and_percent_signs(self):
         self.assertEqual(annotate.escape("50% a\r\nb"), "50%25 a%0D%0Ab")
 

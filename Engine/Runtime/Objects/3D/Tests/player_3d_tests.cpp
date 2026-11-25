@@ -23,167 +23,167 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class Player3DUVETest : public ::testing::Test {
+class Player3DTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 };
 
-TEST_F(Player3DUVETest, ResolvePossessedPlayerPrefersPossessOnPlay) {
-    const EntityUVE npc = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, npc, Player3DObjectDefinitionUVE{});
-    entityManager.GetComponentUVE<PlayerComponentUVE>(npc).possessOnPlay = false;
+TEST_F(Player3DTest, ResolvePossessedPlayerPrefersPossessOnPlay) {
+    const Entity npc = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, npc, Player3DObjectDefinition{});
+    entityManager.GetComponent<PlayerComponent>(npc).possessOnPlay = false;
 
-    const EntityUVE player = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+    const Entity player = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, player, Player3DObjectDefinition{});
 
     // Resolution follows possession now: the engine's per-frame fill runs first, like in play.
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), player);
 }
 
-TEST_F(Player3DUVETest, MaintainFillsSelfPossessionButNeverStealsADirectorsTakeover) {
-    const EntityUVE player = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), kInvalidEntityUVE);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+TEST_F(Player3DTest, MaintainFillsSelfPossessionButNeverStealsADirectorsTakeover) {
+    const Entity player = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, player, Player3DObjectDefinition{});
+    EXPECT_EQ(FindPawnController(entityManager, player), kInvalidEntity);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), kInvalidEntity);
 
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), player);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(FindPawnController(entityManager, player), player);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), player);
 
     // A Player-kind holder elsewhere still counts as player-driven - and is never stolen back.
-    const EntityUVE director = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ControllerComponentUVE>(director, ControllerComponentUVE{});
-    ASSERT_TRUE(PossessControllerUVE(entityManager, director, player));
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), director);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+    const Entity director = entityManager.CreateEntity();
+    entityManager.AddComponent<ControllerComponent>(director, ControllerComponent{});
+    ASSERT_TRUE(PossessController(entityManager, director, player));
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(FindPawnController(entityManager, player), director);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), player);
 
     // An AI-kind takeover removes the body from player resolution until it is released.
-    ASSERT_TRUE(UnpossessControllerUVE(entityManager, director));
-    const EntityUVE aiDirector = entityManager.CreateEntityUVE();
-    ControllerComponentUVE aiController;
-    aiController.kind = ControllerKindUVE::AI;
-    entityManager.AddComponentUVE<ControllerComponentUVE>(aiDirector, aiController);
-    ASSERT_TRUE(PossessControllerUVE(entityManager, aiDirector, player));
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), aiDirector);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+    ASSERT_TRUE(UnpossessController(entityManager, director));
+    const Entity aiDirector = entityManager.CreateEntity();
+    ControllerComponent aiController;
+    aiController.kind = ControllerKind::AI;
+    entityManager.AddComponent<ControllerComponent>(aiDirector, aiController);
+    ASSERT_TRUE(PossessController(entityManager, aiDirector, player));
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(FindPawnController(entityManager, player), aiDirector);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), kInvalidEntity);
 
-    ASSERT_TRUE(UnpossessControllerUVE(entityManager, aiDirector));
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, player), player);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), player);
+    ASSERT_TRUE(UnpossessController(entityManager, aiDirector));
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(FindPawnController(entityManager, player), player);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), player);
 }
 
-TEST_F(Player3DUVETest, MaintainSkipsUnflaggedBodiesAndNonPlayerControllers) {
-    const EntityUVE npc = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, npc, Player3DObjectDefinitionUVE{});
-    entityManager.GetComponentUVE<PlayerComponentUVE>(npc).possessOnPlay = false;
+TEST_F(Player3DTest, MaintainSkipsUnflaggedBodiesAndNonPlayerControllers) {
+    const Entity npc = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, npc, Player3DObjectDefinition{});
+    entityManager.GetComponent<PlayerComponent>(npc).possessOnPlay = false;
 
-    Player3DObjectDefinitionUVE aiDriven{};
-    aiDriven.controllerKind = ControllerKindUVE::AI;
-    const EntityUVE aiBody = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, aiBody, aiDriven);
+    Player3DObjectDefinition aiDriven{};
+    aiDriven.controllerKind = ControllerKind::AI;
+    const Entity aiBody = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, aiBody, aiDriven);
 
-    MaintainPlayerPossessionUVE(entityManager);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, npc), kInvalidEntityUVE);
-    EXPECT_EQ(FindPawnControllerUVE(entityManager, aiBody), kInvalidEntityUVE);
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
+    MaintainPlayerPossession(entityManager);
+    EXPECT_EQ(FindPawnController(entityManager, npc), kInvalidEntity);
+    EXPECT_EQ(FindPawnController(entityManager, aiBody), kInvalidEntity);
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), kInvalidEntity);
 }
 
-TEST_F(Player3DUVETest, DefinitionCarriesControllerKindAndRefusesUnknownKinds) {
-    EXPECT_TRUE(IsPlayer3DObjectDefinitionValidUVE(Player3DObjectDefinitionUVE{}));
-    Player3DObjectDefinitionUVE bad{};
-    bad.controllerKind = static_cast<ControllerKindUVE>(7U);
-    EXPECT_FALSE(IsPlayer3DObjectDefinitionValidUVE(bad));
+TEST_F(Player3DTest, DefinitionCarriesControllerKindAndRefusesUnknownKinds) {
+    EXPECT_TRUE(IsPlayer3DObjectDefinitionValid(Player3DObjectDefinition{}));
+    Player3DObjectDefinition bad{};
+    bad.controllerKind = static_cast<ControllerKind>(7U);
+    EXPECT_FALSE(IsPlayer3DObjectDefinitionValid(bad));
 
-    Player3DObjectDefinitionUVE aiDriven{};
-    aiDriven.controllerKind = ControllerKindUVE::AI;
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, entity, aiDriven);
-    ASSERT_TRUE(entityManager.HasComponentUVE<PawnComponentUVE>(entity));
-    ASSERT_TRUE(entityManager.HasComponentUVE<ControllerComponentUVE>(entity));
-    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(entity).kind,
-              ControllerKindUVE::AI);
+    Player3DObjectDefinition aiDriven{};
+    aiDriven.controllerKind = ControllerKind::AI;
+    const Entity entity = entityManager.CreateEntity();
+    ApplyPlayer3DObjectDefinition(entityManager, entity, aiDriven);
+    ASSERT_TRUE(entityManager.HasComponent<PawnComponent>(entity));
+    ASSERT_TRUE(entityManager.HasComponent<ControllerComponent>(entity));
+    EXPECT_EQ(entityManager.GetComponent<ControllerComponent>(entity).kind,
+              ControllerKind::AI);
 }
 
-TEST_F(Player3DUVETest, FaceMoveTurnsForwardWithYaw) {
-    Math::QuaternionUVE yaw{};
-    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
-    const Math::Vector3UVE faced = FaceMoveFromLookUVE(yaw, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+TEST_F(Player3DTest, FaceMoveTurnsForwardWithYaw) {
+    Math::Quaternion yaw{};
+    ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
+    const Math::Vector3 faced = FaceMoveFromLook(yaw, Math::Vector3{0.0F, 0.0F, -1.0F});
     EXPECT_NEAR(faced.x, -1.0F, 1.0e-5F);
     EXPECT_NEAR(faced.z, 0.0F, 1.0e-5F);
 }
 
-TEST_F(Player3DUVETest, LookYawsTheBodyAndPitchesAChildCamera) {
-    const EntityUVE player = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, player, TransformComponentUVE{});
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+TEST_F(Player3DTest, LookYawsTheBodyAndPitchesAChildCamera) {
+    const Entity player = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, player, TransformComponent{});
+    ApplyPlayer3DObjectDefinition(entityManager, player, Player3DObjectDefinition{});
 
-    const EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, TransformComponentUVE{});
-    entityManager.AddComponentUVE<CameraComponentUVE>(camera, CameraComponentUVE{});
-    sceneGraph.SetParentUVE(entityManager, camera, player);
+    const Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, TransformComponent{});
+    entityManager.AddComponent<CameraComponent>(camera, CameraComponent{});
+    sceneGraph.SetParent(entityManager, camera, player);
 
-    EXPECT_EQ(FindPlayerLookTargetUVE(entityManager, player), camera);
+    EXPECT_EQ(FindPlayerLookTarget(entityManager, player), camera);
 
-    PlayerComponentUVE& state = entityManager.GetComponentUVE<PlayerComponentUVE>(player);
-    TransformComponentUVE body = entityManager.GetComponentUVE<TransformComponentUVE>(player);
-    TransformComponentUVE look = entityManager.GetComponentUVE<TransformComponentUVE>(camera);
-    ApplyPlayerLookUVE(state, body, &look, Math::Vector2UVE{10.0F, 5.0F}, Math::Vector2UVE{}, 0.0F);
+    PlayerComponent& state = entityManager.GetComponent<PlayerComponent>(player);
+    TransformComponent body = entityManager.GetComponent<TransformComponent>(player);
+    TransformComponent look = entityManager.GetComponent<TransformComponent>(camera);
+    ApplyPlayerLook(state, body, &look, Math::Vector2{10.0F, 5.0F}, Math::Vector2{}, 0.0F);
     EXPECT_LT(state.pitchDegrees, 0.0F);
-    EXPECT_NE(body.localRotation, Math::QuaternionUVE{});
-    EXPECT_NE(look.localRotation, Math::QuaternionUVE{});
+    EXPECT_NE(body.localRotation, Math::Quaternion{});
+    EXPECT_NE(look.localRotation, Math::Quaternion{});
 }
 
-TEST_F(Player3DUVETest, ResolvePlayCharacterFallsBackToTheFirstController) {
-    const EntityUVE body = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, body, TransformComponentUVE{});
-    ApplyCharacter3DObjectDefinitionUVE(entityManager, body, Character3DObjectDefinitionUVE{});
-    EXPECT_EQ(ResolvePossessedPlayerUVE(entityManager), kInvalidEntityUVE);
-    EXPECT_EQ(ResolvePlayCharacterUVE(entityManager), body);
+TEST_F(Player3DTest, ResolvePlayCharacterFallsBackToTheFirstController) {
+    const Entity body = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, body, TransformComponent{});
+    ApplyCharacter3DObjectDefinition(entityManager, body, Character3DObjectDefinition{});
+    EXPECT_EQ(ResolvePossessedPlayer(entityManager), kInvalidEntity);
+    EXPECT_EQ(ResolvePlayCharacter(entityManager), body);
 }
 
-TEST_F(Player3DUVETest, FindPlayerCameraWalksPastTheSpringArm) {
-    const EntityUVE player = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, player, TransformComponentUVE{});
-    ApplyPlayer3DObjectDefinitionUVE(entityManager, player, Player3DObjectDefinitionUVE{});
+TEST_F(Player3DTest, FindPlayerCameraWalksPastTheSpringArm) {
+    const Entity player = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, player, TransformComponent{});
+    ApplyPlayer3DObjectDefinition(entityManager, player, Player3DObjectDefinition{});
 
-    const EntityUVE springArm = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, springArm, TransformComponentUVE{});
-    ApplySpringArm3DObjectDefinitionUVE(entityManager, springArm, SpringArm3DObjectDefinitionUVE{});
-    sceneGraph.SetParentUVE(entityManager, springArm, player);
+    const Entity springArm = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, springArm, TransformComponent{});
+    ApplySpringArm3DObjectDefinition(entityManager, springArm, SpringArm3DObjectDefinition{});
+    sceneGraph.SetParent(entityManager, springArm, player);
 
-    const EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, TransformComponentUVE{});
-    entityManager.AddComponentUVE<CameraComponentUVE>(camera, CameraComponentUVE{});
-    sceneGraph.SetParentUVE(entityManager, camera, springArm);
+    const Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, TransformComponent{});
+    entityManager.AddComponent<CameraComponent>(camera, CameraComponent{});
+    sceneGraph.SetParent(entityManager, camera, springArm);
 
-    EXPECT_EQ(FindPlayerLookTargetUVE(entityManager, player), springArm);
-    EXPECT_EQ(FindPlayerCameraUVE(entityManager, player), camera);
+    EXPECT_EQ(FindPlayerLookTarget(entityManager, player), springArm);
+    EXPECT_EQ(FindPlayerCamera(entityManager, player), camera);
 
-    const EntityUVE other = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, other, TransformComponentUVE{});
-    CameraComponentUVE otherCamera{};
+    const Entity other = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, other, TransformComponent{});
+    CameraComponent otherCamera{};
     otherCamera.current = true;
-    entityManager.AddComponentUVE<CameraComponentUVE>(other, otherCamera);
-    MakePlayerCameraCurrentUVE(entityManager, player);
-    EXPECT_TRUE(entityManager.GetComponentUVE<CameraComponentUVE>(camera).current);
-    EXPECT_FALSE(entityManager.GetComponentUVE<CameraComponentUVE>(other).current);
+    entityManager.AddComponent<CameraComponent>(other, otherCamera);
+    MakePlayerCameraCurrent(entityManager, player);
+    EXPECT_TRUE(entityManager.GetComponent<CameraComponent>(camera).current);
+    EXPECT_FALSE(entityManager.GetComponent<CameraComponent>(other).current);
 }
 
-TEST_F(Player3DUVETest, InvalidLookSettingsAreRefused) {
-    PlayerComponentUVE bad{};
+TEST_F(Player3DTest, InvalidLookSettingsAreRefused) {
+    PlayerComponent bad{};
     bad.minPitchDegrees = 10.0F;
     bad.maxPitchDegrees = -10.0F;
-    EXPECT_FALSE(IsPlayer3DObjectComponentValidUVE(bad));
+    EXPECT_FALSE(IsPlayer3DObjectComponentValid(bad));
     bad = {};
     bad.lookSensitivity = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(IsPlayer3DObjectComponentValidUVE(bad));
+    EXPECT_FALSE(IsPlayer3DObjectComponentValid(bad));
 }
 
 } // namespace

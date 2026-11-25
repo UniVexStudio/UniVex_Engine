@@ -15,7 +15,7 @@
 //              natural Low cadence (every 8th tick) - the cadence gap shows end to end.
 //
 // Transports are loopback (in-process, deterministic, no ports and no clock but the
-// sim's). RunInterestFanoutSampleUVE() runs the whole story synchronously and answers a
+// sim's). RunInterestFanoutSample() runs the whole story synchronously and answers a
 // verdict: success plus statistics, or the list of violated invariants. The binary prints
 // the log and exits by the verdict; the test suite runs it silent and asserts green.
 //
@@ -29,9 +29,9 @@
 namespace UVE::Samples {
 
 /// Walker count (net ids 20-25, slot = net id - 20).
-inline constexpr std::uint64_t kInterestFanoutEntitiesUVE = 6U;
+inline constexpr std::uint64_t kInterestFanoutEntities = 6U;
 
-struct InterestFanoutSampleConfigUVE final {
+struct InterestFanoutSampleConfig final {
     /// Fixed server ticks to run. The formation crosses C's window between ticks 48
     /// and 92, so runs below ~95 ticks fail the checks that need the full pass.
     std::uint64_t ticks = 100U;
@@ -39,20 +39,20 @@ struct InterestFanoutSampleConfigUVE final {
     std::function<void(const std::string&)> log;
 };
 
-struct InterestFanoutSampleStatsUVE final {
+struct InterestFanoutSampleStats final {
     std::uint64_t ticks = 0U;
     /// Applies received, per client per walker slot.
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> receivedA{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> receivedB{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> receivedC{};
+    std::array<std::uint64_t, kInterestFanoutEntities> receivedA{};
+    std::array<std::uint64_t, kInterestFanoutEntities> receivedB{};
+    std::array<std::uint64_t, kInterestFanoutEntities> receivedC{};
     /// First apply tick (1-based, 0 = never): the discovery order.
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> firstSeenA{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> firstSeenB{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> firstSeenC{};
+    std::array<std::uint64_t, kInterestFanoutEntities> firstSeenA{};
+    std::array<std::uint64_t, kInterestFanoutEntities> firstSeenB{};
+    std::array<std::uint64_t, kInterestFanoutEntities> firstSeenC{};
     /// Last apply tick (0 = never): walkers leave C's window late.
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> lastSeenA{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> lastSeenB{};
-    std::array<std::uint64_t, kInterestFanoutEntitiesUVE> lastSeenC{};
+    std::array<std::uint64_t, kInterestFanoutEntities> lastSeenA{};
+    std::array<std::uint64_t, kInterestFanoutEntities> lastSeenB{};
+    std::array<std::uint64_t, kInterestFanoutEntities> lastSeenC{};
     /// The fan-out's cumulative counters (refreshes, kept, shed by budget).
     std::uint64_t fanoutRefreshes = 0U;
     std::uint64_t fanoutSelected = 0U;
@@ -67,13 +67,13 @@ struct InterestFanoutSampleStatsUVE final {
     std::uint64_t profilerCounters = 0U;
 };
 
-struct InterestFanoutSampleResultUVE final {
+struct InterestFanoutSampleResult final {
     bool success = false;
     std::vector<std::string> failures;
-    InterestFanoutSampleStatsUVE stats;
+    InterestFanoutSampleStats stats;
 };
 
-[[nodiscard]] InterestFanoutSampleResultUVE RunInterestFanoutSampleUVE(
-    const InterestFanoutSampleConfigUVE& config = InterestFanoutSampleConfigUVE{});
+[[nodiscard]] InterestFanoutSampleResult RunInterestFanoutSample(
+    const InterestFanoutSampleConfig& config = InterestFanoutSampleConfig{});
 
 } // namespace UVE::Samples

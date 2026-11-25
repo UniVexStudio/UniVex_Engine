@@ -8,22 +8,22 @@ namespace UVE::Gameplay {
 
 /// Queued when a controller/pawn link becomes mutual - the frame's new control relationships.
 /// Both ids are live at queue time; possession only ever forms between live entities.
-struct PawnPossessedEventUVE final {
-    Scene::EntityUVE controller = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE pawn = Scene::kInvalidEntityUVE;
+struct PawnPossessedEvent final {
+    Scene::Entity controller = Scene::kInvalidEntity;
+    Scene::Entity pawn = Scene::kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const PawnPossessedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PawnPossessedEvent&) const noexcept = default;
 };
 
 /// Queued when a mutual link stops being mutual: unpossessed, stolen, or either side destroyed.
-/// The ids are last-known - a side that died mid-frame is already stale, so check IsAliveUVE
+/// The ids are last-known - a side that died mid-frame is already stale, so check IsAlive
 /// before following them. A lost link still reports: control dying with its driver is exactly
 /// the signal gameplay needs to cut away from the body.
-struct PawnUnpossessedEventUVE final {
-    Scene::EntityUVE controller = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE pawn = Scene::kInvalidEntityUVE;
+struct PawnUnpossessedEvent final {
+    Scene::Entity controller = Scene::kInvalidEntity;
+    Scene::Entity pawn = Scene::kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const PawnUnpossessedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PawnUnpossessedEvent&) const noexcept = default;
 };
 
 } // namespace UVE::Gameplay

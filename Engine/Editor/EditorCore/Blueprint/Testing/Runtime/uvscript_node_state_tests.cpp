@@ -17,121 +17,121 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class UVScriptNodeStateUVETest : public ::testing::Test {
+class UVScriptNodeStateTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 
-    EntityUVE MakeLightUVE() {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<LightComponentUVE>(entity, LightComponentUVE{});
+    Entity MakeLight() {
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<LightComponent>(entity, LightComponent{});
         return entity;
     }
 
-    EntityUVE MakeCameraUVE() {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<CameraComponentUVE>(entity, CameraComponentUVE{});
+    Entity MakeCamera() {
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<CameraComponent>(entity, CameraComponent{});
         return entity;
     }
 };
 
-TEST_F(UVScriptNodeStateUVETest, Host_DescribesNodeStateSurface) {
-    const Core::BlueprintObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    const std::optional<Blueprint::HostPropertyUVE> visible = bare.DescribePropertyUVE("visible");
+TEST_F(UVScriptNodeStateTest, Host_DescribesNodeStateSurface) {
+    const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity()};
+    const std::optional<Blueprint::HostProperty> visible = bare.DescribeProperty("visible");
     ASSERT_TRUE(visible.has_value());
-    EXPECT_EQ(visible->type.kind, Blueprint::TypeUVE::KindUVE::Bool);
+    EXPECT_EQ(visible->type.kind, Blueprint::Type::Kind::Bool);
     EXPECT_TRUE(visible->writable);
-    EXPECT_FALSE(bare.DescribePropertyUVE("intensity").has_value());
-    EXPECT_FALSE(bare.DescribePropertyUVE("fov").has_value());
+    EXPECT_FALSE(bare.DescribeProperty("intensity").has_value());
+    EXPECT_FALSE(bare.DescribeProperty("fov").has_value());
 
-    const Core::BlueprintObjectHostUVE light{entityManager, nullptr, MakeLightUVE()};
-    const std::optional<Blueprint::HostPropertyUVE> intensity =
-        light.DescribePropertyUVE("intensity");
+    const Core::BlueprintObjectHost light{entityManager, nullptr, MakeLight()};
+    const std::optional<Blueprint::HostProperty> intensity =
+        light.DescribeProperty("intensity");
     ASSERT_TRUE(intensity.has_value());
-    EXPECT_EQ(intensity->type.kind, Blueprint::TypeUVE::KindUVE::Float);
+    EXPECT_EQ(intensity->type.kind, Blueprint::Type::Kind::Float);
     EXPECT_TRUE(intensity->writable);
-    EXPECT_FALSE(light.DescribePropertyUVE("fov").has_value());
+    EXPECT_FALSE(light.DescribeProperty("fov").has_value());
 
-    const Core::BlueprintObjectHostUVE camera{entityManager, nullptr, MakeCameraUVE()};
-    const std::optional<Blueprint::HostPropertyUVE> fov = camera.DescribePropertyUVE("fov");
+    const Core::BlueprintObjectHost camera{entityManager, nullptr, MakeCamera()};
+    const std::optional<Blueprint::HostProperty> fov = camera.DescribeProperty("fov");
     ASSERT_TRUE(fov.has_value());
-    EXPECT_EQ(fov->type.kind, Blueprint::TypeUVE::KindUVE::Float);
+    EXPECT_EQ(fov->type.kind, Blueprint::Type::Kind::Float);
     EXPECT_TRUE(fov->writable);
-    EXPECT_FALSE(camera.DescribePropertyUVE("intensity").has_value());
+    EXPECT_FALSE(camera.DescribeProperty("intensity").has_value());
 }
 
-TEST_F(UVScriptNodeStateUVETest, Visible_DefaultsTrueAndWriteAddsComponent) {
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    EXPECT_TRUE(std::get<bool>(host.GetPropertyUVE("visible")));
+TEST_F(UVScriptNodeStateTest, Visible_DefaultsTrueAndWriteAddsComponent) {
+    Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
+    EXPECT_TRUE(std::get<bool>(host.GetProperty("visible")));
 
-    host.SetPropertyUVE("visible", Blueprint::ValueUVE{false});
-    EXPECT_FALSE(std::get<bool>(host.GetPropertyUVE("visible")));
+    host.SetProperty("visible", Blueprint::Value{false});
+    EXPECT_FALSE(std::get<bool>(host.GetProperty("visible")));
 
-    host.SetPropertyUVE("visible", Blueprint::ValueUVE{true});
-    EXPECT_TRUE(std::get<bool>(host.GetPropertyUVE("visible")));
+    host.SetProperty("visible", Blueprint::Value{true});
+    EXPECT_TRUE(std::get<bool>(host.GetProperty("visible")));
 }
 
-TEST_F(UVScriptNodeStateUVETest, Visible_AddsComponentWithoutTouchingDerivedHierarchy) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entity};
-    ASSERT_FALSE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
+TEST_F(UVScriptNodeStateTest, Visible_AddsComponentWithoutTouchingDerivedHierarchy) {
+    const Entity entity = entityManager.CreateEntity();
+    Core::BlueprintObjectHost host{entityManager, nullptr, entity};
+    ASSERT_FALSE(entityManager.HasComponent<VisibilityComponent>(entity));
 
-    host.SetPropertyUVE("visible", Blueprint::ValueUVE{false});
-    ASSERT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(entity));
-    const VisibilityComponentUVE& stored = entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+    host.SetProperty("visible", Blueprint::Value{false});
+    ASSERT_TRUE(entityManager.HasComponent<VisibilityComponent>(entity));
+    const VisibilityComponent& stored = entityManager.GetComponent<VisibilityComponent>(entity);
     EXPECT_FALSE(stored.visible);
     EXPECT_TRUE(stored.visibleInHierarchy);
 
     // A hidden ancestor leaves the switch on while the derived flag reads hidden; the host
     // reports the switch it owns, and a write still leaves the derived flag alone.
-    VisibilityComponentUVE hidden;
+    VisibilityComponent hidden;
     hidden.visible = true;
     hidden.visibleInHierarchy = false;
-    const EntityUVE child = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<VisibilityComponentUVE>(child, hidden);
-    Core::BlueprintObjectHostUVE childHost{entityManager, nullptr, child};
-    EXPECT_TRUE(std::get<bool>(childHost.GetPropertyUVE("visible")));
-    childHost.SetPropertyUVE("visible", Blueprint::ValueUVE{false});
-    const VisibilityComponentUVE& childStored =
-        entityManager.GetComponentUVE<VisibilityComponentUVE>(child);
+    const Entity child = entityManager.CreateEntity();
+    entityManager.AddComponent<VisibilityComponent>(child, hidden);
+    Core::BlueprintObjectHost childHost{entityManager, nullptr, child};
+    EXPECT_TRUE(std::get<bool>(childHost.GetProperty("visible")));
+    childHost.SetProperty("visible", Blueprint::Value{false});
+    const VisibilityComponent& childStored =
+        entityManager.GetComponent<VisibilityComponent>(child);
     EXPECT_FALSE(childStored.visible);
     EXPECT_FALSE(childStored.visibleInHierarchy);
 }
 
-TEST_F(UVScriptNodeStateUVETest, Intensity_RoundTripsAndRejectsInvalid) {
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, MakeLightUVE()};
-    EXPECT_DOUBLE_EQ(std::get<double>(host.GetPropertyUVE("intensity")), 1.0);
+TEST_F(UVScriptNodeStateTest, Intensity_RoundTripsAndRejectsInvalid) {
+    Core::BlueprintObjectHost host{entityManager, nullptr, MakeLight()};
+    EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("intensity")), 1.0);
 
-    host.SetPropertyUVE("intensity", Blueprint::ValueUVE{2.5});
-    EXPECT_DOUBLE_EQ(std::get<double>(host.GetPropertyUVE("intensity")), 2.5);
+    host.SetProperty("intensity", Blueprint::Value{2.5});
+    EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("intensity")), 2.5);
 
     const double nan = static_cast<double>(std::numeric_limits<float>::quiet_NaN());
     const double inf = std::numeric_limits<double>::infinity();
-    host.SetPropertyUVE("intensity", Blueprint::ValueUVE{-1.0});
-    host.SetPropertyUVE("intensity", Blueprint::ValueUVE{nan});
-    host.SetPropertyUVE("intensity", Blueprint::ValueUVE{inf});
-    EXPECT_DOUBLE_EQ(std::get<double>(host.GetPropertyUVE("intensity")), 2.5);
+    host.SetProperty("intensity", Blueprint::Value{-1.0});
+    host.SetProperty("intensity", Blueprint::Value{nan});
+    host.SetProperty("intensity", Blueprint::Value{inf});
+    EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("intensity")), 2.5);
 }
 
-TEST_F(UVScriptNodeStateUVETest, Fov_RoundTripsAndRejectsInvalid) {
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, MakeCameraUVE()};
-    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetPropertyUVE("fov"))), 60.0);
+TEST_F(UVScriptNodeStateTest, Fov_RoundTripsAndRejectsInvalid) {
+    Core::BlueprintObjectHost host{entityManager, nullptr, MakeCamera()};
+    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetProperty("fov"))), 60.0);
 
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{90.0});
-    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetPropertyUVE("fov"))), 90.0);
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{0.1});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{179.9});
-    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetPropertyUVE("fov"))), 179.9F);
+    host.SetProperty("fov", Blueprint::Value{90.0});
+    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetProperty("fov"))), 90.0);
+    host.SetProperty("fov", Blueprint::Value{0.1});
+    host.SetProperty("fov", Blueprint::Value{179.9});
+    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetProperty("fov"))), 179.9F);
 
     const double nan = static_cast<double>(std::numeric_limits<float>::quiet_NaN());
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{0.05});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{0.0});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{180.0});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{1000.0});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{-90.0});
-    host.SetPropertyUVE("fov", Blueprint::ValueUVE{nan});
-    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetPropertyUVE("fov"))), 179.9F);
+    host.SetProperty("fov", Blueprint::Value{0.05});
+    host.SetProperty("fov", Blueprint::Value{0.0});
+    host.SetProperty("fov", Blueprint::Value{180.0});
+    host.SetProperty("fov", Blueprint::Value{1000.0});
+    host.SetProperty("fov", Blueprint::Value{-90.0});
+    host.SetProperty("fov", Blueprint::Value{nan});
+    EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetProperty("fov"))), 179.9F);
 }
 
 } // namespace

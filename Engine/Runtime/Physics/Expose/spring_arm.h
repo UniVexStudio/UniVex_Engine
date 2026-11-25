@@ -12,10 +12,10 @@
 
 namespace UVE::Physics {
 
-class IRaycastSystemUVE;
+class IRaycastSystem;
 
 /// Why one fixed-step evaluation of a SpringArm3D did what it did, or why it did nothing.
-enum class SpringArm3DStepCodeUVE : std::uint8_t {
+enum class SpringArm3DStepCode : std::uint8_t {
     /// The arm was cast and its length committed.
     Stepped = 0,
     /// The arm is switched off: no cast ran, and the arm handed its length back to its child.
@@ -24,7 +24,7 @@ enum class SpringArm3DStepCodeUVE : std::uint8_t {
     InvalidDeltaTime,
     /// No such entity.
     UnknownEntity,
-    /// The entity is not a spring arm: no SpringArm3DComponentUVE.
+    /// The entity is not a spring arm: no SpringArm3DComponent.
     NotASpringArm,
     /// The arm has no world transform, so there is no origin to cast from.
     MissingTransform,
@@ -34,13 +34,13 @@ enum class SpringArm3DStepCodeUVE : std::uint8_t {
 };
 
 /// One step's outcome, with the numbers that produced it.
-struct SpringArm3DStepResultUVE final {
-    SpringArm3DStepCodeUVE code = SpringArm3DStepCodeUVE::UnknownEntity;
+struct SpringArm3DStepResult final {
+    SpringArm3DStepCode code = SpringArm3DStepCode::UnknownEntity;
     /// Whether a ray was cast this step (`Stepped` only).
     bool castRan = false;
     bool hasHit = false;
-    Scene::EntityUVE hitEntity{};
-    Math::Vector3UVE hitPoint{};
+    Scene::Entity hitEntity{};
+    Math::Vector3 hitPoint{};
     /// Distance along the arm to the hit, before the margin was taken off.
     float hitDistance = 0.0F;
     /// The authored reach.
@@ -57,21 +57,21 @@ struct SpringArm3DStepResultUVE final {
     /// How many direct children actually moved (children without a transform are skipped).
     std::size_t movedChildCount = 0U;
 
-    [[nodiscard]] bool IsSteppedUVE() const noexcept {
-        return code == SpringArm3DStepCodeUVE::Stepped;
+    [[nodiscard]] bool IsStepped() const noexcept {
+        return code == SpringArm3DStepCode::Stepped;
     }
-    [[nodiscard]] bool IsDisabledUVE() const noexcept {
-        return code == SpringArm3DStepCodeUVE::Disabled;
+    [[nodiscard]] bool IsDisabled() const noexcept {
+        return code == SpringArm3DStepCode::Disabled;
     }
     /// True when the arm gave ground this step - the direction that must never lag behind a wall.
-    [[nodiscard]] bool ShortenedUVE() const noexcept {
+    [[nodiscard]] bool Shortened() const noexcept {
         return lengthDelta < 0.0F;
     }
     /// True when the arm handed length back.
-    [[nodiscard]] bool LengthenedUVE() const noexcept {
+    [[nodiscard]] bool Lengthened() const noexcept {
         return lengthDelta > 0.0F;
     }
-    [[nodiscard]] bool MovedChildrenUVE() const noexcept {
+    [[nodiscard]] bool MovedChildren() const noexcept {
         return movedChildCount > 0U;
     }
 };
@@ -81,7 +81,7 @@ struct SpringArm3DStepResultUVE final {
 ///   1. refuses an arm it cannot drive (see the codes above) rather than half-moving one;
 ///   2. casts a ray from the pivot's world position along its own local +Z - the axis the arm
 ///      extends along, behind the pivot, since this engine's cameras look down -Z;
-///   3. resolves the target length through `Scene::SpringArm3DUVE` (full reach when clear, hit
+///   3. resolves the target length through `Scene::SpringArm3D` (full reach when clear, hit
 ///      distance minus `margin` when not, clamped to the authored envelope);
 ///   4. commits it through the node's motion law - retraction snaps so a camera never clips into
 ///      a wall for one smooth frame's sake, extension springs back at `smoothing`/s, and an arm
@@ -98,8 +98,8 @@ struct SpringArm3DStepResultUVE final {
 /// The cast ignores the arm's own entity. What else it may not collide with is the authored
 /// `collisionMask` - the same layer contract every other physics object uses, which is how a
 /// character rig keeps the camera off its own body.
-[[nodiscard]] SpringArm3DStepResultUVE StepSpringArm3DUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    const IRaycastSystemUVE& raycastSystem, Scene::EntityUVE entity, float deltaTimeSeconds);
+[[nodiscard]] SpringArm3DStepResult StepSpringArm3D(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    const IRaycastSystem& raycastSystem, Scene::Entity entity, float deltaTimeSeconds);
 
 } // namespace UVE::Physics

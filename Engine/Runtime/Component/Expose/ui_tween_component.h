@@ -10,18 +10,18 @@
 
 namespace UVE::Scene {
 
-enum class UITweenTargetUVE : std::uint8_t {
+enum class UITweenTarget : std::uint8_t {
     Rect = 0,
     Alpha = 1,
 };
 
-enum class UITweenLoopUVE : std::uint8_t {
+enum class UITweenLoop : std::uint8_t {
     Once = 0,
     Loop = 1,
     PingPong = 2,
 };
 
-enum class UITweenEaseUVE : std::uint8_t {
+enum class UITweenEase : std::uint8_t {
     Linear = 0,
     SineInOut = 1,
     QuadIn = 2,
@@ -53,16 +53,16 @@ enum class UITweenEaseUVE : std::uint8_t {
 /// every wrap for `Loop` and `PingPong`. A non-positive `duration` fails validation and the tween
 /// never advances; an invalid alpha tween parks `currentAlpha` at the neutral 1 so it dims
 /// nothing. Thread-safety: value type; trivially safe to copy/move.
-struct UITweenComponentUVE final {
-    UITweenTargetUVE target = UITweenTargetUVE::Rect;
-    Math::RectUVE fromRect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{120.0F, 32.0F}};
-    Math::RectUVE toRect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{120.0F, 32.0F}};
+struct UITweenComponent final {
+    UITweenTarget target = UITweenTarget::Rect;
+    Math::Rect fromRect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{120.0F, 32.0F}};
+    Math::Rect toRect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{120.0F, 32.0F}};
     float fromAlpha = 1.0F;
     float toAlpha = 1.0F;
     float duration = 1.0F;
     float delay = 0.0F;
-    UITweenEaseUVE ease = UITweenEaseUVE::Linear;
-    UITweenLoopUVE loop = UITweenLoopUVE::Once;
+    UITweenEase ease = UITweenEase::Linear;
+    UITweenLoop loop = UITweenLoop::Once;
     /// Runtime state, never persisted: seconds advanced so far, including the delay phase.
     float elapsed = 0.0F;
     /// Runtime state, never persisted: false once a `Once` tween reaches its end.
@@ -75,16 +75,16 @@ struct UITweenComponentUVE final {
 
 /// Finite from/to values and state, positive finite duration, non-negative finite delay, and
 /// known target/ease/loop values.
-[[nodiscard]] bool IsUITweenComponentValidUVE(const UITweenComponentUVE& value) noexcept;
+[[nodiscard]] bool IsUITweenComponentValid(const UITweenComponent& value) noexcept;
 
 /// True when `value.elapsed` is still within the initial `delay` window (`elapsed < delay`).
-[[nodiscard]] bool IsUITweenInDelayPhaseUVE(const UITweenComponentUVE& value) noexcept;
+[[nodiscard]] bool IsUITweenInDelayPhase(const UITweenComponent& value) noexcept;
 
 /// Computes the normalized cycle progress `t` in `[0, 1]` after subtracting `delay` (`Once`, `Loop`, or `PingPong`).
-[[nodiscard]] float ResolveUITweenNormalizedCycleProgressUVE(
-    const UITweenComponentUVE& value) noexcept;
+[[nodiscard]] float ResolveUITweenNormalizedCycleProgress(
+    const UITweenComponent& value) noexcept;
 
 /// Resets runtime tween playback (`elapsed = 0`, `playing = startPlaying`, `completedThisFrame = false`, `currentAlpha = 1`).
-void ResetUITweenRuntimeStateUVE(UITweenComponentUVE& value, bool startPlaying = true) noexcept;
+void ResetUITweenRuntimeState(UITweenComponent& value, bool startPlaying = true) noexcept;
 
 } // namespace UVE::Scene

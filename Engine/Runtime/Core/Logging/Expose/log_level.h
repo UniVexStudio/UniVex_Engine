@@ -10,7 +10,7 @@ namespace UVE::Debug {
 
 /// Severity level of a log message, from least to most severe. Values are
 /// ordered so `level >= threshold` comparisons work as expected.
-enum class LogLevelUVE : std::uint8_t {
+enum class LogLevel : std::uint8_t {
     Trace = 0,
     Debug = 1,
     Info = 2,
@@ -23,19 +23,19 @@ enum class LogLevelUVE : std::uint8_t {
 /// Returns "UNKNOWN" for a value outside the declared enumerators (only
 /// reachable via an invalid static_cast from an integer, never from normal
 /// engine use).
-[[nodiscard]] constexpr std::string_view ToStringUVE(LogLevelUVE level) noexcept {
+[[nodiscard]] constexpr std::string_view ToString(LogLevel level) noexcept {
     switch (level) {
-        case LogLevelUVE::Trace:
+        case LogLevel::Trace:
             return "TRACE";
-        case LogLevelUVE::Debug:
+        case LogLevel::Debug:
             return "DEBUG";
-        case LogLevelUVE::Info:
+        case LogLevel::Info:
             return "INFO";
-        case LogLevelUVE::Warning:
+        case LogLevel::Warning:
             return "WARNING";
-        case LogLevelUVE::Error:
+        case LogLevel::Error:
             return "ERROR";
-        case LogLevelUVE::Fatal:
+        case LogLevel::Fatal:
             return "FATAL";
     }
     return "UNKNOWN";

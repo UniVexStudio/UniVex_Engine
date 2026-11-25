@@ -10,23 +10,23 @@
 namespace UVE::Core::Tests {
 namespace {
 
-TEST(VersionUVETest, ToStringUVE_FormatsAllFourComponents) {
-    const VersionUVE version{1, 2, 3, 4};
-    EXPECT_EQ(version.ToStringUVE(), "1.2.3+build.4");
+TEST(VersionTest, ToString_FormatsAllFourComponents) {
+    const Version version{1, 2, 3, 4};
+    EXPECT_EQ(version.ToString(), "1.2.3+build.4");
 }
 
-TEST(VersionUVETest, EqualityOperators_CompareAllComponents) {
-    const VersionUVE a{1, 2, 3, 4};
-    const VersionUVE b{1, 2, 3, 4};
-    const VersionUVE c{1, 2, 3, 5};
+TEST(VersionTest, EqualityOperators_CompareAllComponents) {
+    const Version a{1, 2, 3, 4};
+    const Version b{1, 2, 3, 4};
+    const Version c{1, 2, 3, 5};
 
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
 }
 
-TEST(VersionUVETest, EngineCoreUVE_ReturnsExpectedVersionConstant) {
-    const VersionUVE version = EngineCoreUVE::GetEngineVersionUVE();
-    EXPECT_EQ(version, (VersionUVE{0, 1, 2, 0}));
+TEST(VersionTest, EngineCore_ReturnsExpectedVersionConstant) {
+    const Version version = EngineCore::GetEngineVersion();
+    EXPECT_EQ(version, (Version{0, 1, 2, 0}));
 }
 
 } // namespace

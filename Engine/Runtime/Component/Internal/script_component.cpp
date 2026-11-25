@@ -8,8 +8,8 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsScriptAssetPathValidUVE(const std::string_view path) noexcept {
-    if (path.empty() || path.size() > kMaximumScriptAssetPathBytesUVE ||
+[[nodiscard]] bool IsScriptAssetPathValid(const std::string_view path) noexcept {
+    if (path.empty() || path.size() > kMaximumScriptAssetPathBytes ||
         path.contains('\0') || path.contains('\\') ||
         path.contains(':') || path.front() == '/') {
         return path.empty();
@@ -29,14 +29,14 @@ namespace UVE::Scene {
     return true;
 }
 
-[[nodiscard]] bool IsScriptComponentValidUVE(const ScriptComponentUVE& component) noexcept {
-    if (!IsScriptAssetPathValidUVE(component.scriptAssetPath) ||
-        component.exportValues.size() > kMaximumScriptExportValuesUVE) {
+[[nodiscard]] bool IsScriptComponentValid(const ScriptComponent& component) noexcept {
+    if (!IsScriptAssetPathValid(component.scriptAssetPath) ||
+        component.exportValues.size() > kMaximumScriptExportValues) {
         return false;
     }
     for (const auto& [name, value] : component.exportValues) {
-        if (name.empty() || name.size() > kMaximumScriptExportNameBytesUVE || name.contains('\0') ||
-            value.size() > kMaximumScriptExportValueBytesUVE) {
+        if (name.empty() || name.size() > kMaximumScriptExportNameBytes || name.contains('\0') ||
+            value.size() > kMaximumScriptExportValueBytes) {
             return false;
         }
     }

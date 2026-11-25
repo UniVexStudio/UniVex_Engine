@@ -19,155 +19,155 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class UVScriptPhysicsForcesUVETest : public ::testing::Test {
+class UVScriptPhysicsForcesTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 
-    EntityUVE MakeRigidUVE(const float mass, const bool kinematic, const Math::Vector3UVE velocity) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        Rigid3DComponentUVE body;
+    Entity MakeRigid(const float mass, const bool kinematic, const Math::Vector3 velocity) {
+        const Entity entity = entityManager.CreateEntity();
+        Rigid3DComponent body;
         body.mass = mass;
         body.isKinematic = kinematic;
         body.velocity = velocity;
-        entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, body);
+        entityManager.AddComponent<Rigid3DComponent>(entity, body);
         return entity;
     }
 
-    static Blueprint::ValueUVE Vec3ArgUVE(const double x, const double y, const double z) {
-        return Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{x, y, z}};
+    static Blueprint::Value Vec3Arg(const double x, const double y, const double z) {
+        return Blueprint::Value{Blueprint::Vec3Value{x, y, z}};
     }
 };
 
-TEST_F(UVScriptPhysicsForcesUVETest, ApplyForce_StoresPersistentForceUntilChanged) {
-    const EntityUVE body = MakeRigidUVE(2.0F, false, Math::Vector3UVE{});
-    EXPECT_TRUE(Rigid3DUVE::ApplyForceUVE(entityManager, body, Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).force,
-              (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    EXPECT_TRUE(Rigid3DUVE::ApplyForceUVE(entityManager, body, Math::Vector3UVE{}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).force, (Math::Vector3UVE{}));
+TEST_F(UVScriptPhysicsForcesTest, ApplyForce_StoresPersistentForceUntilChanged) {
+    const Entity body = MakeRigid(2.0F, false, Math::Vector3{});
+    EXPECT_TRUE(Rigid3D::ApplyForce(entityManager, body, Math::Vector3{1.0F, 2.0F, 3.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).force,
+              (Math::Vector3{1.0F, 2.0F, 3.0F}));
+    EXPECT_TRUE(Rigid3D::ApplyForce(entityManager, body, Math::Vector3{}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).force, (Math::Vector3{}));
 
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Rigid3DUVE::ApplyForceUVE(entityManager, body, Math::Vector3UVE{nan, 0.0F, 0.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).force, (Math::Vector3UVE{}));
-    EXPECT_FALSE(Rigid3DUVE::ApplyForceUVE(entityManager, entityManager.CreateEntityUVE(),
-                                           Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
+    EXPECT_FALSE(Rigid3D::ApplyForce(entityManager, body, Math::Vector3{nan, 0.0F, 0.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).force, (Math::Vector3{}));
+    EXPECT_FALSE(Rigid3D::ApplyForce(entityManager, entityManager.CreateEntity(),
+                                           Math::Vector3{1.0F, 0.0F, 0.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, ApplyImpulse_ScalesByInverseMass) {
-    const EntityUVE body = MakeRigidUVE(2.0F, false, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    EXPECT_TRUE(Rigid3DUVE::ApplyImpulseUVE(entityManager, body, Math::Vector3UVE{4.0F, -2.0F, 0.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).velocity,
-              (Math::Vector3UVE{3.0F, 0.0F, 1.0F}));
+TEST_F(UVScriptPhysicsForcesTest, ApplyImpulse_ScalesByInverseMass) {
+    const Entity body = MakeRigid(2.0F, false, Math::Vector3{1.0F, 1.0F, 1.0F});
+    EXPECT_TRUE(Rigid3D::ApplyImpulse(entityManager, body, Math::Vector3{4.0F, -2.0F, 0.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).velocity,
+              (Math::Vector3{3.0F, 0.0F, 1.0F}));
 
-    const EntityUVE frozen = MakeRigidUVE(2.0F, true, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    EXPECT_FALSE(Rigid3DUVE::ApplyImpulseUVE(entityManager, frozen, Math::Vector3UVE{4.0F, 0.0F, 0.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(frozen).velocity,
-              (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
-    const EntityUVE massless = MakeRigidUVE(0.0F, false, Math::Vector3UVE{});
-    EXPECT_FALSE(Rigid3DUVE::ApplyImpulseUVE(entityManager, massless, Math::Vector3UVE{4.0F, 0.0F, 0.0F}));
+    const Entity frozen = MakeRigid(2.0F, true, Math::Vector3{1.0F, 0.0F, 0.0F});
+    EXPECT_FALSE(Rigid3D::ApplyImpulse(entityManager, frozen, Math::Vector3{4.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(frozen).velocity,
+              (Math::Vector3{1.0F, 0.0F, 0.0F}));
+    const Entity massless = MakeRigid(0.0F, false, Math::Vector3{});
+    EXPECT_FALSE(Rigid3D::ApplyImpulse(entityManager, massless, Math::Vector3{4.0F, 0.0F, 0.0F}));
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Rigid3DUVE::ApplyImpulseUVE(entityManager, body, Math::Vector3UVE{nan, 0.0F, 0.0F}));
+    EXPECT_FALSE(Rigid3D::ApplyImpulse(entityManager, body, Math::Vector3{nan, 0.0F, 0.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, ApplyTorque_StoresPersistentTorque) {
-    const EntityUVE body = MakeRigidUVE(1.0F, false, Math::Vector3UVE{});
-    EXPECT_TRUE(Rigid3DUVE::ApplyTorqueUVE(entityManager, body, Math::Vector3UVE{0.0F, 0.0F, 5.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).torque,
-              (Math::Vector3UVE{0.0F, 0.0F, 5.0F}));
-    EXPECT_FALSE(Rigid3DUVE::ApplyTorqueUVE(entityManager, entityManager.CreateEntityUVE(),
-                                            Math::Vector3UVE{0.0F, 0.0F, 5.0F}));
+TEST_F(UVScriptPhysicsForcesTest, ApplyTorque_StoresPersistentTorque) {
+    const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
+    EXPECT_TRUE(Rigid3D::ApplyTorque(entityManager, body, Math::Vector3{0.0F, 0.0F, 5.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).torque,
+              (Math::Vector3{0.0F, 0.0F, 5.0F}));
+    EXPECT_FALSE(Rigid3D::ApplyTorque(entityManager, entityManager.CreateEntity(),
+                                            Math::Vector3{0.0F, 0.0F, 5.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, IntegrateLinearVelocityUVE_AddsUnscaledForceAcceleration) {
-    const auto pushed = Rigid3DUVE::IntegrateLinearVelocityUVE(Math::Vector3UVE{}, Math::Vector3UVE{}, 1.0F, 0.0F,
-                                                               0.5F, Math::Vector3UVE{0.0F, 10.0F, 0.0F}, 0.5F);
+TEST_F(UVScriptPhysicsForcesTest, IntegrateLinearVelocity_AddsUnscaledForceAcceleration) {
+    const auto pushed = Rigid3D::IntegrateLinearVelocity(Math::Vector3{}, Math::Vector3{}, 1.0F, 0.0F,
+                                                               0.5F, Math::Vector3{0.0F, 10.0F, 0.0F}, 0.5F);
     ASSERT_TRUE(pushed.has_value());
     EXPECT_FLOAT_EQ(pushed->y, 2.5F);
 
     // Gravity switched off, thruster on: the force term ignores gravityScale.
     const auto thrusting =
-        Rigid3DUVE::IntegrateLinearVelocityUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, -10.0F, 0.0F}, 0.0F,
-                                               0.0F, 1.0F, Math::Vector3UVE{0.0F, 10.0F, 0.0F}, 0.5F);
+        Rigid3D::IntegrateLinearVelocity(Math::Vector3{}, Math::Vector3{0.0F, -10.0F, 0.0F}, 0.0F,
+                                               0.0F, 1.0F, Math::Vector3{0.0F, 10.0F, 0.0F}, 0.5F);
     ASSERT_TRUE(thrusting.has_value());
     EXPECT_FLOAT_EQ(thrusting->y, 5.0F);
 
-    EXPECT_FALSE(Rigid3DUVE::IntegrateLinearVelocityUVE(Math::Vector3UVE{}, Math::Vector3UVE{}, 1.0F, 0.0F,
-                                                        0.5F, Math::Vector3UVE{0.0F, 10.0F, 0.0F}, -0.5F)
+    EXPECT_FALSE(Rigid3D::IntegrateLinearVelocity(Math::Vector3{}, Math::Vector3{}, 1.0F, 0.0F,
+                                                        0.5F, Math::Vector3{0.0F, 10.0F, 0.0F}, -0.5F)
                      .has_value());
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Rigid3DUVE::IntegrateLinearVelocityUVE(Math::Vector3UVE{}, Math::Vector3UVE{}, 1.0F, 0.0F,
-                                                        0.5F, Math::Vector3UVE{nan, 0.0F, 0.0F}, 0.5F)
+    EXPECT_FALSE(Rigid3D::IntegrateLinearVelocity(Math::Vector3{}, Math::Vector3{}, 1.0F, 0.0F,
+                                                        0.5F, Math::Vector3{nan, 0.0F, 0.0F}, 0.5F)
                      .has_value());
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies) {
-    const EntityUVE body = MakeRigidUVE(1.0F, false, Math::Vector3UVE{});
-    const Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
+TEST_F(UVScriptPhysicsForcesTest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies) {
+    const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
+    const Core::BlueprintObjectHost host{entityManager, nullptr, body};
     for (const char* name : {"physics.apply_force", "physics.apply_impulse", "physics.apply_torque"}) {
-        const std::optional<Blueprint::HostFunctionUVE> described = host.DescribeFunctionUVE(name);
+        const std::optional<Blueprint::HostFunction> described = host.DescribeFunction(name);
         ASSERT_TRUE(described.has_value()) << name;
         ASSERT_EQ(described->params.size(), 1U);
-        EXPECT_EQ(described->params[0].kind, Blueprint::TypeUVE::KindUVE::Vec3);
-        EXPECT_EQ(described->result.kind, Blueprint::TypeUVE::KindUVE::Bool);
+        EXPECT_EQ(described->params[0].kind, Blueprint::Type::Kind::Vec3);
+        EXPECT_EQ(described->result.kind, Blueprint::Type::Kind::Bool);
     }
-    const std::optional<Blueprint::HostPropertyUVE> velocity = host.DescribePropertyUVE("velocity");
+    const std::optional<Blueprint::HostProperty> velocity = host.DescribeProperty("velocity");
     ASSERT_TRUE(velocity.has_value());
-    EXPECT_EQ(velocity->type.kind, Blueprint::TypeUVE::KindUVE::Vec3);
+    EXPECT_EQ(velocity->type.kind, Blueprint::Type::Kind::Vec3);
     EXPECT_TRUE(velocity->writable);
 
-    const Core::BlueprintObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_force").has_value());
-    EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_impulse").has_value());
-    EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_torque").has_value());
-    EXPECT_FALSE(bare.DescribePropertyUVE("velocity").has_value());
+    const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity()};
+    EXPECT_FALSE(bare.DescribeFunction("physics.apply_force").has_value());
+    EXPECT_FALSE(bare.DescribeFunction("physics.apply_impulse").has_value());
+    EXPECT_FALSE(bare.DescribeFunction("physics.apply_torque").has_value());
+    EXPECT_FALSE(bare.DescribeProperty("velocity").has_value());
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, Host_CallFunction_AppliesForcesWithoutInput) {
-    const EntityUVE body = MakeRigidUVE(2.0F, false, Math::Vector3UVE{});
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
+TEST_F(UVScriptPhysicsForcesTest, Host_CallFunction_AppliesForcesWithoutInput) {
+    const Entity body = MakeRigid(2.0F, false, Math::Vector3{});
+    Core::BlueprintObjectHost host{entityManager, nullptr, body};
 
-    std::array<Blueprint::ValueUVE, 1U> forceArgs{Vec3ArgUVE(1.0, 0.0, 0.0)};
-    EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_force", forceArgs)));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).force,
-              (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
+    std::array<Blueprint::Value, 1U> forceArgs{Vec3Arg(1.0, 0.0, 0.0)};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("physics.apply_force", forceArgs)));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).force,
+              (Math::Vector3{1.0F, 0.0F, 0.0F}));
 
-    std::array<Blueprint::ValueUVE, 1U> impulseArgs{Vec3ArgUVE(4.0, 0.0, 0.0)};
-    EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_impulse", impulseArgs)));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).velocity,
-              (Math::Vector3UVE{2.0F, 0.0F, 0.0F}));
+    std::array<Blueprint::Value, 1U> impulseArgs{Vec3Arg(4.0, 0.0, 0.0)};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("physics.apply_impulse", impulseArgs)));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).velocity,
+              (Math::Vector3{2.0F, 0.0F, 0.0F}));
 
-    std::array<Blueprint::ValueUVE, 1U> torqueArgs{Vec3ArgUVE(0.0, 0.0, 5.0)};
-    EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_torque", torqueArgs)));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).torque,
-              (Math::Vector3UVE{0.0F, 0.0F, 5.0F}));
+    std::array<Blueprint::Value, 1U> torqueArgs{Vec3Arg(0.0, 0.0, 5.0)};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("physics.apply_torque", torqueArgs)));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).torque,
+              (Math::Vector3{0.0F, 0.0F, 5.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesUVETest, Host_VelocityProperty_RoundTripsWithCharacterPriority) {
-    const EntityUVE body = MakeRigidUVE(1.0F, false, Math::Vector3UVE{});
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
-    host.SetPropertyUVE("velocity", Vec3ArgUVE(1.0, 2.0, 3.0));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).velocity,
-              (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    const Blueprint::Vec3ValueUVE readBack = std::get<Blueprint::Vec3ValueUVE>(host.GetPropertyUVE("velocity"));
+TEST_F(UVScriptPhysicsForcesTest, Host_VelocityProperty_RoundTripsWithCharacterPriority) {
+    const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
+    Core::BlueprintObjectHost host{entityManager, nullptr, body};
+    host.SetProperty("velocity", Vec3Arg(1.0, 2.0, 3.0));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).velocity,
+              (Math::Vector3{1.0F, 2.0F, 3.0F}));
+    const Blueprint::Vec3Value readBack = std::get<Blueprint::Vec3Value>(host.GetProperty("velocity"));
     EXPECT_DOUBLE_EQ(readBack.x, 1.0);
     EXPECT_DOUBLE_EQ(readBack.y, 2.0);
     EXPECT_DOUBLE_EQ(readBack.z, 3.0);
 
-    const EntityUVE hybrid = MakeRigidUVE(1.0F, false, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    CharacterControllerComponentUVE character;
-    character.velocity = Math::Vector3UVE{9.0F, 9.0F, 9.0F};
-    entityManager.AddComponentUVE<CharacterControllerComponentUVE>(hybrid, character);
-    Core::BlueprintObjectHostUVE hybridHost{entityManager, nullptr, hybrid};
-    const Blueprint::Vec3ValueUVE hybridRead =
-        std::get<Blueprint::Vec3ValueUVE>(hybridHost.GetPropertyUVE("velocity"));
+    const Entity hybrid = MakeRigid(1.0F, false, Math::Vector3{1.0F, 1.0F, 1.0F});
+    CharacterControllerComponent character;
+    character.velocity = Math::Vector3{9.0F, 9.0F, 9.0F};
+    entityManager.AddComponent<CharacterControllerComponent>(hybrid, character);
+    Core::BlueprintObjectHost hybridHost{entityManager, nullptr, hybrid};
+    const Blueprint::Vec3Value hybridRead =
+        std::get<Blueprint::Vec3Value>(hybridHost.GetProperty("velocity"));
     EXPECT_DOUBLE_EQ(hybridRead.x, 9.0);
-    hybridHost.SetPropertyUVE("velocity", Vec3ArgUVE(7.0, 7.0, 7.0));
-    EXPECT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(hybrid).velocity,
-              (Math::Vector3UVE{7.0F, 7.0F, 7.0F}));
-    EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(hybrid).velocity,
-              (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+    hybridHost.SetProperty("velocity", Vec3Arg(7.0, 7.0, 7.0));
+    EXPECT_EQ(entityManager.GetComponent<CharacterControllerComponent>(hybrid).velocity,
+              (Math::Vector3{7.0F, 7.0F, 7.0F}));
+    EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(hybrid).velocity,
+              (Math::Vector3{1.0F, 1.0F, 1.0F}));
 }
 
 } // namespace

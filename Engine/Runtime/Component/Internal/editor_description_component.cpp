@@ -9,21 +9,21 @@
 
 namespace UVE::Scene {
 
-bool IsEditorDescriptionTextValidUVE(const std::string_view text) noexcept {
-    // Embedded nulls are rejected for the same reason NameComponentUVE rejects them: the string
+bool IsEditorDescriptionTextValid(const std::string_view text) noexcept {
+    // Embedded nulls are rejected for the same reason NameComponent rejects them: the string
     // crosses into JSON and into C-string UI calls, both of which would silently truncate at the
     // null and leave the author's text quietly cut in half.
-    return text.size() <= kMaximumEditorDescriptionBytesUVE &&
+    return text.size() <= kMaximumEditorDescriptionBytes &&
            text.find('\0') == std::string_view::npos;
 }
 
-bool IsEditorDescriptionComponentValidUVE(
-    const EditorDescriptionComponentUVE& component) noexcept {
-    return IsEditorDescriptionTextValidUVE(component.description);
+bool IsEditorDescriptionComponentValid(
+    const EditorDescriptionComponent& component) noexcept {
+    return IsEditorDescriptionTextValid(component.description);
 }
 
-bool HasNonEmptyEditorDescriptionUVE(
-    const EditorDescriptionComponentUVE& component) noexcept {
+bool HasNonEmptyEditorDescription(
+    const EditorDescriptionComponent& component) noexcept {
     for (const char ch : component.description) {
         if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\0') {
             return true;
@@ -32,8 +32,8 @@ bool HasNonEmptyEditorDescriptionUVE(
     return false;
 }
 
-std::size_t CountEditorDescriptionLinesUVE(
-    const EditorDescriptionComponentUVE& component) noexcept {
+std::size_t CountEditorDescriptionLines(
+    const EditorDescriptionComponent& component) noexcept {
     if (component.description.empty()) {
         return 0U;
     }
@@ -46,29 +46,29 @@ std::size_t CountEditorDescriptionLinesUVE(
     return lines;
 }
 
-std::string SanitizeEditorDescriptionTextUVE(const std::string_view text) {
+std::string SanitizeEditorDescriptionText(const std::string_view text) {
     std::string cleaned;
-    cleaned.reserve(std::min(text.size(), kMaximumEditorDescriptionBytesUVE));
+    cleaned.reserve(std::min(text.size(), kMaximumEditorDescriptionBytes));
     for (const char ch : text) {
         if (ch == '\0') {
             continue;
         }
         cleaned.push_back(ch);
-        if (cleaned.size() >= kMaximumEditorDescriptionBytesUVE) {
+        if (cleaned.size() >= kMaximumEditorDescriptionBytes) {
             break;
         }
     }
     return cleaned;
 }
 
-EditorDescriptionComponentUVE SanitizeEditorDescriptionComponentUVE(
-    const EditorDescriptionComponentUVE& component) {
-    return EditorDescriptionComponentUVE{
-        .description = SanitizeEditorDescriptionTextUVE(component.description),
+EditorDescriptionComponent SanitizeEditorDescriptionComponent(
+    const EditorDescriptionComponent& component) {
+    return EditorDescriptionComponent{
+        .description = SanitizeEditorDescriptionText(component.description),
     };
 }
 
-std::string BuildEditorDescriptionPreviewUVE(const EditorDescriptionComponentUVE& component,
+std::string BuildEditorDescriptionPreview(const EditorDescriptionComponent& component,
                                              const std::size_t maxPreviewBytes) {
     if (maxPreviewBytes == 0U || component.description.empty()) {
         return {};

@@ -14,45 +14,45 @@
 namespace UVE::Scene {
 namespace {
 
-void ClearShapeCast3DResultUVE(ShapeCast3DComponentUVE& cast) noexcept {
+void ClearShapeCast3DResult(ShapeCast3DComponent& cast) noexcept {
     cast.hit = false;
-    cast.hitEntity = kInvalidEntityUVE;
-    cast.hitCenter = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-    cast.hitNormal = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    cast.hitEntity = kInvalidEntity;
+    cast.hitCenter = Math::Vector3{0.0F, 0.0F, 0.0F};
+    cast.hitNormal = Math::Vector3{0.0F, 0.0F, 0.0F};
     cast.hitDistance = 0.0F;
 }
 
 } // namespace
 
-bool IsShapeCast3DComponentValidUVE(const ShapeCast3DComponentUVE& value) noexcept {
-    if (!IsFinite3DObjectVectorUVE(value.direction) ||
-        Math::LengthSquaredUVE(value.direction) <= 1.0e-8F || !std::isfinite(value.maxDistance) ||
+bool IsShapeCast3DComponentValid(const ShapeCast3DComponent& value) noexcept {
+    if (!IsFinite3DObjectVector(value.direction) ||
+        Math::LengthSquared(value.direction) <= 1.0e-8F || !std::isfinite(value.maxDistance) ||
         value.maxDistance <= 0.0F) {
         return false;
     }
     switch (value.shapeKind) {
-    case ShapeCast3DShapeKindUVE::Sphere:
+    case ShapeCast3DShapeKind::Sphere:
         return std::isfinite(value.radius) && value.radius > 0.0F;
-    case ShapeCast3DShapeKindUVE::Box:
-        return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
+    case ShapeCast3DShapeKind::Box:
+        return IsFinite3DObjectVector(value.halfExtents) && value.halfExtents.x > 0.0F &&
                value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F;
-    case ShapeCast3DShapeKindUVE::Capsule:
+    case ShapeCast3DShapeKind::Capsule:
         return std::isfinite(value.radius) && value.radius > 0.0F && std::isfinite(value.height) &&
                value.height > 0.0F;
     }
     return false;
 }
 
-ShapeCast3DComponentUVE SanitizeShapeCast3DComponentUVE(
-    const ShapeCast3DComponentUVE& value) noexcept {
-    ShapeCast3DComponentUVE out = value;
+ShapeCast3DComponent SanitizeShapeCast3DComponent(
+    const ShapeCast3DComponent& value) noexcept {
+    ShapeCast3DComponent out = value;
     if (static_cast<std::uint8_t>(out.shapeKind) >
-        static_cast<std::uint8_t>(ShapeCast3DShapeKindUVE::Capsule)) {
-        out.shapeKind = ShapeCast3DShapeKindUVE::Sphere;
+        static_cast<std::uint8_t>(ShapeCast3DShapeKind::Capsule)) {
+        out.shapeKind = ShapeCast3DShapeKind::Sphere;
     }
-    if (!IsFinite3DObjectVectorUVE(out.direction) ||
-        Math::LengthSquaredUVE(out.direction) <= 1.0e-8F) {
-        out.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    if (!IsFinite3DObjectVector(out.direction) ||
+        Math::LengthSquared(out.direction) <= 1.0e-8F) {
+        out.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     }
     if (!std::isfinite(out.maxDistance) || out.maxDistance <= 0.0F) {
         out.maxDistance = 10.0F;
@@ -60,9 +60,9 @@ ShapeCast3DComponentUVE SanitizeShapeCast3DComponentUVE(
     if (!std::isfinite(out.radius) || out.radius <= 0.0F) {
         out.radius = 0.5F;
     }
-    if (!IsFinite3DObjectVectorUVE(out.halfExtents) || out.halfExtents.x <= 0.0F ||
+    if (!IsFinite3DObjectVector(out.halfExtents) || out.halfExtents.x <= 0.0F ||
         out.halfExtents.y <= 0.0F || out.halfExtents.z <= 0.0F) {
-        out.halfExtents = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+        out.halfExtents = Math::Vector3{0.5F, 0.5F, 0.5F};
     }
     if (!std::isfinite(out.height) || out.height <= 0.0F) {
         out.height = 1.5F;
@@ -70,57 +70,57 @@ ShapeCast3DComponentUVE SanitizeShapeCast3DComponentUVE(
     return out;
 }
 
-bool IsShapeCast3DObjectDefinitionValidUVE(
-    const ShapeCast3DObjectDefinitionUVE& value) noexcept {
-    return IsShapeCast3DComponentValidUVE(value.shapeCast);
+bool IsShapeCast3DObjectDefinitionValid(
+    const ShapeCast3DObjectDefinition& value) noexcept {
+    return IsShapeCast3DComponentValid(value.shapeCast);
 }
 
-void ApplyShapeCast3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                         const ShapeCast3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, ShapeCast3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ShapeCast3DComponentUVE>(
-        entity, SanitizeShapeCast3DComponentUVE(value.shapeCast));
+void ApplyShapeCast3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                         const ShapeCast3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, ShapeCast3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ShapeCast3DComponent>(
+        entity, SanitizeShapeCast3DComponent(value.shapeCast));
 }
 
-bool StepShapeCast3DUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<ShapeCast3DComponentUVE>(entity)) {
+bool StepShapeCast3D(IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<ShapeCast3DComponent>(entity)) {
         return false;
     }
-    ShapeCast3DComponentUVE& cast = entityManager.GetComponentUVE<ShapeCast3DComponentUVE>(entity);
-    if (!cast.enabled || entityManager.HasComponentUVE<DisabledComponentUVE>(entity) ||
-        !IsShapeCast3DComponentValidUVE(cast) || cast.collisionMask == 0U ||
-        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
-        ClearShapeCast3DResultUVE(cast);
+    ShapeCast3DComponent& cast = entityManager.GetComponent<ShapeCast3DComponent>(entity);
+    if (!cast.enabled || entityManager.HasComponent<DisabledComponent>(entity) ||
+        !IsShapeCast3DComponentValid(cast) || cast.collisionMask == 0U ||
+        !entityManager.HasComponent<WorldTransformComponent>(entity)) {
+        ClearShapeCast3DResult(cast);
         return false;
     }
-    const WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-    if (!IsWorldTransformComponentValidUVE(world)) {
-        ClearShapeCast3DResultUVE(cast);
+    const WorldTransformComponent& world =
+        entityManager.GetComponent<WorldTransformComponent>(entity);
+    if (!IsWorldTransformComponentValid(world)) {
+        ClearShapeCast3DResult(cast);
         return false;
     }
-    const Math::Vector3UVE worldDir =
-        RayCast3DUVE::ResolveWorldDirectionUVE(cast.direction, world.worldRotation);
-    if (Math::LengthSquaredUVE(worldDir) <= 1.0e-8F) {
-        ClearShapeCast3DResultUVE(cast);
+    const Math::Vector3 worldDir =
+        RayCast3D::ResolveWorldDirection(cast.direction, world.worldRotation);
+    if (Math::LengthSquared(worldDir) <= 1.0e-8F) {
+        ClearShapeCast3DResult(cast);
         return false;
     }
 
-    Math::RayUVE ray{};
+    Math::Ray ray{};
     ray.origin = world.worldPosition;
     ray.direction = worldDir;
 
     switch (cast.shapeKind) {
-    case ShapeCast3DShapeKindUVE::Sphere: {
-        Physics::SphereCastQueryUVE query{};
+    case ShapeCast3DShapeKind::Sphere: {
+        Physics::SphereCastQuery query{};
         query.ray = ray;
         query.radius = cast.radius;
         query.maxDistance = cast.maxDistance;
         query.layerMask = cast.collisionMask;
         query.ignoreEntity = entity;
         query.alsoIgnoreEntity = cast.alsoIgnoreEntity;
-        if (const auto hit = Physics::ShapeCastSystemUVE::SphereCastUVE(entityManager, query);
+        if (const auto hit = Physics::ShapeCastSystem::SphereCast(entityManager, query);
             hit.has_value()) {
             cast.hit = true;
             cast.hitEntity = hit->entity;
@@ -131,14 +131,14 @@ bool StepShapeCast3DUVE(IEntityManagerUVE& entityManager, const EntityUVE entity
         }
         break;
     }
-    case ShapeCast3DShapeKindUVE::Box: {
-        Physics::BoxCastQueryUVE query{};
+    case ShapeCast3DShapeKind::Box: {
+        Physics::BoxCastQuery query{};
         query.ray = ray;
         query.halfExtents = cast.halfExtents;
         query.maxDistance = cast.maxDistance;
         query.layerMask = cast.collisionMask;
         query.ignoreEntity = entity;
-        if (const auto hit = Physics::ShapeCastSystemUVE::BoxCastUVE(entityManager, query);
+        if (const auto hit = Physics::ShapeCastSystem::BoxCast(entityManager, query);
             hit.has_value()) {
             cast.hit = true;
             cast.hitEntity = hit->entity;
@@ -149,15 +149,15 @@ bool StepShapeCast3DUVE(IEntityManagerUVE& entityManager, const EntityUVE entity
         }
         break;
     }
-    case ShapeCast3DShapeKindUVE::Capsule: {
-        Physics::CapsuleCastQueryUVE query{};
+    case ShapeCast3DShapeKind::Capsule: {
+        Physics::CapsuleCastQuery query{};
         query.ray = ray;
         query.radius = cast.radius;
         query.height = cast.height;
         query.maxDistance = cast.maxDistance;
         query.layerMask = cast.collisionMask;
         query.ignoreEntity = entity;
-        if (const auto hit = Physics::ShapeCastSystemUVE::CapsuleCastUVE(entityManager, query);
+        if (const auto hit = Physics::ShapeCastSystem::CapsuleCast(entityManager, query);
             hit.has_value()) {
             cast.hit = true;
             cast.hitEntity = hit->entity;
@@ -169,15 +169,15 @@ bool StepShapeCast3DUVE(IEntityManagerUVE& entityManager, const EntityUVE entity
         break;
     }
     }
-    ClearShapeCast3DResultUVE(cast);
+    ClearShapeCast3DResult(cast);
     return false;
 }
 
-std::size_t UpdateShapeCast3DObjectsUVE(IEntityManagerUVE& entityManager) {
+std::size_t UpdateShapeCast3DObjects(IEntityManager& entityManager) {
     std::size_t hitCount = 0U;
-    entityManager.ForEachUVE<ShapeCast3DComponentUVE>(
-        [&](const EntityUVE entity, ShapeCast3DComponentUVE&) {
-            if (StepShapeCast3DUVE(entityManager, entity)) {
+    entityManager.ForEach<ShapeCast3DComponent>(
+        [&](const Entity entity, ShapeCast3DComponent&) {
+            if (StepShapeCast3D(entityManager, entity)) {
                 ++hitCount;
             }
         });

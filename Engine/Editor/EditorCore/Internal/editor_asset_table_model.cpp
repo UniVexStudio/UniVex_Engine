@@ -14,27 +14,27 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] std::string LowerUVE(std::string_view text) {
+[[nodiscard]] std::string Lower(std::string_view text) {
     std::string lower(text);
     std::ranges::transform(lower, lower.begin(),
                            [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return lower;
 }
 
-[[nodiscard]] bool IsDirectoryUVE(const Asset::ProjectFileEntryUVE& entry) noexcept {
-    return entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
+[[nodiscard]] bool IsDirectory(const Asset::ProjectFileEntry& entry) noexcept {
+    return entry.kind == Asset::ProjectFileEntryKind::Directory;
 }
 
 /// Folders first, then by file name ignoring case, then by full path so the order is total.
-void SortForDisplayUVE(std::vector<std::size_t>& indices, const std::span<const Asset::ProjectFileEntryUVE> entries) {
+void SortForDisplay(std::vector<std::size_t>& indices, const std::span<const Asset::ProjectFileEntry> entries) {
     std::ranges::stable_sort(indices, [&entries](const std::size_t a, const std::size_t b) {
-        const Asset::ProjectFileEntryUVE& x = entries[a];
-        const Asset::ProjectFileEntryUVE& y = entries[b];
-        if (IsDirectoryUVE(x) != IsDirectoryUVE(y)) {
-            return IsDirectoryUVE(x);
+        const Asset::ProjectFileEntry& x = entries[a];
+        const Asset::ProjectFileEntry& y = entries[b];
+        if (IsDirectory(x) != IsDirectory(y)) {
+            return IsDirectory(x);
         }
-        const std::string xName = LowerUVE(x.relativePath.filename().generic_string());
-        const std::string yName = LowerUVE(y.relativePath.filename().generic_string());
+        const std::string xName = Lower(x.relativePath.filename().generic_string());
+        const std::string yName = Lower(y.relativePath.filename().generic_string());
         if (xName != yName) {
             return xName < yName;
         }
@@ -44,19 +44,19 @@ void SortForDisplayUVE(std::vector<std::size_t>& indices, const std::span<const 
 
 } // namespace
 
-void ContentNavigationHistoryUVE::GoUVE(const ContentLocationUVE& location) {
+void ContentNavigationHistory::Go(const ContentLocation& location) {
     if (location == m_current) {
         return;
     }
     m_back.push_back(std::move(m_current));
-    if (m_back.size() > kMaxEntriesUVE) {
+    if (m_back.size() > kMaxEntries) {
         m_back.erase(m_back.begin());
     }
     m_forward.clear();
     m_current = location;
 }
 
-bool ContentNavigationHistoryUVE::BackUVE() {
+bool ContentNavigationHistory::Back() {
     if (m_back.empty()) {
         return false;
     }
@@ -66,7 +66,7 @@ bool ContentNavigationHistoryUVE::BackUVE() {
     return true;
 }
 
-bool ContentNavigationHistoryUVE::ForwardUVE() {
+bool ContentNavigationHistory::Forward() {
     if (m_forward.empty()) {
         return false;
     }
@@ -76,31 +76,31 @@ bool ContentNavigationHistoryUVE::ForwardUVE() {
     return true;
 }
 
-const ContentShelfUVE* ContentShelvesUVE::FindUVE(const std::string_view name) const noexcept {
-    const auto it = std::ranges::find(m_shelves, name, &ContentShelfUVE::name);
+const ContentShelf* ContentShelves::Find(const std::string_view name) const noexcept {
+    const auto it = std::ranges::find(m_shelves, name, &ContentShelf::name);
     return it == m_shelves.end() ? nullptr : &*it;
 }
 
-ContentShelfUVE* ContentShelvesUVE::FindMutableUVE(const std::string_view name) noexcept {
-    const auto it = std::ranges::find(m_shelves, name, &ContentShelfUVE::name);
+ContentShelf* ContentShelves::FindMutable(const std::string_view name) noexcept {
+    const auto it = std::ranges::find(m_shelves, name, &ContentShelf::name);
     return it == m_shelves.end() ? nullptr : &*it;
 }
 
-std::string ContentShelvesUVE::CreateUVE(const std::string_view baseName, const bool shared) {
-    if (m_shelves.size() >= kMaxShelvesUVE) {
+std::string ContentShelves::Create(const std::string_view baseName, const bool shared) {
+    if (m_shelves.size() >= kMaxShelves) {
         return {};
     }
     const std::string base = baseName.empty() ? std::string{"Shelf"} : std::string{baseName};
     std::string name = base;
-    for (int suffix = 2; FindUVE(name) != nullptr; ++suffix) {
+    for (int suffix = 2; Find(name) != nullptr; ++suffix) {
         name = base + " " + std::to_string(suffix);
     }
-    m_shelves.push_back(ContentShelfUVE{name, {}, shared});
+    m_shelves.push_back(ContentShelf{name, {}, shared});
     return name;
 }
 
-bool ContentShelvesUVE::SetSharedUVE(const std::string_view name, const bool shared) {
-    ContentShelfUVE* const shelf = FindMutableUVE(name);
+bool ContentShelves::SetShared(const std::string_view name, const bool shared) {
+    ContentShelf* const shelf = FindMutable(name);
     if (shelf == nullptr) {
         return false;
     }
@@ -108,32 +108,32 @@ bool ContentShelvesUVE::SetSharedUVE(const std::string_view name, const bool sha
     return true;
 }
 
-void ContentShelvesUVE::RemoveAllUVE(const bool shared) {
-    std::erase_if(m_shelves, [shared](const ContentShelfUVE& shelf) { return shelf.shared == shared; });
+void ContentShelves::RemoveAll(const bool shared) {
+    std::erase_if(m_shelves, [shared](const ContentShelf& shelf) { return shelf.shared == shared; });
 }
 
-bool ContentShelvesUVE::RenameUVE(const std::string_view from, const std::string_view to) {
-    ContentShelfUVE* const shelf = FindMutableUVE(from);
+bool ContentShelves::Rename(const std::string_view from, const std::string_view to) {
+    ContentShelf* const shelf = FindMutable(from);
     if (shelf == nullptr || to.empty()) {
         return false;
     }
     if (from == to) {
         return true;
     }
-    if (FindUVE(to) != nullptr) {
+    if (Find(to) != nullptr) {
         return false;
     }
     shelf->name = std::string{to};
     return true;
 }
 
-bool ContentShelvesUVE::RemoveUVE(const std::string_view name) {
-    return std::erase_if(m_shelves, [name](const ContentShelfUVE& shelf) { return shelf.name == name; }) > 0U;
+bool ContentShelves::Remove(const std::string_view name) {
+    return std::erase_if(m_shelves, [name](const ContentShelf& shelf) { return shelf.name == name; }) > 0U;
 }
 
-bool ContentShelvesUVE::AddItemUVE(const std::string_view shelfName, const std::filesystem::path& item) {
-    ContentShelfUVE* const shelf = FindMutableUVE(shelfName);
-    if (shelf == nullptr || item.empty() || shelf->items.size() >= kMaxItemsPerShelfUVE ||
+bool ContentShelves::AddItem(const std::string_view shelfName, const std::filesystem::path& item) {
+    ContentShelf* const shelf = FindMutable(shelfName);
+    if (shelf == nullptr || item.empty() || shelf->items.size() >= kMaxItemsPerShelf ||
         std::ranges::find(shelf->items, item) != shelf->items.end()) {
         return false;
     }
@@ -141,31 +141,31 @@ bool ContentShelvesUVE::AddItemUVE(const std::string_view shelfName, const std::
     return true;
 }
 
-bool ContentShelvesUVE::RemoveItemUVE(const std::string_view shelfName, const std::filesystem::path& item) {
-    ContentShelfUVE* const shelf = FindMutableUVE(shelfName);
+bool ContentShelves::RemoveItem(const std::string_view shelfName, const std::filesystem::path& item) {
+    ContentShelf* const shelf = FindMutable(shelfName);
     return shelf != nullptr && std::erase(shelf->items, item) > 0U;
 }
 
-bool ContentShelvesUVE::ContainsUVE(const std::string_view shelfName, const std::filesystem::path& item) const {
-    const ContentShelfUVE* const shelf = FindUVE(shelfName);
+bool ContentShelves::Contains(const std::string_view shelfName, const std::filesystem::path& item) const {
+    const ContentShelf* const shelf = Find(shelfName);
     return shelf != nullptr && std::ranges::find(shelf->items, item) != shelf->items.end();
 }
 
-void ContentShelvesUVE::MovePathUVE(const std::filesystem::path& from, const std::filesystem::path& to) {
-    for (ContentShelfUVE& shelf : m_shelves) {
+void ContentShelves::MovePath(const std::filesystem::path& from, const std::filesystem::path& to) {
+    for (ContentShelf& shelf : m_shelves) {
         for (std::filesystem::path& item : shelf.items) {
             if (item == from) {
                 item = to;
-            } else if (IsInsideContentDirectoryUVE(item, from)) {
+            } else if (IsInsideContentDirectory(item, from)) {
                 item = to / item.lexically_relative(from);
             }
         }
     }
 }
 
-std::string WriteSharedShelvesTextUVE(const ContentShelvesUVE& shelves) {
+std::string WriteSharedShelvesText(const ContentShelves& shelves) {
     nlohmann::json list = nlohmann::json::array();
-    for (const ContentShelfUVE& shelf : shelves.GetAllUVE()) {
+    for (const ContentShelf& shelf : shelves.GetAll()) {
         if (!shelf.shared) {
             continue;
         }
@@ -178,7 +178,7 @@ std::string WriteSharedShelvesTextUVE(const ContentShelvesUVE& shelves) {
     return nlohmann::json{{"version", 1}, {"shelves", std::move(list)}}.dump(2) + "\n";
 }
 
-bool ReadSharedShelvesTextUVE(const std::string_view text, ContentShelvesUVE& shelves, std::string& error) {
+bool ReadSharedShelvesText(const std::string_view text, ContentShelves& shelves, std::string& error) {
     const nlohmann::json document = nlohmann::json::parse(text, nullptr, false);
     if (document.is_discarded() || !document.is_object() || !document.contains("shelves") ||
         !document["shelves"].is_array()) {
@@ -190,22 +190,22 @@ bool ReadSharedShelvesTextUVE(const std::string_view text, ContentShelvesUVE& sh
         return false;
     }
     // Personal shelves are set aside and put back after, so a team shelf keeps its name.
-    std::vector<ContentShelfUVE> personal;
-    for (const ContentShelfUVE& shelf : shelves.GetAllUVE()) {
+    std::vector<ContentShelf> personal;
+    for (const ContentShelf& shelf : shelves.GetAll()) {
         if (!shelf.shared) {
             personal.push_back(shelf);
         }
     }
-    shelves.ClearUVE();
+    shelves.Clear();
     for (const nlohmann::json& entry : document["shelves"]) {
         if (!entry.is_object() || !entry.contains("name") || !entry["name"].is_string()) {
             continue;
         }
         const std::string wanted = entry["name"].get<std::string>();
-        if (wanted.empty() || shelves.FindUVE(wanted) != nullptr) {
+        if (wanted.empty() || shelves.Find(wanted) != nullptr) {
             continue; // a repeated team shelf is one too many, not a rename
         }
-        const std::string name = shelves.CreateUVE(wanted, true);
+        const std::string name = shelves.Create(wanted, true);
         if (name.empty() || !entry.contains("items") || !entry["items"].is_array()) {
             continue;
         }
@@ -218,21 +218,21 @@ bool ReadSharedShelvesTextUVE(const std::string_view text, ContentShelvesUVE& sh
                                  path.has_root_directory() ||
                                  (path.begin() != path.end() && *path.begin() == "..");
             if (!escapes) {
-                static_cast<void>(shelves.AddItemUVE(name, path));
+                static_cast<void>(shelves.AddItem(name, path));
             }
         }
     }
-    for (ContentShelfUVE& shelf : personal) {
-        const std::string name = shelves.CreateUVE(shelf.name, false);
+    for (ContentShelf& shelf : personal) {
+        const std::string name = shelves.Create(shelf.name, false);
         for (const std::filesystem::path& item : shelf.items) {
-            static_cast<void>(shelves.AddItemUVE(name, item));
+            static_cast<void>(shelves.AddItem(name, item));
         }
     }
     error.clear();
     return true;
 }
 
-bool IsInsideContentDirectoryUVE(const std::filesystem::path& path, const std::filesystem::path& directory) {
+bool IsInsideContentDirectory(const std::filesystem::path& path, const std::filesystem::path& directory) {
     if (path.empty()) {
         return false;
     }
@@ -248,7 +248,7 @@ bool IsInsideContentDirectoryUVE(const std::filesystem::path& path, const std::f
     return pathIt != path.end();
 }
 
-bool DoesContentNameMatchUVE(const std::string_view name, const std::string_view query) noexcept {
+bool DoesContentNameMatch(const std::string_view name, const std::string_view query) noexcept {
     std::size_t position = 0U;
     while (position < query.size()) {
         const std::size_t start = query.find_first_not_of(' ', position);
@@ -256,7 +256,7 @@ bool DoesContentNameMatchUVE(const std::string_view name, const std::string_view
             break;
         }
         const std::size_t end = std::min(query.find(' ', start), query.size());
-        if (!ContainsCaseInsensitiveUVE(name, query.substr(start, end - start))) {
+        if (!ContainsCaseInsensitive(name, query.substr(start, end - start))) {
             return false;
         }
         position = end;
@@ -264,54 +264,54 @@ bool DoesContentNameMatchUVE(const std::string_view name, const std::string_view
     return true;
 }
 
-std::vector<std::size_t> ListContentFolderUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
+std::vector<std::size_t> ListContentFolder(const std::span<const Asset::ProjectFileEntry> entries,
                                               const std::filesystem::path& directory, const std::string_view query) {
     const bool searching = query.find_first_not_of(' ') != std::string_view::npos;
     std::vector<std::size_t> indices;
     for (std::size_t index = 0U; index < entries.size(); ++index) {
         const std::filesystem::path& path = entries[index].relativePath;
-        const bool shown = searching ? IsInsideContentDirectoryUVE(path, directory) &&
-                                           DoesContentNameMatchUVE(path.filename().generic_string(), query)
+        const bool shown = searching ? IsInsideContentDirectory(path, directory) &&
+                                           DoesContentNameMatch(path.filename().generic_string(), query)
                                      : path.parent_path() == directory;
         if (shown) {
             indices.push_back(index);
         }
     }
-    SortForDisplayUVE(indices, entries);
+    SortForDisplay(indices, entries);
     return indices;
 }
 
-std::vector<std::size_t> ListContentTreeUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
+std::vector<std::size_t> ListContentTree(const std::span<const Asset::ProjectFileEntry> entries,
                                             const std::filesystem::path& directory, const std::string_view query) {
     std::vector<std::size_t> indices;
     for (std::size_t index = 0U; index < entries.size(); ++index) {
         const std::filesystem::path& path = entries[index].relativePath;
-        if (IsInsideContentDirectoryUVE(path, directory) &&
-            DoesContentNameMatchUVE(path.filename().generic_string(), query)) {
+        if (IsInsideContentDirectory(path, directory) &&
+            DoesContentNameMatch(path.filename().generic_string(), query)) {
             indices.push_back(index);
         }
     }
-    SortForDisplayUVE(indices, entries);
+    SortForDisplay(indices, entries);
     return indices;
 }
 
-std::vector<std::size_t> ListContentShelfUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
-                                             const ContentShelfUVE& shelf, const std::string_view query) {
+std::vector<std::size_t> ListContentShelf(const std::span<const Asset::ProjectFileEntry> entries,
+                                             const ContentShelf& shelf, const std::string_view query) {
     std::vector<std::size_t> indices;
     for (const std::filesystem::path& item : shelf.items) {
-        const auto it = std::ranges::find(entries, item, &Asset::ProjectFileEntryUVE::relativePath);
-        if (it != entries.end() && DoesContentNameMatchUVE(item.filename().generic_string(), query)) {
+        const auto it = std::ranges::find(entries, item, &Asset::ProjectFileEntry::relativePath);
+        if (it != entries.end() && DoesContentNameMatch(item.filename().generic_string(), query)) {
             indices.push_back(static_cast<std::size_t>(std::distance(entries.begin(), it)));
         }
     }
     return indices;
 }
 
-std::vector<std::string> CollectVisibleContentFoldersUVE(const std::span<const Asset::ProjectFileEntryUVE> entries,
+std::vector<std::string> CollectVisibleContentFolders(const std::span<const Asset::ProjectFileEntry> entries,
                                                          const std::string_view query) {
     std::set<std::string> visible;
-    for (const Asset::ProjectFileEntryUVE& entry : entries) {
-        if (!IsDirectoryUVE(entry) || !DoesContentNameMatchUVE(entry.relativePath.filename().generic_string(), query)) {
+    for (const Asset::ProjectFileEntry& entry : entries) {
+        if (!IsDirectory(entry) || !DoesContentNameMatch(entry.relativePath.filename().generic_string(), query)) {
             continue;
         }
         for (std::filesystem::path folder = entry.relativePath; !folder.empty(); folder = folder.parent_path()) {
@@ -323,25 +323,25 @@ std::vector<std::string> CollectVisibleContentFoldersUVE(const std::span<const A
     return {visible.begin(), visible.end()};
 }
 
-void SortContentFactsUVE(std::vector<std::size_t>& order, const std::span<const ContentItemFactsUVE> facts,
-                         const ContentSortKeyUVE key, const bool ascending) {
+void SortContentFacts(std::vector<std::size_t>& order, const std::span<const ContentItemFacts> facts,
+                         const ContentSortKey key, const bool ascending) {
     std::ranges::stable_sort(order, [&](const std::size_t a, const std::size_t b) {
-        const ContentItemFactsUVE& x = facts[a];
-        const ContentItemFactsUVE& y = facts[b];
+        const ContentItemFacts& x = facts[a];
+        const ContentItemFacts& y = facts[b];
         if (x.isFolder != y.isFolder) {
             return x.isFolder;
         }
-        const std::string xName = LowerUVE(x.name);
-        const std::string yName = LowerUVE(y.name);
+        const std::string xName = Lower(x.name);
+        const std::string yName = Lower(y.name);
         int compare = 0;
         switch (key) {
-            case ContentSortKeyUVE::Name: break;
-            case ContentSortKeyUVE::Type: compare = LowerUVE(x.type).compare(LowerUVE(y.type)); break;
-            case ContentSortKeyUVE::Size: compare = x.size < y.size ? -1 : (x.size > y.size ? 1 : 0); break;
-            case ContentSortKeyUVE::Modified:
+            case ContentSortKey::Name: break;
+            case ContentSortKey::Type: compare = Lower(x.type).compare(Lower(y.type)); break;
+            case ContentSortKey::Size: compare = x.size < y.size ? -1 : (x.size > y.size ? 1 : 0); break;
+            case ContentSortKey::Modified:
                 compare = x.modified < y.modified ? -1 : (x.modified > y.modified ? 1 : 0);
                 break;
-            case ContentSortKeyUVE::Folder: compare = LowerUVE(x.folder).compare(LowerUVE(y.folder)); break;
+            case ContentSortKey::Folder: compare = Lower(x.folder).compare(Lower(y.folder)); break;
         }
         if (compare == 0) {
             compare = xName.compare(yName);
@@ -350,32 +350,32 @@ void SortContentFactsUVE(std::vector<std::size_t>& order, const std::span<const 
     });
 }
 
-const char* GetContentAgeLabelUVE(const ContentAgeUVE age) noexcept {
+const char* GetContentAgeLabel(const ContentAge age) noexcept {
     switch (age) {
-        case ContentAgeUVE::Today: return "Today";
-        case ContentAgeUVE::Yesterday: return "Yesterday";
-        case ContentAgeUVE::ThisWeek: return "Earlier this week";
-        case ContentAgeUVE::Earlier: return "Before that";
+        case ContentAge::Today: return "Today";
+        case ContentAge::Yesterday: return "Yesterday";
+        case ContentAge::ThisWeek: return "Earlier this week";
+        case ContentAge::Earlier: return "Before that";
     }
     return "Before that";
 }
 
-ContentAgeUVE ClassifyContentAgeUVE(const std::int64_t modified, const std::int64_t startOfToday) noexcept {
+ContentAge ClassifyContentAge(const std::int64_t modified, const std::int64_t startOfToday) noexcept {
     constexpr std::int64_t kDay = 24 * 60 * 60;
     if (modified >= startOfToday) {
-        return ContentAgeUVE::Today;
+        return ContentAge::Today;
     }
     if (modified >= startOfToday - kDay) {
-        return ContentAgeUVE::Yesterday;
+        return ContentAge::Yesterday;
     }
     if (modified >= startOfToday - 6 * kDay) {
-        return ContentAgeUVE::ThisWeek;
+        return ContentAge::ThisWeek;
     }
-    return ContentAgeUVE::Earlier;
+    return ContentAge::Earlier;
 }
 
-std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByTypeUVE(
-    const std::vector<std::size_t>& order, const std::span<const ContentItemFactsUVE> facts) {
+std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByType(
+    const std::vector<std::size_t>& order, const std::span<const ContentItemFacts> facts) {
     std::vector<std::pair<std::string, std::vector<std::size_t>>> lanes;
     for (const std::size_t index : order) {
         if (facts[index].isFolder) {
@@ -388,11 +388,11 @@ std::vector<std::pair<std::string, std::vector<std::size_t>>> GroupContentByType
         }
         lane->second.push_back(index);
     }
-    std::ranges::sort(lanes, [](const auto& a, const auto& b) { return LowerUVE(a.first) < LowerUVE(b.first); });
+    std::ranges::sort(lanes, [](const auto& a, const auto& b) { return Lower(a.first) < Lower(b.first); });
     return lanes;
 }
 
-void ContentSelectionUVE::ClickUVE(const std::span<const std::string> visibleOrder, const std::string& item,
+void ContentSelection::Click(const std::span<const std::string> visibleOrder, const std::string& item,
                                    const bool control, const bool shift) {
     const auto position = [&visibleOrder](const std::string& name) {
         return std::ranges::find(visibleOrder, name);
@@ -406,7 +406,7 @@ void ContentSelectionUVE::ClickUVE(const std::span<const std::string> visibleOrd
         const auto from = std::min(clicked, anchored);
         const auto to = std::max(clicked, anchored);
         for (auto at = from; at <= to; ++at) {
-            if (!ContainsUVE(*at)) {
+            if (!Contains(*at)) {
                 m_items.push_back(*at);
             }
         }
@@ -424,16 +424,16 @@ void ContentSelectionUVE::ClickUVE(const std::span<const std::string> visibleOrd
     m_anchor = item;
 }
 
-bool ContentSelectionUVE::ContainsUVE(const std::string& item) const noexcept {
+bool ContentSelection::Contains(const std::string& item) const noexcept {
     return std::ranges::find(m_items, item) != m_items.end();
 }
 
-void ContentSelectionUVE::ClearUVE() noexcept {
+void ContentSelection::Clear() noexcept {
     m_items.clear();
     m_anchor.clear();
 }
 
-void ContentSelectionUVE::KeepOnlyUVE(const std::span<const std::string> existing) {
+void ContentSelection::KeepOnly(const std::span<const std::string> existing) {
     std::erase_if(m_items, [&existing](const std::string& item) { return std::ranges::find(existing, item) == existing.end(); });
     if (!m_anchor.empty() && std::ranges::find(existing, m_anchor) == existing.end()) {
         m_anchor.clear();

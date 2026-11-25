@@ -71,7 +71,7 @@ build/Engine/Runtime/Retarget/Runtime/uve_retarget_make_reference <source.fbx> \
     Engine/Runtime/Retarget/Runtime/Data/humanoid_reference.json --report > report.tsv
 ```
 
-- `BuildHumanoidReferenceUVE` renames every bone through its key, poses it as described above, and
+- `BuildHumanoidReference` renames every bone through its key, poses it as described above, and
   refuses a rig that does not face +Z or has no hips.
 - `--report` prints every bone before and after: world position, rotation and length to its
   parent. Check it before committing a new reference. Only the hips (set on the ground) and the
@@ -88,7 +88,7 @@ stays unmatched, is kept as it is, and shows grey in the report.
 
 The rig's rest pose can be anything (T-pose, A-pose, in between): directions are measured from
 its actual bones. Which way it stands is measured too: a rig authored Z-up, or facing -Z or +X,
-is stood up +Y and turned to face +Z first (`ConformedRigUVE::orientation`), and its clips are
+is stood up +Y and turned to face +Z first (`ConformedRig::orientation`), and its clips are
 turned with it.
 
 ## Keeping the animation and the mesh
@@ -103,8 +103,8 @@ Conforming moves things; it never rebuilds them.
 - **Mesh.** Triangles, weights, UVs and vertex order are untouched; vertices, normals and tangents
   move with their joints into the A-pose. Where two bones turn differently at a vertex (a shoulder
   when the arm is lowered), a linear blend pinches the skin, so the move is blended with dual
-  quaternions, which keep the volume. `MeasureMeshDistortionUVE` reports how many edges changed
-  by more than 10% and how far the worst went; `RetargetFilesUVE` puts that in the character's
+  quaternions, which keep the volume. `MeasureMeshDistortion` reports how many edges changed
+  by more than 10% and how far the worst went; `RetargetFiles` puts that in the character's
   report.
 - **Skin blending caveat.** Vertices held by several bones are re-posed once, and the runtime
   then blends them linearly, so a vertex in a blend zone can differ slightly from the original
@@ -113,7 +113,7 @@ Conforming moves things; it never rebuilds them.
 ## Playing a conformed clip
 
 A conformed clip stores each bone's translation for the rig it came from. Played literally on a
-character with longer or shorter limbs it would stretch them. So `ConformedPlaybackUVE` (used by
+character with longer or shorter limbs it would stretch them. So `ConformedPlayback` (used by
 the player, the scrubber and the animation tree) changes what a conformed clip may drive:
 
 - **Root, Hips and the IK targets** take the clip's translation, scaled by the character's hips
@@ -126,7 +126,7 @@ cost has not been measured.
 
 ## Matching any rig
 
-`MakeBoneKeyUVE` reduces a bone name to what it means: `"<side>|<words>"`.
+`MakeBoneKey` reduces a bone name to what it means: `"<side>|<words>"`.
 
 - `upperarm_twist_01_l`, `UpperArmTwist1_L` and `DEF-upper_arm.L`-style names all read as
   `L|upperarm twist 1`.
@@ -134,7 +134,7 @@ cost has not been measured.
 - Synonyms are folded to one word: calf, leg and lower leg all read as shin; ball and toe base
   read as toe; weapon reads as prop.
 
-`MatchHumanoidUVE(rig, reference)` pairs a rig's bones with the humanoid's by key. Spine and neck
+`MatchHumanoid(rig, reference)` pairs a rig's bones with the humanoid's by key. Spine and neck
 chains of any length are spread end to end over the humanoid's, so three spine bones land on
 Spine1, Spine3 and Spine5.
 
@@ -151,7 +151,7 @@ Rig bones the humanoid has no place for (such as a head-top end bone) are kept a
 
 ## Conforming
 
-`ConformSkeletonUVE(rig, match, reference)` makes a rig the humanoid:
+`ConformSkeleton(rig, match, reference)` makes a rig the humanoid:
 
 - The humanoid's bones come first, with its names, parents and order. Bones the rig had keep its
   proportions; bones it lacked are added. The rig's own extra bones are kept after them, under
@@ -165,17 +165,17 @@ Rig bones the humanoid has no place for (such as a head-top end bone) are kept a
   ground under the hips.
 - `moveOfRigBone` records how each original bone moved, which is what carries a skin along.
 
-`RigFromMeshUVE` + `ConformMeshUVE` re-skin a `.uvmodel`: vertices, normals and tangents move with
+`RigFromMesh` + `ConformMesh` re-skin a `.uvmodel`: vertices, normals and tangents move with
 their joints into the A-pose, and the joints become the conformed skeleton's, with new inverse
 binds and remeasured bounds. At the new rest every skinning matrix is the identity.
 
-`ConformClipUVE` re-expresses a clip for the conformed rig: at every frame each original bone sits
+`ConformClip` re-expresses a clip for the conformed rig: at every frame each original bone sits
 where the clip put it, now in the humanoid's names and frames. Added bones ride their parents and
 IK targets follow what they follow.
 
 ## Files: in place, with a backup
 
-`RetargetFilesUVE(request, reference, progress)` conforms a character (`.uvmodel`) and any number
+`RetargetFiles(request, reference, progress)` conforms a character (`.uvmodel`) and any number
 of animations (`.uvanim`) where they are; it makes no new files.
 
 1. Everything is read and conformed in memory first. A character that cannot be conformed (missing,
@@ -185,7 +185,7 @@ of animations (`.uvanim`) where they are; it makes no new files.
 3. Each result is written beside its file and moved into place. If any write fails, every file is
    put back from the backup.
 
-`RestoreRetargetBackupUVE(backupDir)` undoes a run byte for byte.
+`RestoreRetargetBackup(backupDir)` undoes a run byte for byte.
 
 An animation can only be retargeted if it knows the skeleton it was made for. `.uvanim` v3 carries
 that (`rest`: bones, parents and rest pose) plus a `conformed` flag; FBX takes are imported with it.

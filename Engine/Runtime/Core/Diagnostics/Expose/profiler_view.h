@@ -19,42 +19,42 @@ namespace UVE::Core {
 
 /// Short display name for a category ("cpu", "net", ...). "unknown" for Count and
 /// anything outside the enum - the panel never prints a bare number.
-[[nodiscard]] std::string_view ProfilerCategoryNameUVE(
-    DiagnosticCategoryUVE category) noexcept;
+[[nodiscard]] std::string_view ProfilerCategoryName(
+    DiagnosticCategory category) noexcept;
 
 /// Human duration: "850ns", "1.50us", "3.40ms", "2.00s" by magnitude.
-[[nodiscard]] std::string FormatProfilerDurationUVE(std::uint64_t nanoseconds);
+[[nodiscard]] std::string FormatProfilerDuration(std::uint64_t nanoseconds);
 
 /// Human counter: integral doubles print whole ("2048"), the rest with 3 decimals
 /// ("1.500").
-[[nodiscard]] std::string FormatProfilerCounterUVE(double value);
+[[nodiscard]] std::string FormatProfilerCounter(double value);
 
-struct ProfilerSpanRowUVE final {
+struct ProfilerSpanRow final {
     std::string name;
-    DiagnosticCategoryUVE category = DiagnosticCategoryUVE::Cpu;
+    DiagnosticCategory category = DiagnosticCategory::Cpu;
     std::uint64_t beginNanoseconds = 0U;
     std::uint64_t durationNanoseconds = 0U;
 
-    [[nodiscard]] bool operator==(const ProfilerSpanRowUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ProfilerSpanRow&) const noexcept = default;
 };
 
 /// One row per span, sorted by (begin, name). Durations saturate: an end before its
 /// begin (impossible through the capture, possible in a hand-built vector) shows 0.
-[[nodiscard]] std::vector<ProfilerSpanRowUVE> BuildProfilerSpanRowsUVE(
-    const std::vector<DiagnosticSpanUVE>& spans);
+[[nodiscard]] std::vector<ProfilerSpanRow> BuildProfilerSpanRows(
+    const std::vector<DiagnosticSpan>& spans);
 
-struct ProfilerCounterRowUVE final {
+struct ProfilerCounterRow final {
     std::string name;
-    DiagnosticCategoryUVE category = DiagnosticCategoryUVE::Cpu;
+    DiagnosticCategory category = DiagnosticCategory::Cpu;
     double value = 0.0;
     std::uint64_t timestampNanoseconds = 0U;
 
-    [[nodiscard]] bool operator==(const ProfilerCounterRowUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ProfilerCounterRow&) const noexcept = default;
 };
 
 /// Latest value per (category, name), sorted by (category, name) for a stable panel.
 /// Timestamp ties keep the last occurrence - the vector order breaks them.
-[[nodiscard]] std::vector<ProfilerCounterRowUVE> BuildProfilerCounterRowsUVE(
-    const std::vector<DiagnosticCounterUVE>& counters);
+[[nodiscard]] std::vector<ProfilerCounterRow> BuildProfilerCounterRows(
+    const std::vector<DiagnosticCounter>& counters);
 
 } // namespace UVE::Core

@@ -26,18 +26,18 @@ namespace UVE::Asset {
 ///
 /// Thread-safety: free functions over caller-owned data, no shared state.
 
-/// Resolves `localPose` (one local-space transform per joint, in MeshAssetUVE::joints order) into
+/// Resolves `localPose` (one local-space transform per joint, in MeshAsset::joints order) into
 /// the model-space SKINNING matrices a vertex transform consumes - that is, each joint's resolved
 /// world transform composed with its inverse bind matrix.
 ///
 /// One forward pass, no recursion: the skeleton's topological ordering guarantees every parent is
 /// already resolved when its child is reached. Returns false, leaving `outSkinningMatrices`
 /// untouched, if the pose size does not match the joint count or the skeleton is not ordered.
-[[nodiscard]] bool TryResolvePoseUVE(std::span<const MeshJointUVE> joints,
-                                     std::span<const Math::Matrix4x4UVE> localPose,
-                                     std::vector<Math::Matrix4x4UVE>& outSkinningMatrices);
+[[nodiscard]] bool TryResolvePose(std::span<const MeshJoint> joints,
+                                     std::span<const Math::Matrix4x4> localPose,
+                                     std::vector<Math::Matrix4x4>& outSkinningMatrices);
 
-/// Skins `mesh` with `skinningMatrices` (as produced by TryResolvePoseUVE) into `outVertices`.
+/// Skins `mesh` with `skinningMatrices` (as produced by TryResolvePose) into `outVertices`.
 ///
 /// Positions are transformed as points and normals/tangents as directions - the distinction
 /// matters: a skinning matrix has a translation, and applying it to a normal would move the
@@ -53,8 +53,8 @@ namespace UVE::Asset {
 /// Returns false, leaving `outVertices` untouched, if the mesh is not skinned, its skinning data
 /// is structurally invalid, the matrix count does not match the joint count, or any result is
 /// non-finite. `outVertices` is sized to match `mesh.vertices`.
-[[nodiscard]] bool TrySkinMeshUVE(const MeshAssetUVE& mesh,
-                                  std::span<const Math::Matrix4x4UVE> skinningMatrices,
-                                  std::vector<MeshVertexUVE>& outVertices);
+[[nodiscard]] bool TrySkinMesh(const MeshAsset& mesh,
+                                  std::span<const Math::Matrix4x4> skinningMatrices,
+                                  std::vector<MeshVertex>& outVertices);
 
 } // namespace UVE::Asset

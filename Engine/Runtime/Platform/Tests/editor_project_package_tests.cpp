@@ -13,12 +13,12 @@
 namespace UVE::Platform::Tests {
 namespace {
 
-class EditorProjectPackageUVETest : public ::testing::Test {
+class EditorProjectPackageTest : public ::testing::Test {
 protected:
-    void SetUp() override { packagePath = ::UVE::Tests::MakeTestCaseDirectoryUVE() / "package.uvproject"; }
+    void SetUp() override { packagePath = ::UVE::Tests::MakeTestCaseDirectory() / "package.uvproject"; }
 
-    [[nodiscard]] EditorProjectPackageUVE MakePackage() const {
-        EditorProjectPackageUVE package;
+    [[nodiscard]] EditorProjectPackage MakePackage() const {
+        EditorProjectPackage package;
         package.revision = 4U;
         package.projectId = "univex-demo-01";
         package.displayName = "UniVex Demo";
@@ -49,7 +49,7 @@ protected:
         package.applicationSettings.symbolUploadEndpoint = "https://symbols.example.com/upload";
         package.applicationSettings.windowWidth = 1920U;
         package.applicationSettings.windowHeight = 1080U;
-        package.applicationSettings.windowMode = WindowModeUVE::ExclusiveFullscreen;
+        package.applicationSettings.windowMode = WindowMode::ExclusiveFullscreen;
         package.applicationSettings.windowResizable = false;
         package.applicationSettings.windowBorderless = true;
         package.applicationSettings.windowAlwaysOnTop = true;
@@ -65,13 +65,13 @@ protected:
         package.applicationSettings.highDpiAware = false;
         package.applicationSettings.perMonitorScaling = false;
         package.applicationSettings.contentScaleOverride = 1.25;
-        package.applicationSettings.stretchMode = StretchModeUVE::Viewport;
-        package.applicationSettings.aspectPolicy = AspectPolicyUVE::KeepWidth;
+        package.applicationSettings.stretchMode = StretchMode::Viewport;
+        package.applicationSettings.aspectPolicy = AspectPolicy::KeepWidth;
         package.applicationSettings.integerOnlyScaling = true;
-        package.applicationSettings.orientation = DisplayOrientationUVE::LandscapeLeft;
-        package.applicationSettings.allowedOrientations = {DisplayOrientationUVE::LandscapeLeft,
-                                                            DisplayOrientationUVE::Portrait};
-        package.applicationSettings.vsyncMode = VSyncModeUVE::Mailbox;
+        package.applicationSettings.orientation = DisplayOrientation::LandscapeLeft;
+        package.applicationSettings.allowedOrientations = {DisplayOrientation::LandscapeLeft,
+                                                            DisplayOrientation::Portrait};
+        package.applicationSettings.vsyncMode = VSyncMode::Mailbox;
         package.applicationSettings.focusedFrameRateCap = 144U;
         package.applicationSettings.unfocusedFrameRateCap = 30U;
         package.applicationSettings.allowDisplaySleep = false;
@@ -91,211 +91,211 @@ protected:
     std::filesystem::path packagePath;
 };
 
-TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsPortableDescriptor) {
-    const EditorProjectPackageUVE expected = MakePackage();
+TEST_F(EditorProjectPackageTest, SaveAndLoad_RoundTripsPortableDescriptor) {
+    const EditorProjectPackage expected = MakePackage();
 
-    const EditorProjectPackageResultUVE saveResult =
-        EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected);
+    const EditorProjectPackageResult saveResult =
+        EditorProjectPackageCodec::Save(packagePath, expected);
 
-    ASSERT_TRUE(saveResult.IsAcceptedUVE()) << saveResult.message;
-    const EditorProjectPackageLoadResultUVE loadResult =
-        EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+    ASSERT_TRUE(saveResult.IsAccepted()) << saveResult.message;
+    const EditorProjectPackageLoadResult loadResult =
+        EditorProjectPackageCodec::Load(packagePath);
 
-    ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+    ASSERT_TRUE(loadResult.IsAccepted()) << loadResult.result.message;
     EXPECT_EQ(*loadResult.package, expected);
 }
 
-TEST_F(EditorProjectPackageUVETest, Validate_RejectsUnboundedIdentityAndTraversalPaths) {
-    EditorProjectPackageUVE package = MakePackage();
+TEST_F(EditorProjectPackageTest, Validate_RejectsUnboundedIdentityAndTraversalPaths) {
+    EditorProjectPackage package = MakePackage();
     package.projectId = "demo/project";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.contentRoot = "../assets";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPath);
 
     package = MakePackage();
     package.settingsPath = "/tmp/settings.json";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPath);
 }
 
-TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidProductMetadata) {
-    EditorProjectPackageUVE package = MakePackage();
-    package.productMetadata.name = std::string(kMaximumEditorProductNameBytesUVE + 1U, 'x');
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+TEST_F(EditorProjectPackageTest, Validate_RejectsInvalidProductMetadata) {
+    EditorProjectPackage package = MakePackage();
+    package.productMetadata.name = std::string(kMaximumEditorProductNameBytes + 1U, 'x');
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
-    package.productMetadata.shortName = std::string(kMaximumEditorProductShortNameBytesUVE + 1U, 'x');
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    package.productMetadata.shortName = std::string(kMaximumEditorProductShortNameBytes + 1U, 'x');
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.productMetadata.description.assign(16U, 'x');
     package.productMetadata.description[3U] = static_cast<char>(0);
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.productMetadata.version.clear();
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 }
 
-TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidApplicationSettings) {
-    EditorProjectPackageUVE package = MakePackage();
+TEST_F(EditorProjectPackageTest, Validate_RejectsInvalidApplicationSettings) {
+    EditorProjectPackage package = MakePackage();
     package.applicationSettings.applicationIdentifiersByTarget["linux"] = "com..astro";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.applicationIdentifiersByTarget["desktop"] = "com.example.astro";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.iconPathsByTarget["windows"][256U] = "../icon.png";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPath);
 
     package = MakePackage();
     package.applicationSettings.splashFadeSeconds = 61.0;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.userDataDirectoryName = "../escape";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.symbolUploadEndpoint = "http://symbols.example.com";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 }
 
-TEST_F(EditorProjectPackageUVETest, Validate_RejectsInvalidWindowAndCursorPolicies) {
-    EditorProjectPackageUVE package = MakePackage();
+TEST_F(EditorProjectPackageTest, Validate_RejectsInvalidWindowAndCursorPolicies) {
+    EditorProjectPackage package = MakePackage();
     package.applicationSettings.windowWidth = 0U;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.minimumWindowWidth = 3000U;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.cursorImagePath = "../cursor.png";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPath);
 
     package = MakePackage();
-    package.applicationSettings.orientation = DisplayOrientationUVE::LandscapeRight;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    package.applicationSettings.orientation = DisplayOrientation::LandscapeRight;
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.focusedFrameRateCap = 1001U;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 
     package = MakePackage();
     package.applicationSettings.contentScaleOverride = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code,
-              EditorProjectPackageCodeUVE::InvalidPackage);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code,
+              EditorProjectPackageCode::InvalidPackage);
 }
 
-TEST_F(EditorProjectPackageUVETest, Save_RejectsWrongExtensionWithoutCreatingFile) {
-    EditorProjectPackageUVE package = MakePackage();
+TEST_F(EditorProjectPackageTest, Save_RejectsWrongExtensionWithoutCreatingFile) {
+    EditorProjectPackage package = MakePackage();
     std::filesystem::path wrongPath = packagePath;
     wrongPath.replace_extension(".json");
 
-    const EditorProjectPackageResultUVE result =
-        EditorProjectPackageCodecUVE::SaveUVE(wrongPath, package);
+    const EditorProjectPackageResult result =
+        EditorProjectPackageCodec::Save(wrongPath, package);
 
-    EXPECT_EQ(result.code, EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(result.code, EditorProjectPackageCode::InvalidPath);
     EXPECT_FALSE(std::filesystem::exists(wrongPath));
 }
 
-TEST_F(EditorProjectPackageUVETest, Load_MalformedOrWrongFormatFailsClosed) {
+TEST_F(EditorProjectPackageTest, Load_MalformedOrWrongFormatFailsClosed) {
     {
         std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
         output << "{\"format\":\"other\"}\n";
     }
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).result.code,
-              EditorProjectPackageCodeUVE::ParseFailed);
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).result.code,
+              EditorProjectPackageCode::ParseFailed);
 
     {
         std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
         output << "not-json\n";
     }
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).result.code,
-              EditorProjectPackageCodeUVE::ParseFailed);
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).result.code,
+              EditorProjectPackageCode::ParseFailed);
 }
 
-TEST_F(EditorProjectPackageUVETest, ApplyUpdate_RequiresExpectedRevisionAndMatchingIdentity) {
-    const EditorProjectPackageUVE initial = MakePackage();
-    ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, initial).IsAcceptedUVE());
+TEST_F(EditorProjectPackageTest, ApplyUpdate_RequiresExpectedRevisionAndMatchingIdentity) {
+    const EditorProjectPackage initial = MakePackage();
+    ASSERT_TRUE(EditorProjectPackageCodec::Save(packagePath, initial).IsAccepted());
 
-    EditorProjectPackageUVE replacement = initial;
+    EditorProjectPackage replacement = initial;
     replacement.revision = 5U;
     replacement.displayName = "Updated Demo";
 
-    const EditorProjectPackageResultUVE staleResult =
-        EditorProjectPackageCodecUVE::ApplyUpdateUVE(packagePath, 3U, replacement);
-    EXPECT_EQ(staleResult.code, EditorProjectPackageCodeUVE::RevisionConflict);
-    ASSERT_TRUE(EditorProjectPackageCodecUVE::LoadUVE(packagePath).package.has_value());
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).package->revision, 4U);
+    const EditorProjectPackageResult staleResult =
+        EditorProjectPackageCodec::ApplyUpdate(packagePath, 3U, replacement);
+    EXPECT_EQ(staleResult.code, EditorProjectPackageCode::RevisionConflict);
+    ASSERT_TRUE(EditorProjectPackageCodec::Load(packagePath).package.has_value());
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).package->revision, 4U);
 
-    const EditorProjectPackageResultUVE updateResult =
-        EditorProjectPackageCodecUVE::ApplyUpdateUVE(packagePath, 4U, replacement);
-    ASSERT_TRUE(updateResult.IsAcceptedUVE()) << updateResult.message;
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).package->displayName, "Updated Demo");
+    const EditorProjectPackageResult updateResult =
+        EditorProjectPackageCodec::ApplyUpdate(packagePath, 4U, replacement);
+    ASSERT_TRUE(updateResult.IsAccepted()) << updateResult.message;
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).package->displayName, "Updated Demo");
 
-    EditorProjectPackageUVE differentProject = replacement;
+    EditorProjectPackage differentProject = replacement;
     differentProject.revision = 6U;
     differentProject.projectId = "other-project";
-    const EditorProjectPackageResultUVE identityResult =
-        EditorProjectPackageCodecUVE::ApplyUpdateUVE(packagePath, 5U, differentProject);
-    EXPECT_EQ(identityResult.code, EditorProjectPackageCodeUVE::ProjectIdentityConflict);
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).package->revision, 5U);
+    const EditorProjectPackageResult identityResult =
+        EditorProjectPackageCodec::ApplyUpdate(packagePath, 5U, differentProject);
+    EXPECT_EQ(identityResult.code, EditorProjectPackageCode::ProjectIdentityConflict);
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).package->revision, 5U);
 }
 
-TEST_F(EditorProjectPackageUVETest, ApplyUpdate_RejectsNonNewerReplacementWithoutMutation) {
-    const EditorProjectPackageUVE initial = MakePackage();
-    ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, initial).IsAcceptedUVE());
+TEST_F(EditorProjectPackageTest, ApplyUpdate_RejectsNonNewerReplacementWithoutMutation) {
+    const EditorProjectPackage initial = MakePackage();
+    ASSERT_TRUE(EditorProjectPackageCodec::Save(packagePath, initial).IsAccepted());
 
-    EditorProjectPackageUVE replacement = initial;
+    EditorProjectPackage replacement = initial;
     replacement.displayName = "Stale";
-    const EditorProjectPackageResultUVE result =
-        EditorProjectPackageCodecUVE::ApplyUpdateUVE(packagePath, initial.revision, replacement);
+    const EditorProjectPackageResult result =
+        EditorProjectPackageCodec::ApplyUpdate(packagePath, initial.revision, replacement);
 
-    EXPECT_EQ(result.code, EditorProjectPackageCodeUVE::RevisionConflict);
-    const auto loaded = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
-    ASSERT_TRUE(loaded.IsAcceptedUVE());
+    EXPECT_EQ(result.code, EditorProjectPackageCode::RevisionConflict);
+    const auto loaded = EditorProjectPackageCodec::Load(packagePath);
+    ASSERT_TRUE(loaded.IsAccepted());
     EXPECT_EQ(loaded.package->displayName, initial.displayName);
 }
 
-TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsStartupScenePath) {
-    EditorProjectPackageUVE expected = MakePackage();
+TEST_F(EditorProjectPackageTest, SaveAndLoad_RoundTripsStartupScenePath) {
+    EditorProjectPackage expected = MakePackage();
     expected.startupScenePath = "scenes/main.uvscene";
 
-    ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected).IsAcceptedUVE());
-    const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+    ASSERT_TRUE(EditorProjectPackageCodec::Save(packagePath, expected).IsAccepted());
+    const EditorProjectPackageLoadResult loadResult = EditorProjectPackageCodec::Load(packagePath);
 
-    ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+    ASSERT_TRUE(loadResult.IsAccepted()) << loadResult.result.message;
     EXPECT_EQ(loadResult.package->startupScenePath, "scenes/main.uvscene");
 }
 
-TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyForOlderFiles) {
+TEST_F(EditorProjectPackageTest, Load_DefaultsMissingStartupScenePathToEmptyForOlderFiles) {
     // Simulates an older .uvproject file written before productMetadata and startupScenePath
     // existed - neither key is present, not merely set to an empty value.
     const nlohmann::json legacyJson{{"format", "uvproject"},
-                                    {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
+                                    {"schemaVersion", kCurrentEditorProjectSchemaVersion},
                                     {"revision", 1U},
                                     {"projectId", "legacy-project"},
                                     {"displayName", "Legacy"},
@@ -308,9 +308,9 @@ TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyF
         output << legacyJson.dump();
     }
 
-    const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+    const EditorProjectPackageLoadResult loadResult = EditorProjectPackageCodec::Load(packagePath);
 
-    ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+    ASSERT_TRUE(loadResult.IsAccepted()) << loadResult.result.message;
     EXPECT_TRUE(loadResult.package->startupScenePath.empty());
     EXPECT_TRUE(loadResult.package->productMetadata.name.empty());
     EXPECT_TRUE(loadResult.package->productMetadata.shortName.empty());
@@ -326,32 +326,32 @@ TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingStartupScenePathToEmptyF
     EXPECT_EQ(loadResult.package->applicationSettings.crashDumpDirectory, "crash-dumps");
 }
 
-TEST_F(EditorProjectPackageUVETest, Validate_RejectsTraversalStartupScenePathButAllowsEmpty) {
-    EditorProjectPackageUVE package = MakePackage();
-    EXPECT_TRUE(EditorProjectPackageCodecUVE::ValidateUVE(package).IsAcceptedUVE());
+TEST_F(EditorProjectPackageTest, Validate_RejectsTraversalStartupScenePathButAllowsEmpty) {
+    EditorProjectPackage package = MakePackage();
+    EXPECT_TRUE(EditorProjectPackageCodec::Validate(package).IsAccepted());
 
     package.startupScenePath = "../outside.uvscene";
-    EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code, EditorProjectPackageCodeUVE::InvalidPath);
+    EXPECT_EQ(EditorProjectPackageCodec::Validate(package).code, EditorProjectPackageCode::InvalidPath);
 }
 
-TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsAllRendererProfiles) {
-    for (const RendererProfileUVE profile :
-         {RendererProfileUVE::Compatibility, RendererProfileUVE::Mobile, RendererProfileUVE::ForwardPlus}) {
-        EditorProjectPackageUVE expected = MakePackage();
+TEST_F(EditorProjectPackageTest, SaveAndLoad_RoundTripsAllRendererProfiles) {
+    for (const RendererProfile profile :
+         {RendererProfile::Compatibility, RendererProfile::Mobile, RendererProfile::ForwardPlus}) {
+        EditorProjectPackage expected = MakePackage();
         expected.rendererProfile = profile;
 
-        ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected).IsAcceptedUVE());
-        const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+        ASSERT_TRUE(EditorProjectPackageCodec::Save(packagePath, expected).IsAccepted());
+        const EditorProjectPackageLoadResult loadResult = EditorProjectPackageCodec::Load(packagePath);
 
-        ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+        ASSERT_TRUE(loadResult.IsAccepted()) << loadResult.result.message;
         EXPECT_EQ(loadResult.package->rendererProfile, profile);
-        EXPECT_EQ(ParseRendererProfileUVE(GetRendererProfileNameUVE(profile)), profile);
+        EXPECT_EQ(ParseRendererProfile(GetRendererProfileName(profile)), profile);
     }
 }
 
-TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingRendererProfileAndRejectsUnknownProfile) {
+TEST_F(EditorProjectPackageTest, Load_DefaultsMissingRendererProfileAndRejectsUnknownProfile) {
     const nlohmann::json legacyJson{{"format", "uvproject"},
-                                    {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
+                                    {"schemaVersion", kCurrentEditorProjectSchemaVersion},
                                     {"revision", 1U},
                                     {"projectId", "legacy-renderer-default"},
                                     {"displayName", "Legacy"},
@@ -363,9 +363,9 @@ TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingRendererProfileAndReject
         std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
         output << legacyJson.dump();
     }
-    const EditorProjectPackageLoadResultUVE legacyLoad = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
-    ASSERT_TRUE(legacyLoad.IsAcceptedUVE()) << legacyLoad.result.message;
-    EXPECT_EQ(legacyLoad.package->rendererProfile, DefaultRendererProfileForHostUVE());
+    const EditorProjectPackageLoadResult legacyLoad = EditorProjectPackageCodec::Load(packagePath);
+    ASSERT_TRUE(legacyLoad.IsAccepted()) << legacyLoad.result.message;
+    EXPECT_EQ(legacyLoad.package->rendererProfile, DefaultRendererProfileForHost());
 
     nlohmann::json invalidJson = legacyJson;
     invalidJson["rendererProfile"] = "ultra_raytrace";
@@ -373,8 +373,8 @@ TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingRendererProfileAndReject
         std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
         output << invalidJson.dump();
     }
-    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).result.code,
-              EditorProjectPackageCodeUVE::ParseFailed);
+    EXPECT_EQ(EditorProjectPackageCodec::Load(packagePath).result.code,
+              EditorProjectPackageCode::ParseFailed);
 }
 
 } // namespace

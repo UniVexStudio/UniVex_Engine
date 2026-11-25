@@ -19,21 +19,21 @@
 
 namespace univex::integration {
 
-bool HasContributingSceneLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+bool HasContributingSceneLight(UVE::Scene::IEntityManager& entityManager) {
     // The light system's own extraction, not a second opinion about what a light is: whatever it
     // drops here is exactly what the renderer will drop, so the panel cannot go dark on account of
     // a light that lights nothing.
-    const UVE::Render::LightSystemUVE lightSystem;
-    const UVE::Render::LightListUVE lights = lightSystem.ExtractActiveLightsUVE(entityManager);
-    for (std::size_t index = 0U; index < lights.SizeUVE(); ++index) {
-        const UVE::Render::LightDataUVE& light = lights[index];
+    const UVE::Render::LightSystem lightSystem;
+    const UVE::Render::LightList lights = lightSystem.ExtractActiveLights(entityManager);
+    for (std::size_t index = 0U; index < lights.Size(); ++index) {
+        const UVE::Render::LightData& light = lights[index];
         if (light.isEditorInternal) {
             continue;
         }
         // Intensity alone is not enough: a light whose colour is black adds nothing however loud
         // its energy setting is.
         if (light.intensity <= 0.0F ||
-            UVE::Scene::Light3DUVE::ComputeRec709LuminanceUVE(light.color) <= 0.0F) {
+            UVE::Scene::Light3D::ComputeRec709Luminance(light.color) <= 0.0F) {
             continue;
         }
         return true;
@@ -41,21 +41,21 @@ bool HasContributingSceneLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) 
     return false;
 }
 
-bool HasContributingDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+bool HasContributingDirectionalLight(UVE::Scene::IEntityManager& entityManager) {
     bool contributing = false;
-    entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE,
-                             UVE::Scene::DirectionalLight3DComponentUVE,
-                             UVE::Scene::LightEmitterComponentUVE>(
-        [&contributing, &entityManager](const UVE::Scene::EntityUVE entity,
-                                        const UVE::Scene::WorldTransformComponentUVE&,
-                                        const UVE::Scene::DirectionalLight3DComponentUVE& directional,
-                                        const UVE::Scene::LightEmitterComponentUVE& emitter) {
+    entityManager.ForEach<UVE::Scene::WorldTransformComponent,
+                             UVE::Scene::DirectionalLight3DComponent,
+                             UVE::Scene::LightEmitterComponent>(
+        [&contributing, &entityManager](const UVE::Scene::Entity entity,
+                                        const UVE::Scene::WorldTransformComponent&,
+                                        const UVE::Scene::DirectionalLight3DComponent& directional,
+                                        const UVE::Scene::LightEmitterComponent& emitter) {
             if (contributing) {
                 return;
             }
-            if (entityManager.HasComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity)) {
-                const UVE::Scene::VisibilityComponentUVE& visibility =
-                    entityManager.GetComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity);
+            if (entityManager.HasComponent<UVE::Scene::VisibilityComponent>(entity)) {
+                const UVE::Scene::VisibilityComponent& visibility =
+                    entityManager.GetComponent<UVE::Scene::VisibilityComponent>(entity);
                 if (!visibility.visible || !visibility.visibleInHierarchy) {
                     return;
                 }
@@ -63,11 +63,11 @@ bool HasContributingDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityMan
             // The light system's own conditions, in its order: everything it would reject here is
             // a sun that lights nothing, and a sun that lights nothing must not silence the
             // preview sun in its favour.
-            if (entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity) ||
-                !UVE::Scene::IsDirectionalLight3DComponentValidUVE(directional) ||
-                !UVE::Scene::IsLightEmitterComponentValidUVE(emitter) || emitter.cullMask == 0U ||
+            if (entityManager.HasComponent<UVE::Scene::EditorInternalEntityComponent>(entity) ||
+                !UVE::Scene::IsDirectionalLight3DComponentValid(directional) ||
+                !UVE::Scene::IsLightEmitterComponentValid(emitter) || emitter.cullMask == 0U ||
                 emitter.energy <= 0.0F ||
-                UVE::Scene::Light3DUVE::ComputeRec709LuminanceUVE(emitter.color) <= 0.0F) {
+                UVE::Scene::Light3D::ComputeRec709Luminance(emitter.color) <= 0.0F) {
                 return;
             }
             contributing = true;
@@ -75,21 +75,21 @@ bool HasContributingDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityMan
     return contributing;
 }
 
-bool HasAuthoredDirectionalLightNodeUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+bool HasAuthoredDirectionalLightNode(UVE::Scene::IEntityManager& entityManager) {
     bool authored = false;
-    entityManager.ForEachUVE<UVE::Scene::WorldTransformComponentUVE,
-                             UVE::Scene::DirectionalLight3DComponentUVE,
-                             UVE::Scene::LightEmitterComponentUVE>(
-        [&authored, &entityManager](const UVE::Scene::EntityUVE entity,
-                                    const UVE::Scene::WorldTransformComponentUVE&,
-                                    const UVE::Scene::DirectionalLight3DComponentUVE& directional,
-                                    const UVE::Scene::LightEmitterComponentUVE& emitter) {
+    entityManager.ForEach<UVE::Scene::WorldTransformComponent,
+                             UVE::Scene::DirectionalLight3DComponent,
+                             UVE::Scene::LightEmitterComponent>(
+        [&authored, &entityManager](const UVE::Scene::Entity entity,
+                                    const UVE::Scene::WorldTransformComponent&,
+                                    const UVE::Scene::DirectionalLight3DComponent& directional,
+                                    const UVE::Scene::LightEmitterComponent& emitter) {
             if (authored) {
                 return;
             }
-            if (entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity) ||
-                !UVE::Scene::IsDirectionalLight3DComponentValidUVE(directional) ||
-                !UVE::Scene::IsLightEmitterComponentValidUVE(emitter)) {
+            if (entityManager.HasComponent<UVE::Scene::EditorInternalEntityComponent>(entity) ||
+                !UVE::Scene::IsDirectionalLight3DComponentValid(directional) ||
+                !UVE::Scene::IsLightEmitterComponentValid(emitter)) {
                 return;
             }
             authored = true;

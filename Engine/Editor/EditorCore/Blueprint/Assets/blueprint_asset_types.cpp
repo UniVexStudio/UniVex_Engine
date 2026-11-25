@@ -7,19 +7,19 @@
 namespace UVE::Blueprint::Assets {
 namespace {
 
-[[nodiscard]] bool ValidMemberNameUVE(const std::string& name) noexcept {
-    return !name.empty() && name.size() <= Asset::kMaximumBlueprintNameBytesUVE && !name.contains('\0');
+[[nodiscard]] bool ValidMemberName(const std::string& name) noexcept {
+    return !name.empty() && name.size() <= Asset::kMaximumBlueprintNameBytes && !name.contains('\0');
 }
 
-[[nodiscard]] bool ValidPinsUVE(const std::vector<Asset::BlueprintPinSpecUVE>& pins) noexcept {
+[[nodiscard]] bool ValidPins(const std::vector<Asset::BlueprintPinSpec>& pins) noexcept {
     if (pins.size() > 64U) {
         return false;
     }
-    for (const Asset::BlueprintPinSpecUVE& pin : pins) {
-        if (pin.name.size() > Asset::kMaximumBlueprintNameBytesUVE || pin.name.contains('\0')) {
+    for (const Asset::BlueprintPinSpec& pin : pins) {
+        if (pin.name.size() > Asset::kMaximumBlueprintNameBytes || pin.name.contains('\0')) {
             return false;
         }
-        if (pin.type > Asset::BlueprintPinTypeUVE::StringArray) {
+        if (pin.type > Asset::BlueprintPinType::StringArray) {
             return false;
         }
     }
@@ -28,54 +28,54 @@ namespace {
 
 } // namespace
 
-std::string_view BlueprintAssetKindNameUVE(const BlueprintAssetKindUVE kind) noexcept {
+std::string_view BlueprintAssetKindName(const BlueprintAssetKind kind) noexcept {
     switch (kind) {
-        case BlueprintAssetKindUVE::BlueprintClass: return "BlueprintClass";
-        case BlueprintAssetKindUVE::WidgetBlueprint: return "WidgetBlueprint";
-        case BlueprintAssetKindUVE::FunctionLibrary: return "FunctionLibrary";
-        case BlueprintAssetKindUVE::MacroLibrary: return "MacroLibrary";
-        case BlueprintAssetKindUVE::Interface: return "Interface";
+        case BlueprintAssetKind::BlueprintClass: return "BlueprintClass";
+        case BlueprintAssetKind::WidgetBlueprint: return "WidgetBlueprint";
+        case BlueprintAssetKind::FunctionLibrary: return "FunctionLibrary";
+        case BlueprintAssetKind::MacroLibrary: return "MacroLibrary";
+        case BlueprintAssetKind::Interface: return "Interface";
     }
     return "BlueprintClass";
 }
 
-bool IsFunctionLibraryAssetValidUVE(const BlueprintFunctionLibraryAssetUVE& library) noexcept {
-    if (!ValidMemberNameUVE(library.libraryName) || library.functions.size() > 512U) {
+bool IsFunctionLibraryAssetValid(const BlueprintFunctionLibraryAsset& library) noexcept {
+    if (!ValidMemberName(library.libraryName) || library.functions.size() > 512U) {
         return false;
     }
     std::set<std::string> names;
-    for (const BlueprintFunctionDefinitionUVE& fn : library.functions) {
-        if (!ValidMemberNameUVE(fn.name) || !names.insert(fn.name).second || !ValidPinsUVE(fn.inputs) ||
-            !ValidPinsUVE(fn.outputs) || !Asset::IsBlueprintAssetValidUVE(fn.bodyGraph)) {
+    for (const BlueprintFunctionDefinition& fn : library.functions) {
+        if (!ValidMemberName(fn.name) || !names.insert(fn.name).second || !ValidPins(fn.inputs) ||
+            !ValidPins(fn.outputs) || !Asset::IsBlueprintAssetValid(fn.bodyGraph)) {
             return false;
         }
     }
     return true;
 }
 
-bool IsMacroLibraryAssetValidUVE(const BlueprintMacroLibraryAssetUVE& library) noexcept {
-    if (!ValidMemberNameUVE(library.libraryName) || !ValidMemberNameUVE(library.targetParentKind) ||
+bool IsMacroLibraryAssetValid(const BlueprintMacroLibraryAsset& library) noexcept {
+    if (!ValidMemberName(library.libraryName) || !ValidMemberName(library.targetParentKind) ||
         library.macros.size() > 512U) {
         return false;
     }
     std::set<std::string> names;
-    for (const BlueprintMacroDefinitionUVE& macro : library.macros) {
-        if (!ValidMemberNameUVE(macro.name) || !names.insert(macro.name).second || !ValidPinsUVE(macro.inputs) ||
-            !ValidPinsUVE(macro.outputs) || !Asset::IsBlueprintAssetValidUVE(macro.subgraph)) {
+    for (const BlueprintMacroDefinition& macro : library.macros) {
+        if (!ValidMemberName(macro.name) || !names.insert(macro.name).second || !ValidPins(macro.inputs) ||
+            !ValidPins(macro.outputs) || !Asset::IsBlueprintAssetValid(macro.subgraph)) {
             return false;
         }
     }
     return true;
 }
 
-bool IsInterfaceAssetValidUVE(const BlueprintInterfaceAssetUVE& iface) noexcept {
-    if (!ValidMemberNameUVE(iface.interfaceName) || iface.methods.size() > 512U) {
+bool IsInterfaceAssetValid(const BlueprintInterfaceAsset& iface) noexcept {
+    if (!ValidMemberName(iface.interfaceName) || iface.methods.size() > 512U) {
         return false;
     }
     std::set<std::string> names;
-    for (const BlueprintInterfaceMethodUVE& method : iface.methods) {
-        if (!ValidMemberNameUVE(method.name) || !names.insert(method.name).second || !ValidPinsUVE(method.inputs) ||
-            !ValidPinsUVE(method.outputs)) {
+    for (const BlueprintInterfaceMethod& method : iface.methods) {
+        if (!ValidMemberName(method.name) || !names.insert(method.name).second || !ValidPins(method.inputs) ||
+            !ValidPins(method.outputs)) {
             return false;
         }
     }

@@ -12,8 +12,8 @@ namespace {
 
 constexpr float kEpsilon = 1.0e-5F;
 
-TEST(AngularDynamicsUVETest, ComputeBoxInverseInertiaUVE_MatchesDiagonalBoxFormula) {
-    const auto inverseInertia = ComputeBoxInverseInertiaUVE(2.0F, Math::Vector3UVE{1.0F, 2.0F, 3.0F});
+TEST(AngularDynamicsTest, ComputeBoxInverseInertia_MatchesDiagonalBoxFormula) {
+    const auto inverseInertia = ComputeBoxInverseInertia(2.0F, Math::Vector3{1.0F, 2.0F, 3.0F});
 
     ASSERT_TRUE(inverseInertia.has_value());
     EXPECT_NEAR(inverseInertia->x, 3.0F / 26.0F, kEpsilon);
@@ -21,9 +21,9 @@ TEST(AngularDynamicsUVETest, ComputeBoxInverseInertiaUVE_MatchesDiagonalBoxFormu
     EXPECT_NEAR(inverseInertia->z, 3.0F / 10.0F, kEpsilon);
 }
 
-TEST(AngularDynamicsUVETest, ComputeBoxInverseInertiaUVE_PreservesLargeFiniteHalfExtents) {
+TEST(AngularDynamicsTest, ComputeBoxInverseInertia_PreservesLargeFiniteHalfExtents) {
     const auto inverseInertia =
-        ComputeBoxInverseInertiaUVE(1.0F, Math::Vector3UVE{1.0e20F, 1.0F, 1.0F});
+        ComputeBoxInverseInertia(1.0F, Math::Vector3{1.0e20F, 1.0F, 1.0F});
 
     ASSERT_TRUE(inverseInertia.has_value());
     EXPECT_NEAR(inverseInertia->x, 1.5F, 1.0e-5F);
@@ -33,17 +33,17 @@ TEST(AngularDynamicsUVETest, ComputeBoxInverseInertiaUVE_PreservesLargeFiniteHal
     EXPECT_GT(inverseInertia->z, 0.0F);
 }
 
-TEST(AngularDynamicsUVETest, ComputeBoxInverseInertiaUVE_ZeroMassReturnsStaticZeroTensor) {
-    const auto inverseInertia = ComputeBoxInverseInertiaUVE(0.0F, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+TEST(AngularDynamicsTest, ComputeBoxInverseInertia_ZeroMassReturnsStaticZeroTensor) {
+    const auto inverseInertia = ComputeBoxInverseInertia(0.0F, Math::Vector3{1.0F, 1.0F, 1.0F});
 
     ASSERT_TRUE(inverseInertia.has_value());
-    EXPECT_EQ(*inverseInertia, Math::Vector3UVE{});
+    EXPECT_EQ(*inverseInertia, Math::Vector3{});
 }
 
-TEST(AngularDynamicsUVETest, IntegrateAngularVelocityUVE_AppliesTorqueOverFiniteStep) {
-    const auto result = IntegrateAngularVelocityUVE(
-        Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::Vector3UVE{4.0F, 5.0F, 6.0F},
-        Math::Vector3UVE{0.5F, 0.25F, 0.1F}, 0.2F);
+TEST(AngularDynamicsTest, IntegrateAngularVelocity_AppliesTorqueOverFiniteStep) {
+    const auto result = IntegrateAngularVelocity(
+        Math::Vector3{1.0F, 2.0F, 3.0F}, Math::Vector3{4.0F, 5.0F, 6.0F},
+        Math::Vector3{0.5F, 0.25F, 0.1F}, 0.2F);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_NEAR(result->x, 1.4F, kEpsilon);
@@ -51,10 +51,10 @@ TEST(AngularDynamicsUVETest, IntegrateAngularVelocityUVE_AppliesTorqueOverFinite
     EXPECT_NEAR(result->z, 3.12F, kEpsilon);
 }
 
-TEST(AngularDynamicsUVETest, ApplyAngularImpulseUVE_AppliesDiagonalInverseInertia) {
-    const auto result = ApplyAngularImpulseUVE(
-        Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::Vector3UVE{4.0F, 5.0F, 6.0F},
-        Math::Vector3UVE{0.5F, 0.25F, 0.1F});
+TEST(AngularDynamicsTest, ApplyAngularImpulse_AppliesDiagonalInverseInertia) {
+    const auto result = ApplyAngularImpulse(
+        Math::Vector3{1.0F, 2.0F, 3.0F}, Math::Vector3{4.0F, 5.0F, 6.0F},
+        Math::Vector3{0.5F, 0.25F, 0.1F});
 
     ASSERT_TRUE(result.has_value());
     EXPECT_NEAR(result->x, 3.0F, kEpsilon);
@@ -62,37 +62,37 @@ TEST(AngularDynamicsUVETest, ApplyAngularImpulseUVE_AppliesDiagonalInverseInerti
     EXPECT_NEAR(result->z, 3.6F, kEpsilon);
 }
 
-TEST(AngularDynamicsUVETest, EvaluateGyroscopicTorqueUVE_UsesDiagonalInertiaCrossTerm) {
-    const auto result = EvaluateGyroscopicTorqueUVE(
-        Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::Vector3UVE{0.5F, 0.25F, 0.1F});
+TEST(AngularDynamicsTest, EvaluateGyroscopicTorque_UsesDiagonalInertiaCrossTerm) {
+    const auto result = EvaluateGyroscopicTorque(
+        Math::Vector3{1.0F, 2.0F, 3.0F}, Math::Vector3{0.5F, 0.25F, 0.1F});
     ASSERT_TRUE(result.has_value());
     EXPECT_NEAR(result->x, 36.0F, kEpsilon);
     EXPECT_NEAR(result->y, -24.0F, kEpsilon);
     EXPECT_NEAR(result->z, 4.0F, kEpsilon);
 }
 
-TEST(AngularDynamicsUVETest, EvaluateGyroscopicTorqueUVE_RejectsUnsafeInputs) {
-    EXPECT_FALSE(EvaluateGyroscopicTorqueUVE(
-        Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}).has_value());
-    EXPECT_FALSE(EvaluateGyroscopicTorqueUVE(
-        Math::Vector3UVE{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
-        Math::Vector3UVE{1.0F, 1.0F, 1.0F}).has_value());
+TEST(AngularDynamicsTest, EvaluateGyroscopicTorque_RejectsUnsafeInputs) {
+    EXPECT_FALSE(EvaluateGyroscopicTorque(
+        Math::Vector3{1.0F, 2.0F, 3.0F}, Math::Vector3{-1.0F, 0.0F, 0.0F}).has_value());
+    EXPECT_FALSE(EvaluateGyroscopicTorque(
+        Math::Vector3{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
+        Math::Vector3{1.0F, 1.0F, 1.0F}).has_value());
 }
 
-TEST(AngularDynamicsUVETest, AngularHelpers_RejectUnsafeOrNonFiniteInputs) {
-    EXPECT_FALSE(ComputeBoxInverseInertiaUVE(-1.0F, Math::Vector3UVE{1.0F, 1.0F, 1.0F}).has_value());
-    EXPECT_FALSE(ComputeBoxInverseInertiaUVE(1.0F, Math::Vector3UVE{0.0F, 1.0F, 1.0F}).has_value());
-    EXPECT_FALSE(ComputeBoxInverseInertiaUVE(
-        std::numeric_limits<float>::quiet_NaN(), Math::Vector3UVE{1.0F, 1.0F, 1.0F}).has_value());
-    EXPECT_FALSE(ComputeBoxInverseInertiaUVE(
-        1.0F, Math::Vector3UVE{std::numeric_limits<float>::max(), 1.0F, 1.0F}).has_value());
-    EXPECT_FALSE(IntegrateAngularVelocityUVE(
-        Math::Vector3UVE{}, Math::Vector3UVE{}, Math::Vector3UVE{}, -0.1F).has_value());
-    EXPECT_FALSE(ApplyAngularImpulseUVE(
-        Math::Vector3UVE{}, Math::Vector3UVE{}, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}).has_value());
-    EXPECT_FALSE(ApplyAngularImpulseUVE(
-        Math::Vector3UVE{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
-        Math::Vector3UVE{}, Math::Vector3UVE{}).has_value());
+TEST(AngularDynamicsTest, AngularHelpers_RejectUnsafeOrNonFiniteInputs) {
+    EXPECT_FALSE(ComputeBoxInverseInertia(-1.0F, Math::Vector3{1.0F, 1.0F, 1.0F}).has_value());
+    EXPECT_FALSE(ComputeBoxInverseInertia(1.0F, Math::Vector3{0.0F, 1.0F, 1.0F}).has_value());
+    EXPECT_FALSE(ComputeBoxInverseInertia(
+        std::numeric_limits<float>::quiet_NaN(), Math::Vector3{1.0F, 1.0F, 1.0F}).has_value());
+    EXPECT_FALSE(ComputeBoxInverseInertia(
+        1.0F, Math::Vector3{std::numeric_limits<float>::max(), 1.0F, 1.0F}).has_value());
+    EXPECT_FALSE(IntegrateAngularVelocity(
+        Math::Vector3{}, Math::Vector3{}, Math::Vector3{}, -0.1F).has_value());
+    EXPECT_FALSE(ApplyAngularImpulse(
+        Math::Vector3{}, Math::Vector3{}, Math::Vector3{-1.0F, 0.0F, 0.0F}).has_value());
+    EXPECT_FALSE(ApplyAngularImpulse(
+        Math::Vector3{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
+        Math::Vector3{}, Math::Vector3{}).has_value());
 }
 
 } // namespace

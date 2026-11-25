@@ -9,7 +9,7 @@
 #include "viewport_surface.h"
 
 namespace UVE::Core {
-class EngineServicesUVE;
+class EngineServices;
 }
 
 namespace UVE::App::Viewports {
@@ -18,26 +18,26 @@ namespace UVE::App::Viewports {
 ///
 /// Switches cleanly between Studio framing and direct `StageCamera` look-through without camera
 /// fly animation, picking, or authoring gizmos.
-class WidgetPreviewViewportUVE final {
+class WidgetPreviewViewport final {
 public:
-    WidgetPreviewViewportUVE(Editor::EditorUVE& editor, Core::EngineServicesUVE& services);
-    ~WidgetPreviewViewportUVE() = default;
+    WidgetPreviewViewport(Editor::Editor& editor, Core::EngineServices& services);
+    ~WidgetPreviewViewport() = default;
 
-    WidgetPreviewViewportUVE(const WidgetPreviewViewportUVE&) = delete;
-    WidgetPreviewViewportUVE& operator=(const WidgetPreviewViewportUVE&) = delete;
-    WidgetPreviewViewportUVE(WidgetPreviewViewportUVE&&) = delete;
-    WidgetPreviewViewportUVE& operator=(WidgetPreviewViewportUVE&&) = delete;
+    WidgetPreviewViewport(const WidgetPreviewViewport&) = delete;
+    WidgetPreviewViewport& operator=(const WidgetPreviewViewport&) = delete;
+    WidgetPreviewViewport(WidgetPreviewViewport&&) = delete;
+    WidgetPreviewViewport& operator=(WidgetPreviewViewport&&) = delete;
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return m_surface.ServicesUVE(); }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return m_surface.Services(); }
 
-    [[nodiscard]] std::uint64_t RenderUVE(const Math::Vector2UVE& availableSize,
-                                          Math::Vector2UVE& outUsedSize,
-                                          const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    [[nodiscard]] std::uint64_t Render(const Math::Vector2& availableSize,
+                                          Math::Vector2& outUsedSize,
+                                          const Editor::Editor::ViewportOverlayState& overlayState);
 
 private:
-    Editor::EditorUVE& m_editor;
-    ViewportSurfaceUVE m_surface;
-    ViewportStudioCameraUVE m_studioCamera;
+    Editor::Editor& m_editor;
+    ViewportSurface m_surface;
+    ViewportStudioCamera m_studioCamera;
 };
 
 } // namespace UVE::App::Viewports

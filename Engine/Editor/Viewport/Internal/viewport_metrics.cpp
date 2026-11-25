@@ -8,7 +8,7 @@ namespace univex::camera {
 using univex::math::Dot;
 using univex::math::Normalize;
 
-float WorldPerPixelAtPointUVE(const OrbitCamera& camera, int framebufferHeight,
+float WorldPerPixelAtPoint(const OrbitCamera& camera, int framebufferHeight,
                               const Vec3& worldPoint) {
     if (framebufferHeight <= 0) return 0.f;
 
@@ -23,8 +23,8 @@ float WorldPerPixelAtPointUVE(const OrbitCamera& camera, int framebufferHeight,
     return worldHeightAtDepth / static_cast<float>(framebufferHeight);
 }
 
-float WorldPerPixelAtOrbitTargetUVE(const OrbitCamera& camera, int framebufferHeight) {
-    return WorldPerPixelAtPointUVE(camera, framebufferHeight, camera.Target());
+float WorldPerPixelAtOrbitTarget(const OrbitCamera& camera, int framebufferHeight) {
+    return WorldPerPixelAtPoint(camera, framebufferHeight, camera.Target());
 }
 
 } // namespace univex::camera

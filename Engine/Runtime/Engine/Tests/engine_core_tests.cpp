@@ -122,8 +122,8 @@
 namespace UVE::Core::Tests {
 namespace {
 
-EngineConfigUVE MakeTestConfigUVE() {
-    EngineConfigUVE config{};
+EngineConfig MakeTestConfig() {
+    EngineConfig config{};
     config.enableConsoleLogging = false;
     config.logFilePath = "uve_engine_core_tests.log";
     config.threadPoolWorkerCount = 2; // keep the whole suite's thread churn small and fast
@@ -131,31 +131,31 @@ EngineConfigUVE MakeTestConfigUVE() {
     config.assetDatabaseFilePath = "uve_engine_core_tests.uvassetdb"; // never touch a real asset db
     config.projectSettingsFilePath = "uve_engine_core_tests.project.uvsettings"; // nor a real project file
     config.inputMapFilePath = "uve_engine_core_tests.project.uvinput";
-    config.headlessUVE = true; // NullWindowManagerUVE/NullRenderDeviceUVE - no display required;
+    config.headless = true; // NullWindowManager/NullRenderDevice - no display required;
                                 // every pre-Increment-20 test opts into this by default, matching
                                 // its exact prior (headless-only) behavior. Tests that specifically
                                 // exercise the real window/GL backend override this explicitly.
     return config;
 }
 
-TEST(EngineCoreUVETest, InvalidApplicationRenderScaleFallsBackToNativeResolution) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.renderResolutionScaleUVE = std::numeric_limits<double>::quiet_NaN();
-    config.dynamicRenderResolutionEnabledUVE = true;
-    config.minimumRenderResolutionScaleUVE = 1.25;
-    config.renderResolutionTargetFrameTimeMillisecondsUVE = std::numeric_limits<double>::quiet_NaN();
+TEST(EngineCoreTest, InvalidApplicationRenderScaleFallsBackToNativeResolution) {
+    EngineConfig config = MakeTestConfig();
+    config.renderResolutionScale = std::numeric_limits<double>::quiet_NaN();
+    config.dynamicRenderResolutionEnabled = true;
+    config.minimumRenderResolutionScale = 1.25;
+    config.renderResolutionTargetFrameTimeMilliseconds = std::numeric_limits<double>::quiet_NaN();
     config.settingsFilePath = "uve_engine_core_invalid_render_scale.uvsettings";
     config.projectSettingsFilePath = "uve_engine_core_invalid_render_scale.project.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_invalid_render_scale.platform.uvsettings";
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionScaleUVE, 1.0);
-    EXPECT_TRUE(engine.GetConfigUVE().dynamicRenderResolutionEnabledUVE);
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().minimumRenderResolutionScaleUVE,
-                     kMinimumRenderResolutionScaleUVE);
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().renderResolutionTargetFrameTimeMillisecondsUVE,
-                     kDefaultRenderResolutionTargetFrameTimeMillisecondsUVE);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().renderResolutionScale, 1.0);
+    EXPECT_TRUE(engine.GetConfig().dynamicRenderResolutionEnabled);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().minimumRenderResolutionScale,
+                     kMinimumRenderResolutionScale);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().renderResolutionTargetFrameTimeMilliseconds,
+                     kDefaultRenderResolutionTargetFrameTimeMilliseconds);
     engine.Shutdown();
 
     std::filesystem::remove(config.settingsFilePath);
@@ -163,8 +163,8 @@ TEST(EngineCoreUVETest, InvalidApplicationRenderScaleFallsBackToNativeResolution
     std::filesystem::remove(config.platformSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, UnsafeProjectShaderCachePathDoesNotOverrideSafeApplicationValue) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, UnsafeProjectShaderCachePathDoesNotOverrideSafeApplicationValue) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_unsafe_shader_cache.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_unsafe_shader_cache.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_unsafe_shader_cache.platform.uvsettings";
@@ -174,35 +174,35 @@ TEST(EngineCoreUVETest, UnsafeProjectShaderCachePathDoesNotOverrideSafeApplicati
         file << R"({"rendering": {"shaders": {"programCacheDirectory": "../outside_cache"}}})";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, std::filesystem::path("safe_application_cache"));
+    EXPECT_EQ(engine.GetConfig().shaderCachePath, std::filesystem::path("safe_application_cache"));
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
     std::filesystem::remove(config.platformSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, UnsafeApplicationShaderCachePathFallsBackToEngineDefault) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, UnsafeApplicationShaderCachePathFallsBackToEngineDefault) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_unsafe_application_shader_cache.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_unsafe_application_shader_cache.platform.uvsettings";
     config.shaderCachePath = "../outside_cache";
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_EQ(engine.GetConfigUVE().shaderCachePath, EngineConfigUVE{}.shaderCachePath);
+    EXPECT_EQ(engine.GetConfig().shaderCachePath, EngineConfig{}.shaderCachePath);
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
     std::filesystem::remove(config.platformSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, ProjectSettings_OverrideTheApplicationsConfigWhereTheProjectSetsThem) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_tests_overrides.project.uvsettings";
-    config.autoSaveIntervalSecondsUVE = 123.0; // the application's choice, kept unless overridden
+    config.autoSaveIntervalSeconds = 123.0; // the application's choice, kept unless overridden
     {
         std::ofstream file(config.projectSettingsFilePath);
         // Ticks and filter are legal; the auto-save interval is below its minimum and ignored.
@@ -211,23 +211,23 @@ TEST(EngineCoreUVETest, ProjectSettings_OverrideTheApplicationsConfigWhereThePro
                     "rendering": {"shadows": {"filter": 0}},
                     "application": {"save": {"autoSaveInterval": 5.0}}})";
     }
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
-    EXPECT_FLOAT_EQ(engine.GetConfigUVE().gravity.y, -3.7F);
-    EXPECT_EQ(engine.GetConfigUVE().maxFixedStepsPerFrame, EngineConfigUVE{}.maxFixedStepsPerFrame);
-    EXPECT_EQ(engine.GetConfigUVE().shadowPcfKernelRadius, 0U);
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().autoSaveIntervalSecondsUVE, 123.0);
-    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, EngineConfigUVE{}.shadowMapResolution);
-    const Config::SettingsDocumentUVE& project = engine.GetServicesUVE().GetProjectSettingsUVE();
-    EXPECT_TRUE(project.IsModifiedUVE(EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE));
-    EXPECT_TRUE(project.IsDirtyUVE()); // The unversioned fixture is upgraded in memory for its next save.
+    EXPECT_DOUBLE_EQ(engine.GetConfig().fixedUpdateFps, 30.0);
+    EXPECT_FLOAT_EQ(engine.GetConfig().gravity.y, -3.7F);
+    EXPECT_EQ(engine.GetConfig().maxFixedStepsPerFrame, EngineConfig{}.maxFixedStepsPerFrame);
+    EXPECT_EQ(engine.GetConfig().shadowPcfKernelRadius, 0U);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().autoSaveIntervalSeconds, 123.0);
+    EXPECT_EQ(engine.GetConfig().shadowMapResolution, EngineConfig{}.shadowMapResolution);
+    const Config::SettingsDocument& project = engine.GetServices().GetProjectSettings();
+    EXPECT_TRUE(project.IsModified(EngineProjectSettingId::kPhysicsTicksPerSecond));
+    EXPECT_TRUE(project.IsDirty()); // The unversioned fixture is upgraded in memory for its next save.
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, UserSettingsOverrideProjectSettingsBeforeDependentSystemsInitialize) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, UserSettingsOverrideProjectSettingsBeforeDependentSystemsInitialize) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_tests_user_override.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_tests_user_override.uvsettings";
     {
@@ -239,16 +239,16 @@ TEST(EngineCoreUVETest, UserSettingsOverrideProjectSettingsBeforeDependentSystem
         file << R"({"physics": {"common": {"ticksPerSecond": 120}}})";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 120.0);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().fixedUpdateFps, 120.0);
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
 }
 
-TEST(EngineCoreUVETest, InvalidUserSettingFallsBackToTheValidProjectSetting) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, InvalidUserSettingFallsBackToTheValidProjectSetting) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_tests_invalid_user.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_tests_invalid_user.uvsettings";
     {
@@ -260,16 +260,16 @@ TEST(EngineCoreUVETest, InvalidUserSettingFallsBackToTheValidProjectSetting) {
         file << R"({"physics": {"common": {"ticksPerSecond": 0}}})";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 30.0);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().fixedUpdateFps, 30.0);
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
 }
 
-TEST(EngineCoreUVETest, PlatformAndCommandLineLayersOverrideUserAndProject) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, PlatformAndCommandLineLayersOverrideUserAndProject) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_tests_cli_platform.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_tests_cli_platform.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_tests_cli_platform.platform.uvsettings";
@@ -287,17 +287,17 @@ TEST(EngineCoreUVETest, PlatformAndCommandLineLayersOverrideUserAndProject) {
         file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 512U);
+    EXPECT_EQ(engine.GetConfig().shadowMapResolution, 512U);
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
     std::filesystem::remove(config.platformSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, InvalidCommandLineSettingFallsBackToPlatformValue) {
+    EngineConfig config = MakeTestConfig();
     config.projectSettingsFilePath = "uve_engine_core_tests_invalid_cli.project.uvsettings";
     config.settingsFilePath = "uve_engine_core_tests_invalid_cli.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_tests_invalid_cli.platform.uvsettings";
@@ -315,77 +315,77 @@ TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
         file << R"({"rendering": {"shadows": {"mapResolution": 1024}}})";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 1024U);
+    EXPECT_EQ(engine.GetConfig().shadowMapResolution, 1024U);
     engine.Shutdown();
     std::filesystem::remove(config.projectSettingsFilePath);
     std::filesystem::remove(config.settingsFilePath);
     std::filesystem::remove(config.platformSettingsFilePath);
 }
 
-TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    // 175 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
-    // registered on its own; the 4 * kLayerCountUVE layer-name settings (Physics, Render, Navigation,
+TEST(EngineCoreTest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    // 175 settings declared in the GetEngineProjectSettings() table plus the default-player entity
+    // registered on its own; the 4 * kLayerCount layer-name settings (Physics, Render, Navigation,
     // Avoidance) are added on top of this. Spelled out because the number silently drifts every time a
     // setting is added or removed - this assertion is the drift detector, so update it deliberately
-    // when the table changes (most recently removing the 6 pure-2D settings and LayerSetUVE::Physics2D).
-    EXPECT_EQ(registry.GetCountUVE(), 176U + (4U * kLayerCountUVE));
-    namespace Id = EngineProjectSettingIdUVE;
-    ASSERT_NE(registry.FindUVE(Id::kDefaultPlayerEntityUVE), nullptr);
-    ASSERT_NE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE), nullptr);
-    EXPECT_EQ(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)->type, Config::SettingTypeUVE::FilePath);
-    EXPECT_TRUE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE)
-                    ->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_EQ(registry.FindUVE(Id::kDefaultPlayerEntityUVE)->type, Config::SettingTypeUVE::FilePath);
-    const EngineConfigUVE defaults{};
-    EXPECT_DOUBLE_EQ(registry.GetFloatUVE(Config::ConfigManagerUVE{}, Id::kPhysicsTicksPerSecondUVE),
+    // when the table changes (most recently removing the 6 pure-2D settings and LayerSet::Physics2D).
+    EXPECT_EQ(registry.GetCount(), 176U + (4U * kLayerCount));
+    namespace Id = EngineProjectSettingId;
+    ASSERT_NE(registry.Find(Id::kDefaultPlayerEntity), nullptr);
+    ASSERT_NE(registry.Find(Id::kShaderProgramCacheDirectory), nullptr);
+    EXPECT_EQ(registry.Find(Id::kShaderProgramCacheDirectory)->type, Config::SettingType::FilePath);
+    EXPECT_TRUE(registry.Find(Id::kShaderProgramCacheDirectory)
+                    ->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_EQ(registry.Find(Id::kDefaultPlayerEntity)->type, Config::SettingType::FilePath);
+    const EngineConfig defaults{};
+    EXPECT_DOUBLE_EQ(registry.GetFloat(Config::ConfigManager{}, Id::kPhysicsTicksPerSecond),
                      defaults.fixedUpdateFps);
-    EXPECT_EQ(registry.GetIntUVE(Config::ConfigManagerUVE{}, Id::kShadowMapResolutionUVE),
+    EXPECT_EQ(registry.GetInt(Config::ConfigManager{}, Id::kShadowMapResolution),
               static_cast<std::int64_t>(defaults.shadowMapResolution));
-    EXPECT_EQ(registry.GetBoolUVE(Config::ConfigManagerUVE{}, Id::kHeadlessUVE), defaults.headlessUVE);
-    ASSERT_NE(registry.FindUVE(Id::kShadowMapResolutionUVE), nullptr);
-    EXPECT_TRUE(registry.FindUVE(Id::kShadowMapResolutionUVE)->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    ASSERT_NE(registry.FindUVE(Id::kHeadlessUVE), nullptr);
-    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagHiddenUVE));
-    EXPECT_TRUE(registry.FindUVE(Id::kHeadlessUVE)->HasFlagUVE(Config::kSettingFlagNotPersistedUVE));
-    for (const Config::SettingDescriptorUVE* descriptor : registry.GetAllUVE()) {
-        EXPECT_EQ(Config::ValidateSettingDescriptorUVE(*descriptor), "") << descriptor->id;
-        // Everything that overrides EngineConfigUVE is read at startup; layer names and the default
+    EXPECT_EQ(registry.GetBool(Config::ConfigManager{}, Id::kHeadless), defaults.headless);
+    ASSERT_NE(registry.Find(Id::kShadowMapResolution), nullptr);
+    EXPECT_TRUE(registry.Find(Id::kShadowMapResolution)->HasFlag(Config::kSettingFlagPerPlatform));
+    ASSERT_NE(registry.Find(Id::kHeadless), nullptr);
+    EXPECT_TRUE(registry.Find(Id::kHeadless)->HasFlag(Config::kSettingFlagHidden));
+    EXPECT_TRUE(registry.Find(Id::kHeadless)->HasFlag(Config::kSettingFlagNotPersisted));
+    for (const Config::SettingDescriptor* descriptor : registry.GetAll()) {
+        EXPECT_EQ(Config::ValidateSettingDescriptor(*descriptor), "") << descriptor->id;
+        // Everything that overrides EngineConfig is read at startup; layer names and the default
         // player are read when they are used.
-        EXPECT_EQ(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE),
+        EXPECT_EQ(descriptor->HasFlag(Config::kSettingFlagRestartRequired),
                   !descriptor->id.starts_with("layers.") && !descriptor->id.starts_with("game."))
             << descriptor->id;
     }
 }
 
-TEST(EngineCoreUVETest, ProjectSettings_NameLayersOneToThirtyTwo) {
-    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Physics, 0U), "layers.physics.1");
-    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Render, 31U), "layers.render.32");
-    Config::SettingsDocumentUVE document;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(document.GetRegistryUVE()));
-    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, 2U), "");
-    ASSERT_TRUE(document.SetValueUVE("layers.physics.3", std::string("Enemies")));
-    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, 2U), "Enemies");
-    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Render, 2U), "");
-    EXPECT_EQ(GetLayerNameUVE(document, LayerSetUVE::Physics, kLayerCountUVE), "");
-    EXPECT_FALSE(document.SetValueUVE("layers.physics.3", std::string(33, 'x')));
+TEST(EngineCoreTest, ProjectSettings_NameLayersOneToThirtyTwo) {
+    EXPECT_EQ(GetLayerNameSettingId(LayerSet::Physics, 0U), "layers.physics.1");
+    EXPECT_EQ(GetLayerNameSettingId(LayerSet::Render, 31U), "layers.render.32");
+    Config::SettingsDocument document;
+    ASSERT_TRUE(RegisterEngineProjectSettings(document.GetRegistry()));
+    EXPECT_EQ(GetLayerName(document, LayerSet::Physics, 2U), "");
+    ASSERT_TRUE(document.SetValue("layers.physics.3", std::string("Enemies")));
+    EXPECT_EQ(GetLayerName(document, LayerSet::Physics, 2U), "Enemies");
+    EXPECT_EQ(GetLayerName(document, LayerSet::Render, 2U), "");
+    EXPECT_EQ(GetLayerName(document, LayerSet::Physics, kLayerCount), "");
+    EXPECT_FALSE(document.SetValue("layers.physics.3", std::string(33, 'x')));
 }
 
-TEST(EngineCoreUVETest, InitialState_IsUninitialized) {
-    const EngineCoreUVE engine(MakeTestConfigUVE());
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Uninitialized);
+TEST(EngineCoreTest, InitialState_IsUninitialized) {
+    const EngineCore engine(MakeTestConfig());
+    EXPECT_EQ(engine.GetState(), EngineState::Uninitialized);
 }
 
-TEST(EngineCoreUVETest, BuildProfileDefaultsMatchCompiledPolicy) {
-    const EngineConfigUVE config{};
+TEST(EngineCoreTest, BuildProfileDefaultsMatchCompiledPolicy) {
+    const EngineConfig config{};
 #if defined(UVE_PROFILE_DEFAULT_LOG_LEVEL)
     EXPECT_EQ(config.minLogLevel,
-              static_cast<Debug::LogLevelUVE>(UVE_PROFILE_DEFAULT_LOG_LEVEL));
+              static_cast<Debug::LogLevel>(UVE_PROFILE_DEFAULT_LOG_LEVEL));
 #else
-    EXPECT_EQ(config.minLogLevel, Debug::LogLevelUVE::Trace);
+    EXPECT_EQ(config.minLogLevel, Debug::LogLevel::Trace);
 #endif
 #if defined(UVE_PROFILE_ASSERTIONS_ENABLED)
     EXPECT_EQ(UVE_DEBUG, UVE_PROFILE_ASSERTIONS_ENABLED);
@@ -394,59 +394,59 @@ TEST(EngineCoreUVETest, BuildProfileDefaultsMatchCompiledPolicy) {
 #endif
 }
 
-TEST(EngineCoreUVETest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFrames) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ParticleEmitterComponents_ReconcileWithRuntimeAcrossFrames) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    ASSERT_NE(entity, Scene::kInvalidEntityUVE);
-    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
-                                                                       Scene::ParticleEmitterComponentUVE{32U});
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    const Scene::Entity entity = entityManager.CreateEntity();
+    ASSERT_NE(entity, Scene::kInvalidEntity);
+    entityManager.AddComponent<Scene::ParticleEmitterComponent>(entity,
+                                                                       Scene::ParticleEmitterComponent{32U});
 
-    engine.TickFrameUVE();
-    Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    engine.TickFrame();
+    Scene::ParticleRuntimeSnapshot snapshot = engine.GetParticleRuntimeSnapshot();
     ASSERT_EQ(snapshot.instanceCount, 1U);
     ASSERT_EQ(snapshot.instances.size(), 1U);
     EXPECT_EQ(snapshot.instances.front().entity, entity);
     EXPECT_EQ(snapshot.instances.front().maxParticles, 32U);
 
-    entityManager.GetComponentUVE<Scene::ParticleEmitterComponentUVE>(entity).maxParticles = 64U;
-    engine.TickFrameUVE();
-    snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    entityManager.GetComponent<Scene::ParticleEmitterComponent>(entity).maxParticles = 64U;
+    engine.TickFrame();
+    snapshot = engine.GetParticleRuntimeSnapshot();
     ASSERT_EQ(snapshot.instances.size(), 1U);
     EXPECT_EQ(snapshot.instances.front().maxParticles, 64U);
 
-    entityManager.RemoveComponentUVE<Scene::ParticleEmitterComponentUVE>(entity);
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instanceCount, 0U);
+    entityManager.RemoveComponent<Scene::ParticleEmitterComponent>(entity);
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetParticleRuntimeSnapshot().instanceCount, 0U);
 }
 
-TEST(EngineCoreUVETest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-    Scene::ParticleEmitterComponentUVE emitter{};
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent transform{};
+    transform.localPosition = Math::Vector3{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, entity, transform);
+    Scene::ParticleEmitterComponent emitter{};
     emitter.maxParticles = 32U;
     emitter.emissionRate = 1'000'000.0F;
     emitter.lifetimeSeconds = 2.0F;
-    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+    entityManager.AddComponent<Scene::ParticleEmitterComponent>(entity, emitter);
 
-    engine.TickFrameUVE();
-    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    engine.TickFrame();
+    const Scene::ParticleRuntimeSnapshot snapshot = engine.GetParticleRuntimeSnapshot();
     ASSERT_EQ(snapshot.instances.size(), 1U);
     EXPECT_GT(snapshot.instances.front().liveParticles, 0U);
-    const std::optional<Scene::ParticleStateSnapshotUVE> particles =
-        services.GetParticleRuntimeUVE().GetParticleSnapshotUVE(entity);
+    const std::optional<Scene::ParticleStateSnapshot> particles =
+        services.GetParticleRuntime().GetParticleSnapshot(entity);
     ASSERT_TRUE(particles.has_value());
     ASSERT_FALSE(particles->particles.empty());
     EXPECT_NEAR(particles->particles.front().position.x, 0.0F, 1.0F);
@@ -455,57 +455,57 @@ TEST(EngineCoreUVETest, ParticleEmitter_AutoEmitsFromTheWorldPose) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ParticleEmitter_EmittingOffDoesNotAutoEmit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ParticleEmitter_EmittingOffDoesNotAutoEmit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
-    Scene::ParticleEmitterComponentUVE emitter{};
+    const Scene::Entity entity = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
+    Scene::ParticleEmitterComponent emitter{};
     emitter.maxParticles = 32U;
     emitter.emitting = false;
     emitter.emissionRate = 1'000'000.0F;
-    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity, emitter);
+    entityManager.AddComponent<Scene::ParticleEmitterComponent>(entity, emitter);
 
-    engine.TickFrameUVE();
-    ASSERT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.size(), 1U);
-    EXPECT_EQ(engine.GetParticleRuntimeSnapshotUVE().instances.front().liveParticles, 0U);
+    engine.TickFrame();
+    ASSERT_EQ(engine.GetParticleRuntimeSnapshot().instances.size(), 1U);
+    EXPECT_EQ(engine.GetParticleRuntimeSnapshot().instances.front().liveParticles, 0U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, TickMode_GatesParticleEmittersAgainstThePausedState) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const auto makeEmitter = [&](const std::optional<Scene::TickModeUVE> mode) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
-                                                                           Scene::ParticleEmitterComponentUVE{8U});
+    const auto makeEmitter = [&](const std::optional<Scene::TickMode> mode) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(entity,
+                                                                           Scene::ParticleEmitterComponent{8U});
         if (mode.has_value()) {
-            Scene::ProcessComponentUVE process{};
+            Scene::ProcessComponent process{};
             process.mode = *mode;
-            entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
+            entityManager.AddComponent<Scene::ProcessComponent>(entity, process);
         }
         return entity;
     };
-    const Scene::EntityUVE pausable = makeEmitter(std::nullopt); // No component: the default.
-    const Scene::EntityUVE always = makeEmitter(Scene::TickModeUVE::Always);
-    const Scene::EntityUVE whenPaused = makeEmitter(Scene::TickModeUVE::PausedOnly);
-    const Scene::EntityUVE disabled = makeEmitter(Scene::TickModeUVE::Never);
+    const Scene::Entity pausable = makeEmitter(std::nullopt); // No component: the default.
+    const Scene::Entity always = makeEmitter(Scene::TickMode::Always);
+    const Scene::Entity whenPaused = makeEmitter(Scene::TickMode::PausedOnly);
+    const Scene::Entity disabled = makeEmitter(Scene::TickMode::Never);
 
-    const auto isEnabled = [&engine](const Scene::EntityUVE entity) {
-        for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance :
-             engine.GetParticleRuntimeSnapshotUVE().instances) {
+    const auto isEnabled = [&engine](const Scene::Entity entity) {
+        for (const Scene::ParticleRuntimeInstanceSnapshot& instance :
+             engine.GetParticleRuntimeSnapshot().instances) {
             if (instance.entity == entity) {
                 return instance.enabled;
             }
@@ -514,15 +514,15 @@ TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
         return false;
     };
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_TRUE(isEnabled(pausable));
     EXPECT_TRUE(isEnabled(always));
     EXPECT_FALSE(isEnabled(whenPaused));
     EXPECT_FALSE(isEnabled(disabled));
 
     // Pausing flips the two pause-sensitive modes and leaves the other two where they were.
-    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
-    engine.TickFrameUVE();
+    ASSERT_TRUE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Paused));
+    engine.TickFrame();
     EXPECT_FALSE(isEnabled(pausable));
     EXPECT_TRUE(isEnabled(always));
     EXPECT_TRUE(isEnabled(whenPaused));
@@ -531,160 +531,160 @@ TEST(EngineCoreUVETest, TickMode_GatesParticleEmittersAgainstThePausedState) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TickMode_NeverInheritsToAChildWithoutTheComponent) {
-    // The inheritance the scene-graph query exists for: the child carries no ProcessComponentUVE,
+TEST(EngineCoreTest, TickMode_NeverInheritsToAChildWithoutTheComponent) {
+    // The inheritance the scene-graph query exists for: the child carries no ProcessComponent,
     // and must still stop because its parent was disabled.
-    EngineCoreUVE engine(MakeTestConfigUVE());
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE parent = entityManager.CreateEntityUVE();
-    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
-    for (const Scene::EntityUVE entity : {parent, child}) {
-        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    const Scene::Entity parent = entityManager.CreateEntity();
+    const Scene::Entity child = entityManager.CreateEntity();
+    for (const Scene::Entity entity : {parent, child}) {
+        sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
     }
-    sceneGraph.SetParentUVE(entityManager, child, parent);
-    Scene::ProcessComponentUVE disabled{};
-    disabled.mode = Scene::TickModeUVE::Never;
-    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(parent, disabled);
-    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(child, Scene::ParticleEmitterComponentUVE{8U});
+    sceneGraph.SetParent(entityManager, child, parent);
+    Scene::ProcessComponent disabled{};
+    disabled.mode = Scene::TickMode::Never;
+    entityManager.AddComponent<Scene::ProcessComponent>(parent, disabled);
+    entityManager.AddComponent<Scene::ParticleEmitterComponent>(child, Scene::ParticleEmitterComponent{8U});
 
-    engine.TickFrameUVE();
-    const Scene::ParticleRuntimeSnapshotUVE snapshot = engine.GetParticleRuntimeSnapshotUVE();
+    engine.TickFrame();
+    const Scene::ParticleRuntimeSnapshot snapshot = engine.GetParticleRuntimeSnapshot();
     ASSERT_EQ(snapshot.instances.size(), 1U);
     EXPECT_FALSE(snapshot.instances.front().enabled);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TickMode_ANeverTickedProjectileDoesNotAdvanceOnAFixedStep) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, TickMode_ANeverTickedProjectileDoesNotAdvanceOnAFixedStep) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const auto makeProjectile = [&](const Scene::TickModeUVE mode) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
-        Scene::Projectile3DComponentUVE projectile{};
-        projectile.velocity = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-        entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(entity, projectile);
-        Scene::ProcessComponentUVE process{};
+    const auto makeProjectile = [&](const Scene::TickMode mode) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
+        Scene::Projectile3DComponent projectile{};
+        projectile.velocity = Math::Vector3{10.0F, 0.0F, 0.0F};
+        entityManager.AddComponent<Scene::Projectile3DComponent>(entity, projectile);
+        Scene::ProcessComponent process{};
         process.mode = mode;
-        entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(entity, process);
+        entityManager.AddComponent<Scene::ProcessComponent>(entity, process);
         return entity;
     };
-    const Scene::EntityUVE moving = makeProjectile(Scene::TickModeUVE::Running);
-    const Scene::EntityUVE frozen = makeProjectile(Scene::TickModeUVE::Never);
+    const Scene::Entity moving = makeProjectile(Scene::TickMode::Running);
+    const Scene::Entity frozen = makeProjectile(Scene::TickMode::Never);
 
     // One frame so the scene graph resolves the modes, then one explicitly requested fixed step:
     // a single step is the simulation advancing, so Running moves even though play is paused.
-    engine.TickFrameUVE();
-    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
-    const float movingBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x;
-    const float frozenBefore = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(frozen).localPosition.x;
-    ASSERT_TRUE(engine.RequestSingleSimulationStepUVE());
-    engine.TickFrameUVE();
+    engine.TickFrame();
+    ASSERT_TRUE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Paused));
+    const float movingBefore = entityManager.GetComponent<Scene::TransformComponent>(moving).localPosition.x;
+    const float frozenBefore = entityManager.GetComponent<Scene::TransformComponent>(frozen).localPosition.x;
+    ASSERT_TRUE(engine.RequestSingleSimulationStep());
+    engine.TickFrame();
 
-    EXPECT_GT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(moving).localPosition.x, movingBefore);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(frozen).localPosition.x,
+    EXPECT_GT(entityManager.GetComponent<Scene::TransformComponent>(moving).localPosition.x, movingBefore);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::TransformComponent>(frozen).localPosition.x,
                     frozenBefore);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutAComponent) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AutoTranslate_ALabelInheritsItsMenusOptOutWithoutAComponent) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    Localization::StringTableUVE filipino{Localization::LocaleUVE{"fil", ""}};
-    ASSERT_TRUE(filipino.SetTranslationUVE("Play", "Maglaro"));
-    ASSERT_TRUE(engine.GetLocalizationServiceUVE().AddStringTableUVE(std::move(filipino)));
-    engine.GetLocalizationServiceUVE().SetActiveLocaleUVE(Localization::LocaleUVE{"fil", ""});
+    Localization::StringTable filipino{Localization::Locale{"fil", ""}};
+    ASSERT_TRUE(filipino.SetTranslation("Play", "Maglaro"));
+    ASSERT_TRUE(engine.GetLocalizationService().AddStringTable(std::move(filipino)));
+    engine.GetLocalizationService().SetActiveLocale(Localization::Locale{"fil", ""});
 
     // One menu that opts out; one label under it carrying no Auto Translate component of its own.
-    const Scene::EntityUVE menu = entityManager.CreateEntityUVE();
-    const Scene::EntityUVE label = entityManager.CreateEntityUVE();
-    for (const Scene::EntityUVE entity : {menu, label}) {
-        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    const Scene::Entity menu = entityManager.CreateEntity();
+    const Scene::Entity label = entityManager.CreateEntity();
+    for (const Scene::Entity entity : {menu, label}) {
+        sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
     }
-    sceneGraph.SetParentUVE(entityManager, label, menu);
-    Scene::AutoTranslateComponentUVE optOut{};
-    optOut.mode = Scene::LocalizeModeUVE::Literal;
-    entityManager.AddComponentUVE<Scene::AutoTranslateComponentUVE>(menu, optOut);
-    Scene::UITextComponentUVE text{};
+    sceneGraph.SetParent(entityManager, label, menu);
+    Scene::AutoTranslateComponent optOut{};
+    optOut.mode = Scene::LocalizeMode::Literal;
+    entityManager.AddComponent<Scene::AutoTranslateComponent>(menu, optOut);
+    Scene::UITextComponent text{};
     text.text = "Play";
-    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(label, text);
+    entityManager.AddComponent<Scene::UITextComponent>(label, text);
 
     const auto glyphCount = [&engine] {
-        const UI::UIDrawBatchUVE& batch = engine.GetUIRuntimeUVE().GetDrawBatchUVE();
-        return std::count_if(batch.quads.cbegin(), batch.quads.cend(), [](const UI::UIQuadUVE& quad) {
-            return quad.kind == UI::UIDrawItemKindUVE::Glyph;
+        const UI::UIDrawBatch& batch = engine.GetUIRuntime().GetDrawBatch();
+        return std::count_if(batch.quads.cbegin(), batch.quads.cend(), [](const UI::UIQuad& quad) {
+            return quad.kind == UI::UIDrawItemKind::Glyph;
         });
     };
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_EQ(glyphCount(), 4) << "the label inherits Disabled, so it draws \"Play\" untranslated";
 
     // Let the menu translate again, and the same label - still without a component - follows.
-    entityManager.GetComponentUVE<Scene::AutoTranslateComponentUVE>(menu).mode = Scene::LocalizeModeUVE::Localized;
-    engine.TickFrameUVE();
+    entityManager.GetComponent<Scene::AutoTranslateComponent>(menu).mode = Scene::LocalizeMode::Localized;
+    engine.TickFrame();
     EXPECT_EQ(glyphCount(), 7) << "\"Maglaro\"";
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ThreadGroup_ASubThreadEmitterSimulatesIdenticallyToItsMainThreadTwin) {
+TEST(EngineCoreTest, ThreadGroup_ASubThreadEmitterSimulatesIdenticallyToItsMainThreadTwin) {
     // End to end through real frames: the engine resolves the thread group, marks the emitter
     // worker-eligible, and hands the simulate its thread pool. The twin never leaves the main
     // thread. Same emission, same frames - the particles must come out the same.
-    EngineCoreUVE engine(MakeTestConfigUVE());
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const auto makeEmitter = [&](const Scene::ThreadGroupModeUVE mode) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(entity,
-                                                                           Scene::ParticleEmitterComponentUVE{32U});
-        Scene::ThreadGroupComponentUVE threadGroup{};
+    const auto makeEmitter = [&](const Scene::ThreadGroupMode mode) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(entity,
+                                                                           Scene::ParticleEmitterComponent{32U});
+        Scene::ThreadGroupComponent threadGroup{};
         threadGroup.mode = mode;
-        entityManager.AddComponentUVE<Scene::ThreadGroupComponentUVE>(entity, threadGroup);
+        entityManager.AddComponent<Scene::ThreadGroupComponent>(entity, threadGroup);
         return entity;
     };
-    const Scene::EntityUVE onWorker = makeEmitter(Scene::ThreadGroupModeUVE::SubThread);
-    const Scene::EntityUVE onMain = makeEmitter(Scene::ThreadGroupModeUVE::MainThread);
+    const Scene::Entity onWorker = makeEmitter(Scene::ThreadGroupMode::SubThread);
+    const Scene::Entity onMain = makeEmitter(Scene::ThreadGroupMode::MainThread);
 
-    engine.TickFrameUVE(); // Resolve modes and attach both runtime instances.
+    engine.TickFrame(); // Resolve modes and attach both runtime instances.
     // The engine routed each emitter by its resolved mode. Without this check the comparison below
     // would pass even if nothing ever left the main thread, because the serial path agrees too.
-    for (const Scene::ParticleRuntimeInstanceSnapshotUVE& instance : engine.GetParticleRuntimeSnapshotUVE().instances) {
+    for (const Scene::ParticleRuntimeInstanceSnapshot& instance : engine.GetParticleRuntimeSnapshot().instances) {
         EXPECT_EQ(instance.workerEligible, instance.entity == onWorker) << "emitter " << instance.entity.index;
     }
-    Scene::IParticleRuntimeUVE& particles = services.GetParticleRuntimeUVE();
-    const Scene::ParticleEmissionUVE emission{16U, Math::Vector3UVE{1.0F, 2.0F, 3.0F},
-                                              Math::Vector3UVE{0.5F, 4.0F, -1.0F}, 5.0F};
-    ASSERT_TRUE(particles.EmitDetailedUVE(onWorker, emission).IsAcceptedUVE());
-    ASSERT_TRUE(particles.EmitDetailedUVE(onMain, emission).IsAcceptedUVE());
+    Scene::IParticleRuntime& particles = services.GetParticleRuntime();
+    const Scene::ParticleEmission emission{16U, Math::Vector3{1.0F, 2.0F, 3.0F},
+                                              Math::Vector3{0.5F, 4.0F, -1.0F}, 5.0F};
+    ASSERT_TRUE(particles.EmitDetailed(onWorker, emission).IsAccepted());
+    ASSERT_TRUE(particles.EmitDetailed(onMain, emission).IsAccepted());
 
     for (int frame = 0; frame < 10; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const std::optional<Scene::ParticleStateSnapshotUVE> worker = particles.GetParticleSnapshotUVE(onWorker);
-    const std::optional<Scene::ParticleStateSnapshotUVE> main = particles.GetParticleSnapshotUVE(onMain);
+    const std::optional<Scene::ParticleStateSnapshot> worker = particles.GetParticleSnapshot(onWorker);
+    const std::optional<Scene::ParticleStateSnapshot> main = particles.GetParticleSnapshot(onMain);
     ASSERT_TRUE(worker.has_value());
     ASSERT_TRUE(main.has_value());
     ASSERT_FALSE(worker->particles.empty());
@@ -695,123 +695,123 @@ TEST(EngineCoreUVETest, ThreadGroup_ASubThreadEmitterSimulatesIdenticallyToItsMa
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, RunUVE_BoundedFrames_ReachesShutdownWithCorrectFrameCount) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    const int exitCode = engine.RunUVE(10);
+TEST(EngineCoreTest, Run_BoundedFrames_ReachesShutdownWithCorrectFrameCount) {
+    EngineCore engine(MakeTestConfig());
+    const int exitCode = engine.Run(10);
 
     EXPECT_EQ(exitCode, 0);
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Shutdown);
-    EXPECT_EQ(engine.GetFrameStatsUVE().frameNumber, 10U);
+    EXPECT_EQ(engine.GetState(), EngineState::Shutdown);
+    EXPECT_EQ(engine.GetFrameStats().frameNumber, 10U);
 }
 
-TEST(EngineCoreUVETest, RunUVE_ZeroFrames_StillInitsAndShutsDownCleanly) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    const int exitCode = engine.RunUVE(0);
+TEST(EngineCoreTest, Run_ZeroFrames_StillInitsAndShutsDownCleanly) {
+    EngineCore engine(MakeTestConfig());
+    const int exitCode = engine.Run(0);
 
     EXPECT_EQ(exitCode, 0);
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Shutdown);
-    EXPECT_EQ(engine.GetFrameStatsUVE().frameNumber, 0U);
+    EXPECT_EQ(engine.GetState(), EngineState::Shutdown);
+    EXPECT_EQ(engine.GetFrameStats().frameNumber, 0U);
 }
 
-TEST(EngineCoreUVETest, RequestQuitUVE_BeforeRun_PreventsAnyFramesFromRunning) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    engine.RequestQuitUVE();
+TEST(EngineCoreTest, RequestQuit_BeforeRun_PreventsAnyFramesFromRunning) {
+    EngineCore engine(MakeTestConfig());
+    engine.RequestQuit();
 
-    const int exitCode = engine.RunUVE(50);
+    const int exitCode = engine.Run(50);
 
     EXPECT_EQ(exitCode, 0);
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Shutdown);
-    EXPECT_EQ(engine.GetFrameStatsUVE().frameNumber, 0U);
+    EXPECT_EQ(engine.GetState(), EngineState::Shutdown);
+    EXPECT_EQ(engine.GetFrameStats().frameNumber, 0U);
 }
 
-TEST(EngineCoreUVETest, Shutdown_ClearsLoggerActiveInstance) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    engine.RunUVE(1);
+TEST(EngineCoreTest, Shutdown_ClearsLoggerActiveInstance) {
+    EngineCore engine(MakeTestConfig());
+    engine.Run(1);
 
-    EXPECT_EQ(Debug::LoggerUVE::GetActiveInstanceUVE(), nullptr);
+    EXPECT_EQ(Debug::Logger::GetActiveInstance(), nullptr);
 }
 
-TEST(EngineCoreUVETest, Timer_TotalTimeStrictlyIncreasesAcrossFrames) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, Timer_TotalTimeStrictlyIncreasesAcrossFrames) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    engine.TickFrameUVE();
-    const double firstTotal = engine.GetFrameStatsUVE().totalTimeSeconds;
-    engine.TickFrameUVE();
-    const double secondTotal = engine.GetFrameStatsUVE().totalTimeSeconds;
+    engine.TickFrame();
+    const double firstTotal = engine.GetFrameStats().totalTimeSeconds;
+    engine.TickFrame();
+    const double secondTotal = engine.GetFrameStats().totalTimeSeconds;
 
     EXPECT_GT(secondTotal, firstTotal);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, QueuedEvent_DeliveredDuringTickFrame) {
-    struct PingEventUVE {
+TEST(EngineCoreTest, QueuedEvent_DeliveredDuringTickFrame) {
+    struct PingEvent {
         int value = 0;
     };
 
-    EngineCoreUVE engine(MakeTestConfigUVE());
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     int received = -1;
-    engine.GetServicesUVE().GetEventSystemUVE().Subscribe<PingEventUVE>(
-        [&received](const PingEventUVE& event) { received = event.value; });
-    engine.GetServicesUVE().GetEventSystemUVE().QueueEvent(PingEventUVE{99});
+    engine.GetServices().GetEventSystem().Subscribe<PingEvent>(
+        [&received](const PingEvent& event) { received = event.value; });
+    engine.GetServices().GetEventSystem().QueueEvent(PingEvent{99});
 
     ASSERT_EQ(received, -1);
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_EQ(received, 99);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE area = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE areaTransform;
-    areaTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, area, areaTransform);
-    entityManager.AddComponentUVE<Scene::AreaComponentUVE>(
-        area, Scene::AreaComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1U, 0xFFFFFFFFU});
+    const Scene::Entity area = entityManager.CreateEntity();
+    Scene::TransformComponent areaTransform;
+    areaTransform.localPosition = Math::Vector3{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, area, areaTransform);
+    entityManager.AddComponent<Scene::AreaComponent>(
+        area, Scene::AreaComponent{Math::Vector3{1.0F, 1.0F, 1.0F}, 1U, 0xFFFFFFFFU});
 
-    const Scene::EntityUVE collider = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE colliderTransform;
-    colliderTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, collider, colliderTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        collider, Scene::ColliderComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1U, 0xFFFFFFFFU});
-    sceneGraph.UpdateUVE(entityManager);
+    const Scene::Entity collider = entityManager.CreateEntity();
+    Scene::TransformComponent colliderTransform;
+    colliderTransform.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, collider, colliderTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        collider, Scene::ColliderComponent{Math::Vector3{1.0F, 1.0F, 1.0F}, 1U, 0xFFFFFFFFU});
+    sceneGraph.Update(entityManager);
 
-    std::vector<Physics::AreaOverlapPairUVE> entered;
-    std::vector<Physics::AreaOverlapPairUVE> exited;
-    services.GetEventSystemUVE().Subscribe<Physics::AreaOverlapEnteredEventUVE>(
-        [&entered](const Physics::AreaOverlapEnteredEventUVE& event) { entered.push_back(event.pair); });
-    services.GetEventSystemUVE().Subscribe<Physics::AreaOverlapExitedEventUVE>(
-        [&exited](const Physics::AreaOverlapExitedEventUVE& event) { exited.push_back(event.pair); });
+    std::vector<Physics::AreaOverlapPair> entered;
+    std::vector<Physics::AreaOverlapPair> exited;
+    services.GetEventSystem().Subscribe<Physics::AreaOverlapEnteredEvent>(
+        [&entered](const Physics::AreaOverlapEnteredEvent& event) { entered.push_back(event.pair); });
+    services.GetEventSystem().Subscribe<Physics::AreaOverlapExitedEvent>(
+        [&exited](const Physics::AreaOverlapExitedEvent& event) { exited.push_back(event.pair); });
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_TRUE(entered.empty());
     EXPECT_TRUE(exited.empty());
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     ASSERT_EQ(entered.size(), 1U);
     EXPECT_EQ(entered.front().area, area);
     EXPECT_EQ(entered.front().other, collider);
     EXPECT_TRUE(exited.empty());
 
-    entityManager.DestroyEntityUVE(collider);
-    engine.TickFrameUVE();
+    entityManager.DestroyEntity(collider);
+    engine.TickFrame();
     EXPECT_TRUE(exited.empty());
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     ASSERT_EQ(exited.size(), 1U);
     EXPECT_EQ(exited.front().area, area);
     EXPECT_EQ(exited.front().other, collider);
@@ -819,44 +819,44 @@ TEST(EngineCoreUVETest, AreaOverlapLifecycle_QueuesEnteredAndExitedEvents) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTheEdgeOnce) {
+TEST(EngineCoreTest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTheEdgeOnce) {
     // The same 1 kHz fixed-update / short real-sleep discipline the physics end-to-end cases use,
     // because a decal ages on the SIMULATED clock: the test has to actually run simulation time for
     // a lifetime to be spent, and a test that ran no fixed step would prove nothing about it.
-    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
 
-    const Scene::EntityUVE fading = entityManager.CreateEntityUVE();
-    Scene::Decal3DComponentUVE decal;
+    const Scene::Entity fading = entityManager.CreateEntity();
+    Scene::Decal3DComponent decal;
     decal.materialAssetPath = "materials/scorch.uemat";
     decal.lifetime = 0.02F; // 20 ms: a few frames of simulated time
-    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(fading, decal);
+    entityManager.AddComponent<Scene::Decal3DComponent>(fading, decal);
 
     // A permanent decal beside it, which must outlive every frame of this test.
-    const Scene::EntityUVE permanent = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::Decal3DComponentUVE>(permanent, Scene::Decal3DComponentUVE{});
+    const Scene::Entity permanent = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::Decal3DComponent>(permanent, Scene::Decal3DComponent{});
 
-    std::vector<Scene::Decal3DExpiredEventUVE> expired;
-    services.GetEventSystemUVE().Subscribe<Scene::Decal3DExpiredEventUVE>(
-        [&expired](const Scene::Decal3DExpiredEventUVE& event) { expired.push_back(event); });
+    std::vector<Scene::Decal3DExpiredEvent> expired;
+    services.GetEventSystem().Subscribe<Scene::Decal3DExpiredEvent>(
+        [&expired](const Scene::Decal3DExpiredEvent& event) { expired.push_back(event); });
 
     for (int frame = 0; frame < 30; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::Decal3DComponentUVE& faded =
-        entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(fading);
+    const Scene::Decal3DComponent& faded =
+        entityManager.GetComponent<Scene::Decal3DComponent>(fading);
     EXPECT_TRUE(faded.expired) << "20 ms of simulated time has certainly passed";
     EXPECT_FLOAT_EQ(faded.remainingLifetime, 0.0F);
-    EXPECT_FALSE(IsDecal3DPaintingUVE(faded)) << "an expired decal stops painting";
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::Decal3DComponentUVE>(permanent).expired)
+    EXPECT_FALSE(IsDecal3DPainting(faded)) << "an expired decal stops painting";
+    EXPECT_FALSE(entityManager.GetComponent<Scene::Decal3DComponent>(permanent).expired)
         << "lifetime 0 is permanent, whatever the clock says";
 
     ASSERT_EQ(expired.size(), 1U) << "one edge per lifetime, not one per frame";
@@ -867,57 +867,57 @@ TEST(EngineCoreUVETest, Decal3DObject_LifetimeRunsOutOnSimulatedTimeAndReportsTh
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, NavigationRegion_BakesFromItsVolumeAndDrivesASeekerOnTheFixedStep) {
-    // EngineCoreUVE::SyncNavigationUVE() is the wiring that makes NavMeshVolume3D and NavSeeker3D
+TEST(EngineCoreTest, NavigationRegion_BakesFromItsVolumeAndDrivesASeekerOnTheFixedStep) {
+    // EngineCore::SyncNavigation() is the wiring that makes NavMeshVolume3D and NavSeeker3D
     // real: before it, both were authored data with nothing reading them. This runs the whole path
     // end-to-end on the simulated clock - a region rasterized from its own world volume through the
     // engine's real raycast system, and an agent stepped against the mesh that came out - because a
     // unit test can prove the pieces and only this can prove the engine drives them.
-    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // Static ground: a box under the origin, top surface at y = 0.
-    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE groundTransform;
-    groundTransform.localPosition = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, ground, groundTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+    const Scene::Entity ground = entityManager.CreateEntity();
+    Scene::TransformComponent groundTransform;
+    groundTransform.localPosition = Math::Vector3{0.0F, -0.5F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, ground, groundTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        ground, Scene::ColliderComponent{Math::Vector3{10.0F, 0.5F, 10.0F}});
 
     // The region: a volume over the floor with 3 m of headroom under its own roof.
-    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE regionTransform;
-    regionTransform.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, region, regionTransform);
-    Scene::NavMeshVolume3DComponentUVE regionComponent;
-    regionComponent.boundsHalfExtents = Math::Vector3UVE{8.0F, 2.5F, 8.0F};
-    entityManager.AddComponentUVE<Scene::NavMeshVolume3DComponentUVE>(region, regionComponent);
+    const Scene::Entity region = entityManager.CreateEntity();
+    Scene::TransformComponent regionTransform;
+    regionTransform.localPosition = Math::Vector3{0.0F, 0.5F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, region, regionTransform);
+    Scene::NavMeshVolume3DComponent regionComponent;
+    regionComponent.boundsHalfExtents = Math::Vector3{8.0F, 2.5F, 8.0F};
+    entityManager.AddComponent<Scene::NavMeshVolume3DComponent>(region, regionComponent);
 
     // The agent: standing on the floor, asked to walk 5 m along +X. Nothing moves its body here -
     // what the engine has to prove is that it publishes a velocity for whatever would.
-    const Scene::EntityUVE agent = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, agent, Scene::TransformComponentUVE{});
-    Scene::NavSeeker3DComponentUVE seeker;
-    seeker.targetPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
+    const Scene::Entity agent = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, agent, Scene::TransformComponent{});
+    Scene::NavSeeker3DComponent seeker;
+    seeker.targetPosition = Math::Vector3{5.0F, 0.0F, 0.0F};
     // No velocity ramp: the ramp is the module suite's own subject, and here it would only mean
     // simulating the four tenths of a second it takes to walk the velocity from +4 to -4.
     seeker.acceleration = 0.0F;
-    entityManager.AddComponentUVE<Scene::NavSeeker3DComponentUVE>(agent, seeker);
+    entityManager.AddComponent<Scene::NavSeeker3DComponent>(agent, seeker);
 
     for (int frame = 0; frame < 40; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::NavSeeker3DComponentUVE& walking =
-        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
-    EXPECT_EQ(walking.pathStatus, Scene::NavigationAgentPathStatusUVE::Following)
+    const Scene::NavSeeker3DComponent& walking =
+        entityManager.GetComponent<Scene::NavSeeker3DComponent>(agent);
+    EXPECT_EQ(walking.pathStatus, Scene::NavigationAgentPathStatus::Following)
         << "the region baked, the agent found a route on it and is walking that route";
     EXPECT_GT(walking.desiredVelocity.x, 0.0F) << "the target is straight ahead";
     EXPECT_NEAR(walking.desiredVelocity.y, 0.0F, 1e-3F) << "steering stays in the plane it walks on";
@@ -926,71 +926,71 @@ TEST(EngineCoreUVETest, NavigationRegion_BakesFromItsVolumeAndDrivesASeekerOnThe
 
     // A new target is a new order: the component is the only thing that has to change, and the next
     // steps route the other way.
-    entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent).targetPosition =
-        Math::Vector3UVE{-5.0F, 0.0F, 0.0F};
+    entityManager.GetComponent<Scene::NavSeeker3DComponent>(agent).targetPosition =
+        Math::Vector3{-5.0F, 0.0F, 0.0F};
     for (int frame = 0; frame < 10; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    const Scene::NavSeeker3DComponentUVE& returning =
-        entityManager.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(agent);
+    const Scene::NavSeeker3DComponent& returning =
+        entityManager.GetComponent<Scene::NavSeeker3DComponent>(agent);
     EXPECT_LT(returning.desiredVelocity.x, 0.0F) << "the agent turned around";
     EXPECT_NEAR(returning.nextPathPosition.x, -5.0F, 0.5F);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, CollisionLifecycle_UpdatesReportBeforeScriptTickEachFrame) {
+TEST(EngineCoreTest, CollisionLifecycle_UpdatesReportBeforeScriptTickEachFrame) {
     // Contrasts directly against AreaOverlapLifecycle_QueuesEnteredAndExitedEvents above: that
-    // event-queued path only surfaces a transition on the TickFrameUVE() call *after* the one
+    // event-queued path only surfaces a transition on the TickFrame() call *after* the one
     // where the overlap actually began, since QueueEvent()'d events aren't drained until the next
-    // frame's Update(). SyncCollisionLifecycleUVE() has no such queue - it's a poll-based binding
-    // updated synchronously before SyncScriptRuntimeUVE() runs the same frame - so this test proves
-    // the very same TickFrameUVE() call that makes two colliders overlap already reports the
+    // frame's Update(). SyncCollisionLifecycle() has no such queue - it's a poll-based binding
+    // updated synchronously before SyncScriptRuntime() runs the same frame - so this test proves
+    // the very same TickFrame() call that makes two colliders overlap already reports the
     // transition, with zero added frame of latency.
-    EngineCoreUVE engine(MakeTestConfigUVE());
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE bodyA = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transformA;
-    transformA.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, bodyA, transformA);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(bodyA, Scene::ColliderComponentUVE{});
+    const Scene::Entity bodyA = entityManager.CreateEntity();
+    Scene::TransformComponent transformA;
+    transformA.localPosition = Math::Vector3{0.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, bodyA, transformA);
+    entityManager.AddComponent<Scene::ColliderComponent>(bodyA, Scene::ColliderComponent{});
 
-    const Scene::EntityUVE bodyB = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transformB;
-    transformB.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, bodyB, transformB);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(bodyB, Scene::ColliderComponentUVE{});
+    const Scene::Entity bodyB = entityManager.CreateEntity();
+    Scene::TransformComponent transformB;
+    transformB.localPosition = Math::Vector3{10.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, bodyB, transformB);
+    entityManager.AddComponent<Scene::ColliderComponent>(bodyB, Scene::ColliderComponent{});
 
-    engine.TickFrameUVE();
-    EXPECT_TRUE(engine.GetLastCollisionLifecycleReportUVE().transitions.empty());
+    engine.TickFrame();
+    EXPECT_TRUE(engine.GetLastCollisionLifecycleReport().transitions.empty());
 
-    transformB.localPosition = Math::Vector3UVE{0.2F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, bodyB, transformB);
-    engine.TickFrameUVE();
+    transformB.localPosition = Math::Vector3{0.2F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, bodyB, transformB);
+    engine.TickFrame();
 
-    const Physics::CollisionLifecycleReportUVE& report = engine.GetLastCollisionLifecycleReportUVE();
+    const Physics::CollisionLifecycleReport& report = engine.GetLastCollisionLifecycleReport();
     ASSERT_EQ(report.transitions.size(), 1U);
-    EXPECT_EQ(report.transitions.front().kind, Physics::CollisionTransitionKindUVE::Entered);
+    EXPECT_EQ(report.transitions.front().kind, Physics::CollisionTransitionKind::Entered);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, FrameStats_PopulatedAfterFrames) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, FrameStats_PopulatedAfterFrames) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
+    engine.TickFrame();
+    engine.TickFrame();
 
-    const FrameStatsUVE& stats = engine.GetFrameStatsUVE();
+    const FrameStats& stats = engine.GetFrameStats();
     EXPECT_EQ(stats.frameNumber, 2U);
     EXPECT_GE(stats.frameTimeSeconds, 0.0);
     EXPECT_GE(stats.deltaTimeSeconds, 0.0);
@@ -999,19 +999,19 @@ TEST(EngineCoreUVETest, FrameStats_PopulatedAfterFrames) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LoopStages_ExecuteInDocumentedOrder) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LoopStages_ExecuteInDocumentedOrder) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
-    engine.GetServicesUVE().GetLoggerUVE().AddSink(std::move(memorySink));
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
+    engine.GetServices().GetLogger().AddSink(std::move(memorySink));
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
     std::vector<std::string> stageOrder;
-    for (const Debug::LogMessageUVE& message : memorySinkPtr->GetMessagesUVE()) {
+    for (const Debug::LogMessage& message : memorySinkPtr->GetMessages()) {
         if (message.message.starts_with("BeginFrame")) {
             stageOrder.emplace_back("BeginFrame");
         } else if (message.message.starts_with("Update:")) {
@@ -1031,142 +1031,142 @@ TEST(EngineCoreUVETest, LoopStages_ExecuteInDocumentedOrder) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, MemoryManager_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, MemoryManager_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Memory::IMemoryManagerUVE& memoryManager = engine.GetServicesUVE().GetMemoryManagerUVE();
-    Memory::IAllocatorUVE& allocator = memoryManager.GetDefaultAllocatorUVE();
+    Memory::IMemoryManager& memoryManager = engine.GetServices().GetMemoryManager();
+    Memory::IAllocator& allocator = memoryManager.GetDefaultAllocator();
 
-    void* const pointer = allocator.AllocateUVE(32, 8, __FILE__, __LINE__);
+    void* const pointer = allocator.Allocate(32, 8, __FILE__, __LINE__);
     ASSERT_NE(pointer, nullptr);
-    EXPECT_TRUE(memoryManager.HasLeaksUVE());
-    allocator.DeallocateUVE(pointer);
-    EXPECT_FALSE(memoryManager.HasLeaksUVE());
+    EXPECT_TRUE(memoryManager.HasLeaks());
+    allocator.Deallocate(pointer);
+    EXPECT_FALSE(memoryManager.HasLeaks());
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, NormalRun_ReportsNoLeaks) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, NormalRun_ReportsNoLeaks) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
+    engine.TickFrame();
+    engine.TickFrame();
 
-    // Nothing allocates through MemoryManagerUVE on Increment 1's behalf yet, so a normal run
+    // Nothing allocates through MemoryManager on Increment 1's behalf yet, so a normal run
     // must report zero leaks — this also implicitly exercises the debug-only shutdown leak
     // assertion on the happy path (zero leaks, assertion never fires).
-    EXPECT_FALSE(engine.GetServicesUVE().GetMemoryManagerUVE().HasLeaksUVE());
+    EXPECT_FALSE(engine.GetServices().GetMemoryManager().HasLeaks());
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ThreadPool_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ThreadPool_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Threading::IThreadPoolUVE& threadPool = engine.GetServicesUVE().GetThreadPoolUVE();
-    EXPECT_GE(threadPool.GetWorkerCountUVE(), 1U);
+    Threading::IThreadPool& threadPool = engine.GetServices().GetThreadPool();
+    EXPECT_GE(threadPool.GetWorkerCount(), 1U);
 
-    Threading::JobCounterUVE counter;
+    Threading::JobCounter counter;
     bool jobRan = false;
-    threadPool.SubmitUVE([&jobRan] { jobRan = true; }, counter);
-    counter.WaitUVE();
+    threadPool.Submit([&jobRan] { jobRan = true; }, counter);
+    counter.Wait();
     EXPECT_TRUE(jobRan);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, CommandLineAndConfigManager_ReachableAndFunctionalAfterInit) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, CommandLineAndConfigManager_ReachableAndFunctionalAfterInit) {
+    EngineConfig config = MakeTestConfig();
     config.commandLineArgs = {"--server"};
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    EXPECT_TRUE(engine.GetServicesUVE().GetCommandLineUVE().HasFlagUVE("server"));
+    EXPECT_TRUE(engine.GetServices().GetCommandLine().HasFlag("server"));
 
-    Config::IConfigManagerUVE& configManager = engine.GetServicesUVE().GetConfigManagerUVE();
-    configManager.SetStringUVE("editor.theme", "dark");
-    EXPECT_EQ(configManager.GetStringUVE("editor.theme", ""), "dark");
+    Config::IConfigManager& configManager = engine.GetServices().GetConfigManager();
+    configManager.SetString("editor.theme", "dark");
+    EXPECT_EQ(configManager.GetString("editor.theme", ""), "dark");
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, EntityManagerAndSceneGraph_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, EntityManagerAndSceneGraph_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, local);
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    sceneGraph.AttachTransform(entityManager, entity, local);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    const Scene::WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const Scene::WorldTransformComponent& world =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
     EXPECT_FALSE(world.dirty);
     EXPECT_EQ(world.worldPosition, local.localPosition);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AssetDatabaseSceneSerializerPrefabSystem_ReachableAndRoundTripAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AssetDatabaseSceneSerializerPrefabSystem_ReachableAndRoundTripAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Scene::IPrefabSystemUVE& prefabSystem = engine.GetServicesUVE().GetPrefabSystemUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Scene::IPrefabSystem& prefabSystem = engine.GetServices().GetPrefabSystem();
 
-    const Scene::EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(
-        source, Scene::MeshComponentUVE{Asset::AssetGuidUVE{51}, Asset::AssetGuidUVE{52}});
+    const Scene::Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::MeshComponent>(
+        source, Scene::MeshComponent{Asset::AssetGuid{51}, Asset::AssetGuid{52}});
 
     const std::filesystem::path prefabPath = "uve_engine_core_tests.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-    const Scene::EntityUVE instance =
-        prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, Scene::kInvalidEntityUVE);
-    ASSERT_NE(instance, Scene::kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::MeshComponentUVE>(instance).meshGuid, Asset::AssetGuidUVE{51});
+    const Scene::Entity instance =
+        prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, Scene::kInvalidEntity);
+    ASSERT_NE(instance, Scene::kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<Scene::MeshComponent>(instance).meshGuid, Asset::AssetGuid{51});
 
     std::filesystem::remove(prefabPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTripAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTripAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IAssetImporterUVE& importer = engine.GetServicesUVE().GetAssetImporterUVE();
-    const Asset::AssetImportSourceClassificationUVE rawModelClassification =
-        importer.ClassifySourceUVE("engine_core_tests_character.dae");
-    EXPECT_EQ(rawModelClassification.kind, Asset::AssetImportSourceKindUVE::RawModel);
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IAssetImporter& importer = engine.GetServices().GetAssetImporter();
+    const Asset::AssetImportSourceClassification rawModelClassification =
+        importer.ClassifySource("engine_core_tests_character.dae");
+    EXPECT_EQ(rawModelClassification.kind, Asset::AssetImportSourceKind::RawModel);
     EXPECT_EQ(rawModelClassification.normalizedExtension, "dae");
     EXPECT_FALSE(rawModelClassification.importerRegistered);
     EXPECT_TRUE(rawModelClassification.requiresFormatSpecificParser);
     EXPECT_EQ(rawModelClassification.diagnostic, "format-specific parser is not registered");
-    Asset::IAssetManagerUVE& assetManager = engine.GetServicesUVE().GetAssetManagerUVE();
-    static_cast<void>(engine.GetServicesUVE().GetHotReloadUVE());
-    static_cast<void>(engine.GetServicesUVE().GetAssetBundleUVE());
+    Asset::IAssetManager& assetManager = engine.GetServices().GetAssetManager();
+    static_cast<void>(engine.GetServices().GetHotReload());
+    static_cast<void>(engine.GetServices().GetAssetBundle());
 
     const std::filesystem::path sourcePath = "uve_engine_core_tests_source.txt";
     const std::filesystem::path destinationPath = "uve_engine_core_tests_dest.txt";
@@ -1177,11 +1177,11 @@ TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTri
         file << "engine core asset pipeline round trip";
     }
 
-    const Asset::AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    const Asset::AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-    assetManager.RegisterLoaderUVE<Asset::BlobAssetUVE>(
-        [](const std::filesystem::path& path, Asset::BlobAssetUVE& outValue) {
+    assetManager.RegisterLoader<Asset::BlobAsset>(
+        [](const std::filesystem::path& path, Asset::BlobAsset& outValue) {
             std::ifstream file(path, std::ios::binary);
             if (!file.is_open()) {
                 return false;
@@ -1194,28 +1194,28 @@ TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTri
 
     {
         // Scoped so the handle releases its reference (and is destroyed) before engine.Shutdown()
-        // tears down the AssetManagerUVE it points into — a handle must never outlive the
-        // manager that produced it, exactly like an IEntityManagerUVE& argument never outliving
-        // its EntityManagerUVE.
-        const Asset::AssetHandleUVE<Asset::BlobAssetUVE> handle =
-            assetManager.LoadUVE<Asset::BlobAssetUVE>(guid, assetDatabase);
+        // tears down the AssetManager it points into — a handle must never outlive the
+        // manager that produced it, exactly like an IEntityManager& argument never outliving
+        // its EntityManager.
+        const Asset::AssetHandle<Asset::BlobAsset> handle =
+            assetManager.Load<Asset::BlobAsset>(guid, assetDatabase);
 
-        // Ticking a couple of frames exercises HotReloadUVE::PollUVE()/AssetManagerUVE::
-        // CollectGarbageUVE() running from within EngineCoreUVE::Update() while a load is in
+        // Ticking a couple of frames exercises HotReload::Poll()/AssetManager::
+        // CollectGarbage() running from within EngineCore::Update() while a load is in
         // flight, proving neither crashes nor prematurely collects the still-referenced asset.
-        engine.TickFrameUVE();
-        engine.TickFrameUVE();
+        engine.TickFrame();
+        engine.TickFrame();
 
         bool ready = false;
         for (int poll = 0; poll < 200000 && !ready; ++poll) {
-            ready = handle.IsReadyUVE() || handle.HasFailedUVE();
+            ready = handle.IsReady() || handle.HasFailed();
             if (!ready) {
                 std::this_thread::yield();
             }
         }
         ASSERT_TRUE(ready);
-        ASSERT_TRUE(handle.IsReadyUVE());
-        const Asset::BlobAssetUVE* const blob = handle.TryGetUVE();
+        ASSERT_TRUE(handle.IsReady());
+        const Asset::BlobAsset* const blob = handle.TryGet();
         ASSERT_NE(blob, nullptr);
         const std::string content(reinterpret_cast<const char*>(blob->data()), blob->size());
         EXPECT_EQ(content, "engine core asset pipeline round trip");
@@ -1226,18 +1226,18 @@ TEST(EngineCoreUVETest, AssetManagerImporterHotReloadBundle_ReachableAndRoundTri
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
+TEST(EngineCoreTest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit) {
+    EngineConfig config = MakeTestConfig();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRoot();
     config.assetDatabaseFilePath = root / "uve_engine_core_typed_envelope_tests.uvassetdb";
 
     constexpr std::array<std::string_view, 4> kTypedEnvelopeExtensions = {
         ".uvmodel", ".uvtex", ".uvshader", ".uvmat"};
-    struct CleanupUVE final {
+    struct Cleanup final {
         std::filesystem::path database;
         std::array<std::filesystem::path, 4> sources;
         std::array<std::filesystem::path, 4> destinations;
-        ~CleanupUVE() {
+        ~Cleanup() {
             std::filesystem::remove(database);
             for (const auto& path : sources) {
                 std::filesystem::remove(path);
@@ -1257,36 +1257,36 @@ TEST(EngineCoreUVETest, TypedUVEEnvelopeImporters_ComposedAndReachableAfterInit)
         source << "typed envelope composition proof";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IAssetImporterUVE& importer = engine.GetServicesUVE().GetAssetImporterUVE();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IAssetImporter& importer = engine.GetServices().GetAssetImporter();
     for (std::size_t index = 0; index < kTypedEnvelopeExtensions.size(); ++index) {
-        const Asset::AssetGuidUVE guid =
-            importer.ImportUVE(cleanup.sources[index], cleanup.destinations[index], assetDatabase);
-        ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE) << kTypedEnvelopeExtensions[index];
-        EXPECT_EQ(assetDatabase.ResolveUVE(guid), cleanup.destinations[index]);
+        const Asset::AssetGuid guid =
+            importer.Import(cleanup.sources[index], cleanup.destinations[index], assetDatabase);
+        ASSERT_NE(guid, Asset::kInvalidAssetGuid) << kTypedEnvelopeExtensions[index];
+        EXPECT_EQ(assetDatabase.Resolve(guid), cleanup.destinations[index]);
     }
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
+TEST(EngineCoreTest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
+    EngineConfig config = MakeTestConfig();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRoot();
     config.assetDatabaseFilePath = root / "uve_engine_core_audio_asset_tests.uvassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_audio_asset_tests.wav";
     const std::filesystem::path destinationPath = root / "uve_engine_core_audio_asset_tests.uvaudio";
     std::filesystem::remove(config.assetDatabaseFilePath);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    struct CleanupUVE final {
+    struct Cleanup final {
         std::filesystem::path database;
         std::filesystem::path source;
         std::filesystem::path destination;
-        ~CleanupUVE() {
+        ~Cleanup() {
             std::filesystem::remove(database);
             std::filesystem::remove(source);
             std::filesystem::remove(destination);
@@ -1304,27 +1304,27 @@ TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPip
                      static_cast<std::streamsize>(wavBytes.size()));
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IAssetImporterUVE& importer = engine.GetServicesUVE().GetAssetImporterUVE();
-    Asset::IAssetManagerUVE& assetManager = engine.GetServicesUVE().GetAssetManagerUVE();
-    const Asset::AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IAssetImporter& importer = engine.GetServices().GetAssetImporter();
+    Asset::IAssetManager& assetManager = engine.GetServices().GetAssetManager();
+    const Asset::AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
     {
-        const Asset::AssetHandleUVE<Asset::AudioAssetUVE> handle =
-            assetManager.LoadUVE<Asset::AudioAssetUVE>(guid, assetDatabase);
+        const Asset::AssetHandle<Asset::AudioAsset> handle =
+            assetManager.Load<Asset::AudioAsset>(guid, assetDatabase);
         bool terminal = false;
         for (int iteration = 0; iteration < 200000 && !terminal; ++iteration) {
-            terminal = handle.IsReadyUVE() || handle.HasFailedUVE();
+            terminal = handle.IsReady() || handle.HasFailed();
             if (!terminal) {
                 std::this_thread::yield();
             }
         }
         ASSERT_TRUE(terminal);
-        ASSERT_TRUE(handle.IsReadyUVE());
-        const Asset::AudioAssetUVE* const audio = handle.TryGetUVE();
+        ASSERT_TRUE(handle.IsReady());
+        const Asset::AudioAsset* const audio = handle.TryGet();
         ASSERT_NE(audio, nullptr);
         EXPECT_EQ(audio->channels, 1U);
         EXPECT_EQ(audio->sampleRate, 48000U);
@@ -1334,55 +1334,55 @@ TEST(EngineCoreUVETest, AudioAssetLoader_RegisteredAndReachableThroughBuiltInPip
     }
     engine.Shutdown();
 }
-TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
+TEST(EngineCoreTest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltInPipeline) {
+    EngineConfig config = MakeTestConfig();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRoot();
     config.assetDatabaseFilePath = root / "uve_engine_core_animation_asset_tests.uvassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_animation_asset_tests_source.uvanim";
     const std::filesystem::path destinationPath = root / "uve_engine_core_animation_asset_tests_dest.uvanim";
     std::filesystem::remove(config.assetDatabaseFilePath);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    struct CleanupUVE final {
+    struct Cleanup final {
         std::filesystem::path database;
         std::filesystem::path source;
         std::filesystem::path destination;
-        ~CleanupUVE() {
+        ~Cleanup() {
             std::filesystem::remove(database);
             std::filesystem::remove(source);
             std::filesystem::remove(destination);
         }
     } cleanup{config.assetDatabaseFilePath, sourcePath, destinationPath};
-    Asset::AnimationClipAssetUVE sourceClip;
+    Asset::AnimationClipAsset sourceClip;
     sourceClip.clipId = "walk";
     sourceClip.durationSeconds = 1.0;
-    sourceClip.samples = {Asset::AnimationAssetSampleUVE{
-        0.0, Asset::AnimationAssetPoseUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
-                                           Math::Vector3UVE{1.0F, 1.0F, 1.0F}}}};
-    sourceClip.events = {Asset::AnimationAssetEventUVE{0.5, "footstep"}};
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(sourceClip, sourcePath));
+    sourceClip.samples = {Asset::AnimationAssetSample{
+        0.0, Asset::AnimationAssetPose{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Quaternion{},
+                                           Math::Vector3{1.0F, 1.0F, 1.0F}}}};
+    sourceClip.events = {Asset::AnimationAssetEvent{0.5, "footstep"}};
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(sourceClip, sourcePath));
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IAssetImporterUVE& importer = engine.GetServicesUVE().GetAssetImporterUVE();
-    Asset::IAssetManagerUVE& assetManager = engine.GetServicesUVE().GetAssetManagerUVE();
-    const Asset::AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IAssetImporter& importer = engine.GetServices().GetAssetImporter();
+    Asset::IAssetManager& assetManager = engine.GetServices().GetAssetManager();
+    const Asset::AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
     {
-        const Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE> handle =
-            assetManager.LoadUVE<Asset::AnimationClipAssetUVE>(guid, assetDatabase);
+        const Asset::AssetHandle<Asset::AnimationClipAsset> handle =
+            assetManager.Load<Asset::AnimationClipAsset>(guid, assetDatabase);
         bool terminal = false;
         for (int iteration = 0; iteration < 200000 && !terminal; ++iteration) {
-            terminal = handle.IsReadyUVE() || handle.HasFailedUVE();
+            terminal = handle.IsReady() || handle.HasFailed();
             if (!terminal) {
                 std::this_thread::yield();
             }
         }
         ASSERT_TRUE(terminal);
-        ASSERT_TRUE(handle.IsReadyUVE());
-        const Asset::AnimationClipAssetUVE* const clip = handle.TryGetUVE();
+        ASSERT_TRUE(handle.IsReady());
+        const Asset::AnimationClipAsset* const clip = handle.TryGet();
         ASSERT_NE(clip, nullptr);
         EXPECT_EQ(clip->clipId, "walk");
         ASSERT_EQ(clip->samples.size(), 1U);
@@ -1391,9 +1391,9 @@ TEST(EngineCoreUVETest, AnimationAssetLoader_RegisteredAndReachableThroughBuiltI
     }
     engine.Shutdown();
 }
-TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesAfterInit) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    const std::filesystem::path root = ::UVE::Tests::ScratchRootUVE();
+TEST(EngineCoreTest, DataTablePipeline_RegisteredAndReachableThroughServicesAfterInit) {
+    EngineConfig config = MakeTestConfig();
+    const std::filesystem::path root = ::UVE::Tests::ScratchRoot();
     config.assetDatabaseFilePath = root / "uve_engine_core_data_table_tests.uvassetdb";
     const std::filesystem::path sourcePath = root / "uve_engine_core_data_table_tests.csv";
     const std::filesystem::path destinationPath = root / "uve_engine_core_data_table_tests.uvtable";
@@ -1401,11 +1401,11 @@ TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesA
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 
-    struct CleanupUVE final {
+    struct Cleanup final {
         std::filesystem::path database;
         std::filesystem::path source;
         std::filesystem::path destination;
-        ~CleanupUVE() {
+        ~Cleanup() {
             std::filesystem::remove(database);
             std::filesystem::remove(source);
             std::filesystem::remove(destination);
@@ -1418,35 +1418,35 @@ TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesA
         output << "id,damage\npistol,25\n";
     }
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IAssetImporterUVE& importer = engine.GetServicesUVE().GetAssetImporterUVE();
-    Asset::IAssetManagerUVE& assetManager = engine.GetServicesUVE().GetAssetManagerUVE();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IAssetImporter& importer = engine.GetServices().GetAssetImporter();
+    Asset::IAssetManager& assetManager = engine.GetServices().GetAssetManager();
 
-    Asset::DataTableImportSettingsUVE settings;
+    Asset::DataTableImportSettings settings;
     settings.tableName = "weapons";
-    settings.columns = {Asset::DataTableColumnUVE{"damage", Asset::DataTableColumnTypeUVE::Integer}};
-    const Asset::AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    settings.columns = {Asset::DataTableColumn{"damage", Asset::DataTableColumnType::Integer}};
+    const Asset::AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase, settings);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
     {
-        const Asset::AssetHandleUVE<Asset::DataTableUVE> handle =
-            assetManager.LoadUVE<Asset::DataTableUVE>(guid, assetDatabase);
+        const Asset::AssetHandle<Asset::DataTable> handle =
+            assetManager.Load<Asset::DataTable>(guid, assetDatabase);
         bool terminal = false;
         for (int iteration = 0; iteration < 200000 && !terminal; ++iteration) {
-            terminal = handle.IsReadyUVE() || handle.HasFailedUVE();
+            terminal = handle.IsReady() || handle.HasFailed();
             if (!terminal) {
                 std::this_thread::yield();
             }
         }
         ASSERT_TRUE(terminal);
-        ASSERT_TRUE(handle.IsReadyUVE());
-        const Asset::DataTableUVE* const table = handle.TryGetUVE();
+        ASSERT_TRUE(handle.IsReady());
+        const Asset::DataTable* const table = handle.TryGet();
         ASSERT_NE(table, nullptr);
-        const Asset::DataTableSnapshotUVE snapshot = table->GetSnapshotUVE();
+        const Asset::DataTableSnapshot snapshot = table->GetSnapshot();
         EXPECT_EQ(snapshot.name, "weapons");
         ASSERT_EQ(snapshot.rows.size(), 1U);
         ASSERT_EQ(snapshot.rows.front().values.size(), 1U);
@@ -1456,24 +1456,24 @@ TEST(EngineCoreUVETest, DataTablePipeline_RegisteredAndReachableThroughServicesA
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
 
     const std::filesystem::path mountDirectory = "uve_engine_core_tests_vfs_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
 
     const std::string text = "engine core vfs round trip";
     const auto* const textBytes = reinterpret_cast<const std::byte*>(text.data());
     const std::vector<std::byte> data(textBytes, textBytes + text.size());
-    ASSERT_TRUE(fileSystem.WriteFileUVE("notes.txt", data));
+    ASSERT_TRUE(fileSystem.WriteFile("notes.txt", data));
 
-    const std::optional<std::vector<std::byte>> readBack = fileSystem.ReadFileUVE("notes.txt");
+    const std::optional<std::vector<std::byte>> readBack = fileSystem.ReadFile("notes.txt");
     ASSERT_TRUE(readBack.has_value());
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(readBack->data()), readBack->size()), text);
 
@@ -1481,89 +1481,89 @@ TEST(EngineCoreUVETest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
     const std::filesystem::path mountDirectory = "uve_engine_core_tests_uvs_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
     const auto write = [&](const char* path, const std::string& text) {
         const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
-        ASSERT_TRUE(fileSystem.WriteFileUVE(path, std::vector<std::byte>(bytes, bytes + text.size())));
+        ASSERT_TRUE(fileSystem.WriteFile(path, std::vector<std::byte>(bytes, bytes + text.size())));
     };
     write("counter.uvs", "var readies = 0\nvar ticks = 0\n\non ready:\n    readies += 1\n\n"
                          "on tick(dt):\n    ticks += 1\n");
     write("broken.uvs", "on tick(dt):\n    ticks += 1\n");
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"counter.uvs"});
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    const Scene::Entity entity = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"counter.uvs"});
 
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(entity);
+    engine.TickFrame();
+    engine.TickFrame();
+    engine.TickFrame();
+    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(entity);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("readies"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(instance->GetFieldUVE("ticks"), Blueprint::ValueUVE{std::int64_t{3}});
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
+    EXPECT_EQ(instance->GetField("readies"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(instance->GetField("ticks"), Blueprint::Value{std::int64_t{3}});
+    EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 1U);
 
     // An unknown name does not compile: no instance, and it is not retried every frame.
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvs";
+    engine.TickFrame();
+    engine.TickFrame();
+    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
 
     // Pointing back at a good script starts it fresh.
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "counter.uvs";
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("ticks"), Blueprint::ValueUVE{std::int64_t{1}});
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "counter.uvs";
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("ticks"), Blueprint::Value{std::int64_t{1}});
 
     // Saving new text restarts the script within half a second - no path change needed. The same
     // goes for a script that failed: fixing the file is enough.
     write("counter.uvs", "var version = 2\n");
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("version"), Blueprint::ValueUVE{std::int64_t{2}});
+    engine.TickFrame();
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("version"), Blueprint::Value{std::int64_t{2}});
 
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvs";
+    engine.TickFrame();
+    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
     write("broken.uvs", "var fixed = true\n");
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("fixed"), Blueprint::ValueUVE{true});
+    engine.TickFrame();
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("fixed"), Blueprint::Value{true});
 
-    entityManager.RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity), nullptr);
+    entityManager.RemoveComponent<Scene::ScriptComponent>(entity);
+    engine.TickFrame();
+    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
 
     // The object's own export values are in place before `ready` runs; changing them restarts it.
     write("exports.uvs", "export speed = 1.0\nvar seen = 0.0\n\non ready:\n    seen = speed\n");
-    const Scene::EntityUVE exporter = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(
-        exporter, Scene::ScriptComponentUVE{"exports.uvs", {{"speed", "7.5"}, {"gone", "1"}}});
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), Blueprint::ValueUVE{7.5});
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(exporter).exportValues["speed"] = "2.0";
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), Blueprint::ValueUVE{2.0});
+    const Scene::Entity exporter = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::ScriptComponent>(
+        exporter, Scene::ScriptComponent{"exports.uvs", {{"speed", "7.5"}, {"gone", "1"}}});
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(exporter), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstance(exporter)->GetField("seen"), Blueprint::Value{7.5});
+    entityManager.GetComponent<Scene::ScriptComponent>(exporter).exportValues["speed"] = "2.0";
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(exporter), nullptr);
+    EXPECT_EQ(engine.FindUVScriptInstance(exporter)->GetField("seen"), Blueprint::Value{2.0});
 
     // Release builds: the running programs are written out as C++, one file per distinct program.
     {
         const std::filesystem::path nativeDirectory = mountDirectory / "native";
-        const std::optional<std::size_t> written = engine.WriteNativeUVScriptsUVE(nativeDirectory);
+        const std::optional<std::size_t> written = engine.WriteNativeUVScripts(nativeDirectory);
         ASSERT_TRUE(written.has_value());
         EXPECT_EQ(*written, 1U); // only the exports script is running at this point
         std::size_t files = 0U;
@@ -1572,134 +1572,134 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
             EXPECT_TRUE(entry.path().filename().string().starts_with("exports_"));
             std::ifstream in(entry.path());
             const std::string text(std::istreambuf_iterator<char>(in), {});
-            EXPECT_NE(text.find("RegistrationUVE kRegistration"), std::string::npos);
+            EXPECT_NE(text.find("Registration kRegistration"), std::string::npos);
         }
         EXPECT_EQ(files, 1U);
     }
 
     // An object with a transform moves itself through `position`.
     write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
-    const Scene::EntityUVE mover = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::TransformComponentUVE>(mover, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(mover, Scene::ScriptComponentUVE{"mover.uvs"});
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    ASSERT_NE(engine.FindUVScriptInstanceUVE(mover), nullptr);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(mover).localPosition.x, 4.0F);
+    const Scene::Entity mover = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::TransformComponent>(mover, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ScriptComponent>(mover, Scene::ScriptComponent{"mover.uvs"});
+    engine.TickFrame();
+    engine.TickFrame();
+    ASSERT_NE(engine.FindUVScriptInstance(mover), nullptr);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::TransformComponent>(mover).localPosition.x, 4.0F);
 
     std::filesystem::remove_all(mountDirectory);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
+TEST(EngineCoreTest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
     // No manual mount: the project directory itself is mounted at the VFS root, so an object's
     // project-relative script path resolves to the file the editor wrote beside the scene.
     const std::filesystem::path projectRoot = "uve_engine_core_tests_project_root";
     std::filesystem::remove_all(projectRoot);
     std::filesystem::create_directories(projectRoot / "scripts");
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.projectRootDirectoryUVE = projectRoot;
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    config.projectRootDirectory = projectRoot;
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    const Scene::Entity entity = entityManager.CreateEntity();
     // An object-graph script no longer runs at all.
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(entity, Scene::ScriptComponentUVE{"scripts/old.uvscript"});
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"scripts/old.uvscript"});
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 0U);
 
     // A `.uvs` script that does not exist yet fails, and runs once the file is written.
-    entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "scripts/main.uvs";
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 0U);
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "scripts/main.uvs";
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 0U);
     std::ofstream(projectRoot / "scripts" / "main.uvs", std::ios::binary) << "var ticks = 0\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
+    engine.TickFrame();
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 1U);
 
     engine.Shutdown();
     std::filesystem::remove_all(projectRoot);
 }
 
-TEST(EngineCoreUVETest, RenderSystem_ReachableAndFrameLifecycleWorksAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, RenderSystem_ReachableAndFrameLifecycleWorksAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Render::IRenderSystemUVE& renderSystem = engine.GetServicesUVE().GetRenderSystemUVE();
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 0U);
+    Render::IRenderSystem& renderSystem = engine.GetServices().GetRenderSystem();
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 0U);
 
-    renderSystem.BeginFrameUVE();
-    static_cast<void>(renderSystem.GetFrameCommandBufferUVE());
-    renderSystem.EndFrameUVE();
+    renderSystem.BeginFrame();
+    static_cast<void>(renderSystem.GetFrameCommandBuffer());
+    renderSystem.EndFrame();
 
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 1U);
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 1U);
 
-    Render::IRenderDeviceUVE& renderDevice = engine.GetServicesUVE().GetRenderDeviceUVE();
-    EXPECT_EQ(renderDevice.GetBackendNameUVE(), "Null");
+    Render::IRenderDevice& renderDevice = engine.GetServices().GetRenderDevice();
+    EXPECT_EQ(renderDevice.GetBackendName(), "Null");
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, CameraSystem_ReachableAndComputesViewProjectionAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, CameraSystem_ReachableAndComputesViewProjectionAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    const Scene::EntityUVE cameraEntity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{0.0F, 0.0F, 5.0F};
-    sceneGraph.AttachTransformUVE(entityManager, cameraEntity, local);
-    sceneGraph.UpdateUVE(entityManager);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(cameraEntity);
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    const Scene::Entity cameraEntity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{0.0F, 0.0F, 5.0F};
+    sceneGraph.AttachTransform(entityManager, cameraEntity, local);
+    sceneGraph.Update(entityManager);
+    entityManager.AddComponent<Scene::CameraComponent>(cameraEntity);
 
-    Render::ICameraSystemUVE& cameraSystem = engine.GetServicesUVE().GetCameraSystemUVE();
-    const Math::Matrix4x4UVE viewProjection =
-        cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, 16.0F / 9.0F);
-    const Math::FrustumUVE frustum = cameraSystem.ExtractFrustumUVE(viewProjection);
+    Render::ICameraSystem& cameraSystem = engine.GetServices().GetCameraSystem();
+    const Math::Matrix4x4 viewProjection =
+        cameraSystem.ComputeViewProjection(entityManager, cameraEntity, 16.0F / 9.0F);
+    const Math::Frustum frustum = cameraSystem.ExtractFrustum(viewProjection);
 
     EXPECT_TRUE(
-        frustum.IntersectsUVE(Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F})));
+        frustum.Intersects(Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F})));
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LightSystem_ReachableAndReturnsEmptyListWithNoLightEntityAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LightSystem_ReachableAndReturnsEmptyListWithNoLightEntityAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Render::ILightSystemUVE& lightSystem = engine.GetServicesUVE().GetLightSystemUVE();
-    const Render::LightListUVE lights =
-        lightSystem.ExtractActiveLightsUVE(engine.GetServicesUVE().GetEntityManagerUVE());
-    EXPECT_TRUE(lights.EmptyUVE());
-    EXPECT_EQ(lights.SizeUVE(), 0U);
+    Render::ILightSystem& lightSystem = engine.GetServices().GetLightSystem();
+    const Render::LightList lights =
+        lightSystem.ExtractActiveLights(engine.GetServices().GetEntityManager());
+    EXPECT_TRUE(lights.Empty());
+    EXPECT_EQ(lights.Size(), 0U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Renderer3D_ReachableAfterInit_NoActiveCameraStillNoOps) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, Renderer3D_ReachableAfterInit_NoActiveCameraStillNoOps) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    static_cast<void>(engine.GetServicesUVE().GetRenderer3DUVE());
-    EXPECT_EQ(engine.GetActiveCameraUVE(), Scene::kInvalidEntityUVE);
+    static_cast<void>(engine.GetServices().GetRenderer3D());
+    EXPECT_EQ(engine.GetActiveCamera(), Scene::kInvalidEntity);
 
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
-    engine.GetServicesUVE().GetLoggerUVE().AddSink(std::move(memorySink));
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
+    engine.GetServices().GetLogger().AddSink(std::move(memorySink));
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundNoOpTrace =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
             return message.message.starts_with("Render (no-op)");
         });
     EXPECT_TRUE(foundNoOpTrace);
@@ -1707,69 +1707,69 @@ TEST(EngineCoreUVETest, Renderer3D_ReachableAfterInit_NoActiveCameraStillNoOps) 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, DocumentScene_IsSeparateFromTheEngineScene) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    EXPECT_EQ(engine.CreateDocumentSceneUVE(), nullptr); // not before Init()
+TEST(EngineCoreTest, DocumentScene_IsSeparateFromTheEngineScene) {
+    EngineCore engine(MakeTestConfig());
+    EXPECT_EQ(engine.CreateDocumentScene(), nullptr); // not before Init()
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& level = engine.GetServicesUVE();
-    std::unique_ptr<DocumentSceneUVE> document = engine.CreateDocumentSceneUVE();
+    EngineServices& level = engine.GetServices();
+    std::unique_ptr<DocumentScene> document = engine.CreateDocumentScene();
     ASSERT_NE(document, nullptr);
-    EngineServicesUVE& services = document->GetServicesUVE();
+    EngineServices& services = document->GetServices();
 
     // The scene half is its own; everything else is the engine's.
-    EXPECT_NE(&services.GetEntityManagerUVE(), &level.GetEntityManagerUVE());
-    EXPECT_NE(&services.GetSceneGraphUVE(), &level.GetSceneGraphUVE());
-    EXPECT_NE(&services.GetRenderer3DUVE(), &level.GetRenderer3DUVE());
-    EXPECT_NE(&services.GetMeshRendererUVE(), &level.GetMeshRendererUVE());
-    EXPECT_EQ(&services.GetAssetDatabaseUVE(), &level.GetAssetDatabaseUVE());
-    EXPECT_EQ(&services.GetRenderDeviceUVE(), &level.GetRenderDeviceUVE());
-    EXPECT_EQ(&services.GetPrefabSystemUVE(), &level.GetPrefabSystemUVE());
+    EXPECT_NE(&services.GetEntityManager(), &level.GetEntityManager());
+    EXPECT_NE(&services.GetSceneGraph(), &level.GetSceneGraph());
+    EXPECT_NE(&services.GetRenderer3D(), &level.GetRenderer3D());
+    EXPECT_NE(&services.GetMeshRenderer(), &level.GetMeshRenderer());
+    EXPECT_EQ(&services.GetAssetDatabase(), &level.GetAssetDatabase());
+    EXPECT_EQ(&services.GetRenderDevice(), &level.GetRenderDevice());
+    EXPECT_EQ(&services.GetPrefabSystem(), &level.GetPrefabSystem());
 
-    const std::size_t levelCount = level.GetEntityManagerUVE().GetEntityCountUVE();
-    const Scene::EntityUVE entity = document->GetEntityManagerUVE().CreateEntityUVE();
-    EXPECT_TRUE(document->GetEntityManagerUVE().IsAliveUVE(entity));
-    EXPECT_EQ(document->GetEntityManagerUVE().GetEntityCountUVE(), 1U);
-    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+    const std::size_t levelCount = level.GetEntityManager().GetEntityCount();
+    const Scene::Entity entity = document->GetEntityManager().CreateEntity();
+    EXPECT_TRUE(document->GetEntityManager().IsAlive(entity));
+    EXPECT_EQ(document->GetEntityManager().GetEntityCount(), 1U);
+    EXPECT_EQ(level.GetEntityManager().GetEntityCount(), levelCount);
 
-    document->GetEntityManagerUVE().DestroyEntityUVE(entity);
-    engine.TickFrameUVE();
-    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+    document->GetEntityManager().DestroyEntity(entity);
+    engine.TickFrame();
+    EXPECT_EQ(level.GetEntityManager().GetEntityCount(), levelCount);
 
     document.reset();
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, WindowedMode_NoActiveCameraStillClearsDefaultFramebuffer) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+TEST(EngineCoreTest, WindowedMode_NoActiveCameraStillClearsDefaultFramebuffer) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 64;
     config.windowHeight = 64;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4;
     config.windowGlVersionMinor = 5;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
-    EXPECT_EQ(engine.GetActiveCameraUVE(), Scene::kInvalidEntityUVE);
+    EXPECT_EQ(engine.GetActiveCamera(), Scene::kInvalidEntity);
 
     std::array<unsigned char, 3> emptyScenePixel{};
     GLenum postRenderGlError = GL_NO_ERROR;
-    engine.SetPostRenderCallbackUVE([&emptyScenePixel, &postRenderGlError] {
+    engine.SetPostRenderCallback([&emptyScenePixel, &postRenderGlError] {
         glFinish();
         glReadBuffer(GL_BACK);
         glReadPixels(32, 32, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, emptyScenePixel.data());
         postRenderGlError = glGetError();
     });
 
-    engine.TickFrameUVE();
-    engine.SetPostRenderCallbackUVE({});
+    engine.TickFrame();
+    engine.SetPostRenderCallback({});
 
     EXPECT_EQ(emptyScenePixel[0], 13U);
     EXPECT_EQ(emptyScenePixel[1], 13U);
@@ -1779,34 +1779,34 @@ TEST(EngineCoreUVETest, WindowedMode_NoActiveCameraStillClearsDefaultFramebuffer
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Renderer3D_ActiveCameraSet_RendersWithoutCrashing) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, Renderer3D_ActiveCameraSet_RendersWithoutCrashing) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    const Scene::EntityUVE cameraEntity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{0.0F, 0.0F, 5.0F};
-    sceneGraph.AttachTransformUVE(entityManager, cameraEntity, local);
-    sceneGraph.UpdateUVE(entityManager);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(cameraEntity);
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    const Scene::Entity cameraEntity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{0.0F, 0.0F, 5.0F};
+    sceneGraph.AttachTransform(entityManager, cameraEntity, local);
+    sceneGraph.Update(entityManager);
+    entityManager.AddComponent<Scene::CameraComponent>(cameraEntity);
 
-    engine.SetActiveCameraUVE(cameraEntity);
-    EXPECT_EQ(engine.GetActiveCameraUVE(), cameraEntity);
+    engine.SetActiveCamera(cameraEntity);
+    EXPECT_EQ(engine.GetActiveCamera(), cameraEntity);
 
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
-    engine.GetServicesUVE().GetLoggerUVE().AddSink(std::move(memorySink));
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
+    engine.GetServices().GetLogger().AddSink(std::move(memorySink));
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
     // With an active camera set, Render() no longer takes the no-op trace path — proves
-    // RenderFrameUVE() actually ran instead (an empty scene still begins+ends a render pass).
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    // RenderFrame() actually ran instead (an empty scene still begins+ends a render pass).
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundNoOpTrace =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
             return message.message.starts_with("Render (no-op)");
         });
     EXPECT_FALSE(foundNoOpTrace);
@@ -1814,69 +1814,69 @@ TEST(EngineCoreUVETest, Renderer3D_ActiveCameraSet_RendersWithoutCrashing) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, PhysicsSystemAndCollisionSystem_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, PhysicsSystemAndCollisionSystem_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Physics::ICollisionSystemUVE& collisionSystem = engine.GetServicesUVE().GetCollisionSystemUVE();
-    Physics::IPhysicsSystemUVE& physicsSystem = engine.GetServicesUVE().GetPhysicsSystemUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Physics::ICollisionSystem& collisionSystem = engine.GetServices().GetCollisionSystem();
+    Physics::IPhysicsSystem& physicsSystem = engine.GetServices().GetPhysicsSystem();
 
-    EXPECT_TRUE(collisionSystem.DetectCollisionsUVE(entityManager).empty());
+    EXPECT_TRUE(collisionSystem.DetectCollisions(entityManager).empty());
 
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{0.0F, 10.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity);
-    sceneGraph.UpdateUVE(entityManager);
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{0.0F, 10.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, entity, local);
+    entityManager.AddComponent<Scene::Rigid3DComponent>(entity);
+    sceneGraph.Update(entityManager);
 
-    physicsSystem.StepUVE(entityManager, sceneGraph, 1.0F / 60.0F);
+    physicsSystem.Step(entityManager, sceneGraph, 1.0F / 60.0F);
 
-    const Scene::WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const Scene::WorldTransformComponent& world =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
     EXPECT_LT(world.worldPosition.y, 10.0F);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, PhysicsConstraints_ComposedAndSolvedThroughNormalFixedStep) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, PhysicsConstraints_ComposedAndSolvedThroughNormalFixedStep) {
+    EngineConfig config = MakeTestConfig();
     config.gravity = {};
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
-    const auto makeBody = [&entityManager, &sceneGraph](const Math::Vector3UVE position) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+    const auto makeBody = [&entityManager, &sceneGraph](const Math::Vector3 position) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity,
-                                                                      Scene::Rigid3DComponentUVE{1.0F, false});
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        entityManager.AddComponent<Scene::Rigid3DComponent>(entity,
+                                                                      Scene::Rigid3DComponent{1.0F, false});
         return entity;
     };
 
-    const Scene::EntityUVE first = makeBody({0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE second = makeBody({10.0F, 0.0F, 0.0F});
-    const Physics::PhysicsConstraintMutationResultUVE added =
-        services.GetPhysicsConstraintSystemUVE().AddDistanceConstraintUVE(
-            Physics::DistanceConstraintUVE{first, second, {}, {}, 4.0F});
-    ASSERT_TRUE(added.IsAcceptedUVE());
+    const Scene::Entity first = makeBody({0.0F, 0.0F, 0.0F});
+    const Scene::Entity second = makeBody({10.0F, 0.0F, 0.0F});
+    const Physics::PhysicsConstraintMutationResult added =
+        services.GetPhysicsConstraintSystem().AddDistanceConstraint(
+            Physics::DistanceConstraint{first, second, {}, {}, 4.0F});
+    ASSERT_TRUE(added.IsAccepted());
 
-    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
-    ASSERT_TRUE(engine.RequestSingleSimulationStepUVE());
-    engine.TickFrameUVE();
+    ASSERT_TRUE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Paused));
+    ASSERT_TRUE(engine.RequestSingleSimulationStep());
+    engine.TickFrame();
 
-    const float firstX = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(first).worldPosition.x;
-    const float secondX = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(second).worldPosition.x;
+    const float firstX = entityManager.GetComponent<Scene::WorldTransformComponent>(first).worldPosition.x;
+    const float secondX = entityManager.GetComponent<Scene::WorldTransformComponent>(second).worldPosition.x;
     EXPECT_NEAR(secondX - firstX, 4.0F, 1.0e-3F);
     EXPECT_NEAR(firstX, 3.0F, 1.0e-3F);
     EXPECT_NEAR(secondX, 7.0F, 1.0e-3F);
@@ -1884,26 +1884,26 @@ TEST(EngineCoreUVETest, PhysicsConstraints_ComposedAndSolvedThroughNormalFixedSt
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, RaycastSystem_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, RaycastSystem_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Physics::IRaycastSystemUVE& raycastSystem = engine.GetServicesUVE().GetRaycastSystemUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Physics::IRaycastSystem& raycastSystem = engine.GetServices().GetRaycastSystem();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    sceneGraph.UpdateUVE(entityManager);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{5.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, entity, local);
+    sceneGraph.Update(entityManager);
+    entityManager.AddComponent<Scene::ColliderComponent>(entity, Scene::ColliderComponent{Math::Vector3{1.0F, 1.0F, 1.0F}});
 
-    Physics::RaycastQueryUVE query;
-    query.ray = Math::RayUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}};
+    Physics::RaycastQuery query;
+    query.ray = Math::Ray{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 0.0F, 0.0F}};
     query.maxDistance = 100.0F;
-    const std::optional<Physics::RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    const std::optional<Physics::RaycastHit> hit = raycastSystem.Raycast(entityManager, query);
 
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->entity, entity);
@@ -1911,230 +1911,230 @@ TEST(EngineCoreUVETest, RaycastSystem_ReachableAndFunctionalAfterInit) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, InputSystem_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, InputSystem_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Input::IInputSystemUVE& inputSystem = engine.GetServicesUVE().GetInputSystemUVE();
+    Input::IInputSystem& inputSystem = engine.GetServices().GetInputSystem();
 
-    inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::Space, true);
-    engine.TickFrameUVE();
+    inputSystem.SetKeyState(Input::KeyCode::Space, true);
+    engine.TickFrame();
 
-    EXPECT_TRUE(inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::Space));
-    EXPECT_TRUE(inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space));
+    EXPECT_TRUE(inputSystem.IsKeyDown(Input::KeyCode::Space));
+    EXPECT_TRUE(inputSystem.WasKeyPressedThisFrame(Input::KeyCode::Space));
 
-    engine.TickFrameUVE();
-    EXPECT_TRUE(inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::Space));
-    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Space));
+    engine.TickFrame();
+    EXPECT_TRUE(inputSystem.IsKeyDown(Input::KeyCode::Space));
+    EXPECT_FALSE(inputSystem.WasKeyPressedThisFrame(Input::KeyCode::Space));
 
-    inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::Space, false);
-    engine.TickFrameUVE();
-    EXPECT_FALSE(inputSystem.IsKeyDownUVE(Input::KeyCodeUVE::Space));
-    EXPECT_TRUE(inputSystem.WasKeyReleasedThisFrameUVE(Input::KeyCodeUVE::Space));
+    inputSystem.SetKeyState(Input::KeyCode::Space, false);
+    engine.TickFrame();
+    EXPECT_FALSE(inputSystem.IsKeyDown(Input::KeyCode::Space));
+    EXPECT_TRUE(inputSystem.WasKeyReleasedThisFrame(Input::KeyCode::Space));
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, ExtendedInputServices_ReachableAndUpdatedThroughEngineCore) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ExtendedInputServices_ReachableAndUpdatedThroughEngineCore) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Input::IInputSystemUVE& inputSystem = engine.GetServicesUVE().GetInputSystemUVE();
-    Input::IGamepadInputSystemUVE& gamepad = engine.GetServicesUVE().GetGamepadInputSystemUVE();
-    Input::IMobileInputSystemUVE& mobile = engine.GetServicesUVE().GetMobileInputSystemUVE();
-    Input::IMobileGestureSystemUVE& gestures = engine.GetServicesUVE().GetMobileGestureSystemUVE();
+    Input::IInputSystem& inputSystem = engine.GetServices().GetInputSystem();
+    Input::IGamepadInputSystem& gamepad = engine.GetServices().GetGamepadInputSystem();
+    Input::IMobileInputSystem& mobile = engine.GetServices().GetMobileInputSystem();
+    Input::IMobileGestureSystem& gestures = engine.GetServices().GetMobileGestureSystem();
 
-    Input::InputActionUVE action;
+    Input::InputAction action;
     action.name = "GamepadJump";
-    action.type = Input::InputActionTypeUVE::Button;
-    action.positiveBindings.push_back(Input::GamepadButtonBindingUVE(0U, Input::GamepadButtonUVE::South));
-    inputSystem.RegisterActionUVE(std::move(action));
+    action.type = Input::InputActionType::Button;
+    action.positiveBindings.push_back(Input::GamepadButtonBinding(0U, Input::GamepadButton::South));
+    inputSystem.RegisterAction(std::move(action));
 
-    gamepad.SetConnectedUVE(0U, true);
-    gamepad.SetButtonStateUVE(0U, Input::GamepadButtonUVE::South, true);
-    mobile.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{10.0F, 20.0F}, 0.5F);
-    engine.TickFrameUVE();
+    gamepad.SetConnected(0U, true);
+    gamepad.SetButtonState(0U, Input::GamepadButton::South, true);
+    mobile.SetTouchState(0U, true, 42U, Math::Vector2{10.0F, 20.0F}, 0.5F);
+    engine.TickFrame();
 
-    EXPECT_TRUE(inputSystem.IsActionTriggeredUVE("GamepadJump"));
-    EXPECT_EQ(gamepad.GetSnapshotUVE(0U).frameNumber, 1U);
-    EXPECT_EQ(mobile.GetSnapshotUVE().frameNumber, 1U);
-    EXPECT_EQ(gestures.GetLastReportUVE().count, 0U);
+    EXPECT_TRUE(inputSystem.IsActionTriggered("GamepadJump"));
+    EXPECT_EQ(gamepad.GetSnapshot(0U).frameNumber, 1U);
+    EXPECT_EQ(mobile.GetSnapshot().frameNumber, 1U);
+    EXPECT_EQ(gestures.GetLastReport().count, 0U);
 
-    gamepad.SetButtonStateUVE(0U, Input::GamepadButtonUVE::South, false);
-    mobile.SetTouchStateUVE(0U, false, 0U, Math::Vector2UVE{}, 0.0F);
-    engine.TickFrameUVE();
+    gamepad.SetButtonState(0U, Input::GamepadButton::South, false);
+    mobile.SetTouchState(0U, false, 0U, Math::Vector2{}, 0.0F);
+    engine.TickFrame();
 
-    EXPECT_TRUE(inputSystem.IsActionReleasedUVE("GamepadJump"));
-    const Input::MobileGestureReportUVE report = gestures.GetLastReportUVE();
+    EXPECT_TRUE(inputSystem.IsActionReleased("GamepadJump"));
+    const Input::MobileGestureReport report = gestures.GetLastReport();
     ASSERT_EQ(report.count, 1U);
-    EXPECT_EQ(report.events[0].type, Input::MobileGestureTypeUVE::Tap);
+    EXPECT_EQ(report.events[0].type, Input::MobileGestureType::Tap);
     EXPECT_EQ(report.events[0].touchIdentifier, 42U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AudioSystem_ReachableAndFunctionalAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AudioSystem_ReachableAndFunctionalAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Audio::IAudioSystemUVE& audioSystem = engine.GetServicesUVE().GetAudioSystemUVE();
+    Audio::IAudioSystem& audioSystem = engine.GetServices().GetAudioSystem();
 
-    Audio::AudioSourceDescUVE desc;
+    Audio::AudioSourceDesc desc;
     desc.spatial = false;
-    const Audio::VoiceHandleUVE source = audioSystem.CreateSourceUVE(desc);
-    ASSERT_NE(source, Audio::kInvalidVoiceHandleUVE);
-    ASSERT_TRUE(audioSystem.PlayUVE(source));
+    const Audio::VoiceHandle source = audioSystem.CreateSource(desc);
+    ASSERT_NE(source, Audio::kInvalidVoiceHandle);
+    ASSERT_TRUE(audioSystem.Play(source));
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    EXPECT_EQ(audioSystem.GetSourceStateUVE(source), Audio::VoicePlaybackStateUVE::Playing);
+    EXPECT_EQ(audioSystem.GetSourceState(source), Audio::VoicePlaybackState::Playing);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AudioStreamAndPcmEffects_ReachableThroughEngineServices) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AudioStreamAndPcmEffects_ReachableThroughEngineServices) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Audio::IAudioSystemUVE& audioSystem = engine.GetServicesUVE().GetAudioSystemUVE();
-    const Audio::VoiceHandleUVE source = audioSystem.CreateSourceUVE(Audio::AudioSourceDescUVE{});
-    ASSERT_NE(source, Audio::kInvalidVoiceHandleUVE);
+    Audio::IAudioSystem& audioSystem = engine.GetServices().GetAudioSystem();
+    const Audio::VoiceHandle source = audioSystem.CreateSource(Audio::AudioSourceDesc{});
+    ASSERT_NE(source, Audio::kInvalidVoiceHandle);
 
-    ASSERT_TRUE(audioSystem.ResetSourceStreamUVE(source, 8U, false));
-    ASSERT_TRUE(audioSystem.ScheduleSourceStreamWindowUVE(source, 3U));
-    Audio::Pcm16StreamWindowPlanUVE plan;
-    ASSERT_TRUE(audioSystem.PopSourceStreamWindowUVE(source, plan));
-    EXPECT_EQ(plan, (Audio::Pcm16StreamWindowPlanUVE{0U, 3U, 3U, false, false}));
+    ASSERT_TRUE(audioSystem.ResetSourceStream(source, 8U, false));
+    ASSERT_TRUE(audioSystem.ScheduleSourceStreamWindow(source, 3U));
+    Audio::Pcm16StreamWindowPlan plan;
+    ASSERT_TRUE(audioSystem.PopSourceStreamWindow(source, plan));
+    EXPECT_EQ(plan, (Audio::Pcm16StreamWindowPlan{0U, 3U, 3U, false, false}));
 
-    ASSERT_TRUE(audioSystem.ScheduleSourcePcmGainWindowUVE(
-        source, Audio::PcmGainEffectWindowUVE{0U, 2U, 0.25F}));
+    ASSERT_TRUE(audioSystem.ScheduleSourcePcmGainWindow(
+        source, Audio::PcmGainEffectWindow{0U, 2U, 0.25F}));
     std::vector<float> output;
-    ASSERT_TRUE(audioSystem.ApplySourcePcmGainEffectsUVE(source, {0.8F, -0.4F, 0.5F}, output));
+    ASSERT_TRUE(audioSystem.ApplySourcePcmGainEffects(source, {0.8F, -0.4F, 0.5F}, output));
     EXPECT_EQ(output, (std::vector<float>{0.2F, -0.1F, 0.5F}));
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AudioListener_TracksActiveCameraWorldPosition) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AudioListener_TracksActiveCameraWorldPosition) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    const Scene::EntityUVE cameraEntity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{3.0F, 4.0F, 5.0F};
-    sceneGraph.AttachTransformUVE(entityManager, cameraEntity, local);
-    sceneGraph.UpdateUVE(entityManager);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(cameraEntity);
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    const Scene::Entity cameraEntity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{3.0F, 4.0F, 5.0F};
+    sceneGraph.AttachTransform(entityManager, cameraEntity, local);
+    sceneGraph.Update(entityManager);
+    entityManager.AddComponent<Scene::CameraComponent>(cameraEntity);
 
-    engine.SetActiveCameraUVE(cameraEntity);
-    engine.TickFrameUVE();
+    engine.SetActiveCamera(cameraEntity);
+    engine.TickFrame();
 
-    Audio::IAudioSystemUVE& audioSystem = engine.GetServicesUVE().GetAudioSystemUVE();
-    EXPECT_EQ(audioSystem.GetListenerPositionUVE(), (Math::Vector3UVE{3.0F, 4.0F, 5.0F}));
+    Audio::IAudioSystem& audioSystem = engine.GetServices().GetAudioSystem();
+    EXPECT_EQ(audioSystem.GetListenerPosition(), (Math::Vector3{3.0F, 4.0F, 5.0F}));
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, FallingRigid3D_TickFrameUVEDrivenPhysicsStep_MovesEntityDownward) {
+TEST(EngineCoreTest, FallingRigid3D_TickFrameDrivenPhysicsStep_MovesEntityDownward) {
     // A 1kHz fixed-update rate (1ms fixed step) paired with a short real sleep before each
-    // TickFrameUVE() call guarantees the ITimerUVE accumulator crosses at least one fixed step
+    // TickFrame() call guarantees the ITimer accumulator crosses at least one fixed step
     // almost every frame — an excessively high fixedUpdateFps would trigger steps just as
     // reliably but make each step's position delta too small to be representable in float at
     // this entity's starting magnitude (10.0), silently rounding to no visible movement. This
-    // test only proves EngineCoreUVE::Update()'s physics-step wiring moves an entity end-to-end;
-    // PhysicsSystemUVE's exact per-step math is already covered by
+    // test only proves EngineCore::Update()'s physics-step wiring moves an entity end-to-end;
+    // PhysicsSystem's exact per-step math is already covered by
     // tests/physics/physics_system_uve_tests.cpp.
-    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{0.0F, 10.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity);
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{0.0F, 10.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, entity, local);
+    entityManager.AddComponent<Scene::Rigid3DComponent>(entity);
 
     for (int frame = 0; frame < 30; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const Scene::WorldTransformComponent& world =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
     EXPECT_LT(world.worldPosition.y, 10.0F);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJumpsOnSpace) {
+TEST(EngineCoreTest, CharacterController_FallsUnderGravityLandsOnGroundThenJumpsOnSpace) {
     // Same 1kHz fixed-update / short real-sleep discipline as FallingRigid3D_* above, so
-    // EngineCoreUVE::Update()'s new SyncCharacterControllersUVE() wiring gets exercised end-to-end
-    // (gravity accumulation -> Physics::CharacterControllerUVE::MoveWithToIUVE -> ground contact),
-    // not just PhysicsSystemUVE's own already-covered per-step math.
-    EngineConfigUVE config = MakeTestConfigUVE();
+    // EngineCore::Update()'s new SyncCharacterControllers() wiring gets exercised end-to-end
+    // (gravity accumulation -> Physics::CharacterController::MoveWithToI -> ground contact),
+    // not just PhysicsSystem's own already-covered per-step math.
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    // Static ground: a flat box collider with no Rigid3DComponentUVE, top surface at y=0.5.
-    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, ground, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+    // Static ground: a flat box collider with no Rigid3DComponent, top surface at y=0.5.
+    const Scene::Entity ground = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, ground, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        ground, Scene::ColliderComponent{Math::Vector3{10.0F, 0.5F, 10.0F}});
 
     // Character controller entity starting 1 unit above its expected resting height (ground top
     // 0.5 + the default box collider's own 0.5 half-extent = 1.0).
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, entity, local);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{0.0F, 2.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, entity, local);
+    entityManager.AddComponent<Scene::ColliderComponent>(entity, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(entity);
 
     // Character input is routed through a mutually possessed player controller; an unpossessed
     // CharacterController intentionally stands still even while the keyboard is active.
-    entityManager.AddComponentUVE<Scene::PawnComponentUVE>(entity);
-    const Scene::EntityUVE playerController = entityManager.CreateEntityUVE();
-    Scene::ControllerComponentUVE controller;
-    controller.kind = Scene::ControllerKindUVE::Player;
-    entityManager.AddComponentUVE<Scene::ControllerComponentUVE>(playerController, controller);
-    ASSERT_TRUE(Scene::PossessControllerUVE(entityManager, playerController, entity));
+    entityManager.AddComponent<Scene::PawnComponent>(entity);
+    const Scene::Entity playerController = entityManager.CreateEntity();
+    Scene::ControllerComponent controller;
+    controller.kind = Scene::ControllerKind::Player;
+    entityManager.AddComponent<Scene::ControllerComponent>(playerController, controller);
+    ASSERT_TRUE(Scene::PossessController(entityManager, playerController, entity));
 
     for (int frame = 0; frame < 400; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::CharacterControllerComponentUVE& afterFall =
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    const Scene::CharacterControllerComponent& afterFall =
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(entity);
     EXPECT_TRUE(afterFall.grounded);
-    const Scene::WorldTransformComponentUVE& worldAfterFall =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    const Scene::WorldTransformComponent& worldAfterFall =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
     EXPECT_NEAR(worldAfterFall.worldPosition.y, 1.0F, 0.35F);
 
-    Input::IInputSystemUVE& inputSystem = engine.GetServicesUVE().GetInputSystemUVE();
-    inputSystem.SetKeyStateUVE(Input::KeyCodeUVE::Space, true);
+    Input::IInputSystem& inputSystem = engine.GetServices().GetInputSystem();
+    inputSystem.SetKeyState(Input::KeyCode::Space, true);
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    const Scene::CharacterControllerComponentUVE& afterJump =
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    const Scene::CharacterControllerComponent& afterJump =
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(entity);
     EXPECT_GT(afterJump.velocity.y, 0.0F);
     EXPECT_FALSE(afterJump.grounded);
 
@@ -2144,61 +2144,61 @@ TEST(EngineCoreUVETest, CharacterController_FallsUnderGravityLandsOnGroundThenJu
 namespace {
 
 // A box collider whose top face is at `top`, spanning x from `minX` to `maxX`.
-Scene::EntityUVE AddFloorUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+Scene::Entity AddFloor(Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
                              const float minX, const float maxX, const float top) {
-    const Scene::EntityUVE floor = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{(minX + maxX) * 0.5F, top - 0.5F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, floor, local);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        floor, Scene::ColliderComponentUVE{Math::Vector3UVE{(maxX - minX) * 0.5F, 0.5F, 10.0F}});
+    const Scene::Entity floor = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{(minX + maxX) * 0.5F, top - 0.5F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, floor, local);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        floor, Scene::ColliderComponent{Math::Vector3{(maxX - minX) * 0.5F, 0.5F, 10.0F}});
     return floor;
 }
 
 // A script-driven Character3D (built-in movement off) with a 1 m box, standing on y = `floorTop`.
-Scene::EntityUVE AddWalkerUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-                              const Math::Vector3UVE& feet, const Scene::CharacterControllerComponentUVE& controller) {
-    const Scene::EntityUVE walker = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE local;
-    local.localPosition = Math::Vector3UVE{feet.x, feet.y + 0.5F, feet.z};
-    sceneGraph.AttachTransformUVE(entityManager, walker, local);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(walker, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(walker, controller);
+Scene::Entity AddWalker(Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+                              const Math::Vector3& feet, const Scene::CharacterControllerComponent& controller) {
+    const Scene::Entity walker = entityManager.CreateEntity();
+    Scene::TransformComponent local;
+    local.localPosition = Math::Vector3{feet.x, feet.y + 0.5F, feet.z};
+    sceneGraph.AttachTransform(entityManager, walker, local);
+    entityManager.AddComponent<Scene::ColliderComponent>(walker, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(walker, controller);
     return walker;
 }
 
 // Walks off a ledge 0.1 m high and reports whether the walker left the floor on the way down.
-bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+bool LeavesTheFloorWalkingDownAStep(const float floorSnapLength) {
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     EXPECT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    static_cast<void>(AddFloorUVE(entityManager, sceneGraph, -10.0F, 0.0F, 0.5F));
-    static_cast<void>(AddFloorUVE(entityManager, sceneGraph, 0.0F, 10.0F, 0.4F));
-    Scene::CharacterControllerComponentUVE controller{};
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    static_cast<void>(AddFloor(entityManager, sceneGraph, -10.0F, 0.0F, 0.5F));
+    static_cast<void>(AddFloor(entityManager, sceneGraph, 0.0F, 10.0F, 0.4F));
+    Scene::CharacterControllerComponent controller{};
     controller.builtInMovement = false;
     controller.floorSnapLength = floorSnapLength;
-    const Scene::EntityUVE walker =
-        AddWalkerUVE(entityManager, sceneGraph, Math::Vector3UVE{-1.5F, 0.5F, 0.0F}, controller);
+    const Scene::Entity walker =
+        AddWalker(entityManager, sceneGraph, Math::Vector3{-1.5F, 0.5F, 0.0F}, controller);
 
     // Settle on the high floor, then walk right at 2 m/s across the edge at x = 0.
     for (int frame = 0; frame < 20; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::CharacterControllerComponent>(walker).grounded);
     bool leftTheFloor = false;
     for (int frame = 0; frame < 700; ++frame) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).velocity.x = 2.0F;
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(walker).velocity.x = 2.0F;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
-        leftTheFloor = leftTheFloor || !entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(walker).grounded;
+        engine.TickFrame();
+        leftTheFloor = leftTheFloor || !entityManager.GetComponent<Scene::CharacterControllerComponent>(walker).grounded;
     }
-    const float x = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.x;
-    const float y = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(walker).worldPosition.y;
+    const float x = entityManager.GetComponent<Scene::WorldTransformComponent>(walker).worldPosition.x;
+    const float y = entityManager.GetComponent<Scene::WorldTransformComponent>(walker).worldPosition.y;
     EXPECT_GT(x, 1.0F) << "never got past the edge";
     EXPECT_NEAR(y, 0.9F, 0.05F) << "not standing on the low floor";
     engine.Shutdown();
@@ -2207,219 +2207,219 @@ bool LeavesTheFloorWalkingDownAStepUVE(const float floorSnapLength) {
 
 } // namespace
 
-TEST(EngineCoreUVETest, Character3D_FloorSnapFollowsAStepDownThatWouldOtherwiseLaunchIt) {
-    EXPECT_FALSE(LeavesTheFloorWalkingDownAStepUVE(0.2F));
-    EXPECT_TRUE(LeavesTheFloorWalkingDownAStepUVE(0.0F));
+TEST(EngineCoreTest, Character3D_FloorSnapFollowsAStepDownThatWouldOtherwiseLaunchIt) {
+    EXPECT_FALSE(LeavesTheFloorWalkingDownAStep(0.2F));
+    EXPECT_TRUE(LeavesTheFloorWalkingDownAStep(0.0F));
 }
 
-TEST(EngineCoreUVETest, Character3D_SolidBodyMotionLocksHoldTheirAxis) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, Character3D_SolidBodyMotionLocksHoldTheirAxis) {
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Scene::CharacterControllerComponentUVE controller{};
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Scene::CharacterControllerComponent controller{};
     controller.builtInMovement = false;
-    controller.motionMode = Scene::CharacterMotionModeUVE::Floating;
-    const Scene::EntityUVE body = AddWalkerUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 5.0F, 0.0F}, controller);
-    Scene::SolidBodyComponentUVE locks{};
+    controller.motionMode = Scene::CharacterMotionMode::Floating;
+    const Scene::Entity body = AddWalker(entityManager, sceneGraph, Math::Vector3{0.0F, 5.0F, 0.0F}, controller);
+    Scene::SolidBodyComponent locks{};
     locks.lockMotionX = true;
-    entityManager.AddComponentUVE<Scene::SolidBodyComponentUVE>(body, locks);
+    entityManager.AddComponent<Scene::SolidBodyComponent>(body, locks);
     for (int frame = 0; frame < 150; ++frame) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(body).velocity =
-            Math::Vector3UVE{3.0F, 0.0F, 2.0F};
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(body).velocity =
+            Math::Vector3{3.0F, 0.0F, 2.0F};
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    const Math::Vector3UVE position = entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(body).worldPosition;
+    const Math::Vector3 position = entityManager.GetComponent<Scene::WorldTransformComponent>(body).worldPosition;
     EXPECT_FLOAT_EQ(position.x, 0.0F);           // Locked: never moved along X.
     EXPECT_GT(position.z, 0.2F);                 // Free: moved along Z.
     EXPECT_NEAR(position.y, 5.5F, 1.0e-4F);      // Floating: no gravity.
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationSequencer_PlaysItsClipOnItsParentObject) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AnimationSequencer_PlaysItsClipOnItsParentObject) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
     // A two-second clip that slides 10 m along X.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "slide";
     clip.durationSeconds = 2.0;
-    Asset::AnimationAssetSampleUVE start;
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 2.0;
-    end.pose.position = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
+    end.pose.position = Math::Vector3{10.0F, 0.0F, 0.0F};
     clip.samples = {start, end};
     const std::filesystem::path clipPath = "uve_engine_core_tests_slide.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
     // The door is a Object3D; the player is a pure Object under it, with no target set.
-    const Scene::EntityUVE door = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, door, Scene::TransformComponentUVE{});
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    const Scene::Entity door = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, door, Scene::TransformComponent{});
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
-    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
-    sceneGraph.SetParentUVE(entityManager, player, door);
+    definition.player.loopMode = Scene::AnimationLoopMode::Once;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, definition);
+    sceneGraph.SetParent(entityManager, player, door);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    const Scene::AnimationSequencerComponentUVE& played =
-        entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player);
+    const Scene::AnimationSequencerComponent& played =
+        entityManager.GetComponent<Scene::AnimationSequencerComponent>(player);
     EXPECT_TRUE(played.finished);
     EXPECT_FALSE(played.isPlaying);
     // A Once clip holds its last pose, and the world transform followed.
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(door).localPosition.x, 10.0F, 1e-4F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(door).worldPosition.x, 10.0F, 1e-4F);
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::TransformComponentUVE>(player));
+    EXPECT_NEAR(entityManager.GetComponent<Scene::TransformComponent>(door).localPosition.x, 10.0F, 1e-4F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::WorldTransformComponent>(door).worldPosition.x, 10.0F, 1e-4F);
+    EXPECT_FALSE(entityManager.HasComponent<Scene::TransformComponent>(player));
 
     std::filesystem::remove(clipPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWithASkeletalClip) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AnimationSequencer_PosesTheSkeletonInsideTheCharacterWithASkeletalClip) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
     // A one-second skeletal clip raising "Hips" from 1 m to 2 m.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "stand";
     clip.durationSeconds = 1.0;
-    Asset::AnimationAssetSampleUVE start;
-    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    start.pose.position = Math::Vector3{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 1.0;
-    end.pose.position = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
-    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    end.pose.position = Math::Vector3{0.0F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrack{"Hips", {start, end}}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_stand.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
 
     // Character > { Skeleton3D, AnimationSequencer }: the player targets its parent, the character,
     // and finds the skeleton inside it.
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
-    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
-    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    const Scene::Entity character = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
+    const Scene::Entity skeletonEntity = entityManager.CreateEntity();
+    Scene::Skeleton3DObjectDefinition skeletonDefinition;
     skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
-    Scene::SkeletonBoneUVE hips;
+    Scene::SkeletonBone hips;
     hips.name = "Hips";
-    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    hips.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
     skeletonDefinition.skeleton.bones = {hips};
-    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
-    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    Scene::ApplySkeleton3DObjectDefinition(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParent(entityManager, skeletonEntity, character);
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
-    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
-    sceneGraph.SetParentUVE(entityManager, player, character);
+    definition.player.loopMode = Scene::AnimationLoopMode::Once;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, definition);
+    sceneGraph.SetParent(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
-    const Scene::Skeleton3DComponentUVE& posed =
-        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
+    const Scene::Skeleton3DComponent& posed =
+        entityManager.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity);
     ASSERT_EQ(posed.pose.size(), 1U);
     EXPECT_NEAR(posed.pose[0].position.y, 2.0F, 1e-4F);
     // The character itself was not moved: a skeletal clip poses bones, not objects.
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition.y, 0.0F, 1e-6F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::TransformComponent>(character).localPosition.y, 0.0F, 1e-6F);
 
     std::filesystem::remove(clipPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArrives) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArrives) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
     // A one-second clip raising "Hand" from the shoulder to a metre above it.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "salute";
     clip.durationSeconds = 1.0;
-    Asset::AnimationAssetSampleUVE start;
-    start.pose.position = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    start.pose.position = Math::Vector3{0.5F, 1.0F, 0.0F};
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 1.0;
-    end.pose.position = Math::Vector3UVE{0.5F, 2.0F, 0.0F};
-    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hand", {start, end}}};
+    end.pose.position = Math::Vector3{0.5F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrack{"Hand", {start, end}}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_salute.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
     // A character at x=10 holding a skeleton, a player that poses it, and an attachment that rides the
     // hand. The attachment is an ordinary child of the CHARACTER, not of the skeleton: being driven by
     // a bone must not cost it its place in the hierarchy, or the character could not carry it around.
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE characterTransform;
-    characterTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, character, characterTransform);
-    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
-    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    const Scene::Entity character = entityManager.CreateEntity();
+    Scene::TransformComponent characterTransform;
+    characterTransform.localPosition = Math::Vector3{10.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, character, characterTransform);
+    const Scene::Entity skeletonEntity = entityManager.CreateEntity();
+    Scene::Skeleton3DObjectDefinition skeletonDefinition;
     skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
-    Scene::SkeletonBoneUVE hips;
+    Scene::SkeletonBone hips;
     hips.name = "Hips";
-    Scene::SkeletonBoneUVE hand;
+    Scene::SkeletonBone hand;
     hand.name = "Hand";
     hand.parentIndex = 0;
-    hand.localPosition = Math::Vector3UVE{0.5F, 1.0F, 0.0F};
+    hand.localPosition = Math::Vector3{0.5F, 1.0F, 0.0F};
     skeletonDefinition.skeleton.bones = {hips, hand};
-    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
-    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    Scene::ApplySkeleton3DObjectDefinition(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParent(entityManager, skeletonEntity, character);
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
-    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
-    sceneGraph.SetParentUVE(entityManager, player, character);
-    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
-    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    definition.player.loopMode = Scene::AnimationLoopMode::Once;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, definition);
+    sceneGraph.SetParent(entityManager, player, character);
+    const Scene::Entity attachment = entityManager.CreateEntity();
+    Scene::BoneAttachment3DComponent attachmentComponent;
     attachmentComponent.skeleton = skeletonEntity;
     attachmentComponent.boneName = "Hand";
-    attachmentComponent.localPosition = Math::Vector3UVE{0.0F, 0.1F, 0.0F};
-    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
-    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
-    sceneGraph.SetParentUVE(entityManager, attachment, character);
+    attachmentComponent.localPosition = Math::Vector3{0.0F, 0.1F, 0.0F};
+    entityManager.AddComponent<Scene::BoneAttachment3DComponent>(attachment, attachmentComponent);
+    sceneGraph.AttachTransform(entityManager, attachment, Scene::TransformComponent{});
+    sceneGraph.SetParent(entityManager, attachment, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+    ASSERT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
 
-    const Scene::BoneAttachment3DComponentUVE& resolved =
-        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    const Scene::BoneAttachment3DComponent& resolved =
+        entityManager.GetComponent<Scene::BoneAttachment3DComponent>(attachment);
     EXPECT_TRUE(resolved.bound);
     EXPECT_EQ(resolved.resolvedBoneIndex, 1U) << "bound by name to the hand";
 
@@ -2427,125 +2427,125 @@ TEST(EngineCoreUVETest, BoneAttachment3D_RidesThePosedBoneInTheFrameThePoseArriv
     // and the attachment sits 10 cm along the bone's own up axis. Asserted on the frame the pose
     // finished in: the attachment pass runs after the pose and before propagation, so it is on the
     // bone in that same frame rather than a frame behind its own animation.
-    const Scene::TransformComponentUVE& local = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment);
+    const Scene::TransformComponent& local = entityManager.GetComponent<Scene::TransformComponent>(attachment);
     EXPECT_NEAR(local.localPosition.x, 0.5F, 1e-3F) << "the transform written is parent-relative";
     EXPECT_NEAR(local.localPosition.y, 2.1F, 1e-3F);
-    const Math::Vector3UVE world =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    const Math::Vector3 world =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(attachment).worldPosition;
     EXPECT_NEAR(world.x, 10.5F, 1e-3F);
     EXPECT_NEAR(world.y, 2.1F, 1e-3F);
     EXPECT_NEAR(world.z, 0.0F, 1e-3F);
 
     // Switching the attachment off leaves it where it was: an attachment that is not bound keeps the
     // transform it had, so turning one off is not a teleport.
-    entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).enabled = false;
-    engine.TickFrameUVE();
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment).bound);
-    const Math::Vector3UVE stayed =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    entityManager.GetComponent<Scene::BoneAttachment3DComponent>(attachment).enabled = false;
+    engine.TickFrame();
+    EXPECT_FALSE(entityManager.GetComponent<Scene::BoneAttachment3DComponent>(attachment).bound);
+    const Math::Vector3 stayed =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(attachment).worldPosition;
     EXPECT_NEAR(stayed.y, 2.1F, 1e-3F);
 
     std::filesystem::remove(clipPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TwoBoneIK3D_SolvesTheReachingLimbBeforeTheAttachmentFollowsIt) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, TwoBoneIK3D_SolvesTheReachingLimbBeforeTheAttachmentFollowsIt) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
     // A one-second clip lifting the hips 20 cm: a real driver poses the skeleton, which is the gate the
     // IK pass reads - a limb whose pose nothing wrote this frame must not be solved a second time.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "crouch";
     clip.durationSeconds = 1.0;
-    Asset::AnimationAssetSampleUVE start;
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 1.0;
-    end.pose.position = Math::Vector3UVE{0.0F, 0.2F, 0.0F};
-    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    end.pose.position = Math::Vector3{0.0F, 0.2F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrack{"Hips", {start, end}}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_crouch.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
     // A four-bone arm: the shoulder a metre above the hips, the elbow a metre above that, the wrist a
     // metre above that. The chain solves the two upper bones so the WRIST's own origin reaches the
     // target, and the hand's rotation is left to the animation.
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
-    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
-    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    const Scene::Entity character = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
+    const Scene::Entity skeletonEntity = entityManager.CreateEntity();
+    Scene::Skeleton3DObjectDefinition skeletonDefinition;
     skeletonDefinition.skeleton.skeletonAssetPath = "Archer.fbx";
-    Scene::SkeletonBoneUVE hips;
+    Scene::SkeletonBone hips;
     hips.name = "Hips";
-    Scene::SkeletonBoneUVE upperArm;
+    Scene::SkeletonBone upperArm;
     upperArm.name = "UpperArm";
     upperArm.parentIndex = 0;
-    upperArm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    Scene::SkeletonBoneUVE forearm;
+    upperArm.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBone forearm;
     forearm.name = "Forearm";
     forearm.parentIndex = 1;
-    forearm.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    Scene::SkeletonBoneUVE handBone;
+    forearm.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
+    Scene::SkeletonBone handBone;
     handBone.name = "Hand";
     handBone.parentIndex = 2;
-    handBone.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    handBone.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
     skeletonDefinition.skeleton.bones = {hips, upperArm, forearm, handBone};
-    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
-    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    Scene::ApplySkeleton3DObjectDefinition(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParent(entityManager, skeletonEntity, character);
 
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE playerDefinition;
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition playerDefinition;
     playerDefinition.player.clip = guid;
-    playerDefinition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, playerDefinition);
-    sceneGraph.SetParentUVE(entityManager, player, character);
+    playerDefinition.player.loopMode = Scene::AnimationLoopMode::Once;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, playerDefinition);
+    sceneGraph.SetParent(entityManager, player, character);
 
-    const Scene::EntityUVE target = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE targetTransform;
-    targetTransform.localPosition = Math::Vector3UVE{1.0F, 1.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, target, targetTransform);
-    const Scene::EntityUVE pole = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE poleTransform;
-    poleTransform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 2.0F};
-    sceneGraph.AttachTransformUVE(entityManager, pole, poleTransform);
+    const Scene::Entity target = entityManager.CreateEntity();
+    Scene::TransformComponent targetTransform;
+    targetTransform.localPosition = Math::Vector3{1.0F, 1.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, target, targetTransform);
+    const Scene::Entity pole = entityManager.CreateEntity();
+    Scene::TransformComponent poleTransform;
+    poleTransform.localPosition = Math::Vector3{0.0F, 0.0F, 2.0F};
+    sceneGraph.AttachTransform(entityManager, pole, poleTransform);
 
-    const Scene::EntityUVE chainEntity = entityManager.CreateEntityUVE();
-    Scene::ApplyTwoBoneIK3DObjectDefinitionUVE(entityManager, chainEntity, {});
-    Scene::TwoBoneIK3DComponentUVE& chain = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    const Scene::Entity chainEntity = entityManager.CreateEntity();
+    Scene::ApplyTwoBoneIK3DObjectDefinition(entityManager, chainEntity, {});
+    Scene::TwoBoneIK3DComponent& chain = entityManager.GetComponent<Scene::TwoBoneIK3DComponent>(chainEntity);
     chain.skeleton = skeletonEntity;
     chain.rootBoneName = "UpperArm";
     chain.middleBoneName = "Forearm";
     chain.endBoneName = "Hand";
     chain.target = target;
     chain.poleTarget = pole;
-    sceneGraph.SetParentUVE(entityManager, chainEntity, character);
+    sceneGraph.SetParent(entityManager, chainEntity, character);
 
     // Something in the hand: an attachment on the bone the IK drives. It is an ordinary child of the
     // character, so the frame it ends up in says which pass wrote the bone last.
-    const Scene::EntityUVE attachment = entityManager.CreateEntityUVE();
-    Scene::BoneAttachment3DComponentUVE attachmentComponent;
+    const Scene::Entity attachment = entityManager.CreateEntity();
+    Scene::BoneAttachment3DComponent attachmentComponent;
     attachmentComponent.skeleton = skeletonEntity;
     attachmentComponent.boneName = "Hand";
-    entityManager.AddComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment, attachmentComponent);
-    sceneGraph.AttachTransformUVE(entityManager, attachment, Scene::TransformComponentUVE{});
-    sceneGraph.SetParentUVE(entityManager, attachment, character);
+    entityManager.AddComponent<Scene::BoneAttachment3DComponent>(attachment, attachmentComponent);
+    sceneGraph.AttachTransform(entityManager, attachment, Scene::TransformComponent{});
+    sceneGraph.SetParent(entityManager, attachment, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
+    ASSERT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
 
-    const Scene::TwoBoneIK3DComponentUVE& solved =
-        entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(chainEntity);
+    const Scene::TwoBoneIK3DComponent& solved =
+        entityManager.GetComponent<Scene::TwoBoneIK3DComponent>(chainEntity);
     EXPECT_TRUE(solved.solved);
     EXPECT_TRUE(solved.reached) << "the target is about a metre from the shoulder and the arm is two long";
     EXPECT_NEAR(solved.endToTargetDistanceMetres, 0.0F, 1e-3F);
@@ -2556,269 +2556,269 @@ TEST(EngineCoreUVETest, TwoBoneIK3D_SolvesTheReachingLimbBeforeTheAttachmentFoll
     // The attachment rides the wrist the IK just moved, in the frame the pose arrived: halfway through
     // the clip the hand is two metres up the limb, and the only thing that puts it on the target is the
     // solve that ran before the attachment pass in this same tick.
-    const Scene::BoneAttachment3DComponentUVE& bound =
-        entityManager.GetComponentUVE<Scene::BoneAttachment3DComponentUVE>(attachment);
+    const Scene::BoneAttachment3DComponent& bound =
+        entityManager.GetComponent<Scene::BoneAttachment3DComponent>(attachment);
     EXPECT_TRUE(bound.bound);
     EXPECT_EQ(bound.resolvedBoneIndex, 3U);
-    const Math::Vector3UVE hand =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(attachment).worldPosition;
+    const Math::Vector3 hand =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(attachment).worldPosition;
     EXPECT_NEAR(hand.x, 1.0F, 1e-3F) << "the wrist is on the target, and the attachment is on the wrist";
     EXPECT_NEAR(hand.y, 1.0F, 1e-3F);
     EXPECT_NEAR(hand.z, 0.0F, 1e-3F);
     EXPECT_GT(std::abs(hand.y - 3.2F), 1.0F)
         << "the hand is nowhere near where the animation alone would have left it";
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(attachment).localPosition.z, 0.0F, 1e-3F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::TransformComponent>(attachment).localPosition.z, 0.0F, 1e-3F);
 
     std::filesystem::remove(clipPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationSequencer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AnimationSequencer_RootMotionMovesTheCharacterThroughTheSkeletonsFrame) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
     // "Hips" run 2 m along +Z in one second.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "run";
     clip.durationSeconds = 1.0;
-    Asset::AnimationAssetSampleUVE start;
-    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    start.pose.position = Math::Vector3{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 1.0;
-    end.pose.position = Math::Vector3UVE{0.0F, 1.0F, 2.0F};
-    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    end.pose.position = Math::Vector3{0.0F, 1.0F, 2.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrack{"Hips", {start, end}}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_run.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
 
     // The skeleton is turned a quarter left inside the character, so its +Z is the world's +X.
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
-    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
-    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    const Scene::Entity character = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
+    const Scene::Entity skeletonEntity = entityManager.CreateEntity();
+    Scene::Skeleton3DObjectDefinition skeletonDefinition;
     skeletonDefinition.skeleton.skeletonAssetPath = "Hero.fbx";
-    Scene::SkeletonBoneUVE hips;
+    Scene::SkeletonBone hips;
     hips.name = "Hips";
-    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    hips.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
     skeletonDefinition.skeleton.bones = {hips};
-    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
-    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
-    auto& skeletonTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(skeletonEntity);
-    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.5707963F,
+    Scene::ApplySkeleton3DObjectDefinition(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParent(entityManager, skeletonEntity, character);
+    auto& skeletonTransform = entityManager.GetComponent<Scene::TransformComponent>(skeletonEntity);
+    ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.5707963F,
                                           skeletonTransform.localRotation));
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
-    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    definition.mixer.rootMotion = Scene::AnimationRootMotionModeUVE::ApplyToTarget;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
-    sceneGraph.SetParentUVE(entityManager, player, character);
+    definition.player.loopMode = Scene::AnimationLoopMode::Once;
+    definition.mixer.rootMotion = Scene::AnimationRootMotionMode::ApplyToTarget;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, definition);
+    sceneGraph.SetParent(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
-    const Math::Vector3UVE moved = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character).localPosition;
+    ASSERT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
+    const Math::Vector3 moved = entityManager.GetComponent<Scene::TransformComponent>(character).localPosition;
     EXPECT_NEAR(moved.x, 2.0F, 1e-3F) << "the clip's 2 m, turned into the world by the skeleton";
     EXPECT_NEAR(moved.z, 0.0F, 1e-3F);
-    const Scene::Skeleton3DComponentUVE& posed =
-        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+    const Scene::Skeleton3DComponent& posed =
+        entityManager.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity);
     ASSERT_EQ(posed.pose.size(), 1U);
     EXPECT_NEAR(posed.pose[0].position.z, 0.0F, 1e-4F) << "the skeleton runs in place";
 
     std::filesystem::remove(clipPath);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObjectItAnimates) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObjectItAnimates) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
 
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
     const std::filesystem::path mountDirectory = "uve_engine_core_tests_anim_events_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
     const std::string script = "var steps = 0\nvar last = \"\"\n\non animation_event(name):\n    steps += 1\n"
                                "    last = name\n";
     const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
-    ASSERT_TRUE(fileSystem.WriteFileUVE("feet.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+    ASSERT_TRUE(fileSystem.WriteFile("feet.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
 
     // A one-second object clip with two footsteps.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "walk";
     clip.durationSeconds = 1.0;
-    Asset::AnimationAssetSampleUVE start;
-    Asset::AnimationAssetSampleUVE end;
+    Asset::AnimationAssetSample start;
+    Asset::AnimationAssetSample end;
     end.timeSeconds = 1.0;
-    end.pose.position = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+    end.pose.position = Math::Vector3{1.0F, 0.0F, 0.0F};
     clip.samples = {start, end};
-    clip.events = {Asset::AnimationAssetEventUVE{0.25, "step_left"}, Asset::AnimationAssetEventUVE{0.75, "step_right"}};
+    clip.events = {Asset::AnimationAssetEvent{0.25, "step_left"}, Asset::AnimationAssetEvent{0.75, "step_right"}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_walk_events.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipPath);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid guid = assetDatabase.Register(clipPath);
 
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(character, Scene::ScriptComponentUVE{"feet.uvs"});
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::AnimationSequencerObjectDefinitionUVE definition;
+    const Scene::Entity character = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"feet.uvs"});
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
-    definition.player.loopMode = Scene::AnimationLoopModeUVE::Once;
-    Scene::ApplyAnimationSequencerObjectDefinitionUVE(entityManager, player, definition);
-    sceneGraph.SetParentUVE(entityManager, player, character);
+    definition.player.loopMode = Scene::AnimationLoopMode::Once;
+    Scene::ApplyAnimationSequencerObjectDefinition(entityManager, player, definition);
+    sceneGraph.SetParent(entityManager, player, character);
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10) &&
-           !entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished) {
+           !entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
-    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    ASSERT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
+    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("steps"), Blueprint::ValueUVE{std::int64_t{2}}) << "each footstep once";
-    EXPECT_EQ(instance->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"step_right"}});
+    EXPECT_EQ(instance->GetField("steps"), Blueprint::Value{std::int64_t{2}}) << "each footstep once";
+    EXPECT_EQ(instance->GetField("last"), Blueprint::Value{std::string{"step_right"}});
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove_all(mountDirectory);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotifies) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotifies) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
-    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
+    Asset::IAssetDatabase& assetDatabase = engine.GetServices().GetAssetDatabase();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
     const std::filesystem::path mountDirectory = "uve_engine_core_tests_montage_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
     const std::string script = "var hits = 0\nvar ended = \"\"\n\non ready:\n    montage.play(\"Attack\")\n\n"
                                "on montage_notify(name):\n    if name == \"hit\":\n        hits += 1\n\n"
                                "on montage_ended(name):\n    ended = name\n";
     const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
-    ASSERT_TRUE(fileSystem.WriteFileUVE("fighter.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+    ASSERT_TRUE(fileSystem.WriteFile("fighter.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
 
     // A half-second swing of the hips, in a montage with one "hit" notify.
-    Asset::AnimationClipAssetUVE clip;
+    Asset::AnimationClipAsset clip;
     clip.clipId = "swing";
     clip.durationSeconds = 0.5;
-    Asset::AnimationAssetSampleUVE start;
-    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    Asset::AnimationAssetSampleUVE end = start;
+    Asset::AnimationAssetSample start;
+    start.pose.position = Math::Vector3{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSample end = start;
     end.timeSeconds = 0.5;
-    end.pose.position = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
-    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    end.pose.position = Math::Vector3{0.0F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrack{"Hips", {start, end}}};
     const std::filesystem::path clipPath = "uve_engine_core_tests_swing.uvanim";
-    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
-    const Asset::AssetGuidUVE clipGuid = assetDatabase.RegisterUVE(clipPath);
-    Asset::MotionMontageAssetUVE montage;
-    Asset::AddMontageSegmentUVE(montage, clipGuid, 0.5);
-    Asset::AddMontageNotifyUVE(montage, "hit", 0.2, 0U);
+    ASSERT_TRUE(Asset::SaveAnimationClipAsset(clip, clipPath));
+    const Asset::AssetGuid clipGuid = assetDatabase.Register(clipPath);
+    Asset::MotionMontageAsset montage;
+    Asset::AddMontageSegment(montage, clipGuid, 0.5);
+    Asset::AddMontageNotify(montage, "hit", 0.2, 0U);
     montage.blendInSeconds = 0.0;
     montage.blendOutSeconds = 0.0;
     const std::filesystem::path montagePath = "Attack.uvmontage";
-    ASSERT_TRUE(Asset::SaveMotionMontageAssetUVE(montage, montagePath));
-    const Asset::AssetGuidUVE montageGuid = assetDatabase.RegisterUVE(montagePath);
+    ASSERT_TRUE(Asset::SaveMotionMontageAsset(montage, montagePath));
+    const Asset::AssetGuid montageGuid = assetDatabase.Register(montagePath);
 
-    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(character, Scene::ScriptComponentUVE{"fighter.uvs"});
-    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
-    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
-    Scene::SkeletonBoneUVE hips;
+    const Scene::Entity character = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"fighter.uvs"});
+    const Scene::Entity skeletonEntity = entityManager.CreateEntity();
+    Scene::Skeleton3DObjectDefinition skeletonDefinition;
+    Scene::SkeletonBone hips;
     hips.name = "Hips";
-    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    hips.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
     skeletonDefinition.skeleton.bones = {hips};
-    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
-    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
-    const Scene::EntityUVE montages = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, montages, Scene::TransformComponentUVE{});
-    Scene::MontageSequencerComponentUVE slots;
+    Scene::ApplySkeleton3DObjectDefinition(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParent(entityManager, skeletonEntity, character);
+    const Scene::Entity montages = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, montages, Scene::TransformComponent{});
+    Scene::MontageSequencerComponent slots;
     slots.montage1 = montageGuid;
-    entityManager.AddComponentUVE<Scene::MontageSequencerComponentUVE>(montages, slots);
-    sceneGraph.SetParentUVE(entityManager, montages, character);
+    entityManager.AddComponent<Scene::MontageSequencerComponent>(montages, slots);
+    sceneGraph.SetParent(entityManager, montages, character);
 
     bool posedMidway = false;
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        engine.TickFrameUVE();
-        const auto& pose = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose;
+        engine.TickFrame();
+        const auto& pose = entityManager.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity).pose;
         posedMidway = posedMidway || (!pose.empty() && pose[0].position.y > 1.05F);
-        Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
-        if (instance != nullptr && instance->GetFieldUVE("ended") == Blueprint::ValueUVE{std::string{"Attack"}}) {
+        Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
+        if (instance != nullptr && instance->GetField("ended") == Blueprint::Value{std::string{"Attack"}}) {
             break;
         }
     }
-    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("ended"), Blueprint::ValueUVE{std::string{"Attack"}});
-    EXPECT_EQ(instance->GetFieldUVE("hits"), Blueprint::ValueUVE{std::int64_t{1}}) << "the hit notify once";
+    EXPECT_EQ(instance->GetField("ended"), Blueprint::Value{std::string{"Attack"}});
+    EXPECT_EQ(instance->GetField("hits"), Blueprint::Value{std::int64_t{1}}) << "the hit notify once";
     EXPECT_TRUE(posedMidway) << "the swing posed the skeleton while it played";
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose.empty())
+    EXPECT_TRUE(entityManager.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity).pose.empty())
         << "nothing else animates it, so it is back at rest";
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove(montagePath);
     std::filesystem::remove_all(mountDirectory);
-    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, RayCast3DObject_HitsRealGroundColliderExcludesItselfAndMissesBeyondLength) {
-    // EngineCoreUVE::SyncRayCast3DObjectsUVE() is new wiring: previously RayCast3DComponentUVE
+TEST(EngineCoreTest, RayCast3DObject_HitsRealGroundColliderExcludesItselfAndMissesBeyondLength) {
+    // EngineCore::SyncRayCast3DObjects() is new wiring: previously RayCast3DComponent
     // was pure authored data with nothing evaluating it. This proves a real per-frame raycast
-    // against a real Physics::RaycastSystemUVE + real colliders, not a mocked query.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    // against a real Physics::RaycastSystem + real colliders, not a mocked query.
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // Static ground: a flat box collider centered at the origin, top surface at y=0.5.
-    const Scene::EntityUVE ground = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, ground, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        ground, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+    const Scene::Entity ground = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, ground, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        ground, Scene::ColliderComponent{Math::Vector3{10.0F, 0.5F, 10.0F}});
 
     // The raycasting entity sits 5 units above the ground, has its own collider (to prove
     // self-exclusion really works - without it, the closest "hit" would be itself at distance 0),
     // and casts a local-space "-Y" ray far enough to reach the ground.
-    const Scene::EntityUVE caster = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE casterTransform;
-    casterTransform.localPosition = Math::Vector3UVE{0.0F, 5.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, caster, casterTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(caster, Scene::ColliderComponentUVE{});
-    Scene::RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    const Scene::Entity caster = entityManager.CreateEntity();
+    Scene::TransformComponent casterTransform;
+    casterTransform.localPosition = Math::Vector3{0.0F, 5.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, caster, casterTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(caster, Scene::ColliderComponent{});
+    Scene::RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    entityManager.AddComponentUVE<Scene::RayCast3DComponentUVE>(caster, rayCast);
+    entityManager.AddComponent<Scene::RayCast3DComponent>(caster, rayCast);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    const Scene::RayCast3DComponentUVE& afterHit =
-        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    const Scene::RayCast3DComponent& afterHit =
+        entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     EXPECT_TRUE(afterHit.hit);
     EXPECT_EQ(afterHit.hitEntity, ground);
     EXPECT_NEAR(afterHit.hitPosition.y, 0.5F, 0.01F);
@@ -2826,134 +2826,134 @@ TEST(EngineCoreUVETest, RayCast3DObject_HitsRealGroundColliderExcludesItselfAndM
 
     // Shortening the ray so it can't reach the ground (top at y=0.5, caster at y=5, so a length of
     // 1.0 falls well short) must report a clean miss, not a stale hit from the previous frame.
-    Scene::RayCast3DComponentUVE& live = entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    Scene::RayCast3DComponent& live = entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     live.length = 1.0F;
-    engine.TickFrameUVE();
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    engine.TickFrame();
+    EXPECT_FALSE(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hit);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, RayCast3DObject_ExclusionsReachTheQueryAndAnInvalidListClearsTheWholeResult) {
-    // The authored exclusions are not decoration: SyncRayCast3DObjectsUVE hands the component's live
-    // prefix to the query as Physics::RaycastQueryUVE::excludedEntities, so naming an object really
+TEST(EngineCoreTest, RayCast3DObject_ExclusionsReachTheQueryAndAnInvalidListClearsTheWholeResult) {
+    // The authored exclusions are not decoration: SyncRayCast3DObjects hands the component's live
+    // prefix to the query as Physics::RaycastQuery::excludedEntities, so naming an object really
     // does take it out of the cast. A list the component's own rule refuses (a live reference behind
     // an empty slot) is a gate like any other, and every gate clears the WHOLE result - a consumer
     // that reads hitEntity without checking hit must never see last frame's object.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // Two flat blockers under the caster, the nearer one first: tops at y=4.5 and y=3.5.
-    const Scene::EntityUVE nearer = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE nearerTransform;
-    nearerTransform.localPosition = Math::Vector3UVE{0.0F, 4.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, nearer, nearerTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        nearer, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+    const Scene::Entity nearer = entityManager.CreateEntity();
+    Scene::TransformComponent nearerTransform;
+    nearerTransform.localPosition = Math::Vector3{0.0F, 4.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, nearer, nearerTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        nearer, Scene::ColliderComponent{Math::Vector3{10.0F, 0.5F, 10.0F}});
 
-    const Scene::EntityUVE farther = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE fartherTransform;
-    fartherTransform.localPosition = Math::Vector3UVE{0.0F, 3.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, farther, fartherTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        farther, Scene::ColliderComponentUVE{Math::Vector3UVE{10.0F, 0.5F, 10.0F}});
+    const Scene::Entity farther = entityManager.CreateEntity();
+    Scene::TransformComponent fartherTransform;
+    fartherTransform.localPosition = Math::Vector3{0.0F, 3.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, farther, fartherTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        farther, Scene::ColliderComponent{Math::Vector3{10.0F, 0.5F, 10.0F}});
 
-    const Scene::EntityUVE caster = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE casterTransform;
-    casterTransform.localPosition = Math::Vector3UVE{0.0F, 5.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, caster, casterTransform);
-    Scene::RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    const Scene::Entity caster = entityManager.CreateEntity();
+    Scene::TransformComponent casterTransform;
+    casterTransform.localPosition = Math::Vector3{0.0F, 5.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, caster, casterTransform);
+    Scene::RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    entityManager.AddComponentUVE<Scene::RayCast3DComponentUVE>(caster, rayCast);
+    entityManager.AddComponent<Scene::RayCast3DComponent>(caster, rayCast);
 
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hitEntity, nearer);
 
     // Naming the nearest blocker moves the ray onto the next one - and the exclusions array is a
     // prefix, so one live slot is exactly one exclusion.
-    Scene::RayCast3DComponentUVE& live =
-        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    Scene::RayCast3DComponent& live =
+        entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     live.exclusions[0] = nearer;
-    engine.TickFrameUVE();
-    const Scene::RayCast3DComponentUVE& skippingNearest =
-        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    engine.TickFrame();
+    const Scene::RayCast3DComponent& skippingNearest =
+        entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     EXPECT_TRUE(skippingNearest.hit);
     EXPECT_EQ(skippingNearest.hitEntity, farther);
     EXPECT_NEAR(skippingNearest.hitPosition.y, 3.5F, 0.01F);
 
     // Both named: nothing is left in the ray's path.
     live.exclusions[1] = farther;
-    engine.TickFrameUVE();
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
+    engine.TickFrame();
+    EXPECT_FALSE(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hit);
 
     // A hole in the list is refused by the component's validator, which is a gate like any other:
     // the stale hit is cleared rather than kept.
-    live.exclusions[0] = Scene::kInvalidEntityUVE;
-    engine.TickFrameUVE();
-    const Scene::RayCast3DComponentUVE& invalidList =
-        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    live.exclusions[0] = Scene::kInvalidEntity;
+    engine.TickFrame();
+    const Scene::RayCast3DComponent& invalidList =
+        entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     EXPECT_FALSE(invalidList.hit);
-    EXPECT_EQ(invalidList.hitEntity, Scene::kInvalidEntityUVE);
-    EXPECT_EQ(invalidList.hitPosition, Math::Vector3UVE{});
+    EXPECT_EQ(invalidList.hitEntity, Scene::kInvalidEntity);
+    EXPECT_EQ(invalidList.hitPosition, Math::Vector3{});
 
     // Switching the ray off clears the whole result too - no hit, no point, no normal, no entity.
-    live.exclusions = Scene::MakeEmptyEntityReferencesUVE<Scene::kMaximumRayCastExclusionsUVE>();
+    live.exclusions = Scene::MakeEmptyEntityReferences<Scene::kMaximumRayCastExclusions>();
     live.enabled = false;
-    engine.TickFrameUVE();
-    const Scene::RayCast3DComponentUVE& disabled =
-        entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster);
+    engine.TickFrame();
+    const Scene::RayCast3DComponent& disabled =
+        entityManager.GetComponent<Scene::RayCast3DComponent>(caster);
     EXPECT_FALSE(disabled.hit);
-    EXPECT_EQ(disabled.hitEntity, Scene::kInvalidEntityUVE);
-    EXPECT_EQ(disabled.hitNormal, Math::Vector3UVE{});
+    EXPECT_EQ(disabled.hitEntity, Scene::kInvalidEntity);
+    EXPECT_EQ(disabled.hitNormal, Math::Vector3{});
 
     // And nothing is sticky: an enabled ray with a cleared list finds the nearest blocker again.
     live.enabled = true;
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hit);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(caster).hitEntity, nearer);
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hit);
+    EXPECT_EQ(entityManager.GetComponent<Scene::RayCast3DComponent>(caster).hitEntity, nearer);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
-    // EngineCoreUVE::SyncHitbox3DObjectsUVE() is new wiring: previously Hitbox3DComponentUVE
-    // and Hurtbox3DComponentUVE were pure authored data with nothing evaluating them. This
+TEST(EngineCoreTest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGatedOrApart) {
+    // EngineCore::SyncHitbox3DObjects() is new wiring: previously Hitbox3DComponent
+    // and Hurtbox3DComponent were pure authored data with nothing evaluating them. This
     // proves the real per-frame pairing - exact oriented-box overlap with symmetric layer/mask
     // acceptance, damage-channel equality, and self-exclusion - and that every gate clears
     // stale strikes instead of keeping the previous frame's list.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // Attacker at the origin with default combat volumes (half extents 0.5, layer 1, full mask,
     // channel "default"); victim parked 0.5 units away so the boxes overlap 0.5 units along X.
-    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(
-        attacker, Scene::Hitbox3DComponentUVE{});
+    const Scene::Entity attacker = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, attacker, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::Hitbox3DComponent>(
+        attacker, Scene::Hitbox3DComponent{});
 
-    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE victimTransform;
-    victimTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
-    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
-        victim, Scene::Hurtbox3DComponentUVE{});
+    const Scene::Entity victim = entityManager.CreateEntity();
+    Scene::TransformComponent victimTransform;
+    victimTransform.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, victim, victimTransform);
+    entityManager.AddComponent<Scene::Hurtbox3DComponent>(
+        victim, Scene::Hurtbox3DComponent{});
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::Hitbox3DComponentUVE& afterStrike =
-            entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker);
+        const Scene::Hitbox3DComponent& afterStrike =
+            entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker);
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
         EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.5F, 0.01F);
@@ -2961,46 +2961,46 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGat
     }
 
     // Moving the hurtbox far out of range must clear the strike, not keep the stale one.
-    Scene::TransformComponentUVE victimLive =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
-    victimLive.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker).strikeCount, 0U);
+    Scene::TransformComponent victimLive =
+        entityManager.GetComponent<Scene::TransformComponent>(victim);
+    victimLive.localPosition = Math::Vector3{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, victim, victimLive);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker).strikeCount, 0U);
 
     // Back in range but on a different damage channel: no strike.
-    victimLive.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
-    Scene::Hurtbox3DComponentUVE& hurtboxLive =
-        entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim);
+    victimLive.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, victim, victimLive);
+    Scene::Hurtbox3DComponent& hurtboxLive =
+        entityManager.GetComponent<Scene::Hurtbox3DComponent>(victim);
     hurtboxLive.damageChannel = "environment";
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker).strikeCount, 0U);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker).strikeCount, 0U);
 
     // Same channel again but the hurtbox's mask no longer accepts the hitbox's layer: no strike
     // (acceptance is symmetric - both sides must accept each other).
     hurtboxLive.damageChannel = "default";
     hurtboxLive.collisionMask = 0U;
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker).strikeCount, 0U);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker).strikeCount, 0U);
 
     // Mask restored but the hitbox itself is disabled: no strike, and none may linger.
     hurtboxLive.collisionMask = 0xFFFFFFFFU;
-    Scene::Hitbox3DComponentUVE& hitboxLive =
-        entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker);
+    Scene::Hitbox3DComponent& hitboxLive =
+        entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker);
     hitboxLive.enabled = false;
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker).strikeCount, 0U);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker).strikeCount, 0U);
 
     // Re-enabled: the strike returns. A hurtbox on the attacker's OWN entity must not add a
     // second (self) strike - the victim stays the only recorded hit.
     hitboxLive.enabled = true;
-    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
-        attacker, Scene::Hurtbox3DComponentUVE{});
-    engine.TickFrameUVE();
+    entityManager.AddComponent<Scene::Hurtbox3DComponent>(
+        attacker, Scene::Hurtbox3DComponent{});
+    engine.TickFrame();
     {
-        const Scene::Hitbox3DComponentUVE& afterStrike =
-            entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker);
+        const Scene::Hitbox3DComponent& afterStrike =
+            entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker);
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
     }
@@ -3008,55 +3008,55 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikesOverlappingHurtboxAndClearsWhenGat
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndWhenGated) {
+TEST(EngineCoreTest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndWhenGated) {
     // The component pair above proves the state - "this hitbox is touching this hurtbox right now".
     // What a gameplay system can actually act on is the edge: this strike started, this strike
     // ended. The engine owns the diff and queues one typed event per edge, so damage-on-Entered
     // fires once per hit instead of once per frame, and an exit is reported even when the reason is
     // a gate rather than the boxes moving apart.
     //
-    // Queued events surface one TickFrameUVE() later, the same contract
+    // Queued events surface one TickFrame() later, the same contract
     // AreaOverlapLifecycle_QueuesEnteredAndExitedEvents locks: QueueEvent()'d events are not
-    // drained until the next frame's DispatchQueuedUVE(). Every observation below therefore
+    // drained until the next frame's DispatchQueued(). Every observation below therefore
     // happens on the tick AFTER the one that caused it - which is the contract, not a quirk.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE blade = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, blade, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(
-        blade, Scene::Hitbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    const Scene::Entity blade = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, blade, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::Hitbox3DComponent>(
+        blade, Scene::Hitbox3DComponent{Math::Vector3{1.0F, 1.0F, 1.0F}});
 
     // 1.5 m apart, so the two 1 m half-extent boxes overlap by exactly 0.5 m along X and the
     // minimum-translation axis is unambiguous - coincident boxes tie on all three axes and their
     // minimum translation is the full 2 m, which is a much weaker thing to assert.
-    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE victimTransform;
-    victimTransform.localPosition = Math::Vector3UVE{1.5F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
-    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(
-        victim, Scene::Hurtbox3DComponentUVE{Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    const Scene::Entity victim = entityManager.CreateEntity();
+    Scene::TransformComponent victimTransform;
+    victimTransform.localPosition = Math::Vector3{1.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, victim, victimTransform);
+    entityManager.AddComponent<Scene::Hurtbox3DComponent>(
+        victim, Scene::Hurtbox3DComponent{Math::Vector3{1.0F, 1.0F, 1.0F}});
 
-    std::vector<Physics::Hitbox3DStrikeEnteredEventUVE> entered;
-    std::vector<Physics::Hitbox3DStrikeExitedEventUVE> exited;
-    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeEnteredEventUVE>(
-        [&entered](const Physics::Hitbox3DStrikeEnteredEventUVE& event) { entered.push_back(event); });
-    services.GetEventSystemUVE().Subscribe<Physics::Hitbox3DStrikeExitedEventUVE>(
-        [&exited](const Physics::Hitbox3DStrikeExitedEventUVE& event) { exited.push_back(event); });
+    std::vector<Physics::Hitbox3DStrikeEnteredEvent> entered;
+    std::vector<Physics::Hitbox3DStrikeExitedEvent> exited;
+    services.GetEventSystem().Subscribe<Physics::Hitbox3DStrikeEnteredEvent>(
+        [&entered](const Physics::Hitbox3DStrikeEnteredEvent& event) { entered.push_back(event); });
+    services.GetEventSystem().Subscribe<Physics::Hitbox3DStrikeExitedEvent>(
+        [&exited](const Physics::Hitbox3DStrikeExitedEvent& event) { exited.push_back(event); });
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     // The pairing is real on this tick and the edge is queued - but not delivered yet.
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(blade).strikeCount, 1U);
     EXPECT_TRUE(entered.empty());
     EXPECT_TRUE(exited.empty());
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     ASSERT_EQ(entered.size(), 1U) << "a 1 m box and a 1 m box 1.5 m apart overlap by 0.5 m";
     EXPECT_EQ(entered[0].strike.hitbox, blade);
     EXPECT_EQ(entered[0].strike.hurtbox, victim);
@@ -3066,17 +3066,17 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
     EXPECT_TRUE(exited.empty());
 
     // Still overlapping on the next tick: same pair, no second edge, and nothing to deliver.
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_EQ(entered.size(), 1U);
     EXPECT_TRUE(exited.empty());
 
     // The hurtbox is switched off without moving: the strike ends because the gate closed, and the
     // exit is queued on that tick while the volumes still overlap geometrically.
-    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = false;
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 0U);
+    entityManager.GetComponent<Scene::Hurtbox3DComponent>(victim).enabled = false;
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(blade).strikeCount, 0U);
     EXPECT_TRUE(exited.empty());
-    engine.TickFrameUVE();
+    engine.TickFrame();
     ASSERT_EQ(exited.size(), 1U);
     EXPECT_EQ(exited[0].strike.hitbox, blade);
     EXPECT_EQ(exited[0].strike.hurtbox, victim);
@@ -3084,116 +3084,116 @@ TEST(EngineCoreUVETest, Hitbox3DObject_StrikeEdgesReachTheEventSystemOnceAndEndW
 
     // Switched back on while still overlapping: a fresh strike with a fresh edge, because the
     // previous one was ended by the gate rather than paused by it.
-    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(victim).enabled = true;
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(blade).strikeCount, 1U);
-    engine.TickFrameUVE();
+    entityManager.GetComponent<Scene::Hurtbox3DComponent>(victim).enabled = true;
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(blade).strikeCount, 1U);
+    engine.TickFrame();
     EXPECT_EQ(entered.size(), 2U);
     EXPECT_EQ(exited.size(), 1U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, InteractionArea3DObject_TracksInteractorsFocusesTheNearestAndClearsWhenGated) {
-    // EngineCoreUVE::SyncInteractionArea3DObjectsUVE() is new wiring: previously
-    // InteractionArea3DComponentUVE was pure authored data with nothing evaluating it - a
+TEST(EngineCoreTest, InteractionArea3DObject_TracksInteractorsFocusesTheNearestAndClearsWhenGated) {
+    // EngineCore::SyncInteractionArea3DObjects() is new wiring: previously
+    // InteractionArea3DComponent was pure authored data with nothing evaluating it - a
     // game had to hand-roll the whole "what can I interact with" loop. This proves the real
     // per-frame behaviour: the character-controller player populates overlapping areas'
     // interactor lists, exactly one area - the nearest - earns focusedByPrimaryInteractor,
     // the bounded list reports its own overflow, and every gate clears stale state instead of
     // keeping the previous frame's answers.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // The player: a character controller with the default box collider (0.5 half extents) at the
     // origin. Area A is one step away; area B starts out of range.
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(player, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+    const Scene::Entity player = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, player, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ColliderComponent>(player, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(player);
 
-    const Scene::EntityUVE areaA = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transformA;
-    transformA.localPosition = Math::Vector3UVE{0.4F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, areaA, transformA);
-    entityManager.AddComponentUVE<Scene::InteractionArea3DComponentUVE>(
-        areaA, Scene::InteractionArea3DComponentUVE{});
+    const Scene::Entity areaA = entityManager.CreateEntity();
+    Scene::TransformComponent transformA;
+    transformA.localPosition = Math::Vector3{0.4F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, areaA, transformA);
+    entityManager.AddComponent<Scene::InteractionArea3DComponent>(
+        areaA, Scene::InteractionArea3DComponent{});
 
-    const Scene::EntityUVE areaB = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transformB;
-    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, areaB, transformB);
-    entityManager.AddComponentUVE<Scene::InteractionArea3DComponentUVE>(
-        areaB, Scene::InteractionArea3DComponentUVE{});
+    const Scene::Entity areaB = entityManager.CreateEntity();
+    Scene::TransformComponent transformB;
+    transformB.localPosition = Math::Vector3{30.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, areaB, transformB);
+    entityManager.AddComponent<Scene::InteractionArea3DComponent>(
+        areaB, Scene::InteractionArea3DComponent{});
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::InteractionArea3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA);
+        const Scene::InteractionArea3DComponent& live =
+            entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA);
         ASSERT_EQ(live.interactorCount, 1U);
         EXPECT_EQ(live.interactors[0U], player);
         EXPECT_FALSE(live.interactorsTruncated);
         EXPECT_TRUE(live.focusedByPrimaryInteractor);
     }
     {
-        const Scene::InteractionArea3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB);
+        const Scene::InteractionArea3DComponent& live =
+            entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB);
         EXPECT_EQ(live.interactorCount, 0U);
         EXPECT_FALSE(live.focusedByPrimaryInteractor);
     }
 
     // Pull B barely into range (its center lands farther than A's): both list the player, but
     // only the NEAREST one keeps the focus.
-    transformB.localPosition = Math::Vector3UVE{0.45F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB)
+    transformB.localPosition = Math::Vector3{0.45F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, areaB, transformB);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB)
                   .interactorCount,
               1U);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA)
+    EXPECT_TRUE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA)
                     .focusedByPrimaryInteractor);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB)
+    EXPECT_FALSE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB)
                      .focusedByPrimaryInteractor);
 
     // B ends up the nearer of the two: the focus must MOVE to it, not stick to first-come.
-    transformB.localPosition = Math::Vector3UVE{0.1F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
-    engine.TickFrameUVE();
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA)
+    transformB.localPosition = Math::Vector3{0.1F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, areaB, transformB);
+    engine.TickFrame();
+    EXPECT_FALSE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA)
                      .focusedByPrimaryInteractor);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB)
+    EXPECT_TRUE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB)
                     .focusedByPrimaryInteractor);
 
     // Disabling B hands the focus back to A - nothing stale may survive the gate.
-    entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB).enabled = false;
-    engine.TickFrameUVE();
+    entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB).enabled = false;
+    engine.TickFrame();
     {
-        const Scene::InteractionArea3DComponentUVE& liveB =
-            entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB);
+        const Scene::InteractionArea3DComponent& liveB =
+            entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB);
         EXPECT_EQ(liveB.interactorCount, 0U);
         EXPECT_FALSE(liveB.focusedByPrimaryInteractor);
     }
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA)
+    EXPECT_TRUE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA)
                     .focusedByPrimaryInteractor);
 
     // The player's collider mask stops accepting either side: participation ends, and with no
     // interactor left the focus goes away entirely - fail-closed, not last-known.
-    entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB).enabled = true;
-    Scene::ColliderComponentUVE& playerCollider =
-        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(player);
+    entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB).enabled = true;
+    Scene::ColliderComponent& playerCollider =
+        entityManager.GetComponent<Scene::ColliderComponent>(player);
     playerCollider.collisionMask = 0U;
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA)
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA)
                   .interactorCount,
               0U);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA)
+    EXPECT_FALSE(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA)
                      .focusedByPrimaryInteractor);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaB)
+    EXPECT_EQ(entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaB)
                   .interactorCount,
               0U);
 
@@ -3202,20 +3202,20 @@ TEST(EngineCoreUVETest, InteractionArea3DObject_TracksInteractorsFocusesTheNeare
     // REPORTS its overflow instead of silently dropping the extra interactor or overwriting past
     // the cap.
     playerCollider.collisionMask = 0xFFFFFFFFU;
-    transformB.localPosition = Math::Vector3UVE{30.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, areaB, transformB);
-    Scene::InteractionArea3DComponentUVE& liveA =
-        entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA);
+    transformB.localPosition = Math::Vector3{30.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, areaB, transformB);
+    Scene::InteractionArea3DComponent& liveA =
+        entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA);
     liveA.maximumCandidates = 1U;
-    const Scene::EntityUVE secondPlayer = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, secondPlayer, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        secondPlayer, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(secondPlayer);
-    engine.TickFrameUVE();
+    const Scene::Entity secondPlayer = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, secondPlayer, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        secondPlayer, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(secondPlayer);
+    engine.TickFrame();
     {
-        const Scene::InteractionArea3DComponentUVE& afterFill =
-            entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA);
+        const Scene::InteractionArea3DComponent& afterFill =
+            entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA);
         EXPECT_EQ(afterFill.interactorCount, 1U);
         EXPECT_TRUE(afterFill.interactorsTruncated);
         // The primary interactor is the first content-ordered controller, and the focus verdict
@@ -3225,13 +3225,13 @@ TEST(EngineCoreUVETest, InteractionArea3DObject_TracksInteractorsFocusesTheNeare
     }
 
     // A controller WITHOUT a collider has no overlap volume and must never appear.
-    const Scene::EntityUVE colliderless = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, colliderless, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(colliderless);
-    engine.TickFrameUVE();
+    const Scene::Entity colliderless = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, colliderless, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(colliderless);
+    engine.TickFrame();
     {
-        const Scene::InteractionArea3DComponentUVE& afterFill =
-            entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(areaA);
+        const Scene::InteractionArea3DComponent& afterFill =
+            entityManager.GetComponent<Scene::InteractionArea3DComponent>(areaA);
         EXPECT_EQ(afterFill.interactorCount, 1U);
         for (std::size_t index = 0; index < afterFill.interactorCount; ++index) {
             EXPECT_NE(afterFill.interactors[index], colliderless);
@@ -3241,51 +3241,51 @@ TEST(EngineCoreUVETest, InteractionArea3DObject_TracksInteractorsFocusesTheNeare
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Hitbox3DObject_HurtboxRotationIsHonoredByExactObbOverlap) {
+TEST(EngineCoreTest, Hitbox3DObject_HurtboxRotationIsHonoredByExactObbOverlap) {
     // The strike test must be an exact ORIENTED-box test, not a conservative axis-aligned one.
     // Both boxes are long thin rods along X; the hurtbox sits 2 units to the side. Unrotated it
     // clearly overlaps (x in [0.5, 3.5] vs the hitbox's [-1.5, 1.5]); rotated 90 degrees about Z
     // its long axis becomes vertical (x only in [1.9, 2.1]) and it must NOT strike. A pairing
     // that ignored rotation would fail this test in the always-overlapping direction.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE attacker = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, attacker, Scene::TransformComponentUVE{});
-    Scene::Hitbox3DComponentUVE hitbox;
-    hitbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
-    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(attacker, hitbox);
+    const Scene::Entity attacker = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, attacker, Scene::TransformComponent{});
+    Scene::Hitbox3DComponent hitbox;
+    hitbox.halfExtents = Math::Vector3{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponent<Scene::Hitbox3DComponent>(attacker, hitbox);
 
-    const Scene::EntityUVE victim = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE victimTransform;
-    victimTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F};
+    const Scene::Entity victim = entityManager.CreateEntity();
+    Scene::TransformComponent victimTransform;
+    victimTransform.localPosition = Math::Vector3{2.0F, 0.0F, 0.0F};
     victimTransform.localRotation =
-        Math::QuaternionUVE{0.0F, 0.0F, 0.70710678F, 0.70710678F}; // 90 degrees about +Z
-    sceneGraph.AttachTransformUVE(entityManager, victim, victimTransform);
-    Scene::Hurtbox3DComponentUVE hurtbox;
-    hurtbox.halfExtents = Math::Vector3UVE{1.5F, 0.1F, 0.1F};
-    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(victim, hurtbox);
+        Math::Quaternion{0.0F, 0.0F, 0.70710678F, 0.70710678F}; // 90 degrees about +Z
+    sceneGraph.AttachTransform(entityManager, victim, victimTransform);
+    Scene::Hurtbox3DComponent hurtbox;
+    hurtbox.halfExtents = Math::Vector3{1.5F, 0.1F, 0.1F};
+    entityManager.AddComponent<Scene::Hurtbox3DComponent>(victim, hurtbox);
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker).strikeCount, 0U);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker).strikeCount, 0U);
 
     // Removing the rotation turns the hurtbox back along X: it must strike. The recorded depth
     // is the minimum-translation-axis penetration, i.e. the thinnest separating direction - for
     // two horizontal rods stacked in Y that is the Y axis (0.1 + 0.1 extents, fully overlapped),
     // not the 1.0-unit X overlap.
-    Scene::TransformComponentUVE victimLive =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(victim);
-    victimLive.localRotation = Math::QuaternionUVE{};
-    sceneGraph.SetLocalTransformUVE(entityManager, victim, victimLive);
-    engine.TickFrameUVE();
+    Scene::TransformComponent victimLive =
+        entityManager.GetComponent<Scene::TransformComponent>(victim);
+    victimLive.localRotation = Math::Quaternion{};
+    sceneGraph.SetLocalTransform(entityManager, victim, victimLive);
+    engine.TickFrame();
     {
-        const Scene::Hitbox3DComponentUVE& afterStrike =
-            entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(attacker);
+        const Scene::Hitbox3DComponent& afterStrike =
+            entityManager.GetComponent<Scene::Hitbox3DComponent>(attacker);
         ASSERT_EQ(afterStrike.strikeCount, 1U);
         EXPECT_EQ(afterStrike.strikes[0U].hurtboxEntity, victim);
         EXPECT_NEAR(afterStrike.strikes[0U].penetrationDepth, 0.2F, 0.01F);
@@ -3294,51 +3294,51 @@ TEST(EngineCoreUVETest, Hitbox3DObject_HurtboxRotationIsHonoredByExactObbOverlap
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Projectile3DObject_StopsOnAWallAndQueuesTheHitAsATypedEvent) {
+TEST(EngineCoreTest, Projectile3DObject_StopsOnAWallAndQueuesTheHitAsATypedEvent) {
     // The engine's half of the hit decision, end to end: the swept sphere finds the wall, the
     // authored Stop policy halts the projectile at the contact, and the contact is delivered as a
     // typed event the gameplay side can subscribe to - nothing here decides what a hit *means*.
-    EngineConfigUVE config = MakeTestConfigUVE();
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
     // The wall's near face is at x = 0.5, so a 0.1m sphere touches it when its centre reaches
     // x = 0.4. The projectile starts 5mm short of that, so the first fixed step is the step that
     // resolves the contact.
-    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE wallTransform;
-    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+    const Scene::Entity wall = entityManager.CreateEntity();
+    Scene::TransformComponent wallTransform;
+    wallTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, wall, wallTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        wall, Scene::ColliderComponent{Math::Vector3{0.5F, 0.5F, 0.5F}});
 
-    const Scene::EntityUVE bullet = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE bulletTransform;
-    bulletTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, bullet, bulletTransform);
-    Scene::Projectile3DComponentUVE projectile;
-    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    const Scene::Entity bullet = entityManager.CreateEntity();
+    Scene::TransformComponent bulletTransform;
+    bulletTransform.localPosition = Math::Vector3{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, bullet, bulletTransform);
+    Scene::Projectile3DComponent projectile;
+    projectile.velocity = Math::Vector3{6.0F, 0.0F, 0.0F};
     projectile.radius = 0.1F;
-    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(bullet, projectile);
-    sceneGraph.UpdateUVE(entityManager);
+    entityManager.AddComponent<Scene::Projectile3DComponent>(bullet, projectile);
+    sceneGraph.Update(entityManager);
 
-    std::vector<Physics::Projectile3DHitEventUVE> hits;
-    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
-        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+    std::vector<Physics::Projectile3DHitEvent> hits;
+    services.GetEventSystem().Subscribe<Physics::Projectile3DHitEvent>(
+        [&hits](const Physics::Projectile3DHitEvent& event) { hits.push_back(event); });
 
     for (int frame = 0; frame < 4; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(3));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::Projectile3DComponentUVE& after =
-        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(bullet);
+    const Scene::Projectile3DComponent& after =
+        entityManager.GetComponent<Scene::Projectile3DComponent>(bullet);
     EXPECT_FALSE(after.active);
     EXPECT_NEAR(after.velocity.x, 0.0F, 1.0e-4F);
     EXPECT_TRUE(after.hit);
@@ -3349,102 +3349,102 @@ TEST(EngineCoreUVETest, Projectile3DObject_StopsOnAWallAndQueuesTheHitAsATypedEv
     ASSERT_FALSE(hits.empty()) << "the contact has to reach gameplay as an event, not only as state";
     EXPECT_EQ(hits.front().projectile, bullet);
     EXPECT_EQ(hits.front().hitEntity, wall);
-    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Stop);
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicy::Stop);
     EXPECT_TRUE(hits.front().stopped);
     EXPECT_NEAR(hits.front().impactSpeed, 6.0F, 1.0e-2F);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Projectile3DObject_BouncesOffAWallAndReportsThatItSurvivedTheHit) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, Projectile3DObject_BouncesOffAWallAndReportsThatItSurvivedTheHit) {
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    auto& services = engine.GetServicesUVE();
-    auto& entityManager = services.GetEntityManagerUVE();
-    auto& sceneGraph = services.GetSceneGraphUVE();
+    auto& services = engine.GetServices();
+    auto& entityManager = services.GetEntityManager();
+    auto& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE wall = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE wallTransform;
-    wallTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, wall, wallTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        wall, Scene::ColliderComponentUVE{Math::Vector3UVE{0.5F, 0.5F, 0.5F}});
+    const Scene::Entity wall = entityManager.CreateEntity();
+    Scene::TransformComponent wallTransform;
+    wallTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, wall, wallTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        wall, Scene::ColliderComponent{Math::Vector3{0.5F, 0.5F, 0.5F}});
 
-    const Scene::EntityUVE ball = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE ballTransform;
-    ballTransform.localPosition = Math::Vector3UVE{0.395F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, ball, ballTransform);
-    Scene::Projectile3DComponentUVE projectile;
-    projectile.velocity = Math::Vector3UVE{6.0F, 0.0F, 0.0F};
+    const Scene::Entity ball = entityManager.CreateEntity();
+    Scene::TransformComponent ballTransform;
+    ballTransform.localPosition = Math::Vector3{0.395F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, ball, ballTransform);
+    Scene::Projectile3DComponent projectile;
+    projectile.velocity = Math::Vector3{6.0F, 0.0F, 0.0F};
     projectile.radius = 0.1F;
-    projectile.hitPolicy = Scene::Projectile3DHitPolicyUVE::Bounce;
+    projectile.hitPolicy = Scene::Projectile3DHitPolicy::Bounce;
     projectile.restitution = 1.0F;
     projectile.friction = 0.0F;
-    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(ball, projectile);
-    sceneGraph.UpdateUVE(entityManager);
+    entityManager.AddComponent<Scene::Projectile3DComponent>(ball, projectile);
+    sceneGraph.Update(entityManager);
 
-    std::vector<Physics::Projectile3DHitEventUVE> hits;
-    services.GetEventSystemUVE().Subscribe<Physics::Projectile3DHitEventUVE>(
-        [&hits](const Physics::Projectile3DHitEventUVE& event) { hits.push_back(event); });
+    std::vector<Physics::Projectile3DHitEvent> hits;
+    services.GetEventSystem().Subscribe<Physics::Projectile3DHitEvent>(
+        [&hits](const Physics::Projectile3DHitEvent& event) { hits.push_back(event); });
 
     for (int frame = 0; frame < 4; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(3));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::Projectile3DComponentUVE& after =
-        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(ball);
+    const Scene::Projectile3DComponent& after =
+        entityManager.GetComponent<Scene::Projectile3DComponent>(ball);
     EXPECT_TRUE(after.active) << "a bounce keeps flying";
     EXPECT_EQ(after.bounceCount, 1U);
     EXPECT_NEAR(after.velocity.x, -6.0F, 1.0e-2F);
-    EXPECT_LT(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(ball).localPosition.x, 0.4F);
+    EXPECT_LT(entityManager.GetComponent<Scene::TransformComponent>(ball).localPosition.x, 0.4F);
 
     ASSERT_FALSE(hits.empty());
-    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicyUVE::Bounce);
+    EXPECT_EQ(hits.front().policy, Scene::Projectile3DHitPolicy::Bounce);
     EXPECT_FALSE(hits.front().stopped);
     EXPECT_EQ(hits.front().bounceCount, 1U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, Projectile3DObject_IntegratesVelocityAccelerationAndExpiresAfterLifetime) {
-    // EngineCoreUVE::SyncProjectile3DObjectsUVE() is new wiring: previously
-    // Projectile3DComponentUVE was pure authored data with nothing moving it or expiring it.
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, Projectile3DObject_IntegratesVelocityAccelerationAndExpiresAfterLifetime) {
+    // EngineCore::SyncProjectile3DObjects() is new wiring: previously
+    // Projectile3DComponent was pure authored data with nothing moving it or expiring it.
+    EngineConfig config = MakeTestConfig();
     config.fixedUpdateFps = 1000.0;
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
-    Scene::Projectile3DComponentUVE projectile;
-    projectile.velocity = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    projectile.acceleration = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    const Scene::Entity entity = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, entity, Scene::TransformComponent{});
+    Scene::Projectile3DComponent projectile;
+    projectile.velocity = Math::Vector3{0.0F, 1.0F, 0.0F};
+    projectile.acceleration = Math::Vector3{0.0F, -1.0F, 0.0F};
     projectile.maxLifetime = 0.05F;
     projectile.remainingLifetime = 0.05F;
-    entityManager.AddComponentUVE<Scene::Projectile3DComponentUVE>(entity, projectile);
+    entityManager.AddComponent<Scene::Projectile3DComponent>(entity, projectile);
 
     // A few fixed steps at 1kHz (~6ms of simulated time) - enough to move and to have accumulated
     // some deceleration from `acceleration`, nowhere near the 50ms lifetime yet.
     for (int frame = 0; frame < 3; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
     {
-        const Scene::TransformComponentUVE& transform =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        const Scene::TransformComponent& transform =
+            entityManager.GetComponent<Scene::TransformComponent>(entity);
         EXPECT_GT(transform.localPosition.y, 0.0F);
-        const Scene::Projectile3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(entity);
+        const Scene::Projectile3DComponent& live =
+            entityManager.GetComponent<Scene::Projectile3DComponent>(entity);
         EXPECT_LT(live.velocity.y, 1.0F);
         EXPECT_TRUE(live.active);
     }
@@ -3453,43 +3453,43 @@ TEST(EngineCoreUVETest, Projectile3DObject_IntegratesVelocityAccelerationAndExpi
     // of scheduling jitter.
     for (int frame = 0; frame < 100; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    const Scene::Projectile3DComponentUVE& afterExpiry =
-        entityManager.GetComponentUVE<Scene::Projectile3DComponentUVE>(entity);
+    const Scene::Projectile3DComponent& afterExpiry =
+        entityManager.GetComponent<Scene::Projectile3DComponent>(entity);
     EXPECT_FALSE(afterExpiry.active);
     EXPECT_FLOAT_EQ(afterExpiry.remainingLifetime, 0.0F);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, SaveGameSystemAndCheckpointManager_ReachableAndFunctionalAfterInit) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, SaveGameSystemAndCheckpointManager_ReachableAndFunctionalAfterInit) {
+    EngineConfig config = MakeTestConfig();
     config.saveDirectoryPath = "uve_engine_core_tests_saves";
     std::filesystem::remove_all(config.saveDirectoryPath);
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Save::ISaveGameSystemUVE& saveGameSystem = engine.GetServicesUVE().GetSaveGameSystemUVE();
-    Save::ICheckpointManagerUVE& checkpointManager = engine.GetServicesUVE().GetCheckpointManagerUVE();
+    Save::ISaveGameSystem& saveGameSystem = engine.GetServices().GetSaveGameSystem();
+    Save::ICheckpointManager& checkpointManager = engine.GetServices().GetCheckpointManager();
 
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    ASSERT_TRUE(saveGameSystem.SaveUVE(0, entityManager, {entity}, Save::GameStateMetadataUVE{}));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(0));
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    const Scene::Entity entity = entityManager.CreateEntity();
+    ASSERT_TRUE(saveGameSystem.Save(0, entityManager, {entity}, Save::GameStateMetadata{}));
+    EXPECT_TRUE(saveGameSystem.HasSave(0));
 
-    EXPECT_TRUE(checkpointManager.CheckpointUVE(entityManager, {entity}));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(Save::kManualCheckpointSlotIndexUVE));
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(Save::kAutoSaveSlotIndexUVE));
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(0));
+    EXPECT_TRUE(checkpointManager.Checkpoint(entityManager, {entity}));
+    EXPECT_TRUE(saveGameSystem.HasSave(Save::kManualCheckpointSlotIndex));
+    EXPECT_FALSE(saveGameSystem.HasSave(Save::kAutoSaveSlotIndex));
+    EXPECT_TRUE(saveGameSystem.HasSave(0));
 
-    const std::optional<Save::GameStateMetadataUVE> checkpointMetadata =
-        saveGameSystem.GetSaveMetadataUVE(Save::kManualCheckpointSlotIndexUVE);
+    const std::optional<Save::GameStateMetadata> checkpointMetadata =
+        saveGameSystem.GetSaveMetadata(Save::kManualCheckpointSlotIndex);
     ASSERT_TRUE(checkpointMetadata.has_value());
-    const VersionUVE engineVersion = engine.GetEngineVersionUVE();
+    const Version engineVersion = engine.GetEngineVersion();
     EXPECT_EQ(checkpointMetadata->engineVersionMajor, engineVersion.major);
     EXPECT_EQ(checkpointMetadata->engineVersionMinor, engineVersion.minor);
     EXPECT_EQ(checkpointMetadata->engineVersionPatch, engineVersion.patch);
@@ -3499,95 +3499,95 @@ TEST(EngineCoreUVETest, SaveGameSystemAndCheckpointManager_ReachableAndFunctiona
     std::filesystem::remove_all(config.saveDirectoryPath);
 }
 
-TEST(EngineCoreUVETest, CheckpointManager_AutoSavesAfterConfiguredInterval_TickFrameUVEDriven) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, CheckpointManager_AutoSavesAfterConfiguredInterval_TickFrameDriven) {
+    EngineConfig config = MakeTestConfig();
     config.saveDirectoryPath = "uve_engine_core_tests_autosave_saves";
-    config.autoSaveIntervalSecondsUVE = std::numeric_limits<double>::min(); // smallest positive interval
+    config.autoSaveIntervalSeconds = std::numeric_limits<double>::min(); // smallest positive interval
     std::filesystem::remove_all(config.saveDirectoryPath);
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Save::ISaveGameSystemUVE& saveGameSystem = engine.GetServicesUVE().GetSaveGameSystemUVE();
+    Save::ISaveGameSystem& saveGameSystem = engine.GetServices().GetSaveGameSystem();
 
     for (int frame = 0; frame < 3; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(Save::kAutoSaveSlotIndexUVE));
-    EXPECT_TRUE(saveGameSystem.ListUsedSlotsUVE().empty());
+    EXPECT_TRUE(saveGameSystem.HasSave(Save::kAutoSaveSlotIndex));
+    EXPECT_TRUE(saveGameSystem.ListUsedSlots().empty());
 
     engine.Shutdown();
     std::filesystem::remove_all(config.saveDirectoryPath);
 }
 
-TEST(EngineCoreUVETest, SimulationControl_PausesStepsQueuesOneStepAndSuppressesTransientCheckpoints) {
-    EngineConfigUVE config = MakeTestConfigUVE();
+TEST(EngineCoreTest, SimulationControl_PausesStepsQueuesOneStepAndSuppressesTransientCheckpoints) {
+    EngineConfig config = MakeTestConfig();
     config.saveDirectoryPath = "uve_engine_core_tests_transient_saves";
-    config.autoSaveIntervalSecondsUVE = std::numeric_limits<double>::min(); // smallest positive interval
+    config.autoSaveIntervalSeconds = std::numeric_limits<double>::min(); // smallest positive interval
     std::filesystem::remove_all(config.saveDirectoryPath);
 
-    EngineCoreUVE engine(config);
-    EXPECT_FALSE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
+    EngineCore engine(config);
+    EXPECT_FALSE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Paused));
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Save::ISaveGameSystemUVE& saveGameSystem = engine.GetServicesUVE().GetSaveGameSystemUVE();
-    Save::ICheckpointManagerUVE& checkpointManager = engine.GetServicesUVE().GetCheckpointManagerUVE();
-    ASSERT_TRUE(engine.SetTransientSimulationSessionActiveUVE(true));
-    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Paused));
-    EXPECT_TRUE(engine.RequestSingleSimulationStepUVE());
-    EXPECT_FALSE(engine.RequestSingleSimulationStepUVE());
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), SimulationExecutionModeUVE::Paused);
-    EXPECT_FALSE(saveGameSystem.HasSaveUVE(Save::kAutoSaveSlotIndexUVE));
-    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSecondsUVE(), 0.0);
-    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSecondsUVE(), 0.0);
+    Save::ISaveGameSystem& saveGameSystem = engine.GetServices().GetSaveGameSystem();
+    Save::ICheckpointManager& checkpointManager = engine.GetServices().GetCheckpointManager();
+    ASSERT_TRUE(engine.SetTransientSimulationSessionActive(true));
+    ASSERT_TRUE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Paused));
+    EXPECT_TRUE(engine.RequestSingleSimulationStep());
+    EXPECT_FALSE(engine.RequestSingleSimulationStep());
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetSimulationExecutionMode(), SimulationExecutionMode::Paused);
+    EXPECT_FALSE(saveGameSystem.HasSave(Save::kAutoSaveSlotIndex));
+    EXPECT_DOUBLE_EQ(checkpointManager.GetElapsedSinceLastSaveSeconds(), 0.0);
+    EXPECT_DOUBLE_EQ(checkpointManager.GetTotalPlaytimeSeconds(), 0.0);
 
-    ASSERT_TRUE(engine.SetSimulationExecutionModeUVE(SimulationExecutionModeUVE::Running));
-    ASSERT_TRUE(engine.SetTransientSimulationSessionActiveUVE(false));
+    ASSERT_TRUE(engine.SetSimulationExecutionMode(SimulationExecutionMode::Running));
+    ASSERT_TRUE(engine.SetTransientSimulationSessionActive(false));
     // A positive interval must observe a nonzero timer delta; allow the same three-frame cadence
     // used by the neighboring autosave integration test after the paused frame.
     for (int frame = 0; frame < 3; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    EXPECT_TRUE(saveGameSystem.HasSaveUVE(Save::kAutoSaveSlotIndexUVE));
+    EXPECT_TRUE(saveGameSystem.HasSave(Save::kAutoSaveSlotIndex));
 
     engine.Shutdown();
     std::filesystem::remove_all(config.saveDirectoryPath);
 }
 
-TEST(EngineCoreUVETest, HeadlessCommandLineFlag_ForcesHeadlessAndUsesNullWindowManager) {
-    // headlessUVE starts false here specifically to prove the hidden `headless` descriptor maps
+TEST(EngineCoreTest, HeadlessCommandLineFlag_ForcesHeadlessAndUsesNullWindowManager) {
+    // headless starts false here specifically to prove the hidden `headless` descriptor maps
     // the presence-only --headless flag through the highest-priority command-line settings layer.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.commandLineArgs = {"--headless"};
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    EXPECT_EQ(engine.GetServicesUVE().GetWindowManagerUVE().GetBackendNameUVE(), "Null");
+    EXPECT_EQ(engine.GetServices().GetWindowManager().GetBackendName(), "Null");
 
     for (int frame = 0; frame < 3; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    EXPECT_EQ(engine.GetFrameStatsUVE().frameNumber, 3U);
+    EXPECT_EQ(engine.GetFrameStats().frameNumber, 3U);
 
     engine.Shutdown();
 }
 
 // Needs a real (possibly virtual, e.g. Xvfb) X display and GL context. Skips cleanly with a clear
 // message when unavailable, so the same uve_tests binary runs cleanly with or without a display -
-// same GTEST_SKIP() pattern as WindowManagerUVETest/GlRenderDeviceUVETest.
-TEST(EngineCoreUVETest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+// same GTEST_SKIP() pattern as WindowManagerTest/GlRenderDeviceTest.
+TEST(EngineCoreTest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 64;
     config.windowHeight = 64;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     // This sandbox's Mesa/llvmpipe GLX stack caps at OpenGL 4.5 Core (confirmed by direct
     // testing - 4.6 fails with GLXBadFBConfig); see the identical override + rationale in
     // tests/window/window_manager_uve_tests.cpp. The shipped production default (4, 6) is
@@ -3595,46 +3595,46 @@ TEST(EngineCoreUVETest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene
     config.windowGlVersionMajor = 4;
     config.windowGlVersionMinor = 5;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
-    EXPECT_EQ(engine.GetServicesUVE().GetWindowManagerUVE().GetBackendNameUVE(), "GLFW3");
+    EXPECT_EQ(engine.GetServices().GetWindowManager().GetBackendName(), "GLFW3");
 
     // An active identity camera ensures this is an empty *renderer scene* test rather than a
     // no-camera EngineCore no-op test.
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
     std::array<unsigned char, 3> scenePixel{};
     GLenum postRenderGlError = GL_NO_ERROR;
-    engine.SetPostRenderCallbackUVE([&scenePixel, &postRenderGlError] {
+    engine.SetPostRenderCallback([&scenePixel, &postRenderGlError] {
         glFinish();
         glReadBuffer(GL_BACK);
         glReadPixels(32, 32, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, scenePixel.data());
         postRenderGlError = glGetError();
     });
 
-    // A few frames let Renderer3DUVE complete scene, tone-mapping, and presentation work.
+    // A few frames let Renderer3D complete scene, tone-mapping, and presentation work.
     for (int frame = 0; frame < 10; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    engine.SetPostRenderCallbackUVE({});
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Running);
-    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
-        engine.GetServicesUVE().GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
-    EXPECT_EQ(diagnostics.renderTargetWidth, engine.GetServicesUVE().GetWindowManagerUVE().GetWidthUVE());
-    EXPECT_EQ(diagnostics.renderTargetHeight, engine.GetServicesUVE().GetWindowManagerUVE().GetHeightUVE());
+    engine.SetPostRenderCallback({});
+    EXPECT_EQ(engine.GetState(), EngineState::Running);
+    const Render::Renderer3DFrameDiagnostics diagnostics =
+        engine.GetServices().GetRenderer3D().GetLastFrameDiagnostics();
+    EXPECT_EQ(diagnostics.renderTargetWidth, engine.GetServices().GetWindowManager().GetWidth());
+    EXPECT_EQ(diagnostics.renderTargetHeight, engine.GetServices().GetWindowManager().GetHeight());
 
-    // With no document render items, Renderer3DUVE presents its deterministic charcoal
+    // With no document render items, Renderer3D presents its deterministic charcoal
     // tone-mapped environment. This is intentionally not a demo-geometry assertion: visible
     // content enters only through ECS extraction into the renderer.
     EXPECT_EQ(scenePixel[0], 11U);
@@ -3645,69 +3645,69 @@ TEST(EngineCoreUVETest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene
     engine.Shutdown();
 }
 
-// Exercises the actual EngineCore -> Renderer3DUVE -> tone-mapping -> GLFW default-framebuffer
+// Exercises the actual EngineCore -> Renderer3D -> tone-mapping -> GLFW default-framebuffer
 // path. The fixed positions are intentionally far from geometry edges so a future expected-pixel
 // assertion cannot be satisfied by the background alone.
-TEST(EngineCoreUVETest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefaultFramebuffer) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+TEST(EngineCoreTest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefaultFramebuffer) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 128U;
     config.windowHeight = 96U;
     config.renderTargetWidth = 128U;
     config.renderTargetHeight = 96U;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
-    config.ambientColor = Math::Vector3UVE{0.45F, 0.45F, 0.45F};
+    config.ambientColor = Math::Vector3{0.45F, 0.45F, 0.45F};
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    Math::QuaternionUVE planeFacingCamera{};
-    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F},
+    Math::Quaternion planeFacingCamera{};
+    ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{1.0F, 0.0F, 0.0F},
                                           std::numbers::pi_v<float> * 0.5F, planeFacingCamera));
-    const auto makePrimitive = [&entityManager, &sceneGraph](const Math::Vector3UVE position,
-                                                               const Math::QuaternionUVE rotation,
-                                                               const Math::Vector3UVE scale,
-                                                               const Scene::PrimitiveMeshKindUVE kind,
-                                                               const Math::Vector3UVE color) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform{};
+    const auto makePrimitive = [&entityManager, &sceneGraph](const Math::Vector3 position,
+                                                               const Math::Quaternion rotation,
+                                                               const Math::Vector3 scale,
+                                                               const Scene::PrimitiveMeshKind kind,
+                                                               const Math::Vector3 color) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform{};
         transform.localPosition = position;
         transform.localRotation = rotation;
         transform.localScale = scale;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-            entity, Scene::PrimitiveMeshComponentUVE{kind, color});
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Scene::PrimitiveMeshComponent>(
+            entity, Scene::PrimitiveMeshComponent{kind, color});
     };
-    makePrimitive(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, planeFacingCamera, Math::Vector3UVE{6.0F, 6.0F, 1.0F},
-                  Scene::PrimitiveMeshKindUVE::Plane, Math::Vector3UVE{0.10F, 0.72F, 0.20F});
-    makePrimitive(Math::Vector3UVE{-3.5F, 0.0F, -8.0F}, Math::QuaternionUVE{}, Math::Vector3UVE{1.0F, 1.0F, 1.0F},
-                  Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{0.88F, 0.10F, 0.06F});
-    makePrimitive(Math::Vector3UVE{-1.8F, 0.0F, -7.0F}, Math::QuaternionUVE{}, Math::Vector3UVE{1.4F, 1.4F, 1.4F},
-                  Scene::PrimitiveMeshKindUVE::UVSphere, Math::Vector3UVE{0.06F, 0.20F, 0.90F});
-    sceneGraph.UpdateUVE(entityManager);
+    makePrimitive(Math::Vector3{0.0F, 0.0F, -10.0F}, planeFacingCamera, Math::Vector3{6.0F, 6.0F, 1.0F},
+                  Scene::PrimitiveMeshKind::Plane, Math::Vector3{0.10F, 0.72F, 0.20F});
+    makePrimitive(Math::Vector3{-3.5F, 0.0F, -8.0F}, Math::Quaternion{}, Math::Vector3{1.0F, 1.0F, 1.0F},
+                  Scene::PrimitiveMeshKind::Cube, Math::Vector3{0.88F, 0.10F, 0.06F});
+    makePrimitive(Math::Vector3{-1.8F, 0.0F, -7.0F}, Math::Quaternion{}, Math::Vector3{1.4F, 1.4F, 1.4F},
+                  Scene::PrimitiveMeshKind::UVSphere, Math::Vector3{0.06F, 0.20F, 0.90F});
+    sceneGraph.Update(entityManager);
 
     std::array<unsigned char, 3> cube{};
     std::array<unsigned char, 3> plane{};
     std::array<unsigned char, 3> sphere{};
     GLenum postRenderGlError = GL_NO_ERROR;
-    engine.SetPostRenderCallbackUVE([&cube, &plane, &sphere, &postRenderGlError] {
-        // The callback runs after Renderer3DUVE’s default-framebuffer tone-map pass and before
-        // EngineCoreUVE requests SwapBuffersUVE(). GL_BACK is therefore the exact presentation
+    engine.SetPostRenderCallback([&cube, &plane, &sphere, &postRenderGlError] {
+        // The callback runs after Renderer3D’s default-framebuffer tone-map pass and before
+        // EngineCore requests SwapBuffers(). GL_BACK is therefore the exact presentation
         // surface being handed to the window manager, unlike post-swap front/back reads.
         glFinish();
         glReadBuffer(GL_BACK);
@@ -3731,11 +3731,11 @@ TEST(EngineCoreUVETest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefa
         postRenderGlError = glGetError();
     });
     for (int frame = 0; frame < 12; ++frame) {
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
-    engine.SetPostRenderCallbackUVE({});
+    engine.SetPostRenderCallback({});
 
-    const Render::Renderer3DFrameDiagnosticsUVE diagnostics = services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    const Render::Renderer3DFrameDiagnostics diagnostics = services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(diagnostics.primitiveCandidates, 3U);
     EXPECT_EQ(diagnostics.primitiveItemsExtracted, 3U);
     EXPECT_EQ(diagnostics.primitiveDrawCallsRecorded, 3U);
@@ -3756,23 +3756,23 @@ TEST(EngineCoreUVETest, WindowedMode_PresentsDeterministicPrimitiveFixtureToDefa
     engine.Shutdown();
 }
 
-// Phase U3a coverage: proves UIRuntimeUVE's authored screen-space UI (image/button/text) actually
-// reaches real pixels on the default framebuffer through Renderer3DUVE's new "UIOverlay" pass, and
-// that a real mouse click (via IInputSystemUVE's real Set*StateUVE() live-state model, exactly like
-// a real GLFW callback would drive it) flips UIButtonComponentUVE::wasClickedThisFrame and visibly
+// Phase U3a coverage: proves UIRuntime's authored screen-space UI (image/button/text) actually
+// reaches real pixels on the default framebuffer through Renderer3D's new "UIOverlay" pass, and
+// that a real mouse click (via IInputSystem's real Set*State() live-state model, exactly like
+// a real GLFW callback would drive it) flips UIButtonComponent::wasClickedThisFrame and visibly
 // changes the button's rendered color - the exact end-to-end claim Phase U3a's own plan requires.
 // Real (non-headless) GLFW/GL backend under Xvfb, matching every other WindowedMode_*/UI-adjacent
-// test in this file. glReadPixels uses GL's bottom-left-origin convention; UIRuntimeUVE/UIOverlay
-// use top-left-origin, y-down pixel space (matching GetMousePositionUVE()'s own convention), so
+// test in this file. glReadPixels uses GL's bottom-left-origin convention; UIRuntime/UIOverlay
+// use top-left-origin, y-down pixel space (matching GetMousePosition()'s own convention), so
 // sample rows are converted via `windowHeight - uiY`.
-TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersARealButtonClick) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+TEST(EngineCoreTest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersARealButtonClick) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 160U;
     config.windowHeight = 120U;
     config.renderTargetWidth = 160U;
     config.renderTargetHeight = 120U;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
 
@@ -3780,57 +3780,57 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
     // production synchronous policy explicitly: the default async policy may legitimately
     // still be preprocessing UIOverlay when its first Update runs on a loaded CI worker.
     // Keep every pixel and real-input assertion below unchanged.
-    config.shaderCompilationModeUVE = ShaderCompilationModeUVE::SynchronousOnDemandUVE;
+    config.shaderCompilationMode = ShaderCompilationMode::SynchronousOnDemand;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    Input::IInputSystemUVE& inputSystem = services.GetInputSystemUVE();
-    // WindowManagerUVE re-polls the *real* OS cursor/button state every frame (matching real
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    Input::IInputSystem& inputSystem = services.GetInputSystem();
+    // WindowManager re-polls the *real* OS cursor/button state every frame (matching real
     // gameplay use) and would otherwise overwrite this test's directly-injected mouse state on the
-    // very next TickFrameUVE() - detaching it here is what lets IInputSystemUVE's live-state model
-    // (the same Set*StateUVE() calls a real GLFW callback would make) drive input deterministically
+    // very next TickFrame() - detaching it here is what lets IInputSystem's live-state model
+    // (the same Set*State() calls a real GLFW callback would make) drive input deterministically
     // against this still-real GL window/context.
-    services.GetWindowManagerUVE().AttachInputSystemUVE(nullptr);
+    services.GetWindowManager().AttachInputSystem(nullptr);
 
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    const Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(
-        imageEntity, Scene::UIImageComponentUVE{Asset::AssetGuidUVE{},
-                                                 Math::RectUVE{Math::Vector2UVE{10.0F, 10.0F},
-                                                               Math::Vector2UVE{20.0F, 20.0F}},
-                                                 Math::Vector3UVE{0.90F, 0.10F, 0.10F}, 1.0F});
+    const Scene::Entity imageEntity = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::UIImageComponent>(
+        imageEntity, Scene::UIImageComponent{Asset::AssetGuid{},
+                                                 Math::Rect{Math::Vector2{10.0F, 10.0F},
+                                                               Math::Vector2{20.0F, 20.0F}},
+                                                 Math::Vector3{0.90F, 0.10F, 0.10F}, 1.0F});
 
-    const Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
-    Scene::UIButtonComponentUVE buttonComponent{};
-    buttonComponent.rect.position = Math::Vector2UVE{60.0F, 10.0F};
-    buttonComponent.rect.size = Math::Vector2UVE{40.0F, 20.0F};
-    buttonComponent.normalColor = Math::Vector3UVE{0.10F, 0.85F, 0.10F};
-    buttonComponent.hoverColor = Math::Vector3UVE{0.10F, 0.10F, 0.85F};
-    buttonComponent.pressedColor = Math::Vector3UVE{0.85F, 0.85F, 0.10F};
-    entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity, buttonComponent);
+    const Scene::Entity buttonEntity = entityManager.CreateEntity();
+    Scene::UIButtonComponent buttonComponent{};
+    buttonComponent.rect.position = Math::Vector2{60.0F, 10.0F};
+    buttonComponent.rect.size = Math::Vector2{40.0F, 20.0F};
+    buttonComponent.normalColor = Math::Vector3{0.10F, 0.85F, 0.10F};
+    buttonComponent.hoverColor = Math::Vector3{0.10F, 0.10F, 0.85F};
+    buttonComponent.pressedColor = Math::Vector3{0.85F, 0.85F, 0.10F};
+    entityManager.AddComponent<Scene::UIButtonComponent>(buttonEntity, buttonComponent);
 
-    const Scene::EntityUVE textEntity = entityManager.CreateEntityUVE();
-    Scene::UITextComponentUVE textComponent{};
+    const Scene::Entity textEntity = entityManager.CreateEntity();
+    Scene::UITextComponent textComponent{};
     textComponent.text = "Hi";
-    textComponent.positionPixels = Math::Vector2UVE{10.0F, 60.0F};
+    textComponent.positionPixels = Math::Vector2{10.0F, 60.0F};
     textComponent.fontSize = 24.0F;
-    textComponent.color = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-    entityManager.AddComponentUVE<Scene::UITextComponentUVE>(textEntity, textComponent);
+    textComponent.color = Math::Vector3{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponent<Scene::UITextComponent>(textEntity, textComponent);
 
-    const auto sampleTopLeftPixelUVE = [windowHeight = config.windowHeight](float uiX, float uiY) {
+    const auto sampleTopLeftPixel = [windowHeight = config.windowHeight](float uiX, float uiY) {
         std::array<unsigned char, 3> pixel{};
         const int glX = static_cast<int>(uiX);
         const int glY = static_cast<int>(windowHeight) - static_cast<int>(uiY);
@@ -3839,29 +3839,29 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
     };
 
     // Frame 1 (baseline): mouse well away from the button, nothing pressed.
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{0.0F, 0.0F});
+    inputSystem.SetMousePosition(Math::Vector2{0.0F, 0.0F});
     std::array<unsigned char, 3> imagePixel{};
     std::array<unsigned char, 3> buttonPixelBaseline{};
     unsigned char maxTextBrightness = 0U;
-    engine.SetPostRenderCallbackUVE([&] {
+    engine.SetPostRenderCallback([&] {
         glFinish();
         glReadBuffer(GL_BACK);
-        imagePixel = sampleTopLeftPixelUVE(20.0F, 20.0F);
-        buttonPixelBaseline = sampleTopLeftPixelUVE(80.0F, 20.0F);
+        imagePixel = sampleTopLeftPixel(20.0F, 20.0F);
+        buttonPixelBaseline = sampleTopLeftPixel(80.0F, 20.0F);
         for (float sampleX = 8.0F; sampleX <= 40.0F; sampleX += 2.0F) {
             for (float sampleY = 55.0F; sampleY <= 90.0F; sampleY += 2.0F) {
-                const std::array<unsigned char, 3> pixel = sampleTopLeftPixelUVE(sampleX, sampleY);
+                const std::array<unsigned char, 3> pixel = sampleTopLeftPixel(sampleX, sampleY);
                 const unsigned char brightness = static_cast<unsigned char>(
                     (static_cast<int>(pixel[0]) + static_cast<int>(pixel[1]) + static_cast<int>(pixel[2])) / 3);
                 maxTextBrightness = std::max(maxTextBrightness, brightness);
             }
         }
     });
-    engine.TickFrameUVE();
-    engine.SetPostRenderCallbackUVE({});
+    engine.TickFrame();
+    engine.SetPostRenderCallback({});
 
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity).isHovered);
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity).wasClickedThisFrame);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UIButtonComponent>(buttonEntity).isHovered);
+    EXPECT_FALSE(entityManager.GetComponent<Scene::UIButtonComponent>(buttonEntity).wasClickedThisFrame);
     EXPECT_GT(imagePixel[0], static_cast<unsigned char>(imagePixel[1] + 20U))
         << "image RGB=" << static_cast<int>(imagePixel[0]) << ',' << static_cast<int>(imagePixel[1]) << ','
         << static_cast<int>(imagePixel[2]);
@@ -3870,20 +3870,20 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
         << static_cast<int>(buttonPixelBaseline[1]) << ',' << static_cast<int>(buttonPixelBaseline[2]);
     EXPECT_GT(maxTextBrightness, 90U) << "max sampled text-region brightness=" << static_cast<int>(maxTextBrightness);
 
-    // Frame 2: a real mouse move + press over the button - IInputSystemUVE's live-state model is
+    // Frame 2: a real mouse move + press over the button - IInputSystem's live-state model is
     // exactly what a real GLFW cursor/mouse-button callback would drive.
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{80.0F, 20.0F});
-    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, true);
+    inputSystem.SetMousePosition(Math::Vector2{80.0F, 20.0F});
+    inputSystem.SetMouseButtonState(Input::MouseButton::Left, true);
     std::array<unsigned char, 3> buttonPixelPressed{};
-    engine.SetPostRenderCallbackUVE([&] {
+    engine.SetPostRenderCallback([&] {
         glFinish();
         glReadBuffer(GL_BACK);
-        buttonPixelPressed = sampleTopLeftPixelUVE(80.0F, 20.0F);
+        buttonPixelPressed = sampleTopLeftPixel(80.0F, 20.0F);
     });
-    engine.TickFrameUVE();
-    engine.SetPostRenderCallbackUVE({});
+    engine.TickFrame();
+    engine.SetPostRenderCallback({});
 
-    const Scene::UIButtonComponentUVE afterClick = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity);
+    const Scene::UIButtonComponent afterClick = entityManager.GetComponent<Scene::UIButtonComponent>(buttonEntity);
     EXPECT_TRUE(afterClick.isHovered);
     EXPECT_TRUE(afterClick.wasClickedThisFrame) << "a real mouse press over the button did not register";
     EXPECT_GT(buttonPixelPressed[0], static_cast<unsigned char>(buttonPixelPressed[2] + 20U))
@@ -3895,17 +3895,17 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
 
     // Frame 3: release, mouse still hovering - wasClickedThisFrame must not stay latched, and the
     // rendered color must move to the distinct hover color (not normal, not pressed).
-    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, false);
+    inputSystem.SetMouseButtonState(Input::MouseButton::Left, false);
     std::array<unsigned char, 3> buttonPixelHover{};
-    engine.SetPostRenderCallbackUVE([&] {
+    engine.SetPostRenderCallback([&] {
         glFinish();
         glReadBuffer(GL_BACK);
-        buttonPixelHover = sampleTopLeftPixelUVE(80.0F, 20.0F);
+        buttonPixelHover = sampleTopLeftPixel(80.0F, 20.0F);
     });
-    engine.TickFrameUVE();
-    engine.SetPostRenderCallbackUVE({});
+    engine.TickFrame();
+    engine.SetPostRenderCallback({});
 
-    const Scene::UIButtonComponentUVE afterRelease = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(buttonEntity);
+    const Scene::UIButtonComponent afterRelease = entityManager.GetComponent<Scene::UIButtonComponent>(buttonEntity);
     EXPECT_TRUE(afterRelease.isHovered);
     EXPECT_FALSE(afterRelease.wasClickedThisFrame) << "a stale click latched past the frame it occurred on";
     EXPECT_GT(buttonPixelHover[2], static_cast<unsigned char>(buttonPixelHover[0] + 20U))
@@ -3916,68 +3916,68 @@ TEST(EngineCoreUVETest, WindowedMode_UIOverlayRendersAuthoredUIAndRegistersAReal
 }
 
 // Gap A audit coverage: verifies the render target/framebuffer dimensions (audit checkpoint #2)
-// actually track SetEditorViewportRegionUVE()'s region - not the window - and cleanly revert once
+// actually track SetEditorViewportRegion()'s region - not the window - and cleanly revert once
 // the region is cleared. Real windowed GLFW/GL backend under Xvfb, matching every other
-// WindowedMode_* test's verification method in this file (not NullRenderDeviceUVE, since this
-// exercises the real adaptive-resolution/window-manager code path SyncAdaptiveRenderResolutionUVE()
-// only takes when m_windowedRenderingActiveUVE is true).
-TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNotWindow) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+// WindowedMode_* test's verification method in this file (not NullRenderDevice, since this
+// exercises the real adaptive-resolution/window-manager code path SyncAdaptiveRenderResolution()
+// only takes when m_windowedRenderingActive is true).
+TEST(EngineCoreTest, SetEditorViewportRegion_DrivesRenderTargetToRegionNotWindow) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 200U;
     config.windowHeight = 150U;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
-    services.GetLoggerUVE().AddSink(std::move(memorySink));
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
+    services.GetLogger().AddSink(std::move(memorySink));
 
     // Baseline: no region set yet, so the target tracks the 200x150 window as before this fix.
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE windowDrivenDiagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics windowDrivenDiagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(windowDrivenDiagnostics.renderTargetWidth, 200U);
     EXPECT_EQ(windowDrivenDiagnostics.renderTargetHeight, 150U);
 
     // A region clearly smaller than, and offset within, the window - proves the target tracks the
     // region's own dimensions ("very narrow"/"resized side panels" editor layouts), not the window.
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{20, 10}, Math::Vector2iUVE{90, 60}});
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE regionDrivenDiagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.SetEditorViewportRegion(Render::ViewportRect{Math::Vector2i{20, 10}, Math::Vector2i{90, 60}});
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics regionDrivenDiagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(regionDrivenDiagnostics.renderTargetWidth, 90U);
     EXPECT_EQ(regionDrivenDiagnostics.renderTargetHeight, 60U);
 
     // Clearing the region reverts to window-driven sizing - proves no stale state leaks into a
     // frame the editor no longer wants confined (e.g. switching back to a full/maximized layout).
-    engine.SetEditorViewportRegionUVE(std::nullopt);
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE revertedDiagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.SetEditorViewportRegion(std::nullopt);
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics revertedDiagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(revertedDiagnostics.renderTargetWidth, 200U);
     EXPECT_EQ(revertedDiagnostics.renderTargetHeight, 150U);
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundViewportRejection =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
             return message.message.contains("does not fit within");
         });
     EXPECT_FALSE(foundViewportRejection);
@@ -3988,42 +3988,42 @@ TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_DrivesRenderTargetToRegionNot
 // The configured fixed scene-render scale must change only the 3D render target; the native
 // presentation surface remains at the window's drawable resolution. This is a windowed GL
 // integration check and skips when no display/context is available.
-TEST(EngineCoreUVETest, FixedRenderScaleScalesSceneTargetWithoutChangingWindowSize) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+TEST(EngineCoreTest, FixedRenderScaleScalesSceneTargetWithoutChangingWindowSize) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 200U;
     config.windowHeight = 150U;
-    config.renderResolutionScaleUVE = 0.5;
+    config.renderResolutionScale = 0.5;
     config.settingsFilePath = "uve_engine_core_fixed_render_scale.uvsettings";
     config.projectSettingsFilePath = "uve_engine_core_fixed_render_scale.project.uvsettings";
     config.platformSettingsFilePath = "uve_engine_core_fixed_render_scale.platform.uvsettings";
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics diagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(diagnostics.renderTargetWidth, 100U);
     EXPECT_EQ(diagnostics.renderTargetHeight, 75U);
-    EXPECT_EQ(services.GetWindowManagerUVE().GetWidthUVE(), 200U);
-    EXPECT_EQ(services.GetWindowManagerUVE().GetHeightUVE(), 150U);
+    EXPECT_EQ(services.GetWindowManager().GetWidth(), 200U);
+    EXPECT_EQ(services.GetWindowManager().GetHeight(), 150U);
 
     engine.Shutdown();
     std::filesystem::remove(config.settingsFilePath);
@@ -4034,126 +4034,126 @@ TEST(EngineCoreUVETest, FixedRenderScaleScalesSceneTargetWithoutChangingWindowSi
 // A region whose on-screen destination sub-rect is a THIN SLICE of the window (very narrow and
 // very wide/short cases) - the two extreme "editor layout" shapes the audit specifically asked to
 // be exercised, beyond the more moderate rect above.
-TEST(EngineCoreUVETest, SetEditorViewportRegionUVE_HandlesVeryNarrowAndVeryWideRegions) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+TEST(EngineCoreTest, SetEditorViewportRegion_HandlesVeryNarrowAndVeryWideRegions) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = 200U;
     config.windowHeight = 150U;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    const Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
     // Very narrow: a 10px-wide sliver on the right (e.g. a Scene panel dragged nearly closed).
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{180, 0}, Math::Vector2iUVE{10, 150}});
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE narrowDiagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.SetEditorViewportRegion(Render::ViewportRect{Math::Vector2i{180, 0}, Math::Vector2i{10, 150}});
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics narrowDiagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(narrowDiagnostics.renderTargetWidth, 10U);
     EXPECT_EQ(narrowDiagnostics.renderTargetHeight, 150U);
 
     // Very wide/short: the full width, a thin 8px strip in height (e.g. a bottom dock nearly
     // maximized over the viewport).
-    engine.SetEditorViewportRegionUVE(Render::ViewportRectUVE{Math::Vector2iUVE{0, 0}, Math::Vector2iUVE{200, 8}});
-    engine.TickFrameUVE();
-    const Render::Renderer3DFrameDiagnosticsUVE wideDiagnostics =
-        services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    engine.SetEditorViewportRegion(Render::ViewportRect{Math::Vector2i{0, 0}, Math::Vector2i{200, 8}});
+    engine.TickFrame();
+    const Render::Renderer3DFrameDiagnostics wideDiagnostics =
+        services.GetRenderer3D().GetLastFrameDiagnostics();
     EXPECT_EQ(wideDiagnostics.renderTargetWidth, 200U);
     EXPECT_EQ(wideDiagnostics.renderTargetHeight, 8U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, PostRenderCallback_HeadlessModeDoesNotInvokeOverlay) {
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = true;
-    EngineCoreUVE engine(config);
+TEST(EngineCoreTest, PostRenderCallback_HeadlessModeDoesNotInvokeOverlay) {
+    EngineConfig config = MakeTestConfig();
+    config.headless = true;
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     int callbackCount = 0;
-    engine.SetPostRenderCallbackUVE([&callbackCount] { ++callbackCount; });
-    engine.TickFrameUVE();
+    engine.SetPostRenderCallback([&callbackCount] { ++callbackCount; });
+    engine.TickFrame();
     EXPECT_EQ(callbackCount, 0);
 
-    engine.SetPostRenderCallbackUVE({});
+    engine.SetPostRenderCallback({});
     engine.Shutdown();
 }
 
-// A-1 (P0): RunUVE() is a hard exception boundary - see its doc comment in engine_core_uve.h.
-// TickFrameUVE_UncaughtSubscriberException below proves the underlying mechanism is real (an
+// A-1 (P0): Run() is a hard exception boundary - see its doc comment in engine_core_uve.h.
+// TickFrame_UncaughtSubscriberException below proves the underlying mechanism is real (an
 // exception genuinely propagates out of a frame update when nothing catches it) using the real
-// EngineCoreUVE via IEventSystemUVE's public Subscribe()/QueueEvent() API - the same real
-// mechanism RunUVE()'s internal frame loop drives every frame via TickFrameUVE().
+// EngineCore via IEventSystem's public Subscribe()/QueueEvent() API - the same real
+// mechanism Run()'s internal frame loop drives every frame via TickFrame().
 //
-// The three RunUVEExceptionBoundaryHarness tests further down cover all three cases the fix
+// The three RunExceptionBoundaryHarness tests further down cover all three cases the fix
 // requires (throw during Init(), during Load(), during a frame update) against a small,
-// self-contained harness rather than the real EngineCoreUVE::RunUVE(): EngineCoreUVE constructs
+// self-contained harness rather than the real EngineCore::Run(): EngineCore constructs
 // roughly 34 concrete subsystems directly in Init(), each already written (per the D-1/SYS-1
 // audits) to avoid throwing wherever avoidable, so there is no deterministic, non-flaky way to
-// make Init() or Load() throw through EngineCoreUVE's public API alone. The harness reuses the
-// real EngineStateUVE/IsValidTransitionUVE/EngineCoreUVE::kUnhandledExceptionExitCodeUVE from
-// production code and reproduces RunUVE()'s documented contract exactly, so it verifies that
-// contract's logic even though it cannot substitute for exercising EngineCoreUVE::Init()/Load()
+// make Init() or Load() throw through EngineCore's public API alone. The harness reuses the
+// real EngineState/IsValidTransition/EngineCore::kUnhandledExceptionExitCode from
+// production code and reproduces Run()'s documented contract exactly, so it verifies that
+// contract's logic even though it cannot substitute for exercising EngineCore::Init()/Load()
 // themselves.
-TEST(EngineCoreUVETest, TickFrameUVE_UncaughtSubscriberException_PropagatesInsteadOfBeingSwallowed) {
-    struct BoomEventUVE {};
+TEST(EngineCoreTest, TickFrame_UncaughtSubscriberException_PropagatesInsteadOfBeingSwallowed) {
+    struct BoomEvent {};
 
-    EngineCoreUVE engine(MakeTestConfigUVE());
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    engine.GetServicesUVE().GetEventSystemUVE().Subscribe<BoomEventUVE>(
-        [](const BoomEventUVE&) { throw std::runtime_error("subscriber exploded"); });
-    engine.GetServicesUVE().GetEventSystemUVE().QueueEvent(BoomEventUVE{});
+    engine.GetServices().GetEventSystem().Subscribe<BoomEvent>(
+        [](const BoomEvent&) { throw std::runtime_error("subscriber exploded"); });
+    engine.GetServices().GetEventSystem().QueueEvent(BoomEvent{});
 
-    // TickFrameUVE() itself has no exception boundary by design - RunUVE() is the boundary (see
+    // TickFrame() itself has no exception boundary by design - Run() is the boundary (see
     // its doc comment), so a caller driving frames directly (this test, and the editor's
     // hand-rolled loop in engine/app/src/editor/main.cpp) is responsible for its own. Confirms
     // the exception is genuinely uncaught here, not silently swallowed somewhere internally.
-    EXPECT_THROW(engine.TickFrameUVE(), std::runtime_error);
-    EXPECT_EQ(engine.GetStateUVE(), EngineStateUVE::Running); // still mid-run; clean up explicitly
+    EXPECT_THROW(engine.TickFrame(), std::runtime_error);
+    EXPECT_EQ(engine.GetState(), EngineState::Running); // still mid-run; clean up explicitly
     engine.Shutdown();
 }
 
 namespace {
 
-/// Reproduces EngineCoreUVE::RunUVE()'s documented exception-boundary contract in isolation
-/// (see the comment above TickFrameUVE_UncaughtSubscriberException_PropagatesInsteadOfBeingSwallowed
+/// Reproduces EngineCore::Run()'s documented exception-boundary contract in isolation
+/// (see the comment above TickFrame_UncaughtSubscriberException_PropagatesInsteadOfBeingSwallowed
 /// for why): catches any exception thrown by an injected Init()/Load()/frame-update hook, calls a
 /// Shutdown()-equivalent only if state had actually reached Running (an exception during Init()
-/// itself must not force it - see RunUVE()'s doc comment), never lets a second exception from
-/// that Shutdown()-equivalent escape either, and returns EngineCoreUVE::kUnhandledExceptionExitCodeUVE.
-class RunUVEExceptionBoundaryHarnessUVE final {
+/// itself must not force it - see Run()'s doc comment), never lets a second exception from
+/// that Shutdown()-equivalent escape either, and returns EngineCore::kUnhandledExceptionExitCode.
+class RunExceptionBoundaryHarness final {
 public:
     std::function<void()> onInit;
     std::function<bool()> onLoad = [] { return true; };
     std::function<void()> onFrameUpdate;
 
-    int RunUVE(int frameCount) {
+    int Run(int frameCount) {
         try {
-            TransitionUVE(EngineStateUVE::Initializing);
+            Transition(EngineState::Initializing);
             if (onInit) {
                 onInit();
             }
-            TransitionUVE(EngineStateUVE::Running);
+            Transition(EngineState::Running);
             if (onLoad && !onLoad()) {
-                ShutdownUVE();
+                Shutdown();
                 return 1;
             }
             for (int frame = 0; frame < frameCount; ++frame) {
@@ -4161,71 +4161,71 @@ public:
                     onFrameUpdate();
                 }
             }
-            ShutdownUVE();
+            Shutdown();
             return 0;
         } catch (const std::exception&) {
             // Production logs via UVE_FATAL here; nothing to assert on in this harness.
         } catch (...) {
         }
-        if (m_state == EngineStateUVE::Running) {
+        if (m_state == EngineState::Running) {
             try {
-                ShutdownUVE();
+                Shutdown();
             } catch (...) {
                 m_shutdownThrew = true;
             }
         }
-        return EngineCoreUVE::kUnhandledExceptionExitCodeUVE;
+        return EngineCore::kUnhandledExceptionExitCode;
     }
 
-    [[nodiscard]] bool ShutdownRanUVE() const noexcept { return m_shutdownRan; }
-    [[nodiscard]] bool ShutdownThrewUVE() const noexcept { return m_shutdownThrew; }
-    [[nodiscard]] EngineStateUVE GetStateUVE() const noexcept { return m_state; }
+    [[nodiscard]] bool ShutdownRan() const noexcept { return m_shutdownRan; }
+    [[nodiscard]] bool ShutdownThrew() const noexcept { return m_shutdownThrew; }
+    [[nodiscard]] EngineState GetState() const noexcept { return m_state; }
 
 private:
-    void TransitionUVE(EngineStateUVE newState) {
-        // Mirrors EngineCoreUVE::TransitionStateUVE()'s own UVE_ASSERT(IsValidTransitionUVE(...))
+    void Transition(EngineState newState) {
+        // Mirrors EngineCore::TransitionState()'s own UVE_ASSERT(IsValidTransition(...))
         // guard - a failure here is a bug in this harness's own test-hook wiring, not in the
         // property under test, so a plain non-fatal EXPECT_TRUE is enough to surface it.
-        EXPECT_TRUE(IsValidTransitionUVE(m_state, newState));
+        EXPECT_TRUE(IsValidTransition(m_state, newState));
         m_state = newState;
     }
 
-    void ShutdownUVE() {
-        TransitionUVE(EngineStateUVE::ShuttingDown);
+    void Shutdown() {
+        Transition(EngineState::ShuttingDown);
         m_shutdownRan = true;
-        TransitionUVE(EngineStateUVE::Shutdown);
+        Transition(EngineState::Shutdown);
     }
 
-    EngineStateUVE m_state = EngineStateUVE::Uninitialized;
+    EngineState m_state = EngineState::Uninitialized;
     bool m_shutdownRan = false;
     bool m_shutdownThrew = false;
 };
 
 } // namespace
 
-TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringInit_ReturnsDistinctCodeAndSkipsUnsafeShutdown) {
-    RunUVEExceptionBoundaryHarnessUVE harness;
+TEST(RunExceptionBoundaryHarnessTest, ThrowDuringInit_ReturnsDistinctCodeAndSkipsUnsafeShutdown) {
+    RunExceptionBoundaryHarness harness;
     harness.onInit = [] { throw std::runtime_error("boom during init"); };
 
-    EXPECT_EQ(harness.RunUVE(1), EngineCoreUVE::kUnhandledExceptionExitCodeUVE);
-    // State never reached Running - the real EngineCoreUVE::Shutdown() would dereference
+    EXPECT_EQ(harness.Run(1), EngineCore::kUnhandledExceptionExitCode);
+    // State never reached Running - the real EngineCore::Shutdown() would dereference
     // subsystems Init() never got to construct, so it must not run here either.
-    EXPECT_FALSE(harness.ShutdownRanUVE());
-    EXPECT_EQ(harness.GetStateUVE(), EngineStateUVE::Initializing);
+    EXPECT_FALSE(harness.ShutdownRan());
+    EXPECT_EQ(harness.GetState(), EngineState::Initializing);
 }
 
-TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringLoad_RunsShutdownInNormalOrderAndReturnsDistinctCode) {
-    RunUVEExceptionBoundaryHarnessUVE harness;
+TEST(RunExceptionBoundaryHarnessTest, ThrowDuringLoad_RunsShutdownInNormalOrderAndReturnsDistinctCode) {
+    RunExceptionBoundaryHarness harness;
     harness.onLoad = []() -> bool { throw std::runtime_error("boom during load"); };
 
-    EXPECT_EQ(harness.RunUVE(1), EngineCoreUVE::kUnhandledExceptionExitCodeUVE);
-    EXPECT_TRUE(harness.ShutdownRanUVE());
-    EXPECT_FALSE(harness.ShutdownThrewUVE());
-    EXPECT_EQ(harness.GetStateUVE(), EngineStateUVE::Shutdown);
+    EXPECT_EQ(harness.Run(1), EngineCore::kUnhandledExceptionExitCode);
+    EXPECT_TRUE(harness.ShutdownRan());
+    EXPECT_FALSE(harness.ShutdownThrew());
+    EXPECT_EQ(harness.GetState(), EngineState::Shutdown);
 }
 
-TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringFrameUpdate_RunsShutdownInNormalOrderAndReturnsDistinctCode) {
-    RunUVEExceptionBoundaryHarnessUVE harness;
+TEST(RunExceptionBoundaryHarnessTest, ThrowDuringFrameUpdate_RunsShutdownInNormalOrderAndReturnsDistinctCode) {
+    RunExceptionBoundaryHarness harness;
     int framesRun = 0;
     harness.onFrameUpdate = [&framesRun] {
         ++framesRun;
@@ -4234,131 +4234,131 @@ TEST(RunUVEExceptionBoundaryHarnessUVETest, ThrowDuringFrameUpdate_RunsShutdownI
         }
     };
 
-    EXPECT_EQ(harness.RunUVE(5), EngineCoreUVE::kUnhandledExceptionExitCodeUVE);
+    EXPECT_EQ(harness.Run(5), EngineCore::kUnhandledExceptionExitCode);
     EXPECT_EQ(framesRun, 2); // stopped exactly at the throwing frame, not all 5
-    EXPECT_TRUE(harness.ShutdownRanUVE());
-    EXPECT_EQ(harness.GetStateUVE(), EngineStateUVE::Shutdown);
+    EXPECT_TRUE(harness.ShutdownRan());
+    EXPECT_EQ(harness.GetState(), EngineState::Shutdown);
 }
 
 
 // ---------------------------------------------------------------------------
-// CS2: ComputeSystemUVE wired into the frame loop. The queue is drained in
+// CS2: ComputeSystem wired into the frame loop. The queue is drained in
 // Render(), BEFORE any render pass opens, into its own submitted command
 // buffer - the RHI compute slices' outside-pass-markers contract, enforced at
 // the engine level rather than left to each caller.
 // ---------------------------------------------------------------------------
 
-// The headless engine config brings up NullRenderDeviceUVE, whose spy hook keeps the most
-// recently submitted command list - the same evidence channel RenderSystemUVE's own tests use.
+// The headless engine config brings up NullRenderDevice, whose spy hook keeps the most
+// recently submitted command list - the same evidence channel RenderSystem's own tests use.
 // Reached by dynamic_cast rather than a new production accessor: the engine exposes the device
-// through its interface, and inventing a test-only getter on EngineCoreUVE to see one backend's
+// through its interface, and inventing a test-only getter on EngineCore to see one backend's
 // spy would put test scaffolding into the engine's public surface.
-[[nodiscard]] const std::vector<Render::RecordedCommandUVE>& LastSubmittedCommandsUVE(
-    EngineCoreUVE& engine) {
+[[nodiscard]] const std::vector<Render::RecordedCommand>& LastSubmittedCommands(
+    EngineCore& engine) {
     auto* const nullDevice =
-        dynamic_cast<Render::NullRenderDeviceUVE*>(&engine.GetServicesUVE().GetRenderDeviceUVE());
-    UVE_ASSERT(nullDevice != nullptr && "headless EngineCoreUVE must run on NullRenderDeviceUVE");
-    return nullDevice->GetLastSubmittedCommandsUVE();
+        dynamic_cast<Render::NullRenderDevice*>(&engine.GetServices().GetRenderDevice());
+    UVE_ASSERT(nullDevice != nullptr && "headless EngineCore must run on NullRenderDevice");
+    return nullDevice->GetLastSubmittedCommands();
 }
 
-TEST(EngineCoreUVETest, ComputeSystem_ReachableThroughServicesAfterInit) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, ComputeSystem_ReachableThroughServicesAfterInit) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
-    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
-    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 0U);
+    Render::IComputeSystem& computeSystem = engine.GetServices().GetComputeSystem();
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCount(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnostics().dispatchesRecorded, 0U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TickFrame_QueuedComputeDispatch_IsSubmittedBeforeAnyRenderPass) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, TickFrame_QueuedComputeDispatch_IsSubmittedBeforeAnyRenderPass) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    Render::IComputeSystemUVE& computeSystem = engine.GetServicesUVE().GetComputeSystemUVE();
-    Render::IRenderDeviceUVE& renderDevice = engine.GetServicesUVE().GetRenderDeviceUVE();
+    Render::IComputeSystem& computeSystem = engine.GetServices().GetComputeSystem();
+    Render::IRenderDevice& renderDevice = engine.GetServices().GetRenderDevice();
 
-    Render::ComputeProgramDescUVE programDesc;
+    Render::ComputeProgramDesc programDesc;
     programDesc.sourceCode = "engine-frame-loop compute kernel (recorded by the Null backend)";
     programDesc.debugName = "frame-loop-kernel";
-    const Render::PipelineHandleUVE program = computeSystem.CreateProgramUVE(programDesc);
-    ASSERT_NE(program, Render::kInvalidPipelineHandleUVE);
+    const Render::PipelineHandle program = computeSystem.CreateProgram(programDesc);
+    ASSERT_NE(program, Render::kInvalidPipelineHandle);
 
-    const Render::BufferHandleUVE storage =
-        renderDevice.CreateBufferUVE(Render::BufferDescUVE{64U, Render::BufferUsageUVE::Storage});
-    ASSERT_NE(storage, Render::kInvalidBufferHandleUVE);
+    const Render::BufferHandle storage =
+        renderDevice.CreateBuffer(Render::BufferDesc{64U, Render::BufferUsage::Storage});
+    ASSERT_NE(storage, Render::kInvalidBufferHandle);
 
-    Render::ComputeDispatchDescUVE dispatch;
+    Render::ComputeDispatchDesc dispatch;
     dispatch.program = program;
     dispatch.groupCountX = 3U;
     dispatch.groupCountY = 2U;
     dispatch.groupCountZ = 1U;
-    dispatch.storageBuffers.push_back(Render::ComputeStorageBufferBindingUVE{storage, 0U});
-    ASSERT_TRUE(computeSystem.EnqueueDispatchUVE(dispatch));
-    ASSERT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 1U);
+    dispatch.storageBuffers.push_back(Render::ComputeStorageBufferBinding{storage, 0U});
+    ASSERT_TRUE(computeSystem.EnqueueDispatch(dispatch));
+    ASSERT_EQ(computeSystem.GetQueuedDispatchCount(), 1U);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
     // The queue drained through the frame loop - no test touched a command buffer directly.
-    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U);
-    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 1U);
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCount(), 0U);
+    EXPECT_EQ(computeSystem.GetDiagnostics().dispatchesRecorded, 1U);
 
     // The compute work went out as its OWN submission, with no pass markers around it: the Null
     // spy keeps the most recent submitted list, and with no active camera the renderer records
     // nothing this frame, so what remains is exactly the compute buffer.
-    const auto& submitted = LastSubmittedCommandsUVE(engine);
+    const auto& submitted = LastSubmittedCommands(engine);
     ASSERT_EQ(submitted.size(), 3U);
-    ASSERT_TRUE(std::holds_alternative<Render::BindPipelineCommandUVE>(submitted[0]));
-    EXPECT_EQ(std::get<Render::BindPipelineCommandUVE>(submitted[0]).pipeline, program);
-    ASSERT_TRUE(std::holds_alternative<Render::BindStorageBufferCommandUVE>(submitted[1]));
-    EXPECT_EQ(std::get<Render::BindStorageBufferCommandUVE>(submitted[1]).buffer, storage);
-    ASSERT_TRUE(std::holds_alternative<Render::DispatchCommandUVE>(submitted[2]));
-    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountX, 3U);
-    EXPECT_EQ(std::get<Render::DispatchCommandUVE>(submitted[2]).groupCountY, 2U);
+    ASSERT_TRUE(std::holds_alternative<Render::BindPipelineCommand>(submitted[0]));
+    EXPECT_EQ(std::get<Render::BindPipelineCommand>(submitted[0]).pipeline, program);
+    ASSERT_TRUE(std::holds_alternative<Render::BindStorageBufferCommand>(submitted[1]));
+    EXPECT_EQ(std::get<Render::BindStorageBufferCommand>(submitted[1]).buffer, storage);
+    ASSERT_TRUE(std::holds_alternative<Render::DispatchCommand>(submitted[2]));
+    EXPECT_EQ(std::get<Render::DispatchCommand>(submitted[2]).groupCountX, 3U);
+    EXPECT_EQ(std::get<Render::DispatchCommand>(submitted[2]).groupCountY, 2U);
 
     // No render pass command may appear in the compute submission at all.
-    for (const Render::RecordedCommandUVE& command : submitted) {
-        EXPECT_FALSE(std::holds_alternative<Render::BeginRenderPassCommandUVE>(command));
-        EXPECT_FALSE(std::holds_alternative<Render::EndRenderPassCommandUVE>(command));
+    for (const Render::RecordedCommand& command : submitted) {
+        EXPECT_FALSE(std::holds_alternative<Render::BeginRenderPassCommand>(command));
+        EXPECT_FALSE(std::holds_alternative<Render::EndRenderPassCommand>(command));
     }
 
-    computeSystem.DestroyProgramUVE(program);
-    renderDevice.DestroyBufferUVE(storage);
+    computeSystem.DestroyProgram(program);
+    renderDevice.DestroyBuffer(storage);
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, TickFrame_EmptyComputeQueue_SubmitsNothingExtra) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, TickFrame_EmptyComputeQueue_SubmitsNothingExtra) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     // A frame with no queued compute must not submit an empty compute buffer - scenes that never
     // touch compute pay nothing observable.
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    EXPECT_TRUE(LastSubmittedCommandsUVE(engine).empty());
-    EXPECT_EQ(engine.GetServicesUVE().GetComputeSystemUVE().GetDiagnosticsUVE().dispatchesRecorded, 0U);
+    EXPECT_TRUE(LastSubmittedCommands(engine).empty());
+    EXPECT_EQ(engine.GetServices().GetComputeSystem().GetDiagnostics().dispatchesRecorded, 0U);
 
     engine.Shutdown();
 }
 
 #if UVE_DEBUG
-TEST(EngineCoreUVEDeathTest, ShutdownBeforeInit_TriggersInvalidTransitionAssert) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreDeathTest, ShutdownBeforeInit_TriggersInvalidTransitionAssert) {
+    EngineCore engine(MakeTestConfig());
     EXPECT_DEATH({ engine.Shutdown(); }, "");
 }
 
-TEST(EngineCoreUVEDeathTest, GetServicesUVEBeforeInit_Asserts) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    EXPECT_DEATH({ static_cast<void>(engine.GetServicesUVE()); }, "");
+TEST(EngineCoreDeathTest, GetServicesBeforeInit_Asserts) {
+    EngineCore engine(MakeTestConfig());
+    EXPECT_DEATH({ static_cast<void>(engine.GetServices()); }, "");
 }
 #else
-TEST(EngineCoreUVETest, GetServicesUVEBeforeInit_ThrowsBadOptionalAccessInsteadOfDereferencingEmptyOptional) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
-    EXPECT_THROW({ static_cast<void>(engine.GetServicesUVE()); }, std::bad_optional_access);
+TEST(EngineCoreTest, GetServicesBeforeInit_ThrowsBadOptionalAccessInsteadOfDereferencingEmptyOptional) {
+    EngineCore engine(MakeTestConfig());
+    EXPECT_THROW({ static_cast<void>(engine.GetServices()); }, std::bad_optional_access);
 }
 #endif
 
@@ -4372,309 +4372,309 @@ const std::filesystem::path kStreamerTestLevelPath = "uve_engine_core_streamer_t
 
 // Writes `kStreamerTestLevelPath` and returns true on success. Two entities: a root at (0,0,0)
 // with a child offset at (1,2,3), so "one loaded level" is measurable as +2 entities.
-bool WriteStreamerTestLevelFileUVE() {
+bool WriteStreamerTestLevelFile() {
     std::filesystem::remove(kStreamerTestLevelPath);
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE tempManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
-    Scene::SceneGraphUVE tempGraph;
-    Scene::SceneSerializerUVE serializer;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager tempManager(memoryManager.GetDefaultAllocator(), eventSystem);
+    Scene::SceneGraph tempGraph;
+    Scene::SceneSerializer serializer;
 
-    const Scene::EntityUVE root = tempManager.CreateEntityUVE();
-    tempGraph.AttachTransformUVE(tempManager, root, Scene::TransformComponentUVE{});
-    const Scene::EntityUVE child = tempManager.CreateEntityUVE();
-    Scene::TransformComponentUVE childTransform;
-    childTransform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    tempGraph.AttachTransformUVE(tempManager, child, childTransform);
-    tempGraph.SetParentUVE(tempManager, child, root);
+    const Scene::Entity root = tempManager.CreateEntity();
+    tempGraph.AttachTransform(tempManager, root, Scene::TransformComponent{});
+    const Scene::Entity child = tempManager.CreateEntity();
+    Scene::TransformComponent childTransform;
+    childTransform.localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    tempGraph.AttachTransform(tempManager, child, childTransform);
+    tempGraph.SetParent(tempManager, child, root);
     const bool saved =
-        serializer.SaveUVE(tempManager, {root}, kStreamerTestLevelPath, Asset::AssetKindUVE::Scene);
+        serializer.Save(tempManager, {root}, kStreamerTestLevelPath, Asset::AssetKind::Scene);
     if (!saved) {
         std::filesystem::remove(kStreamerTestLevelPath);
     }
     return saved;
 }
 
-struct StreamerTestCleanupUVE {
-    ~StreamerTestCleanupUVE() { std::filesystem::remove(kStreamerTestLevelPath); }
+struct StreamerTestCleanup {
+    ~StreamerTestCleanup() { std::filesystem::remove(kStreamerTestLevelPath); }
 };
 
-Scene::EntityUVE CreateEnabledStreamerAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                            Scene::ISceneGraphUVE& sceneGraph,
-                                            const Math::Vector3UVE& position) {
-    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+Scene::Entity CreateEnabledStreamerAt(Scene::IEntityManager& entityManager,
+                                            Scene::ISceneGraph& sceneGraph,
+                                            const Math::Vector3& position) {
+    const Scene::Entity streamer = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, streamer, transform);
-    Scene::LevelStreamer3DComponentUVE component;
+    sceneGraph.AttachTransform(entityManager, streamer, transform);
+    Scene::LevelStreamer3DComponent component;
     component.levelPath = kStreamerTestLevelPath.string();
     component.loadDistance = 10.0F;
     component.unloadDistance = 20.0F;
     component.enabled = true;
-    entityManager.AddComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer, component);
+    entityManager.AddComponent<Scene::LevelStreamer3DComponent>(streamer, component);
     return streamer;
 }
 
-Scene::EntityUVE CreateWatchingCameraAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                           Scene::ISceneGraphUVE& sceneGraph,
-                                           const Math::Vector3UVE& position) {
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+Scene::Entity CreateWatchingCameraAt(Scene::IEntityManager& entityManager,
+                                           Scene::ISceneGraph& sceneGraph,
+                                           const Math::Vector3& position) {
+    const Scene::Entity camera = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, camera, transform);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera, Scene::CameraComponentUVE{});
+    sceneGraph.AttachTransform(entityManager, camera, transform);
+    entityManager.AddComponent<Scene::CameraComponent>(camera, Scene::CameraComponent{});
     return camera;
 }
 
 } // namespace
 
-TEST(EngineCoreUVETest, LevelStreamer3D_NearViewerLoadsContentFarViewerUnloadsItHysteresisHoldsBetween) {
+TEST(EngineCoreTest, LevelStreamer3D_NearViewerLoadsContentFarViewerUnloadsItHysteresisHoldsBetween) {
     // The full distance-driven contract measured end-to-end: a viewer inside the load radius
     // pulls the level document in (+2 entities, streamer.flags flip), the hysteresis band between
     // loadDistance and unloadDistance changes nothing, leaving the unload radius destroys the
     // loaded subtree (-2 entities), and loadRequested is false between ticks - the synchronous
     // model's documented invariant.
-    ASSERT_TRUE(WriteStreamerTestLevelFileUVE()) << "the streamed level document must save";
-    StreamerTestCleanupUVE cleanup;
+    ASSERT_TRUE(WriteStreamerTestLevelFile()) << "the streamed level document must save";
+    StreamerTestCleanup cleanup;
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE streamer =
-        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity streamer =
+        CreateEnabledStreamerAt(entityManager, sceneGraph, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    const std::size_t baseline = entityManager.GetEntityCountUVE();
-    engine.TickFrameUVE();
+    const std::size_t baseline = entityManager.GetEntityCount();
+    engine.TickFrame();
     {
-        const Scene::LevelStreamer3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer);
+        const Scene::LevelStreamer3DComponent& live =
+            entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer);
         EXPECT_FALSE(live.loaded) << "a viewer 100 units out must never trigger the load";
         EXPECT_FALSE(live.loadRequested) << "loadRequested is false between ticks, always";
     }
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline);
+    EXPECT_EQ(entityManager.GetEntityCount(), baseline);
 
     // The camera is now effectively on top of the streamer: one tick streams the level in.
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
-        Scene::TransformComponentUVE t;
-        t.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, [&] {
+        Scene::TransformComponent t;
+        t.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
         return t;
     }());
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::LevelStreamer3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer);
+        const Scene::LevelStreamer3DComponent& live =
+            entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer);
         EXPECT_TRUE(live.loaded) << "a viewer inside the load radius streams the level in";
         EXPECT_FALSE(live.loadRequested);
     }
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U)
+    EXPECT_EQ(entityManager.GetEntityCount(), baseline + 2U)
         << "the two authored entities of the level document appeared";
 
     // Hysteresis: at 15 units (inside unload, outside load) a loaded level does nothing.
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
-        Scene::TransformComponentUVE t;
-        t.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, [&] {
+        Scene::TransformComponent t;
+        t.localPosition = Math::Vector3{15.0F, 0.0F, 0.0F};
         return t;
     }());
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_TRUE(
-        entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).loaded)
+        entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).loaded)
         << "the band between 10 and 20 keeps a loaded level in place";
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+    EXPECT_EQ(entityManager.GetEntityCount(), baseline + 2U);
 
     // Past the unload radius the subtree is destroyed - real content lifecycle, not a hidden flag.
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, [&] {
-        Scene::TransformComponentUVE t;
-        t.localPosition = Math::Vector3UVE{25.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, [&] {
+        Scene::TransformComponent t;
+        t.localPosition = Math::Vector3{25.0F, 0.0F, 0.0F};
         return t;
     }());
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::LevelStreamer3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer);
+        const Scene::LevelStreamer3DComponent& live =
+            entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer);
         EXPECT_FALSE(live.loaded) << "past the unload radius the level unloads";
         EXPECT_FALSE(live.loadRequested);
     }
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+    EXPECT_EQ(entityManager.GetEntityCount(), baseline)
         << "the streamer's two loaded entities are destroyed on unload";
 }
 
-TEST(EngineCoreUVETest, LevelStreamer3D_CharacterControllerServesAsViewerWithoutAnyCamera) {
+TEST(EngineCoreTest, LevelStreamer3D_CharacterControllerServesAsViewerWithoutAnyCamera) {
     // The viewer model is Frostbite listener-style: ANY character controller pulls content,
     // even in a world no camera ever sees.
-    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
-    StreamerTestCleanupUVE cleanup;
+    ASSERT_TRUE(WriteStreamerTestLevelFile());
+    StreamerTestCleanup cleanup;
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE streamer =
-        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, player, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(player);
+    const Scene::Entity streamer =
+        CreateEnabledStreamerAt(entityManager, sceneGraph, Math::Vector3{});
+    const Scene::Entity player = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, player, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(player);
 
-    const std::size_t baseline = entityManager.GetEntityCountUVE();
-    engine.TickFrameUVE();
+    const std::size_t baseline = entityManager.GetEntityCount();
+    engine.TickFrame();
     EXPECT_TRUE(
-        entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).loaded)
+        entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).loaded)
         << "a standing controller with no active camera still streams the level in";
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline + 2U);
+    EXPECT_EQ(entityManager.GetEntityCount(), baseline + 2U);
 }
 
-TEST(EngineCoreUVETest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
+TEST(EngineCoreTest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
     // The authored toggle beats distance, matching the common convention a disabled streaming
     // volume stops holding its level - measured while the camera stands inside the load radius.
-    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
-    StreamerTestCleanupUVE cleanup;
+    ASSERT_TRUE(WriteStreamerTestLevelFile());
+    StreamerTestCleanup cleanup;
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE streamer =
-        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
-    engine.TickFrameUVE();
+    const Scene::Entity streamer =
+        CreateEnabledStreamerAt(entityManager, sceneGraph, Math::Vector3{});
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
+    engine.TickFrame();
     ASSERT_TRUE(
-        entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).loaded);
-    const std::size_t loadedCount = entityManager.GetEntityCountUVE();
+        entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).loaded);
+    const std::size_t loadedCount = entityManager.GetEntityCount();
 
-    entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).enabled = false;
-    engine.TickFrameUVE();
+    entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).enabled = false;
+    engine.TickFrame();
     EXPECT_FALSE(
-        entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).loaded)
+        entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).loaded)
         << "disabling unloads even with the viewer inside the load radius";
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), loadedCount - 2U)
+    EXPECT_EQ(entityManager.GetEntityCount(), loadedCount - 2U)
         << "the disabled streamer's subtree is gone the same tick";
 }
 
-TEST(EngineCoreUVETest, LevelStreamer3D_FailedLoadLatchesClosedAndNeverRetriesInSession) {
+TEST(EngineCoreTest, LevelStreamer3D_FailedLoadLatchesClosedAndNeverRetriesInSession) {
     // The honest fail-closed path: levelPath points at a file that does not exist. The first
     // tick attempts and fails (loaded stays false, loadRequested stays false between ticks);
     // the latch means every later tick decides nothing either - never a retry storm - and the
     // streamer never marks itself loaded on an empty restore.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE streamer = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, streamer, Scene::TransformComponentUVE{});
-    Scene::LevelStreamer3DComponentUVE component;
+    const Scene::Entity streamer = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, streamer, Scene::TransformComponent{});
+    Scene::LevelStreamer3DComponent component;
     component.levelPath = "uve_engine_core_streamer_file_that_does_not_exist.uvscene";
     component.loadDistance = 10.0F;
     component.unloadDistance = 20.0F;
     component.enabled = true;
-    entityManager.AddComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer, component);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    entityManager.AddComponent<Scene::LevelStreamer3DComponent>(streamer, component);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    const std::size_t baseline = entityManager.GetEntityCountUVE();
+    const std::size_t baseline = entityManager.GetEntityCount();
     for (int tick = 0; tick < 3; ++tick) {
-        engine.TickFrameUVE();
-        const Scene::LevelStreamer3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer);
+        engine.TickFrame();
+        const Scene::LevelStreamer3DComponent& live =
+            entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer);
         EXPECT_FALSE(live.loaded) << "tick " << tick << ": a missing file never marks loaded";
         EXPECT_FALSE(live.loadRequested) << "tick " << tick << ": no request survives the tick";
-        EXPECT_EQ(entityManager.GetEntityCountUVE(), baseline)
+        EXPECT_EQ(entityManager.GetEntityCount(), baseline)
             << "tick " << tick << ": nothing materializes out of a missing file";
     }
 
     // The sibling with valid data is unaffected: a latch is per streamer, never global.
-    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
-    StreamerTestCleanupUVE cleanup;
-    const Scene::EntityUVE good =
-        CreateEnabledStreamerAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(good).loaded)
+    ASSERT_TRUE(WriteStreamerTestLevelFile());
+    StreamerTestCleanup cleanup;
+    const Scene::Entity good =
+        CreateEnabledStreamerAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::LevelStreamer3DComponent>(good).loaded)
         << "a failed sibling never blocks an unrelated streamer";
     EXPECT_FALSE(
-        entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(streamer).loaded)
+        entityManager.GetComponent<Scene::LevelStreamer3DComponent>(streamer).loaded)
         << "the latched streamer stays closed even alongside a success";
 }
 
-TEST(EngineCoreUVETest, LevelStreamer3D_LoadBudgetCarriesOverflowIntoTheNextTick) {
+TEST(EngineCoreTest, LevelStreamer3D_LoadBudgetCarriesOverflowIntoTheNextTick) {
     // The time-slicing contract: 5 identical streamers demand a load on the same tick with a
     // budget of 4 - exactly 4 stream in on tick one, and the straggler follows on tick two with
     // no other state stirring. This is the measurable answer to the hitch problem.
-    ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
-    StreamerTestCleanupUVE cleanup;
+    ASSERT_TRUE(WriteStreamerTestLevelFile());
+    StreamerTestCleanup cleanup;
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    std::array<Scene::EntityUVE, 5U> streamers;
-    for (Scene::EntityUVE& target : streamers) {
-        target = CreateEnabledStreamerAtUVE(
-            entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
+    std::array<Scene::Entity, 5U> streamers;
+    for (Scene::Entity& target : streamers) {
+        target = CreateEnabledStreamerAt(
+            entityManager, sceneGraph, Math::Vector3{100.0F, 0.0F, 0.0F});
     }
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{100.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{100.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
     const auto countLoaded = [&entityManager, &streamers]() -> std::size_t {
         std::size_t loaded = 0;
-        for (const Scene::EntityUVE s : streamers) {
-            if (entityManager.GetComponentUVE<Scene::LevelStreamer3DComponentUVE>(s).loaded) {
+        for (const Scene::Entity s : streamers) {
+            if (entityManager.GetComponent<Scene::LevelStreamer3DComponent>(s).loaded) {
                 ++loaded;
             }
         }
         return loaded;
     };
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(countLoaded(), Scene::kMaximumLevelStreamer3DLoadsPerTickUVE)
+    engine.TickFrame();
+    EXPECT_EQ(countLoaded(), Scene::kMaximumLevelStreamer3DLoadsPerTick)
         << "the budget capped tick one, and the overflow stayed pending instead of dropping";
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_EQ(countLoaded(), 5U) << "tick two consumed the carry-over - the straggler loads";
-    engine.TickFrameUVE();
+    engine.TickFrame();
     EXPECT_EQ(countLoaded(), 5U) << "a further tick sits at steady state, nothing more moved";
 }
 
 namespace {
 
-Scene::EntityUVE CreateReflectionProbeAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                             Scene::ISceneGraphUVE& sceneGraph,
-                                             const Math::Vector3UVE& position,
-                                              Scene::ReflectionProbeUpdateModeUVE updateMode) {
-    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+Scene::Entity CreateReflectionProbeAt(Scene::IEntityManager& entityManager,
+                                             Scene::ISceneGraph& sceneGraph,
+                                             const Math::Vector3& position,
+                                              Scene::ReflectionProbeUpdateMode updateMode) {
+    const Scene::Entity probe = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, probe, transform);
-    Scene::ReflectionProbe3DComponentUVE component;
+    sceneGraph.AttachTransform(entityManager, probe, transform);
+    Scene::ReflectionProbe3DComponent component;
     component.updateMode = updateMode;
-    entityManager.AddComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe, component);
+    entityManager.AddComponent<Scene::ReflectionProbe3DComponent>(probe, component);
     return probe;
 }
 
-std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
-                                       std::span<const Scene::EntityUVE> probes) {
+std::uint32_t TotalProbeGenerations(Scene::IEntityManager& entityManager,
+                                       std::span<const Scene::Entity> probes) {
     std::uint32_t total = 0;
-    for (const Scene::EntityUVE probe : probes) {
-        total += entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    for (const Scene::Entity probe : probes) {
+        total += entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                      .captureGeneration;
     }
     return total;
@@ -4682,862 +4682,862 @@ std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
 
 } // namespace
 
-TEST(EngineCoreUVETest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
+TEST(EngineCoreTest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
     // The measurable answer to the standard "capture scene on load" convention: first Tick resolves
     // exactly one capture (capturedOnce flips, captureGeneration hits 1), every subsequent tick
     // touches nothing - no re-capture, no latch drift, cost paid exactly once.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, Scene::ReflectionProbeUpdateModeUVE::Once);
+    const Scene::Entity probe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{}, Scene::ReflectionProbeUpdateMode::Once);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::ReflectionProbe3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe);
+        const Scene::ReflectionProbe3DComponent& live =
+            entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe);
         EXPECT_TRUE(live.capturedOnce) << "the first tick resolves the one-and-only capture";
         EXPECT_EQ(live.captureGeneration, 1U);
     }
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    const Scene::ReflectionProbe3DComponentUVE& after =
-        entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe);
+    engine.TickFrame();
+    engine.TickFrame();
+    const Scene::ReflectionProbe3DComponent& after =
+        entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe);
     EXPECT_EQ(after.captureGeneration, 1U) << "later ticks revisit nothing - once means once";
 }
 
-TEST(EngineCoreUVETest, ReflectionProbe3D_EveryFrameRecapturesOnlyWhileTheCameraIsInside) {
+TEST(EngineCoreTest, ReflectionProbe3D_EveryFrameRecapturesOnlyWhileTheCameraIsInside) {
     // A camera parked inside the probe sees one fresh capture per tick; walking it outside the
     // influence box stops the churn COMPLETELY the same tick - the save Godot's Always mode
     // cannot express, measured as captureGeneration flatlines.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{},
-        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity probe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{},
+        Scene::ReflectionProbeUpdateMode::EveryFrame);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     const std::uint32_t insideOne =
-        entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+        entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
             .captureGeneration;
     EXPECT_GE(insideOne, 1U) << "camera inside: the probe keeps its imagery current";
-    engine.TickFrameUVE();
+    engine.TickFrame();
     const std::uint32_t insideTwo =
-        entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+        entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
             .captureGeneration;
     EXPECT_GT(insideTwo, insideOne) << "camera inside: each tick refreshes";
 
     // Walk out (default probe size 5 => half extent 2.5; 10 units is comfortably beyond) and the
     // meter falls dead on the very first outside tick.
-    Scene::TransformComponentUVE farTransform;
-    farTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, farTransform);
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    Scene::TransformComponent farTransform;
+    farTransform.localPosition = Math::Vector3{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, farTransform);
+    engine.TickFrame();
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                   .captureGeneration,
               insideTwo) << "camera outside: no capture at all - the eye sees nothing of it";
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                         .cameraInfluenceWeight,
                     0.0F) << "outside the face the camera's blend weight reads exactly zero";
 }
 
-TEST(EngineCoreUVETest, ReflectionProbe3D_CameraInfluenceWeightTracksCameraPositionExactly) {
+TEST(EngineCoreTest, ReflectionProbe3D_CameraInfluenceWeightTracksCameraPositionExactly) {
     // The first-class blend weight: dead center reads 1.0 (perfectly influential), halfway to the
     // face 0.5, and passing the face snaps to 0.0 - each measured through the public component
     // state, which is exactly the number a shading pass would blend with.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    Scene::ReflectionProbe3DComponentUVE probeTemplate;
-    probeTemplate.size = Math::Vector3UVE{4.0F, 4.0F, 4.0F}; // half extent 2 on every axis
-    probeTemplate.updateMode = Scene::ReflectionProbeUpdateModeUVE::EveryFrame;
-    const Scene::EntityUVE probe = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, probe, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe, probeTemplate);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    Scene::ReflectionProbe3DComponent probeTemplate;
+    probeTemplate.size = Math::Vector3{4.0F, 4.0F, 4.0F}; // half extent 2 on every axis
+    probeTemplate.updateMode = Scene::ReflectionProbeUpdateMode::EveryFrame;
+    const Scene::Entity probe = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, probe, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ReflectionProbe3DComponent>(probe, probeTemplate);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                         .cameraInfluenceWeight,
                     1.0F) << "dead center: completely influential";
 
-    Scene::TransformComponentUVE halfTransform;
-    halfTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F}; // halfway: 1/2 of half-extent
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, halfTransform);
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    Scene::TransformComponent halfTransform;
+    halfTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F}; // halfway: 1/2 of half-extent
+    sceneGraph.SetLocalTransform(entityManager, camera, halfTransform);
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                         .cameraInfluenceWeight,
                     0.5F) << "halfway: exactly the linear falloff midpoint";
 
-    Scene::TransformComponentUVE faceTransform;
-    faceTransform.localPosition = Math::Vector3UVE{2.0F, 0.0F, 0.0F}; // exactly ON the face
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, faceTransform);
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    Scene::TransformComponent faceTransform;
+    faceTransform.localPosition = Math::Vector3{2.0F, 0.0F, 0.0F}; // exactly ON the face
+    sceneGraph.SetLocalTransform(entityManager, camera, faceTransform);
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                         .cameraInfluenceWeight,
                     0.0F) << "the face itself counts as outside - no floating sliver of weight";
 }
 
-TEST(EngineCoreUVETest, ReflectionProbe3D_OnDemandServicesTheLatchThenClearsIt) {
+TEST(EngineCoreTest, ReflectionProbe3D_OnDemandServicesTheLatchThenClearsIt) {
     // The inspector "Recapture" contract: latched, the next tick resolves exactly one capture
     // and CLEARS the latch - second tick does nothing, until latched again.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE probe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{},
-        Scene::ReflectionProbeUpdateModeUVE::OnDemand);
+    const Scene::Entity probe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{},
+        Scene::ReflectionProbeUpdateMode::OnDemand);
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                   .captureGeneration,
               0U) << "without the latch OnDemand captures nothing";
 
-    entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe).updateRequested =
+    entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe).updateRequested =
         true;
-    engine.TickFrameUVE();
+    engine.TickFrame();
     {
-        const Scene::ReflectionProbe3DComponentUVE& live =
-            entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe);
+        const Scene::ReflectionProbe3DComponent& live =
+            entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe);
         EXPECT_EQ(live.captureGeneration, 1U) << "the latch delivered exactly one capture";
         EXPECT_FALSE(live.updateRequested) << "and cleared itself the same tick it fired";
     }
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(probe)
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(probe)
                   .captureGeneration,
               1U) << "no latch, no capture - the probe waits for the next demand";
 }
 
-TEST(EngineCoreUVETest, ReflectionProbe3D_CaptureBudgetAgesOutOfStarvationNeverNearestOnly) {
+TEST(EngineCoreTest, ReflectionProbe3D_CaptureBudgetAgesOutOfStarvationNeverNearestOnly) {
     // Three EveryFrame probes with a budget of two, all containing the camera: naive nearest-
     // first would starve the farthest one forever under continuous demand, so priority is the
     // WAIT AGE first, distance second. Measured: tick one takes the two nearest by tie-break,
     // far one tick ages visibly (captureWaitTicks 1), and on tick two the aged waiter cuts the
     // line ahead of nearer-but-fresher askers.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
     // Distances 0.5 / 1.0 / 1.5 on +X keep d^2 distinct (no ties), while the default box of
     // half extent 2.5 still contains the origin - all three demand a capture every tick.
-    const Scene::EntityUVE nearProbe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{0.5F, 0.0F, 0.0F},
-        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
-    const Scene::EntityUVE midProbe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F},
-        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
-    const Scene::EntityUVE farProbe = CreateReflectionProbeAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F},
-        Scene::ReflectionProbeUpdateModeUVE::EveryFrame);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
-    const std::array<Scene::EntityUVE, 3U> probes{nearProbe, midProbe, farProbe};
+    const Scene::Entity nearProbe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{0.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateMode::EveryFrame);
+    const Scene::Entity midProbe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateMode::EveryFrame);
+    const Scene::Entity farProbe = CreateReflectionProbeAt(
+        entityManager, sceneGraph, Math::Vector3{1.5F, 0.0F, 0.0F},
+        Scene::ReflectionProbeUpdateMode::EveryFrame);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
+    const std::array<Scene::Entity, 3U> probes{nearProbe, midProbe, farProbe};
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
-              Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+    engine.TickFrame();
+    EXPECT_EQ(TotalProbeGenerations(entityManager, probes),
+              Scene::kMaximumReflectionProbeCapturesPerTick)
         << "tick one serves exactly the budget, never the whole queue";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(nearProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(nearProbe)
                   .captureGeneration,
               1U);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(midProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(midProbe)
                   .captureGeneration,
               1U);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(farProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(farProbe)
                   .captureGeneration,
               0U) << "the farthest one waits (distances tie-free)";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(farProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(farProbe)
                   .captureWaitTicks,
               1U) << "and its wait age shows in its own component state";
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
     // Tick two: far now beats both nearer probes by age and captures ahead of them.
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(farProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(farProbe)
                   .captureGeneration,
               1U) << "the aged waiter cuts the line - starvation is impossible";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::ReflectionProbe3DComponentUVE>(farProbe)
+    EXPECT_EQ(entityManager.GetComponent<Scene::ReflectionProbe3DComponent>(farProbe)
                   .captureWaitTicks,
               0U) << "service resets the age";
-    EXPECT_EQ(TotalProbeGenerationsUVE(entityManager, probes),
-              2U * Scene::kMaximumReflectionProbeCapturesPerTickUVE)
+    EXPECT_EQ(TotalProbeGenerations(entityManager, probes),
+              2U * Scene::kMaximumReflectionProbeCapturesPerTick)
         << "every tick still stays within budget";
 }
 
 namespace {
 
-Scene::EntityUVE CreateWorldPartitionAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                           Scene::ISceneGraphUVE& sceneGraph,
-                                           const Math::Vector3UVE& position,
+Scene::Entity CreateWorldPartitionAt(Scene::IEntityManager& entityManager,
+                                           Scene::ISceneGraph& sceneGraph,
+                                           const Math::Vector3& position,
                                            const float cellSize,
                                            const std::array<std::uint32_t, 3U>& counts,
                                            const std::uint32_t maximumLoadedCells) {
-    const Scene::EntityUVE partition = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+    const Scene::Entity partition = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, partition, transform);
-    Scene::WorldPartition3DComponentUVE component;
+    sceneGraph.AttachTransform(entityManager, partition, transform);
+    Scene::WorldPartition3DComponent component;
     component.cellSize = cellSize;
     component.cellCounts = counts;
     component.maximumLoadedCells = maximumLoadedCells;
-    entityManager.AddComponentUVE<Scene::WorldPartition3DComponentUVE>(partition, component);
+    entityManager.AddComponent<Scene::WorldPartition3DComponent>(partition, component);
     return partition;
 }
 
-Scene::EntityUVE CreatePartitionChildAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                           Scene::ISceneGraphUVE& sceneGraph,
-                                           const Scene::EntityUVE parent,
-                                           const Math::Vector3UVE& position,
+Scene::Entity CreatePartitionChildAt(Scene::IEntityManager& entityManager,
+                                           Scene::ISceneGraph& sceneGraph,
+                                           const Scene::Entity parent,
+                                           const Math::Vector3& position,
                                            const bool withMesh) {
-    const Scene::EntityUVE child = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+    const Scene::Entity child = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, child, transform);
-    sceneGraph.SetParentUVE(entityManager, child, parent);
+    sceneGraph.AttachTransform(entityManager, child, transform);
+    sceneGraph.SetParent(entityManager, child, parent);
     if (withMesh) {
-        entityManager.AddComponentUVE<Scene::MeshComponentUVE>(child, Scene::MeshComponentUVE{});
+        entityManager.AddComponent<Scene::MeshComponent>(child, Scene::MeshComponent{});
     }
     return child;
 }
 
 } // namespace
 
-TEST(EngineCoreUVETest, WorldPartition3D_MembershipAttachesToDrawablesAndOutsideStaysUnmanaged) {
+TEST(EngineCoreTest, WorldPartition3D_MembershipAttachesToDrawablesAndOutsideStaysUnmanaged) {
     // The engine-owned runtime state attaches to drawable descendants (mesh and primitive mesh
     // here; a transform-only child and a light stay clean). The partition beyond its volume is
     // nobody's business (membership there exists but its live verdict is always true), and
     // loadedCellCount only counts cells actually inside the volume.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 2U}, 2U);
-    const Scene::EntityUVE insideMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE meshlessChild =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
-    const Scene::EntityUVE primitiveChild =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
-    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitiveChild,
-                                                                   Scene::PrimitiveMeshComponentUVE{});
-    const Scene::EntityUVE lightChild =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
-    entityManager.AddComponentUVE<Scene::LightComponentUVE>(lightChild, Scene::LightComponentUVE{});
-    const Scene::EntityUVE outsideMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{5.0F, 0.0F, 5.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity partition = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 10.0F, {2U, 1U, 2U}, 2U);
+    const Scene::Entity insideMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 5.0F}, /*withMesh=*/true);
+    const Scene::Entity meshlessChild =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    const Scene::Entity primitiveChild =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponent<Scene::PrimitiveMeshComponent>(primitiveChild,
+                                                                   Scene::PrimitiveMeshComponent{});
+    const Scene::Entity lightChild =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 5.0F}, /*withMesh=*/false);
+    entityManager.AddComponent<Scene::LightComponent>(lightChild, Scene::LightComponent{});
+    const Scene::Entity outsideMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{500.0F, 0.0F, 500.0F}, /*withMesh=*/true);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{5.0F, 0.0F, 5.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
+    engine.TickFrame();
 
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    ASSERT_TRUE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         insideMesh));
-    const Scene::WorldPartition3DMembershipComponentUVE& insideMembership =
-        entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(insideMesh);
+    const Scene::WorldPartition3DMembershipComponent& insideMembership =
+        entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(insideMesh);
     EXPECT_TRUE(insideMembership.live) << "inside cell (0,0,0) with budget 2: live";
     EXPECT_EQ(insideMembership.partition, partition) << "the engine stamps the deciding owner";
 
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         meshlessChild)) << "no drawable, no membership - authoritatively not every descendant";
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    ASSERT_TRUE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         primitiveChild))
         << "a primitive mesh is a drawable the vis-budget can skip";
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         lightChild))
         << "lights are not partition drawables";
 
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    ASSERT_TRUE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         outsideMesh));
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_TRUE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                     outsideMesh)
                     .live)
         << "outside the partition volume: never culled by a partition that cannot see it";
 
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition)
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DComponent>(partition)
                   .loadedCellCount,
               1U) << "the unmanaged outside point creates no occupied cell";
 }
 
-TEST(EngineCoreUVETest, WorldPartition3D_BudgetAdmitsNearestCellOnlyAndCameraMoveFlipsTheVerdict) {
+TEST(EngineCoreTest, WorldPartition3D_BudgetAdmitsNearestCellOnlyAndCameraMoveFlipsTheVerdict) {
     // maximumLoadedCells is the hard contract: with one slot and two occupied cells, only the
     // serially-nearest cell's member renders - move the camera to the other cell and the verdict
     // flips seat afterwards, deterministically (nothing depends on iteration order because the
     // distance key breaks the tie cleanly).
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
-    const Scene::EntityUVE nearMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE farMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity partition = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::Entity nearMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::Entity farMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                     nearMesh)
                     .live) << "cell (0,0,0): the nearest occupied cell earns the slot";
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                      farMesh)
                      .live) << "cell (1,0,0): out of budget, out of the frame";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition)
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DComponent>(partition)
                   .loadedCellCount,
               1U);
 
-    Scene::TransformComponentUVE farCameraTransform;
-    farCameraTransform.localPosition = Math::Vector3UVE{15.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, farCameraTransform);
-    engine.TickFrameUVE();
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    Scene::TransformComponent farCameraTransform;
+    farCameraTransform.localPosition = Math::Vector3{15.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, farCameraTransform);
+    engine.TickFrame();
+    EXPECT_FALSE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                      nearMesh)
                      .live) << "the verdict flips with the camera, not with sentiment";
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_TRUE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                     farMesh)
                     .live);
 }
 
-TEST(EngineCoreUVETest, WorldPartition3D_NestedPartitionsTheInnerOneOwnsItsSubtree) {
+TEST(EngineCoreTest, WorldPartition3D_NestedPartitionsTheInnerOneOwnsItsSubtree) {
     // Closest-ancestor-wins: a partition inside another partition manages its own subtree, and
     // nothing the outer walk touches ever rewrites that decision - measured as the inner child's
     // stamped owner being the INNER partition, not the outer.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE outer = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 50.0F, {2U, 1U, 1U}, 2U);
-    const Scene::EntityUVE inner = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
-    sceneGraph.SetParentUVE(entityManager, inner, outer);
-    const Scene::EntityUVE innerMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, inner,
-                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE outerMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, outer,
-                                  Math::Vector3UVE{25.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity outer = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 50.0F, {2U, 1U, 1U}, 2U);
+    const Scene::Entity inner = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 10.0F, {2U, 1U, 1U}, 2U);
+    sceneGraph.SetParent(entityManager, inner, outer);
+    const Scene::Entity innerMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, inner,
+                                  Math::Vector3{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::Entity outerMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, outer,
+                                  Math::Vector3{25.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                   innerMesh)
                   .partition,
               inner) << "the inner partition decides its own subtree";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                   outerMesh)
                   .partition,
               outer) << "the outer one only ever touches its own descendants";
 }
 
-TEST(EngineCoreUVETest, WorldPartition3D_DisabledReleasesEveryMemberAndClearsTheLiveCount) {
+TEST(EngineCoreTest, WorldPartition3D_DisabledReleasesEveryMemberAndClearsTheLiveCount) {
     // The toggle must show EVERYTHING, because leaving a stale fade behind after switching the
     // system off is the honest failure mode exactly backwards - fail open, measured everywhere.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 1U);
-    const Scene::EntityUVE farMesh =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    static_cast<void>(CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                                Math::Vector3UVE{5.0F, 0.0F, 0.0F},
+    const Scene::Entity partition = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 10.0F, {2U, 1U, 1U}, 1U);
+    const Scene::Entity farMesh =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{15.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    static_cast<void>(CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                                Math::Vector3{5.0F, 0.0F, 0.0F},
                                                 /*withMesh=*/true));
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_FALSE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                      farMesh)
                      .live)
         << "setup: budget 1, far cell out of budget";
 
-    entityManager.GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition).enabled =
+    entityManager.GetComponent<Scene::WorldPartition3DComponent>(partition).enabled =
         false;
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                     farMesh)
                     .live)
         << "disabled: every member renders, no stale fade lingers";
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition)
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DComponent>(partition)
                   .loadedCellCount,
               0U) << "and the live cell count zeroes instead of freezing";
 }
 
-TEST(EngineCoreUVETest, WorldPartition3D_MembershipFollowsSubtreeGrowthNotStaleSnapshots) {
+TEST(EngineCoreTest, WorldPartition3D_MembershipFollowsSubtreeGrowthNotStaleSnapshots) {
     // The state lives in the sync, not in a one-shot: a mesh added between ticks earns its
     // membership on the NEXT tick, and destroying a member mid-run leaves nothing stale behind -
     // measured as the live-set moving exactly with the mutate-then-tick cadence.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE partition = CreateWorldPartitionAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{}, 10.0F, {2U, 1U, 1U}, 2U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity partition = CreateWorldPartitionAt(
+        entityManager, sceneGraph, Math::Vector3{}, 10.0F, {2U, 1U, 1U}, 2U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    const Scene::EntityUVE added =
-        CreatePartitionChildAtUVE(entityManager, sceneGraph, partition,
-                                  Math::Vector3UVE{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    const Scene::Entity added =
+        CreatePartitionChildAt(entityManager, sceneGraph, partition,
+                                  Math::Vector3{5.0F, 0.0F, 0.0F}, /*withMesh=*/true);
+    EXPECT_FALSE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         added)) << "mid-tick birth: nothing attaches before the follow-up tick's sync";
 
-    engine.TickFrameUVE();
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_TRUE(entityManager.HasComponent<Scene::WorldPartition3DMembershipComponent>(
         added));
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::WorldPartition3DMembershipComponentUVE>(
+    EXPECT_TRUE(entityManager.GetComponent<Scene::WorldPartition3DMembershipComponent>(
                     added)
                     .live);
 
     // Destroy it and the partition must still tick cleanly with nothing stale behind.
-    entityManager.DestroyEntityUVE(added);
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::WorldPartition3DComponentUVE>(partition)
+    entityManager.DestroyEntity(added);
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::WorldPartition3DComponent>(partition)
                   .loadedCellCount,
               0U) << "a dead member unbooks its whole cell - no ghost occupancy";
 }
 
 namespace {
 
-Scene::EntityUVE CreateVisibilityRegionAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                             Scene::ISceneGraphUVE& sceneGraph,
-                                             const Math::Vector3UVE& position,
-                                             const Math::Vector3UVE& halfExtents,
+Scene::Entity CreateVisibilityRegionAt(Scene::IEntityManager& entityManager,
+                                             Scene::ISceneGraph& sceneGraph,
+                                             const Math::Vector3& position,
+                                             const Math::Vector3& halfExtents,
                                              const std::uint32_t layers) {
-    const Scene::EntityUVE region = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+    const Scene::Entity region = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, region, transform);
-    Scene::VisibilityRegion3DComponentUVE component;
+    sceneGraph.AttachTransform(entityManager, region, transform);
+    Scene::VisibilityRegion3DComponent component;
     component.halfExtents = halfExtents;
     component.visibilityLayers = layers;
-    entityManager.AddComponentUVE<Scene::VisibilityRegion3DComponentUVE>(region, component);
+    entityManager.AddComponent<Scene::VisibilityRegion3DComponent>(region, component);
     return region;
 }
 
-Scene::EntityUVE CreateStandaloneMeshAtUVE(Scene::IEntityManagerUVE& entityManager,
-                                           Scene::ISceneGraphUVE& sceneGraph,
-                                           const Math::Vector3UVE& position,
+Scene::Entity CreateStandaloneMeshAt(Scene::IEntityManager& entityManager,
+                                           Scene::ISceneGraph& sceneGraph,
+                                           const Math::Vector3& position,
                                            const std::uint32_t layers) {
-    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+    const Scene::Entity mesh = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, mesh, transform);
-    Scene::MeshComponentUVE component{};
+    sceneGraph.AttachTransform(entityManager, mesh, transform);
+    Scene::MeshComponent component{};
     component.visibilityLayers = layers;
-    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, component);
+    entityManager.AddComponent<Scene::MeshComponent>(mesh, component);
     return mesh;
 }
 
 } // namespace
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorCameraInsideShowsIt) {
+TEST(EngineCoreTest, VisibilityRegion3D_CameraOutsideTheRoomSkipsItsInteriorCameraInsideShowsIt) {
     // The headline claim Godot cannot answer: interior contents cost zero render while nobody
     // stands inside the room, and reappear the tick the eye enters - with the region's own
     // active flag readable as the same verdict the membership carries.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+    static_cast<void>(CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                                  Math::Vector3{5.0F, 5.0F, 5.0F},
                                                   0xFFFFFFFFU));
-    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE primitive = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE primitiveTransform;
-    primitiveTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, primitive, primitiveTransform);
-    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(primitive,
-                                                                   Scene::PrimitiveMeshComponentUVE{});
-    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE lightTransform;
-    lightTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, light, lightTransform);
-    entityManager.AddComponentUVE<Scene::LightComponentUVE>(light, Scene::LightComponentUVE{});
-    const Scene::EntityUVE outside = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity content = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity primitive = entityManager.CreateEntity();
+    Scene::TransformComponent primitiveTransform;
+    primitiveTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, primitive, primitiveTransform);
+    entityManager.AddComponent<Scene::PrimitiveMeshComponent>(primitive,
+                                                                   Scene::PrimitiveMeshComponent{});
+    const Scene::Entity light = entityManager.CreateEntity();
+    Scene::TransformComponent lightTransform;
+    lightTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, light, lightTransform);
+    entityManager.AddComponent<Scene::LightComponent>(light, Scene::LightComponent{});
+    const Scene::Entity outside = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_TRUE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         content));
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      content)
                      .live)
         << "camera outside: interior content is skipped with zero render work";
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         outside)) << "content outside every region is not a member of anything";
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    ASSERT_TRUE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         primitive))
         << "a primitive mesh inside the room is a drawable the region can skip";
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      primitive)
                      .live);
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         light))
         << "lights are not region drawables";
 
-    Scene::TransformComponentUVE enterTransform;
-    enterTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, camera, enterTransform);
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    Scene::TransformComponent enterTransform;
+    enterTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, camera, enterTransform);
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                     content)
                     .live)
         << "the tick the eye steps in, the room draws again - no one-frame stale dark";
 }
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_LayerGateKeepsUninvitedMeshesOutOfTheRoom) {
+TEST(EngineCoreTest, VisibilityRegion3D_LayerGateKeepsUninvitedMeshesOutOfTheRoom) {
     // The roadmap's own phrase: the REGION's visibilityLayers gate what renders inside it. A
     // props-layer mesh is managed by the props region; an NPC on the default layer standing in
     // the same room is NOT, so nobody has to special-object the walk-through cases.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+    static_cast<void>(CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                                  Math::Vector3{5.0F, 5.0F, 5.0F},
                                                   0x00000002U)); // props only
-    const Scene::EntityUVE prop = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000002U);
-    const Scene::EntityUVE npc = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity prop = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F}, 0x00000002U);
+    const Scene::Entity npc = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{-1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_TRUE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         prop));
-    EXPECT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      prop)
                      .live)
         << "same room, right layer: skipped while the room is empty";
-    EXPECT_FALSE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_FALSE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         npc)) << "same room, wrong layer: the room simply does not claim this mesh";
 }
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_WalkingOutReleasesTheVerdictOnTheVeryNextTick) {
+TEST(EngineCoreTest, VisibilityRegion3D_WalkingOutReleasesTheVerdictOnTheVeryNextTick) {
     // The regression that decides this slice is honest: a member that LEAVES the box must not
     // keep last tick's fade. Membership refreshes per tick, and the live flag goes back to true
     // the same tick the mesh crosses out of the room - never a frame of dark behind it.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                                  Math::Vector3UVE{5.0F, 5.0F, 5.0F},
+    static_cast<void>(CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                                  Math::Vector3{5.0F, 5.0F, 5.0F},
                                                   0xFFFFFFFFU));
-    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity content = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      content)
                      .live)
         << "setup: inside an inactive room, skipped";
 
-    Scene::TransformComponentUVE doorTransform;
-    doorTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, content, doorTransform);
-    engine.TickFrameUVE();
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    Scene::TransformComponent doorTransform;
+    doorTransform.localPosition = Math::Vector3{10.0F, 0.0F, 0.0F};
+    sceneGraph.SetLocalTransform(entityManager, content, doorTransform);
+    engine.TickFrame();
+    ASSERT_TRUE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         content))
         << "the engine leaves the marker; the VERDICT is what is released";
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_TRUE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                     content)
                     .live) << "out of the room: rendered again the very next tick, not someday";
 }
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_DisabledReleasesAndDestroyingTheRegionRehomesItsMembers) {
+TEST(EngineCoreTest, VisibilityRegion3D_DisabledReleasesAndDestroyingTheRegionRehomesItsMembers) {
     // Two fail-open paths at once: disabling a region shows its content from the next tick, and
     // destroying the region lets the membership rehome to ANOTHER containing region (or nobody)
     // without a stale fade ever binding the mesh again.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE roomA =
-        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
-    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity roomA =
+        CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                    Math::Vector3{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::Entity content = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      content)
                      .live);
 
-    entityManager.GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(roomA).enabled =
+    entityManager.GetComponent<Scene::VisibilityRegion3DComponent>(roomA).enabled =
         false;
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                     content)
                     .live) << "disabled: released the same tick, no stale fade";
 
-    // Re-enable, then destroy: the membership rebrands to kInvalidEntityUVE and stays live.
-    entityManager.GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(roomA).enabled =
+    // Re-enable, then destroy: the membership rebrands to kInvalidEntity and stays live.
+    entityManager.GetComponent<Scene::VisibilityRegion3DComponent>(roomA).enabled =
         true;
-    engine.TickFrameUVE();
-    ASSERT_FALSE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    ASSERT_FALSE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                      content)
                      .live);
-    entityManager.DestroyEntityUVE(roomA);
-    engine.TickFrameUVE();
-    const Scene::VisibilityRegion3DMembershipComponentUVE& membership =
-        entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(content);
+    entityManager.DestroyEntity(roomA);
+    engine.TickFrame();
+    const Scene::VisibilityRegion3DMembershipComponent& membership =
+        entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(content);
     EXPECT_TRUE(membership.live)
         << "dead region: fail open on the render path AND in the recorded verdict";
-    EXPECT_EQ(membership.region, Scene::kInvalidEntityUVE)
+    EXPECT_EQ(membership.region, Scene::kInvalidEntity)
         << "ownership is reassigned - content is rehomeable, never orphan-hidden";
 }
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_OverlappingRoomsTheNearestCenterOwnsTheMesh) {
+TEST(EngineCoreTest, VisibilityRegion3D_OverlappingRoomsTheNearestCenterOwnsTheMesh) {
     // Overlapping rooms need ONE deterministic owner per mesh; otherwise the culling of a double-
     // booked room was history-dependent. Measured: the nearest region center stamps it, and a
     // second tick answers the same way without oscillation.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    static_cast<void>(CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                                  Math::Vector3UVE{6.0F, 6.0F, 6.0F},
+    static_cast<void>(CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                                  Math::Vector3{6.0F, 6.0F, 6.0F},
                                                   0xFFFFFFFFU)); // big, centered at 0
-    const Scene::EntityUVE small =
-        CreateVisibilityRegionAtUVE(entityManager, sceneGraph,
-                                    Math::Vector3UVE{4.0F, 0.0F, 0.0F},
-                                    Math::Vector3UVE{2.0F, 2.0F, 2.0F}, 0xFFFFFFFFU);
-    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{4.5F, 0.0F, 0.0F}, 0x00000001U);
-    const Scene::EntityUVE camera =
-        CreateWatchingCameraAtUVE(entityManager, sceneGraph, Math::Vector3UVE{50.0F, 0.0F, 0.0F});
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity small =
+        CreateVisibilityRegionAt(entityManager, sceneGraph,
+                                    Math::Vector3{4.0F, 0.0F, 0.0F},
+                                    Math::Vector3{2.0F, 2.0F, 2.0F}, 0xFFFFFFFFU);
+    const Scene::Entity content = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{4.5F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity camera =
+        CreateWatchingCameraAt(entityManager, sceneGraph, Math::Vector3{50.0F, 0.0F, 0.0F});
+    engine.SetActiveCamera(camera);
 
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                   content)
                   .region,
               small) << "inside both rooms: the NEAREST center owns the mesh";
-    engine.TickFrameUVE();
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    engine.TickFrame();
+    EXPECT_EQ(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                   content)
                   .region,
               small) << "second tick: same owner, no oscillation between overlapping rooms";
 }
 
-TEST(EngineCoreUVETest, VisibilityRegion3D_NoViewersAtAllFailsOpenWithActiveRegions) {
+TEST(EngineCoreTest, VisibilityRegion3D_NoViewersAtAllFailsOpenWithActiveRegions) {
     // Empty worlds show everything: with no camera and no controller, regions report active and
     // their members report live. The fail-open belongs to the POLICY (the sync), while the pure
     // function stays measurable - asserted separately in the object tests.
-    EngineConfigUVE config = MakeTestConfigUVE();
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    const Scene::EntityUVE room =
-        CreateVisibilityRegionAtUVE(entityManager, sceneGraph, Math::Vector3UVE{},
-                                    Math::Vector3UVE{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
-    const Scene::EntityUVE content = CreateStandaloneMeshAtUVE(
-        entityManager, sceneGraph, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0x00000001U);
+    const Scene::Entity room =
+        CreateVisibilityRegionAt(entityManager, sceneGraph, Math::Vector3{},
+                                    Math::Vector3{5.0F, 5.0F, 5.0F}, 0xFFFFFFFFU);
+    const Scene::Entity content = CreateStandaloneMeshAt(
+        entityManager, sceneGraph, Math::Vector3{1.0F, 0.0F, 0.0F}, 0x00000001U);
 
-    engine.TickFrameUVE();
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DComponentUVE>(room)
+    engine.TickFrame();
+    EXPECT_TRUE(entityManager.GetComponent<Scene::VisibilityRegion3DComponent>(room)
                     .active)
         << "no viewer anywhere: active, because managing nothing hides nothing";
-    ASSERT_TRUE(entityManager.HasComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    ASSERT_TRUE(entityManager.HasComponent<Scene::VisibilityRegion3DMembershipComponent>(
         content));
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::VisibilityRegion3DMembershipComponentUVE>(
+    EXPECT_TRUE(entityManager.GetComponent<Scene::VisibilityRegion3DMembershipComponent>(
                     content)
                     .live);
 }
 
 
-[[nodiscard]] Scene::EntityUVE MakeLagShooterUVE(Scene::IEntityManagerUVE& entityManager,
-                                                 Scene::ISceneGraphUVE& sceneGraph,
-                                                 const Math::Vector3UVE& position) {
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform{};
+[[nodiscard]] Scene::Entity MakeLagShooter(Scene::IEntityManager& entityManager,
+                                                 Scene::ISceneGraph& sceneGraph,
+                                                 const Math::Vector3& position) {
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent transform{};
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-    Scene::Hitbox3DComponentUVE hitbox{};
-    hitbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    sceneGraph.AttachTransform(entityManager, entity, transform);
+    Scene::Hitbox3DComponent hitbox{};
+    hitbox.halfExtents = Math::Vector3{1.0F, 1.0F, 1.0F};
     hitbox.damageChannel = "melee";
-    entityManager.AddComponentUVE<Scene::Hitbox3DComponentUVE>(entity, hitbox);
+    entityManager.AddComponent<Scene::Hitbox3DComponent>(entity, hitbox);
     return entity;
 }
 
-[[nodiscard]] Scene::EntityUVE MakeLagTargetUVE(Scene::IEntityManagerUVE& entityManager,
-                                               Scene::ISceneGraphUVE& sceneGraph,
-                                               const Math::Vector3UVE& position) {
-    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform{};
+[[nodiscard]] Scene::Entity MakeLagTarget(Scene::IEntityManager& entityManager,
+                                               Scene::ISceneGraph& sceneGraph,
+                                               const Math::Vector3& position) {
+    const Scene::Entity entity = entityManager.CreateEntity();
+    Scene::TransformComponent transform{};
     transform.localPosition = position;
-    sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-    Scene::Hurtbox3DComponentUVE hurtbox{};
-    hurtbox.halfExtents = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    sceneGraph.AttachTransform(entityManager, entity, transform);
+    Scene::Hurtbox3DComponent hurtbox{};
+    hurtbox.halfExtents = Math::Vector3{1.0F, 1.0F, 1.0F};
     hurtbox.damageChannel = "melee";
-    entityManager.AddComponentUVE<Scene::Hurtbox3DComponentUVE>(entity, hurtbox);
-    entityManager.AddComponentUVE<Scene::HealthComponentUVE>(entity, Scene::HealthComponentUVE{});
+    entityManager.AddComponent<Scene::Hurtbox3DComponent>(entity, hurtbox);
+    entityManager.AddComponent<Scene::HealthComponent>(entity, Scene::HealthComponent{});
     return entity;
 }
 
-void MoveLagEntityUVE(Scene::IEntityManagerUVE& entityManager,
-                      Scene::ISceneGraphUVE& sceneGraph, const Scene::EntityUVE entity,
-                      const Math::Vector3UVE& position) {
-    Scene::TransformComponentUVE transform =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+void MoveLagEntity(Scene::IEntityManager& entityManager,
+                      Scene::ISceneGraph& sceneGraph, const Scene::Entity entity,
+                      const Math::Vector3& position) {
+    Scene::TransformComponent transform =
+        entityManager.GetComponent<Scene::TransformComponent>(entity);
     transform.localPosition = position;
-    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+    sceneGraph.SetLocalTransform(entityManager, entity, transform);
 }
 
-[[nodiscard]] float HealthOfUVE(Scene::IEntityManagerUVE& entityManager,
-                               const Scene::EntityUVE entity) {
-    return entityManager.GetComponentUVE<Scene::HealthComponentUVE>(entity).health;
+[[nodiscard]] float HealthOf(Scene::IEntityManager& entityManager,
+                               const Scene::Entity entity) {
+    return entityManager.GetComponent<Scene::HealthComponent>(entity).health;
 }
 
-TEST(EngineCoreUVETest, LagTick_RecordsEveryFrame) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LagTick_RecordsEveryFrame) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     // 1-based engine frames: nothing recorded before the first sync.
-    EXPECT_EQ(engine.GetLagTickUVE(), 0U);
-    EXPECT_EQ(engine.GetLagCompensatorUVE().HistorySizeUVE(), 0U);
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetLagTickUVE(), 3U);
-    EXPECT_EQ(engine.GetLagCompensatorUVE().HistorySizeUVE(), 3U);
+    EXPECT_EQ(engine.GetLagTick(), 0U);
+    EXPECT_EQ(engine.GetLagCompensator().HistorySize(), 0U);
+    engine.TickFrame();
+    engine.TickFrame();
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetLagTick(), 3U);
+    EXPECT_EQ(engine.GetLagCompensator().HistorySize(), 3U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LagShot_MergedBeforeTrackerDamages) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LagShot_MergedBeforeTrackerDamages) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE shooter =
-        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE target =
-        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F});
+    const Scene::Entity shooter =
+        MakeLagShooter(entityManager, sceneGraph, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Scene::Entity target =
+        MakeLagTarget(entityManager, sceneGraph, Math::Vector3{1.5F, 0.0F, 0.0F});
 
     // Frame 1 records the overlap - and live-hits it the same frame (entered, 100 -> 99).
-    engine.TickFrameUVE();
-    ASSERT_EQ(engine.GetLagTickUVE(), 1U);
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+    engine.TickFrame();
+    ASSERT_EQ(engine.GetLagTick(), 1U);
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 99.0F);
 
     // Escape: frame 2 records the miss, and the live strike exits without further damage.
-    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
-    engine.TickFrameUVE();
-    ASSERT_EQ(engine.GetLagTickUVE(), 2U);
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+    MoveLagEntity(entityManager, sceneGraph, target, Math::Vector3{20.0F, 0.0F, 0.0F});
+    engine.TickFrame();
+    ASSERT_EQ(engine.GetLagTick(), 2U);
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 99.0F);
 
     // The lagged shot, resolved against tick 1 through the engine's own compensator...
-    Physics::LagShotReportUVE compensated =
-        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager);
+    Physics::LagShotReport compensated =
+        engine.GetLagCompensator().ResolveShot(shooter, 1U, entityManager);
     ASSERT_EQ(compensated.pairs.size(), 1U);
 
     // ...re-enters on frame 3 exactly like a live strike: damage plus the typed event.
-    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
-    const Events::EventSubscriptionUVE damagedSub =
-        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
-            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    std::vector<Gameplay::HealthDamagedEvent> damaged;
+    const Events::EventSubscription damagedSub =
+        services.GetEventSystem().Subscribe<Gameplay::HealthDamagedEvent>(
+            [&](const Gameplay::HealthDamagedEvent& event) { damaged.push_back(event); });
     static_cast<void>(damagedSub);
-    engine.SubmitLagShotUVE(std::move(compensated));
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
-    services.GetEventSystemUVE().DispatchQueuedUVE();
+    engine.SubmitLagShot(std::move(compensated));
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 98.0F);
+    services.GetEventSystem().DispatchQueued();
     ASSERT_EQ(damaged.size(), 1U);
     EXPECT_EQ(damaged[0].hurtbox, target);
     EXPECT_EQ(damaged[0].hitbox, shooter);
@@ -5545,113 +5545,113 @@ TEST(EngineCoreUVETest, LagShot_MergedBeforeTrackerDamages) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LagShot_ReplayedSubmitStaysSilent) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LagShot_ReplayedSubmitStaysSilent) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE shooter =
-        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE target =
-        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{1.5F, 0.0F, 0.0F});
-    engine.TickFrameUVE();
-    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
-    engine.TickFrameUVE();
-    ASSERT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+    const Scene::Entity shooter =
+        MakeLagShooter(entityManager, sceneGraph, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Scene::Entity target =
+        MakeLagTarget(entityManager, sceneGraph, Math::Vector3{1.5F, 0.0F, 0.0F});
+    engine.TickFrame();
+    MoveLagEntity(entityManager, sceneGraph, target, Math::Vector3{20.0F, 0.0F, 0.0F});
+    engine.TickFrame();
+    ASSERT_FLOAT_EQ(HealthOf(entityManager, target), 99.0F);
 
-    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
-    const Events::EventSubscriptionUVE damagedSub =
-        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
-            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    std::vector<Gameplay::HealthDamagedEvent> damaged;
+    const Events::EventSubscription damagedSub =
+        services.GetEventSystem().Subscribe<Gameplay::HealthDamagedEvent>(
+            [&](const Gameplay::HealthDamagedEvent& event) { damaged.push_back(event); });
     static_cast<void>(damagedSub);
 
     // Frame 3 re-enters compensated (99 -> 98); frame 4 replays the same report - the pair
     // is already active, so the merge stays silent.
-    engine.SubmitLagShotUVE(
-        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager));
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
-    engine.SubmitLagShotUVE(
-        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 1U, entityManager));
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 98.0F);
+    engine.SubmitLagShot(
+        engine.GetLagCompensator().ResolveShot(shooter, 1U, entityManager));
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 98.0F);
+    engine.SubmitLagShot(
+        engine.GetLagCompensator().ResolveShot(shooter, 1U, entityManager));
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 98.0F);
 
-    services.GetEventSystemUVE().DispatchQueuedUVE();
+    services.GetEventSystem().DispatchQueued();
     EXPECT_EQ(damaged.size(), 1U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LagShot_EmptyHistoryResolvesEmpty) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LagShot_EmptyHistoryResolvesEmpty) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE shooter =
-        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE target =
-        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{20.0F, 0.0F, 0.0F});
+    const Scene::Entity shooter =
+        MakeLagShooter(entityManager, sceneGraph, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Scene::Entity target =
+        MakeLagTarget(entityManager, sceneGraph, Math::Vector3{20.0F, 0.0F, 0.0F});
 
     // No frames ran, so no history exists: the resolve is empty, and submitting it is a
     // no-op the first real frame shrugs off.
-    Physics::LagShotReportUVE empty =
-        engine.GetLagCompensatorUVE().ResolveShotUVE(shooter, 5U, entityManager);
+    Physics::LagShotReport empty =
+        engine.GetLagCompensator().ResolveShot(shooter, 5U, entityManager);
     EXPECT_TRUE(empty.pairs.empty());
-    std::vector<Gameplay::HealthDamagedEventUVE> damaged;
-    const Events::EventSubscriptionUVE damagedSub =
-        services.GetEventSystemUVE().Subscribe<Gameplay::HealthDamagedEventUVE>(
-            [&](const Gameplay::HealthDamagedEventUVE& event) { damaged.push_back(event); });
+    std::vector<Gameplay::HealthDamagedEvent> damaged;
+    const Events::EventSubscription damagedSub =
+        services.GetEventSystem().Subscribe<Gameplay::HealthDamagedEvent>(
+            [&](const Gameplay::HealthDamagedEvent& event) { damaged.push_back(event); });
     static_cast<void>(damagedSub);
-    engine.SubmitLagShotUVE(std::move(empty));
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetLagTickUVE(), 1U);
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
-    services.GetEventSystemUVE().DispatchQueuedUVE();
+    engine.SubmitLagShot(std::move(empty));
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetLagTick(), 1U);
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 100.0F);
+    services.GetEventSystem().DispatchQueued();
     EXPECT_TRUE(damaged.empty());
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, LagShot_FractionalResolveSubmits) {
-    EngineCoreUVE engine(MakeTestConfigUVE());
+TEST(EngineCoreTest, LagShot_FractionalResolveSubmits) {
+    EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE shooter =
-        MakeLagShooterUVE(entityManager, sceneGraph, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Scene::EntityUVE target =
-        MakeLagTargetUVE(entityManager, sceneGraph, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
-    MoveLagEntityUVE(entityManager, sceneGraph, target, Math::Vector3UVE{-4.0F, 0.0F, 0.0F});
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 100.0F);
+    const Scene::Entity shooter =
+        MakeLagShooter(entityManager, sceneGraph, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Scene::Entity target =
+        MakeLagTarget(entityManager, sceneGraph, Math::Vector3{4.0F, 0.0F, 0.0F});
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 100.0F);
+    MoveLagEntity(entityManager, sceneGraph, target, Math::Vector3{-4.0F, 0.0F, 0.0F});
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 100.0F);
 
     // Neither recorded frame overlaps, but halfway the target stood inside the shooter:
     // the interpolated report enters through the inbox like any lagged shot.
-    Physics::LagShotReportUVE between =
-        engine.GetLagCompensatorUVE().ResolveShotAtUVE(shooter, 1U, 0.5F, entityManager);
+    Physics::LagShotReport between =
+        engine.GetLagCompensator().ResolveShotAt(shooter, 1U, 0.5F, entityManager);
     ASSERT_EQ(between.pairs.size(), 1U);
     EXPECT_TRUE(between.interpolated);
-    engine.SubmitLagShotUVE(std::move(between));
-    engine.TickFrameUVE();
-    EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+    engine.SubmitLagShot(std::move(between));
+    engine.TickFrame();
+    EXPECT_FLOAT_EQ(HealthOf(entityManager, target), 99.0F);
 
     engine.Shutdown();
 }
 
 namespace {
 
-[[nodiscard]] std::uint32_t ComputeCrc32ForPngUVE(const std::uint8_t* const data,
+[[nodiscard]] std::uint32_t ComputeCrc32ForPng(const std::uint8_t* const data,
                                                    const std::size_t length) noexcept {
     std::uint32_t crc = 0xFFFFFFFFU;
     for (std::size_t i = 0U; i < length; ++i) {
@@ -5664,7 +5664,7 @@ namespace {
     return ~crc;
 }
 
-[[nodiscard]] std::uint32_t ComputeAdler32ForPngUVE(const std::uint8_t* const data,
+[[nodiscard]] std::uint32_t ComputeAdler32ForPng(const std::uint8_t* const data,
                                                      const std::size_t length) noexcept {
     std::uint32_t a = 1U;
     std::uint32_t b = 0U;
@@ -5676,28 +5676,28 @@ namespace {
     return (b << 16U) | a;
 }
 
-void AppendBigEndianUint32UVE(std::vector<std::uint8_t>& out, const std::uint32_t value) {
+void AppendBigEndianUint32(std::vector<std::uint8_t>& out, const std::uint32_t value) {
     out.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
     out.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     out.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
     out.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
-void AppendPngChunkUVE(std::vector<std::uint8_t>& out,
+void AppendPngChunk(std::vector<std::uint8_t>& out,
                        const char (&type)[5],
                        const std::vector<std::uint8_t>& payload) {
-    AppendBigEndianUint32UVE(out, static_cast<std::uint32_t>(payload.size()));
+    AppendBigEndianUint32(out, static_cast<std::uint32_t>(payload.size()));
     const std::size_t typeOffset = out.size();
     out.push_back(static_cast<std::uint8_t>(type[0]));
     out.push_back(static_cast<std::uint8_t>(type[1]));
     out.push_back(static_cast<std::uint8_t>(type[2]));
     out.push_back(static_cast<std::uint8_t>(type[3]));
     out.insert(out.end(), payload.begin(), payload.end());
-    const std::uint32_t crc = ComputeCrc32ForPngUVE(out.data() + typeOffset, 4U + payload.size());
-    AppendBigEndianUint32UVE(out, crc);
+    const std::uint32_t crc = ComputeCrc32ForPng(out.data() + typeOffset, 4U + payload.size());
+    AppendBigEndianUint32(out, crc);
 }
 
-[[nodiscard]] bool WriteGlBottomUpRgbaCropToPngUVE(const std::filesystem::path& filePath,
+[[nodiscard]] bool WriteGlBottomUpRgbaCropToPng(const std::filesystem::path& filePath,
                                                    const std::vector<std::uint8_t>& glBottomUpRgba,
                                                    const std::uint32_t fullWidth,
                                                    const std::uint32_t fullHeight,
@@ -5744,21 +5744,21 @@ void AppendPngChunkUVE(std::vector<std::uint8_t>& out,
                           rawScanlines.begin() + static_cast<std::ptrdiff_t>(pos + blockLen));
         pos += blockLen;
     }
-    const std::uint32_t adler = ComputeAdler32ForPngUVE(rawScanlines.data(), rawScanlines.size());
-    AppendBigEndianUint32UVE(zlibStream, adler);
+    const std::uint32_t adler = ComputeAdler32ForPng(rawScanlines.data(), rawScanlines.size());
+    AppendBigEndianUint32(zlibStream, adler);
 
     std::vector<std::uint8_t> pngBytes = {0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU};
     std::vector<std::uint8_t> ihdr;
-    AppendBigEndianUint32UVE(ihdr, cropWidth);
-    AppendBigEndianUint32UVE(ihdr, cropHeight);
+    AppendBigEndianUint32(ihdr, cropWidth);
+    AppendBigEndianUint32(ihdr, cropHeight);
     ihdr.push_back(8U); // bit depth
     ihdr.push_back(6U); // color type RGBA
     ihdr.push_back(0U); // compression
     ihdr.push_back(0U); // filter
     ihdr.push_back(0U); // interlace
-    AppendPngChunkUVE(pngBytes, "IHDR", ihdr);
-    AppendPngChunkUVE(pngBytes, "IDAT", zlibStream);
-    AppendPngChunkUVE(pngBytes, "IEND", {});
+    AppendPngChunk(pngBytes, "IHDR", ihdr);
+    AppendPngChunk(pngBytes, "IDAT", zlibStream);
+    AppendPngChunk(pngBytes, "IEND", {});
 
     std::error_code ec;
     std::filesystem::create_directories(filePath.parent_path(), ec);
@@ -5771,234 +5771,234 @@ void AppendPngChunkUVE(std::vector<std::uint8_t>& out,
     return out.good();
 }
 
-[[nodiscard]] Asset::ParticleFloatInputUVE MakeConstFloatInputUVE(const float value) noexcept {
-    Asset::ParticleFloatInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::Constant;
+[[nodiscard]] Asset::ParticleFloatInput MakeConstFloatInput(const float value) noexcept {
+    Asset::ParticleFloatInput input;
+    input.kind = Asset::ParticleValueKind::Constant;
     input.constant = value;
     return input;
 }
 
-[[nodiscard]] Asset::ParticleFloatInputUVE MakeRandomFloatInputUVE(const float minVal,
+[[nodiscard]] Asset::ParticleFloatInput MakeRandomFloatInput(const float minVal,
                                                                    const float maxVal) noexcept {
-    Asset::ParticleFloatInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::RandomRange;
+    Asset::ParticleFloatInput input;
+    input.kind = Asset::ParticleValueKind::RandomRange;
     input.min = minVal;
     input.max = maxVal;
     return input;
 }
 
-[[nodiscard]] Asset::ParticleVectorInputUVE MakeConstVectorInputUVE(
-    const Math::Vector3UVE& value) noexcept {
-    Asset::ParticleVectorInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::Constant;
+[[nodiscard]] Asset::ParticleVectorInput MakeConstVectorInput(
+    const Math::Vector3& value) noexcept {
+    Asset::ParticleVectorInput input;
+    input.kind = Asset::ParticleValueKind::Constant;
     input.constant = value;
     return input;
 }
 
-[[nodiscard]] Asset::ParticleVectorInputUVE MakeRandomVectorInputUVE(
-    const Math::Vector3UVE& minVal,
-    const Math::Vector3UVE& maxVal) noexcept {
-    Asset::ParticleVectorInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::RandomRange;
+[[nodiscard]] Asset::ParticleVectorInput MakeRandomVectorInput(
+    const Math::Vector3& minVal,
+    const Math::Vector3& maxVal) noexcept {
+    Asset::ParticleVectorInput input;
+    input.kind = Asset::ParticleValueKind::RandomRange;
     input.min = minVal;
     input.max = maxVal;
     return input;
 }
 
-[[nodiscard]] Asset::ParticleColorInputUVE MakeConstColorInputUVE(const Math::ColorUVE& color,
+[[nodiscard]] Asset::ParticleColorInput MakeConstColorInput(const Math::Color& color,
                                                                   const float alpha = 1.0F) noexcept {
-    Asset::ParticleColorInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::Constant;
+    Asset::ParticleColorInput input;
+    input.kind = Asset::ParticleValueKind::Constant;
     input.constant = color;
     input.alpha = alpha;
     return input;
 }
 
-[[nodiscard]] Asset::ParticleColorInputUVE MakeGradientColorInputUVE(
-    const Asset::ParticleGradientUVE& gradient) {
-    Asset::ParticleColorInputUVE input;
-    input.kind = Asset::ParticleValueKindUVE::Gradient;
+[[nodiscard]] Asset::ParticleColorInput MakeGradientColorInput(
+    const Asset::ParticleGradient& gradient) {
+    Asset::ParticleColorInput input;
+    input.kind = Asset::ParticleValueKind::Gradient;
     input.gradient = gradient;
     return input;
 }
 
 } // namespace
 
-TEST(EngineCoreUVETest, VfxRuntime_ParticleEmitterWithSystemAssetPathSpawnsInVfxWorldNotLegacyRuntime) {
-    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectoryUVE("engine_vfx_emitter_sync");
+TEST(EngineCoreTest, VfxRuntime_ParticleEmitterWithSystemAssetPathSpawnsInVfxWorldNotLegacyRuntime) {
+    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectory("engine_vfx_emitter_sync");
     const std::filesystem::path sparksPath = scratchDir / "Sparks.uvfx";
-    const Asset::ParticleSystemAssetUVE sparksAsset =
-        VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
-    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sparksAsset, sparksPath));
+    const Asset::ParticleSystemAsset sparksAsset =
+        VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Sparks);
+    ASSERT_TRUE(Asset::SaveParticleSystemAsset(sparksAsset, sparksPath));
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.projectRootDirectoryUVE = scratchDir;
-    EngineCoreUVE engine(config);
+    EngineConfig config = MakeTestConfig();
+    config.projectRootDirectory = scratchDir;
+    EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    ASSERT_NE(services.TryGetVfxWorldUVE(), nullptr);
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    EngineServices& services = engine.GetServices();
+    ASSERT_NE(services.TryGetVfxWorld(), nullptr);
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE camTransform{};
-    camTransform.localPosition = Math::Vector3UVE{0.0F, 1.0F, 5.0F};
-    sceneGraph.AttachTransformUVE(entityManager, camera, camTransform);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity camera = entityManager.CreateEntity();
+    Scene::TransformComponent camTransform{};
+    camTransform.localPosition = Math::Vector3{0.0F, 1.0F, 5.0F};
+    sceneGraph.AttachTransform(entityManager, camera, camTransform);
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    const Scene::EntityUVE emitterEntity = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE emitterTransform{};
-    emitterTransform.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, emitterEntity, emitterTransform);
-    Scene::ParticleEmitterComponentUVE emitterComp{};
+    const Scene::Entity emitterEntity = entityManager.CreateEntity();
+    Scene::TransformComponent emitterTransform{};
+    emitterTransform.localPosition = Math::Vector3{0.0F, 0.5F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, emitterEntity, emitterTransform);
+    Scene::ParticleEmitterComponent emitterComp{};
     emitterComp.systemAssetPath = "Sparks.uvfx";
     emitterComp.seed = 42U;
     emitterComp.autoPlay = true;
     emitterComp.emitting = true;
-    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(emitterEntity, emitterComp);
+    entityManager.AddComponent<Scene::ParticleEmitterComponent>(emitterEntity, emitterComp);
 
     for (int frame = 0; frame < 6; ++frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(8));
-        engine.TickFrameUVE();
+        engine.TickFrame();
     }
 
-    EXPECT_EQ(services.GetParticleRuntimeUVE().GetInstanceCountUVE(), 0U);
-    EXPECT_EQ(engine.GetVfxWorldUVE().GetStatsUVE().activeInstanceCount, 1U);
-    EXPECT_GT(engine.GetVfxWorldUVE().GetStatsUVE().totalLiveParticles, 0U);
+    EXPECT_EQ(services.GetParticleRuntime().GetInstanceCount(), 0U);
+    EXPECT_EQ(engine.GetVfxWorld().GetStats().activeInstanceCount, 1U);
+    EXPECT_GT(engine.GetVfxWorld().GetStats().totalLiveParticles, 0U);
 
-    entityManager.DestroyEntityUVE(emitterEntity);
-    engine.TickFrameUVE();
-    EXPECT_EQ(engine.GetVfxWorldUVE().GetStatsUVE().activeInstanceCount, 0U);
+    entityManager.DestroyEntity(emitterEntity);
+    engine.TickFrame();
+    EXPECT_EQ(engine.GetVfxWorld().GetStats().activeInstanceCount, 0U);
 
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplateLevelWithScreenshots) {
-    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectoryUVE("engine_vfx_windowed_v3a");
+TEST(EngineCoreTest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplateLevelWithScreenshots) {
+    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectory("engine_vfx_windowed_v3a");
     constexpr std::uint32_t kWinW = 320U;
     constexpr std::uint32_t kWinH = 240U;
 
-    EngineConfigUVE config = MakeTestConfigUVE();
-    config.headlessUVE = false;
+    EngineConfig config = MakeTestConfig();
+    config.headless = false;
     config.windowWidth = kWinW;
     config.windowHeight = kWinH;
     config.renderTargetWidth = kWinW;
     config.renderTargetHeight = kWinH;
-    config.vsyncEnabledUVE = false;
+    config.vsyncEnabled = false;
     config.windowGlVersionMajor = 4U;
     config.windowGlVersionMinor = 5U;
-    config.projectRootDirectoryUVE = scratchDir;
-    config.backgroundColorUVE = {0.04F, 0.05F, 0.08F, 1.0F};
-    config.ambientColor = Math::Vector3UVE{0.35F, 0.38F, 0.45F};
-    config.shaderCompilationModeUVE = ShaderCompilationModeUVE::SynchronousOnDemandUVE;
+    config.projectRootDirectory = scratchDir;
+    config.backgroundColor = {0.04F, 0.05F, 0.08F, 1.0F};
+    config.ambientColor = Math::Vector3{0.35F, 0.38F, 0.45F};
+    config.shaderCompilationMode = ShaderCompilationMode::SynchronousOnDemand;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
-        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+    if (!engine.GetServices().GetWindowManager().IsValid()) {
+        GTEST_SKIP() << "No display available for windowed EngineCore - skipping (run under "
                         "xvfb-run to exercise this test)";
     }
     ASSERT_TRUE(engine.Load());
 
-    EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+    EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE camTransform{};
-    camTransform.localPosition = Math::Vector3UVE{0.0F, 1.1F, 4.5F};
-    sceneGraph.AttachTransformUVE(entityManager, camera, camTransform);
-    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    const Scene::Entity camera = entityManager.CreateEntity();
+    Scene::TransformComponent camTransform{};
+    camTransform.localPosition = Math::Vector3{0.0F, 1.1F, 4.5F};
+    sceneGraph.AttachTransform(entityManager, camera, camTransform);
+    entityManager.AddComponent<Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE sunTransform{};
-    Math::QuaternionUVE sunRot{};
-    static_cast<void>(Math::TryMakeEulerUVE(Math::Vector3UVE{-0.8F, -0.4F, 0.0F}, sunRot));
+    const Scene::Entity sun = entityManager.CreateEntity();
+    Scene::TransformComponent sunTransform{};
+    Math::Quaternion sunRot{};
+    static_cast<void>(Math::TryMakeEuler(Math::Vector3{-0.8F, -0.4F, 0.0F}, sunRot));
     sunTransform.localRotation = sunRot;
-    sceneGraph.AttachTransformUVE(entityManager, sun, sunTransform);
-    Scene::LightComponentUVE sunLight{};
-    sunLight.type = Scene::LightTypeUVE::Directional;
-    sunLight.color = Math::ColorUVE{1.0F, 0.96F, 0.90F};
+    sceneGraph.AttachTransform(entityManager, sun, sunTransform);
+    Scene::LightComponent sunLight{};
+    sunLight.type = Scene::LightType::Directional;
+    sunLight.color = Math::Color{1.0F, 0.96F, 0.90F};
     sunLight.intensity = 1.6F;
-    entityManager.AddComponentUVE<Scene::LightComponentUVE>(sun, sunLight);
+    entityManager.AddComponent<Scene::LightComponent>(sun, sunLight);
 
-    const std::filesystem::path shotsDir = UVE::Tests::RepositoryRootUVE() / "Docs/Plans/vfx_shots";
+    const std::filesystem::path shotsDir = UVE::Tests::RepositoryRoot() / "Docs/Plans/vfx_shots";
 
     // -------------------------------------------------------------------------
     // 1. Additive sparks (`v3a_additive_sparks.png`):
     //    Verify overlapping additive particles accumulate brightness above a single particle.
     // -------------------------------------------------------------------------
     {
-        Asset::ParticleSystemAssetUVE additiveSystem =
-            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
+        Asset::ParticleSystemAsset additiveSystem =
+            VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Sparks);
         ASSERT_FALSE(additiveSystem.emitters.empty());
-        Asset::ParticleEmitterAssetUVE& em = additiveSystem.emitters[0];
+        Asset::ParticleEmitterAsset& em = additiveSystem.emitters[0];
         em.maxParticles = 600U;
         em.emitterUpdate.clear();
-        Asset::ParticleModuleUVE burstMod;
+        Asset::ParticleModule burstMod;
         burstMod.id = 1U;
-        burstMod.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
-        burstMod.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+        burstMod.type = Asset::ParticleModuleType::SpawnBurst;
+        burstMod.floats["Time"] = MakeConstFloatInput(0.0F);
         burstMod.ints["Count"] = 90;
         burstMod.ints["Cycles"] = 1;
-        burstMod.floats["Interval"] = MakeConstFloatInputUVE(1.0F);
+        burstMod.floats["Interval"] = MakeConstFloatInput(1.0F);
         em.emitterUpdate.push_back(burstMod);
 
-        Asset::ParticleModuleUVE rateMod;
+        Asset::ParticleModule rateMod;
         rateMod.id = 2U;
-        rateMod.type = Asset::ParticleModuleTypeUVE::SpawnRate;
-        rateMod.floats["Rate"] = MakeConstFloatInputUVE(160.0F);
+        rateMod.type = Asset::ParticleModuleType::SpawnRate;
+        rateMod.floats["Rate"] = MakeConstFloatInput(160.0F);
         em.emitterUpdate.push_back(rateMod);
 
-        for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
-                mod.floats["Size"] = MakeConstFloatInputUVE(0.32F);
+        for (Asset::ParticleModule& mod : em.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleType::InitialSize) {
+                mod.floats["Size"] = MakeConstFloatInput(0.32F);
                 mod.vectors["Size"] =
-                    MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+                    MakeConstVectorInput(Math::Vector3{1.0F, 1.0F, 1.0F});
             }
-            if (mod.type == Asset::ParticleModuleTypeUVE::VelocityInCone) {
-                mod.floats["Angle"] = MakeConstFloatInputUVE(35.0F);
-                mod.floats["Speed"] = MakeRandomFloatInputUVE(1.5F, 3.8F);
+            if (mod.type == Asset::ParticleModuleType::VelocityInCone) {
+                mod.floats["Angle"] = MakeConstFloatInput(35.0F);
+                mod.floats["Speed"] = MakeRandomFloatInput(1.5F, 3.8F);
             }
         }
-        for (Asset::ParticleModuleUVE& mod : em.render) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+        for (Asset::ParticleModule& mod : em.render) {
+            if (mod.type == Asset::ParticleModuleType::SpriteRenderer) {
                 mod.ints["Facing"] = 0; // CameraPlane so billboards are large and crisp
                 mod.ints["Blend"] = 0;  // Additive
-                mod.floats["Emissive"] = MakeConstFloatInputUVE(2.0F);
+                mod.floats["Emissive"] = MakeConstFloatInput(2.0F);
             }
         }
 
         const std::filesystem::path additivePath = scratchDir / "AdditiveSparks.uvfx";
-        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(additiveSystem, additivePath));
+        ASSERT_TRUE(Asset::SaveParticleSystemAsset(additiveSystem, additivePath));
 
-        const Scene::EntityUVE sparkEmitter = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE sparkTransform{};
-        sparkTransform.localPosition = Math::Vector3UVE{0.0F, 0.85F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, sparkEmitter, sparkTransform);
-        Scene::ParticleEmitterComponentUVE sparkComp{};
+        const Scene::Entity sparkEmitter = entityManager.CreateEntity();
+        Scene::TransformComponent sparkTransform{};
+        sparkTransform.localPosition = Math::Vector3{0.0F, 0.85F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, sparkEmitter, sparkTransform);
+        Scene::ParticleEmitterComponent sparkComp{};
         sparkComp.systemAssetPath = "AdditiveSparks.uvfx";
         sparkComp.seed = 101U;
         sparkComp.autoPlay = true;
         sparkComp.emitting = true;
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(sparkEmitter, sparkComp);
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(sparkEmitter, sparkComp);
 
-        engine.TickFrameUVE();
-        engine.GetVfxWorldUVE().TickUVE(0.18F);
+        engine.TickFrame();
+        engine.GetVfxWorld().Tick(0.18F);
 
         std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
-        engine.SetPostRenderCallbackUVE([&] {
+        engine.SetPostRenderCallback([&] {
             glFinish();
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
                          GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         });
-        engine.TickFrameUVE();
-        engine.SetPostRenderCallbackUVE({});
+        engine.TickFrame();
+        engine.SetPostRenderCallback({});
 
         std::uint32_t maxR = 0U;
         std::uint32_t brightPixelCount = 0U;
@@ -6010,11 +6010,11 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
         }
         EXPECT_GT(maxR, 180U);
         EXPECT_GT(brightPixelCount, 40U);
-        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPng(
             shotsDir / "v3a_additive_sparks.png", rgba, kWinW, kWinH, 40U, 20U, 240U, 200U));
 
-        entityManager.DestroyEntityUVE(sparkEmitter);
-        engine.TickFrameUVE();
+        entityManager.DestroyEntity(sparkEmitter);
+        engine.TickFrame();
     }
 
     // -------------------------------------------------------------------------
@@ -6022,82 +6022,82 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
     //    Rising alpha-blended colored smoke puffs sorted back-to-front by camera depth.
     // -------------------------------------------------------------------------
     {
-        Asset::ParticleSystemAssetUVE layeredSmoke =
-            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Smoke);
+        Asset::ParticleSystemAsset layeredSmoke =
+            VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Smoke);
         ASSERT_FALSE(layeredSmoke.emitters.empty());
-        Asset::ParticleEmitterAssetUVE& smokeEm = layeredSmoke.emitters[0];
+        Asset::ParticleEmitterAsset& smokeEm = layeredSmoke.emitters[0];
         smokeEm.maxParticles = 400U;
         smokeEm.emitterUpdate.clear();
         {
-            Asset::ParticleModuleUVE burst;
+            Asset::ParticleModule burst;
             burst.id = 1U;
-            burst.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
-            burst.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+            burst.type = Asset::ParticleModuleType::SpawnBurst;
+            burst.floats["Time"] = MakeConstFloatInput(0.0F);
             burst.ints["Count"] = 45;
             burst.ints["Cycles"] = 1;
             smokeEm.emitterUpdate.push_back(burst);
 
-            Asset::ParticleModuleUVE rate;
+            Asset::ParticleModule rate;
             rate.id = 2U;
-            rate.type = Asset::ParticleModuleTypeUVE::SpawnRate;
-            rate.floats["Rate"] = MakeConstFloatInputUVE(60.0F);
+            rate.type = Asset::ParticleModuleType::SpawnRate;
+            rate.floats["Rate"] = MakeConstFloatInput(60.0F);
             smokeEm.emitterUpdate.push_back(rate);
         }
-        for (Asset::ParticleModuleUVE& mod : smokeEm.particleSpawn) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+        for (Asset::ParticleModule& mod : smokeEm.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleType::InitialSize) {
                 mod.vectors["Size"] =
-                    MakeRandomVectorInputUVE(Math::Vector3UVE{0.65F, 0.65F, 0.65F},
-                                             Math::Vector3UVE{1.10F, 1.10F, 1.10F});
+                    MakeRandomVectorInput(Math::Vector3{0.65F, 0.65F, 0.65F},
+                                             Math::Vector3{1.10F, 1.10F, 1.10F});
             }
-            if (mod.type == Asset::ParticleModuleTypeUVE::InitialColor) {
+            if (mod.type == Asset::ParticleModuleType::InitialColor) {
                 mod.colors["Color"] =
-                    MakeConstColorInputUVE(Math::ColorUVE{0.75F, 0.82F, 0.92F}, 0.75F);
+                    MakeConstColorInput(Math::Color{0.75F, 0.82F, 0.92F}, 0.75F);
             }
         }
-        for (Asset::ParticleModuleUVE& mod : smokeEm.particleUpdate) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::ColorOverLife) {
-                Asset::ParticleGradientUVE grad;
+        for (Asset::ParticleModule& mod : smokeEm.particleUpdate) {
+            if (mod.type == Asset::ParticleModuleType::ColorOverLife) {
+                Asset::ParticleGradient grad;
                 grad.stops = {
-                    Asset::ParticleGradientStopUVE{0.0F, Math::ColorUVE{0.95F, 0.55F, 0.20F}, 0.80F},
-                    Asset::ParticleGradientStopUVE{0.5F, Math::ColorUVE{0.55F, 0.68F, 0.88F}, 0.65F},
-                    Asset::ParticleGradientStopUVE{1.0F, Math::ColorUVE{0.25F, 0.32F, 0.45F}, 0.0F},
+                    Asset::ParticleGradientStop{0.0F, Math::Color{0.95F, 0.55F, 0.20F}, 0.80F},
+                    Asset::ParticleGradientStop{0.5F, Math::Color{0.55F, 0.68F, 0.88F}, 0.65F},
+                    Asset::ParticleGradientStop{1.0F, Math::Color{0.25F, 0.32F, 0.45F}, 0.0F},
                 };
-                mod.colors["Color"] = MakeGradientColorInputUVE(grad);
+                mod.colors["Color"] = MakeGradientColorInput(grad);
             }
         }
-        for (Asset::ParticleModuleUVE& mod : smokeEm.render) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+        for (Asset::ParticleModule& mod : smokeEm.render) {
+            if (mod.type == Asset::ParticleModuleType::SpriteRenderer) {
                 mod.ints["Blend"] = 1; // AlphaBlend
-                mod.floats["Emissive"] = MakeConstFloatInputUVE(1.2F);
+                mod.floats["Emissive"] = MakeConstFloatInput(1.2F);
             }
         }
 
         const std::filesystem::path smokePath = scratchDir / "AlphaSmoke.uvfx";
-        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(layeredSmoke, smokePath));
+        ASSERT_TRUE(Asset::SaveParticleSystemAsset(layeredSmoke, smokePath));
 
-        const Scene::EntityUVE smokeEntity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE smokeTransform{};
-        smokeTransform.localPosition = Math::Vector3UVE{0.0F, 0.4F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, smokeEntity, smokeTransform);
-        Scene::ParticleEmitterComponentUVE smokeComp{};
+        const Scene::Entity smokeEntity = entityManager.CreateEntity();
+        Scene::TransformComponent smokeTransform{};
+        smokeTransform.localPosition = Math::Vector3{0.0F, 0.4F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, smokeEntity, smokeTransform);
+        Scene::ParticleEmitterComponent smokeComp{};
         smokeComp.systemAssetPath = "AlphaSmoke.uvfx";
         smokeComp.seed = 202U;
         smokeComp.autoPlay = true;
         smokeComp.emitting = true;
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(smokeEntity, smokeComp);
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(smokeEntity, smokeComp);
 
-        engine.TickFrameUVE();
-        engine.GetVfxWorldUVE().TickUVE(0.35F);
+        engine.TickFrame();
+        engine.GetVfxWorld().Tick(0.35F);
 
         std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
-        engine.SetPostRenderCallbackUVE([&] {
+        engine.SetPostRenderCallback([&] {
             glFinish();
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
                          GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         });
-        engine.TickFrameUVE();
-        engine.SetPostRenderCallbackUVE({});
+        engine.TickFrame();
+        engine.SetPostRenderCallback({});
 
         std::uint32_t smokeChangedPixels = 0U;
         for (std::size_t idx = 0U; idx < rgba.size(); idx += 4U) {
@@ -6106,11 +6106,11 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
             }
         }
         EXPECT_GT(smokeChangedPixels, 200U);
-        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPng(
             shotsDir / "v3a_alpha_smoke.png", rgba, kWinW, kWinH, 40U, 15U, 240U, 210U));
 
-        entityManager.DestroyEntityUVE(smokeEntity);
-        engine.TickFrameUVE();
+        entityManager.DestroyEntity(smokeEntity);
+        engine.TickFrame();
     }
 
     // -------------------------------------------------------------------------
@@ -6118,98 +6118,98 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
     //    Place a visible floor plane and soft particles intersecting the floor with SoftDistance > 0.
     // -------------------------------------------------------------------------
     {
-        const Scene::EntityUVE floorEntity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE floorTransform{};
-        floorTransform.localPosition = Math::Vector3UVE{0.0F, 0.45F, 0.0F};
-        floorTransform.localScale = Math::Vector3UVE{5.0F, 0.25F, 5.0F};
-        sceneGraph.AttachTransformUVE(entityManager, floorEntity, floorTransform);
-        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        const Scene::Entity floorEntity = entityManager.CreateEntity();
+        Scene::TransformComponent floorTransform{};
+        floorTransform.localPosition = Math::Vector3{0.0F, 0.45F, 0.0F};
+        floorTransform.localScale = Math::Vector3{5.0F, 0.25F, 5.0F};
+        sceneGraph.AttachTransform(entityManager, floorEntity, floorTransform);
+        entityManager.AddComponent<Scene::PrimitiveMeshComponent>(
             floorEntity,
-            Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube,
-                                             Math::Vector3UVE{0.22F, 0.28F, 0.36F}});
+            Scene::PrimitiveMeshComponent{Scene::PrimitiveMeshKind::Cube,
+                                             Math::Vector3{0.22F, 0.28F, 0.36F}});
 
-        Asset::ParticleSystemAssetUVE softSystem =
-            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Smoke);
+        Asset::ParticleSystemAsset softSystem =
+            VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Smoke);
         ASSERT_FALSE(softSystem.emitters.empty());
-        Asset::ParticleEmitterAssetUVE& softEm = softSystem.emitters[0];
+        Asset::ParticleEmitterAsset& softEm = softSystem.emitters[0];
         softEm.emitterUpdate.clear();
         {
-            Asset::ParticleModuleUVE burst;
+            Asset::ParticleModule burst;
             burst.id = 1U;
-            burst.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
-            burst.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+            burst.type = Asset::ParticleModuleType::SpawnBurst;
+            burst.floats["Time"] = MakeConstFloatInput(0.0F);
             burst.ints["Count"] = 35;
             burst.ints["Cycles"] = 1;
             softEm.emitterUpdate.push_back(burst);
         }
-        for (Asset::ParticleModuleUVE& mod : softEm.particleSpawn) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::ShapeSphere) {
-                mod.floats["Radius"] = MakeConstFloatInputUVE(0.85F);
+        for (Asset::ParticleModule& mod : softEm.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleType::ShapeSphere) {
+                mod.floats["Radius"] = MakeConstFloatInput(0.85F);
             }
-            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+            if (mod.type == Asset::ParticleModuleType::InitialSize) {
                 mod.vectors["Size"] =
-                    MakeConstVectorInputUVE(Math::Vector3UVE{1.15F, 1.15F, 1.15F});
+                    MakeConstVectorInput(Math::Vector3{1.15F, 1.15F, 1.15F});
             }
-            if (mod.type == Asset::ParticleModuleTypeUVE::InitialColor) {
+            if (mod.type == Asset::ParticleModuleType::InitialColor) {
                 mod.colors["Color"] =
-                    MakeConstColorInputUVE(Math::ColorUVE{0.35F, 0.85F, 0.95F}, 0.80F);
+                    MakeConstColorInput(Math::Color{0.35F, 0.85F, 0.95F}, 0.80F);
             }
         }
-        for (Asset::ParticleModuleUVE& mod : softEm.particleUpdate) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::ColorOverLife) {
-                Asset::ParticleGradientUVE grad;
+        for (Asset::ParticleModule& mod : softEm.particleUpdate) {
+            if (mod.type == Asset::ParticleModuleType::ColorOverLife) {
+                Asset::ParticleGradient grad;
                 grad.stops = {
-                    Asset::ParticleGradientStopUVE{0.0F, Math::ColorUVE{0.35F, 0.90F, 1.0F}, 0.85F},
-                    Asset::ParticleGradientStopUVE{1.0F, Math::ColorUVE{0.20F, 0.65F, 0.95F}, 0.55F},
+                    Asset::ParticleGradientStop{0.0F, Math::Color{0.35F, 0.90F, 1.0F}, 0.85F},
+                    Asset::ParticleGradientStop{1.0F, Math::Color{0.20F, 0.65F, 0.95F}, 0.55F},
                 };
-                mod.colors["Color"] = MakeGradientColorInputUVE(grad);
+                mod.colors["Color"] = MakeGradientColorInput(grad);
             }
         }
-        for (Asset::ParticleModuleUVE& mod : softEm.render) {
-            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+        for (Asset::ParticleModule& mod : softEm.render) {
+            if (mod.type == Asset::ParticleModuleType::SpriteRenderer) {
                 mod.ints["Blend"] = 1; // AlphaBlend
-                mod.floats["SoftDistance"] = MakeConstFloatInputUVE(1.25F);
-                mod.floats["Emissive"] = MakeConstFloatInputUVE(1.3F);
+                mod.floats["SoftDistance"] = MakeConstFloatInput(1.25F);
+                mod.floats["Emissive"] = MakeConstFloatInput(1.3F);
             }
         }
 
         const std::filesystem::path softPath = scratchDir / "SoftParticles.uvfx";
-        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(softSystem, softPath));
+        ASSERT_TRUE(Asset::SaveParticleSystemAsset(softSystem, softPath));
 
-        const Scene::EntityUVE softEmitter = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE softTransform{};
-        softTransform.localPosition = Math::Vector3UVE{0.0F, 0.65F, 0.3F};
-        sceneGraph.AttachTransformUVE(entityManager, softEmitter, softTransform);
-        Scene::ParticleEmitterComponentUVE softComp{};
+        const Scene::Entity softEmitter = entityManager.CreateEntity();
+        Scene::TransformComponent softTransform{};
+        softTransform.localPosition = Math::Vector3{0.0F, 0.65F, 0.3F};
+        sceneGraph.AttachTransform(entityManager, softEmitter, softTransform);
+        Scene::ParticleEmitterComponent softComp{};
         softComp.systemAssetPath = "SoftParticles.uvfx";
         softComp.seed = 303U;
         softComp.autoPlay = true;
         softComp.emitting = true;
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(softEmitter, softComp);
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(softEmitter, softComp);
 
-        engine.TickFrameUVE();
-        engine.GetVfxWorldUVE().TickUVE(0.15F);
+        engine.TickFrame();
+        engine.GetVfxWorld().Tick(0.15F);
 
         std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
-        engine.SetPostRenderCallbackUVE([&] {
+        engine.SetPostRenderCallback([&] {
             glFinish();
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
                          GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         });
-        engine.TickFrameUVE();
-        engine.SetPostRenderCallbackUVE({});
+        engine.TickFrame();
+        engine.SetPostRenderCallback({});
 
-        const Render::Renderer3DFrameDiagnosticsUVE diag =
-            services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        const Render::Renderer3DFrameDiagnostics diag =
+            services.GetRenderer3D().GetLastFrameDiagnostics();
         EXPECT_TRUE(diag.vfxPassRecorded);
         EXPECT_GT(diag.vfxInstancesDrawn, 0U);
-        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPng(
             shotsDir / "v3a_soft_particles.png", rgba, kWinW, kWinH, 30U, 20U, 260U, 200U));
 
-        entityManager.DestroyEntityUVE(softEmitter);
-        entityManager.DestroyEntityUVE(floorEntity);
-        engine.TickFrameUVE();
+        entityManager.DestroyEntity(softEmitter);
+        entityManager.DestroyEntity(floorEntity);
+        engine.TickFrame();
     }
 
     // -------------------------------------------------------------------------
@@ -6218,87 +6218,87 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
     //    in front of the camera above a floor plane, simulate, and capture screenshot.
     // -------------------------------------------------------------------------
     {
-        Asset::ParticleSystemAssetUVE fountainAsset =
-            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Fountain);
-        for (Asset::ParticleEmitterAssetUVE& em : fountainAsset.emitters) {
-            for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
-                if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
-                    mod.floats["Size"] = MakeConstFloatInputUVE(0.24F);
+        Asset::ParticleSystemAsset fountainAsset =
+            VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Fountain);
+        for (Asset::ParticleEmitterAsset& em : fountainAsset.emitters) {
+            for (Asset::ParticleModule& mod : em.particleSpawn) {
+                if (mod.type == Asset::ParticleModuleType::InitialSize) {
+                    mod.floats["Size"] = MakeConstFloatInput(0.24F);
                     mod.vectors["Size"] =
-                        MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+                        MakeConstVectorInput(Math::Vector3{1.0F, 1.0F, 1.0F});
                 }
             }
         }
-        Asset::ParticleSystemAssetUVE sparksAsset =
-            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
-        for (Asset::ParticleEmitterAssetUVE& em : sparksAsset.emitters) {
-            for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
-                if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
-                    mod.floats["Size"] = MakeConstFloatInputUVE(0.22F);
+        Asset::ParticleSystemAsset sparksAsset =
+            VFX::CreateParticleTemplate(VFX::ParticleTemplateKind::Sparks);
+        for (Asset::ParticleEmitterAsset& em : sparksAsset.emitters) {
+            for (Asset::ParticleModule& mod : em.particleSpawn) {
+                if (mod.type == Asset::ParticleModuleType::InitialSize) {
+                    mod.floats["Size"] = MakeConstFloatInput(0.22F);
                     mod.vectors["Size"] =
-                        MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+                        MakeConstVectorInput(Math::Vector3{1.0F, 1.0F, 1.0F});
                 }
             }
-            for (Asset::ParticleModuleUVE& mod : em.render) {
-                if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+            for (Asset::ParticleModule& mod : em.render) {
+                if (mod.type == Asset::ParticleModuleType::SpriteRenderer) {
                     mod.ints["Facing"] = 0;
-                    mod.floats["Emissive"] = MakeConstFloatInputUVE(2.2F);
+                    mod.floats["Emissive"] = MakeConstFloatInput(2.2F);
                 }
             }
         }
 
-        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(fountainAsset, scratchDir / "Fountain.uvfx"));
-        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sparksAsset, scratchDir / "Sparks.uvfx"));
+        ASSERT_TRUE(Asset::SaveParticleSystemAsset(fountainAsset, scratchDir / "Fountain.uvfx"));
+        ASSERT_TRUE(Asset::SaveParticleSystemAsset(sparksAsset, scratchDir / "Sparks.uvfx"));
 
-        const Scene::EntityUVE floorEntity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE floorTransform{};
-        floorTransform.localPosition = Math::Vector3UVE{0.0F, -0.35F, 0.0F};
-        floorTransform.localScale = Math::Vector3UVE{6.0F, 0.2F, 4.0F};
-        sceneGraph.AttachTransformUVE(entityManager, floorEntity, floorTransform);
-        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+        const Scene::Entity floorEntity = entityManager.CreateEntity();
+        Scene::TransformComponent floorTransform{};
+        floorTransform.localPosition = Math::Vector3{0.0F, -0.35F, 0.0F};
+        floorTransform.localScale = Math::Vector3{6.0F, 0.2F, 4.0F};
+        sceneGraph.AttachTransform(entityManager, floorEntity, floorTransform);
+        entityManager.AddComponent<Scene::PrimitiveMeshComponent>(
             floorEntity,
-            Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube,
-                                             Math::Vector3UVE{0.18F, 0.22F, 0.28F}});
+            Scene::PrimitiveMeshComponent{Scene::PrimitiveMeshKind::Cube,
+                                             Math::Vector3{0.18F, 0.22F, 0.28F}});
 
-        const Scene::EntityUVE fountainEntity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE fountainTransform{};
-        fountainTransform.localPosition = Math::Vector3UVE{-1.05F, 0.0F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, fountainEntity, fountainTransform);
-        Scene::ParticleEmitterComponentUVE fountainComp{};
+        const Scene::Entity fountainEntity = entityManager.CreateEntity();
+        Scene::TransformComponent fountainTransform{};
+        fountainTransform.localPosition = Math::Vector3{-1.05F, 0.0F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, fountainEntity, fountainTransform);
+        Scene::ParticleEmitterComponent fountainComp{};
         fountainComp.systemAssetPath = "Fountain.uvfx";
         fountainComp.seed = 11U;
         fountainComp.autoPlay = true;
         fountainComp.emitting = true;
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(fountainEntity, fountainComp);
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(fountainEntity, fountainComp);
 
-        const Scene::EntityUVE sparksEntity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE sparksTransform{};
-        sparksTransform.localPosition = Math::Vector3UVE{1.05F, 0.25F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, sparksEntity, sparksTransform);
-        Scene::ParticleEmitterComponentUVE sparksComp{};
+        const Scene::Entity sparksEntity = entityManager.CreateEntity();
+        Scene::TransformComponent sparksTransform{};
+        sparksTransform.localPosition = Math::Vector3{1.05F, 0.25F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, sparksEntity, sparksTransform);
+        Scene::ParticleEmitterComponent sparksComp{};
         sparksComp.systemAssetPath = "Sparks.uvfx";
         sparksComp.seed = 22U;
         sparksComp.autoPlay = true;
         sparksComp.emitting = true;
-        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(sparksEntity, sparksComp);
+        entityManager.AddComponent<Scene::ParticleEmitterComponent>(sparksEntity, sparksComp);
 
-        engine.TickFrameUVE();
+        engine.TickFrame();
         for (int step = 0; step < 8; ++step) {
-            engine.GetVfxWorldUVE().TickUVE(0.05F);
+            engine.GetVfxWorld().Tick(0.05F);
         }
 
         std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
-        engine.SetPostRenderCallbackUVE([&] {
+        engine.SetPostRenderCallback([&] {
             glFinish();
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
                          GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         });
-        engine.TickFrameUVE();
-        engine.SetPostRenderCallbackUVE({});
+        engine.TickFrame();
+        engine.SetPostRenderCallback({});
 
-        const Render::Renderer3DFrameDiagnosticsUVE diag =
-            services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        const Render::Renderer3DFrameDiagnostics diag =
+            services.GetRenderer3D().GetLastFrameDiagnostics();
         EXPECT_TRUE(diag.vfxPassRecorded);
         EXPECT_GE(diag.vfxBatchesExtracted, 2U);
         EXPECT_GT(diag.vfxInstancesDrawn, 20U);
@@ -6322,7 +6322,7 @@ TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplat
         }
         EXPECT_GT(leftBluePixels, 15U);
         EXPECT_GT(rightWarmPixels, 15U);
-        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPng(
             shotsDir / "v3a_fountain_sparks_level.png", rgba, kWinW, kWinH, 16U, 16U, 288U, 208U));
     }
 

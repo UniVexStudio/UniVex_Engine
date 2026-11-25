@@ -37,7 +37,7 @@ namespace univex::gizmo {
 using univex::math::Vec3;
 
 /// One bone in world space, as the editor hands it over.
-struct BoneOverlayUVE {
+struct BoneOverlay {
     Vec3 head{};
     Vec3 tail{};
     /// The bone's own X axis in world space: orients the diamond's edges, so a bone's roll is
@@ -59,7 +59,7 @@ struct BoneOverlayUVE {
 };
 
 /// Colours and proportions of the bone. One value, so the look is defined in one place.
-struct BoneStyleUVE {
+struct BoneStyle {
     Vec3 selectedColor{0.74f, 0.75f, 0.77f};   // light grey
     Vec3 activeBoneColor{1.00f, 0.56f, 0.14f}; // orange - the only accent
     Vec3 idleColor{0.33f, 0.34f, 0.36f};       // charcoal
@@ -84,7 +84,7 @@ struct BoneStyleUVE {
 
 /// Builds the faces and strokes for `bones`, with joints turned toward `viewDirection` (eye into
 /// the scene). Bones shorter than a thousandth of a unit are skipped - they have no direction.
-[[nodiscard]] GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3& viewDirection,
-                                         const BoneStyleUVE& style = {});
+[[nodiscard]] GizmoMesh BuildBoneMesh(const std::vector<BoneOverlay>& bones, const Vec3& viewDirection,
+                                         const BoneStyle& style = {});
 
 } // namespace univex::gizmo

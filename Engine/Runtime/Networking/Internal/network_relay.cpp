@@ -9,17 +9,17 @@
 
 namespace UVE::Network {
 
-RelayPeerIdUVE NetworkRelayUVE::AddPeerUVE(NetworkSessionUVE&& session) {
-    const RelayPeerIdUVE id = m_nextPeerId++;
-    if (m_nextPeerId == kInvalidRelayPeerIdUVE) {
+RelayPeerId NetworkRelay::AddPeer(NetworkSession&& session) {
+    const RelayPeerId id = m_nextPeerId++;
+    if (m_nextPeerId == kInvalidRelayPeerId) {
         // Wrapped past four billion peers: skip the invalid id, keep counting.
         ++m_nextPeerId;
     }
-    m_peers.emplace(id, RelayPeerUVE{std::move(session)});
+    m_peers.emplace(id, RelayPeer{std::move(session)});
     return id;
 }
 
-bool NetworkRelayUVE::RemovePeerUVE(const RelayPeerIdUVE id) noexcept {
+bool NetworkRelay::RemovePeer(const RelayPeerId id) noexcept {
     if (m_peers.erase(id) == 0U) {
         return false;
     }
@@ -35,8 +35,8 @@ bool NetworkRelayUVE::RemovePeerUVE(const RelayPeerIdUVE id) noexcept {
     return true;
 }
 
-bool NetworkRelayUVE::SetPeerRoomUVE(const RelayPeerIdUVE id,
-                                        const RelayRoomIdUVE room) noexcept {
+bool NetworkRelay::SetPeerRoom(const RelayPeerId id,
+                                        const RelayRoomId room) noexcept {
     const auto peer = m_peers.find(id);
     if (peer == m_peers.end()) {
         return false;
@@ -45,16 +45,16 @@ bool NetworkRelayUVE::SetPeerRoomUVE(const RelayPeerIdUVE id,
     return true;
 }
 
-RelayRoomIdUVE NetworkRelayUVE::PeerRoomUVE(const RelayPeerIdUVE id) const noexcept {
+RelayRoomId NetworkRelay::PeerRoom(const RelayPeerId id) const noexcept {
     const auto peer = m_peers.find(id);
     if (peer == m_peers.end()) {
-        return kDefaultRelayRoomUVE;
+        return kDefaultRelayRoom;
     }
     return peer->second.room;
 }
 
-bool NetworkRelayUVE::SetPeerInterestUVE(const RelayPeerIdUVE receiver,
-                                         const RelayPeerIdUVE sender, const bool interested) {
+bool NetworkRelay::SetPeerInterest(const RelayPeerId receiver,
+                                         const RelayPeerId sender, const bool interested) {
     if (!m_peers.contains(receiver) || !m_peers.contains(sender)) {
         return false;
     }
@@ -72,28 +72,28 @@ bool NetworkRelayUVE::SetPeerInterestUVE(const RelayPeerIdUVE receiver,
     return true;
 }
 
-bool NetworkRelayUVE::IsPeerInterestedUVE(const RelayPeerIdUVE receiver,
-                                          const RelayPeerIdUVE sender) const noexcept {
+bool NetworkRelay::IsPeerInterested(const RelayPeerId receiver,
+                                          const RelayPeerId sender) const noexcept {
     const auto row = m_muted.find(receiver);
     return row == m_muted.end() || !row->second.contains(sender);
 }
 
-void NetworkRelayUVE::UpdateUVE(const std::uint64_t nowMs) {
+void NetworkRelay::Update(const std::uint64_t nowMs) {
     for (auto& [id, peer] : m_peers) {
-        peer.session.UpdateUVE(nowMs);
+        peer.session.Update(nowMs);
         for (;;) {
-            std::optional<std::vector<std::uint8_t>> raw = peer.session.TryReceiveRawDataUVE();
+            std::optional<std::vector<std::uint8_t>> raw = peer.session.TryReceiveRawData();
             if (!raw.has_value()) {
                 break;
             }
             ++m_stats.payloadsReceived;
             for (auto& [otherId, other] : m_peers) {
                 if (otherId == id || other.room != peer.room ||
-                    !IsPeerInterestedUVE(otherId, id) ||
-                    other.session.StateUVE() != SessionStateUVE::Established) {
+                    !IsPeerInterested(otherId, id) ||
+                    other.session.State() != SessionState::Established) {
                     continue;
                 }
-                if (other.session.SendRawDataUVE(*raw)) {
+                if (other.session.SendRawData(*raw)) {
                     ++m_stats.payloadsForwarded;
                 } else {
                     ++m_stats.forwardsDropped;
@@ -103,7 +103,7 @@ void NetworkRelayUVE::UpdateUVE(const std::uint64_t nowMs) {
     }
 }
 
-NetworkSessionUVE* NetworkRelayUVE::PeerSessionUVE(const RelayPeerIdUVE id) noexcept {
+NetworkSession* NetworkRelay::PeerSession(const RelayPeerId id) noexcept {
     const auto peer = m_peers.find(id);
     if (peer == m_peers.end()) {
         return nullptr;
@@ -111,8 +111,8 @@ NetworkSessionUVE* NetworkRelayUVE::PeerSessionUVE(const RelayPeerIdUVE id) noex
     return &peer->second.session;
 }
 
-const NetworkSessionUVE* NetworkRelayUVE::PeerSessionUVE(
-    const RelayPeerIdUVE id) const noexcept {
+const NetworkSession* NetworkRelay::PeerSession(
+    const RelayPeerId id) const noexcept {
     const auto peer = m_peers.find(id);
     if (peer == m_peers.end()) {
         return nullptr;

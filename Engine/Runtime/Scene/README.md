@@ -8,20 +8,20 @@ third corner of a triangle new contributors historically confuse:
 
 | Concern | Module | Lives at / include prefix | Mental model |
 |---|---|---|---|
-| **Entity + component storage (ECS)** | `Engine/Runtime/Entity` | `uve/entity/*` | `EntityUVE` is just an id; components are plain structs in archetype chunks; `IEntityManagerUVE` owns lifecycle + queries. Data-oriented. |
-| **Component definitions** | `Engine/Runtime/Component` | `uve/component/*` | One `.h` + `.cpp` pair per component (Transform, Camera, Light, Mesh, ...): the struct + function declarations live in the header, its validators/behavior in the matching `.cpp`. The concept, the type-info template, and the `EntityUVE` handle stay header-only (they cannot or should not leave the header). |
-| **Hierarchy + transforms parenting** | **this module** | `uve/scene/*` (graph, serializer, prefab) | `SceneGraphUVE` parents entities and propagates `TransformComponentUVE` → `WorldTransformComponentUVE`. Hierarchy is *components*, not node objects. |
-| **Typed "Node" vocabulary** | this module (`uve/scene/objects/`) + `Engine/Runtime/Objects` (`uve/objects/...`) | registry + structs | `SceneObjectKindUVE` + the registry map a node kind to its real backing struct/components. Node files are grouped by domain: general 3D (`Objects/3D`), physics 3D (`Objects/3D/Physics`), AI/navigation (`Objects/AI/3D`), animation (`Objects/Animation`), and Canvas/UI. Each definition is a creation recipe, never a second copy of component storage. A "Object3D" is a vocabulary over entities+components, **not** a parallel object tree. |
+| **Entity + component storage (ECS)** | `Engine/Runtime/Entity` | `uve/entity/*` | `Entity` is just an id; components are plain structs in archetype chunks; `IEntityManager` owns lifecycle + queries. Data-oriented. |
+| **Component definitions** | `Engine/Runtime/Component` | `uve/component/*` | One `.h` + `.cpp` pair per component (Transform, Camera, Light, Mesh, ...): the struct + function declarations live in the header, its validators/behavior in the matching `.cpp`. The concept, the type-info template, and the `Entity` handle stay header-only (they cannot or should not leave the header). |
+| **Hierarchy + transforms parenting** | **this module** | `uve/scene/*` (graph, serializer, prefab) | `SceneGraph` parents entities and propagates `TransformComponent` → `WorldTransformComponent`. Hierarchy is *components*, not node objects. |
+| **Typed "Node" vocabulary** | this module (`uve/scene/objects/`) + `Engine/Runtime/Objects` (`uve/objects/...`) | registry + structs | `SceneObjectKind` + the registry map a node kind to its real backing struct/components. Node files are grouped by domain: general 3D (`Objects/3D`), physics 3D (`Objects/3D/Physics`), AI/navigation (`Objects/AI/3D`), animation (`Objects/Animation`), and Canvas/UI. Each definition is a creation recipe, never a second copy of component storage. A "Object3D" is a vocabulary over entities+components, **not** a parallel object tree. |
 
 ## The rules that keep this triangle from duplicating itself
 
-1. **One truth per concept.** World position lives in `WorldTransformComponentUVE` only; node
+1. **One truth per concept.** World position lives in `WorldTransformComponent` only; node
    structs never shadow their own transform state.
 2. **New behavior attaches to entities as components** whenever practical; add a node *kind*
    only when the editor/serializers/tools need a named, user-attachable concept.
-3. **No second hierarchy.** `SceneNodeRegistryUVE` knows node kinds; `SceneGraphUVE` knows
+3. **No second hierarchy.** `SceneNodeRegistry` knows node kinds; `SceneGraph` knows
    parenting. If a feature wants a tree, extend the graph — don't build a shadow tree of
    node pointers.
-4. There *was* a compatibility-alias facade (`using XNodeUVE = XComponentUVE;` per node type);
+4. There *was* a compatibility-alias facade (`using XNode = XComponent;` per node type);
    it was deliberately deleted when nothing used it (see `scene_object_uve.h`'s own header
    comment). Do not reintroduce alias shims.

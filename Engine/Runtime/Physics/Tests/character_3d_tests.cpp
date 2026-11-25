@@ -1,8 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// Tests for the Character3D runtime: the node-layer mover (Character3DUVE) against a fake world it
+// Tests for the Character3D runtime: the node-layer mover (Character3D) against a fake world it
 // can be reasoned about exactly, and then the same mover against the engine's real collision world
-// through the Physics-layer bridge (CharacterWorldQueryUVE / StepCharacter3DUVE).
+// through the Physics-layer bridge (CharacterWorldQuery / StepCharacter3D).
 //
 // The two halves are deliberately tested apart. The mover's tests use a point body with exact
 // arithmetic so a failure names its own cause; the bridge's tests use real components, the real
@@ -43,18 +43,18 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-using Scene::Character3DUVE;
-using Scene::CharacterMotionConfigUVE;
-using Scene::CharacterMotionResultUVE;
-using Scene::CharacterMotionStateUVE;
-using Scene::CharacterMoveCodeUVE;
-using Scene::CharacterSlideCollisionUVE;
-using Scene::CharacterSurfaceKindUVE;
+using Scene::Character3D;
+using Scene::CharacterMotionConfig;
+using Scene::CharacterMotionResult;
+using Scene::CharacterMotionState;
+using Scene::CharacterMoveCode;
+using Scene::CharacterSlideCollision;
+using Scene::CharacterSurfaceKind;
 
-constexpr float kToleranceUVE = 1.0e-4F;
+constexpr float kTolerance = 1.0e-4F;
 
-[[nodiscard]] Scene::EntityUVE MakeEntityUVE(const std::uint32_t index) noexcept {
-    Scene::EntityUVE entity;
+[[nodiscard]] Scene::Entity MakeEntity(const std::uint32_t index) noexcept {
+    Scene::Entity entity;
     entity.index = index;
     entity.generation = 1U;
     return entity;
@@ -68,42 +68,42 @@ constexpr float kToleranceUVE = 1.0e-4F;
 // need a real body size set `halfExtents`.
 // =================================================================================================
 
-struct FakeBoxUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE min;
-    Math::Vector3UVE max;
+struct FakeBox final {
+    Scene::Entity entity;
+    Math::Vector3 min;
+    Math::Vector3 max;
 };
 
-class FakeCharacterWorldUVE final : public Scene::ICharacterWorldQueryUVE {
+class FakeCharacterWorld final : public Scene::ICharacterWorldQuery {
 public:
-    Math::Vector3UVE center{};
-    Math::Vector3UVE halfExtents{};
-    std::vector<FakeBoxUVE> boxes;
-    std::vector<CharacterSlideCollisionUVE> overlaps;
-    std::unordered_map<std::uint32_t, Math::Vector3UVE> positions;
-    std::unordered_map<std::uint32_t, Math::Vector3UVE> velocities;
+    Math::Vector3 center{};
+    Math::Vector3 halfExtents{};
+    std::vector<FakeBox> boxes;
+    std::vector<CharacterSlideCollision> overlaps;
+    std::unordered_map<std::uint32_t, Math::Vector3> positions;
+    std::unordered_map<std::uint32_t, Math::Vector3> velocities;
     /// Hits to report ahead of the real geometry, consumed one per sweep - for testing contact
     /// shapes (a slope, a moving surface) that axis-aligned boxes cannot express.
-    mutable std::vector<CharacterSlideCollisionUVE> scriptedHits;
+    mutable std::vector<CharacterSlideCollision> scriptedHits;
     mutable std::size_t scriptedHitIndex = 0U;
 
-    [[nodiscard]] Math::Vector3UVE GetCenterUVE() const override {
+    [[nodiscard]] Math::Vector3 GetCenter() const override {
         return center;
     }
 
-    [[nodiscard]] std::vector<CharacterSlideCollisionUVE> GetOverlapsAtUVE(
-        const Math::Vector3UVE& sweepCenter) const override {
-        std::vector<CharacterSlideCollisionUVE> result;
-        if (Math::IsFiniteUVE(sweepCenter)) {
-            const Math::AabbUVE moving = Math::AabbUVE::FromCenterExtentsUVE(sweepCenter, halfExtents);
-            for (const FakeBoxUVE& box : boxes) {
-                const std::optional<Math::PenetrationUVE> penetration =
-                    Math::ComputePenetrationUVE(moving, Math::AabbUVE{box.min, box.max});
+    [[nodiscard]] std::vector<CharacterSlideCollision> GetOverlapsAt(
+        const Math::Vector3& sweepCenter) const override {
+        std::vector<CharacterSlideCollision> result;
+        if (Math::IsFinite(sweepCenter)) {
+            const Math::Aabb moving = Math::Aabb::FromCenterExtents(sweepCenter, halfExtents);
+            for (const FakeBox& box : boxes) {
+                const std::optional<Math::Penetration> penetration =
+                    Math::ComputePenetration(moving, Math::Aabb{box.min, box.max});
                 if (!penetration.has_value() || !std::isfinite(penetration->depth) ||
                     penetration->depth <= 0.0F) {
                     continue;
                 }
-                CharacterSlideCollisionUVE overlap;
+                CharacterSlideCollision overlap;
                 overlap.entity = box.entity;
                 overlap.normal = penetration->axis * -1.0F;
                 overlap.position = sweepCenter;
@@ -118,26 +118,26 @@ public:
         return result;
     }
 
-    [[nodiscard]] std::optional<CharacterSlideCollisionUVE> SweepUVE(
-        const Math::Vector3UVE& sweepCenter, const Math::Vector3UVE& motion,
+    [[nodiscard]] std::optional<CharacterSlideCollision> Sweep(
+        const Math::Vector3& sweepCenter, const Math::Vector3& motion,
         const float margin) const override {
         if (scriptedHitIndex < scriptedHits.size()) {
-            CharacterSlideCollisionUVE hit = scriptedHits[scriptedHitIndex];
+            CharacterSlideCollision hit = scriptedHits[scriptedHitIndex];
             ++scriptedHitIndex;
-            const float motionLength = Math::LengthUVE(motion);
+            const float motionLength = Math::Length(motion);
             hit.travel = std::min(hit.travel, std::max(0.0F, motionLength - margin));
             return hit;
         }
-        const float motionLength = Math::LengthUVE(motion);
+        const float motionLength = Math::Length(motion);
         if (!std::isfinite(motionLength) || motionLength <= 0.0F) {
             return std::nullopt;
         }
-        const Math::AabbUVE moving = Math::AabbUVE::FromCenterExtentsUVE(sweepCenter, halfExtents);
-        std::optional<CharacterSlideCollisionUVE> best;
+        const Math::Aabb moving = Math::Aabb::FromCenterExtents(sweepCenter, halfExtents);
+        std::optional<CharacterSlideCollision> best;
         float bestDistance = std::numeric_limits<float>::infinity();
-        for (const FakeBoxUVE& box : boxes) {
-            const std::optional<Math::SweptAabbHitUVE> swept =
-                Math::SweepAabbUVE(moving, motion, Math::AabbUVE{box.min, box.max});
+        for (const FakeBox& box : boxes) {
+            const std::optional<Math::SweptAabbHit> swept =
+                Math::SweepAabb(moving, motion, Math::Aabb{box.min, box.max});
             if (!swept.has_value()) {
                 continue;
             }
@@ -148,7 +148,7 @@ public:
             if (!closer && !tied) {
                 continue;
             }
-            CharacterSlideCollisionUVE hit;
+            CharacterSlideCollision hit;
             hit.entity = box.entity;
             // The engine's swept-AABB normal is the direction the body was moving; the mover's
             // contract is the surface normal pointing back at the body.
@@ -161,13 +161,13 @@ public:
         return best;
     }
 
-    [[nodiscard]] Math::Vector3UVE GetSurfaceVelocityUVE(const Scene::EntityUVE entity) const override {
+    [[nodiscard]] Math::Vector3 GetSurfaceVelocity(const Scene::Entity entity) const override {
         const auto found = velocities.find(entity.index);
-        return found != velocities.end() ? found->second : Math::Vector3UVE{};
+        return found != velocities.end() ? found->second : Math::Vector3{};
     }
 
-    [[nodiscard]] std::optional<Math::Vector3UVE> TryGetEntityCenterUVE(
-        const Scene::EntityUVE entity) const override {
+    [[nodiscard]] std::optional<Math::Vector3> TryGetEntityCenter(
+        const Scene::Entity entity) const override {
         const auto found = positions.find(entity.index);
         if (found == positions.end()) {
             return std::nullopt;
@@ -176,35 +176,35 @@ public:
     }
 };
 
-[[nodiscard]] CharacterMotionConfigUVE DefaultConfigUVE() noexcept {
-    CharacterMotionConfigUVE config;
+[[nodiscard]] CharacterMotionConfig DefaultConfig() noexcept {
+    CharacterMotionConfig config;
     // A hair of skin, the same order the engine's own controller uses: a resting body stays
     // well-posed and contacts never land exactly on a face.
     config.safeMargin = 0.001F;
     return config;
 }
 
-void AddBoxUVE(FakeCharacterWorldUVE& world, const Scene::EntityUVE entity, const Math::Vector3UVE& min,
-               const Math::Vector3UVE& max) {
-    world.boxes.push_back(FakeBoxUVE{entity, min, max});
+void AddBox(FakeCharacterWorld& world, const Scene::Entity entity, const Math::Vector3& min,
+               const Math::Vector3& max) {
+    world.boxes.push_back(FakeBox{entity, min, max});
 }
 
-void AddFloorUVE(FakeCharacterWorldUVE& world, const float topY,
-                 const Scene::EntityUVE entity = MakeEntityUVE(1U)) {
-    AddBoxUVE(world, entity, {-100.0F, topY - 1.0F, -100.0F}, {100.0F, topY, 100.0F});
+void AddFloor(FakeCharacterWorld& world, const float topY,
+                 const Scene::Entity entity = MakeEntity(1U)) {
+    AddBox(world, entity, {-100.0F, topY - 1.0F, -100.0F}, {100.0F, topY, 100.0F});
 }
 
-void AddWallUVE(FakeCharacterWorldUVE& world, const float faceX, const float nearY = -100.0F,
-                const float farY = 100.0F, const Scene::EntityUVE entity = MakeEntityUVE(2U)) {
-    AddBoxUVE(world, entity, {faceX, nearY, -100.0F}, {faceX + 1.0F, farY, 100.0F});
+void AddWall(FakeCharacterWorld& world, const float faceX, const float nearY = -100.0F,
+                const float farY = 100.0F, const Scene::Entity entity = MakeEntity(2U)) {
+    AddBox(world, entity, {faceX, nearY, -100.0F}, {faceX + 1.0F, farY, 100.0F});
 }
 
-void AddCeilingUVE(FakeCharacterWorldUVE& world, const float undersideY, const float fromX = -100.0F,
-                   const float toX = 100.0F, const Scene::EntityUVE entity = MakeEntityUVE(3U)) {
-    AddBoxUVE(world, entity, {fromX, undersideY, -100.0F}, {toX, undersideY + 1.0F, 100.0F});
+void AddCeiling(FakeCharacterWorld& world, const float undersideY, const float fromX = -100.0F,
+                   const float toX = 100.0F, const Scene::Entity entity = MakeEntity(3U)) {
+    AddBox(world, entity, {fromX, undersideY, -100.0F}, {toX, undersideY + 1.0F, 100.0F});
 }
 
-void ExpectNearUVE(const Math::Vector3UVE& actual, const Math::Vector3UVE& expected, const float tolerance) {
+void ExpectNear(const Math::Vector3& actual, const Math::Vector3& expected, const float tolerance) {
     EXPECT_NEAR(actual.x, expected.x, tolerance) << "x";
     EXPECT_NEAR(actual.y, expected.y, tolerance) << "y";
     EXPECT_NEAR(actual.z, expected.z, tolerance) << "z";
@@ -214,112 +214,112 @@ void ExpectNearUVE(const Math::Vector3UVE& actual, const Math::Vector3UVE& expec
 // Surface classification: what the body is touching, and at what angle.
 // =================================================================================================
 
-TEST(Character3DSurfaceUVETest, AFloorIsWhatTheBodyCanStandOnAndAWallIsWhatItCannot) {
+TEST(Character3DSurfaceTest, AFloorIsWhatTheBodyCanStandOnAndAWallIsWhatItCannot) {
     float angle = 0.0F;
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKindUVE::Floor);
-    EXPECT_NEAR(angle, 0.0F, kToleranceUVE);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKind::Floor);
+    EXPECT_NEAR(angle, 0.0F, kTolerance);
 
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKindUVE::Wall);
-    EXPECT_NEAR(angle, 90.0F, kToleranceUVE);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKind::Wall);
+    EXPECT_NEAR(angle, 90.0F, kTolerance);
 
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, -1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKindUVE::Ceiling);
-    EXPECT_NEAR(angle, 180.0F, kToleranceUVE);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, -1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle), CharacterSurfaceKind::Ceiling);
+    EXPECT_NEAR(angle, 180.0F, kTolerance);
 }
 
-TEST(Character3DSurfaceUVETest, TheFloorLimitIsInclusiveSoARampExactlyAtItIsStillWalked) {
-    const Math::Vector3UVE exactlyAtTheLimit{0.0F, 1.0F, -1.0F};
+TEST(Character3DSurfaceTest, TheFloorLimitIsInclusiveSoARampExactlyAtItIsStillWalked) {
+    const Math::Vector3 exactlyAtTheLimit{0.0F, 1.0F, -1.0F};
     float angle = 0.0F;
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE(exactlyAtTheLimit, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
-              CharacterSurfaceKindUVE::Floor);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface(exactlyAtTheLimit, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
+              CharacterSurfaceKind::Floor);
     EXPECT_NEAR(angle, 45.0F, 1.0e-3F);
 
     // A hair steeper, and it is a wall.
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, 1.0F, -1.01F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
-              CharacterSurfaceKindUVE::Wall);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, 1.0F, -1.01F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
+              CharacterSurfaceKind::Wall);
     EXPECT_GT(angle, 45.0F);
 }
 
-TEST(Character3DSurfaceUVETest, ADegenerateNormalIsNotASurfaceAndZeroesTheAngle) {
+TEST(Character3DSurfaceTest, ADegenerateNormalIsNotASurfaceAndZeroesTheAngle) {
     float angle = 123.0F;
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
-              CharacterSurfaceKindUVE::Invalid);
-    EXPECT_NEAR(angle, 0.0F, kToleranceUVE);
-    EXPECT_EQ(Scene::ClassifyCharacterSurfaceUVE({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 0.0F, angle),
-              CharacterSurfaceKindUVE::Floor);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, angle),
+              CharacterSurfaceKind::Invalid);
+    EXPECT_NEAR(angle, 0.0F, kTolerance);
+    EXPECT_EQ(Scene::ClassifyCharacterSurface({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 0.0F, angle),
+              CharacterSurfaceKind::Floor);
 }
 
-TEST(Character3DSurfaceUVETest, SlopeAngleIsMeasuredFromUpAndSurvivesBadInput) {
-    EXPECT_NEAR(Character3DUVE::SlopeAngleDegreesUVE({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 0.0F, kToleranceUVE);
-    EXPECT_NEAR(Character3DUVE::SlopeAngleDegreesUVE({0.0F, -1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 180.0F, kToleranceUVE);
-    EXPECT_NEAR(Character3DUVE::SlopeAngleDegreesUVE({0.0F, 1.0F, -1.0F}, {0.0F, 1.0F, 0.0F}), 45.0F, 1.0e-3F);
-    EXPECT_NEAR(Character3DUVE::SlopeAngleDegreesUVE({0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 0.0F, kToleranceUVE);
+TEST(Character3DSurfaceTest, SlopeAngleIsMeasuredFromUpAndSurvivesBadInput) {
+    EXPECT_NEAR(Character3D::SlopeAngleDegrees({0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 0.0F, kTolerance);
+    EXPECT_NEAR(Character3D::SlopeAngleDegrees({0.0F, -1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 180.0F, kTolerance);
+    EXPECT_NEAR(Character3D::SlopeAngleDegrees({0.0F, 1.0F, -1.0F}, {0.0F, 1.0F, 0.0F}), 45.0F, 1.0e-3F);
+    EXPECT_NEAR(Character3D::SlopeAngleDegrees({0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}), 0.0F, kTolerance);
 }
 
 // =================================================================================================
 // Walking: sliding, stopping, stepping, snapping and riding, all against the box world above.
 // =================================================================================================
 
-TEST(Character3DMoverUVETest, AFreeMoveGoesWhereItWasAskedAndTouchesNothing) {
-    FakeCharacterWorldUVE world;
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, AFreeMoveGoesWhereItWasAskedAndTouchesNothing) {
+    FakeCharacterWorld world;
+    CharacterMotionState state;
     state.velocity = {1.0F, 0.0F, 0.0F};
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
-    EXPECT_EQ(result.code, CharacterMoveCodeUVE::Moved);
+    ASSERT_TRUE(result.IsAccepted());
+    EXPECT_EQ(result.code, CharacterMoveCode::Moved);
     EXPECT_FALSE(result.blocked);
     EXPECT_FALSE(result.onFloor);
     EXPECT_FALSE(result.onWall);
     EXPECT_FALSE(result.onCeiling);
     EXPECT_EQ(result.slideCount, 0U);
     EXPECT_EQ(result.contactCount, 0U);
-    EXPECT_EQ(result.GetCollisionCountUVE(), 0U);
-    ExpectNearUVE(result.appliedMotion, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
-    ExpectNearUVE(result.finalCenter, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
-    ExpectNearUVE(state.lastMotion, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
+    EXPECT_EQ(result.GetCollisionCount(), 0U);
+    ExpectNear(result.appliedMotion, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(result.finalCenter, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(state.lastMotion, {1.0F, 0.0F, 0.0F}, 1.0e-5F);
     // Real velocity is what the world allowed, not what was asked for: here, the same thing.
-    ExpectNearUVE(state.realVelocity, {10.0F, 0.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(state.realVelocity, {10.0F, 0.0F, 0.0F}, 1.0e-3F);
     EXPECT_FALSE(result.carriedByPlatform);
     EXPECT_FALSE(result.depenetrated);
     EXPECT_FALSE(result.configClamped);
     EXPECT_FALSE(result.snapUsed);
-    EXPECT_EQ(result.GetCollisionUVE(0U), nullptr);
+    EXPECT_EQ(result.GetCollision(0U), nullptr);
 }
 
-TEST(Character3DMoverUVETest, AWallStopsTheBodyASkinShortOfItAndSaysWhichWall) {
-    FakeCharacterWorldUVE world;
-    AddWallUVE(world, 1.0F);
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, AWallStopsTheBodyASkinShortOfItAndSaysWhichWall) {
+    FakeCharacterWorld world;
+    AddWall(world, 1.0F);
+    CharacterMotionState state;
     state.velocity = {2.0F, 0.0F, 0.0F};
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {2.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {2.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.onWall);
     EXPECT_FALSE(result.onFloor);
-    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 2.0e-3F);
-    ExpectNearUVE(result.wallNormal, {-1.0F, 0.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(state.lastMotion, {0.999F, 0.0F, 0.0F}, 2.0e-3F);
+    ExpectNear(result.wallNormal, {-1.0F, 0.0F, 0.0F}, 1.0e-3F);
     // One wall, one contact, however many slides it took to stop against it.
     EXPECT_EQ(result.contactCount, 1U);
     ASSERT_EQ(result.collisions.size(), 1U);
-    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 2U);
-    EXPECT_FALSE(result.GetCollisionUVE(0U)->steppedUp);
-    EXPECT_NEAR(result.GetCollisionUVE(0U)->depth, 0.0F, kToleranceUVE);
+    EXPECT_EQ(result.GetCollision(0U)->entity.index, 2U);
+    EXPECT_FALSE(result.GetCollision(0U)->steppedUp);
+    EXPECT_NEAR(result.GetCollision(0U)->depth, 0.0F, kTolerance);
 }
 
-TEST(Character3DMoverUVETest, AWallKeepsTheMotionThatWasNotGoingIntoIt) {
-    FakeCharacterWorldUVE world;
-    AddWallUVE(world, 1.0F);
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, AWallKeepsTheMotionThatWasNotGoingIntoIt) {
+    FakeCharacterWorld world;
+    AddWall(world, 1.0F);
+    CharacterMotionState state;
     state.velocity = {2.0F, 0.0F, 1.0F};
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {2.0F, 0.0F, 1.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {2.0F, 0.0F, 1.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     // x: 1 mm short of the wall. z: the half it travelled getting there, then the half it slid.
-    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 1.0F}, 3.0e-3F);
+    ExpectNear(state.lastMotion, {0.999F, 0.0F, 1.0F}, 3.0e-3F);
     // Blocked means "some of what was asked for did not happen", and the x that the wall ate is
     // exactly that, even though the body kept moving along the wall.
     EXPECT_TRUE(result.blocked);
@@ -327,83 +327,83 @@ TEST(Character3DMoverUVETest, AWallKeepsTheMotionThatWasNotGoingIntoIt) {
     EXPECT_EQ(result.contactCount, 1U);
 }
 
-TEST(Character3DMoverUVETest, ASteepRampIsStoppedAgainstInsteadOfSlidAlong) {
-    FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, ASteepRampIsStoppedAgainstInsteadOfSlidAlong) {
+    FakeCharacterWorld world;
     // 50 degrees: past the 45 degree floor limit, inside the 15 degree slide band's far side.
-    const Math::Vector3UVE rampNormal = Math::NormalizeUVE(Math::Vector3UVE{0.0F, 1.0F, -1.19F});
-    CharacterSlideCollisionUVE ramp;
-    ramp.entity = MakeEntityUVE(4U);
+    const Math::Vector3 rampNormal = Math::Normalize(Math::Vector3{0.0F, 1.0F, -1.19F});
+    CharacterSlideCollision ramp;
+    ramp.entity = MakeEntity(4U);
     ramp.normal = rampNormal;
     ramp.travel = 0.99F;
     world.scriptedHits.push_back(ramp);
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.velocity = {0.0F, 0.0F, 1.0F};
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 1.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 1.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.onWall);
     // The ramp band stops the body dead rather than letting it creep up the slope.
-    ExpectNearUVE(state.lastMotion, {0.0F, 0.0F, 0.99F}, 2.0e-3F);
-    ExpectNearUVE(result.wallNormal, rampNormal, 1.0e-3F);
+    ExpectNear(state.lastMotion, {0.0F, 0.0F, 0.99F}, 2.0e-3F);
+    ExpectNear(result.wallNormal, rampNormal, 1.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, ACeilingStopsTheRiseAndIsSlidAlongWhenThatIsAllowed) {
+TEST(Character3DMoverTest, ACeilingStopsTheRiseAndIsSlidAlongWhenThatIsAllowed) {
     // A ceiling a quarter of a metre up, walked under diagonally: the body gets there, and the
     // question is what it is allowed to do afterwards.
     const auto runOnce = [](const bool slideOnCeiling) {
-        FakeCharacterWorldUVE world;
-        AddCeilingUVE(world, 0.25F);
-        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        FakeCharacterWorld world;
+        AddCeiling(world, 0.25F);
+        CharacterMotionConfig config = DefaultConfig();
         config.slideOnCeiling = slideOnCeiling;
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.velocity = {1.0F, 1.0F, 0.0F};
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, config, state, {1.0F, 1.0F, 0.0F}, 0.1F);
-        return std::pair<CharacterMotionResultUVE, Math::Vector3UVE>{result, state.lastMotion};
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, config, state, {1.0F, 1.0F, 0.0F}, 0.1F);
+        return std::pair<CharacterMotionResult, Math::Vector3>{result, state.lastMotion};
     };
 
     // Sliding: the rise stops at the ceiling and the walk keeps every millimetre of its x.
     const auto sliding = runOnce(true);
-    ASSERT_TRUE(sliding.first.IsAcceptedUVE());
+    ASSERT_TRUE(sliding.first.IsAccepted());
     EXPECT_TRUE(sliding.first.onCeiling);
-    ExpectNearUVE(sliding.second, {1.0F, 0.249F, 0.0F}, 3.0e-3F);
-    ExpectNearUVE(sliding.first.ceilingNormal, {0.0F, -1.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(sliding.second, {1.0F, 0.249F, 0.0F}, 3.0e-3F);
+    ExpectNear(sliding.first.ceilingNormal, {0.0F, -1.0F, 0.0F}, 1.0e-3F);
 
     // Not sliding: the ceiling ends the move where it is - the body travelled to it, and no
     // further, sideways motion included.
     const auto blocked = runOnce(false);
-    ASSERT_TRUE(blocked.first.IsAcceptedUVE());
+    ASSERT_TRUE(blocked.first.IsAccepted());
     EXPECT_TRUE(blocked.first.blocked);
     EXPECT_TRUE(blocked.first.onCeiling);
-    ExpectNearUVE(blocked.second, {0.249F, 0.249F, 0.0F}, 3.0e-3F);
+    ExpectNear(blocked.second, {0.249F, 0.249F, 0.0F}, 3.0e-3F);
     EXPECT_GT(sliding.second.x, blocked.second.x + 0.5F);
 }
 
-TEST(Character3DMoverUVETest, FloorBlockOnWallStopsTheMoveAtTheWallInsteadOfSlidingAlong) {
+TEST(Character3DMoverTest, FloorBlockOnWallStopsTheMoveAtTheWallInsteadOfSlidingAlong) {
     // The same diagonal walk, run twice: with the setting off the body slides along the wall to its
     // full z distance; with it on the move ends at the wall, taking only the z it had already
     // travelled when it got there.
-    FakeCharacterWorldUVE slidingWorld;
-    AddWallUVE(slidingWorld, 1.5F);
-    CharacterMotionStateUVE slidingState;
+    FakeCharacterWorld slidingWorld;
+    AddWall(slidingWorld, 1.5F);
+    CharacterMotionState slidingState;
     slidingState.grounded = true;
-    const CharacterMotionResultUVE sliding =
-        Character3DUVE::MoveAndSlideUVE(slidingWorld, DefaultConfigUVE(), slidingState, {2.0F, 0.0F, 1.0F}, 0.1F);
-    ASSERT_TRUE(sliding.IsAcceptedUVE());
+    const CharacterMotionResult sliding =
+        Character3D::MoveAndSlide(slidingWorld, DefaultConfig(), slidingState, {2.0F, 0.0F, 1.0F}, 0.1F);
+    ASSERT_TRUE(sliding.IsAccepted());
     EXPECT_NEAR(slidingState.lastMotion.z, 1.0F, 3.0e-3F);
 
-    FakeCharacterWorldUVE blockedWorld;
-    AddWallUVE(blockedWorld, 1.5F);
-    CharacterMotionConfigUVE config = DefaultConfigUVE();
+    FakeCharacterWorld blockedWorld;
+    AddWall(blockedWorld, 1.5F);
+    CharacterMotionConfig config = DefaultConfig();
     config.floorBlockOnWall = true;
-    CharacterMotionStateUVE blockedState;
+    CharacterMotionState blockedState;
     blockedState.grounded = true;
-    const CharacterMotionResultUVE blocked =
-        Character3DUVE::MoveAndSlideUVE(blockedWorld, config, blockedState, {2.0F, 0.0F, 1.0F}, 0.1F);
+    const CharacterMotionResult blocked =
+        Character3D::MoveAndSlide(blockedWorld, config, blockedState, {2.0F, 0.0F, 1.0F}, 0.1F);
 
-    ASSERT_TRUE(blocked.IsAcceptedUVE());
+    ASSERT_TRUE(blocked.IsAccepted());
     EXPECT_TRUE(blocked.blocked);
     EXPECT_NEAR(blockedState.lastMotion.x, 1.499F, 3.0e-3F);
     // The z the body had when it met the wall, and not a millimetre of the z it wanted after that.
@@ -411,104 +411,104 @@ TEST(Character3DMoverUVETest, FloorBlockOnWallStopsTheMoveAtTheWallInsteadOfSlid
     EXPECT_LT(blockedState.lastMotion.z, slidingState.lastMotion.z - 0.2F);
 }
 
-TEST(Character3DMoverUVETest, AWalkingBodyClimbsALowStepInsteadOfStoppingAtIt) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
+TEST(Character3DMoverTest, AWalkingBodyClimbsALowStepInsteadOfStoppingAtIt) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
     // A 0.2 m step, from x = 1 onwards: inside the default 0.3 m step height.
-    world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
-    CharacterMotionStateUVE state;
+    world.boxes.push_back(FakeBox{MakeEntity(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
+    CharacterMotionState state;
     state.grounded = true;
     state.velocity = {1.0F, 0.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.stepUpUsed);
     EXPECT_TRUE(result.onFloor);
     EXPECT_FALSE(result.blocked);
     // The whole walk happened: a millimetre of approach, then the step carrying the body up and
     // over, and the body standing a skin above the tread.
-    ExpectNearUVE(state.lastMotion, {1.0F, 0.201F, 0.0F}, 3.0e-3F);
-    ExpectNearUVE(result.appliedMotion, {1.0F, 0.201F, 0.0F}, 3.0e-3F);
+    ExpectNear(state.lastMotion, {1.0F, 0.201F, 0.0F}, 3.0e-3F);
+    ExpectNear(result.appliedMotion, {1.0F, 0.201F, 0.0F}, 3.0e-3F);
     // The step's own contribution: from where the body was when the step began.
-    ExpectNearUVE(result.stepMotion, {0.001F, 0.201F, 0.0F}, 3.0e-3F);
+    ExpectNear(result.stepMotion, {0.001F, 0.201F, 0.0F}, 3.0e-3F);
     ASSERT_EQ(result.collisions.size(), 1U);
-    EXPECT_TRUE(result.GetCollisionUVE(0U)->steppedUp);
-    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 5U);
+    EXPECT_TRUE(result.GetCollision(0U)->steppedUp);
+    EXPECT_EQ(result.GetCollision(0U)->entity.index, 5U);
 }
 
-TEST(Character3DMoverUVETest, AStepTallerThanTheStepHeightIsAWall) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
+TEST(Character3DMoverTest, AStepTallerThanTheStepHeightIsAWall) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
     // 0.5 m against a 0.3 m step height: the lift cannot clear it, so it is a wall.
-    world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.5F, 2.0F}});
-    CharacterMotionStateUVE state;
+    world.boxes.push_back(FakeBox{MakeEntity(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.5F, 2.0F}});
+    CharacterMotionState state;
     state.grounded = true;
     state.velocity = {1.0F, 0.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.stepUpUsed);
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.onWall);
-    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
+    ExpectNear(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, AStepWithNoHeadroomIsRefusedRatherThanForced) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
-    world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
+TEST(Character3DMoverTest, AStepWithNoHeadroomIsRefusedRatherThanForced) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
+    world.boxes.push_back(FakeBox{MakeEntity(5U), {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
     // A shelf 0.15 m above the body's feet: no room to stand up by a step.
-    AddCeilingUVE(world, 0.15F, 0.0F, 4.0F, MakeEntityUVE(6U));
-    CharacterMotionStateUVE state;
+    AddCeiling(world, 0.15F, 0.0F, 4.0F, MakeEntity(6U));
+    CharacterMotionState state;
     state.grounded = true;
     state.velocity = {1.0F, 0.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.stepUpUsed);
     EXPECT_TRUE(result.blocked);
-    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
+    ExpectNear(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, AStepWhoseOwnMeshIsTheCeilingIsRefused) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
-    const Scene::EntityUVE stepAndLintel = MakeEntityUVE(5U);
+TEST(Character3DMoverTest, AStepWhoseOwnMeshIsTheCeilingIsRefused) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
+    const Scene::Entity stepAndLintel = MakeEntity(5U);
     // A 0.2 m step, and a lintel 0.15 m above the body's feet that is the same entity: a doorway
     // whose wall and ceiling are one mesh. Rising along the riser is not rising through the roof.
-    world.boxes.push_back(FakeBoxUVE{stepAndLintel, {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
-    world.boxes.push_back(FakeBoxUVE{stepAndLintel, {0.0F, 0.15F, -2.0F}, {4.0F, 1.15F, 2.0F}});
-    CharacterMotionStateUVE state;
+    world.boxes.push_back(FakeBox{stepAndLintel, {1.0F, 0.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
+    world.boxes.push_back(FakeBox{stepAndLintel, {0.0F, 0.15F, -2.0F}, {4.0F, 1.15F, 2.0F}});
+    CharacterMotionState state;
     state.grounded = true;
     state.velocity = {1.0F, 0.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.stepUpUsed);
     EXPECT_TRUE(result.blocked);
-    ExpectNearUVE(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
+    ExpectNear(state.lastMotion, {0.999F, 0.0F, 0.0F}, 3.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, ABodyInTheAirDoesNotStepUpOntoAnything) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, -2.0F);
-    world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(5U), {1.0F, -2.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, ABodyInTheAirDoesNotStepUpOntoAnything) {
+    FakeCharacterWorld world;
+    AddFloor(world, -2.0F);
+    world.boxes.push_back(FakeBox{MakeEntity(5U), {1.0F, -2.0F, -2.0F}, {3.0F, 0.2F, 2.0F}});
+    CharacterMotionState state;
     state.grounded = false; // falling
     state.velocity = {1.0F, -2.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, -2.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, -2.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.stepUpUsed);
     EXPECT_TRUE(result.blocked);
     // Stopped against the step's face, still in the air, with the rest of the walk thrown away.
@@ -516,304 +516,304 @@ TEST(Character3DMoverUVETest, ABodyInTheAirDoesNotStepUpOntoAnything) {
     EXPECT_LT(result.finalCenter.y, 0.0F);
 }
 
-TEST(Character3DMoverUVETest, AGroundedBodyFollowsTheFloorDownSmallSteps) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, AGroundedBodyFollowsTheFloorDownSmallSteps) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
+    CharacterMotionState state;
     state.grounded = true;
     state.velocity = {1.0F, 0.0F, 0.0F};
     // Five centimetres above the floor, walking: the floor is close enough to be followed.
     world.center = {0.0F, 0.05F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.snapUsed);
     EXPECT_TRUE(result.onFloor);
     // It dropped towards the floor and stopped above it - a snap is a follow, not a drop.
     EXPECT_LT(result.finalCenter.y, 0.02F);
     EXPECT_GT(result.finalCenter.y, -1.0e-3F);
-    ExpectNearUVE(result.snapMotion, {0.0F, result.finalCenter.y - 0.05F, 0.0F}, 1.0e-3F);
+    ExpectNear(result.snapMotion, {0.0F, result.finalCenter.y - 0.05F, 0.0F}, 1.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, ASnapOntoTheFloorIsAContactTheCallerCanRead) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F, MakeEntityUVE(9U));
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, ASnapOntoTheFloorIsAContactTheCallerCanRead) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F, MakeEntity(9U));
+    CharacterMotionState state;
     state.grounded = true;
     world.center = {0.0F, 0.05F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.snapUsed);
     EXPECT_TRUE(result.onFloor);
     ASSERT_EQ(result.collisions.size(), 1U);
-    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 9U);
-    EXPECT_FALSE(result.GetCollisionUVE(0U)->steppedUp);
-    ExpectNearUVE(result.GetCollisionUVE(0U)->normal, {0.0F, 1.0F, 0.0F}, 1.0e-3F);
+    EXPECT_EQ(result.GetCollision(0U)->entity.index, 9U);
+    EXPECT_FALSE(result.GetCollision(0U)->steppedUp);
+    ExpectNear(result.GetCollision(0U)->normal, {0.0F, 1.0F, 0.0F}, 1.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, AJumpIsNotSnappedBackDownToTheFloor) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
-    CharacterMotionConfigUVE config = DefaultConfigUVE();
+TEST(Character3DMoverTest, AJumpIsNotSnappedBackDownToTheFloor) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
+    CharacterMotionConfig config = DefaultConfig();
     config.jumpedThisStep = true;
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.grounded = true; // it was standing...
     state.velocity = {0.0F, 5.0F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, 0.5F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, config, state, {0.0F, 0.5F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.snapUsed);
     EXPECT_FALSE(result.onFloor);
     EXPECT_FALSE(state.grounded);
-    ExpectNearUVE(state.lastMotion, {0.0F, 0.5F, 0.0F}, 1.0e-4F);
+    ExpectNear(state.lastMotion, {0.0F, 0.5F, 0.0F}, 1.0e-4F);
 }
 
-TEST(Character3DMoverUVETest, ABodyThatWasNotOnTheFloorIsNotSnappedToIt) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, ABodyThatWasNotOnTheFloorIsNotSnappedToIt) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
+    CharacterMotionState state;
     state.grounded = false;
     world.center = {0.0F, 0.05F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.snapUsed);
     EXPECT_FALSE(result.onFloor);
     EXPECT_NEAR(result.finalCenter.y, 0.05F, 1.0e-4F);
 }
 
-TEST(Character3DMoverUVETest, APatformUnderfootCarriesTheBodyAndItsMotion) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F, MakeEntityUVE(9U));
+TEST(Character3DMoverTest, APatformUnderfootCarriesTheBodyAndItsMotion) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F, MakeEntity(9U));
     world.center = {0.0F, 0.001F, 0.0F};
     world.positions[9U] = {0.0F, 0.0F, 0.0F};
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.grounded = true;
 
     // First step: the body stands on the platform, and the move remembers where the platform was.
-    const CharacterMotionResultUVE standing =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
-    ASSERT_TRUE(standing.IsAcceptedUVE());
+    const CharacterMotionResult standing =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    ASSERT_TRUE(standing.IsAccepted());
     ASSERT_EQ(state.platform.index, 9U);
     ASSERT_TRUE(state.hasPlatformWorldPosition);
     EXPECT_FALSE(standing.carriedByPlatform);
 
     // The platform moves half a metre in a 0.1 s step: 5 m/s, and the body comes with it.
     world.positions[9U] = {0.5F, 0.0F, 0.0F};
-    const CharacterMotionResultUVE carried =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult carried =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(carried.IsAcceptedUVE());
+    ASSERT_TRUE(carried.IsAccepted());
     EXPECT_TRUE(carried.carriedByPlatform);
-    ExpectNearUVE(carried.platformVelocity, {5.0F, 0.0F, 0.0F}, 1.0e-3F);
-    ExpectNearUVE(state.lastMotion, {0.5F, 0.0F, 0.0F}, 2.0e-3F);
-    ExpectNearUVE(state.realVelocity, {5.0F, 0.0F, 0.0F}, 2.0e-2F);
+    ExpectNear(carried.platformVelocity, {5.0F, 0.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(state.lastMotion, {0.5F, 0.0F, 0.0F}, 2.0e-3F);
+    ExpectNear(state.realVelocity, {5.0F, 0.0F, 0.0F}, 2.0e-2F);
     EXPECT_TRUE(carried.onFloor);
     EXPECT_EQ(state.platform.index, 9U);
 }
 
-TEST(Character3DMoverUVETest, LeavingAPlatformHandsOverItsVelocityOrDoesNotAccordingToTheMode) {
-    const auto runOnce = [](const Scene::CharacterPlatformLeaveModeUVE mode) {
-        FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, LeavingAPlatformHandsOverItsVelocityOrDoesNotAccordingToTheMode) {
+    const auto runOnce = [](const Scene::CharacterPlatformLeaveMode mode) {
+        FakeCharacterWorld world;
         world.positions[7U] = {10.0F, 3.0F, 0.0F};
-        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        CharacterMotionConfig config = DefaultConfig();
         config.platformOnLeave = mode;
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
-        state.platform = MakeEntityUVE(7U);
+        state.platform = MakeEntity(7U);
         state.platformWorldPosition = {9.5F, 2.7F, 0.0F};
         state.hasPlatformWorldPosition = true;
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, 0.0F, 0.0F}, 0.1F);
-        return std::pair<CharacterMotionResultUVE, Math::Vector3UVE>{result, state.velocity};
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, config, state, {0.0F, 0.0F, 0.0F}, 0.1F);
+        return std::pair<CharacterMotionResult, Math::Vector3>{result, state.velocity};
     };
 
     // AddVelocity: the body keeps the platform's whole velocity as it leaves.
-    const auto add = runOnce(Scene::CharacterPlatformLeaveModeUVE::AddVelocity);
+    const auto add = runOnce(Scene::CharacterPlatformLeaveMode::AddVelocity);
     EXPECT_TRUE(add.first.leftPlatform);
     EXPECT_FALSE(add.first.onFloor);
-    ExpectNearUVE(add.second, {5.0F, 3.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(add.second, {5.0F, 3.0F, 0.0F}, 1.0e-3F);
     // And it was carried by the platform while it was still standing on it.
     EXPECT_TRUE(add.first.carriedByPlatform);
 
     // AddUpwardVelocity: only the part that pushes the body up, never the sideways motion.
-    const auto upward = runOnce(Scene::CharacterPlatformLeaveModeUVE::AddUpwardVelocity);
+    const auto upward = runOnce(Scene::CharacterPlatformLeaveMode::AddUpwardVelocity);
     EXPECT_TRUE(upward.first.leftPlatform);
-    ExpectNearUVE(upward.second, {0.0F, 3.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(upward.second, {0.0F, 3.0F, 0.0F}, 1.0e-3F);
 
     // KeepVelocity: the body keeps only what it had of its own.
-    const auto keep = runOnce(Scene::CharacterPlatformLeaveModeUVE::KeepVelocity);
+    const auto keep = runOnce(Scene::CharacterPlatformLeaveMode::KeepVelocity);
     EXPECT_TRUE(keep.first.leftPlatform);
-    ExpectNearUVE(keep.second, {0.0F, 0.0F, 0.0F}, 1.0e-3F);
+    ExpectNear(keep.second, {0.0F, 0.0F, 0.0F}, 1.0e-3F);
 
     // AddVelocity with nothing to hand over: the new platform is gone before the body leaves it.
-    FakeCharacterWorldUVE vanishedWorld;
-    CharacterMotionStateUVE vanishedState;
+    FakeCharacterWorld vanishedWorld;
+    CharacterMotionState vanishedState;
     vanishedState.grounded = true;
-    vanishedState.platform = MakeEntityUVE(7U);
+    vanishedState.platform = MakeEntity(7U);
     vanishedState.platformWorldPosition = {9.5F, 2.7F, 0.0F};
     vanishedState.hasPlatformWorldPosition = true;
-    const CharacterMotionResultUVE vanished = Character3DUVE::MoveAndSlideUVE(
-        vanishedWorld, DefaultConfigUVE(), vanishedState, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult vanished = Character3D::MoveAndSlide(
+        vanishedWorld, DefaultConfig(), vanishedState, {0.0F, 0.0F, 0.0F}, 0.1F);
     EXPECT_TRUE(vanished.leftPlatform);
-    ExpectNearUVE(vanished.platformVelocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
-    EXPECT_EQ(vanishedState.platform, Scene::EntityUVE{});
+    ExpectNear(vanished.platformVelocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    EXPECT_EQ(vanishedState.platform, Scene::Entity{});
 }
 
-TEST(Character3DMoverUVETest, APlatformThatTeleportsIsTreatedAsStandingStill) {
-    FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, APlatformThatTeleportsIsTreatedAsStandingStill) {
+    FakeCharacterWorld world;
     // Ten metres in one step: 100 m/s, past the 50 m/s teleport guard.
     world.positions[7U] = {10.0F, 0.0F, 0.0F};
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.grounded = true;
-    state.platform = MakeEntityUVE(7U);
+    state.platform = MakeEntity(7U);
     state.platformWorldPosition = {0.0F, 0.0F, 0.0F};
     state.hasPlatformWorldPosition = true;
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.carriedByPlatform);
     // The body did not move, and nothing was handed over when it left: a script writing a
     // transform is not motion, and inheriting it would fling the body across the level.
-    ExpectNearUVE(state.lastMotion, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
-    ExpectNearUVE(result.platformVelocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
-    ExpectNearUVE(state.velocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(state.lastMotion, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(result.platformVelocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(state.velocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
 }
 
-TEST(Character3DMoverUVETest, ABodyThatStartsInsideGeometryIsPushedOutBeforeItWalks) {
-    FakeCharacterWorldUVE world;
-    CharacterSlideCollisionUVE overlap;
-    overlap.entity = MakeEntityUVE(8U);
+TEST(Character3DMoverTest, ABodyThatStartsInsideGeometryIsPushedOutBeforeItWalks) {
+    FakeCharacterWorld world;
+    CharacterSlideCollision overlap;
+    overlap.entity = MakeEntity(8U);
     overlap.normal = {-1.0F, 0.0F, 0.0F};
     overlap.depth = 0.1F;
     world.overlaps.push_back(overlap);
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.depenetrated);
     EXPECT_EQ(result.depenetrationPasses, 1U);
     // Out by the depth plus the skin, and the report says which body pushed it.
-    ExpectNearUVE(result.appliedMotion, {-0.101F, 0.0F, 0.0F}, 2.0e-3F);
-    ExpectNearUVE(result.depenetrationMotion, {-0.101F, 0.0F, 0.0F}, 2.0e-3F);
+    ExpectNear(result.appliedMotion, {-0.101F, 0.0F, 0.0F}, 2.0e-3F);
+    ExpectNear(result.depenetrationMotion, {-0.101F, 0.0F, 0.0F}, 2.0e-3F);
     ASSERT_EQ(result.collisions.size(), 1U);
-    EXPECT_NEAR(result.GetCollisionUVE(0U)->depth, 0.1F, 1.0e-4F);
+    EXPECT_NEAR(result.GetCollision(0U)->depth, 0.1F, 1.0e-4F);
 }
 
-TEST(Character3DMoverUVETest, ABodyInsideSeveralThingsIsPushedOutDeepestFirst) {
-    FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, ABodyInsideSeveralThingsIsPushedOutDeepestFirst) {
+    FakeCharacterWorld world;
     const float depths[3] = {0.05F, 0.30F, 0.10F};
     const std::uint32_t entities[3] = {11U, 12U, 13U};
     for (std::size_t index = 0U; index < 3U; ++index) {
-        CharacterSlideCollisionUVE overlap;
-        overlap.entity = MakeEntityUVE(entities[index]);
+        CharacterSlideCollision overlap;
+        overlap.entity = MakeEntity(entities[index]);
         overlap.normal = {0.0F, 1.0F, 0.0F};
         overlap.depth = depths[index];
         world.overlaps.push_back(overlap);
     }
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_EQ(result.depenetrationPasses, 1U);
     // Deepest first, and only that one: after the push the working center has left the pose the
     // scripted overlaps described, so they cannot keep pushing.
-    ExpectNearUVE(result.depenetrationMotion, {0.0F, 0.301F, 0.0F}, 2.0e-3F);
+    ExpectNear(result.depenetrationMotion, {0.0F, 0.301F, 0.0F}, 2.0e-3F);
     ASSERT_GE(result.collisions.size(), 1U);
-    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 12U);
+    EXPECT_EQ(result.GetCollision(0U)->entity.index, 12U);
 }
 
-TEST(Character3DMoverUVETest, DepenetrationRequeriesTheWorkingCenterSoABoxIsLeftBehind) {
-    FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, DepenetrationRequeriesTheWorkingCenterSoABoxIsLeftBehind) {
+    FakeCharacterWorld world;
     world.halfExtents = {0.5F, 0.5F, 0.5F};
     // The body occupies [-0.5, 0.5]; this wall's face sits at x = 0.2, so the body is 0.7 m inside.
-    AddBoxUVE(world, MakeEntityUVE(8U), {-2.0F, -2.0F, -2.0F}, {0.2F, 2.0F, 2.0F});
-    CharacterMotionStateUVE state;
+    AddBox(world, MakeEntity(8U), {-2.0F, -2.0F, -2.0F}, {0.2F, 2.0F, 2.0F});
+    CharacterMotionState state;
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.depenetrated);
     EXPECT_EQ(result.depenetrationPasses, 1U);
-    ExpectNearUVE(result.depenetrationMotion, {0.701F, 0.0F, 0.0F}, 2.0e-3F);
+    ExpectNear(result.depenetrationMotion, {0.701F, 0.0F, 0.0F}, 2.0e-3F);
     // Asked about the pose it was pushed to, the wall is gone: a second pass would be a ghost.
-    EXPECT_TRUE(world.GetOverlapsAtUVE(result.finalCenter).empty());
+    EXPECT_TRUE(world.GetOverlapsAt(result.finalCenter).empty());
 }
 
-TEST(Character3DMoverUVETest, ContactsAreCappedAndTheLossIsReported) {
-    FakeCharacterWorldUVE world;
+TEST(Character3DMoverTest, ContactsAreCappedAndTheLossIsReported) {
+    FakeCharacterWorld world;
     for (std::uint32_t index = 0U; index < 3U; ++index) {
-        CharacterSlideCollisionUVE overlap;
-        overlap.entity = MakeEntityUVE(20U + index);
+        CharacterSlideCollision overlap;
+        overlap.entity = MakeEntity(20U + index);
         overlap.normal = {0.0F, 1.0F, 0.0F};
         overlap.depth = 0.1F + static_cast<float>(index) * 0.01F;
         world.overlaps.push_back(overlap);
     }
-    CharacterMotionConfigUVE config = DefaultConfigUVE();
+    CharacterMotionConfig config = DefaultConfig();
     config.maximumContacts = 1U;
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, config, state, {0.0F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_EQ(result.contactsTruncated, true);
     EXPECT_EQ(result.contactCount, 1U);
     EXPECT_EQ(result.droppedContactCount, 2U);
     EXPECT_EQ(result.collisions.size(), 1U);
     // The deepest body is the one worth telling the caller about, so it is the one that survives
     // the cap: 22 is three centimetres deeper than 20.
-    EXPECT_EQ(result.GetCollisionUVE(0U)->entity.index, 22U);
+    EXPECT_EQ(result.GetCollision(0U)->entity.index, 22U);
 }
 
-TEST(Character3DMoverUVETest, ABadConfigStateOrWorldIsRefusedRatherThanGuessed) {
-    FakeCharacterWorldUVE world;
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, ABadConfigStateOrWorldIsRefusedRatherThanGuessed) {
+    FakeCharacterWorld world;
+    CharacterMotionState state;
     state.velocity = {1.0F, 0.0F, 0.0F};
 
     // A body with no up direction has no floor, no wall and no ceiling: refused.
-    CharacterMotionConfigUVE degenerate = DefaultConfigUVE();
+    CharacterMotionConfig degenerate = DefaultConfig();
     degenerate.upDirection = {0.0F, 0.0F, 0.0F};
-    EXPECT_EQ(Character3DUVE::MoveAndSlideUVE(world, degenerate, state, {1.0F, 0.0F, 0.0F}, 0.1F).code,
-              CharacterMoveCodeUVE::InvalidConfig);
+    EXPECT_EQ(Character3D::MoveAndSlide(world, degenerate, state, {1.0F, 0.0F, 0.0F}, 0.1F).code,
+              CharacterMoveCode::InvalidConfig);
 
     // A step with no duration, and a motion that is not a number.
-    EXPECT_EQ(Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.0F).code,
-              CharacterMoveCodeUVE::InvalidConfig);
-    EXPECT_EQ(Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state,
+    EXPECT_EQ(Character3D::MoveAndSlide(world, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.0F).code,
+              CharacterMoveCode::InvalidConfig);
+    EXPECT_EQ(Character3D::MoveAndSlide(world, DefaultConfig(), state,
                                               {std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, 0.1F).code,
-              CharacterMoveCodeUVE::InvalidConfig);
+              CharacterMoveCode::InvalidConfig);
 
     // A body state that is not a number.
-    CharacterMotionStateUVE broken = state;
+    CharacterMotionState broken = state;
     broken.velocity = {std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
-    EXPECT_EQ(Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), broken, {1.0F, 0.0F, 0.0F}, 0.1F).code,
-              CharacterMoveCodeUVE::InvalidState);
+    EXPECT_EQ(Character3D::MoveAndSlide(world, DefaultConfig(), broken, {1.0F, 0.0F, 0.0F}, 0.1F).code,
+              CharacterMoveCode::InvalidState);
 
     // A world that cannot say where the body is.
-    FakeCharacterWorldUVE brokenWorld;
+    FakeCharacterWorld brokenWorld;
     brokenWorld.center = {std::numeric_limits<float>::infinity(), 0.0F, 0.0F};
-    EXPECT_EQ(Character3DUVE::MoveAndSlideUVE(brokenWorld, DefaultConfigUVE(), state, {1.0F, 0.0F, 0.0F}, 0.1F).code,
-              CharacterMoveCodeUVE::InvalidWorld);
+    EXPECT_EQ(Character3D::MoveAndSlide(brokenWorld, DefaultConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F).code,
+              CharacterMoveCode::InvalidWorld);
 
     // And the values a script could write that are merely wrong are clamped, not refused.
-    CharacterMotionConfigUVE sloppy = DefaultConfigUVE();
+    CharacterMotionConfig sloppy = DefaultConfig();
     sloppy.maxSlides = 0U;
     sloppy.maximumContacts = 0U;
     sloppy.safeMargin = -1.0F;
@@ -823,148 +823,148 @@ TEST(Character3DMoverUVETest, ABadConfigStateOrWorldIsRefusedRatherThanGuessed) 
     sloppy.maxStepHeight = -1.0F;
     sloppy.minStepWidth = 42.0F;
     sloppy.maximumPlatformSpeed = -3.0F;
-    sloppy.platformOnLeave = static_cast<Scene::CharacterPlatformLeaveModeUVE>(200U);
-    const CharacterMotionResultUVE clamped =
-        Character3DUVE::MoveAndSlideUVE(world, sloppy, state, {1.0F, 0.0F, 0.0F}, 0.1F);
-    EXPECT_TRUE(clamped.IsAcceptedUVE());
+    sloppy.platformOnLeave = static_cast<Scene::CharacterPlatformLeaveMode>(200U);
+    const CharacterMotionResult clamped =
+        Character3D::MoveAndSlide(world, sloppy, state, {1.0F, 0.0F, 0.0F}, 0.1F);
+    EXPECT_TRUE(clamped.IsAccepted());
     EXPECT_TRUE(clamped.configClamped);
 }
 
-TEST(Character3DMoverUVETest, AMotionTooSmallToMatterIsNotAMoveAtAll) {
-    FakeCharacterWorldUVE world;
-    AddWallUVE(world, 1.0F);
-    CharacterMotionStateUVE state;
+TEST(Character3DMoverTest, AMotionTooSmallToMatterIsNotAMoveAtAll) {
+    FakeCharacterWorld world;
+    AddWall(world, 1.0F);
+    CharacterMotionState state;
     state.velocity = {0.0F, 0.0F, 0.0F};
 
-    const CharacterMotionResultUVE result = Character3DUVE::MoveAndSlideUVE(
-        world, DefaultConfigUVE(), state, {Character3DUVE::kMinimumMotionDistanceUVE * 0.5F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result = Character3D::MoveAndSlide(
+        world, DefaultConfig(), state, {Character3D::kMinimumMotionDistance * 0.5F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.blocked);
     EXPECT_EQ(result.contactCount, 0U);
     EXPECT_EQ(result.slideCount, 0U);
-    ExpectNearUVE(result.appliedMotion, {0.0F, 0.0F, 0.0F}, 0.0F);
+    ExpectNear(result.appliedMotion, {0.0F, 0.0F, 0.0F}, 0.0F);
 }
 
-TEST(Character3DMoverUVETest, TheSameWorldAndTheSameWalkGiveTheSameAnswerToTheLastBit) {
+TEST(Character3DMoverTest, TheSameWorldAndTheSameWalkGiveTheSameAnswerToTheLastBit) {
     const auto runOnce = []() {
-        FakeCharacterWorldUVE world;
-        AddFloorUVE(world, 0.0F);
-        world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(5U), {1.5F, 0.0F, -3.0F}, {4.0F, 0.2F, 3.0F}});
-        world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(6U), {2.0F, -1.0F, 0.5F}, {2.5F, 1.0F, 1.0F}});
-        world.boxes.push_back(FakeBoxUVE{MakeEntityUVE(7U), {-2.0F, -1.0F, -2.0F}, {2.0F, 1.0F, -1.5F}});
+        FakeCharacterWorld world;
+        AddFloor(world, 0.0F);
+        world.boxes.push_back(FakeBox{MakeEntity(5U), {1.5F, 0.0F, -3.0F}, {4.0F, 0.2F, 3.0F}});
+        world.boxes.push_back(FakeBox{MakeEntity(6U), {2.0F, -1.0F, 0.5F}, {2.5F, 1.0F, 1.0F}});
+        world.boxes.push_back(FakeBox{MakeEntity(7U), {-2.0F, -1.0F, -2.0F}, {2.0F, 1.0F, -1.5F}});
         world.center = {0.0F, 0.0F, 0.0F};
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
-        std::vector<Math::Vector3UVE> path;
+        std::vector<Math::Vector3> path;
         for (int step = 0; step < 12; ++step) {
             state.velocity = {1.0F, 0.0F, 0.25F};
-            const CharacterMotionResultUVE result = Character3DUVE::MoveAndSlideUVE(
-                world, DefaultConfigUVE(), state, {0.1F, -0.01F, 0.025F}, 0.1F);
+            const CharacterMotionResult result = Character3D::MoveAndSlide(
+                world, DefaultConfig(), state, {0.1F, -0.01F, 0.025F}, 0.1F);
             path.push_back(result.appliedMotion);
             world.center = result.finalCenter;
         }
         return path;
     };
 
-    const std::vector<Math::Vector3UVE> first = runOnce();
-    const std::vector<Math::Vector3UVE> second = runOnce();
+    const std::vector<Math::Vector3> first = runOnce();
+    const std::vector<Math::Vector3> second = runOnce();
     ASSERT_EQ(first.size(), second.size());
     for (std::size_t index = 0U; index < first.size(); ++index) {
-        ExpectNearUVE(first[index], second[index], 0.0F);
+        ExpectNear(first[index], second[index], 0.0F);
     }
     // The walk went somewhere, so this is not two sequences of zeroes agreeing.
     EXPECT_GT(first.back().x, 0.0F);
 }
 
-TEST(Character3DMoverUVETest, TestMoveAnswersWhatWouldHappenWithoutMovingAnything) {
-    FakeCharacterWorldUVE world;
-    AddWallUVE(world, 1.0F);
+TEST(Character3DMoverTest, TestMoveAnswersWhatWouldHappenWithoutMovingAnything) {
+    FakeCharacterWorld world;
+    AddWall(world, 1.0F);
     world.center = {0.0F, 0.0F, 0.0F};
 
-    const std::optional<CharacterSlideCollisionUVE> hit =
-        Character3DUVE::TestMoveUVE(world, {2.0F, 0.0F, 0.0F}, 0.001F);
+    const std::optional<CharacterSlideCollision> hit =
+        Character3D::TestMove(world, {2.0F, 0.0F, 0.0F}, 0.001F);
     ASSERT_TRUE(hit.has_value());
     EXPECT_NEAR(hit->travel, 0.999F, 2.0e-3F);
     EXPECT_EQ(hit->entity.index, 2U);
     EXPECT_NEAR(hit->normal.x, -1.0F, 1.0e-3F);
     // The world is exactly where it was: a query, not a move.
-    ExpectNearUVE(world.center, {0.0F, 0.0F, 0.0F}, 0.0F);
+    ExpectNear(world.center, {0.0F, 0.0F, 0.0F}, 0.0F);
 
-    EXPECT_FALSE(Character3DUVE::TestMoveUVE(world, {0.0F, 0.0F, 0.0F}, 0.001F).has_value());
-    EXPECT_FALSE(Character3DUVE::TestMoveUVE(world, {0.0F, 5.0F, 0.0F}, 0.001F).has_value());
+    EXPECT_FALSE(Character3D::TestMove(world, {0.0F, 0.0F, 0.0F}, 0.001F).has_value());
+    EXPECT_FALSE(Character3D::TestMove(world, {0.0F, 5.0F, 0.0F}, 0.001F).has_value());
 }
 
-TEST(Character3DMoverUVETest, ProbeFloorFindsTheFloorBelowAndNothingElse) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F, MakeEntityUVE(9U));
+TEST(Character3DMoverTest, ProbeFloorFindsTheFloorBelowAndNothingElse) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F, MakeEntity(9U));
 
-    const std::optional<CharacterSlideCollisionUVE> floor =
-        Character3DUVE::ProbeFloorUVE(world, {0.0F, 0.05F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F, 0.001F);
+    const std::optional<CharacterSlideCollision> floor =
+        Character3D::ProbeFloor(world, {0.0F, 0.05F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F, 0.001F);
     ASSERT_TRUE(floor.has_value());
     EXPECT_EQ(floor->entity.index, 9U);
-    ExpectNearUVE(floor->normal, {0.0F, 1.0F, 0.0F}, 1.0e-4F);
+    ExpectNear(floor->normal, {0.0F, 1.0F, 0.0F}, 1.0e-4F);
 
     // Floors only: a wall's face below the probe is not something to stand on.
-    FakeCharacterWorldUVE wallWorld;
-    AddWallUVE(wallWorld, -0.5F, -1.0F, 1.0F);
-    EXPECT_FALSE(Character3DUVE::ProbeFloorUVE(wallWorld, {0.0F, 0.05F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F,
+    FakeCharacterWorld wallWorld;
+    AddWall(wallWorld, -0.5F, -1.0F, 1.0F);
+    EXPECT_FALSE(Character3D::ProbeFloor(wallWorld, {0.0F, 0.05F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F,
                                               0.001F)
                      .has_value());
 
     // And nothing within reach is nothing.
-    EXPECT_FALSE(Character3DUVE::ProbeFloorUVE(world, {0.0F, 5.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F, 0.001F)
+    EXPECT_FALSE(Character3D::ProbeFloor(world, {0.0F, 5.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 45.0F, 0.1F, 0.001F)
                      .has_value());
 }
 
-TEST(Character3DMoverUVETest, StandingStillOnASlopeDoesNotCreepDownItWhenThatIsAsked) {
+TEST(Character3DMoverTest, StandingStillOnASlopeDoesNotCreepDownItWhenThatIsAsked) {
     const auto runOnce = [](const bool stopOnSlope) {
-        FakeCharacterWorldUVE world;
+        FakeCharacterWorld world;
         // A 20 degree ramp rising in +x, seen as one contact.
-        CharacterSlideCollisionUVE ramp;
-        ramp.entity = MakeEntityUVE(4U);
-        ramp.normal = Math::NormalizeUVE(Math::Vector3UVE{-0.342F, 0.940F, 0.0F});
+        CharacterSlideCollision ramp;
+        ramp.entity = MakeEntity(4U);
+        ramp.normal = Math::Normalize(Math::Vector3{-0.342F, 0.940F, 0.0F});
         ramp.travel = 0.5F;
         world.scriptedHits.push_back(ramp);
-        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        CharacterMotionConfig config = DefaultConfig();
         config.floorStopOnSlope = stopOnSlope;
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
         // Gravity pulling it down the slope, but not walking.
         state.velocity = {0.0F, -1.0F, 0.0F};
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, -0.1F, 0.0F}, 0.1F);
-        return std::pair<CharacterMotionResultUVE, Math::Vector3UVE>{result, state.velocity};
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, config, state, {0.0F, -0.1F, 0.0F}, 0.1F);
+        return std::pair<CharacterMotionResult, Math::Vector3>{result, state.velocity};
     };
 
     const auto stopped = runOnce(true);
     EXPECT_TRUE(stopped.first.onFloor);
-    ExpectNearUVE(stopped.second, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(stopped.second, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
 
     const auto creeping = runOnce(false);
     EXPECT_TRUE(creeping.first.onFloor);
     EXPECT_LT(creeping.second.y, 0.0F);
 }
 
-TEST(Character3DMoverUVETest, WalkingUpASlopeKeepsTheHorizontalSpeedWhenThatIsAsked) {
+TEST(Character3DMoverTest, WalkingUpASlopeKeepsTheHorizontalSpeedWhenThatIsAsked) {
     const auto runOnce = [](const bool constantSpeed) {
-        FakeCharacterWorldUVE world;
-        CharacterSlideCollisionUVE ramp;
-        ramp.entity = MakeEntityUVE(4U);
+        FakeCharacterWorld world;
+        CharacterSlideCollision ramp;
+        ramp.entity = MakeEntity(4U);
         // A 30 degree ramp rising in +x: its normal leans back towards -x.
-        ramp.normal = Math::NormalizeUVE(Math::Vector3UVE{-0.5F, 0.866F, 0.0F});
+        ramp.normal = Math::Normalize(Math::Vector3{-0.5F, 0.866F, 0.0F});
         ramp.travel = 0.5F;
         world.scriptedHits.push_back(ramp);
-        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        CharacterMotionConfig config = DefaultConfig();
         config.floorConstantSpeed = constantSpeed;
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
         state.velocity = {1.0F, 0.0F, 0.0F};
-        return Character3DUVE::MoveAndSlideUVE(world, config, state, {1.0F, 0.0F, 0.0F}, 0.1F);
+        return Character3D::MoveAndSlide(world, config, state, {1.0F, 0.0F, 0.0F}, 0.1F);
     };
 
-    const CharacterMotionResultUVE slowed = runOnce(false);
-    const CharacterMotionResultUVE constant = runOnce(true);
+    const CharacterMotionResult slowed = runOnce(false);
+    const CharacterMotionResult constant = runOnce(true);
     // Without the setting the walk up the ramp loses horizontal speed to it; with it, the walk
     // keeps every millimetre of the horizontal motion it asked for.
     EXPECT_NEAR(slowed.appliedMotion.x, 0.875F, 5.0e-3F);
@@ -974,25 +974,25 @@ TEST(Character3DMoverUVETest, WalkingUpASlopeKeepsTheHorizontalSpeedWhenThatIsAs
     EXPECT_NEAR(constant.appliedMotion.y, slowed.appliedMotion.y, 5.0e-3F);
 }
 
-TEST(Character3DMoverUVETest, TheReportHelpersAnswerTheOneQuestionEachOfThemIsNamedFor) {
-    FakeCharacterWorldUVE world;
-    AddFloorUVE(world, 0.0F);
+TEST(Character3DMoverTest, TheReportHelpersAnswerTheOneQuestionEachOfThemIsNamedFor) {
+    FakeCharacterWorld world;
+    AddFloor(world, 0.0F);
     world.center = {0.0F, 0.001F, 0.0F};
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.grounded = true;
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, DefaultConfigUVE(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, DefaultConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
-    EXPECT_TRUE(result.IsOnFloorOnlyUVE());
-    EXPECT_FALSE(result.IsOnWallOnlyUVE());
-    EXPECT_FALSE(result.IsOnCeilingOnlyUVE());
-    EXPECT_EQ(result.GetCollisionCountUVE(), result.collisions.size());
-    EXPECT_EQ(result.GetCollisionCountUVE(), result.contactCount);
+    ASSERT_TRUE(result.IsAccepted());
+    EXPECT_TRUE(result.IsOnFloorOnly());
+    EXPECT_FALSE(result.IsOnWallOnly());
+    EXPECT_FALSE(result.IsOnCeilingOnly());
+    EXPECT_EQ(result.GetCollisionCount(), result.collisions.size());
+    EXPECT_EQ(result.GetCollisionCount(), result.contactCount);
 }
 
-TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
-    Scene::CharacterControllerComponentUVE controller;
+TEST(Character3DMoverTest, StateAndConfigRoundTripThroughTheComponent) {
+    Scene::CharacterControllerComponent controller;
     controller.maxSlides = 12U;
     controller.floorMaxAngleDegrees = 30.0F;
     controller.wallMinSlideAngleDegrees = 5.0F;
@@ -1004,11 +1004,11 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     controller.floorStopOnSlope = true;
     controller.floorConstantSpeed = true;
     controller.maximumPlatformSpeed = 12.0F;
-    controller.platformOnLeave = Scene::CharacterPlatformLeaveModeUVE::AddUpwardVelocity;
+    controller.platformOnLeave = Scene::CharacterPlatformLeaveMode::AddUpwardVelocity;
     controller.upDirection = {0.0F, 0.0F, 1.0F};
 
-    const CharacterMotionConfigUVE config = Scene::MakeCharacterMotionConfigUVE(controller);
-    ExpectNearUVE(config.upDirection, {0.0F, 0.0F, 1.0F}, 1.0e-6F);
+    const CharacterMotionConfig config = Scene::MakeCharacterMotionConfig(controller);
+    ExpectNear(config.upDirection, {0.0F, 0.0F, 1.0F}, 1.0e-6F);
     EXPECT_EQ(config.maxSlides, 12U);
     EXPECT_NEAR(config.floorMaxAngleDegrees, 30.0F, 1.0e-5F);
     EXPECT_NEAR(config.wallMinSlideAngleDegrees, 5.0F, 1.0e-5F);
@@ -1020,21 +1020,21 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     EXPECT_TRUE(config.floorStopOnSlope);
     EXPECT_TRUE(config.floorConstantSpeed);
     EXPECT_NEAR(config.maximumPlatformSpeed, 12.0F, 1.0e-6F);
-    EXPECT_EQ(config.platformOnLeave, Scene::CharacterPlatformLeaveModeUVE::AddUpwardVelocity);
+    EXPECT_EQ(config.platformOnLeave, Scene::CharacterPlatformLeaveMode::AddUpwardVelocity);
     EXPECT_TRUE(config.detectFloor);
     EXPECT_FALSE(config.jumpedThisStep);
 
     // A floating body has no floor to detect, nothing to snap to, nothing to step on and no slope
     // to stand on: the mode's whole contract, expressed as configuration.
-    controller.motionMode = Scene::CharacterMotionModeUVE::Floating;
-    const CharacterMotionConfigUVE floating = Scene::MakeCharacterMotionConfigUVE(controller);
+    controller.motionMode = Scene::CharacterMotionMode::Floating;
+    const CharacterMotionConfig floating = Scene::MakeCharacterMotionConfig(controller);
     EXPECT_FALSE(floating.detectFloor);
     EXPECT_NEAR(floating.floorSnapLength, 0.0F, 1.0e-6F);
     EXPECT_NEAR(floating.maxStepHeight, 0.0F, 1.0e-6F);
     EXPECT_FALSE(floating.floorStopOnSlope);
 
     // State in, state out, and only the runtime block is touched.
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.velocity = {3.0F, 0.0F, -1.0F};
     state.grounded = true;
     state.onWall = true;
@@ -1043,53 +1043,53 @@ TEST(Character3DMoverUVETest, StateAndConfigRoundTripThroughTheComponent) {
     state.jumpBufferRemaining = 0.05F;
     state.lastMotion = {0.1F, 0.0F, 0.0F};
     state.realVelocity = {1.0F, 0.0F, 0.0F};
-    state.platform = MakeEntityUVE(3U);
+    state.platform = MakeEntity(3U);
     state.platformVelocity = {2.0F, 0.0F, 0.0F};
     state.platformWorldPosition = {1.0F, 0.0F, 0.0F};
     state.hasPlatformWorldPosition = true;
-    Scene::CharacterControllerComponentUVE target;
-    Scene::StoreCharacterMotionStateUVE(target, state);
+    Scene::CharacterControllerComponent target;
+    Scene::StoreCharacterMotionState(target, state);
     EXPECT_TRUE(target.grounded);
     EXPECT_TRUE(target.onWall);
     EXPECT_NEAR(target.wallNormal.x, -1.0F, 1.0e-6F);
     EXPECT_NEAR(target.timeSinceOnFloor, 0.25F, 1.0e-6F);
     EXPECT_NEAR(target.jumpBufferRemaining, 0.05F, 1.0e-6F);
-    EXPECT_EQ(target.platform, MakeEntityUVE(3U));
+    EXPECT_EQ(target.platform, MakeEntity(3U));
     EXPECT_TRUE(target.hasPlatformWorldPosition);
     // Authored settings were not touched by the state write: `target` was never given any, so it
     // still holds the component's own defaults.
-    const Scene::CharacterControllerComponentUVE authoredDefaults;
+    const Scene::CharacterControllerComponent authoredDefaults;
     EXPECT_NEAR(target.safeMargin, authoredDefaults.safeMargin, 1.0e-6F);
     EXPECT_EQ(target.maxSlides, authoredDefaults.maxSlides);
 
     // And the state read back is the same state, platform bookkeeping included.
-    const CharacterMotionStateUVE readBack = Scene::MakeCharacterMotionStateUVE(target);
-    ExpectNearUVE(readBack.velocity, state.velocity, 1.0e-6F);
+    const CharacterMotionState readBack = Scene::MakeCharacterMotionState(target);
+    ExpectNear(readBack.velocity, state.velocity, 1.0e-6F);
     EXPECT_EQ(readBack.platform, state.platform);
     EXPECT_TRUE(readBack.hasPlatformWorldPosition);
-    ExpectNearUVE(readBack.platformVelocity, state.platformVelocity, 1.0e-6F);
+    ExpectNear(readBack.platformVelocity, state.platformVelocity, 1.0e-6F);
 }
 
-TEST(Character3DMoverUVETest, SnapAndStepUseTheBodyUpNotWorldY) {
+TEST(Character3DMoverTest, SnapAndStepUseTheBodyUpNotWorldY) {
     // A Z-up body whose world-Y velocity is large: that used to be read as "going up", which
     // skipped the snap and refused the step. Along this body's own up it is standing still, so
     // both have to happen.
     const auto zUpConfig = []() {
-        CharacterMotionConfigUVE config = DefaultConfigUVE();
+        CharacterMotionConfig config = DefaultConfig();
         config.upDirection = {0.0F, 0.0F, 1.0F};
         return config;
     };
 
     {
-        FakeCharacterWorldUVE world;
-        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        FakeCharacterWorld world;
+        AddBox(world, MakeEntity(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
         world.center = {0.0F, 0.0F, 0.05F};
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
         state.velocity = {0.0F, 5.0F, 0.0F};
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
-        ASSERT_TRUE(result.IsAcceptedUVE());
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAccepted());
         EXPECT_TRUE(result.snapUsed);
         EXPECT_TRUE(result.onFloor);
         EXPECT_LT(result.finalCenter.z, 0.02F);
@@ -1097,64 +1097,64 @@ TEST(Character3DMoverUVETest, SnapAndStepUseTheBodyUpNotWorldY) {
     }
 
     {
-        FakeCharacterWorldUVE world;
-        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        FakeCharacterWorld world;
+        AddBox(world, MakeEntity(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
         world.center = {0.0F, 0.0F, 0.05F};
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
         state.velocity = {0.0F, 0.0F, 5.0F};
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
-        ASSERT_TRUE(result.IsAcceptedUVE());
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, zUpConfig(), state, {0.1F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAccepted());
         EXPECT_FALSE(result.snapUsed);
         EXPECT_NEAR(result.finalCenter.z, 0.05F, 1.0e-4F);
     }
 
     {
-        FakeCharacterWorldUVE world;
-        AddBoxUVE(world, MakeEntityUVE(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
+        FakeCharacterWorld world;
+        AddBox(world, MakeEntity(1U), {-100.0F, -100.0F, -1.0F}, {100.0F, 100.0F, 0.0F});
         world.boxes.push_back(
-            FakeBoxUVE{MakeEntityUVE(5U), {1.0F, -2.0F, 0.0F}, {3.0F, 2.0F, 0.2F}});
+            FakeBox{MakeEntity(5U), {1.0F, -2.0F, 0.0F}, {3.0F, 2.0F, 0.2F}});
         world.center = {0.0F, 0.0F, 0.001F};
-        CharacterMotionStateUVE state;
+        CharacterMotionState state;
         state.grounded = true;
         state.velocity = {1.0F, 5.0F, 0.0F};
-        const CharacterMotionResultUVE result =
-            Character3DUVE::MoveAndSlideUVE(world, zUpConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
-        ASSERT_TRUE(result.IsAcceptedUVE());
+        const CharacterMotionResult result =
+            Character3D::MoveAndSlide(world, zUpConfig(), state, {1.0F, 0.0F, 0.0F}, 0.1F);
+        ASSERT_TRUE(result.IsAccepted());
         EXPECT_TRUE(result.stepUpUsed);
         EXPECT_TRUE(result.onFloor);
         EXPECT_GT(result.finalCenter.z, 0.15F);
     }
 }
 
-TEST(Character3DMoverUVETest, FloorStopOnSlopeUsesTheBodyUpNotWorldY) {
-    FakeCharacterWorldUVE world;
-    CharacterSlideCollisionUVE ramp;
-    ramp.entity = MakeEntityUVE(4U);
-    ramp.normal = Math::NormalizeUVE(Math::Vector3UVE{-0.342F, 0.0F, 0.940F});
+TEST(Character3DMoverTest, FloorStopOnSlopeUsesTheBodyUpNotWorldY) {
+    FakeCharacterWorld world;
+    CharacterSlideCollision ramp;
+    ramp.entity = MakeEntity(4U);
+    ramp.normal = Math::Normalize(Math::Vector3{-0.342F, 0.0F, 0.940F});
     ramp.travel = 0.5F;
     world.scriptedHits.push_back(ramp);
-    CharacterMotionConfigUVE config = DefaultConfigUVE();
+    CharacterMotionConfig config = DefaultConfig();
     config.upDirection = {0.0F, 0.0F, 1.0F};
     config.floorStopOnSlope = true;
-    CharacterMotionStateUVE state;
+    CharacterMotionState state;
     state.grounded = true;
     // Horizontal in Z-up. World-Y would have read this as "going up" and left the body creeping.
     state.velocity = {0.0F, 0.05F, 0.0F};
 
-    const CharacterMotionResultUVE result =
-        Character3DUVE::MoveAndSlideUVE(world, config, state, {0.0F, 0.0F, -0.1F}, 0.1F);
+    const CharacterMotionResult result =
+        Character3D::MoveAndSlide(world, config, state, {0.0F, 0.0F, -0.1F}, 0.1F);
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.onFloor);
-    ExpectNearUVE(state.velocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(state.velocity, {0.0F, 0.0F, 0.0F}, 1.0e-5F);
 }
 
-TEST(Character3DMoverUVETest, ACharacterCanBeBuiltFromItsObjectDefinition) {
-    const Scene::Character3DObjectDefinitionUVE definition{};
-    EXPECT_TRUE(Scene::IsCharacter3DObjectDefinitionValidUVE(definition));
-    const Scene::ColliderComponentUVE collider = Scene::Character3DObjectDefinitionUVE::MakeDefaultColliderUVE();
+TEST(Character3DMoverTest, ACharacterCanBeBuiltFromItsObjectDefinition) {
+    const Scene::Character3DObjectDefinition definition{};
+    EXPECT_TRUE(Scene::IsCharacter3DObjectDefinitionValid(definition));
+    const Scene::ColliderComponent collider = Scene::Character3DObjectDefinition::MakeDefaultCollider();
     EXPECT_GT(collider.halfExtents.y, 0.0F);
     EXPECT_GT(collider.halfExtents.x, 0.0F);
 }
@@ -1164,316 +1164,316 @@ TEST(Character3DMoverUVETest, ACharacterCanBeBuiltFromItsObjectDefinition) {
 // real scene graph, and the step system that ties them together.
 // =================================================================================================
 
-class Character3DStepUVETest : public ::testing::Test {
+class Character3DStepTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    CollisionSystemUVE collisionSystem;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    CollisionSystem collisionSystem;
 
-    static constexpr float kDeltaTimeUVE = 1.0F / 60.0F;
-    static constexpr float kGravityYUVE = -9.81F;
+    static constexpr float kDeltaTime = 1.0F / 60.0F;
+    static constexpr float kGravityY = -9.81F;
 
-    [[nodiscard]] Scene::EntityUVE MakeBoxUVE(const Math::Vector3UVE position,
-                                              const Math::Vector3UVE halfExtents,
+    [[nodiscard]] Scene::Entity MakeBox(const Math::Vector3 position,
+                                              const Math::Vector3 halfExtents,
                                               const std::uint32_t layer = 1U,
                                               const std::uint32_t mask = 0xFFFFFFFFU) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        Scene::ColliderComponentUVE collider{halfExtents};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        Scene::ColliderComponent collider{halfExtents};
         collider.collisionLayer = layer;
         collider.collisionMask = mask;
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+        entityManager.AddComponent<Scene::ColliderComponent>(entity, collider);
         return entity;
     }
 
     /// A character is a collider, a controller and a transform - no rigid body, because a character
     /// is moved by its own code and not by forces.
-    [[nodiscard]] Scene::EntityUVE MakeCharacterUVE(
-        const Math::Vector3UVE position, const Math::Vector3UVE halfExtents,
-        const Scene::CharacterControllerComponentUVE& controller = {}) {
-        const Scene::EntityUVE entity = MakeBoxUVE(position, halfExtents);
-        entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(entity, controller);
+    [[nodiscard]] Scene::Entity MakeCharacter(
+        const Math::Vector3 position, const Math::Vector3 halfExtents,
+        const Scene::CharacterControllerComponent& controller = {}) {
+        const Scene::Entity entity = MakeBox(position, halfExtents);
+        entityManager.AddComponent<Scene::CharacterControllerComponent>(entity, controller);
         return entity;
     }
 
-    [[nodiscard]] Scene::EntityUVE MakeFloorUVE(const float topY = 0.0F,
-                                                const Math::Vector3UVE halfExtents = {100.0F, 0.5F, 100.0F}) {
-        return MakeBoxUVE({0.0F, topY - halfExtents.y, 0.0F}, halfExtents);
+    [[nodiscard]] Scene::Entity MakeFloor(const float topY = 0.0F,
+                                                const Math::Vector3 halfExtents = {100.0F, 0.5F, 100.0F}) {
+        return MakeBox({0.0F, topY - halfExtents.y, 0.0F}, halfExtents);
     }
 
-    [[nodiscard]] Character3DStepResultUVE StepUVE(
-        const Scene::EntityUVE entity, const CharacterMotionInputUVE& input = {},
-        const float deltaTimeSeconds = kDeltaTimeUVE) {
-        return StepCharacter3DUVE(entityManager, sceneGraph, collisionSystem, entity, input, kGravityYUVE,
+    [[nodiscard]] Character3DStepResult Step(
+        const Scene::Entity entity, const CharacterMotionInput& input = {},
+        const float deltaTimeSeconds = kDeltaTime) {
+        return StepCharacter3D(entityManager, sceneGraph, collisionSystem, entity, input, kGravityY,
                                   deltaTimeSeconds);
     }
 
-    [[nodiscard]] Math::Vector3UVE PositionUVE(const Scene::EntityUVE entity) {
-        return entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition;
+    [[nodiscard]] Math::Vector3 Position(const Scene::Entity entity) {
+        return entityManager.GetComponent<Scene::TransformComponent>(entity).localPosition;
     }
 
-    [[nodiscard]] Scene::CharacterControllerComponentUVE ControllerUVE(const Scene::EntityUVE entity) {
-        return entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    [[nodiscard]] Scene::CharacterControllerComponent Controller(const Scene::Entity entity) {
+        return entityManager.GetComponent<Scene::CharacterControllerComponent>(entity);
     }
 
     /// Steps until the predicate holds, and hands back the last report. Used where a test is about
     /// where a body ends up rather than about one particular step.
-    template <typename PredicateUVE>
-    [[nodiscard]] Character3DStepResultUVE StepUntilUVE(const Scene::EntityUVE entity,
-                                                        PredicateUVE&& done, const int maximumSteps = 240) {
-        Character3DStepResultUVE report = StepUVE(entity);
+    template <typename Predicate>
+    [[nodiscard]] Character3DStepResult StepUntil(const Scene::Entity entity,
+                                                        Predicate&& done, const int maximumSteps = 240) {
+        Character3DStepResult report = Step(entity);
         for (int step = 1; step < maximumSteps && !done(report); ++step) {
-            report = StepUVE(entity);
+            report = Step(entity);
         }
         return report;
     }
 };
 
-TEST_F(Character3DStepUVETest, ACharacterFallingOntoTheFloorLandsOnItAndStaysThere) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, ACharacterFallingOntoTheFloorLandsOnItAndStaysThere) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 3.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity character = MakeCharacter({0.0F, 3.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
     for (int step = 0; step < 120; ++step) {
-        const Character3DStepResultUVE report = StepUVE(character);
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
     }
 
     // Resting on the floor: the collider's half height above the floor's top, give or take the skin.
-    EXPECT_NEAR(PositionUVE(character).y, 0.5F, 1.0e-2F);
-    const Scene::CharacterControllerComponentUVE controller = ControllerUVE(character);
+    EXPECT_NEAR(Position(character).y, 0.5F, 1.0e-2F);
+    const Scene::CharacterControllerComponent controller = Controller(character);
     EXPECT_TRUE(controller.grounded);
     EXPECT_NEAR(controller.velocity.y, 0.0F, 1.0e-3F);
     EXPECT_NEAR(controller.floorNormal.y, 1.0F, 1.0e-3F);
     EXPECT_LT(controller.timeSinceOnFloor, 1.0e-3F);
 }
 
-TEST_F(Character3DStepUVETest, WalkingIntoAWallStopsAtItAndSaysSo) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, WalkingIntoAWallStopsAtItAndSaysSo) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE wall = MakeBoxUVE({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
-    Scene::CharacterControllerComponentUVE settings;
+    const Scene::Entity wall = MakeBox({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
-    CharacterMotionInputUVE input;
-    Character3DStepResultUVE report;
+    CharacterMotionInput input;
+    Character3DStepResult report;
     for (int step = 0; step < 120; ++step) {
         // A script driving the body: five metres a second, straight at the wall.
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-        report = StepUVE(character, input);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{5.0F, 0.0F, 0.0F};
+        report = Step(character, input);
         ASSERT_TRUE(report.stepped) << "step " << step;
     }
 
     // The wall's own face is at x = 2.0; the collider's surface stops a skin short of it.
-    EXPECT_NEAR(PositionUVE(character).x, 1.5F, 5.0e-3F);
+    EXPECT_NEAR(Position(character).x, 1.5F, 5.0e-3F);
     EXPECT_TRUE(report.motion.onWall);
     EXPECT_TRUE(report.motion.blocked);
     EXPECT_NEAR(report.motion.wallNormal.x, -1.0F, 1.0e-3F);
     ASSERT_GT(report.motion.contactCount, 0U);
-    ASSERT_NE(report.motion.GetCollisionUVE(0U), nullptr);
-    EXPECT_EQ(report.motion.GetCollisionUVE(0U)->entity, wall);
+    ASSERT_NE(report.motion.GetCollision(0U), nullptr);
+    EXPECT_EQ(report.motion.GetCollision(0U)->entity, wall);
 }
 
-TEST_F(Character3DStepUVETest, WalkingForwardClimbsALowStep) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, WalkingForwardClimbsALowStep) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // A step 0.25 m tall, from x = 1.0 onwards: low enough for the default 0.3 m step height.
-    const Scene::EntityUVE stepBox = MakeBoxUVE({3.0F, 0.125F, 0.0F}, {2.5F, 0.125F, 5.0F});
-    Scene::CharacterControllerComponentUVE settings;
+    const Scene::Entity stepBox = MakeBox({3.0F, 0.125F, 0.0F}, {2.5F, 0.125F, 5.0F});
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
     bool steppedUp = false;
     // One second of walking: three metres from the start, which is the middle of the tread.
     for (int step = 0; step < 60; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{3.0F, 0.0F, 0.0F};
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{3.0F, 0.0F, 0.0F};
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
         steppedUp = steppedUp || report.motion.stepUpUsed;
     }
 
     EXPECT_TRUE(steppedUp);
     // On top of the step: the tread is at 0.25, so the body's centre rests just above 0.75.
-    EXPECT_GT(PositionUVE(character).x, 2.0F);
-    EXPECT_NEAR(PositionUVE(character).y, 0.75F, 1.5e-2F);
+    EXPECT_GT(Position(character).x, 2.0F);
+    EXPECT_NEAR(Position(character).y, 0.75F, 1.5e-2F);
     static_cast<void>(stepBox);
 }
 
-TEST_F(Character3DStepUVETest, AStepTallerThanTheStepHeightIsAWallAndIsNotClimbed) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, AStepTallerThanTheStepHeightIsAWallAndIsNotClimbed) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // 0.6 m tall against a 0.3 m step height: a wall, whatever it looks like from the side. Its
     // face is a metre in front of the body, so the walk has somewhere to go before it stops.
-    const Scene::EntityUVE ledge = MakeBoxUVE({3.5F, 0.3F, 0.0F}, {2.5F, 0.3F, 5.0F});
+    const Scene::Entity ledge = MakeBox({3.5F, 0.3F, 0.0F}, {2.5F, 0.3F, 5.0F});
     static_cast<void>(ledge);
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
     for (int step = 0; step < 120; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{3.0F, 0.0F, 0.0F};
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{3.0F, 0.0F, 0.0F};
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
         EXPECT_FALSE(report.motion.stepUpUsed);
     }
 
-    EXPECT_NEAR(PositionUVE(character).y, 0.5F, 1.0e-2F);
-    EXPECT_NEAR(PositionUVE(character).x, 0.5F, 5.0e-3F);
+    EXPECT_NEAR(Position(character).y, 0.5F, 1.0e-2F);
+    EXPECT_NEAR(Position(character).x, 0.5F, 5.0e-3F);
 }
 
-TEST_F(Character3DStepUVETest, JumpingLeavesTheFloorAndComesBackDownToIt) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, JumpingLeavesTheFloorAndComesBackDownToIt) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = true;
     settings.jumpHeight = 1.0F;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
     // Settle first: a jump is only a jump from the floor.
-    const Character3DStepResultUVE settled = StepUntilUVE(character, [](const Character3DStepResultUVE&) {
+    const Character3DStepResult settled = StepUntil(character, [](const Character3DStepResult&) {
         return false;
     }, 2);
     ASSERT_TRUE(settled.stepped);
-    ASSERT_TRUE(ControllerUVE(character).grounded);
+    ASSERT_TRUE(Controller(character).grounded);
 
-    CharacterMotionInputUVE jumpInput;
+    CharacterMotionInput jumpInput;
     jumpInput.jumpPressed = true;
-    const Character3DStepResultUVE jump = StepUVE(character, jumpInput);
+    const Character3DStepResult jump = Step(character, jumpInput);
     ASSERT_TRUE(jump.stepped);
     EXPECT_TRUE(jump.jumped);
-    EXPECT_GT(ControllerUVE(character).velocity.y, 0.0F);
-    EXPECT_FALSE(ControllerUVE(character).grounded);
+    EXPECT_GT(Controller(character).velocity.y, 0.0F);
+    EXPECT_FALSE(Controller(character).grounded);
 
-    float highest = PositionUVE(character).y;
+    float highest = Position(character).y;
     bool landed = false;
     for (int step = 0; step < 240 && !landed; ++step) {
-        const Character3DStepResultUVE report = StepUVE(character);
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped);
-        highest = std::max(highest, PositionUVE(character).y);
+        highest = std::max(highest, Position(character).y);
         landed = report.motion.onFloor;
     }
 
     EXPECT_TRUE(landed);
     EXPECT_GT(highest, 1.0F);
-    EXPECT_NEAR(PositionUVE(character).y, 0.5F, 1.5e-2F);
-    EXPECT_TRUE(ControllerUVE(character).grounded);
+    EXPECT_NEAR(Position(character).y, 0.5F, 1.5e-2F);
+    EXPECT_TRUE(Controller(character).grounded);
 }
 
-TEST_F(Character3DStepUVETest, AFloatingBodyIgnoresGravityAndItsLocksHoldTheirAxes) {
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::CharacterControllerComponentUVE settings = ControllerUVE(character);
-    settings.motionMode = Scene::CharacterMotionModeUVE::Floating;
+TEST_F(Character3DStepTest, AFloatingBodyIgnoresGravityAndItsLocksHoldTheirAxes) {
+    const Scene::Entity character = MakeCharacter({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::CharacterControllerComponent settings = Controller(character);
+    settings.motionMode = Scene::CharacterMotionMode::Floating;
     settings.builtInMovement = true;
     settings.moveSpeed = 2.0F;
-    entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character) = settings;
+    entityManager.GetComponent<Scene::CharacterControllerComponent>(character) = settings;
 
-    Scene::SolidBodyComponentUVE locks;
+    Scene::SolidBodyComponent locks;
     locks.lockMotionX = true;
-    entityManager.AddComponentUVE<Scene::SolidBodyComponentUVE>(character, locks);
+    entityManager.AddComponent<Scene::SolidBodyComponent>(character, locks);
 
-    CharacterMotionInputUVE input;
+    CharacterMotionInput input;
     input.move = {1.0F, 0.0F, 1.0F};
     input.rise = 1.0F;
     for (int step = 0; step < 30; ++step) {
-        const Character3DStepResultUVE report = StepUVE(character, input);
+        const Character3DStepResult report = Step(character, input);
         ASSERT_TRUE(report.stepped) << "step " << step;
         EXPECT_FALSE(report.motion.onFloor);
     }
 
-    const Math::Vector3UVE position = PositionUVE(character);
+    const Math::Vector3 position = Position(character);
     EXPECT_NEAR(position.x, 0.0F, 1.0e-5F); // locked
     EXPECT_NEAR(position.z, 1.0F, 5.0e-2F); // half a second at 2 m/s
     EXPECT_NEAR(position.y, 2.0F, 5.0e-2F); // rising at 2 m/s
 }
 
-TEST_F(Character3DStepUVETest, AMovingPlatformCarriesTheBodyStandingOnIt) {
+TEST_F(Character3DStepTest, AMovingPlatformCarriesTheBodyStandingOnIt) {
     // The platform is the floor: a solid box the body stands on, moved by its own code each step.
-    const Scene::EntityUVE platform = MakeBoxUVE({0.0F, -0.25F, 0.0F}, {2.0F, 0.25F, 2.0F});
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity platform = MakeBox({0.0F, -0.25F, 0.0F}, {2.0F, 0.25F, 2.0F});
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
     // Ride for a moment so the body is genuinely standing on the platform.
     for (int step = 0; step < 10; ++step) {
-        ASSERT_TRUE(StepUVE(character).stepped);
+        ASSERT_TRUE(Step(character).stepped);
     }
-    ASSERT_TRUE(ControllerUVE(character).grounded);
-    const float startX = PositionUVE(character).x;
+    ASSERT_TRUE(Controller(character).grounded);
+    const float startX = Position(character).x;
 
     bool carried = false;
-    constexpr float kPlatformStepUVE = 0.01F;
+    constexpr float kPlatformStep = 0.01F;
     for (int step = 0; step < 30; ++step) {
-        Scene::TransformComponentUVE platformTransform =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(platform);
-        platformTransform.localPosition.x += kPlatformStepUVE;
-        sceneGraph.SetLocalTransformUVE(entityManager, platform, platformTransform);
+        Scene::TransformComponent platformTransform =
+            entityManager.GetComponent<Scene::TransformComponent>(platform);
+        platformTransform.localPosition.x += kPlatformStep;
+        sceneGraph.SetLocalTransform(entityManager, platform, platformTransform);
 
-        const Character3DStepResultUVE report = StepUVE(character);
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
         carried = carried || report.motion.carriedByPlatform;
     }
 
     EXPECT_TRUE(carried);
     // Thirty steps at a centimetre a step: the rider went with the platform, not just its velocity.
-    EXPECT_NEAR(PositionUVE(character).x - startX, 0.3F, 2.5e-2F);
-    EXPECT_TRUE(ControllerUVE(character).grounded);
+    EXPECT_NEAR(Position(character).x - startX, 0.3F, 2.5e-2F);
+    EXPECT_TRUE(Controller(character).grounded);
 }
 
-TEST_F(Character3DStepUVETest, ALayerTheCharacterDoesNotCollideWithIsWalkedStraightThrough) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, ALayerTheCharacterDoesNotCollideWithIsWalkedStraightThrough) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // A wall on layer 2. The character's mask only accepts layer 1, and the wall's mask accepts
     // everything - one direction failing is enough for a pair to be ignored.
-    const Scene::EntityUVE wall = MakeBoxUVE({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F}, 2U, 0xFFFFFFFFU);
+    const Scene::Entity wall = MakeBox({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F}, 2U, 0xFFFFFFFFU);
     static_cast<void>(wall);
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeBoxUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(character, settings);
+    const Scene::Entity character = MakeBox({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(character, settings);
 
     for (int step = 0; step < 60; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{5.0F, 0.0F, 0.0F};
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
         EXPECT_FALSE(report.motion.onWall);
     }
 
-    EXPECT_GT(PositionUVE(character).x, 4.0F);
+    EXPECT_GT(Position(character).x, 4.0F);
 }
 
-TEST_F(Character3DStepUVETest, AControllerWithNoShapeFallsInsteadOfStandingInTheAir) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, AControllerWithNoShapeFallsInsteadOfStandingInTheAir) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // A Character3D authored without a Collider3D: a controller with nothing to stand on and
     // nothing to hit. It used to be refused - missing collider - and left exactly where the editor
     // placed it, which reads as a body born with an invisible collider of its own.
-    const Scene::EntityUVE shapeless = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform;
+    const Scene::Entity shapeless = entityManager.CreateEntity();
+    Scene::TransformComponent transform;
     transform.localPosition = {0.0F, 3.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, shapeless, transform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        shapeless, Scene::CharacterControllerComponentUVE{});
+    sceneGraph.AttachTransform(entityManager, shapeless, transform);
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(
+        shapeless, Scene::CharacterControllerComponent{});
 
-    const Math::Vector3UVE start = PositionUVE(shapeless);
+    const Math::Vector3 start = Position(shapeless);
     for (int step = 0; step < 120; ++step) {
-        const Character3DStepResultUVE report = StepUVE(shapeless);
+        const Character3DStepResult report = Step(shapeless);
         ASSERT_TRUE(report.stepped) << "step " << step << ": a shapeless body still moves";
-        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+        ASSERT_EQ(report.code, Character3DStepCode::NoShape) << "step " << step;
     }
-    EXPECT_LT(PositionUVE(shapeless).y, start.y) << "gravity reaches a body with no shape";
-    EXPECT_LT(PositionUVE(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
-    EXPECT_FALSE(ControllerUVE(shapeless).grounded);
+    EXPECT_LT(Position(shapeless).y, start.y) << "gravity reaches a body with no shape";
+    EXPECT_LT(Position(shapeless).y, 0.0F) << "no shape means no floor: it falls through it";
+    EXPECT_FALSE(Controller(shapeless).grounded);
 }
 
-TEST_F(Character3DStepUVETest, AMeshAndAShapeAuthoredAtTheSameHeightStandOnTheFloor) {
+TEST_F(Character3DStepTest, AMeshAndAShapeAuthoredAtTheSameHeightStandOnTheFloor) {
     // The reported setup, both halves of it. A Player3D at the world origin with two children, each
     // one metre up: the MeshInstance3D showing a CapsuleMesh, and the Collider3D that is its body.
     // The floor's top is y = 0.
@@ -1485,226 +1485,226 @@ TEST_F(Character3DStepUVETest, AMeshAndAShapeAuthoredAtTheSameHeightStandOnTheFl
     // It used to float a whole metre, because the mover read the collider's SIZE but took its
     // CENTRE from the body. The shape was queried at the body's origin while the mesh was drawn one
     // metre above it, which is a capsule hanging in the air over an invisible body.
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
 
-    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE bodyTransform;
+    const Scene::Entity body = entityManager.CreateEntity();
+    Scene::TransformComponent bodyTransform;
     bodyTransform.localPosition = {0.0F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        body, Scene::CharacterControllerComponentUVE{});
+    sceneGraph.AttachTransform(entityManager, body, bodyTransform);
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(
+        body, Scene::CharacterControllerComponent{});
 
-    const Scene::EntityUVE mesh = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE meshTransform;
+    const Scene::Entity mesh = entityManager.CreateEntity();
+    Scene::TransformComponent meshTransform;
     meshTransform.localPosition = {0.0F, 1.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, mesh, meshTransform);
-    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(mesh, Scene::MeshComponentUVE{});
-    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-        mesh, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
-    sceneGraph.SetParentUVE(entityManager, mesh, body);
+    sceneGraph.AttachTransform(entityManager, mesh, meshTransform);
+    entityManager.AddComponent<Scene::MeshComponent>(mesh, Scene::MeshComponent{});
+    entityManager.AddComponent<Scene::PrimitiveMeshComponent>(
+        mesh, Scene::PrimitiveMeshComponent{Scene::PrimitiveMeshKind::Capsule});
+    sceneGraph.SetParent(entityManager, mesh, body);
 
-    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE shapeTransform;
+    const Scene::Entity shape = entityManager.CreateEntity();
+    Scene::TransformComponent shapeTransform;
     shapeTransform.localPosition = {0.0F, 1.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
-    Scene::ColliderComponentUVE capsule = Scene::Collider3DUVE::MakeCapsuleUVE(0.5F, 2.0F);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(shape, capsule);
-    sceneGraph.SetParentUVE(entityManager, shape, body);
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.AttachTransform(entityManager, shape, shapeTransform);
+    Scene::ColliderComponent capsule = Scene::Collider3D::MakeCapsule(0.5F, 2.0F);
+    entityManager.AddComponent<Scene::ColliderComponent>(shape, capsule);
+    sceneGraph.SetParent(entityManager, shape, body);
+    sceneGraph.Update(entityManager);
 
-    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+    ASSERT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(body))
         << "the body itself carries no shape - the Collider3D under it does";
 
-    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
-        const Character3DStepResultUVE report = StepUVE(body);
+    for (int step = 0; step < 240 && !Controller(body).grounded; ++step) {
+        const Character3DStepResult report = Step(body);
         ASSERT_TRUE(report.stepped) << "step " << step;
     }
-    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+    ASSERT_TRUE(Controller(body).grounded) << "the body never reached the floor";
 
     // The shape is what stands on the floor: its centre is half its height above it.
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape).worldPosition.y,
+    EXPECT_NEAR(entityManager.GetComponent<Scene::WorldTransformComponent>(shape).worldPosition.y,
                 1.0F, 0.02F)
         << "the Collider3D rests at its own half height, as authored";
     // ...and the body, whose origin is a metre below the shape, lands at the floor.
-    EXPECT_NEAR(PositionUVE(body).y, 0.0F, 0.02F)
+    EXPECT_NEAR(Position(body).y, 0.0F, 0.02F)
         << "the body is not lifted by its child's offset, and not sunk by it either";
     // ...which puts the bottom of the capsule the author sees exactly on the floor.
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(mesh).worldPosition.y -
+    EXPECT_NEAR(entityManager.GetComponent<Scene::WorldTransformComponent>(mesh).worldPosition.y -
                     1.0F,
                 0.0F, 0.02F)
         << "the mesh capsule is 2 m tall, centred 1 m up, so its bottom is the floor";
 }
 
-TEST_F(Character3DStepUVETest, ABodyWearingAMeshWithNoColliderFalls) {
+TEST_F(Character3DStepTest, ABodyWearingAMeshWithNoColliderFalls) {
     // The reported setup, exactly: a body with no Collider3D, and the mesh it wears under it as a
     // MeshInstance3D showing a CapsuleMesh. Neither carries a collider - a MeshInstance3D gets a
-    // MeshComponentUVE and nothing else - so there is no shape anywhere, and the body hangs in the
+    // MeshComponent and nothing else - so there is no shape anywhere, and the body hangs in the
     // air wearing a capsule. What looks like an invisible collider holding it up is the body being
     // refused and left where it was placed.
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
 
-    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE bodyTransform;
+    const Scene::Entity body = entityManager.CreateEntity();
+    Scene::TransformComponent bodyTransform;
     bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        body, Scene::CharacterControllerComponentUVE{});
+    sceneGraph.AttachTransform(entityManager, body, bodyTransform);
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(
+        body, Scene::CharacterControllerComponent{});
 
-    const Scene::EntityUVE worn = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE wornTransform;
-    sceneGraph.AttachTransformUVE(entityManager, worn, wornTransform);
-    entityManager.AddComponentUVE<Scene::MeshComponentUVE>(worn, Scene::MeshComponentUVE{});
-    entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
-        worn, Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Capsule});
-    sceneGraph.SetParentUVE(entityManager, worn, body);
-    sceneGraph.UpdateUVE(entityManager);
+    const Scene::Entity worn = entityManager.CreateEntity();
+    Scene::TransformComponent wornTransform;
+    sceneGraph.AttachTransform(entityManager, worn, wornTransform);
+    entityManager.AddComponent<Scene::MeshComponent>(worn, Scene::MeshComponent{});
+    entityManager.AddComponent<Scene::PrimitiveMeshComponent>(
+        worn, Scene::PrimitiveMeshComponent{Scene::PrimitiveMeshKind::Capsule});
+    sceneGraph.SetParent(entityManager, worn, body);
+    sceneGraph.Update(entityManager);
 
-    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(body))
+    ASSERT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(body))
         << "a Character3D is a controller, not a shape";
-    ASSERT_FALSE(entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(worn))
+    ASSERT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(worn))
         << "a MeshInstance3D draws a mesh; it is not a collider";
 
-    const Math::Vector3UVE start = PositionUVE(body);
+    const Math::Vector3 start = Position(body);
     for (int step = 0; step < 120; ++step) {
-        const Character3DStepResultUVE report = StepUVE(body);
+        const Character3DStepResult report = Step(body);
         ASSERT_TRUE(report.stepped) << "step " << step << ": a body wearing a mesh still moves";
-        ASSERT_EQ(report.code, Character3DStepCodeUVE::NoShape) << "step " << step;
+        ASSERT_EQ(report.code, Character3DStepCode::NoShape) << "step " << step;
     }
-    EXPECT_LT(PositionUVE(body).y, start.y) << "the body falls instead of hanging in the air";
-    EXPECT_NEAR(PositionUVE(body).y, start.y - 0.5F * 9.81F * 2.0F * 2.0F, 0.35F)
+    EXPECT_LT(Position(body).y, start.y) << "the body falls instead of hanging in the air";
+    EXPECT_NEAR(Position(body).y, start.y - 0.5F * 9.81F * 2.0F * 2.0F, 0.35F)
         << "and it falls at gravity, not slowly and not not-at-all";
 }
 
-TEST_F(Character3DStepUVETest, AShapeAuthoredUnderTheBodyPutsTheBodyWhereTheShapeIs) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, AShapeAuthoredUnderTheBodyPutsTheBodyWhereTheShapeIs) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
 
     // A character with no collider of its own and a Collider3D under it, offset 0.4 up - the shape
     // is where the author put it, not where the body's origin is. The body falls until the SHAPE
     // rests on the floor, which leaves the body 0.4 below the shape's centre. Taking the centre
     // from the body instead would stop the body 0.4 higher and leave the shape hovering.
-    const Scene::EntityUVE body = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE bodyTransform;
+    const Scene::Entity body = entityManager.CreateEntity();
+    Scene::TransformComponent bodyTransform;
     bodyTransform.localPosition = {0.0F, 3.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, body, bodyTransform);
-    entityManager.AddComponentUVE<Scene::CharacterControllerComponentUVE>(
-        body, Scene::CharacterControllerComponentUVE{});
+    sceneGraph.AttachTransform(entityManager, body, bodyTransform);
+    entityManager.AddComponent<Scene::CharacterControllerComponent>(
+        body, Scene::CharacterControllerComponent{});
 
-    const Scene::EntityUVE shape = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE shapeTransform;
+    const Scene::Entity shape = entityManager.CreateEntity();
+    Scene::TransformComponent shapeTransform;
     shapeTransform.localPosition = {0.0F, 0.4F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, shape, shapeTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-        shape, Scene::Collider3DUVE::MakeCapsuleUVE(0.4F, 1.8F));
-    sceneGraph.SetParentUVE(entityManager, shape, body);
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.AttachTransform(entityManager, shape, shapeTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(
+        shape, Scene::Collider3D::MakeCapsule(0.4F, 1.8F));
+    sceneGraph.SetParent(entityManager, shape, body);
+    sceneGraph.Update(entityManager);
 
-    ASSERT_EQ(PositionUVE(body), (Math::Vector3UVE{0.0F, 3.0F, 0.0F}));
+    ASSERT_EQ(Position(body), (Math::Vector3{0.0F, 3.0F, 0.0F}));
 
-    for (int step = 0; step < 240 && !ControllerUVE(body).grounded; ++step) {
-        const Character3DStepResultUVE report = StepUVE(body);
+    for (int step = 0; step < 240 && !Controller(body).grounded; ++step) {
+        const Character3DStepResult report = Step(body);
         ASSERT_TRUE(report.stepped) << "step " << step;
     }
-    ASSERT_TRUE(ControllerUVE(body).grounded) << "the body never reached the floor";
+    ASSERT_TRUE(Controller(body).grounded) << "the body never reached the floor";
 
-    const Scene::WorldTransformComponentUVE shapeWorld =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape);
+    const Scene::WorldTransformComponent shapeWorld =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(shape);
     // A 1.8-tall capsule rests with its centre at half its height.
     EXPECT_NEAR(shapeWorld.worldPosition.y, 0.9F, 0.02F)
         << "the shape is what stands on the floor, so the shape is what must be at rest height";
-    EXPECT_NEAR(PositionUVE(body).y, 0.5F, 0.02F)
+    EXPECT_NEAR(Position(body).y, 0.5F, 0.02F)
         << "the body sits 0.4 under the shape it was authored with";
 }
 
-TEST_F(Character3DStepUVETest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, BodiesTheStepCannotDriveAreRefusedWithAReason) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
 
     // Not a controller at all.
-    const Scene::EntityUVE plain = MakeBoxUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    EXPECT_EQ(StepUVE(plain).code, Character3DStepCodeUVE::NotAController);
+    const Scene::Entity plain = MakeBox({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    EXPECT_EQ(Step(plain).code, Character3DStepCode::NotAController);
 
     // A predicted body belongs to the predictor: refused, and left exactly where it was.
-    const Scene::EntityUVE predicted = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::PredictedCharacterComponentUVE>(
-        predicted, Scene::PredictedCharacterComponentUVE{});
-    EXPECT_EQ(StepUVE(predicted).code, Character3DStepCodeUVE::PredictedElsewhere);
-    EXPECT_FALSE(StepUVE(predicted).stepped);
-    EXPECT_EQ(PositionUVE(predicted), (Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
+    const Scene::Entity predicted = MakeCharacter({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::PredictedCharacterComponent>(
+        predicted, Scene::PredictedCharacterComponent{});
+    EXPECT_EQ(Step(predicted).code, Character3DStepCode::PredictedElsewhere);
+    EXPECT_FALSE(Step(predicted).stepped);
+    EXPECT_EQ(Position(predicted), (Math::Vector3{0.0F, 1.0F, 0.0F}));
 
     // A dynamic rigid body is driven by forces, not by a character controller.
-    const Scene::EntityUVE dynamic = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(dynamic, Scene::Rigid3DComponentUVE{});
-    EXPECT_EQ(StepUVE(dynamic).code, Character3DStepCodeUVE::NonKinematicBody);
+    const Scene::Entity dynamic = MakeCharacter({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(dynamic, Scene::Rigid3DComponent{});
+    EXPECT_EQ(Step(dynamic).code, Character3DStepCode::NonKinematicBody);
 
     // A kinematic rigid body is fine: that is a body whose motion is authored.
-    const Scene::EntityUVE kinematic = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::Rigid3DComponentUVE kinematicBody;
+    const Scene::Entity kinematic = MakeCharacter({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::Rigid3DComponent kinematicBody;
     kinematicBody.isKinematic = true;
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(kinematic, kinematicBody);
-    EXPECT_EQ(StepUVE(kinematic).code, Character3DStepCodeUVE::Stepped);
+    entityManager.AddComponent<Scene::Rigid3DComponent>(kinematic, kinematicBody);
+    EXPECT_EQ(Step(kinematic).code, Character3DStepCode::Stepped);
 
     // A vanished entity, and a step with no duration.
-    const Scene::EntityUVE vanished = MakeCharacterUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.DestroyEntityUVE(vanished);
-    EXPECT_EQ(StepUVE(vanished).code, Character3DStepCodeUVE::UnknownEntity);
-    EXPECT_EQ(StepUVE(kinematic, {}, 0.0F).code, Character3DStepCodeUVE::InvalidDeltaTime);
-    EXPECT_EQ(StepUVE(kinematic, {}, -1.0F).code, Character3DStepCodeUVE::InvalidDeltaTime);
-    EXPECT_EQ(StepUVE(kinematic, {}, std::numeric_limits<float>::quiet_NaN()).code,
-              Character3DStepCodeUVE::InvalidDeltaTime);
+    const Scene::Entity vanished = MakeCharacter({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.DestroyEntity(vanished);
+    EXPECT_EQ(Step(vanished).code, Character3DStepCode::UnknownEntity);
+    EXPECT_EQ(Step(kinematic, {}, 0.0F).code, Character3DStepCode::InvalidDeltaTime);
+    EXPECT_EQ(Step(kinematic, {}, -1.0F).code, Character3DStepCode::InvalidDeltaTime);
+    EXPECT_EQ(Step(kinematic, {}, std::numeric_limits<float>::quiet_NaN()).code,
+              Character3DStepCode::InvalidDeltaTime);
 }
 
-TEST_F(Character3DStepUVETest, AScriptedVelocityMovesTheBodyThroughTheWorld) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, AScriptedVelocityMovesTheBodyThroughTheWorld) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
-    Math::Vector3UVE velocity{2.0F, 0.0F, -3.0F};
+    Math::Vector3 velocity{2.0F, 0.0F, -3.0F};
     for (int step = 0; step < 60; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity = velocity;
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity = velocity;
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
     }
 
     // One second of scripted travel, and the component's velocity is left as the script set it.
-    EXPECT_NEAR(PositionUVE(character).x, 2.0F, 5.0e-2F);
-    EXPECT_NEAR(PositionUVE(character).z, -3.0F, 5.0e-2F);
-    EXPECT_NEAR(ControllerUVE(character).velocity.x, velocity.x, 1.0e-4F);
-    EXPECT_NEAR(ControllerUVE(character).velocity.z, velocity.z, 1.0e-4F);
+    EXPECT_NEAR(Position(character).x, 2.0F, 5.0e-2F);
+    EXPECT_NEAR(Position(character).z, -3.0F, 5.0e-2F);
+    EXPECT_NEAR(Controller(character).velocity.x, velocity.x, 1.0e-4F);
+    EXPECT_NEAR(Controller(character).velocity.z, velocity.z, 1.0e-4F);
 }
 
-TEST_F(Character3DStepUVETest, ARefusedStepLeavesTheBodyExactlyWhereItWas) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, ARefusedStepLeavesTheBodyExactlyWhereItWas) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
-    entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-        Math::Vector3UVE{4.0F, 0.0F, 0.0F};
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+        Math::Vector3{4.0F, 0.0F, 0.0F};
 
-    const Math::Vector3UVE positionBefore = PositionUVE(character);
-    const Character3DStepResultUVE refused = StepUVE(character, {}, 0.0F);
+    const Math::Vector3 positionBefore = Position(character);
+    const Character3DStepResult refused = Step(character, {}, 0.0F);
     EXPECT_FALSE(refused.stepped);
-    ExpectNearUVE(PositionUVE(character), positionBefore, 0.0F);
-    EXPECT_NEAR(ControllerUVE(character).velocity.x, 4.0F, 1.0e-5F);
+    ExpectNear(Position(character), positionBefore, 0.0F);
+    EXPECT_NEAR(Controller(character).velocity.x, 4.0F, 1.0e-5F);
 }
 
-TEST_F(Character3DStepUVETest, TheBridgesSweepAgreesWithTheMoverAboutAFaceAndItsNormal) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, TheBridgesSweepAgreesWithTheMoverAboutAFaceAndItsNormal) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE wall = MakeBoxUVE({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity wall = MakeBox({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
-    CharacterWorldQueryUVE world(entityManager, collisionSystem, character);
-    ASSERT_TRUE(world.IsMovableCharacterUVE());
-    ExpectNearUVE(world.GetCenterUVE(), {0.0F, 0.5F, 0.0F}, 1.0e-5F);
+    CharacterWorldQuery world(entityManager, collisionSystem, character);
+    ASSERT_TRUE(world.IsMovableCharacter());
+    ExpectNear(world.GetCenter(), {0.0F, 0.5F, 0.0F}, 1.0e-5F);
 
-    const std::optional<CharacterSlideCollisionUVE> hit =
-        world.SweepUVE(world.GetCenterUVE(), {4.0F, 0.0F, 0.0F}, 0.001F);
+    const std::optional<CharacterSlideCollision> hit =
+        world.Sweep(world.GetCenter(), {4.0F, 0.0F, 0.0F}, 0.001F);
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->entity, wall);
     // The wall's face is at x = 2.0, the body's surface is 0.5 out from its center, and the query
@@ -1715,25 +1715,25 @@ TEST_F(Character3DStepUVETest, TheBridgesSweepAgreesWithTheMoverAboutAFaceAndIts
 
     // A downward sweep hits the floor, and names the floor: the body's own geometry is never its
     // own obstacle, however long the sweep is.
-    const std::optional<CharacterSlideCollisionUVE> below =
-        world.SweepUVE(world.GetCenterUVE(), {0.0F, -4.0F, 0.0F}, 0.001F);
+    const std::optional<CharacterSlideCollision> below =
+        world.Sweep(world.GetCenter(), {0.0F, -4.0F, 0.0F}, 0.001F);
     ASSERT_TRUE(below.has_value());
     EXPECT_NE(below->entity, character);
     EXPECT_NEAR(below->normal.y, 1.0F, 1.0e-3F);
 }
 
-TEST_F(Character3DStepUVETest, TheBridgeReportsOverlapsWithNormalsPointingBackAtTheBody) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, TheBridgeReportsOverlapsWithNormalsPointingBackAtTheBody) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // The body is spawned half a metre inside the wall's face.
-    const Scene::EntityUVE wall = MakeBoxUVE({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
-    const Scene::EntityUVE character = MakeCharacterUVE({1.75F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity wall = MakeBox({2.5F, 1.0F, 0.0F}, {0.5F, 1.5F, 5.0F});
+    const Scene::Entity character = MakeCharacter({1.75F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
-    CharacterWorldQueryUVE world(entityManager, collisionSystem, character);
-    const std::vector<CharacterSlideCollisionUVE> overlaps = world.GetOverlapsUVE();
+    CharacterWorldQuery world(entityManager, collisionSystem, character);
+    const std::vector<CharacterSlideCollision> overlaps = world.GetOverlaps();
     ASSERT_FALSE(overlaps.empty());
     const auto found = std::find_if(overlaps.begin(), overlaps.end(),
-                                    [wall](const CharacterSlideCollisionUVE& overlap) {
+                                    [wall](const CharacterSlideCollision& overlap) {
                                         return overlap.entity == wall;
                                     });
     ASSERT_NE(found, overlaps.end());
@@ -1741,107 +1741,107 @@ TEST_F(Character3DStepUVETest, TheBridgeReportsOverlapsWithNormalsPointingBackAt
     EXPECT_NEAR(found->depth, 0.25F, 2.0e-2F);
 
     // And a body standing free of everything reports nothing at all.
-    Scene::TransformComponentUVE transform =
-        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(character);
+    Scene::TransformComponent transform =
+        entityManager.GetComponent<Scene::TransformComponent>(character);
     transform.localPosition = {0.0F, 3.0F, 0.0F};
-    sceneGraph.SetLocalTransformUVE(entityManager, character, transform);
-    sceneGraph.UpdateUVE(entityManager);
-    CharacterWorldQueryUVE clearWorld(entityManager, collisionSystem, character);
-    EXPECT_TRUE(clearWorld.GetOverlapsUVE().empty());
+    sceneGraph.SetLocalTransform(entityManager, character, transform);
+    sceneGraph.Update(entityManager);
+    CharacterWorldQuery clearWorld(entityManager, collisionSystem, character);
+    EXPECT_TRUE(clearWorld.GetOverlaps().empty());
 }
 
-TEST_F(Character3DStepUVETest, AQueryForAnEntityThatIsNotACharacterIsNotMovable) {
-    const Scene::EntityUVE plain = MakeBoxUVE({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    CharacterWorldQueryUVE world(entityManager, collisionSystem, plain);
-    EXPECT_FALSE(world.IsMovableCharacterUVE());
+TEST_F(Character3DStepTest, AQueryForAnEntityThatIsNotACharacterIsNotMovable) {
+    const Scene::Entity plain = MakeBox({0.0F, 1.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    CharacterWorldQuery world(entityManager, collisionSystem, plain);
+    EXPECT_FALSE(world.IsMovableCharacter());
     // Everything it is asked about *moving* answers "nothing".
-    EXPECT_TRUE(world.GetOverlapsUVE().empty());
-    EXPECT_FALSE(world.SweepUVE({0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F).has_value());
+    EXPECT_TRUE(world.GetOverlaps().empty());
+    EXPECT_FALSE(world.Sweep({0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, 0.0F).has_value());
     // Where an entity is, is a fact about the world and not a question about the character: it is
     // answered whether or not this query could move the body.
-    ASSERT_TRUE(world.TryGetEntityCenterUVE(plain).has_value());
-    ExpectNearUVE(*world.TryGetEntityCenterUVE(plain), {0.0F, 1.0F, 0.0F}, 1.0e-5F);
+    ASSERT_TRUE(world.TryGetEntityCenter(plain).has_value());
+    ExpectNear(*world.TryGetEntityCenter(plain), {0.0F, 1.0F, 0.0F}, 1.0e-5F);
 
     // And moving a body through it is refused rather than silently moving it from nowhere.
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    CharacterMotionStateUVE state;
-    const CharacterMotionResultUVE result = Character3DUVE::MoveAndSlideUVE(
-        world, Scene::MakeCharacterMotionConfigUVE(settings), state, {1.0F, 0.0F, 0.0F}, kDeltaTimeUVE);
-    EXPECT_FALSE(result.IsAcceptedUVE());
-    EXPECT_EQ(result.code, CharacterMoveCodeUVE::InvalidWorld);
-    ExpectNearUVE(state.lastMotion, {0.0F, 0.0F, 0.0F}, 0.0F);
+    CharacterMotionState state;
+    const CharacterMotionResult result = Character3D::MoveAndSlide(
+        world, Scene::MakeCharacterMotionConfig(settings), state, {1.0F, 0.0F, 0.0F}, kDeltaTime);
+    EXPECT_FALSE(result.IsAccepted());
+    EXPECT_EQ(result.code, CharacterMoveCode::InvalidWorld);
+    ExpectNear(state.lastMotion, {0.0F, 0.0F, 0.0F}, 0.0F);
 }
 
-TEST_F(Character3DStepUVETest, ASurfaceVelocityIsReportedForRigidBodiesAndThePlatformCentreForEntities) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
-    sceneGraph.UpdateUVE(entityManager);
-    const Scene::EntityUVE crate = MakeBoxUVE({3.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::Rigid3DComponentUVE crateBody;
+TEST_F(Character3DStepTest, ASurfaceVelocityIsReportedForRigidBodiesAndThePlatformCentreForEntities) {
+    const Scene::Entity floor = MakeFloor(0.0F);
+    sceneGraph.Update(entityManager);
+    const Scene::Entity crate = MakeBox({3.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::Rigid3DComponent crateBody;
     crateBody.velocity = {1.5F, 0.0F, -0.5F};
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(crate, crateBody);
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(crate, crateBody);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
-    CharacterWorldQueryUVE world(entityManager, collisionSystem, character);
-    ExpectNearUVE(world.GetSurfaceVelocityUVE(crate), {1.5F, 0.0F, -0.5F}, 1.0e-5F);
+    CharacterWorldQuery world(entityManager, collisionSystem, character);
+    ExpectNear(world.GetSurfaceVelocity(crate), {1.5F, 0.0F, -0.5F}, 1.0e-5F);
     // Static geometry has no surface velocity: it is not going anywhere.
-    ExpectNearUVE(world.GetSurfaceVelocityUVE(floor), {0.0F, 0.0F, 0.0F}, 1.0e-5F);
+    ExpectNear(world.GetSurfaceVelocity(floor), {0.0F, 0.0F, 0.0F}, 1.0e-5F);
 
-    const std::optional<Math::Vector3UVE> centre = world.TryGetEntityCenterUVE(crate);
+    const std::optional<Math::Vector3> centre = world.TryGetEntityCenter(crate);
     ASSERT_TRUE(centre.has_value());
-    ExpectNearUVE(*centre, {3.0F, 0.5F, 0.0F}, 1.0e-5F);
-    EXPECT_FALSE(world.TryGetEntityCenterUVE(Scene::EntityUVE{}).has_value());
+    ExpectNear(*centre, {3.0F, 0.5F, 0.0F}, 1.0e-5F);
+    EXPECT_FALSE(world.TryGetEntityCenter(Scene::Entity{}).has_value());
 }
 
-TEST_F(Character3DStepUVETest, TheSameWorldAndTheSameStepsGiveTheSameAnswerEveryTime) {
+TEST_F(Character3DStepTest, TheSameWorldAndTheSameStepsGiveTheSameAnswerEveryTime) {
     // Two identical worlds, walked identically: the mover promises determinism, and this is where a
     // tie broken by storage order instead of by entity index would show up.
     const auto runOnce = [this]() {
-        Memory::MemoryManagerUVE localMemory;
-        Events::EventSystemUVE localEvents;
-        Scene::EntityManagerUVE localEntities{localMemory.GetDefaultAllocatorUVE(), localEvents};
-        Scene::SceneGraphUVE localGraph;
-        CollisionSystemUVE localCollision;
+        Memory::MemoryManager localMemory;
+        Events::EventSystem localEvents;
+        Scene::EntityManager localEntities{localMemory.GetDefaultAllocator(), localEvents};
+        Scene::SceneGraph localGraph;
+        CollisionSystem localCollision;
 
-        std::vector<Scene::EntityUVE> obstacles;
+        std::vector<Scene::Entity> obstacles;
         for (int index = 0; index < 4; ++index) {
             const float x = 1.0F + static_cast<float>(index) * 0.75F;
-            const Scene::EntityUVE entity = localEntities.CreateEntityUVE();
-            Scene::TransformComponentUVE transform;
+            const Scene::Entity entity = localEntities.CreateEntity();
+            Scene::TransformComponent transform;
             transform.localPosition = {x, 0.5F, 0.0F};
-            localGraph.AttachTransformUVE(localEntities, entity, transform);
-            localGraph.UpdateUVE(localEntities);
-            Scene::ColliderComponentUVE collider{{0.25F, 0.5F, 0.25F}};
-            localEntities.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+            localGraph.AttachTransform(localEntities, entity, transform);
+            localGraph.Update(localEntities);
+            Scene::ColliderComponent collider{{0.25F, 0.5F, 0.25F}};
+            localEntities.AddComponent<Scene::ColliderComponent>(entity, collider);
             obstacles.push_back(entity);
         }
-        const Scene::EntityUVE moverEntity = localEntities.CreateEntityUVE();
-        Scene::TransformComponentUVE moverTransform;
+        const Scene::Entity moverEntity = localEntities.CreateEntity();
+        Scene::TransformComponent moverTransform;
         moverTransform.localPosition = {0.0F, 0.5F, 0.0F};
-        localGraph.AttachTransformUVE(localEntities, moverEntity, moverTransform);
-        localGraph.UpdateUVE(localEntities);
-        localEntities.AddComponentUVE<Scene::ColliderComponentUVE>(
-            moverEntity, Scene::ColliderComponentUVE{{0.25F, 0.5F, 0.25F}});
-        Scene::CharacterControllerComponentUVE settings;
+        localGraph.AttachTransform(localEntities, moverEntity, moverTransform);
+        localGraph.Update(localEntities);
+        localEntities.AddComponent<Scene::ColliderComponent>(
+            moverEntity, Scene::ColliderComponent{{0.25F, 0.5F, 0.25F}});
+        Scene::CharacterControllerComponent settings;
         settings.builtInMovement = false;
-        localEntities.AddComponentUVE<Scene::CharacterControllerComponentUVE>(moverEntity, settings);
+        localEntities.AddComponent<Scene::CharacterControllerComponent>(moverEntity, settings);
 
-        std::vector<Math::Vector3UVE> path;
+        std::vector<Math::Vector3> path;
         for (int step = 0; step < 40; ++step) {
-            localEntities.GetComponentUVE<Scene::CharacterControllerComponentUVE>(moverEntity).velocity =
-                Math::Vector3UVE{3.0F, 0.0F, 0.5F};
-            static_cast<void>(StepCharacter3DUVE(localEntities, localGraph, localCollision, moverEntity, {},
+            localEntities.GetComponent<Scene::CharacterControllerComponent>(moverEntity).velocity =
+                Math::Vector3{3.0F, 0.0F, 0.5F};
+            static_cast<void>(StepCharacter3D(localEntities, localGraph, localCollision, moverEntity, {},
                                                  -9.81F, 1.0F / 60.0F));
-            path.push_back(localEntities.GetComponentUVE<Scene::TransformComponentUVE>(moverEntity).localPosition);
+            path.push_back(localEntities.GetComponent<Scene::TransformComponent>(moverEntity).localPosition);
         }
         return path;
     };
 
-    const std::vector<Math::Vector3UVE> first = runOnce();
-    const std::vector<Math::Vector3UVE> second = runOnce();
+    const std::vector<Math::Vector3> first = runOnce();
+    const std::vector<Math::Vector3> second = runOnce();
     ASSERT_EQ(first.size(), second.size());
     for (std::size_t index = 0; index < first.size(); ++index) {
-        ExpectNearUVE(first[index], second[index], 0.0F);
+        ExpectNear(first[index], second[index], 0.0F);
     }
     // And the walk actually went somewhere - up to the first obstacle and no further - so this is
     // not a test of two bodies that never moved.
@@ -1854,30 +1854,30 @@ TEST_F(Character3DStepUVETest, TheSameWorldAndTheSameStepsGiveTheSameAnswerEvery
 // turns the contacts into velocity for the rigid bodies that were in the way.
 // =================================================================================================
 
-TEST_F(Character3DStepUVETest, AWalkIntoARigidBodyPushesItAndSaysSo) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, AWalkIntoARigidBodyPushesItAndSaysSo) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
 
     // A dynamic box in the way, one metre of walking from the start.
-    const Scene::EntityUVE target = MakeBoxUVE({2.5F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{});
+    const Scene::Entity target = MakeBox({2.5F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(target, Scene::Rigid3DComponent{});
 
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
-    const Physics::CharacterDynamicPushPolicyUVE push{true, 1.0F, 5.0F, kDeltaTimeUVE};
+    const Physics::CharacterDynamicPushPolicy push{true, 1.0F, 5.0F, kDeltaTime};
     std::size_t pushedTotal = 0U;
     for (int step = 0; step < 60; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{3.0F, 0.0F, 0.0F};
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{3.0F, 0.0F, 0.0F};
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
-        pushedTotal += PushBodiesFromCharacterMoveUVE(entityManager, report.motion.collisions, push);
+        pushedTotal += PushBodiesFromCharacterMove(entityManager, report.motion.collisions, push);
     }
 
     // The body was pushed the way the character was walking: away from it, along +x.
-    const Scene::Rigid3DComponentUVE& body = entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target);
+    const Scene::Rigid3DComponent& body = entityManager.GetComponent<Scene::Rigid3DComponent>(target);
     EXPECT_GT(body.velocity.x, 0.0F);
     EXPECT_LT(body.velocity.x, 5.0F + 1.0e-3F);
     EXPECT_NEAR(body.velocity.y, 0.0F, 1.0e-4F);
@@ -1885,161 +1885,161 @@ TEST_F(Character3DStepUVETest, AWalkIntoARigidBodyPushesItAndSaysSo) {
     EXPECT_GT(pushedTotal, 0U);
 
     // And the character stopped at the body rather than walking through it.
-    EXPECT_LT(PositionUVE(character).x, 1.5F);
+    EXPECT_LT(Position(character).x, 1.5F);
 }
 
-TEST_F(Character3DStepUVETest, APushNeverSlowsABodyThatIsAlreadyLeavingFaster) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, APushNeverSlowsABodyThatIsAlreadyLeavingFaster) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE target = MakeBoxUVE({2.5F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::Rigid3DComponentUVE rigid;
+    const Scene::Entity target = MakeBox({2.5F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::Rigid3DComponent rigid;
     // Already running away at four times the push's own speed cap.
-    rigid.velocity = Math::Vector3UVE{20.0F, 0.0F, 0.0F};
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, rigid);
+    rigid.velocity = Math::Vector3{20.0F, 0.0F, 0.0F};
+    entityManager.AddComponent<Scene::Rigid3DComponent>(target, rigid);
 
-    Scene::CharacterControllerComponentUVE settings;
+    Scene::CharacterControllerComponent settings;
     settings.builtInMovement = false;
-    const Scene::EntityUVE character = MakeCharacterUVE({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
+    const Scene::Entity character = MakeCharacter({0.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F}, settings);
 
-    const Physics::CharacterDynamicPushPolicyUVE push{true, 1.0F, 5.0F, kDeltaTimeUVE};
+    const Physics::CharacterDynamicPushPolicy push{true, 1.0F, 5.0F, kDeltaTime};
     for (int step = 0; step < 60; ++step) {
-        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(character).velocity =
-            Math::Vector3UVE{3.0F, 0.0F, 0.0F};
-        const Character3DStepResultUVE report = StepUVE(character);
+        entityManager.GetComponent<Scene::CharacterControllerComponent>(character).velocity =
+            Math::Vector3{3.0F, 0.0F, 0.0F};
+        const Character3DStepResult report = Step(character);
         ASSERT_TRUE(report.stepped) << "step " << step;
-        EXPECT_EQ(PushBodiesFromCharacterMoveUVE(entityManager, report.motion.collisions, push), 0U);
+        EXPECT_EQ(PushBodiesFromCharacterMove(entityManager, report.motion.collisions, push), 0U);
     }
 
     // Untouched: a push adds speed, it never brakes the thing it is pushing.
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target).velocity.x, 20.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(target).velocity.x, 20.0F);
 }
 
-TEST_F(Character3DStepUVETest, OneBodyIsPushedOncePerStepAndUnmovableBodiesAreNotPushedAtAll) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, OneBodyIsPushedOncePerStepAndUnmovableBodiesAreNotPushedAtAll) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE dynamicBody = MakeBoxUVE({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(dynamicBody, Scene::Rigid3DComponentUVE{});
-    const Scene::EntityUVE kinematicBody = MakeBoxUVE({2.0F, 1.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::Rigid3DComponentUVE kinematic;
+    const Scene::Entity dynamicBody = MakeBox({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(dynamicBody, Scene::Rigid3DComponent{});
+    const Scene::Entity kinematicBody = MakeBox({2.0F, 1.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::Rigid3DComponent kinematic;
     kinematic.isKinematic = true;
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(kinematicBody, kinematic);
-    const Scene::EntityUVE weightlessBody = MakeBoxUVE({2.0F, 2.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    Scene::Rigid3DComponentUVE weightless;
+    entityManager.AddComponent<Scene::Rigid3DComponent>(kinematicBody, kinematic);
+    const Scene::Entity weightlessBody = MakeBox({2.0F, 2.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    Scene::Rigid3DComponent weightless;
     weightless.mass = 0.0F;
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(weightlessBody, weightless);
+    entityManager.AddComponent<Scene::Rigid3DComponent>(weightlessBody, weightless);
 
     // The same body met twice in one step - a corner contact and a face contact - plus bodies the
     // character has no business moving.
-    const Math::Vector3UVE intoTheWall{3.0F, 0.0F, 0.0F};
-    std::vector<Scene::CharacterSlideCollisionUVE> contacts;
+    const Math::Vector3 intoTheWall{3.0F, 0.0F, 0.0F};
+    std::vector<Scene::CharacterSlideCollision> contacts;
     for (int repeat = 0; repeat < 2; ++repeat) {
-        Scene::CharacterSlideCollisionUVE contact;
+        Scene::CharacterSlideCollision contact;
         contact.entity = dynamicBody;
-        contact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+        contact.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
         contact.motion = intoTheWall;
         contact.travel = 0.0F;
         contacts.push_back(contact);
     }
-    Scene::CharacterSlideCollisionUVE onTheKinematic;
+    Scene::CharacterSlideCollision onTheKinematic;
     onTheKinematic.entity = kinematicBody;
-    onTheKinematic.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+    onTheKinematic.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
     onTheKinematic.motion = intoTheWall;
     contacts.push_back(onTheKinematic);
-    Scene::CharacterSlideCollisionUVE onTheWeightless;
+    Scene::CharacterSlideCollision onTheWeightless;
     onTheWeightless.entity = weightlessBody;
-    onTheWeightless.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+    onTheWeightless.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
     onTheWeightless.motion = intoTheWall;
     contacts.push_back(onTheWeightless);
 
     // The cap is high enough that pushing the same body twice would be visible: 3 m/s of pressing
     // speed over a 60 Hz step is 180 m/s of push, so a second push would double it.
-    const Physics::CharacterDynamicPushPolicyUVE push{true, 1.0F, 1000.0F, kDeltaTimeUVE};
-    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(entityManager, contacts, push), 1U);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(dynamicBody).velocity.x, 180.0F, 0.5F);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(kinematicBody).velocity.x, 0.0F);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(weightlessBody).velocity.x, 0.0F);
+    const Physics::CharacterDynamicPushPolicy push{true, 1.0F, 1000.0F, kDeltaTime};
+    EXPECT_EQ(PushBodiesFromCharacterMove(entityManager, contacts, push), 1U);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(dynamicBody).velocity.x, 180.0F, 0.5F);
+    EXPECT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(kinematicBody).velocity.x, 0.0F);
+    EXPECT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(weightlessBody).velocity.x, 0.0F);
 }
 
-TEST_F(Character3DStepUVETest, ABodyThatIsNotBeingSimulatedIsNotPushedByAWalkIntoIt) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, ABodyThatIsNotBeingSimulatedIsNotPushedByAWalkIntoIt) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
     // Two bodies in the character's path. One is stopped with MakeStatic and one is taken out of
     // the world entirely; a walk into either must leave its velocity alone, whatever the push
     // policy says - a push is something the simulation does to a body it is simulating.
-    const Scene::EntityUVE parked = MakeBoxUVE({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(parked, Scene::Rigid3DComponentUVE{});
-    Scene::ProcessComponentUVE stopped{};
-    stopped.mode = Scene::TickModeUVE::Never;
-    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(parked, stopped);
-    Scene::PhysicsObjectComponentUVE parkedObject{};
-    parkedObject.disableMode = Scene::PhysicsObjectDisableModeUVE::MakeStatic;
-    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(parked, parkedObject);
+    const Scene::Entity parked = MakeBox({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(parked, Scene::Rigid3DComponent{});
+    Scene::ProcessComponent stopped{};
+    stopped.mode = Scene::TickMode::Never;
+    entityManager.AddComponent<Scene::ProcessComponent>(parked, stopped);
+    Scene::PhysicsObjectComponent parkedObject{};
+    parkedObject.disableMode = Scene::PhysicsObjectDisableMode::MakeStatic;
+    entityManager.AddComponent<Scene::PhysicsObjectComponent>(parked, parkedObject);
 
-    const Scene::EntityUVE gone = MakeBoxUVE({2.0F, 1.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(gone, Scene::Rigid3DComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ProcessComponentUVE>(gone, stopped);
-    Scene::PhysicsObjectComponentUVE goneObject{};
-    goneObject.disableMode = Scene::PhysicsObjectDisableModeUVE::Remove;
-    entityManager.AddComponentUVE<Scene::PhysicsObjectComponentUVE>(gone, goneObject);
+    const Scene::Entity gone = MakeBox({2.0F, 1.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(gone, Scene::Rigid3DComponent{});
+    entityManager.AddComponent<Scene::ProcessComponent>(gone, stopped);
+    Scene::PhysicsObjectComponent goneObject{};
+    goneObject.disableMode = Scene::PhysicsObjectDisableMode::Remove;
+    entityManager.AddComponent<Scene::PhysicsObjectComponent>(gone, goneObject);
 
     // Both get contacts handed straight to the push, as if the mover had reported them.
-    const Math::Vector3UVE intoThem{3.0F, 0.0F, 0.0F};
-    std::vector<Scene::CharacterSlideCollisionUVE> contacts;
-    for (const Scene::EntityUVE entity : {parked, gone}) {
-        Scene::CharacterSlideCollisionUVE contact;
+    const Math::Vector3 intoThem{3.0F, 0.0F, 0.0F};
+    std::vector<Scene::CharacterSlideCollision> contacts;
+    for (const Scene::Entity entity : {parked, gone}) {
+        Scene::CharacterSlideCollision contact;
         contact.entity = entity;
-        contact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+        contact.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
         contact.motion = intoThem;
         contacts.push_back(contact);
     }
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
 
-    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(
+    EXPECT_EQ(PushBodiesFromCharacterMove(
                   entityManager, contacts,
-                  Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, 5.0F, kDeltaTimeUVE}),
+                  Physics::CharacterDynamicPushPolicy{true, 1.0F, 5.0F, kDeltaTime}),
               0U);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(parked).velocity.x, 0.0F);
-    EXPECT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(gone).velocity.x, 0.0F);
+    EXPECT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(parked).velocity.x, 0.0F);
+    EXPECT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(gone).velocity.x, 0.0F);
 
     // And the same contacts against a body that is being simulated still push, so the test is
     // about the state and not about the contact list.
-    const Scene::EntityUVE live = MakeBoxUVE({2.0F, 2.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(live, Scene::Rigid3DComponentUVE{});
-    Scene::CharacterSlideCollisionUVE liveContact;
+    const Scene::Entity live = MakeBox({2.0F, 2.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(live, Scene::Rigid3DComponent{});
+    Scene::CharacterSlideCollision liveContact;
     liveContact.entity = live;
-    liveContact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
+    liveContact.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
     liveContact.motion = intoThem;
-    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(
-                  entityManager, std::vector<Scene::CharacterSlideCollisionUVE>{liveContact},
-                  Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, 5.0F, kDeltaTimeUVE}),
+    EXPECT_EQ(PushBodiesFromCharacterMove(
+                  entityManager, std::vector<Scene::CharacterSlideCollision>{liveContact},
+                  Physics::CharacterDynamicPushPolicy{true, 1.0F, 5.0F, kDeltaTime}),
               1U);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(live).velocity.x, 5.0F, 1.0e-3F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(live).velocity.x, 5.0F, 1.0e-3F);
 }
-TEST_F(Character3DStepUVETest, APushPolicyThatIsOffOrNonsenseLeavesEveryBodyAlone) {
-    const Scene::EntityUVE floor = MakeFloorUVE(0.0F);
+TEST_F(Character3DStepTest, APushPolicyThatIsOffOrNonsenseLeavesEveryBodyAlone) {
+    const Scene::Entity floor = MakeFloor(0.0F);
     static_cast<void>(floor);
-    const Scene::EntityUVE body = MakeBoxUVE({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(body, Scene::Rigid3DComponentUVE{});
+    const Scene::Entity body = MakeBox({2.0F, 0.5F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(body, Scene::Rigid3DComponent{});
 
-    Scene::CharacterSlideCollisionUVE contact;
+    Scene::CharacterSlideCollision contact;
     contact.entity = body;
-    contact.normal = Math::Vector3UVE{-1.0F, 0.0F, 0.0F};
-    contact.motion = Math::Vector3UVE{3.0F, 0.0F, 0.0F};
-    const std::vector<Scene::CharacterSlideCollisionUVE> contacts{contact};
+    contact.normal = Math::Vector3{-1.0F, 0.0F, 0.0F};
+    contact.motion = Math::Vector3{3.0F, 0.0F, 0.0F};
+    const std::vector<Scene::CharacterSlideCollision> contacts{contact};
 
     // Off, no strength, no time to push over: three ways to say "nothing happens".
-    for (const Physics::CharacterDynamicPushPolicyUVE& policy :
-         {Physics::CharacterDynamicPushPolicyUVE{false, 1.0F, 5.0F, kDeltaTimeUVE},
-          Physics::CharacterDynamicPushPolicyUVE{true, 0.0F, 5.0F, kDeltaTimeUVE},
-          Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, 5.0F, 0.0F}}) {
-        EXPECT_EQ(PushBodiesFromCharacterMoveUVE(entityManager, contacts, policy), 0U);
+    for (const Physics::CharacterDynamicPushPolicy& policy :
+         {Physics::CharacterDynamicPushPolicy{false, 1.0F, 5.0F, kDeltaTime},
+          Physics::CharacterDynamicPushPolicy{true, 0.0F, 5.0F, kDeltaTime},
+          Physics::CharacterDynamicPushPolicy{true, 1.0F, 5.0F, 0.0F}}) {
+        EXPECT_EQ(PushBodiesFromCharacterMove(entityManager, contacts, policy), 0U);
     }
     // The default fallback for a nonsense cap is the engine's own, not an infinite push.
-    EXPECT_EQ(PushBodiesFromCharacterMoveUVE(
+    EXPECT_EQ(PushBodiesFromCharacterMove(
                   entityManager, contacts,
-                  Physics::CharacterDynamicPushPolicyUVE{true, 1.0F, -1.0F, kDeltaTimeUVE}),
+                  Physics::CharacterDynamicPushPolicy{true, 1.0F, -1.0F, kDeltaTime}),
               1U);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.x, 5.0F, 1.0e-3F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.x, 5.0F, 1.0e-3F);
 }
 
 } // namespace

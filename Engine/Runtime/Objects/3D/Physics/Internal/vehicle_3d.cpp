@@ -16,20 +16,20 @@
 
 namespace UVE::Scene {
 
-bool IsVehicleBody3DComponentValidUVE(const VehicleBody3DComponentUVE& value) noexcept {
+bool IsVehicleBody3DComponentValid(const VehicleBody3DComponent& value) noexcept {
     return std::isfinite(value.mass) && value.mass > 0.0F && std::isfinite(value.engineForce) &&
            std::isfinite(value.brakeForce) && value.brakeForce >= 0.0F &&
            std::isfinite(value.steeringAngleRadians) &&
            std::fabs(value.steeringAngleRadians) <= 1.5F &&
-           IsFinite3DObjectVectorUVE(value.linearVelocity) &&
-           IsFinite3DObjectVectorUVE(value.angularVelocity) &&
+           IsFinite3DObjectVector(value.linearVelocity) &&
+           IsFinite3DObjectVector(value.angularVelocity) &&
            std::isfinite(value.wheelbaseMetres) && value.wheelbaseMetres > 0.1F &&
            std::isfinite(value.trackWidthMetres) && value.trackWidthMetres > 0.1F;
 }
 
-VehicleBody3DComponentUVE SanitizeVehicleBody3DComponentUVE(
-    const VehicleBody3DComponentUVE& value) noexcept {
-    VehicleBody3DComponentUVE out = value;
+VehicleBody3DComponent SanitizeVehicleBody3DComponent(
+    const VehicleBody3DComponent& value) noexcept {
+    VehicleBody3DComponent out = value;
     if (!std::isfinite(out.mass) || out.mass <= 0.0F) {
         out.mass = 1200.0F;
     }
@@ -44,11 +44,11 @@ VehicleBody3DComponentUVE SanitizeVehicleBody3DComponentUVE(
     } else {
         out.steeringAngleRadians = std::clamp(out.steeringAngleRadians, -1.5F, 1.5F);
     }
-    if (!IsFinite3DObjectVectorUVE(out.linearVelocity)) {
-        out.linearVelocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    if (!IsFinite3DObjectVector(out.linearVelocity)) {
+        out.linearVelocity = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
-    if (!IsFinite3DObjectVectorUVE(out.angularVelocity)) {
-        out.angularVelocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    if (!IsFinite3DObjectVector(out.angularVelocity)) {
+        out.angularVelocity = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     if (!std::isfinite(out.wheelbaseMetres) || out.wheelbaseMetres <= 0.1F) {
         out.wheelbaseMetres = 2.6F;
@@ -65,31 +65,31 @@ VehicleBody3DComponentUVE SanitizeVehicleBody3DComponentUVE(
     return out;
 }
 
-bool IsVehicleBody3DObjectDefinitionValidUVE(
-    const VehicleBody3DObjectDefinitionUVE& value) noexcept {
-    return IsVehicleBody3DComponentValidUVE(value.vehicle);
+bool IsVehicleBody3DObjectDefinitionValid(
+    const VehicleBody3DObjectDefinition& value) noexcept {
+    return IsVehicleBody3DComponentValid(value.vehicle);
 }
 
-void ApplyVehicleBody3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const VehicleBody3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, VehicleBody3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<VehicleBody3DComponentUVE>(
-        entity, SanitizeVehicleBody3DComponentUVE(value.vehicle));
+void ApplyVehicleBody3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                           const VehicleBody3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, VehicleBody3DObjectDefinition::defaultName);
+    entityManager.AddComponent<VehicleBody3DComponent>(
+        entity, SanitizeVehicleBody3DComponent(value.vehicle));
 }
 
-bool IsVehicleWheel3DComponentValidUVE(const VehicleWheel3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.localMountOffset) &&
+bool IsVehicleWheel3DComponentValid(const VehicleWheel3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.localMountOffset) &&
            std::isfinite(value.wheelRadius) && value.wheelRadius > 0.0F &&
            std::isfinite(value.suspensionRestLength) && value.suspensionRestLength > 0.0F &&
            std::isfinite(value.suspensionStiffness) && value.suspensionStiffness >= 0.0F &&
            std::isfinite(value.suspensionDamping) && value.suspensionDamping >= 0.0F;
 }
 
-VehicleWheel3DComponentUVE SanitizeVehicleWheel3DComponentUVE(
-    const VehicleWheel3DComponentUVE& value) noexcept {
-    VehicleWheel3DComponentUVE out = value;
-    if (!IsFinite3DObjectVectorUVE(out.localMountOffset)) {
-        out.localMountOffset = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+VehicleWheel3DComponent SanitizeVehicleWheel3DComponent(
+    const VehicleWheel3DComponent& value) noexcept {
+    VehicleWheel3DComponent out = value;
+    if (!IsFinite3DObjectVector(out.localMountOffset)) {
+        out.localMountOffset = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     if (!std::isfinite(out.wheelRadius) || out.wheelRadius <= 0.0F) {
         out.wheelRadius = 0.35F;
@@ -108,21 +108,21 @@ VehicleWheel3DComponentUVE SanitizeVehicleWheel3DComponentUVE(
     return out;
 }
 
-bool IsVehicleWheel3DObjectDefinitionValidUVE(
-    const VehicleWheel3DObjectDefinitionUVE& value) noexcept {
-    return IsVehicleWheel3DComponentValidUVE(value.wheel);
+bool IsVehicleWheel3DObjectDefinitionValid(
+    const VehicleWheel3DObjectDefinition& value) noexcept {
+    return IsVehicleWheel3DComponentValid(value.wheel);
 }
 
-void ApplyVehicleWheel3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const VehicleWheel3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              VehicleWheel3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<VehicleWheel3DComponentUVE>(
-        entity, SanitizeVehicleWheel3DComponentUVE(value.wheel));
+void ApplyVehicleWheel3DObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const VehicleWheel3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity,
+                              VehicleWheel3DObjectDefinition::defaultName);
+    entityManager.AddComponent<VehicleWheel3DComponent>(
+        entity, SanitizeVehicleWheel3DComponent(value.wheel));
 }
 
-std::pair<float, float> EvaluateAckermannSteeringUVE(const float steerAngleRadians,
+std::pair<float, float> EvaluateAckermannSteering(const float steerAngleRadians,
                                                      const float wheelbaseMetres,
                                                      const float trackWidthMetres) noexcept {
     if (!std::isfinite(steerAngleRadians) || std::fabs(steerAngleRadians) < 1.0e-5F ||
@@ -143,10 +143,10 @@ std::pair<float, float> EvaluateAckermannSteeringUVE(const float steerAngleRadia
     return {-outerAngle, -innerAngle};
 }
 
-float EvaluateVehicleWheelSuspensionForceUVE(
-    const VehicleWheel3DComponentUVE& wheel, const float compressionMetres,
+float EvaluateVehicleWheelSuspensionForce(
+    const VehicleWheel3DComponent& wheel, const float compressionMetres,
     const float compressionVelocityMetresPerSecond) noexcept {
-    if (!IsVehicleWheel3DComponentValidUVE(wheel) || !std::isfinite(compressionMetres) ||
+    if (!IsVehicleWheel3DComponentValid(wheel) || !std::isfinite(compressionMetres) ||
         compressionMetres <= 0.0F || !std::isfinite(compressionVelocityMetresPerSecond)) {
         return 0.0F;
     }
@@ -155,14 +155,14 @@ float EvaluateVehicleWheelSuspensionForceUVE(
     return std::max(0.0F, force);
 }
 
-std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdateVehicle3DObjects(IEntityManager& entityManager,
                                       const float deltaTimeSeconds,
-                                      const VehicleRaycastCallbackUVE& groundRaycaster) {
+                                      const VehicleRaycastCallback& groundRaycaster) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
         return 0U;
     }
 
-    struct WheelLinkSummaryUVE final {
+    struct WheelLinkSummary final {
         std::uint32_t totalWheels = 0U;
         std::uint32_t groundedWheels = 0U;
         std::uint32_t poweredGrounded = 0U;
@@ -172,37 +172,37 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
         float pitchTorque = 0.0F;
         float rollTorque = 0.0F;
     };
-    std::unordered_map<std::uint64_t, WheelLinkSummaryUVE> summaries;
-    const auto entityKey = [](const EntityUVE e) noexcept -> std::uint64_t {
+    std::unordered_map<std::uint64_t, WheelLinkSummary> summaries;
+    const auto entityKey = [](const Entity e) noexcept -> std::uint64_t {
         return (static_cast<std::uint64_t>(e.generation) << 32U) | static_cast<std::uint64_t>(e.index);
     };
 
     // Pass 1: evaluate per-wheel raycast suspension and wheel masks.
-    entityManager.ForEachUVE<VehicleWheel3DComponentUVE>(
-        [&](const EntityUVE wheelEntity, VehicleWheel3DComponentUVE& wheel) {
+    entityManager.ForEach<VehicleWheel3DComponent>(
+        [&](const Entity wheelEntity, VehicleWheel3DComponent& wheel) {
             if (!wheel.enabled ||
-                entityManager.HasComponentUVE<DisabledComponentUVE>(wheelEntity) ||
-                !IsVehicleWheel3DComponentValidUVE(wheel) ||
-                wheel.vehicleBodyEntity == kInvalidEntityUVE ||
-                !entityManager.IsAliveUVE(wheel.vehicleBodyEntity) ||
-                !entityManager.HasComponentUVE<VehicleBody3DComponentUVE>(wheel.vehicleBodyEntity)) {
+                entityManager.HasComponent<DisabledComponent>(wheelEntity) ||
+                !IsVehicleWheel3DComponentValid(wheel) ||
+                wheel.vehicleBodyEntity == kInvalidEntity ||
+                !entityManager.IsAlive(wheel.vehicleBodyEntity) ||
+                !entityManager.HasComponent<VehicleBody3DComponent>(wheel.vehicleBodyEntity)) {
                 return;
             }
-            const VehicleBody3DComponentUVE& vehicle =
-                entityManager.GetComponentUVE<VehicleBody3DComponentUVE>(wheel.vehicleBodyEntity);
-            const TransformComponentUVE chassisTr =
-                entityManager.HasComponentUVE<TransformComponentUVE>(wheel.vehicleBodyEntity)
-                    ? entityManager.GetComponentUVE<TransformComponentUVE>(wheel.vehicleBodyEntity)
-                    : TransformComponentUVE{};
-            Math::QuaternionUVE chassisRot{};
-            if (!Math::TryNormalizeUVE(chassisTr.localRotation, chassisRot)) {
-                chassisRot = Math::QuaternionUVE{};
+            const VehicleBody3DComponent& vehicle =
+                entityManager.GetComponent<VehicleBody3DComponent>(wheel.vehicleBodyEntity);
+            const TransformComponent chassisTr =
+                entityManager.HasComponent<TransformComponent>(wheel.vehicleBodyEntity)
+                    ? entityManager.GetComponent<TransformComponent>(wheel.vehicleBodyEntity)
+                    : TransformComponent{};
+            Math::Quaternion chassisRot{};
+            if (!Math::TryNormalize(chassisTr.localRotation, chassisRot)) {
+                chassisRot = Math::Quaternion{};
             }
 
             auto& summary = summaries[entityKey(wheel.vehicleBodyEntity)];
             ++summary.totalWheels;
 
-            const auto [leftSteer, rightSteer] = EvaluateAckermannSteeringUVE(
+            const auto [leftSteer, rightSteer] = EvaluateAckermannSteering(
                 vehicle.steeringAngleRadians, vehicle.wheelbaseMetres, vehicle.trackWidthMetres);
             if (wheel.isSteerable) {
                 const float rawSteer = wheel.localMountOffset.x < 0.0F ? leftSteer : rightSteer;
@@ -215,12 +215,12 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
             const float prevLength = wheel.currentSuspensionLength;
             float friction = 1.0F;
             if (groundRaycaster) {
-                const Math::Vector3UVE mountWorld =
-                    chassisTr.localPosition + Math::RotateVectorUVE(chassisRot, wheel.localMountOffset);
-                const Math::Vector3UVE downDir =
-                    Math::RotateVectorUVE(chassisRot, Math::Vector3UVE{0.0F, -1.0F, 0.0F});
+                const Math::Vector3 mountWorld =
+                    chassisTr.localPosition + Math::RotateVector(chassisRot, wheel.localMountOffset);
+                const Math::Vector3 downDir =
+                    Math::RotateVector(chassisRot, Math::Vector3{0.0F, -1.0F, 0.0F});
                 const float maxRay = wheel.suspensionRestLength + wheel.wheelRadius;
-                const VehicleGroundSampleUVE sample = groundRaycaster(mountWorld, downDir, maxRay);
+                const VehicleGroundSample sample = groundRaycaster(mountWorld, downDir, maxRay);
                 if (sample.hit && sample.hitDistance >= 0.0F && sample.hitDistance <= maxRay) {
                     wheel.inContact = true;
                     wheel.currentSuspensionLength =
@@ -237,7 +237,7 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
             const float compressionVel = (prevLength - wheel.currentSuspensionLength) / deltaTimeSeconds;
             wheel.previousSuspensionLength = prevLength;
             wheel.suspensionForce =
-                wheel.inContact ? EvaluateVehicleWheelSuspensionForceUVE(wheel, compression, compressionVel) : 0.0F;
+                wheel.inContact ? EvaluateVehicleWheelSuspensionForce(wheel, compression, compressionVel) : 0.0F;
 
             if (wheel.inContact) {
                 ++summary.groundedWheels;
@@ -258,30 +258,30 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
 
     // Pass 2: integrate 6-DOF vehicle chassis linear & angular motion.
     std::size_t steppedVehicles = 0U;
-    entityManager.ForEachUVE<VehicleBody3DComponentUVE, TransformComponentUVE>(
-        [&](const EntityUVE vehicleEntity, VehicleBody3DComponentUVE& vehicle,
-            TransformComponentUVE& localTransform) {
+    entityManager.ForEach<VehicleBody3DComponent, TransformComponent>(
+        [&](const Entity vehicleEntity, VehicleBody3DComponent& vehicle,
+            TransformComponent& localTransform) {
             if (!vehicle.enabled ||
-                entityManager.HasComponentUVE<DisabledComponentUVE>(vehicleEntity) ||
-                !IsVehicleBody3DComponentValidUVE(vehicle)) {
+                entityManager.HasComponent<DisabledComponent>(vehicleEntity) ||
+                !IsVehicleBody3DComponentValid(vehicle)) {
                 return;
             }
             const auto summaryIt = summaries.find(entityKey(vehicleEntity));
             const bool hasLinkedWheels = summaryIt != summaries.end() && summaryIt->second.totalWheels > 0U;
-            const WheelLinkSummaryUVE summary = hasLinkedWheels ? summaryIt->second : WheelLinkSummaryUVE{};
+            const WheelLinkSummary summary = hasLinkedWheels ? summaryIt->second : WheelLinkSummary{};
             vehicle.groundedWheelCount = hasLinkedWheels ? summary.groundedWheels : 4U;
 
-            Math::QuaternionUVE chassisRot{};
-            if (!Math::TryNormalizeUVE(localTransform.localRotation, chassisRot)) {
-                chassisRot = Math::QuaternionUVE{};
+            Math::Quaternion chassisRot{};
+            if (!Math::TryNormalize(localTransform.localRotation, chassisRot)) {
+                chassisRot = Math::Quaternion{};
             }
-            const Math::Vector3UVE forwardDir =
-                Math::RotateVectorUVE(chassisRot, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-            const Math::Vector3UVE rightDir =
-                Math::RotateVectorUVE(chassisRot, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+            const Math::Vector3 forwardDir =
+                Math::RotateVector(chassisRot, Math::Vector3{0.0F, 0.0F, -1.0F});
+            const Math::Vector3 rightDir =
+                Math::RotateVector(chassisRot, Math::Vector3{1.0F, 0.0F, 0.0F});
 
-            float forwardSpeed = Math::DotUVE(vehicle.linearVelocity, forwardDir);
-            float lateralSpeed = Math::DotUVE(vehicle.linearVelocity, rightDir);
+            float forwardSpeed = Math::Dot(vehicle.linearVelocity, forwardDir);
+            float lateralSpeed = Math::Dot(vehicle.linearVelocity, rightDir);
 
             const bool canDrive = !hasLinkedWheels || summary.poweredGrounded > 0U;
             const bool canBrake = !hasLinkedWheels || summary.brakingGrounded > 0U;
@@ -329,47 +329,47 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
 
             const float yawDelta = vehicle.angularVelocity.y * deltaTimeSeconds;
             if (std::fabs(yawDelta) > 1.0e-6F) {
-                Math::QuaternionUVE dq{};
-                if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, yawDelta, dq)) {
-                    Math::QuaternionUVE nextRot{};
-                    if (Math::TryNormalizeUVE(Math::MultiplyUVE(dq, chassisRot), nextRot)) {
+                Math::Quaternion dq{};
+                if (Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, yawDelta, dq)) {
+                    Math::Quaternion nextRot{};
+                    if (Math::TryNormalize(Math::Multiply(dq, chassisRot), nextRot)) {
                         localTransform.localRotation = nextRot;
                         chassisRot = nextRot;
                     }
                 }
             }
 
-            const Math::Vector3UVE newForward =
-                Math::RotateVectorUVE(chassisRot, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-            const Math::Vector3UVE newRight =
-                Math::RotateVectorUVE(chassisRot, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+            const Math::Vector3 newForward =
+                Math::RotateVector(chassisRot, Math::Vector3{0.0F, 0.0F, -1.0F});
+            const Math::Vector3 newRight =
+                Math::RotateVector(chassisRot, Math::Vector3{1.0F, 0.0F, 0.0F});
             const float verticalSpeed = vehicle.linearVelocity.y;
             vehicle.linearVelocity = newForward * forwardSpeed + newRight * lateralSpeed +
-                                     Math::Vector3UVE{0.0F, verticalSpeed, 0.0F};
+                                     Math::Vector3{0.0F, verticalSpeed, 0.0F};
             localTransform.localPosition =
                 localTransform.localPosition + vehicle.linearVelocity * deltaTimeSeconds;
             vehicle.currentSpeedMetresPerSecond =
-                std::sqrt(Math::LengthSquaredUVE(vehicle.linearVelocity));
+                std::sqrt(Math::LengthSquared(vehicle.linearVelocity));
 
-            if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(vehicleEntity)) {
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(vehicleEntity).dirty = true;
+            if (entityManager.HasComponent<WorldTransformComponent>(vehicleEntity)) {
+                entityManager.GetComponent<WorldTransformComponent>(vehicleEntity).dirty = true;
             }
             ++steppedVehicles;
         });
 
     // Pass 3: update wheel visual spin rotation from chassis speed.
-    entityManager.ForEachUVE<VehicleWheel3DComponentUVE>(
-        [&](const EntityUVE wheelEntity, VehicleWheel3DComponentUVE& wheel) {
+    entityManager.ForEach<VehicleWheel3DComponent>(
+        [&](const Entity wheelEntity, VehicleWheel3DComponent& wheel) {
             if (!wheel.enabled ||
-                entityManager.HasComponentUVE<DisabledComponentUVE>(wheelEntity) ||
-                !IsVehicleWheel3DComponentValidUVE(wheel) ||
-                wheel.vehicleBodyEntity == kInvalidEntityUVE ||
-                !entityManager.IsAliveUVE(wheel.vehicleBodyEntity) ||
-                !entityManager.HasComponentUVE<VehicleBody3DComponentUVE>(wheel.vehicleBodyEntity)) {
+                entityManager.HasComponent<DisabledComponent>(wheelEntity) ||
+                !IsVehicleWheel3DComponentValid(wheel) ||
+                wheel.vehicleBodyEntity == kInvalidEntity ||
+                !entityManager.IsAlive(wheel.vehicleBodyEntity) ||
+                !entityManager.HasComponent<VehicleBody3DComponent>(wheel.vehicleBodyEntity)) {
                 return;
             }
-            const VehicleBody3DComponentUVE& vehicle =
-                entityManager.GetComponentUVE<VehicleBody3DComponentUVE>(wheel.vehicleBodyEntity);
+            const VehicleBody3DComponent& vehicle =
+                entityManager.GetComponent<VehicleBody3DComponent>(wheel.vehicleBodyEntity);
             wheel.rotationAngleRadians +=
                 (vehicle.currentSpeedMetresPerSecond / wheel.wheelRadius) * deltaTimeSeconds;
         });

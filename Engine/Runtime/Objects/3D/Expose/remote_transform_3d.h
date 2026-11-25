@@ -10,45 +10,45 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Pushes this object's transform channels (`position`, `rotation`, `scale`) onto another
 /// target entity each frame before scene-graph world-transform propagation. When
-/// `useGlobalCoordinates` is true, the source's `WorldTransformComponentUVE` is copied onto a
+/// `useGlobalCoordinates` is true, the source's `WorldTransformComponent` is copied onto a
 /// root target's local transform (and cached world transform); when false, the source's local
-/// `TransformComponentUVE` is copied directly.
-struct RemoteTransform3DComponentUVE final {
-    EntityUVE remoteTarget = kInvalidEntityUVE;
+/// `TransformComponent` is copied directly.
+struct RemoteTransform3DComponent final {
+    Entity remoteTarget = kInvalidEntity;
     bool useGlobalCoordinates = true;
     bool updatePosition = true;
     bool updateRotation = true;
     bool updateScale = true;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const RemoteTransform3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const RemoteTransform3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsRemoteTransform3DComponentValidUVE(
-    const RemoteTransform3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsRemoteTransform3DComponentValid(
+    const RemoteTransform3DComponent& value) noexcept;
 
 /// True when `enabled` is true, `remoteTarget` is valid/non-self, and at least one channel is enabled.
-[[nodiscard]] bool HasRemoteTransform3DActiveChannelUVE(
-    const RemoteTransform3DComponentUVE& value,
-    EntityUVE selfEntity = kInvalidEntityUVE) noexcept;
+[[nodiscard]] bool HasRemoteTransform3DActiveChannel(
+    const RemoteTransform3DComponent& value,
+    Entity selfEntity = kInvalidEntity) noexcept;
 
-struct RemoteTransform3DObjectDefinitionUVE final {
+struct RemoteTransform3DObjectDefinition final {
     static constexpr std::string_view defaultName = "RemoteTransform3D";
-    RemoteTransform3DComponentUVE remoteTransform{};
+    RemoteTransform3DComponent remoteTransform{};
 };
 
-[[nodiscard]] bool IsRemoteTransform3DObjectDefinitionValidUVE(
-    const RemoteTransform3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsRemoteTransform3DObjectDefinitionValid(
+    const RemoteTransform3DObjectDefinition& value) noexcept;
 
-void ApplyRemoteTransform3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                               const RemoteTransform3DObjectDefinitionUVE& value);
+void ApplyRemoteTransform3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                               const RemoteTransform3DObjectDefinition& value);
 
-/// Pushes every enabled `RemoteTransform3DComponentUVE` onto its `remoteTarget` in deterministic
+/// Pushes every enabled `RemoteTransform3DComponent` onto its `remoteTarget` in deterministic
 /// entity order and returns the number of targets updated.
-std::size_t UpdateRemoteTransform3DObjectsUVE(IEntityManagerUVE& entityManager);
+std::size_t UpdateRemoteTransform3DObjects(IEntityManager& entityManager);
 
 } // namespace UVE::Scene

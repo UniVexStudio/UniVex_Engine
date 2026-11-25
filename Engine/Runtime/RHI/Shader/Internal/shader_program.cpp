@@ -11,19 +11,19 @@
 
 namespace UVE::Render::Shader {
 
-std::optional<UniformReflectionUVE> ShaderProgramUVE::FindUniformUVE(std::string_view name) const {
+std::optional<UniformReflection> ShaderProgram::FindUniform(std::string_view name) const {
     const auto it = std::find_if(m_uniforms.begin(), m_uniforms.end(),
-                                  [&](const UniformReflectionUVE& uniform) { return uniform.name == name; });
+                                  [&](const UniformReflection& uniform) { return uniform.name == name; });
     if (it == m_uniforms.end()) {
         return std::nullopt;
     }
     return *it;
 }
 
-void ShaderProgramUVE::SetPendingUniformUVE(std::string_view name, PendingUniformValueUVE value) {
+void ShaderProgram::SetPendingUniform(std::string_view name, PendingUniformValue value) {
     const auto existingIt = m_uniformIndexByName.find(name);
     if (existingIt != m_uniformIndexByName.end()) {
-        PendingUniformEntryUVE& entry = m_uniformEntries[existingIt->second];
+        PendingUniformEntry& entry = m_uniformEntries[existingIt->second];
         if (entry.value == value) {
             return;
         }
@@ -36,79 +36,79 @@ void ShaderProgramUVE::SetPendingUniformUVE(std::string_view name, PendingUnifor
     }
     const std::size_t index = m_uniformEntries.size();
     std::string ownedName(name);
-    m_uniformEntries.push_back(PendingUniformEntryUVE{ownedName, std::move(value), true});
+    m_uniformEntries.push_back(PendingUniformEntry{ownedName, std::move(value), true});
     m_uniformIndexByName.emplace(std::move(ownedName), index);
     m_dirtyUniformIndices.push_back(index);
 }
 
-void ShaderProgramUVE::SetFloatUVE(std::string_view name, float value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetFloat(std::string_view name, float value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetIntUVE(std::string_view name, std::int32_t value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetInt(std::string_view name, std::int32_t value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetBoolUVE(std::string_view name, bool value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetBool(std::string_view name, bool value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetVector2(std::string_view name, const Math::Vector2& value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetVector3(std::string_view name, const Math::Vector3& value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetVector4(std::string_view name, const Math::Vector4& value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {
-    SetPendingUniformUVE(name, value);
+void ShaderProgram::SetMatrix4x4(std::string_view name, const Math::Matrix4x4& value) {
+    SetPendingUniform(name, value);
 }
 
-void ShaderProgramUVE::SetMatrix3x3UVE(std::string_view name, const Math::Matrix3x3UVE& value) {
+void ShaderProgram::SetMatrix3x3(std::string_view name, const Math::Matrix3x3& value) {
     // See the header: embed in an identity-bordered 4x4 for the mat4-only uniform chain.
-    SetPendingUniformUVE(name, Math::ToMatrix4x4UVE(value));
+    SetPendingUniform(name, Math::ToMatrix4x4(value));
 }
 
-void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
+void ShaderProgram::ApplyTo(ICommandBuffer& commandBuffer) const {
     if (!m_valid) {
-        UVE_WARNING("ShaderProgramUVE: ApplyToUVE called on a program that never linked successfully - skipping");
+        UVE_WARNING("ShaderProgram: ApplyTo called on a program that never linked successfully - skipping");
         return;
     }
 
-    commandBuffer.BindPipelineUVE(m_pipeline);
-    const auto flushEntry = [&commandBuffer](const PendingUniformEntryUVE& entry) {
+    commandBuffer.BindPipeline(m_pipeline);
+    const auto flushEntry = [&commandBuffer](const PendingUniformEntry& entry) {
         std::visit(
             [&](const auto& concreteValue) {
-                using ValueTypeUVE = std::decay_t<decltype(concreteValue)>;
-                if constexpr (std::is_same_v<ValueTypeUVE, float>) {
-                    commandBuffer.SetUniformFloatUVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, std::int32_t>) {
-                    commandBuffer.SetUniformIntUVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, bool>) {
-                    commandBuffer.SetUniformBoolUVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector2UVE>) {
-                    commandBuffer.SetUniformVector2UVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector3UVE>) {
-                    commandBuffer.SetUniformVector3UVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector4UVE>) {
-                    commandBuffer.SetUniformVector4UVE(entry.name, concreteValue);
-                } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Matrix4x4UVE>) {
-                    commandBuffer.SetUniformMatrix4x4UVE(entry.name, concreteValue);
+                using ValueType = std::decay_t<decltype(concreteValue)>;
+                if constexpr (std::is_same_v<ValueType, float>) {
+                    commandBuffer.SetUniformFloat(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, std::int32_t>) {
+                    commandBuffer.SetUniformInt(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, bool>) {
+                    commandBuffer.SetUniformBool(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, Math::Vector2>) {
+                    commandBuffer.SetUniformVector2(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, Math::Vector3>) {
+                    commandBuffer.SetUniformVector3(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, Math::Vector4>) {
+                    commandBuffer.SetUniformVector4(entry.name, concreteValue);
+                } else if constexpr (std::is_same_v<ValueType, Math::Matrix4x4>) {
+                    commandBuffer.SetUniformMatrix4x4(entry.name, concreteValue);
                 }
             },
             entry.value);
     };
 
-    const bool retainsState = commandBuffer.RetainsUniformStatePerPipelineUVE();
-    const std::uint64_t bufferId = commandBuffer.GetInstanceIdUVE();
+    const bool retainsState = commandBuffer.RetainsUniformStatePerPipeline();
+    const std::uint64_t bufferId = commandBuffer.GetInstanceId();
     if (retainsState && m_lastSyncedPipeline == m_pipeline && m_lastSyncedBufferId == bufferId && bufferId != 0U) {
         for (const std::size_t index : m_dirtyUniformIndices) {
-            PendingUniformEntryUVE& entry = m_uniformEntries[index];
+            PendingUniformEntry& entry = m_uniformEntries[index];
             flushEntry(entry);
             entry.dirty = false;
         }
@@ -116,7 +116,7 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
         return;
     }
 
-    for (PendingUniformEntryUVE& entry : m_uniformEntries) {
+    for (PendingUniformEntry& entry : m_uniformEntries) {
         flushEntry(entry);
         entry.dirty = false;
     }
@@ -125,7 +125,7 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
         m_lastSyncedPipeline = m_pipeline;
         m_lastSyncedBufferId = bufferId;
     } else {
-        m_lastSyncedPipeline = kInvalidPipelineHandleUVE;
+        m_lastSyncedPipeline = kInvalidPipelineHandle;
         m_lastSyncedBufferId = 0U;
     }
 }

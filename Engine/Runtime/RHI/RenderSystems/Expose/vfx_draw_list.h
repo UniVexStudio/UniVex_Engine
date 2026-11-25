@@ -15,11 +15,11 @@
 
 namespace UVE::Render {
 
-inline constexpr std::size_t kMaximumVfxSpriteInstancesPerFrameUVE = 1'000'000U;
-inline constexpr std::size_t kVfxSpriteVerticesPerQuadUVE = 6U;
+inline constexpr std::size_t kMaximumVfxSpriteInstancesPerFrame = 1'000'000U;
+inline constexpr std::size_t kVfxSpriteVerticesPerQuad = 6U;
 
 /// 48-byte GPU instance record uploaded to `layout(std430, binding = 0)` for instanced sprite drawing.
-struct alignas(16) VfxSpriteGpuInstanceUVE final {
+struct alignas(16) VfxSpriteGpuInstance final {
     float posX = 0.0F;
     float posY = 0.0F;
     float posZ = 0.0F;
@@ -35,13 +35,13 @@ struct alignas(16) VfxSpriteGpuInstanceUVE final {
     float packedColorBits = 0.0F;
     float colorHdrScale = 1.0F;
 };
-static_assert(sizeof(VfxSpriteGpuInstanceUVE) == 48U,
-              "VfxSpriteGpuInstanceUVE must match GLSL std430 VfxSpriteInstanceData (3 x vec4 = 48 bytes)");
+static_assert(sizeof(VfxSpriteGpuInstance) == 48U,
+              "VfxSpriteGpuInstance must match GLSL std430 VfxSpriteInstanceData (3 x vec4 = 48 bytes)");
 
 /// CPU-expanded sprite vertex used by the vertex-attribute fallback path (`UVE_VFX_VERTEX_FALLBACK`).
-struct VfxSpriteFallbackVertexUVE final {
-    Math::Vector3UVE position{};
-    Math::Vector2UVE uv{};
+struct VfxSpriteFallbackVertex final {
+    Math::Vector3 position{};
+    Math::Vector2 uv{};
     float red = 1.0F;
     float green = 1.0F;
     float blue = 1.0F;
@@ -51,7 +51,7 @@ struct VfxSpriteFallbackVertexUVE final {
 };
 
 /// Packs linear RGBA color (with separate HDR RGB multiplier) into an `unpackUnorm4x8`-compatible 32-bit word.
-[[nodiscard]] inline std::uint32_t PackVfxRgba8UnormUVE(const float r,
+[[nodiscard]] inline std::uint32_t PackVfxRgba8Unorm(const float r,
                                                         const float g,
                                                         const float b,
                                                         const float a,
@@ -76,7 +76,7 @@ struct VfxSpriteFallbackVertexUVE final {
 }
 
 /// Unpacks a 32-bit `unpackUnorm4x8` word and multiplies RGB by `hdrScale`.
-inline void UnpackVfxRgba8UnormUVE(const std::uint32_t packed,
+inline void UnpackVfxRgba8Unorm(const std::uint32_t packed,
                                    const float hdrScale,
                                    float& outR,
                                    float& outG,
@@ -89,20 +89,20 @@ inline void UnpackVfxRgba8UnormUVE(const std::uint32_t packed,
     outA = static_cast<float>((packed >> 24U) & 0xFFU) / 255.0F;
 }
 
-/// Creates a `VfxSpriteGpuInstanceUVE` from unpacked particle attributes.
-[[nodiscard]] inline VfxSpriteGpuInstanceUVE MakeVfxSpriteGpuInstanceUVE(
-    const Math::Vector3UVE& position,
+/// Creates a `VfxSpriteGpuInstance` from unpacked particle attributes.
+[[nodiscard]] inline VfxSpriteGpuInstance MakeVfxSpriteGpuInstance(
+    const Math::Vector3& position,
     const float rotationRadians,
-    const Math::Vector3UVE& velocity,
+    const Math::Vector3& velocity,
     const float frame,
-    const Math::Vector2UVE& size,
+    const Math::Vector2& size,
     const float r,
     const float g,
     const float b,
     const float a) noexcept {
     float hdrScale = 1.0F;
-    const std::uint32_t packed = PackVfxRgba8UnormUVE(r, g, b, a, &hdrScale);
-    VfxSpriteGpuInstanceUVE inst{};
+    const std::uint32_t packed = PackVfxRgba8Unorm(r, g, b, a, &hdrScale);
+    VfxSpriteGpuInstance inst{};
     inst.posX = position.x;
     inst.posY = position.y;
     inst.posZ = position.z;
@@ -118,8 +118,8 @@ inline void UnpackVfxRgba8UnormUVE(const std::uint32_t packed,
     return inst;
 }
 
-/// Single emitter-renderer batch extracted from `VfxWorldUVE` for `Renderer3DUVE`.
-struct VfxSpriteBatchUVE final {
+/// Single emitter-renderer batch extracted from `VfxWorld` for `Renderer3D`.
+struct VfxSpriteBatch final {
     std::int32_t facing = 0;      ///< 0 CameraPlane, 1 Spherical, 2 Velocity, 3 FixedAxis.
     std::int32_t blend = 0;       ///< 0 Additive, 1 AlphaBlend (Premultiplied), 2 OpaqueCutout.
     std::int32_t rows = 1;
@@ -131,17 +131,17 @@ struct VfxSpriteBatchUVE final {
     float cameraFadeNear = 0.0F;
     float cameraFadeFar = 0.0F;
     float emissive = 1.0F;
-    Math::Vector3UVE axis{0.0F, 1.0F, 0.0F};
+    Math::Vector3 axis{0.0F, 1.0F, 0.0F};
     std::string texturePath;
     std::string materialPath;
     std::uint64_t attachEntityKey = 0ULL;
 
-    std::vector<VfxSpriteGpuInstanceUVE> instances;
+    std::vector<VfxSpriteGpuInstance> instances;
     std::vector<float> sortDepths;
 };
 
 /// Frame-level extraction and rendering statistics for the VFX sprite pipeline.
-struct VfxDrawStatsUVE final {
+struct VfxDrawStats final {
     std::size_t batchesExtracted = 0U;
     std::size_t opaqueBatchesExtracted = 0U;
     std::size_t translucentBatchesExtracted = 0U;
@@ -149,18 +149,18 @@ struct VfxDrawStatsUVE final {
     std::size_t instancesTruncated = 0U;
 };
 
-/// Per-frame collection of sprite batches extracted from `VfxWorldUVE`.
-struct VfxDrawListUVE final {
-    std::vector<VfxSpriteBatchUVE> batches;
-    VfxDrawStatsUVE stats{};
+/// Per-frame collection of sprite batches extracted from `VfxWorld`.
+struct VfxDrawList final {
+    std::vector<VfxSpriteBatch> batches;
+    VfxDrawStats stats{};
 
-    void ClearUVE() noexcept {
+    void Clear() noexcept {
         batches.clear();
-        stats = VfxDrawStatsUVE{};
+        stats = VfxDrawStats{};
     }
 
-    [[nodiscard]] bool HasOpaqueBatchesUVE() const noexcept { return stats.opaqueBatchesExtracted > 0U; }
-    [[nodiscard]] bool HasTranslucentBatchesUVE() const noexcept { return stats.translucentBatchesExtracted > 0U; }
+    [[nodiscard]] bool HasOpaqueBatches() const noexcept { return stats.opaqueBatchesExtracted > 0U; }
+    [[nodiscard]] bool HasTranslucentBatches() const noexcept { return stats.translucentBatchesExtracted > 0U; }
 };
 
 } // namespace UVE::Render

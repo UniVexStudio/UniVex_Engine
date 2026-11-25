@@ -7,65 +7,65 @@
 namespace UVE::Core {
 namespace {
 
-AnimationClipUVE MakeClipUVE(const std::string& id, const float start, const float end) {
-    AnimationClipUVE clip;
+AnimationClip MakeClip(const std::string& id, const float start, const float end) {
+    AnimationClip clip;
     clip.clipId = id;
     clip.durationSeconds = 1.0;
     clip.samples = {
-        PoseSampleUVE{0.0, TransformPoseUVE{{start, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
-        PoseSampleUVE{1.0, TransformPoseUVE{{end, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
+        PoseSample{0.0, TransformPose{{start, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
+        PoseSample{1.0, TransformPose{{end, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
     };
     return clip;
 }
 
-AnimationStateMachineUVE MakeMachineUVE() {
-    AnimationStateMachineUVE machine;
+AnimationStateMachine MakeMachine() {
+    AnimationStateMachine machine;
     machine.initialStateId = "idle";
-    machine.clips = {MakeClipUVE("idleClip", 0.0F, 0.0F), MakeClipUVE("runClip", 10.0F, 20.0F)};
+    machine.clips = {MakeClip("idleClip", 0.0F, 0.0F), MakeClip("runClip", 10.0F, 20.0F)};
     machine.states = {
-        AnimationStateUVE{"idle", "idleClip", "locomotion", "upper", 1.0F},
-        AnimationStateUVE{"run", "runClip", "locomotion", "upper", 1.0F},
+        AnimationState{"idle", "idleClip", "locomotion", "upper", 1.0F},
+        AnimationState{"run", "runClip", "locomotion", "upper", 1.0F},
     };
     machine.transitions = {
-        AnimationTransitionUVE{"idle_to_run", "idle", "run", 1.0F, 0.25F, 5, AnimationInterruptionPolicyUVE::SourceOrTarget},
+        AnimationTransition{"idle_to_run", "idle", "run", 1.0F, 0.25F, 5, AnimationInterruptionPolicy::SourceOrTarget},
     };
     return machine;
 }
 
-AnimationStateMachineUVE MakeInterruptibleMachineUVE(const AnimationInterruptionPolicyUVE policy) {
-    AnimationStateMachineUVE machine = MakeMachineUVE();
-    machine.clips.push_back(MakeClipUVE("jumpClip", 30.0F, 40.0F));
-    machine.states.push_back(AnimationStateUVE{"jump", "jumpClip", "locomotion", "upper", 1.0F});
+AnimationStateMachine MakeInterruptibleMachine(const AnimationInterruptionPolicy policy) {
+    AnimationStateMachine machine = MakeMachine();
+    machine.clips.push_back(MakeClip("jumpClip", 30.0F, 40.0F));
+    machine.states.push_back(AnimationState{"jump", "jumpClip", "locomotion", "upper", 1.0F});
     machine.transitions[0].priority = 10;
     machine.transitions[0].exitTime = 0.0F;
     machine.transitions[0].interruption = policy;
-    machine.transitions.push_back(AnimationTransitionUVE{
-        "idle_to_jump", "idle", "jump", 1.0F, 0.0F, 9, AnimationInterruptionPolicyUVE::None});
-    machine.transitions.push_back(AnimationTransitionUVE{
-        "run_to_jump", "run", "jump", 1.0F, 0.0F, 8, AnimationInterruptionPolicyUVE::None});
+    machine.transitions.push_back(AnimationTransition{
+        "idle_to_jump", "idle", "jump", 1.0F, 0.0F, 9, AnimationInterruptionPolicy::None});
+    machine.transitions.push_back(AnimationTransition{
+        "run_to_jump", "run", "jump", 1.0F, 0.0F, 8, AnimationInterruptionPolicy::None});
     return machine;
 }
 
-const AnimationStateMachineEvaluationResultUVE BeginTransitionUVE(
-    AnimationStateMachineEvaluatorUVE& evaluator) {
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
-    EXPECT_TRUE(result.IsSuccessUVE());
+const AnimationStateMachineEvaluationResult BeginTransition(
+    AnimationStateMachineEvaluator& evaluator) {
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
+    EXPECT_TRUE(result.IsSuccess());
     return result;
 }
 
 } // namespace
 
-TEST(AnimationStateMachineUVETest, ValidateAnimationStateMachineUVE_AcceptsBoundedStatesAndTransition) {
-    const AnimationStateMachineValidationResultUVE result = ValidateAnimationStateMachineUVE(MakeMachineUVE());
-    EXPECT_TRUE(result.IsValidUVE());
-    EXPECT_EQ(result.code, AnimationStateMachineValidationCodeUVE::Valid);
+TEST(AnimationStateMachineTest, ValidateAnimationStateMachine_AcceptsBoundedStatesAndTransition) {
+    const AnimationStateMachineValidationResult result = ValidateAnimationStateMachine(MakeMachine());
+    EXPECT_TRUE(result.IsValid());
+    EXPECT_EQ(result.code, AnimationStateMachineValidationCode::Valid);
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_UsesExitTimeCrossfadeAndCopiedDebugSnapshot) {
-    const AnimationStateMachineUVE machine = MakeMachineUVE();
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
-    const AnimationStateMachineEvaluationResultUVE beforeTransition = evaluator.EvaluateUVE(0.25);
-    ASSERT_TRUE(beforeTransition.IsSuccessUVE());
+TEST(AnimationStateMachineTest, Evaluate_UsesExitTimeCrossfadeAndCopiedDebugSnapshot) {
+    const AnimationStateMachine machine = MakeMachine();
+    AnimationStateMachineEvaluator evaluator(machine);
+    const AnimationStateMachineEvaluationResult beforeTransition = evaluator.Evaluate(0.25);
+    ASSERT_TRUE(beforeTransition.IsSuccess());
     EXPECT_DOUBLE_EQ(beforeTransition.debug.normalizedTime, 0.25);
     EXPECT_EQ(beforeTransition.debug.currentStateId, "idle");
     EXPECT_TRUE(beforeTransition.debug.transitioning);
@@ -73,95 +73,95 @@ TEST(AnimationStateMachineUVETest, EvaluateUVE_UsesExitTimeCrossfadeAndCopiedDeb
     EXPECT_EQ(beforeTransition.debug.syncGroupId, "locomotion");
     EXPECT_EQ(beforeTransition.debug.layerMaskId, "upper");
 
-    const AnimationStateMachineEvaluationResultUVE crossfade = evaluator.EvaluateUVE(0.25);
-    ASSERT_TRUE(crossfade.IsSuccessUVE());
+    const AnimationStateMachineEvaluationResult crossfade = evaluator.Evaluate(0.25);
+    ASSERT_TRUE(crossfade.IsSuccess());
     EXPECT_NEAR(crossfade.debug.transitionAlpha, 0.5, 1.0e-12);
     EXPECT_NEAR(crossfade.pose.position.x, 7.5F, 1.0e-5F);
 
-    static_cast<void>(evaluator.EvaluateUVE(0.25));
-    const AnimationStateMachineEvaluationResultUVE completed = evaluator.EvaluateUVE(0.25);
-    ASSERT_TRUE(completed.IsSuccessUVE());
+    static_cast<void>(evaluator.Evaluate(0.25));
+    const AnimationStateMachineEvaluationResult completed = evaluator.Evaluate(0.25);
+    ASSERT_TRUE(completed.IsSuccess());
     EXPECT_FALSE(completed.debug.transitioning);
     EXPECT_EQ(completed.debug.currentStateId, "run");
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_SelectsHighestPriorityEligibleTransition) {
-    AnimationStateMachineUVE machine = MakeMachineUVE();
-    machine.transitions.push_back(AnimationTransitionUVE{
-        "idle_to_run_low", "idle", "run", 0.0F, 0.0F, 1, AnimationInterruptionPolicyUVE::None});
+TEST(AnimationStateMachineTest, Evaluate_SelectsHighestPriorityEligibleTransition) {
+    AnimationStateMachine machine = MakeMachine();
+    machine.transitions.push_back(AnimationTransition{
+        "idle_to_run_low", "idle", "run", 0.0F, 0.0F, 1, AnimationInterruptionPolicy::None});
     machine.transitions[0].priority = 8;
     machine.transitions[0].exitTime = 0.0F;
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
+    AnimationStateMachineEvaluator evaluator(machine);
 
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
-    ASSERT_TRUE(result.IsSuccessUVE());
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.debug.activeTransitionId, "idle_to_run");
     EXPECT_EQ(result.debug.selectedTransitionPriority, 8);
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_NoneInterruptionKeepsActiveTransition) {
-    const AnimationStateMachineUVE machine =
-        MakeInterruptibleMachineUVE(AnimationInterruptionPolicyUVE::None);
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
-    ASSERT_EQ(BeginTransitionUVE(evaluator).debug.activeTransitionId, "idle_to_run");
+TEST(AnimationStateMachineTest, Evaluate_NoneInterruptionKeepsActiveTransition) {
+    const AnimationStateMachine machine =
+        MakeInterruptibleMachine(AnimationInterruptionPolicy::None);
+    AnimationStateMachineEvaluator evaluator(machine);
+    ASSERT_EQ(BeginTransition(evaluator).debug.activeTransitionId, "idle_to_run");
 
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
 
-    ASSERT_TRUE(result.IsSuccessUVE());
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.debug.activeTransitionId, "idle_to_run");
     EXPECT_EQ(result.debug.targetStateId, "run");
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_SourceInterruptionSelectsSourceTransition) {
-    const AnimationStateMachineUVE machine =
-        MakeInterruptibleMachineUVE(AnimationInterruptionPolicyUVE::Source);
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
-    ASSERT_EQ(BeginTransitionUVE(evaluator).debug.activeTransitionId, "idle_to_run");
+TEST(AnimationStateMachineTest, Evaluate_SourceInterruptionSelectsSourceTransition) {
+    const AnimationStateMachine machine =
+        MakeInterruptibleMachine(AnimationInterruptionPolicy::Source);
+    AnimationStateMachineEvaluator evaluator(machine);
+    ASSERT_EQ(BeginTransition(evaluator).debug.activeTransitionId, "idle_to_run");
 
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
 
-    ASSERT_TRUE(result.IsSuccessUVE());
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.debug.activeTransitionId, "idle_to_jump");
     EXPECT_EQ(result.debug.targetStateId, "jump");
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_TargetInterruptionSelectsTargetTransition) {
-    const AnimationStateMachineUVE machine =
-        MakeInterruptibleMachineUVE(AnimationInterruptionPolicyUVE::Target);
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
-    ASSERT_EQ(BeginTransitionUVE(evaluator).debug.activeTransitionId, "idle_to_run");
+TEST(AnimationStateMachineTest, Evaluate_TargetInterruptionSelectsTargetTransition) {
+    const AnimationStateMachine machine =
+        MakeInterruptibleMachine(AnimationInterruptionPolicy::Target);
+    AnimationStateMachineEvaluator evaluator(machine);
+    ASSERT_EQ(BeginTransition(evaluator).debug.activeTransitionId, "idle_to_run");
 
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
 
-    ASSERT_TRUE(result.IsSuccessUVE());
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.debug.activeTransitionId, "run_to_jump");
     EXPECT_EQ(result.debug.targetStateId, "jump");
 }
 
-TEST(AnimationStateMachineUVETest, EvaluateUVE_SourceOrTargetUsesPriorityAcrossBothStates) {
-    const AnimationStateMachineUVE machine =
-        MakeInterruptibleMachineUVE(AnimationInterruptionPolicyUVE::SourceOrTarget);
-    AnimationStateMachineEvaluatorUVE evaluator(machine);
-    ASSERT_EQ(BeginTransitionUVE(evaluator).debug.activeTransitionId, "idle_to_run");
+TEST(AnimationStateMachineTest, Evaluate_SourceOrTargetUsesPriorityAcrossBothStates) {
+    const AnimationStateMachine machine =
+        MakeInterruptibleMachine(AnimationInterruptionPolicy::SourceOrTarget);
+    AnimationStateMachineEvaluator evaluator(machine);
+    ASSERT_EQ(BeginTransition(evaluator).debug.activeTransitionId, "idle_to_run");
 
-    const AnimationStateMachineEvaluationResultUVE result = evaluator.EvaluateUVE(0.01);
+    const AnimationStateMachineEvaluationResult result = evaluator.Evaluate(0.01);
 
-    ASSERT_TRUE(result.IsSuccessUVE());
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.debug.activeTransitionId, "idle_to_jump");
     EXPECT_EQ(result.debug.targetStateId, "jump");
     EXPECT_EQ(result.debug.selectedTransitionPriority, 9);
 }
 
-TEST(AnimationStateMachineUVETest, ValidateAnimationStateMachineUVE_RejectsUnknownClipAndInvalidExitTime) {
-    AnimationStateMachineUVE unknownClip = MakeMachineUVE();
+TEST(AnimationStateMachineTest, ValidateAnimationStateMachine_RejectsUnknownClipAndInvalidExitTime) {
+    AnimationStateMachine unknownClip = MakeMachine();
     unknownClip.states[1].clipId = "missing";
-    EXPECT_EQ(ValidateAnimationStateMachineUVE(unknownClip).code,
-              AnimationStateMachineValidationCodeUVE::UnknownClip);
+    EXPECT_EQ(ValidateAnimationStateMachine(unknownClip).code,
+              AnimationStateMachineValidationCode::UnknownClip);
 
-    AnimationStateMachineUVE invalidExit = MakeMachineUVE();
+    AnimationStateMachine invalidExit = MakeMachine();
     invalidExit.transitions[0].exitTime = 1.5F;
-    EXPECT_EQ(ValidateAnimationStateMachineUVE(invalidExit).code,
-              AnimationStateMachineValidationCodeUVE::InvalidExitTime);
+    EXPECT_EQ(ValidateAnimationStateMachine(invalidExit).code,
+              AnimationStateMachineValidationCode::InvalidExitTime);
 }
 
 } // namespace UVE::Core

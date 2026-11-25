@@ -6,13 +6,13 @@
 // clients, every adapter composed the way a production game composes them:
 //
 //   lobby:      bots create and join rooms through the typed client facade;
-//   relay:      room-scoped shouts, bound to lobby rooms by the server's ClientRoomUVE sync
+//   relay:      room-scoped shouts, bound to lobby rooms by the server's ClientRoom sync
 //               loop (roommates hear each other; nobody else does);
-//   prediction: each bot predicts its pawn through TickPredictedPawnUVE() against a floored
+//   prediction: each bot predicts its pawn through TickPredictedPawn() against a floored
 //               server stepper, reconciling every landing it cannot see;
 //   replication: predicted pawns ride as Owner against the server's proxy dolls, and a
 //               server-owned patrol NPC rides back down to every bot's doll;
-//   mover:      an untagged local walker steps through the real StepCharacter3DUVE() beside
+//   mover:      an untagged local walker steps through the real StepCharacter3D() beside
 //               the dolls - while the tagged pawns keep refusing it, proving the two never
 //               double-step.
 //
@@ -22,7 +22,7 @@
 // is traffic-rich (ticks, snapshots, shouts, roster refreshes), so a silent regression fails
 // loudly instead of idling past it.
 //
-// RunDedicatedServerSampleUVE() runs the whole story synchronously and answers a verdict:
+// RunDedicatedServerSample() runs the whole story synchronously and answers a verdict:
 // success plus statistics, or the list of violated invariants. The binary prints the log and
 // exits by the verdict; the test suite runs it silent and asserts green.
 //
@@ -35,17 +35,17 @@
 namespace UVE::Samples {
 
 /// One human-readable log line. Empty sinks silence the story; the verdict never needs them.
-using SampleLogSinkUVE = std::function<void(const std::string&)>;
+using SampleLogSink = std::function<void(const std::string&)>;
 
-struct DedicatedServerSampleConfigUVE final {
+struct DedicatedServerSampleConfig final {
     /// Fixed steps to run. Shouts go out every 30 ticks and roster refreshes every 60, so
     /// short runs still exercise every path - but runs below ~60 ticks fail the checks that
     /// need a landing (reconciles) or a walk (the walker crossing).
     std::uint64_t ticks = 600U;
-    SampleLogSinkUVE log;
+    SampleLogSink log;
 };
 
-struct DedicatedServerSampleStatsUVE final {
+struct DedicatedServerSampleStats final {
     std::uint64_t ticks = 0U;
     std::uint64_t reconcilesAmy = 0U;
     std::uint64_t reconcilesBob = 0U;
@@ -61,13 +61,13 @@ struct DedicatedServerSampleStatsUVE final {
     float walkerX = 0.0F;
 };
 
-struct DedicatedServerSampleResultUVE final {
+struct DedicatedServerSampleResult final {
     bool success = false;
     std::vector<std::string> failures;
-    DedicatedServerSampleStatsUVE stats;
+    DedicatedServerSampleStats stats;
 };
 
-[[nodiscard]] DedicatedServerSampleResultUVE RunDedicatedServerSampleUVE(
-    const DedicatedServerSampleConfigUVE& config = DedicatedServerSampleConfigUVE{});
+[[nodiscard]] DedicatedServerSampleResult RunDedicatedServerSample(
+    const DedicatedServerSampleConfig& config = DedicatedServerSampleConfig{});
 
 } // namespace UVE::Samples

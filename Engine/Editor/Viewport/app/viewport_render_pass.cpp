@@ -117,29 +117,29 @@ std::optional<ViewportRenderPass> ViewportRenderPass::Create(std::string& outErr
     return pass;
 }
 
-bool ViewportRenderPass::SetAxisPaletteUVE(const univex::viewport::AxisPaletteUVE& palette) {
-    if (!univex::viewport::IsAxisPaletteValidUVE(palette)) {
+bool ViewportRenderPass::SetAxisPalette(const univex::viewport::AxisPalette& palette) {
+    if (!univex::viewport::IsAxisPaletteValid(palette)) {
         return false;
     }
     // The nav gizmo reads its colours off the same GizmoStyle, so the corner widget follows for
     // free - there is no third place to keep in step.
-    univex::viewport::ApplyAxisPaletteUVE(palette, style_, grid_.Settings());
+    univex::viewport::ApplyAxisPalette(palette, style_, grid_.Settings());
     return true;
 }
 
-void ViewportRenderPass::SetGridOpacityUVE(const float opacity) {
+void ViewportRenderPass::SetGridOpacity(const float opacity) {
     grid_.Settings().opacity = std::isfinite(opacity) ? std::clamp(opacity, 0.f, 1.f) : 1.f;
 }
 
-void ViewportRenderPass::SetGridPlaneUVE(const univex::render::GridPlane plane) {
+void ViewportRenderPass::SetGridPlane(const univex::render::GridPlane plane) {
     grid_.Settings().plane = plane;
 }
 
-void ViewportRenderPass::SetSelectionOutlineUVE(const univex::render::SelectionOutlineSettings& settings) {
+void ViewportRenderPass::SetSelectionOutline(const univex::render::SelectionOutlineSettings& settings) {
     selectionOutlineSettings_ = univex::render::SanitizeSelectionOutlineSettings(settings);
 }
 
-void ViewportRenderPass::RenderSelectionOutlineUVE(const OrbitCamera& camera, const int framebufferWidth,
+void ViewportRenderPass::RenderSelectionOutline(const OrbitCamera& camera, const int framebufferWidth,
                                                    const int framebufferHeight,
                                                    const std::vector<univex::render::SelectionOutlineVertex>& triangles) {
     if (!selectionOutline_.has_value() || framebufferWidth <= 0 || framebufferHeight <= 0) {
@@ -150,7 +150,7 @@ void ViewportRenderPass::RenderSelectionOutlineUVE(const OrbitCamera& camera, co
                             selectionOutlineSettings_);
 }
 
-bool ViewportRenderPass::ReadSelectionMaskUVE(const OrbitCamera& camera, const int framebufferWidth,
+bool ViewportRenderPass::ReadSelectionMask(const OrbitCamera& camera, const int framebufferWidth,
                                               const int framebufferHeight,
                                               const std::vector<univex::render::SelectionOutlineVertex>& triangles,
                                               std::vector<std::uint8_t>& outMask) {
@@ -164,15 +164,15 @@ bool ViewportRenderPass::ReadSelectionMaskUVE(const OrbitCamera& camera, const i
                                        outMask);
 }
 
-void ViewportRenderPass::SetGridCellSizeUVE(const float cellSize) {
+void ViewportRenderPass::SetGridCellSize(const float cellSize) {
     // The shader divides by this spacing; zero, negative or NaN would blank or corrupt the grid.
     if (std::isfinite(cellSize) && cellSize > 0.f) {
         grid_.Settings().baseSpacing = cellSize;
     }
 }
 
-univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
-    return univex::viewport::AxisPaletteOfUVE(style_);
+univex::viewport::AxisPalette ViewportRenderPass::GetAxisPalette() const {
+    return univex::viewport::AxisPaletteOf(style_);
 }
 
 void ViewportRenderPass::DrawBackground() const {
@@ -215,7 +215,7 @@ void ViewportRenderPass::DrawCameraFrustums(const OrbitCamera& camera, int width
 
 void ViewportRenderPass::DrawBones(const OrbitCamera& camera, int width, int height) const {
     const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
-    const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMeshUVE(bones_, viewDirection);
+    const univex::gizmo::GizmoMesh mesh = univex::gizmo::BuildBoneMesh(bones_, viewDirection);
     GizmoDrawParams params;
     params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
     params.origin = Vec3{0.f, 0.f, 0.f}; // the bones are already in world space
@@ -249,7 +249,7 @@ void ViewportRenderPass::DrawColliderWireframes(const OrbitCamera& camera, int w
     gizmos_.Draw(mesh, params);
 }
 
-void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) const {
+void ViewportRenderPass::Clear(int framebufferWidth, int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
     glViewport(0, 0, framebufferWidth, framebufferHeight);
     univex::render::EnableOverlayDepthWrite(); // clearing depth requires the write mask on
@@ -257,7 +257,7 @@ void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) c
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void ViewportRenderPass::RenderBackgroundUVE(const bool neutralEditorFallback) const {
+void ViewportRenderPass::RenderBackground(const bool neutralEditorFallback) const {
     if (!settings_.viewEnvironment) {
         return;
     }
@@ -266,7 +266,7 @@ void ViewportRenderPass::RenderBackgroundUVE(const bool neutralEditorFallback) c
     DrawBackground();
 }
 
-void ViewportRenderPass::RenderGridUVE(const OrbitCamera& camera,
+void ViewportRenderPass::RenderGrid(const OrbitCamera& camera,
                                        int framebufferWidth,
                                        int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0 || !settings_.viewGrid) return;
@@ -281,7 +281,7 @@ void ViewportRenderPass::RenderGridUVE(const OrbitCamera& camera,
     grid_.Draw(camera, framebufferWidth, framebufferHeight);
 }
 
-void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
+void ViewportRenderPass::RenderOverlay(const OrbitCamera& camera,
                                           int framebufferWidth,
                                           int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
@@ -300,10 +300,10 @@ void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
                                      int framebufferWidth,
                                      int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
-    ClearUVE(framebufferWidth, framebufferHeight);
-    RenderBackgroundUVE();
-    RenderGridUVE(camera, framebufferWidth, framebufferHeight);
-    RenderOverlayUVE(camera, framebufferWidth, framebufferHeight);
+    Clear(framebufferWidth, framebufferHeight);
+    RenderBackground();
+    RenderGrid(camera, framebufferWidth, framebufferHeight);
+    RenderOverlay(camera, framebufferWidth, framebufferHeight);
 }
 
 } // namespace univex::app

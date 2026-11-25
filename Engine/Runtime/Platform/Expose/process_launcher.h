@@ -11,12 +11,12 @@ namespace UVE::Platform {
 
 /// File-name suffix of an executable on the platform this build targets.
 #if defined(_WIN32)
-inline constexpr std::string_view kExecutableSuffixUVE = ".exe";
+inline constexpr std::string_view kExecutableSuffix = ".exe";
 #else
-inline constexpr std::string_view kExecutableSuffixUVE = "";
+inline constexpr std::string_view kExecutableSuffix = "";
 #endif
 
-struct ProcessLaunchDescUVE final {
+struct ProcessLaunchDesc final {
     /// The program to run. A bare name is looked up on the search path.
     std::filesystem::path executable;
     std::vector<std::string> arguments;
@@ -24,19 +24,19 @@ struct ProcessLaunchDescUVE final {
     std::filesystem::path workingDirectory;
 };
 
-struct ProcessLaunchResultUVE final {
+struct ProcessLaunchResult final {
     bool launched = false;
     std::string message;
 };
 
 /// Starts a program that outlives the caller: it is not waited for and keeps running when the
 /// caller exits. Arguments are passed as-is, never through a shell.
-[[nodiscard]] ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc);
+[[nodiscard]] ProcessLaunchResult LaunchDetachedProcess(const ProcessLaunchDesc& desc);
 
 /// The running program's own executable file, or empty when the platform cannot say.
-[[nodiscard]] std::filesystem::path CurrentExecutablePathUVE();
+[[nodiscard]] std::filesystem::path CurrentExecutablePath();
 
 /// Shows `directory` in the platform's file manager.
-[[nodiscard]] ProcessLaunchResultUVE RevealInFileManagerUVE(const std::filesystem::path& directory);
+[[nodiscard]] ProcessLaunchResult RevealInFileManager(const std::filesystem::path& directory);
 
 } // namespace UVE::Platform

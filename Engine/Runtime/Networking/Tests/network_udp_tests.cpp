@@ -30,11 +30,11 @@ namespace {
 // Fixed loopback ports are retained for the explicit bind/conflict tests below. The pair helper
 // derives its ports from the test process instead: CTest launches each case as a separate process,
 // so fixed ports make otherwise independent UDP tests race when the suite runs with -j.
-inline constexpr std::uint16_t kUdpTestPortAUVE = 41741U;
-inline constexpr std::uint16_t kUdpTestPortBUVE = 41742U;
-inline constexpr std::uint16_t kUdpDynamicPortBaseUVE = 49152U;
+inline constexpr std::uint16_t kUdpTestPortA = 41741U;
+inline constexpr std::uint16_t kUdpTestPortB = 41742U;
+inline constexpr std::uint16_t kUdpDynamicPortBase = 49152U;
 
-[[nodiscard]] std::uint32_t CurrentProcessIdUVE() noexcept {
+[[nodiscard]] std::uint32_t CurrentProcessId() noexcept {
 #if defined(_WIN32)
     return static_cast<std::uint32_t>(_getpid());
 #else
@@ -42,48 +42,48 @@ inline constexpr std::uint16_t kUdpDynamicPortBaseUVE = 49152U;
 #endif
 }
 
-[[nodiscard]] std::pair<std::uint16_t, std::uint16_t> DynamicPairPortsUVE(
+[[nodiscard]] std::pair<std::uint16_t, std::uint16_t> DynamicPairPorts(
     const std::uint32_t attempt) noexcept {
-    constexpr std::uint32_t kPortPairCountUVE = 2500U;
+    constexpr std::uint32_t kPortPairCount = 2500U;
     const std::uint32_t pairIndex =
-        (CurrentProcessIdUVE() % kPortPairCountUVE + attempt) % kPortPairCountUVE;
+        (CurrentProcessId() % kPortPairCount + attempt) % kPortPairCount;
     const std::uint16_t first = static_cast<std::uint16_t>(
-        kUdpDynamicPortBaseUVE + pairIndex * 2U);
+        kUdpDynamicPortBase + pairIndex * 2U);
     return {first, static_cast<std::uint16_t>(first + 1U)};
 }
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-[[nodiscard]] UdpTransportConfigUVE ConfigUVE(const std::uint16_t local,
+[[nodiscard]] UdpTransportConfig Config(const std::uint16_t local,
                                               const std::uint16_t remote) {
-    UdpTransportConfigUVE config;
+    UdpTransportConfig config;
     config.localPort = local;
     config.remoteHost = "127.0.0.1";
     config.remotePort = remote;
     return config;
 }
 
-struct UdpPairUVE final {
-    UdpTransportEndpointUVE a;
-    UdpTransportEndpointUVE b;
+struct UdpPair final {
+    UdpTransportEndpoint a;
+    UdpTransportEndpoint b;
 };
 
-[[nodiscard]] std::optional<UdpPairUVE> MakePairUVE() {
+[[nodiscard]] std::optional<UdpPair> MakePair() {
     // A runner may already have a socket on the process-derived candidate, so retry a bounded
     // sequence of disjoint pairs instead of turning harmless port contention into a flaky test.
     for (std::uint32_t attempt = 0U; attempt < 64U; ++attempt) {
-        const auto [portA, portB] = DynamicPairPortsUVE(attempt);
-        std::optional<UdpTransportEndpointUVE> a =
-            CreateUdpTransportEndpointUVE(ConfigUVE(portA, portB));
+        const auto [portA, portB] = DynamicPairPorts(attempt);
+        std::optional<UdpTransportEndpoint> a =
+            CreateUdpTransportEndpoint(Config(portA, portB));
         if (!a.has_value()) {
             continue;
         }
-        std::optional<UdpTransportEndpointUVE> b =
-            CreateUdpTransportEndpointUVE(ConfigUVE(portB, portA));
+        std::optional<UdpTransportEndpoint> b =
+            CreateUdpTransportEndpoint(Config(portB, portA));
         if (b.has_value()) {
-            return UdpPairUVE{std::move(*a), std::move(*b)};
+            return UdpPair{std::move(*a), std::move(*b)};
         }
     }
     return std::nullopt;
@@ -91,8 +91,8 @@ struct UdpPairUVE final {
 
 // Spins until the predicate holds or the budget (in 1ms naps) runs out. Localhost delivery
 // is near-instant, but the kernel is not the test's to command - poll, don't assume.
-template <typename PredicateUVE>
-[[nodiscard]] bool PollUntilUVE(PredicateUVE&& predicate, const int budgetMs = 2000) {
+template <typename Predicate>
+[[nodiscard]] bool PollUntil(Predicate&& predicate, const int budgetMs = 2000) {
     for (int i = 0; i < budgetMs; ++i) {
         if (predicate()) {
             return true;
@@ -102,291 +102,291 @@ template <typename PredicateUVE>
     return predicate();
 }
 
-TEST(UdpTransportUVE, PairExchangesDatagramsBothDirectionsInOrder) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, PairExchangesDatagramsBothDirectionsInOrder) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    EXPECT_NE(pair->a.LocalPortUVE(), 0U);
-    EXPECT_NE(pair->b.LocalPortUVE(), 0U);
-    EXPECT_NE(pair->a.LocalPortUVE(), pair->b.LocalPortUVE());
+    EXPECT_NE(pair->a.LocalPort(), 0U);
+    EXPECT_NE(pair->b.LocalPort(), 0U);
+    EXPECT_NE(pair->a.LocalPort(), pair->b.LocalPort());
 
-    EXPECT_TRUE(pair->a.SendUVE(BytesUVE("one")));
-    EXPECT_TRUE(pair->a.SendUVE(BytesUVE("two")));
-    EXPECT_TRUE(pair->a.SendUVE(BytesUVE("three")));
-    EXPECT_TRUE(pair->b.SendUVE(BytesUVE("back")));
+    EXPECT_TRUE(pair->a.Send(Bytes("one")));
+    EXPECT_TRUE(pair->a.Send(Bytes("two")));
+    EXPECT_TRUE(pair->a.Send(Bytes("three")));
+    EXPECT_TRUE(pair->b.Send(Bytes("back")));
 
-    ASSERT_TRUE(PollUntilUVE([&] { return pair->b.HasPendingUVE(); }));
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("one"));
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("two"));
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("three"));
-    EXPECT_EQ(pair->a.TryReceiveUVE(), BytesUVE("back"));
-    EXPECT_FALSE(pair->a.TryReceiveUVE().has_value());
-    EXPECT_FALSE(pair->b.TryReceiveUVE().has_value());
+    ASSERT_TRUE(PollUntil([&] { return pair->b.HasPending(); }));
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("one"));
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("two"));
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("three"));
+    EXPECT_EQ(pair->a.TryReceive(), Bytes("back"));
+    EXPECT_FALSE(pair->a.TryReceive().has_value());
+    EXPECT_FALSE(pair->b.TryReceive().has_value());
 }
 
-TEST(UdpTransportUVE, PendingFlagsTrackQueuedMail) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, PendingFlagsTrackQueuedMail) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    EXPECT_FALSE(pair->a.HasPendingUVE());
-    EXPECT_FALSE(pair->b.HasPendingUVE());
-    EXPECT_EQ(pair->a.PendingCountUVE(), 0U);
-    EXPECT_EQ(pair->b.PendingCountUVE(), 0U);
+    EXPECT_FALSE(pair->a.HasPending());
+    EXPECT_FALSE(pair->b.HasPending());
+    EXPECT_EQ(pair->a.PendingCount(), 0U);
+    EXPECT_EQ(pair->b.PendingCount(), 0U);
 
-    EXPECT_TRUE(pair->a.SendUVE(BytesUVE("first")));
-    EXPECT_TRUE(pair->a.SendUVE(BytesUVE("second")));
-    ASSERT_TRUE(PollUntilUVE([&] { return pair->b.HasPendingUVE(); }));
+    EXPECT_TRUE(pair->a.Send(Bytes("first")));
+    EXPECT_TRUE(pair->a.Send(Bytes("second")));
+    ASSERT_TRUE(PollUntil([&] { return pair->b.HasPending(); }));
     // Nothing drained yet: an empty queue plus a visibly-full socket reads exactly one,
     // the documented lower bound - two wait, one is provable without receiving.
-    EXPECT_EQ(pair->b.PendingCountUVE(), 1U);
+    EXPECT_EQ(pair->b.PendingCount(), 1U);
 
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("first"));
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("first"));
     // The first receive drained both into the queue and popped one: one queued, the
     // socket dry, so the count is exact from here on.
-    EXPECT_TRUE(pair->b.HasPendingUVE());
-    EXPECT_EQ(pair->b.PendingCountUVE(), 1U);
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("second"));
-    EXPECT_FALSE(pair->b.HasPendingUVE());
-    EXPECT_EQ(pair->b.PendingCountUVE(), 0U);
+    EXPECT_TRUE(pair->b.HasPending());
+    EXPECT_EQ(pair->b.PendingCount(), 1U);
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("second"));
+    EXPECT_FALSE(pair->b.HasPending());
+    EXPECT_EQ(pair->b.PendingCount(), 0U);
 }
 
-TEST(UdpTransportUVE, OversizeSendFailsAndCounts) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, OversizeSendFailsAndCounts) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    const std::vector<std::uint8_t> maximum(kTransportMaximumDatagramBytesUVE, 0xAB);
-    EXPECT_TRUE(pair->a.SendUVE(maximum));
-    const std::vector<std::uint8_t> over(kTransportMaximumDatagramBytesUVE + 1U, 0xAB);
-    EXPECT_FALSE(pair->a.SendUVE(over));
+    const std::vector<std::uint8_t> maximum(kTransportMaximumDatagramBytes, 0xAB);
+    EXPECT_TRUE(pair->a.Send(maximum));
+    const std::vector<std::uint8_t> over(kTransportMaximumDatagramBytes + 1U, 0xAB);
+    EXPECT_FALSE(pair->a.Send(over));
 
-    UdpTransportStatsUVE expected;
+    UdpTransportStats expected;
     expected.datagramsSent = 1U;
     expected.datagramsDroppedOversize = 1U;
-    EXPECT_EQ(pair->a.StatsUVE(), expected);
+    EXPECT_EQ(pair->a.Stats(), expected);
 
-    ASSERT_TRUE(PollUntilUVE([&] { return pair->b.HasPendingUVE(); }));
-    EXPECT_EQ(pair->b.TryReceiveUVE(), maximum);
-    EXPECT_EQ(pair->b.StatsUVE().datagramsReceived, 1U);
+    ASSERT_TRUE(PollUntil([&] { return pair->b.HasPending(); }));
+    EXPECT_EQ(pair->b.TryReceive(), maximum);
+    EXPECT_EQ(pair->b.Stats().datagramsReceived, 1U);
 }
 
-TEST(UdpTransportUVE, EmptyEndpointStaysSilent) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, EmptyEndpointStaysSilent) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    EXPECT_FALSE(pair->a.TryReceiveUVE().has_value());
-    EXPECT_FALSE(pair->b.TryReceiveUVE().has_value());
-    EXPECT_FALSE(pair->a.HasPendingUVE());
-    EXPECT_EQ(pair->b.PendingCountUVE(), 0U);
-    EXPECT_EQ(pair->a.StatsUVE(), UdpTransportStatsUVE{});
+    EXPECT_FALSE(pair->a.TryReceive().has_value());
+    EXPECT_FALSE(pair->b.TryReceive().has_value());
+    EXPECT_FALSE(pair->a.HasPending());
+    EXPECT_EQ(pair->b.PendingCount(), 0U);
+    EXPECT_EQ(pair->a.Stats(), UdpTransportStats{});
 }
 
-TEST(UdpTransportUVE, CopiesShareOneSocketAndMovedFromIsInert) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, CopiesShareOneSocketAndMovedFromIsInert) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    UdpTransportEndpointUVE copy = pair->a;
-    EXPECT_TRUE(copy.SendUVE(BytesUVE("via-copy")));
-    EXPECT_EQ(pair->a.StatsUVE().datagramsSent, 1U);
-    ASSERT_TRUE(PollUntilUVE([&] { return pair->b.HasPendingUVE(); }));
-    EXPECT_EQ(pair->b.TryReceiveUVE(), BytesUVE("via-copy"));
+    UdpTransportEndpoint copy = pair->a;
+    EXPECT_TRUE(copy.Send(Bytes("via-copy")));
+    EXPECT_EQ(pair->a.Stats().datagramsSent, 1U);
+    ASSERT_TRUE(PollUntil([&] { return pair->b.HasPending(); }));
+    EXPECT_EQ(pair->b.TryReceive(), Bytes("via-copy"));
 
-    UdpTransportEndpointUVE moved = std::move(copy);
-    EXPECT_FALSE(copy.SendUVE(BytesUVE("nope")));
-    EXPECT_FALSE(copy.TryReceiveUVE().has_value());
-    EXPECT_FALSE(copy.HasPendingUVE());
-    EXPECT_EQ(copy.PendingCountUVE(), 0U);
-    EXPECT_EQ(copy.StatsUVE(), UdpTransportStatsUVE{});
-    EXPECT_EQ(copy.LocalPortUVE(), 0U);
-    EXPECT_NE(moved.LocalPortUVE(), 0U);
+    UdpTransportEndpoint moved = std::move(copy);
+    EXPECT_FALSE(copy.Send(Bytes("nope")));
+    EXPECT_FALSE(copy.TryReceive().has_value());
+    EXPECT_FALSE(copy.HasPending());
+    EXPECT_EQ(copy.PendingCount(), 0U);
+    EXPECT_EQ(copy.Stats(), UdpTransportStats{});
+    EXPECT_EQ(copy.LocalPort(), 0U);
+    EXPECT_NE(moved.LocalPort(), 0U);
 }
 
-TEST(UdpTransportUVE, InvalidConfigsReturnNullopt) {
-    UdpTransportConfigUVE badHost = ConfigUVE(kUdpTestPortAUVE, kUdpTestPortBUVE);
+TEST(UdpTransport, InvalidConfigsReturnNullopt) {
+    UdpTransportConfig badHost = Config(kUdpTestPortA, kUdpTestPortB);
     badHost.remoteHost = "not-a-host";
-    EXPECT_FALSE(CreateUdpTransportEndpointUVE(badHost).has_value());
+    EXPECT_FALSE(CreateUdpTransportEndpoint(badHost).has_value());
     badHost.remoteHost = "999.1.1.1";
-    EXPECT_FALSE(CreateUdpTransportEndpointUVE(badHost).has_value());
+    EXPECT_FALSE(CreateUdpTransportEndpoint(badHost).has_value());
     badHost.remoteHost.clear();
-    EXPECT_FALSE(CreateUdpTransportEndpointUVE(badHost).has_value());
+    EXPECT_FALSE(CreateUdpTransportEndpoint(badHost).has_value());
     // Unresolvable names fail the same way invalid quads do (DNS, then nothing).
     badHost.remoteHost = "nonexistent.invalid";
-    EXPECT_FALSE(CreateUdpTransportEndpointUVE(badHost).has_value());
+    EXPECT_FALSE(CreateUdpTransportEndpoint(badHost).has_value());
 
-    const UdpTransportConfigUVE inUse = ConfigUVE(kUdpTestPortAUVE, kUdpTestPortBUVE);
-    std::optional<UdpTransportEndpointUVE> first = CreateUdpTransportEndpointUVE(inUse);
+    const UdpTransportConfig inUse = Config(kUdpTestPortA, kUdpTestPortB);
+    std::optional<UdpTransportEndpoint> first = CreateUdpTransportEndpoint(inUse);
     ASSERT_TRUE(first.has_value());
-    EXPECT_FALSE(CreateUdpTransportEndpointUVE(inUse).has_value());
+    EXPECT_FALSE(CreateUdpTransportEndpoint(inUse).has_value());
 }
 
-TEST(UdpTransportUVE, ResolveNumericQuadsWithoutTheNameService) {
-    EXPECT_EQ(ResolveUdpHostUVE("127.0.0.1"), 0x7F000001U);
-    EXPECT_EQ(ResolveUdpHostUVE("192.168.1.10"), 0xC0A8010AU);
-    EXPECT_EQ(ResolveUdpHostUVE("0.0.0.0"), 0U);
-    EXPECT_EQ(ResolveUdpHostUVE("255.255.255.255"), 0xFFFFFFFFU);
+TEST(UdpTransport, ResolveNumericQuadsWithoutTheNameService) {
+    EXPECT_EQ(ResolveUdpHost("127.0.0.1"), 0x7F000001U);
+    EXPECT_EQ(ResolveUdpHost("192.168.1.10"), 0xC0A8010AU);
+    EXPECT_EQ(ResolveUdpHost("0.0.0.0"), 0U);
+    EXPECT_EQ(ResolveUdpHost("255.255.255.255"), 0xFFFFFFFFU);
 }
 
-TEST(UdpTransportUVE, ResolveLocalhostHitsLoopback) {
+TEST(UdpTransport, ResolveLocalhostHitsLoopback) {
     // The one name every resolver answers without leaving the machine.
-    EXPECT_EQ(ResolveUdpHostUVE("localhost"), 0x7F000001U);
+    EXPECT_EQ(ResolveUdpHost("localhost"), 0x7F000001U);
 }
 
-TEST(UdpTransportUVE, ResolveUnresolvableFailsClosed) {
-    EXPECT_FALSE(ResolveUdpHostUVE("").has_value());
-    EXPECT_FALSE(ResolveUdpHostUVE("not a host!").has_value());
-    EXPECT_FALSE(ResolveUdpHostUVE("nonexistent.invalid").has_value());
+TEST(UdpTransport, ResolveUnresolvableFailsClosed) {
+    EXPECT_FALSE(ResolveUdpHost("").has_value());
+    EXPECT_FALSE(ResolveUdpHost("not a host!").has_value());
+    EXPECT_FALSE(ResolveUdpHost("nonexistent.invalid").has_value());
     // IPv6-only answers are failures to an IPv4 transport, not fallbacks.
-    EXPECT_FALSE(ResolveUdpHostUVE("::1").has_value());
-    EXPECT_FALSE(ResolveUdpHostUVE("999.999.999.999").has_value());
+    EXPECT_FALSE(ResolveUdpHost("::1").has_value());
+    EXPECT_FALSE(ResolveUdpHost("999.999.999.999").has_value());
 }
 
-TEST(UdpTransportUVE, FactoryAcceptsHostnames) {
+TEST(UdpTransport, FactoryAcceptsHostnames) {
     // Port 9 (discard) has nobody listening, like the ephemeral test: UDP connects without
     // a handshake, so the factory proves resolve plus bind - "localhost" now builds.
-    UdpTransportConfigUVE config;
+    UdpTransportConfig config;
     config.remoteHost = "localhost";
     config.remotePort = 9U;
-    const std::optional<UdpTransportEndpointUVE> endpoint =
-        CreateUdpTransportEndpointUVE(config);
+    const std::optional<UdpTransportEndpoint> endpoint =
+        CreateUdpTransportEndpoint(config);
     ASSERT_TRUE(endpoint.has_value());
-    EXPECT_NE(endpoint->LocalPortUVE(), 0U);
+    EXPECT_NE(endpoint->LocalPort(), 0U);
 }
 
-TEST(UdpTransportUVE, EphemeralPortBindsAndReports) {
-    UdpTransportConfigUVE config;
+TEST(UdpTransport, EphemeralPortBindsAndReports) {
+    UdpTransportConfig config;
     config.remoteHost = "127.0.0.1";
     // Port 9 (discard) has nobody listening, which is fine: UDP connects without a
     // handshake, so the factory only proves the local bind plus the remote parses.
     config.remotePort = 9U;
-    std::optional<UdpTransportEndpointUVE> endpoint = CreateUdpTransportEndpointUVE(config);
+    std::optional<UdpTransportEndpoint> endpoint = CreateUdpTransportEndpoint(config);
     ASSERT_TRUE(endpoint.has_value());
-    EXPECT_NE(endpoint->LocalPortUVE(), 0U);
+    EXPECT_NE(endpoint->LocalPort(), 0U);
 }
 
-TEST(UdpTransportUVE, SessionHandshakesOverRealUdp) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, SessionHandshakesOverRealUdp) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    NetworkSessionUVE client(SessionRoleUVE::Client,
-                             std::make_unique<UdpTransportEndpointUVE>(pair->a));
-    NetworkSessionUVE server(SessionRoleUVE::Server,
-                             std::make_unique<UdpTransportEndpointUVE>(pair->b));
-    ASSERT_TRUE(client.ConnectUVE(0U));
+    NetworkSession client(SessionRole::Client,
+                             std::make_unique<UdpTransportEndpoint>(pair->a));
+    NetworkSession server(SessionRole::Server,
+                             std::make_unique<UdpTransportEndpoint>(pair->b));
+    ASSERT_TRUE(client.Connect(0U));
 
     // The session core is unchanged - same pump, same handshake, now over the wire. The
     // clock crawls at 1ms a round with a 5s timeout, so the poll budget cannot trip it.
     std::uint64_t nowMs = 0U;
-    const bool established = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    const bool established = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
-        return client.StateUVE() == SessionStateUVE::Established &&
-               server.StateUVE() == SessionStateUVE::Established;
+        return client.State() == SessionState::Established &&
+               server.State() == SessionState::Established;
     });
     ASSERT_TRUE(established);
 
-    ASSERT_TRUE(client.SendDataUVE(BytesUVE("ping")));
-    ASSERT_TRUE(server.SendDataUVE(BytesUVE("pong")));
+    ASSERT_TRUE(client.SendData(Bytes("ping")));
+    ASSERT_TRUE(server.SendData(Bytes("pong")));
     std::optional<std::vector<std::uint8_t>> toServer;
     std::optional<std::vector<std::uint8_t>> toClient;
-    const bool exchanged = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    const bool exchanged = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
         if (!toServer.has_value()) {
-            toServer = server.TryReceiveDataUVE();
+            toServer = server.TryReceiveData();
         }
         if (!toClient.has_value()) {
-            toClient = client.TryReceiveDataUVE();
+            toClient = client.TryReceiveData();
         }
         return toServer.has_value() && toClient.has_value();
     });
     ASSERT_TRUE(exchanged);
-    EXPECT_EQ(toServer, BytesUVE("ping"));
-    EXPECT_EQ(toClient, BytesUVE("pong"));
+    EXPECT_EQ(toServer, Bytes("ping"));
+    EXPECT_EQ(toClient, Bytes("pong"));
 }
 
-TEST(UdpTransportUVE, SessionRedialsOverRealUdp) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, SessionRedialsOverRealUdp) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    NetworkSessionUVE client(SessionRoleUVE::Client,
-                             std::make_unique<UdpTransportEndpointUVE>(pair->a));
-    NetworkSessionUVE server(SessionRoleUVE::Server,
-                             std::make_unique<UdpTransportEndpointUVE>(pair->b));
+    NetworkSession client(SessionRole::Client,
+                             std::make_unique<UdpTransportEndpoint>(pair->a));
+    NetworkSession server(SessionRole::Server,
+                             std::make_unique<UdpTransportEndpoint>(pair->b));
     constexpr std::uint64_t kToken = 0x0102030405060708U;
-    client.SetReconnectConfigUVE(SessionReconnectConfigUVE{50U, 20U});
-    ASSERT_TRUE(client.ConnectUVE(0U, kToken));
+    client.SetReconnectConfig(SessionReconnectConfig{50U, 20U});
+    ASSERT_TRUE(client.Connect(0U, kToken));
 
     // Same crawl-the-clock poll as the handshake test: real sockets, fake session time.
     std::uint64_t nowMs = 0U;
-    const bool established = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    const bool established = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
-        return client.StateUVE() == SessionStateUVE::Established &&
-               server.StateUVE() == SessionStateUVE::Established;
+        return client.State() == SessionState::Established &&
+               server.State() == SessionState::Established;
     });
     ASSERT_TRUE(established);
 
     // Jump the clock past the silence timeout with the wire idle: both sides drop, and
     // the client starts redialing on its own.
-    nowMs += kDefaultSessionTimeoutMsUVE;
-    client.UpdateUVE(nowMs);
-    server.UpdateUVE(nowMs);
-    ASSERT_EQ(client.StateUVE(), SessionStateUVE::Reconnecting);
-    ASSERT_EQ(server.StateUVE(), SessionStateUVE::Disconnected);
+    nowMs += kDefaultSessionTimeoutMs;
+    client.Update(nowMs);
+    server.Update(nowMs);
+    ASSERT_EQ(client.State(), SessionState::Reconnecting);
+    ASSERT_EQ(server.State(), SessionState::Disconnected);
 
-    const bool resumed = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    const bool resumed = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
-        return client.StateUVE() == SessionStateUVE::Established;
+        return client.State() == SessionState::Established;
     });
     ASSERT_TRUE(resumed);
-    EXPECT_TRUE(server.DidResumeUVE());
-    EXPECT_TRUE(client.DidResumeUVE());
-    EXPECT_EQ(server.SessionTokenUVE(), kToken);
-    EXPECT_EQ(client.ReconnectAttemptsUVE(), 1U);
+    EXPECT_TRUE(server.DidResume());
+    EXPECT_TRUE(client.DidResume());
+    EXPECT_EQ(server.SessionToken(), kToken);
+    EXPECT_EQ(client.ReconnectAttempts(), 1U);
 }
 
-TEST(UdpTransportUVE, RpcRoundTripsOverRealUdp) {
-    std::optional<UdpPairUVE> pair = MakePairUVE();
+TEST(UdpTransport, RpcRoundTripsOverRealUdp) {
+    std::optional<UdpPair> pair = MakePair();
     ASSERT_TRUE(pair.has_value());
-    NetworkSessionUVE clientSession(SessionRoleUVE::Client,
-                                    std::make_unique<UdpTransportEndpointUVE>(pair->a));
-    NetworkSessionUVE serverSession(SessionRoleUVE::Server,
-                                    std::make_unique<UdpTransportEndpointUVE>(pair->b));
-    NetworkRpcUVE client(std::move(clientSession));
-    NetworkRpcUVE server(std::move(serverSession));
-    ASSERT_TRUE(server.RegisterMethodUVE("add", [](const std::span<const Blueprint::ValueUVE> args) {
+    NetworkSession clientSession(SessionRole::Client,
+                                    std::make_unique<UdpTransportEndpoint>(pair->a));
+    NetworkSession serverSession(SessionRole::Server,
+                                    std::make_unique<UdpTransportEndpoint>(pair->b));
+    NetworkRpc client(std::move(clientSession));
+    NetworkRpc server(std::move(serverSession));
+    ASSERT_TRUE(server.RegisterMethod("add", [](const std::span<const Blueprint::Value> args) {
         const std::int64_t lhs = std::get<std::int64_t>(args[0]);
         const std::int64_t rhs = std::get<std::int64_t>(args[1]);
-        return RpcOkUVE(Blueprint::ValueUVE{lhs + rhs});
+        return RpcOk(Blueprint::Value{lhs + rhs});
     }));
-    ASSERT_TRUE(client.SessionUVE().ConnectUVE(0U));
+    ASSERT_TRUE(client.Session().Connect(0U));
 
     // Same crawl-the-clock poll as the handshake test: real sockets, fake session time.
     std::uint64_t nowMs = 0U;
-    const bool established = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    const bool established = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
-        return client.SessionUVE().StateUVE() == SessionStateUVE::Established &&
-               server.SessionUVE().StateUVE() == SessionStateUVE::Established;
+        return client.Session().State() == SessionState::Established &&
+               server.Session().State() == SessionState::Established;
     });
     ASSERT_TRUE(established);
 
     // The RPC layer is unchanged - same calls, same framing, now over the wire.
-    std::optional<RpcOutcomeUVE> result;
-    const RpcCallIdUVE call =
-        client.CallUVE("add",
-                       {Blueprint::ValueUVE{std::int64_t{20}}, Blueprint::ValueUVE{std::int64_t{22}}},
-                       [&](const RpcCallIdUVE /*id*/, const RpcOutcomeUVE& outcome) {
+    std::optional<RpcOutcome> result;
+    const RpcCallId call =
+        client.Call("add",
+                       {Blueprint::Value{std::int64_t{20}}, Blueprint::Value{std::int64_t{22}}},
+                       [&](const RpcCallId /*id*/, const RpcOutcome& outcome) {
                            result = outcome;
                        });
-    ASSERT_NE(call, kInvalidRpcCallIdUVE);
-    const bool answered = PollUntilUVE([&] {
-        client.UpdateUVE(nowMs);
-        server.UpdateUVE(nowMs);
+    ASSERT_NE(call, kInvalidRpcCallId);
+    const bool answered = PollUntil([&] {
+        client.Update(nowMs);
+        server.Update(nowMs);
         ++nowMs;
         return result.has_value();
     });
     ASSERT_TRUE(answered);
     EXPECT_TRUE(result->ok);
-    EXPECT_EQ(result->value, Blueprint::ValueUVE{std::int64_t{42}});
+    EXPECT_EQ(result->value, Blueprint::Value{std::int64_t{42}});
 }
 
 } // namespace

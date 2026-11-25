@@ -8,9 +8,9 @@
 
 namespace UVE::Asset {
 
-inline constexpr std::size_t kMaximumTgaDecodedPixelBytesUVE = 64U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumTgaDecodedPixelBytes = 64U * 1024U * 1024U;
 
-struct TgaRgba8ImageUVE final {
+struct TgaRgba8Image final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::vector<std::byte> pixels;
@@ -24,7 +24,7 @@ struct TgaRgba8ImageUVE final {
 /// or 32-bit BGRA palette entries, with 16-bit BGR5551 and 32-bit BGRA indexed alpha conversion,
 /// honors the origin bits,
 /// and leaves the caller's output unchanged on every failure.
-[[nodiscard]] bool DecodeTgaRgba8ImageUVE(const std::vector<std::byte>& bytes,
-                                          TgaRgba8ImageUVE& outImage) noexcept;
+[[nodiscard]] bool DecodeTgaRgba8Image(const std::vector<std::byte>& bytes,
+                                          TgaRgba8Image& outImage) noexcept;
 
 } // namespace UVE::Asset

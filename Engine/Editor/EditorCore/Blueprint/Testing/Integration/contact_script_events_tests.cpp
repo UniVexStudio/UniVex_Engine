@@ -3,7 +3,7 @@
 // Whole-engine contact edges: collision and Area3D overlap transitions reach both parties'
 // scripts as `collision_enter/exit` / `overlap_enter/exit`, each carrying the other object's
 // name. Lives here rather than beside the animation-event test because uve_engine_tests is
-// desktop-GL-gated while these need only a headless EngineCoreUVE.
+// desktop-GL-gated while these need only a headless EngineCore.
 
 #include <chrono>
 #include <cstddef>
@@ -31,8 +31,8 @@
 namespace UVE::Integration::Tests {
 namespace {
 
-Core::EngineConfigUVE MakeHeadlessTestConfigUVE() {
-    Core::EngineConfigUVE config{};
+Core::EngineConfig MakeHeadlessTestConfig() {
+    Core::EngineConfig config{};
     config.enableConsoleLogging = false;
     config.logFilePath = "uve_contact_script_events_tests.log";
     config.threadPoolWorkerCount = 2;
@@ -40,144 +40,144 @@ Core::EngineConfigUVE MakeHeadlessTestConfigUVE() {
     config.assetDatabaseFilePath = "uve_contact_script_events_tests.uvassetdb";
     config.projectSettingsFilePath = "uve_contact_script_events_tests.project.uvsettings";
     config.inputMapFilePath = "uve_contact_script_events_tests.project.uvinput";
-    config.headlessUVE = true;
+    config.headless = true;
     return config;
 }
 
-void WriteMountedScriptUVE(Asset::IFileSystemUVE& fileSystem, const std::string& fileName,
+void WriteMountedScript(Asset::IFileSystem& fileSystem, const std::string& fileName,
                             const std::string& script) {
     const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
-    ASSERT_TRUE(fileSystem.WriteFileUVE(fileName, std::vector<std::byte>(bytes, bytes + script.size())));
+    ASSERT_TRUE(fileSystem.WriteFile(fileName, std::vector<std::byte>(bytes, bytes + script.size())));
 }
 
-TEST(ContactScriptEventsUVETest, CollisionScriptEvents_BothBodiesHearEnterThenExitWithTheOthersName) {
-    Core::EngineCoreUVE engine(MakeHeadlessTestConfigUVE());
+TEST(ContactScriptEventsTest, CollisionScriptEvents_BothBodiesHearEnterThenExitWithTheOthersName) {
+    Core::EngineCore engine(MakeHeadlessTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
     const std::filesystem::path mountDirectory = "uve_contact_script_events_bump_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
     const std::string script = "var enters = 0\nvar exits = 0\nvar last = \"\"\n"
                                "\non collision_enter(n):\n    enters += 1\n    last = n\n"
                                "\non collision_exit(n):\n    exits += 1\n    last = n\n";
-    WriteMountedScriptUVE(fileSystem, "bump.uvs", script);
+    WriteMountedScript(fileSystem, "bump.uvs", script);
 
     // Two unit boxes half-overlapping: A is named, B is deliberately not, so A hears "".
-    const Scene::EntityUVE boxA = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, boxA, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(boxA, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(boxA, Scene::NameComponentUVE{"BoxA"});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(boxA, Scene::ScriptComponentUVE{"bump.uvs"});
-    const Scene::EntityUVE boxB = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE overlapTransform;
-    overlapTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, boxB, overlapTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(boxB, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(boxB, Scene::ScriptComponentUVE{"bump.uvs"});
+    const Scene::Entity boxA = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, boxA, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ColliderComponent>(boxA, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::NameComponent>(boxA, Scene::NameComponent{"BoxA"});
+    entityManager.AddComponent<Scene::ScriptComponent>(boxA, Scene::ScriptComponent{"bump.uvs"});
+    const Scene::Entity boxB = entityManager.CreateEntity();
+    Scene::TransformComponent overlapTransform;
+    overlapTransform.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, boxB, overlapTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(boxB, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::ScriptComponent>(boxB, Scene::ScriptComponent{"bump.uvs"});
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
-        engine.TickFrameUVE();
-        Blueprint::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
-        if (a != nullptr && a->GetFieldUVE("enters") == Blueprint::ValueUVE{std::int64_t{1}}) {
+        engine.TickFrame();
+        Blueprint::ScriptInstance* const a = engine.FindUVScriptInstance(boxA);
+        if (a != nullptr && a->GetField("enters") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    Blueprint::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
-    Blueprint::ScriptInstanceUVE* const b = engine.FindUVScriptInstanceUVE(boxB);
+    Blueprint::ScriptInstance* const a = engine.FindUVScriptInstance(boxA);
+    Blueprint::ScriptInstance* const b = engine.FindUVScriptInstance(boxB);
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(a->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(a->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{}});
-    EXPECT_EQ(b->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(b->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"BoxA"}});
+    EXPECT_EQ(a->GetField("enters"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(a->GetField("last"), Blueprint::Value{std::string{}});
+    EXPECT_EQ(b->GetField("enters"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(b->GetField("last"), Blueprint::Value{std::string{"BoxA"}});
 
-    entityManager.GetComponentUVE<Scene::TransformComponentUVE>(boxB).localPosition =
-        Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(boxB).dirty = true;
+    entityManager.GetComponent<Scene::TransformComponent>(boxB).localPosition =
+        Math::Vector3{5.0F, 0.0F, 0.0F};
+    entityManager.GetComponent<Scene::WorldTransformComponent>(boxB).dirty = true;
     const auto exitStartedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - exitStartedAt < std::chrono::seconds(5)) {
-        engine.TickFrameUVE();
-        if (a->GetFieldUVE("exits") == Blueprint::ValueUVE{std::int64_t{1}}) {
+        engine.TickFrame();
+        if (a->GetField("exits") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    EXPECT_EQ(a->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(b->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(a->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}}) << "no double-enter";
+    EXPECT_EQ(a->GetField("exits"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(b->GetField("exits"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(a->GetField("enters"), Blueprint::Value{std::int64_t{1}}) << "no double-enter";
 
     std::filesystem::remove_all(mountDirectory);
-    std::filesystem::remove(MakeHeadlessTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeHeadlessTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 
-TEST(ContactScriptEventsUVETest, OverlapScriptEvents_AreaAndBodyHearEnterThenExit) {
-    Core::EngineCoreUVE engine(MakeHeadlessTestConfigUVE());
+TEST(ContactScriptEventsTest, OverlapScriptEvents_AreaAndBodyHearEnterThenExit) {
+    Core::EngineCore engine(MakeHeadlessTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = engine.GetServices().GetSceneGraph();
 
-    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
     const std::filesystem::path mountDirectory = "uve_contact_script_events_zone_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
-    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    fileSystem.MountDirectory("", mountDirectory, 0);
     const std::string script = "var enters = 0\nvar exits = 0\nvar last = \"\"\n"
                                "\non overlap_enter(n):\n    enters += 1\n    last = n\n"
                                "\non overlap_exit(n):\n    exits += 1\n    last = n\n";
-    WriteMountedScriptUVE(fileSystem, "zone.uvs", script);
+    WriteMountedScript(fileSystem, "zone.uvs", script);
 
-    const Scene::EntityUVE zone = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, zone, Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<Scene::AreaComponentUVE>(zone, Scene::AreaComponentUVE{});
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(zone, Scene::NameComponentUVE{"Zone"});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(zone, Scene::ScriptComponentUVE{"zone.uvs"});
-    const Scene::EntityUVE player = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE insideTransform;
-    insideTransform.localPosition = Math::Vector3UVE{0.5F, 0.0F, 0.0F};
-    sceneGraph.AttachTransformUVE(entityManager, player, insideTransform);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(player, Scene::ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Scene::NameComponentUVE>(player, Scene::NameComponentUVE{"Player"});
-    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(player, Scene::ScriptComponentUVE{"zone.uvs"});
+    const Scene::Entity zone = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, zone, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::AreaComponent>(zone, Scene::AreaComponent{});
+    entityManager.AddComponent<Scene::NameComponent>(zone, Scene::NameComponent{"Zone"});
+    entityManager.AddComponent<Scene::ScriptComponent>(zone, Scene::ScriptComponent{"zone.uvs"});
+    const Scene::Entity player = entityManager.CreateEntity();
+    Scene::TransformComponent insideTransform;
+    insideTransform.localPosition = Math::Vector3{0.5F, 0.0F, 0.0F};
+    sceneGraph.AttachTransform(entityManager, player, insideTransform);
+    entityManager.AddComponent<Scene::ColliderComponent>(player, Scene::ColliderComponent{});
+    entityManager.AddComponent<Scene::NameComponent>(player, Scene::NameComponent{"Player"});
+    entityManager.AddComponent<Scene::ScriptComponent>(player, Scene::ScriptComponent{"zone.uvs"});
 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
-        engine.TickFrameUVE();
-        Blueprint::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
-        if (z != nullptr && z->GetFieldUVE("enters") == Blueprint::ValueUVE{std::int64_t{1}}) {
+        engine.TickFrame();
+        Blueprint::ScriptInstance* const z = engine.FindUVScriptInstance(zone);
+        if (z != nullptr && z->GetField("enters") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    Blueprint::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
-    Blueprint::ScriptInstanceUVE* const p = engine.FindUVScriptInstanceUVE(player);
+    Blueprint::ScriptInstance* const z = engine.FindUVScriptInstance(zone);
+    Blueprint::ScriptInstance* const p = engine.FindUVScriptInstance(player);
     ASSERT_NE(z, nullptr);
     ASSERT_NE(p, nullptr);
-    EXPECT_EQ(z->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(z->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"Player"}});
-    EXPECT_EQ(p->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(p->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"Zone"}});
+    EXPECT_EQ(z->GetField("enters"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(z->GetField("last"), Blueprint::Value{std::string{"Player"}});
+    EXPECT_EQ(p->GetField("enters"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(p->GetField("last"), Blueprint::Value{std::string{"Zone"}});
 
-    entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player).localPosition =
-        Math::Vector3UVE{5.0F, 0.0F, 0.0F};
-    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(player).dirty = true;
+    entityManager.GetComponent<Scene::TransformComponent>(player).localPosition =
+        Math::Vector3{5.0F, 0.0F, 0.0F};
+    entityManager.GetComponent<Scene::WorldTransformComponent>(player).dirty = true;
     const auto exitStartedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - exitStartedAt < std::chrono::seconds(5)) {
-        engine.TickFrameUVE();
-        if (z->GetFieldUVE("exits") == Blueprint::ValueUVE{std::int64_t{1}}) {
+        engine.TickFrame();
+        if (z->GetField("exits") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    EXPECT_EQ(z->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(p->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(z->GetField("exits"), Blueprint::Value{std::int64_t{1}});
+    EXPECT_EQ(p->GetField("exits"), Blueprint::Value{std::int64_t{1}});
 
     std::filesystem::remove_all(mountDirectory);
-    std::filesystem::remove(MakeHeadlessTestConfigUVE().assetDatabaseFilePath);
+    std::filesystem::remove(MakeHeadlessTestConfig().assetDatabaseFilePath);
     engine.Shutdown();
 }
 

@@ -16,7 +16,7 @@
 namespace UVE::Blueprint::Nodes {
 
 /// Canonical node domains matching the Blueprint/Nodes architecture.
-enum class BlueprintNodeDomainUVE : std::uint8_t {
+enum class BlueprintNodeDomain : std::uint8_t {
     Event = 0,
     Flow,
     Logic,
@@ -46,29 +46,29 @@ enum class BlueprintNodeDomainUVE : std::uint8_t {
     Utility,
 };
 
-[[nodiscard]] std::string_view BlueprintNodeDomainNameUVE(BlueprintNodeDomainUVE domain) noexcept;
+[[nodiscard]] std::string_view BlueprintNodeDomainName(BlueprintNodeDomain domain) noexcept;
 
-/// Classifies any registered Blueprint node type into its canonical BlueprintNodeDomainUVE.
-[[nodiscard]] BlueprintNodeDomainUVE ClassifyBlueprintNodeDomainUVE(const Asset::BlueprintNodeTypeUVE& node) noexcept;
+/// Classifies any registered Blueprint node type into its canonical BlueprintNodeDomain.
+[[nodiscard]] BlueprintNodeDomain ClassifyBlueprintNodeDomain(const Asset::BlueprintNodeType& node) noexcept;
 
 /// Returns all built-in Blueprint catalog nodes that belong to `domain`.
-[[nodiscard]] std::vector<const Asset::BlueprintNodeTypeUVE*> GetBlueprintNodesByDomainUVE(
-    BlueprintNodeDomainUVE domain);
+[[nodiscard]] std::vector<const Asset::BlueprintNodeType*> GetBlueprintNodesByDomain(
+    BlueprintNodeDomain domain);
 
 /// Query filter for palette/search lookups across the Blueprint node catalog.
-struct BlueprintNodeQueryUVE final {
+struct BlueprintNodeQuery final {
     std::string searchText;
-    std::optional<BlueprintNodeDomainUVE> domain;
-    std::optional<Asset::BlueprintGraphKindUVE> graphKind;
+    std::optional<BlueprintNodeDomain> domain;
+    std::optional<Asset::BlueprintGraphKind> graphKind;
     /// When set, nodes requiring a component not present in this set are excluded.
     std::optional<std::set<std::string>> availableComponents;
 };
 
 /// Searches the built-in Blueprint node catalog with optional domain, graph kind, component, and text filters.
-[[nodiscard]] std::vector<const Asset::BlueprintNodeTypeUVE*> SearchBlueprintNodesUVE(
-    const BlueprintNodeQueryUVE& query);
+[[nodiscard]] std::vector<const Asset::BlueprintNodeType*> SearchBlueprintNodes(
+    const BlueprintNodeQuery& query);
 
 /// Returns the number of built-in nodes per domain across the entire catalog.
-[[nodiscard]] std::map<BlueprintNodeDomainUVE, std::size_t> GetBlueprintNodeDomainCountsUVE();
+[[nodiscard]] std::map<BlueprintNodeDomain, std::size_t> GetBlueprintNodeDomainCounts();
 
 } // namespace UVE::Blueprint::Nodes

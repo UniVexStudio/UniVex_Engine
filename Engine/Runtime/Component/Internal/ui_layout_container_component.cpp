@@ -7,12 +7,12 @@
 
 namespace UVE::Scene {
 
-bool IsUILayoutContainerComponentValidUVE(const UILayoutContainerComponentUVE& value) noexcept {
-    const bool directionKnown = value.direction == UILayoutDirectionUVE::Vertical ||
-                                value.direction == UILayoutDirectionUVE::Horizontal;
-    const bool alignmentKnown = value.alignment == UILayoutAlignmentUVE::Start ||
-                                value.alignment == UILayoutAlignmentUVE::Center ||
-                                value.alignment == UILayoutAlignmentUVE::End;
+bool IsUILayoutContainerComponentValid(const UILayoutContainerComponent& value) noexcept {
+    const bool directionKnown = value.direction == UILayoutDirection::Vertical ||
+                                value.direction == UILayoutDirection::Horizontal;
+    const bool alignmentKnown = value.alignment == UILayoutAlignment::Start ||
+                                value.alignment == UILayoutAlignment::Center ||
+                                value.alignment == UILayoutAlignment::End;
     return directionKnown && alignmentKnown && std::isfinite(value.rect.position.x) &&
            std::isfinite(value.rect.position.y) && std::isfinite(value.rect.size.x) &&
            std::isfinite(value.rect.size.y) && value.rect.size.x >= 0.0F && value.rect.size.y >= 0.0F &&
@@ -20,20 +20,20 @@ bool IsUILayoutContainerComponentValidUVE(const UILayoutContainerComponentUVE& v
            value.spacing >= 0.0F;
 }
 
-UILayoutContainerComponentUVE SanitizeUILayoutContainerComponentUVE(
-    const UILayoutContainerComponentUVE& value) noexcept {
-    UILayoutContainerComponentUVE out = value;
-    if (out.direction != UILayoutDirectionUVE::Vertical &&
-        out.direction != UILayoutDirectionUVE::Horizontal) {
-        out.direction = UILayoutDirectionUVE::Vertical;
+UILayoutContainerComponent SanitizeUILayoutContainerComponent(
+    const UILayoutContainerComponent& value) noexcept {
+    UILayoutContainerComponent out = value;
+    if (out.direction != UILayoutDirection::Vertical &&
+        out.direction != UILayoutDirection::Horizontal) {
+        out.direction = UILayoutDirection::Vertical;
     }
-    if (out.alignment != UILayoutAlignmentUVE::Start &&
-        out.alignment != UILayoutAlignmentUVE::Center &&
-        out.alignment != UILayoutAlignmentUVE::End) {
-        out.alignment = UILayoutAlignmentUVE::Start;
+    if (out.alignment != UILayoutAlignment::Start &&
+        out.alignment != UILayoutAlignment::Center &&
+        out.alignment != UILayoutAlignment::End) {
+        out.alignment = UILayoutAlignment::Start;
     }
-    if (!Math::IsFiniteUVE(out.rect)) {
-        out.rect = Math::RectUVE{{0.0F, 0.0F}, {320.0F, 240.0F}};
+    if (!Math::IsFinite(out.rect)) {
+        out.rect = Math::Rect{{0.0F, 0.0F}, {320.0F, 240.0F}};
     } else {
         out.rect.size.x = std::max(0.0F, out.rect.size.x);
         out.rect.size.y = std::max(0.0F, out.rect.size.y);
@@ -43,20 +43,20 @@ UILayoutContainerComponentUVE SanitizeUILayoutContainerComponentUVE(
     return out;
 }
 
-Math::RectUVE ResolveUILayoutContentRectUVE(
-    const UILayoutContainerComponentUVE& value) noexcept {
-    const UILayoutContainerComponentUVE safe = SanitizeUILayoutContainerComponentUVE(value);
-    const Math::Vector2UVE pad{safe.padding, safe.padding};
-    return Math::RectUVE{
+Math::Rect ResolveUILayoutContentRect(
+    const UILayoutContainerComponent& value) noexcept {
+    const UILayoutContainerComponent safe = SanitizeUILayoutContainerComponent(value);
+    const Math::Vector2 pad{safe.padding, safe.padding};
+    return Math::Rect{
         .position = safe.rect.position + pad,
-        .size = Math::Vector2UVE{
+        .size = Math::Vector2{
             std::max(0.0F, safe.rect.size.x - safe.padding * 2.0F),
             std::max(0.0F, safe.rect.size.y - safe.padding * 2.0F),
         },
     };
 }
 
-std::uint32_t ComputeUILayoutLineCountUVE(const UILayoutContainerComponentUVE& value,
+std::uint32_t ComputeUILayoutLineCount(const UILayoutContainerComponent& value,
                                           const std::uint32_t childCount) noexcept {
     if (childCount == 0U) {
         return 0U;

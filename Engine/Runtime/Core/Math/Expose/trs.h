@@ -15,31 +15,31 @@ namespace UVE::Math {
 /// bone attachments all used to combine transforms as three separate members plus hand-rolled
 /// quaternion/vector arithmetic; this type makes that composition one named operation.
 /// A point `p` is transformed as `translation + rotation * (scale * p)` (scale first, then
-/// rotation, then translation), matching `Matrix4x4UVE::ComposeTrsUVE` exactly.
+/// rotation, then translation), matching `Matrix4x4::ComposeTrs` exactly.
 /// Deliberately minimal, matching this module's precedent: compose, forward/inverse point,
 /// direction, and rotation-delta transforms, equality, and a debug formatter. There is
 /// intentionally NO materialized
-/// inverse (`TryInverseUVE` returning a `TrsUVE`): rotation and non-uniform scale do not commute,
+/// inverse (`TryInverse` returning a `Trs`): rotation and non-uniform scale do not commute,
 /// so the inverse of a general TRS is not itself a TRS — the in-tree precedent is the reparent
 /// path refusing non-uniformly-scaled rotated parents, since no local TRS reproduces that world
 /// TRS. The `TryInverseTransform*UVE()` functions below are the exact inverse APPLICATION for
 /// every scale, which is what every caller actually needs.
 /// Thread-safety: value type; safe to copy/pass freely, no shared state.
-struct TrsUVE {
-    Vector3UVE translation{};
-    QuaternionUVE rotation{};
-    Vector3UVE scale{1.0F, 1.0F, 1.0F};
+struct Trs {
+    Vector3 translation{};
+    Quaternion rotation{};
+    Vector3 scale{1.0F, 1.0F, 1.0F};
 
     /// Returns the identity transform. Equivalent to the default constructor; provided for
     /// readability at call sites.
-    [[nodiscard]] static constexpr TrsUVE IdentityUVE() noexcept { return TrsUVE{}; }
+    [[nodiscard]] static constexpr Trs Identity() noexcept { return Trs{}; }
 };
 
-[[nodiscard]] constexpr bool operator==(const TrsUVE& lhs, const TrsUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator==(const Trs& lhs, const Trs& rhs) noexcept {
     return lhs.translation == rhs.translation && lhs.rotation == rhs.rotation && lhs.scale == rhs.scale;
 }
 
-[[nodiscard]] constexpr bool operator!=(const TrsUVE& lhs, const TrsUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator!=(const Trs& lhs, const Trs& rhs) noexcept {
     return !(lhs == rhs);
 }
 
@@ -55,16 +55,16 @@ struct TrsUVE {
 /// not commute, so a chain's grouping matters. That matches the scene graph exactly — this is
 /// its rule, verbatim — and any chain that needs order-independence under non-uniform scale
 /// should compose matrices instead.
-[[nodiscard]] TrsUVE ComposeUVE(const TrsUVE& parent, const TrsUVE& child) noexcept;
+[[nodiscard]] Trs Compose(const Trs& parent, const Trs& child) noexcept;
 
 /// Transforms `point` by `trs`: `translation + rotation * (scale * point)`.
-[[nodiscard]] Vector3UVE TransformPointUVE(const TrsUVE& trs, const Vector3UVE& point) noexcept;
+[[nodiscard]] Vector3 TransformPoint(const Trs& trs, const Vector3& point) noexcept;
 
 /// Transforms `direction` by `trs`, IGNORING translation: `rotation * (scale * direction)`.
 /// For directions (normals-ish quantities, drag deltas), which live in no position.
-[[nodiscard]] Vector3UVE TransformDirectionUVE(const TrsUVE& trs, const Vector3UVE& direction) noexcept;
+[[nodiscard]] Vector3 TransformDirection(const Trs& trs, const Vector3& direction) noexcept;
 
-/// The exact inverse of TransformPointUVE(): `(rotation^-1 * (point - translation)) / scale`.
+/// The exact inverse of TransformPoint(): `(rotation^-1 * (point - translation)) / scale`.
 /// Returns false (leaving `outPoint` untouched) if any input is non-finite, the rotation is
 /// degenerate (not invertible as a quaternion), or the result is non-finite — so a zero scale
 /// axis fails rather than producing an infinity, and callers simply propagate the failure.
@@ -72,13 +72,13 @@ struct TrsUVE {
 /// path in this tree (the editor's drag path refuses scales at or under 1e-5, bone attachments
 /// under 1e-6): callers pre-guard with their own cutoff, and this function revalidates cheaply.
 /// Unrotate-then-divide order, matching the editor's long-standing world-to-local arithmetic.
-[[nodiscard]] bool TryInverseTransformPointUVE(const TrsUVE& trs, const Vector3UVE& point,
-                                               Vector3UVE& outPoint) noexcept;
+[[nodiscard]] bool TryInverseTransformPoint(const Trs& trs, const Vector3& point,
+                                               Vector3& outPoint) noexcept;
 
-/// The exact inverse of TransformDirectionUVE(): `(rotation^-1 * direction) / scale`.
-/// Same contract as TryInverseTransformPointUVE().
-[[nodiscard]] bool TryInverseTransformDirectionUVE(const TrsUVE& trs, const Vector3UVE& direction,
-                                                   Vector3UVE& outDirection) noexcept;
+/// The exact inverse of TransformDirection(): `(rotation^-1 * direction) / scale`.
+/// Same contract as TryInverseTransformPoint().
+[[nodiscard]] bool TryInverseTransformDirection(const Trs& trs, const Vector3& direction,
+                                                   Vector3& outDirection) noexcept;
 
 /// Conjugates a world-space rotation delta into `trs`' frame: `rotation^-1 * worldDelta *
 /// rotation` — the local delta that reproduces `worldDelta` back under the parent, for the
@@ -90,11 +90,11 @@ struct TrsUVE {
 /// Normalize-then-conjugate order, matching the editor's long-standing world-to-local arithmetic.
 /// A materialized-inverse formulation (`parent^-1 * newWorld`) stays impossible — the inverse of
 /// a general TRS is not a TRS — so conjugation remains the value-type spelling of this gesture.
-[[nodiscard]] bool TryInverseTransformRotationUVE(const TrsUVE& trs,
-                                                 const QuaternionUVE& worldDelta,
-                                                 QuaternionUVE& outLocalDelta) noexcept;
+[[nodiscard]] bool TryInverseTransformRotation(const Trs& trs,
+                                                 const Quaternion& worldDelta,
+                                                 Quaternion& outLocalDelta) noexcept;
 
 /// Formats `trs` as `"Trs((tx, ty, tz), (qx, qy, qz, qw), (sx, sy, sz))"`, for logging/debugging.
-[[nodiscard]] std::string ToStringUVE(const TrsUVE& trs);
+[[nodiscard]] std::string ToString(const Trs& trs);
 
 } // namespace UVE::Math

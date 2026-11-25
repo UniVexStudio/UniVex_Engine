@@ -10,32 +10,32 @@
 
 namespace UVE::Scene {
 
-bool IsAudioSource3DObjectDefinitionValidUVE(const AudioSource3DObjectDefinitionUVE& value) noexcept {
-    return IsAudioSourceComponentValidUVE(value.source);
+bool IsAudioSource3DObjectDefinitionValid(const AudioSource3DObjectDefinition& value) noexcept {
+    return IsAudioSourceComponentValid(value.source);
 }
 
-void ApplyAudioSource3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                           const AudioSource3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, AudioSource3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, value.source);
+void ApplyAudioSource3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                           const AudioSource3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, AudioSource3DObjectDefinition::defaultName);
+    entityManager.AddComponent<AudioSourceComponent>(entity, value.source);
 }
 
-bool AudioSource3DUVE::IsPlayableUVE(const AudioSourceComponentUVE& source) noexcept {
-    return IsAudioSourceComponentValidUVE(source) && HasAudioSourceAssetPathUVE(source);
+bool AudioSource3D::IsPlayable(const AudioSourceComponent& source) noexcept {
+    return IsAudioSourceComponentValid(source) && HasAudioSourceAssetPath(source);
 }
 
-bool AudioSource3DUVE::ShouldAutoPlayOnAwakeUVE(const AudioSourceComponentUVE& source) noexcept {
-    return IsPlayableUVE(source) && source.playOnAwake;
+bool AudioSource3D::ShouldAutoPlayOnAwake(const AudioSourceComponent& source) noexcept {
+    return IsPlayable(source) && source.playOnAwake;
 }
 
-std::string_view AudioSource3DUVE::ResolveEffectiveMixerGroupUVE(
-    const AudioSourceComponentUVE& source, const std::string_view fallbackMasterGroup) noexcept {
+std::string_view AudioSource3D::ResolveEffectiveMixerGroup(
+    const AudioSourceComponent& source, const std::string_view fallbackMasterGroup) noexcept {
     return source.mixerGroup.empty() ? fallbackMasterGroup : std::string_view{source.mixerGroup};
 }
 
-float AudioSource3DUVE::EvaluateDistanceGainUVE(
-    const AudioSourceComponentUVE& source, const float listenerDistance) noexcept {
-    if (!IsAudioSourceComponentValidUVE(source) || !std::isfinite(listenerDistance) ||
+float AudioSource3D::EvaluateDistanceGain(
+    const AudioSourceComponent& source, const float listenerDistance) noexcept {
+    if (!IsAudioSourceComponentValid(source) || !std::isfinite(listenerDistance) ||
         listenerDistance < 0.0F) {
         return 0.0F;
     }
@@ -51,27 +51,27 @@ float AudioSource3DUVE::EvaluateDistanceGainUVE(
     }
     const float t = std::clamp((listenerDistance - source.minDistance) / span, 0.0F, 1.0F);
     switch (source.attenuationCurve) {
-        case AudioAttenuationCurveUVE::InverseSquare: {
+        case AudioAttenuationCurve::InverseSquare: {
             const float ratio = source.minDistance / std::max(listenerDistance, source.minDistance);
             const float inverseSquare = ratio * ratio;
             return std::clamp(inverseSquare * (1.0F - t), 0.0F, 1.0F);
         }
-        case AudioAttenuationCurveUVE::Linear:
+        case AudioAttenuationCurve::Linear:
         default:
             return 1.0F - t;
     }
 }
 
-float AudioSource3DUVE::ResolveEffectiveGainUVE(
-    const AudioSourceComponentUVE& source, const float listenerDistance) noexcept {
-    if (!IsAudioSourceComponentValidUVE(source)) {
+float AudioSource3D::ResolveEffectiveGain(
+    const AudioSourceComponent& source, const float listenerDistance) noexcept {
+    if (!IsAudioSourceComponentValid(source)) {
         return 0.0F;
     }
-    return source.volume * EvaluateDistanceGainUVE(source, listenerDistance);
+    return source.volume * EvaluateDistanceGain(source, listenerDistance);
 }
 
-bool AudioSource3DUVE::RequiresVoiceReplacementUVE(
-    const AudioSourceComponentUVE& previous, const AudioSourceComponentUVE& current) noexcept {
+bool AudioSource3D::RequiresVoiceReplacement(
+    const AudioSourceComponent& previous, const AudioSourceComponent& current) noexcept {
     return previous.audioAssetPath != current.audioAssetPath ||
            previous.looping != current.looping || previous.spatial != current.spatial ||
            previous.minDistance != current.minDistance ||

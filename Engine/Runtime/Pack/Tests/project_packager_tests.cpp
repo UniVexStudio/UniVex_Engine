@@ -15,12 +15,12 @@
 namespace UVE::Pack::Tests {
 namespace {
 
-class ProjectPackagerUVETest : public ::testing::Test {
+class ProjectPackagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        projectRoot = ::UVE::Tests::MakeTestCaseDirectoryUVE("root");
-        // Deliberately NOT created: PackUVE itself must create its output directory.
-        outputDirectory = ::UVE::Tests::ScratchPathUVE("packager_output");
+        projectRoot = ::UVE::Tests::MakeTestCaseDirectory("root");
+        // Deliberately NOT created: Pack itself must create its output directory.
+        outputDirectory = ::UVE::Tests::ScratchPath("packager_output");
 
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
         std::filesystem::create_directories(projectRoot / "content" / "icons");
@@ -73,8 +73,8 @@ protected:
 
     [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uvproject"; }
 
-    [[nodiscard]] ProjectPackOptionsUVE MakeOptionsUVE() const {
-        ProjectPackOptionsUVE options;
+    [[nodiscard]] ProjectPackOptions MakeOptions() const {
+        ProjectPackOptions options;
         options.projectFile = projectFile();
         options.runtimeExecutablePath = runtimeExecutablePath;
         options.outputDirectory = outputDirectory;
@@ -84,15 +84,15 @@ protected:
     std::filesystem::path projectRoot;
     std::filesystem::path outputDirectory;
     std::filesystem::path runtimeExecutablePath;
-    Platform::EditorProjectPackageUVE package;
+    Platform::EditorProjectPackage package;
 };
 
-TEST_F(ProjectPackagerUVETest, PackUVE_CopiesRuntimeManifestAndContentIntoOneFolder) {
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+TEST_F(ProjectPackagerTest, Pack_CopiesRuntimeManifestAndContentIntoOneFolder) {
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
+    const ProjectPackResult result = ProjectPackager::Pack(MakeOptions());
 
-    ASSERT_TRUE(result.IsSuccessUVE()) << result.message;
+    ASSERT_TRUE(result.IsSuccess()) << result.message;
     EXPECT_NE(result.message.find("Sky Runner"), std::string::npos);
     EXPECT_NE(result.message.find("v2.4.1-beta (build 17)"), std::string::npos);
     EXPECT_NE(result.message.find("publisher: Studio Labs"), std::string::npos);
@@ -104,33 +104,33 @@ TEST_F(ProjectPackagerUVETest, PackUVE_CopiesRuntimeManifestAndContentIntoOneFol
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / "content" / "icons" / "linux-64.png"));
 
     // The copied .uvproject's relative paths must still resolve unchanged against the copy.
-    const Platform::EditorProjectPackageLoadResultUVE reloaded =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(outputDirectory / "project.uvproject");
-    ASSERT_TRUE(reloaded.IsAcceptedUVE());
+    const Platform::EditorProjectPackageLoadResult reloaded =
+        Platform::EditorProjectPackageCodec::Load(outputDirectory / "project.uvproject");
+    ASSERT_TRUE(reloaded.IsAccepted());
     EXPECT_EQ(reloaded.package->productMetadata, package.productMetadata);
     EXPECT_EQ(reloaded.package->applicationSettings, package.applicationSettings);
     EXPECT_TRUE(std::filesystem::is_regular_file(outputDirectory / reloaded.package->contentRoot /
                                                  reloaded.package->startupScenePath));
 }
 
-TEST_F(ProjectPackagerUVETest, PackUVE_RejectsMissingReferencedApplicationIcon) {
+TEST_F(ProjectPackagerTest, Pack_RejectsMissingReferencedApplicationIcon) {
     package.applicationSettings.iconPathsByTarget["windows"] = {{256U, "icons/missing.png"}};
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
+    const ProjectPackResult result = ProjectPackager::Pack(MakeOptions());
 
-    EXPECT_FALSE(result.IsSuccessUVE());
-    EXPECT_EQ(result.code, ProjectPackCodeUVE::ApplicationResourceNotFound);
+    EXPECT_FALSE(result.IsSuccess());
+    EXPECT_EQ(result.code, ProjectPackCode::ApplicationResourceNotFound);
     EXPECT_FALSE(std::filesystem::exists(outputDirectory));
 }
 
-TEST_F(ProjectPackagerUVETest, PackUVE_PreservesRuntimeExecutablePermissionBits) {
+TEST_F(ProjectPackagerTest, Pack_PreservesRuntimeExecutablePermissionBits) {
 #if defined(_WIN32)
     GTEST_SKIP() << "POSIX execute permissions are not represented on Windows filesystem";
 #else
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    ASSERT_TRUE(ProjectPackagerUVE::PackUVE(MakeOptionsUVE()).IsSuccessUVE());
+    ASSERT_TRUE(ProjectPackager::Pack(MakeOptions()).IsSuccess());
 
     const std::filesystem::perms copiedPermissions =
         std::filesystem::status(outputDirectory / "fake_uve_runtime").permissions();
@@ -138,37 +138,37 @@ TEST_F(ProjectPackagerUVETest, PackUVE_PreservesRuntimeExecutablePermissionBits)
 #endif
 }
 
-TEST_F(ProjectPackagerUVETest, PackUVE_RejectsProjectWithNoStartupSceneConfigured) {
+TEST_F(ProjectPackagerTest, Pack_RejectsProjectWithNoStartupSceneConfigured) {
     package.startupScenePath.clear();
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
+    const ProjectPackResult result = ProjectPackager::Pack(MakeOptions());
 
-    EXPECT_FALSE(result.IsSuccessUVE());
-    EXPECT_EQ(result.code, ProjectPackCodeUVE::NoStartupSceneConfigured);
+    EXPECT_FALSE(result.IsSuccess());
+    EXPECT_EQ(result.code, ProjectPackCode::NoStartupSceneConfigured);
     EXPECT_FALSE(std::filesystem::exists(outputDirectory));
 }
 
-TEST_F(ProjectPackagerUVETest, PackUVE_RejectsMissingRuntimeExecutable) {
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
-    ProjectPackOptionsUVE options = MakeOptionsUVE();
+TEST_F(ProjectPackagerTest, Pack_RejectsMissingRuntimeExecutable) {
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
+    ProjectPackOptions options = MakeOptions();
     options.runtimeExecutablePath = projectRoot / "no_such_runtime";
 
-    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(options);
+    const ProjectPackResult result = ProjectPackager::Pack(options);
 
-    EXPECT_FALSE(result.IsSuccessUVE());
-    EXPECT_EQ(result.code, ProjectPackCodeUVE::RuntimeExecutableNotFound);
+    EXPECT_FALSE(result.IsSuccess());
+    EXPECT_EQ(result.code, ProjectPackCode::RuntimeExecutableNotFound);
 }
 
-TEST_F(ProjectPackagerUVETest, PackUVE_RejectsNonEmptyExistingOutputDirectory) {
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+TEST_F(ProjectPackagerTest, Pack_RejectsNonEmptyExistingOutputDirectory) {
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
     std::filesystem::create_directories(outputDirectory);
     std::ofstream(outputDirectory / "stray.txt") << "pre-existing";
 
-    const ProjectPackResultUVE result = ProjectPackagerUVE::PackUVE(MakeOptionsUVE());
+    const ProjectPackResult result = ProjectPackager::Pack(MakeOptions());
 
-    EXPECT_FALSE(result.IsSuccessUVE());
-    EXPECT_EQ(result.code, ProjectPackCodeUVE::OutputDirectoryNotEmpty);
+    EXPECT_FALSE(result.IsSuccess());
+    EXPECT_EQ(result.code, ProjectPackCode::OutputDirectoryNotEmpty);
 }
 
 } // namespace

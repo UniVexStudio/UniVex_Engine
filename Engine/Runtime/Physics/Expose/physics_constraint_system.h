@@ -15,18 +15,18 @@
 
 namespace UVE::Physics {
 
-struct PhysicsConstraintHandleUVE final {
+struct PhysicsConstraintHandle final {
     std::uint32_t index = UINT32_MAX;
     std::uint32_t generation = 0U;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
+    [[nodiscard]] bool IsValid() const noexcept {
         return index != UINT32_MAX && generation != 0U;
     }
 
-    [[nodiscard]] constexpr bool operator==(const PhysicsConstraintHandleUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const PhysicsConstraintHandle&) const noexcept = default;
 };
 
-enum class PhysicsConstraintCodeUVE : std::uint8_t {
+enum class PhysicsConstraintCode : std::uint8_t {
     Accepted = 0,
     InvalidConstraint,
     CapacityExceeded,
@@ -34,46 +34,46 @@ enum class PhysicsConstraintCodeUVE : std::uint8_t {
     StaleGeneration,
 };
 
-struct DistanceConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
+struct DistanceConstraint final {
+    Scene::Entity firstEntity;
+    Scene::Entity secondEntity;
+    Math::Vector3 firstAnchor{};
+    Math::Vector3 secondAnchor{};
     float restLength = 0.0F;
 };
 
-struct HingeConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
-    Math::Vector3UVE worldAxis{0.0F, 1.0F, 0.0F};
+struct HingeConstraint final {
+    Scene::Entity firstEntity;
+    Scene::Entity secondEntity;
+    Math::Vector3 firstAnchor{};
+    Math::Vector3 secondAnchor{};
+    Math::Vector3 worldAxis{0.0F, 1.0F, 0.0F};
 };
 
-struct BallSocketConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
+struct BallSocketConstraint final {
+    Scene::Entity firstEntity;
+    Scene::Entity secondEntity;
+    Math::Vector3 firstAnchor{};
+    Math::Vector3 secondAnchor{};
 };
 
-struct FixedConstraintUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
-    Math::Vector3UVE firstAnchor{};
-    Math::Vector3UVE secondAnchor{};
+struct FixedConstraint final {
+    Scene::Entity firstEntity;
+    Scene::Entity secondEntity;
+    Math::Vector3 firstAnchor{};
+    Math::Vector3 secondAnchor{};
 };
 
-struct PhysicsConstraintMutationResultUVE final {
-    PhysicsConstraintCodeUVE code = PhysicsConstraintCodeUVE::InvalidConstraint;
-    PhysicsConstraintHandleUVE handle;
+struct PhysicsConstraintMutationResult final {
+    PhysicsConstraintCode code = PhysicsConstraintCode::InvalidConstraint;
+    PhysicsConstraintHandle handle;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == PhysicsConstraintCodeUVE::Accepted;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == PhysicsConstraintCode::Accepted;
     }
 };
 
-struct PhysicsConstraintSolveResultUVE final {
+struct PhysicsConstraintSolveResult final {
     std::size_t iterations = 0U;
     std::size_t solvedConstraintCount = 0U;
     std::size_t skippedConstraintCount = 0U;
@@ -84,45 +84,45 @@ struct PhysicsConstraintSolveResultUVE final {
     bool iterationCapReached = false;
 };
 
-struct ConstraintIslandEdgeUVE final {
-    Scene::EntityUVE firstEntity;
-    Scene::EntityUVE secondEntity;
+struct ConstraintIslandEdge final {
+    Scene::Entity firstEntity;
+    Scene::Entity secondEntity;
 };
 
-struct ConstraintIslandPlanUVE final {
-    static constexpr std::size_t kMaximumEntitiesUVE = 2048U;
-    std::array<Scene::EntityUVE, kMaximumEntitiesUVE> entities{};
-    std::array<std::size_t, kMaximumEntitiesUVE> islandIndices{};
+struct ConstraintIslandPlan final {
+    static constexpr std::size_t kMaximumEntities = 2048U;
+    std::array<Scene::Entity, kMaximumEntities> entities{};
+    std::array<std::size_t, kMaximumEntities> islandIndices{};
     std::size_t entityCount = 0U;
     std::size_t islandCount = 0U;
 };
 
 /// Builds deterministic connected components from copied constraint edges. The planner owns no
 /// constraints, entities, solver iterations, persistence, or backend state.
-[[nodiscard]] inline bool BuildConstraintIslandPlanUVE(
-    const std::span<const ConstraintIslandEdgeUVE> edges, ConstraintIslandPlanUVE& outPlan) noexcept {
-    if (edges.size() > ConstraintIslandPlanUVE::kMaximumEntitiesUVE) {
+[[nodiscard]] inline bool BuildConstraintIslandPlan(
+    const std::span<const ConstraintIslandEdge> edges, ConstraintIslandPlan& outPlan) noexcept {
+    if (edges.size() > ConstraintIslandPlan::kMaximumEntities) {
         return false;
     }
-    ConstraintIslandPlanUVE plan;
-    std::array<std::size_t, ConstraintIslandPlanUVE::kMaximumEntitiesUVE> parent{};
+    ConstraintIslandPlan plan;
+    std::array<std::size_t, ConstraintIslandPlan::kMaximumEntities> parent{};
     for (std::size_t index = 0U; index < parent.size(); ++index) {
         parent[index] = index;
     }
-    const auto addEntity = [&plan, &parent](const Scene::EntityUVE entity) noexcept {
+    const auto addEntity = [&plan, &parent](const Scene::Entity entity) noexcept {
         const std::size_t existing = [&plan, entity]() noexcept {
             for (std::size_t index = 0U; index < plan.entityCount; ++index) {
                 if (plan.entities[index] == entity) {
                     return index;
                 }
             }
-            return ConstraintIslandPlanUVE::kMaximumEntitiesUVE;
+            return ConstraintIslandPlan::kMaximumEntities;
         }();
-        if (existing != ConstraintIslandPlanUVE::kMaximumEntitiesUVE) {
+        if (existing != ConstraintIslandPlan::kMaximumEntities) {
             return existing;
         }
-        if (plan.entityCount >= ConstraintIslandPlanUVE::kMaximumEntitiesUVE) {
-            return ConstraintIslandPlanUVE::kMaximumEntitiesUVE;
+        if (plan.entityCount >= ConstraintIslandPlan::kMaximumEntities) {
+            return ConstraintIslandPlan::kMaximumEntities;
         }
         const std::size_t index = plan.entityCount++;
         plan.entities[index] = entity;
@@ -136,14 +136,14 @@ struct ConstraintIslandPlanUVE final {
         }
         return index;
     };
-    for (const ConstraintIslandEdgeUVE& edge : edges) {
-        if (edge.firstEntity == Scene::kInvalidEntityUVE || edge.secondEntity == Scene::kInvalidEntityUVE) {
+    for (const ConstraintIslandEdge& edge : edges) {
+        if (edge.firstEntity == Scene::kInvalidEntity || edge.secondEntity == Scene::kInvalidEntity) {
             return false;
         }
         const std::size_t first = addEntity(edge.firstEntity);
         const std::size_t second = addEntity(edge.secondEntity);
-        if (first == ConstraintIslandPlanUVE::kMaximumEntitiesUVE ||
-            second == ConstraintIslandPlanUVE::kMaximumEntitiesUVE) {
+        if (first == ConstraintIslandPlan::kMaximumEntities ||
+            second == ConstraintIslandPlan::kMaximumEntities) {
             return false;
         }
         const std::size_t firstRoot = findRoot(first);
@@ -154,14 +154,14 @@ struct ConstraintIslandPlanUVE final {
     }
     for (std::size_t index = 0U; index < plan.entityCount; ++index) {
         const std::size_t root = findRoot(index);
-        std::size_t islandIndex = ConstraintIslandPlanUVE::kMaximumEntitiesUVE;
+        std::size_t islandIndex = ConstraintIslandPlan::kMaximumEntities;
         for (std::size_t prior = 0U; prior < index; ++prior) {
             if (findRoot(prior) == root) {
                 islandIndex = plan.islandIndices[prior];
                 break;
             }
         }
-        if (islandIndex == ConstraintIslandPlanUVE::kMaximumEntitiesUVE) {
+        if (islandIndex == ConstraintIslandPlan::kMaximumEntities) {
             islandIndex = plan.islandCount++;
         }
         plan.islandIndices[index] = islandIndex;
@@ -170,59 +170,59 @@ struct ConstraintIslandPlanUVE final {
     return true;
 }
 
-/// Bounded main-thread positional constraint seam above the existing PhysicsSystemUVE.
+/// Bounded main-thread positional constraint seam above the existing PhysicsSystem.
 /// Distance constraints preserve a configured anchor separation; hinge constraints preserve
 /// coincident anchor positions and carry a validated world axis for future angular degrees of
 /// freedom. v1 owns copied descriptors and generation-safe registry slots only: it does not own
 /// entities, rotations, angular velocity, inertia, persistence, motors, limits, or backend state.
-/// SolveUVE consumes the bounded deterministic connected-component plan to order work by island,
+/// Solve consumes the bounded deterministic connected-component plan to order work by island,
 /// preserving slot order within each island and leaving the positional constraint equations unchanged.
-class PhysicsConstraintSystemUVE final {
+class PhysicsConstraintSystem final {
 public:
-    static constexpr std::size_t kMaximumConstraintsUVE = 1024U;
-    static constexpr std::size_t kMaximumSolverIterationsUVE = 8U;
-    static constexpr float kConstraintEpsilonUVE = 1.0e-4F;
+    static constexpr std::size_t kMaximumConstraints = 1024U;
+    static constexpr std::size_t kMaximumSolverIterations = 8U;
+    static constexpr float kConstraintEpsilon = 1.0e-4F;
 
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddDistanceConstraintUVE(
-        const DistanceConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddHingeConstraintUVE(
-        const HingeConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddBallSocketConstraintUVE(
-        const BallSocketConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddFixedConstraintUVE(
-        const FixedConstraintUVE& constraint);
-    [[nodiscard]] PhysicsConstraintMutationResultUVE RemoveConstraintUVE(
-        PhysicsConstraintHandleUVE handle) noexcept;
-    void ClearUVE() noexcept;
+    [[nodiscard]] PhysicsConstraintMutationResult AddDistanceConstraint(
+        const DistanceConstraint& constraint);
+    [[nodiscard]] PhysicsConstraintMutationResult AddHingeConstraint(
+        const HingeConstraint& constraint);
+    [[nodiscard]] PhysicsConstraintMutationResult AddBallSocketConstraint(
+        const BallSocketConstraint& constraint);
+    [[nodiscard]] PhysicsConstraintMutationResult AddFixedConstraint(
+        const FixedConstraint& constraint);
+    [[nodiscard]] PhysicsConstraintMutationResult RemoveConstraint(
+        PhysicsConstraintHandle handle) noexcept;
+    void Clear() noexcept;
 
-    [[nodiscard]] std::size_t GetConstraintCountUVE() const noexcept;
+    [[nodiscard]] std::size_t GetConstraintCount() const noexcept;
 
-    [[nodiscard]] PhysicsConstraintSolveResultUVE SolveUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        std::size_t maximumIterations = kMaximumSolverIterationsUVE) const;
+    [[nodiscard]] PhysicsConstraintSolveResult Solve(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        std::size_t maximumIterations = kMaximumSolverIterations) const;
 
 private:
-    enum class KindUVE : std::uint8_t { Distance = 0, Hinge, BallSocket, Fixed };
+    enum class Kind : std::uint8_t { Distance = 0, Hinge, BallSocket, Fixed };
 
-    struct SlotUVE final {
-        KindUVE kind = KindUVE::Distance;
-        DistanceConstraintUVE distance;
-        HingeConstraintUVE hinge;
-        BallSocketConstraintUVE ballSocket;
-        FixedConstraintUVE fixed;
+    struct Slot final {
+        Kind kind = Kind::Distance;
+        DistanceConstraint distance;
+        HingeConstraint hinge;
+        BallSocketConstraint ballSocket;
+        FixedConstraint fixed;
         std::uint32_t generation = 1U;
         bool occupied = false;
     };
 
-    [[nodiscard]] PhysicsConstraintMutationResultUVE AddUVE(
-        KindUVE kind, const DistanceConstraintUVE* distance, const HingeConstraintUVE* hinge,
-        const BallSocketConstraintUVE* ballSocket = nullptr, const FixedConstraintUVE* fixed = nullptr);
-    [[nodiscard]] static bool IsValidDistanceUVE(const DistanceConstraintUVE& constraint) noexcept;
-    [[nodiscard]] static bool IsValidHingeUVE(const HingeConstraintUVE& constraint) noexcept;
-    [[nodiscard]] static bool IsValidBallSocketUVE(const BallSocketConstraintUVE& constraint) noexcept;
-    [[nodiscard]] static bool IsValidFixedUVE(const FixedConstraintUVE& constraint) noexcept;
+    [[nodiscard]] PhysicsConstraintMutationResult Add(
+        Kind kind, const DistanceConstraint* distance, const HingeConstraint* hinge,
+        const BallSocketConstraint* ballSocket = nullptr, const FixedConstraint* fixed = nullptr);
+    [[nodiscard]] static bool IsValidDistance(const DistanceConstraint& constraint) noexcept;
+    [[nodiscard]] static bool IsValidHinge(const HingeConstraint& constraint) noexcept;
+    [[nodiscard]] static bool IsValidBallSocket(const BallSocketConstraint& constraint) noexcept;
+    [[nodiscard]] static bool IsValidFixed(const FixedConstraint& constraint) noexcept;
 
-    std::array<SlotUVE, kMaximumConstraintsUVE> slots_{};
+    std::array<Slot, kMaximumConstraints> slots_{};
 };
 
 } // namespace UVE::Physics

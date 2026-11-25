@@ -18,139 +18,139 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-std::filesystem::path TestPathUVE(const char* const name) {
-    return ::UVE::Tests::ScratchRootUVE() / name;
+std::filesystem::path TestPath(const char* const name) {
+    return ::UVE::Tests::ScratchRoot() / name;
 }
 
-void AppendU32LittleEndianUVE(std::vector<std::byte>& bytes, const std::uint32_t value) {
+void AppendU32LittleEndian(std::vector<std::byte>& bytes, const std::uint32_t value) {
     for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
         bytes.push_back(std::byte{static_cast<unsigned char>((value >> shift) & 0xFFU)});
     }
 }
 
-void AppendU16LittleEndianUVE(std::vector<std::byte>& bytes, const std::uint16_t value) {
+void AppendU16LittleEndian(std::vector<std::byte>& bytes, const std::uint16_t value) {
     bytes.push_back(std::byte{static_cast<unsigned char>(value & 0xFFU)});
     bytes.push_back(std::byte{static_cast<unsigned char>((value >> 8U) & 0xFFU)});
 }
 
-void AppendFloatLittleEndianUVE(std::vector<std::byte>& bytes, const float value) {
-    AppendU32LittleEndianUVE(bytes, std::bit_cast<std::uint32_t>(value));
+void AppendFloatLittleEndian(std::vector<std::byte>& bytes, const float value) {
+    AppendU32LittleEndian(bytes, std::bit_cast<std::uint32_t>(value));
 }
 
-void WriteFloatLittleEndianUVE(std::vector<std::byte>& bytes, const std::size_t offset, const float value) {
+void WriteFloatLittleEndian(std::vector<std::byte>& bytes, const std::size_t offset, const float value) {
     const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
     for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
         bytes[offset + shift / 8U] = std::byte{static_cast<unsigned char>((bits >> shift) & 0xFFU)};
     }
 }
 
-void AppendColumnMajorTranslationUVE(std::vector<std::byte>& bytes, const float x, const float y,
+void AppendColumnMajorTranslation(std::vector<std::byte>& bytes, const float x, const float y,
                                      const float z) {
-    AppendFloatLittleEndianUVE(bytes, 1.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 1.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, 1.0F);
-    AppendFloatLittleEndianUVE(bytes, 0.0F);
-    AppendFloatLittleEndianUVE(bytes, x);
-    AppendFloatLittleEndianUVE(bytes, y);
-    AppendFloatLittleEndianUVE(bytes, z);
-    AppendFloatLittleEndianUVE(bytes, 1.0F);
+    AppendFloatLittleEndian(bytes, 1.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 1.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, 1.0F);
+    AppendFloatLittleEndian(bytes, 0.0F);
+    AppendFloatLittleEndian(bytes, x);
+    AppendFloatLittleEndian(bytes, y);
+    AppendFloatLittleEndian(bytes, z);
+    AppendFloatLittleEndian(bytes, 1.0F);
 }
 
-GltfSkeletonUVE MakeTwoJointSkeletonUVE() {
-    GltfJointUVE root;
+GltfSkeleton MakeTwoJointSkeleton() {
+    GltfJoint root;
     root.sourceNodeIndex = 0U;
     root.name = "Root";
     root.parentIndex = -1;
-    GltfJointUVE child;
+    GltfJoint child;
     child.sourceNodeIndex = 1U;
     child.name = "Child";
     child.parentIndex = 0;
-    child.translation = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    GltfSkeletonUVE skeleton;
+    child.translation = Math::Vector3{0.0F, 1.0F, 0.0F};
+    GltfSkeleton skeleton;
     skeleton.joints = {root, child};
     skeleton.skinCount = 1U;
     return skeleton;
 }
 
-struct HandBuiltSkinUVE final {
+struct HandBuiltSkin final {
     std::vector<std::byte> ibmBytes;
     std::vector<std::byte> jointBytes;
     std::vector<std::byte> weightBytes;
-    GltfSkinSourceUVE source;
+    GltfSkinSource source;
 };
 
 // Two joints (root node 0, child node 1) with the skin order REVERSED relative to the
 // hierarchy, so every assertion exercises the skin-order to skeleton-order mapping: skin
 // position 0 is the child (inverse bind translation 4,5,6), skin position 1 is the root
 // (translation 1,2,3). The single vertex references skin joints {0,1} with weights {2,2}.
-HandBuiltSkinUVE MakeHandBuiltSkinUVE(const GltfComponentTypeUVE jointType) {
-    HandBuiltSkinUVE built;
-    AppendColumnMajorTranslationUVE(built.ibmBytes, 4.0F, 5.0F, 6.0F);
-    AppendColumnMajorTranslationUVE(built.ibmBytes, 1.0F, 2.0F, 3.0F);
+HandBuiltSkin MakeHandBuiltSkin(const GltfComponentType jointType) {
+    HandBuiltSkin built;
+    AppendColumnMajorTranslation(built.ibmBytes, 4.0F, 5.0F, 6.0F);
+    AppendColumnMajorTranslation(built.ibmBytes, 1.0F, 2.0F, 3.0F);
     const std::uint32_t skinJoints[4U] = {0U, 1U, 0U, 0U};
     for (const std::uint32_t skinJoint : skinJoints) {
         switch (jointType) {
-        case GltfComponentTypeUVE::UnsignedByte:
+        case GltfComponentType::UnsignedByte:
             built.jointBytes.push_back(std::byte{static_cast<unsigned char>(skinJoint)});
             break;
-        case GltfComponentTypeUVE::UnsignedShort:
-            AppendU16LittleEndianUVE(built.jointBytes, static_cast<std::uint16_t>(skinJoint));
+        case GltfComponentType::UnsignedShort:
+            AppendU16LittleEndian(built.jointBytes, static_cast<std::uint16_t>(skinJoint));
             break;
-        case GltfComponentTypeUVE::UnsignedInt:
-            AppendU32LittleEndianUVE(built.jointBytes, skinJoint);
+        case GltfComponentType::UnsignedInt:
+            AppendU32LittleEndian(built.jointBytes, skinJoint);
             break;
-        case GltfComponentTypeUVE::Float:
-            AppendFloatLittleEndianUVE(built.jointBytes, static_cast<float>(skinJoint));
+        case GltfComponentType::Float:
+            AppendFloatLittleEndian(built.jointBytes, static_cast<float>(skinJoint));
             break;
         }
     }
-    AppendFloatLittleEndianUVE(built.weightBytes, 2.0F);
-    AppendFloatLittleEndianUVE(built.weightBytes, 2.0F);
-    AppendFloatLittleEndianUVE(built.weightBytes, 0.0F);
-    AppendFloatLittleEndianUVE(built.weightBytes, 0.0F);
+    AppendFloatLittleEndian(built.weightBytes, 2.0F);
+    AppendFloatLittleEndian(built.weightBytes, 2.0F);
+    AppendFloatLittleEndian(built.weightBytes, 0.0F);
+    AppendFloatLittleEndian(built.weightBytes, 0.0F);
 
     built.source.skeletonId = "Rig";
-    built.source.skeleton = MakeTwoJointSkeletonUVE();
+    built.source.skeleton = MakeTwoJointSkeleton();
     built.source.skinJointNodes = {1U, 0U};
     built.source.inverseBindMatrices =
-        GltfAccessorViewUVE{std::span<const std::byte>{built.ibmBytes}, 0U, 2U, 0U,
-                            GltfComponentTypeUVE::Float};
-    built.source.joints0 = GltfAccessorViewUVE{std::span<const std::byte>{built.jointBytes}, 0U, 1U, 0U,
+        GltfAccessorView{std::span<const std::byte>{built.ibmBytes}, 0U, 2U, 0U,
+                            GltfComponentType::Float};
+    built.source.joints0 = GltfAccessorView{std::span<const std::byte>{built.jointBytes}, 0U, 1U, 0U,
                                                jointType};
     built.source.weights0 =
-        GltfAccessorViewUVE{std::span<const std::byte>{built.weightBytes}, 0U, 1U, 0U,
-                            GltfComponentTypeUVE::Float};
+        GltfAccessorView{std::span<const std::byte>{built.weightBytes}, 0U, 1U, 0U,
+                            GltfComponentType::Float};
     built.source.vertexCount = 1U;
     return built;
 }
 
-std::vector<std::byte> MakeDocumentBufferUVE() {
+std::vector<std::byte> MakeDocumentBuffer() {
     std::vector<std::byte> buffer;
-    AppendColumnMajorTranslationUVE(buffer, 4.0F, 5.0F, 6.0F);
-    AppendColumnMajorTranslationUVE(buffer, 1.0F, 2.0F, 3.0F);
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
+    AppendColumnMajorTranslation(buffer, 4.0F, 5.0F, 6.0F);
+    AppendColumnMajorTranslation(buffer, 1.0F, 2.0F, 3.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
     buffer.push_back(std::byte{0U});
     buffer.push_back(std::byte{1U});
     buffer.push_back(std::byte{0U});
     buffer.push_back(std::byte{0U});
-    AppendFloatLittleEndianUVE(buffer, 2.0F);
-    AppendFloatLittleEndianUVE(buffer, 2.0F);
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
+    AppendFloatLittleEndian(buffer, 2.0F);
+    AppendFloatLittleEndian(buffer, 2.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
     return buffer;
 }
 
-constexpr const char* kSkinnedDocumentUVE = R"json({
+constexpr const char* kSkinnedDocument = R"json({
   "asset": {"version": "2.0"},
   "nodes": [
     {"name": "Root", "children": [1]},
@@ -175,10 +175,10 @@ constexpr const char* kSkinnedDocumentUVE = R"json({
 
 } // namespace
 
-TEST(GltfSkinConverterUVETest, ConvertsSkinWithReversedSkinOrder) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
-    GltfSkinResultUVE result;
-    ASSERT_TRUE(ConvertGltfSkinUVE(built.source, result));
+TEST(GltfSkinConverterTest, ConvertsSkinWithReversedSkinOrder) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
+    GltfSkinResult result;
+    ASSERT_TRUE(ConvertGltfSkin(built.source, result));
 
     EXPECT_EQ(result.skeleton.skeletonId, "Rig");
     ASSERT_EQ(result.skeleton.joints.size(), 2U);
@@ -186,10 +186,10 @@ TEST(GltfSkinConverterUVETest, ConvertsSkinWithReversedSkinOrder) {
     EXPECT_EQ(result.skeleton.joints[0].parent, -1);
     EXPECT_EQ(result.skeleton.joints[1].name, "Child");
     EXPECT_EQ(result.skeleton.joints[1].parent, 0);
-    EXPECT_TRUE(IsSkeletonAssetValidUVE(result.skeleton));
+    EXPECT_TRUE(IsSkeletonAssetValid(result.skeleton));
 
     ASSERT_EQ(result.joints.size(), 2U);
-    EXPECT_EQ(result.joints[0].parentIndex, kInvalidJointParentUVE);
+    EXPECT_EQ(result.joints[0].parentIndex, kInvalidJointParent);
     EXPECT_EQ(result.joints[1].parentIndex, 0U);
     // Skin position 0 is the child: its matrix (translation 4,5,6) lands on skeleton joint 1,
     // transposed from glTF column-major to row-major.
@@ -202,28 +202,28 @@ TEST(GltfSkinConverterUVETest, ConvertsSkinWithReversedSkinOrder) {
     EXPECT_FLOAT_EQ(result.joints[0].inverseBindMatrix.m[2][3], 3.0F);
 
     ASSERT_EQ(result.influences.size(), 1U);
-    const MeshSkinningInfluenceUVE& influence = result.influences[0];
+    const MeshSkinningInfluence& influence = result.influences[0];
     EXPECT_EQ(influence.joints[0], 1U);
     EXPECT_EQ(influence.joints[1], 0U);
     EXPECT_FLOAT_EQ(influence.weights[0], 0.5F);
     EXPECT_FLOAT_EQ(influence.weights[1], 0.5F);
     EXPECT_FLOAT_EQ(influence.weights[2], 0.0F);
     EXPECT_FLOAT_EQ(influence.weights[3], 0.0F);
-    EXPECT_TRUE(IsSkinningInfluenceNormalizedUVE(influence));
+    EXPECT_TRUE(IsSkinningInfluenceNormalized(influence));
 
-    MeshAssetUVE mesh;
+    MeshAsset mesh;
     mesh.vertices.resize(1U);
     mesh.skinningInfluences = result.influences;
     mesh.joints = result.joints;
-    EXPECT_TRUE(IsMeshSkinningDataValidUVE(mesh));
+    EXPECT_TRUE(IsMeshSkinningDataValid(mesh));
 }
 
-TEST(GltfSkinConverterUVETest, AcceptsUnsignedShortAndUnsignedIntJoints) {
-    for (const GltfComponentTypeUVE jointType :
-         {GltfComponentTypeUVE::UnsignedShort, GltfComponentTypeUVE::UnsignedInt}) {
-        HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(jointType);
-        GltfSkinResultUVE result;
-        ASSERT_TRUE(ConvertGltfSkinUVE(built.source, result));
+TEST(GltfSkinConverterTest, AcceptsUnsignedShortAndUnsignedIntJoints) {
+    for (const GltfComponentType jointType :
+         {GltfComponentType::UnsignedShort, GltfComponentType::UnsignedInt}) {
+        HandBuiltSkin built = MakeHandBuiltSkin(jointType);
+        GltfSkinResult result;
+        ASSERT_TRUE(ConvertGltfSkin(built.source, result));
         ASSERT_EQ(result.influences.size(), 1U);
         EXPECT_EQ(result.influences[0].joints[0], 1U);
         EXPECT_EQ(result.influences[0].joints[1], 0U);
@@ -232,13 +232,13 @@ TEST(GltfSkinConverterUVETest, AcceptsUnsignedShortAndUnsignedIntJoints) {
     }
 }
 
-TEST(GltfSkinConverterUVETest, MissingInverseBindMatricesMeansIdentity) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, MissingInverseBindMatricesMeansIdentity) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     built.source.inverseBindMatrices.reset();
-    GltfSkinResultUVE result;
-    ASSERT_TRUE(ConvertGltfSkinUVE(built.source, result));
+    GltfSkinResult result;
+    ASSERT_TRUE(ConvertGltfSkin(built.source, result));
     ASSERT_EQ(result.joints.size(), 2U);
-    for (const MeshJointUVE& joint : result.joints) {
+    for (const MeshJoint& joint : result.joints) {
         EXPECT_FLOAT_EQ(joint.inverseBindMatrix.m[0][0], 1.0F);
         EXPECT_FLOAT_EQ(joint.inverseBindMatrix.m[1][1], 1.0F);
         EXPECT_FLOAT_EQ(joint.inverseBindMatrix.m[2][2], 1.0F);
@@ -247,68 +247,68 @@ TEST(GltfSkinConverterUVETest, MissingInverseBindMatricesMeansIdentity) {
     }
 }
 
-TEST(GltfSkinConverterUVETest, RejectsVertexCountMismatch) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, RejectsVertexCountMismatch) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     built.source.vertexCount = 2U;
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsOutOfRangeJointIndex) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, RejectsOutOfRangeJointIndex) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     built.jointBytes[0] = std::byte{7U};
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsFloatJoints) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, RejectsFloatJoints) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     // A valid float-VEC4 span, so only the component-type gate can reject this.
     built.jointBytes.resize(16U);
     built.source.joints0.buffer = std::span<const std::byte>{built.jointBytes};
-    built.source.joints0.componentType = GltfComponentTypeUVE::Float;
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+    built.source.joints0.componentType = GltfComponentType::Float;
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsNegativeWeight) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
-    WriteFloatLittleEndianUVE(built.weightBytes, 0U, -1.0F);
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+TEST(GltfSkinConverterTest, RejectsNegativeWeight) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
+    WriteFloatLittleEndian(built.weightBytes, 0U, -1.0F);
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsZeroWeightSum) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
-    WriteFloatLittleEndianUVE(built.weightBytes, 0U, 0.0F);
-    WriteFloatLittleEndianUVE(built.weightBytes, 4U, 0.0F);
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+TEST(GltfSkinConverterTest, RejectsZeroWeightSum) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
+    WriteFloatLittleEndian(built.weightBytes, 0U, 0.0F);
+    WriteFloatLittleEndian(built.weightBytes, 4U, 0.0F);
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsDuplicateSkinNode) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, RejectsDuplicateSkinNode) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     built.source.skinJointNodes = {0U, 0U};
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, RejectsSkinNodeOutsideHierarchy) {
-    HandBuiltSkinUVE built = MakeHandBuiltSkinUVE(GltfComponentTypeUVE::UnsignedByte);
+TEST(GltfSkinConverterTest, RejectsSkinNodeOutsideHierarchy) {
+    HandBuiltSkin built = MakeHandBuiltSkin(GltfComponentType::UnsignedByte);
     built.source.skinJointNodes = {1U, 5U};
-    GltfSkinResultUVE result;
-    EXPECT_FALSE(ConvertGltfSkinUVE(built.source, result));
+    GltfSkinResult result;
+    EXPECT_FALSE(ConvertGltfSkin(built.source, result));
 }
 
-TEST(GltfSkinConverterUVETest, DocumentParseConvertsAndRoundTripsSkeleton) {
-    const std::vector<std::byte> buffer = MakeDocumentBufferUVE();
-    const std::optional<GltfSkinSourceUVE> source = ParseGltfSkinSourceUVE(kSkinnedDocumentUVE, buffer);
+TEST(GltfSkinConverterTest, DocumentParseConvertsAndRoundTripsSkeleton) {
+    const std::vector<std::byte> buffer = MakeDocumentBuffer();
+    const std::optional<GltfSkinSource> source = ParseGltfSkinSource(kSkinnedDocument, buffer);
     ASSERT_TRUE(source.has_value());
     EXPECT_EQ(source->skeletonId, "Rig");
     EXPECT_EQ(source->vertexCount, 1U);
 
-    GltfSkinResultUVE result;
-    ASSERT_TRUE(ConvertGltfSkinUVE(*source, result));
+    GltfSkinResult result;
+    ASSERT_TRUE(ConvertGltfSkin(*source, result));
     ASSERT_EQ(result.influences.size(), 1U);
     EXPECT_EQ(result.influences[0].joints[0], 1U);
     EXPECT_EQ(result.influences[0].joints[1], 0U);
@@ -316,16 +316,16 @@ TEST(GltfSkinConverterUVETest, DocumentParseConvertsAndRoundTripsSkeleton) {
     ASSERT_EQ(result.joints.size(), 2U);
     EXPECT_FLOAT_EQ(result.joints[1].inverseBindMatrix.m[0][3], 4.0F);
 
-    const std::filesystem::path path = TestPathUVE("uve_gltf_skin_skeleton_round_trip.uvskel");
+    const std::filesystem::path path = TestPath("uve_gltf_skin_skeleton_round_trip.uvskel");
     std::filesystem::remove(path);
-    ASSERT_TRUE(SaveSkeletonAssetUVE(result.skeleton, path));
-    SkeletonAssetUVE reloaded;
-    ASSERT_TRUE(LoadSkeletonAssetUVE(path, reloaded));
+    ASSERT_TRUE(SaveSkeletonAsset(result.skeleton, path));
+    SkeletonAsset reloaded;
+    ASSERT_TRUE(LoadSkeletonAsset(path, reloaded));
     EXPECT_EQ(reloaded, result.skeleton);
     std::filesystem::remove(path);
 }
 
-TEST(GltfSkinConverterUVETest, RejectsDocumentMissingWeights) {
+TEST(GltfSkinConverterTest, RejectsDocumentMissingWeights) {
     constexpr const char* kMissingWeights = R"json({
   "asset": {"version": "2.0"},
   "nodes": [{"name": "Root", "children": [1]}, {"name": "Child"}],
@@ -343,11 +343,11 @@ TEST(GltfSkinConverterUVETest, RejectsDocumentMissingWeights) {
   ],
   "buffers": [{"byteLength": 144}]
 })json";
-    const std::vector<std::byte> buffer = MakeDocumentBufferUVE();
-    EXPECT_FALSE(ParseGltfSkinSourceUVE(kMissingWeights, buffer).has_value());
+    const std::vector<std::byte> buffer = MakeDocumentBuffer();
+    EXPECT_FALSE(ParseGltfSkinSource(kMissingWeights, buffer).has_value());
 }
 
-TEST(GltfSkinConverterUVETest, RejectsDocumentWithoutSkin) {
+TEST(GltfSkinConverterTest, RejectsDocumentWithoutSkin) {
     constexpr const char* kNoSkin = R"json({
   "asset": {"version": "2.0"},
   "nodes": [{"name": "Root"}],
@@ -357,12 +357,12 @@ TEST(GltfSkinConverterUVETest, RejectsDocumentWithoutSkin) {
   "buffers": [{"byteLength": 12}]
 })json";
     const std::vector<std::byte> buffer(12U);
-    EXPECT_FALSE(ParseGltfSkinSourceUVE(kNoSkin, buffer).has_value());
+    EXPECT_FALSE(ParseGltfSkinSource(kNoSkin, buffer).has_value());
 }
 
-TEST(GltfSkinConverterUVETest, RejectsMalformedDocument) {
+TEST(GltfSkinConverterTest, RejectsMalformedDocument) {
     const std::vector<std::byte> buffer(12U);
-    EXPECT_FALSE(ParseGltfSkinSourceUVE("{not json", buffer).has_value());
+    EXPECT_FALSE(ParseGltfSkinSource("{not json", buffer).has_value());
 }
 
 } // namespace UVE::Asset::Tests

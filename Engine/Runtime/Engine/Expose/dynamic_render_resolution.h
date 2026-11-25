@@ -8,19 +8,19 @@
 
 namespace UVE::Core {
 
-struct DynamicRenderResolutionSettingsUVE final {
+struct DynamicRenderResolutionSettings final {
     double minimumScale = 0.5;
     double maximumScale = 1.0;
     double targetFrameTimeMilliseconds = 16.6667;
 };
 
 /// Slow, hysteretic frame-budget controller for dynamic scene resolution. It consumes wall-clock
-/// frame duration supplied by EngineCoreUVE (the sample includes Present/swap waiting; this is not
+/// frame duration supplied by EngineCore (the sample includes Present/swap waiting; this is not
 /// a GPU timestamp query). Downscaling reacts after 8 consecutive over-budget samples; quality is
 /// restored more slowly, after 30 consecutive well-under-budget samples.
-class DynamicRenderResolutionControllerUVE final {
+class DynamicRenderResolutionController final {
 public:
-    [[nodiscard]] bool ConfigureUVE(const DynamicRenderResolutionSettingsUVE& settings) noexcept {
+    [[nodiscard]] bool Configure(const DynamicRenderResolutionSettings& settings) noexcept {
         if (!std::isfinite(settings.minimumScale) || !std::isfinite(settings.maximumScale) ||
             !std::isfinite(settings.targetFrameTimeMilliseconds) || settings.minimumScale <= 0.0 ||
             settings.maximumScale < settings.minimumScale || settings.maximumScale > 1.0 ||
@@ -39,7 +39,7 @@ public:
 
     /// Adds one positive wall-clock frame duration. Returns true only when the effective scale
     /// changes; invalid samples are ignored without disturbing the existing smoothing state.
-    [[nodiscard]] bool ObserveFrameTimeUVE(const double frameTimeSeconds) noexcept {
+    [[nodiscard]] bool ObserveFrameTime(const double frameTimeSeconds) noexcept {
         if (!std::isfinite(frameTimeSeconds) || frameTimeSeconds <= 0.0) {
             return false;
         }
@@ -54,9 +54,9 @@ public:
         } else {
             // Respond quickly enough after a resolution step that the old budget violation does
             // not trigger several downscales before the lower-cost frame samples are considered.
-            constexpr double kSmoothingAlphaUVE = 0.25;
+            constexpr double kSmoothingAlpha = 0.25;
             m_smoothedFrameTimeMilliseconds +=
-                (frameTimeMilliseconds - m_smoothedFrameTimeMilliseconds) * kSmoothingAlphaUVE;
+                (frameTimeMilliseconds - m_smoothedFrameTimeMilliseconds) * kSmoothingAlpha;
         }
 
         const double slowFrameThreshold = m_settings.targetFrameTimeMilliseconds * 1.08;
@@ -72,20 +72,20 @@ public:
             m_underBudgetFrameCount = 0U;
         }
 
-        if (m_overBudgetFrameCount >= kOverBudgetSamplesBeforeDownscaleUVE) {
+        if (m_overBudgetFrameCount >= kOverBudgetSamplesBeforeDownscale) {
             m_overBudgetFrameCount = 0U;
             m_underBudgetFrameCount = 0U;
-            const double nextScale = std::max(m_settings.minimumScale, m_currentScale - kDownscaleStepUVE);
+            const double nextScale = std::max(m_settings.minimumScale, m_currentScale - kDownscaleStep);
             if (nextScale < m_currentScale) {
                 m_currentScale = nextScale;
                 return true;
             }
         }
 
-        if (m_underBudgetFrameCount >= kUnderBudgetSamplesBeforeUpscaleUVE) {
+        if (m_underBudgetFrameCount >= kUnderBudgetSamplesBeforeUpscale) {
             m_overBudgetFrameCount = 0U;
             m_underBudgetFrameCount = 0U;
-            const double nextScale = std::min(m_settings.maximumScale, m_currentScale + kUpscaleStepUVE);
+            const double nextScale = std::min(m_settings.maximumScale, m_currentScale + kUpscaleStep);
             if (nextScale > m_currentScale) {
                 m_currentScale = nextScale;
                 return true;
@@ -95,18 +95,18 @@ public:
         return false;
     }
 
-    [[nodiscard]] double GetCurrentScaleUVE() const noexcept { return m_currentScale; }
-    [[nodiscard]] double GetSmoothedFrameTimeMillisecondsUVE() const noexcept {
+    [[nodiscard]] double GetCurrentScale() const noexcept { return m_currentScale; }
+    [[nodiscard]] double GetSmoothedFrameTimeMilliseconds() const noexcept {
         return m_smoothedFrameTimeMilliseconds;
     }
 
-    inline static constexpr std::uint32_t kOverBudgetSamplesBeforeDownscaleUVE = 8U;
-    inline static constexpr std::uint32_t kUnderBudgetSamplesBeforeUpscaleUVE = 30U;
-    inline static constexpr double kDownscaleStepUVE = 0.05;
-    inline static constexpr double kUpscaleStepUVE = 0.025;
+    inline static constexpr std::uint32_t kOverBudgetSamplesBeforeDownscale = 8U;
+    inline static constexpr std::uint32_t kUnderBudgetSamplesBeforeUpscale = 30U;
+    inline static constexpr double kDownscaleStep = 0.05;
+    inline static constexpr double kUpscaleStep = 0.025;
 
 private:
-    DynamicRenderResolutionSettingsUVE m_settings{};
+    DynamicRenderResolutionSettings m_settings{};
     double m_currentScale = 1.0;
     double m_smoothedFrameTimeMilliseconds = 0.0;
     bool m_hasFrameTimeSample = false;

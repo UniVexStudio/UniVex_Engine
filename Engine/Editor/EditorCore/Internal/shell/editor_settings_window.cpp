@@ -33,15 +33,15 @@
 namespace UVE::Editor {
 namespace {
 
-using Config::SettingDescriptorUVE;
-using Config::SettingTypeUVE;
-using Config::SettingValueUVE;
+using Config::SettingDescriptor;
+using Config::SettingType;
+using Config::SettingValue;
 
-constexpr int kWidthUVE = 920;
-constexpr int kHeightUVE = 620;
+constexpr int kWidth = 920;
+constexpr int kHeight = 620;
 
 /// "Editor/Viewport/Grid" as "Viewport / Grid" (the window's own root dropped).
-[[nodiscard]] std::string CategoryTitleUVE(const std::string_view category) {
+[[nodiscard]] std::string CategoryTitle(const std::string_view category) {
     const std::size_t first = category.find('/');
     const std::string_view rest = first == std::string_view::npos ? category : category.substr(first + 1U);
     std::string title;
@@ -51,13 +51,13 @@ constexpr int kHeightUVE = 620;
     return title.empty() ? std::string(category) : title;
 }
 
-[[nodiscard]] std::string NumberTextUVE(const double value) {
+[[nodiscard]] std::string NumberText(const double value) {
     char buffer[64];
     std::snprintf(buffer, sizeof(buffer), "%.6g", value);
     return buffer;
 }
 
-[[nodiscard]] std::optional<double> ParseNumberUVE(const std::string& text) {
+[[nodiscard]] std::optional<double> ParseNumber(const std::string& text) {
     char* end = nullptr;
     const double value = std::strtod(text.c_str(), &end);
     if (end == text.c_str() || !std::isfinite(value)) {
@@ -66,7 +66,7 @@ constexpr int kHeightUVE = 620;
     return value;
 }
 
-[[nodiscard]] double ClampUVE(const SettingDescriptorUVE& descriptor, double value) {
+[[nodiscard]] double Clamp(const SettingDescriptor& descriptor, double value) {
     if (descriptor.minimum) {
         value = std::max(value, *descriptor.minimum);
     }
@@ -77,7 +77,7 @@ constexpr int kHeightUVE = 620;
 }
 
 /// A text field that commits on Enter or when it loses focus.
-[[nodiscard]] prism::Ref<prism::TextInput> FieldUVE(const std::string& text, std::function<void(const std::string&)> commit) {
+[[nodiscard]] prism::Ref<prism::TextInput> Field(const std::string& text, std::function<void(const std::string&)> commit) {
     auto field = prism::make<prism::TextInput>(text);
     field->onCommit = [commit](const std::string& value) { commit(value); };
     return field;
@@ -85,77 +85,77 @@ constexpr int kHeightUVE = 620;
 
 } // namespace
 
-EditorSettingsWindowUVE::EditorSettingsWindowUVE(EditorUVE& editor, EditorHostUVE& host, bool& visible,
-                                                 std::function<SourceUVE()> source, bool* focusPending)
+EditorSettingsWindow::EditorSettingsWindow(Editor& editor, EditorHost& host, bool& visible,
+                                                 std::function<Source()> source, bool* focusPending)
     : m_editor(editor), m_host(host), m_visible(visible), m_focusPending(focusPending), m_sourceOf(std::move(source)) {}
 
-EditorSettingsWindowUVE::~EditorSettingsWindowUVE() = default;
+EditorSettingsWindow::~EditorSettingsWindow() = default;
 
-void EditorSettingsWindowUVE::SetUVE(const std::string& id, const SettingValueUVE& value) {
+void EditorSettingsWindow::Set(const std::string& id, const SettingValue& value) {
     if (m_source.set) {
         static_cast<void>(m_source.set(id, value));
     }
     m_rowsDirty = true;   // rebuilt between frames: never from inside the control's own event
 }
 
-prism::Ref<prism::Widget> EditorSettingsWindowUVE::EditorForUVE(const SettingDescriptorUVE& descriptor, const SettingValueUVE& value) {
+prism::Ref<prism::Widget> EditorSettingsWindow::EditorFor(const SettingDescriptor& descriptor, const SettingValue& value) {
     const std::string id = descriptor.id;
     switch (descriptor.type) {
-    case SettingTypeUVE::Bool: {
+    case SettingType::Bool: {
         auto box = prism::make<prism::CheckBox>("", std::get<bool>(value));
-        box->onChange = [this, id](const bool on) { SetUVE(id, SettingValueUVE{on}); };
+        box->onChange = [this, id](const bool on) { Set(id, SettingValue{on}); };
         return box;
     }
-    case SettingTypeUVE::Int:
-    case SettingTypeUVE::LayerMask: {
+    case SettingType::Int:
+    case SettingType::LayerMask: {
         const auto current = std::get<std::int64_t>(value);
-        return FieldUVE(std::to_string(current), [this, id, descriptor](const std::string& text) {
-            if (const std::optional<double> parsed = ParseNumberUVE(text)) {
-                double v = descriptor.type == SettingTypeUVE::LayerMask ? std::clamp(*parsed, 0.0, 4294967295.0) : ClampUVE(descriptor, *parsed);
-                SetUVE(id, SettingValueUVE{static_cast<std::int64_t>(std::llround(v))});
+        return Field(std::to_string(current), [this, id, descriptor](const std::string& text) {
+            if (const std::optional<double> parsed = ParseNumber(text)) {
+                double v = descriptor.type == SettingType::LayerMask ? std::clamp(*parsed, 0.0, 4294967295.0) : Clamp(descriptor, *parsed);
+                Set(id, SettingValue{static_cast<std::int64_t>(std::llround(v))});
             } else {
                 m_rowsDirty = true;
             }
         });
     }
-    case SettingTypeUVE::Float: {
-        return FieldUVE(NumberTextUVE(std::get<double>(value)), [this, id, descriptor](const std::string& text) {
-            if (const std::optional<double> parsed = ParseNumberUVE(text)) {
-                SetUVE(id, SettingValueUVE{ClampUVE(descriptor, *parsed)});
+    case SettingType::Float: {
+        return Field(NumberText(std::get<double>(value)), [this, id, descriptor](const std::string& text) {
+            if (const std::optional<double> parsed = ParseNumber(text)) {
+                Set(id, SettingValue{Clamp(descriptor, *parsed)});
             } else {
                 m_rowsDirty = true;
             }
         });
     }
-    case SettingTypeUVE::String:
-    case SettingTypeUVE::FilePath:
-    case SettingTypeUVE::AssetReference: {
+    case SettingType::String:
+    case SettingType::FilePath:
+    case SettingType::AssetReference: {
         const std::size_t limit = descriptor.maxLength;
-        return FieldUVE(std::get<std::string>(value), [this, id, limit](const std::string& text) {
-            SetUVE(id, SettingValueUVE{limit != 0U && text.size() > limit ? text.substr(0U, limit) : text});
+        return Field(std::get<std::string>(value), [this, id, limit](const std::string& text) {
+            Set(id, SettingValue{limit != 0U && text.size() > limit ? text.substr(0U, limit) : text});
         });
     }
-    case SettingTypeUVE::StringList: {
-        const std::size_t count = std::get<Config::SettingStringListUVE>(value).size();
+    case SettingType::StringList: {
+        const std::size_t count = std::get<Config::SettingStringList>(value).size();
         auto label = prism::make<prism::Label>(std::to_string(count) + (count == 1U ? " entry" : " entries"));
         label->setColor(prism::ThemeColor(&prism::Theme::textDim));
         return label;
     }
-    case SettingTypeUVE::KeyBinding: {
-        const std::optional<EditorShortcutUVE> parsed = ParseEditorShortcutUVE(std::get<std::string>(value));
-        auto capture = prism::make<EditorKeyCaptureUVE>(parsed.value_or(EditorShortcutUVE{}));
-        capture->onCaptured = [this, id](const EditorShortcutUVE& shortcut) {
-            SetUVE(id, SettingValueUVE{FormatEditorShortcutUVE(shortcut)});
+    case SettingType::KeyBinding: {
+        const std::optional<EditorShortcut> parsed = ParseEditorShortcut(std::get<std::string>(value));
+        auto capture = prism::make<EditorKeyCapture>(parsed.value_or(EditorShortcut{}));
+        capture->onCaptured = [this, id](const EditorShortcut& shortcut) {
+            Set(id, SettingValue{FormatEditorShortcut(shortcut)});
         };
         auto row = prism::hbox(4.0F);
         row->add(capture, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         auto clear = prism::make<prism::Button>("", prism::Icon::Close, prism::ButtonStyle::Flat);
         clear->setTooltip("Remove this shortcut");
-        clear->onClick = [this, id] { SetUVE(id, SettingValueUVE{std::string{}}); };
+        clear->onClick = [this, id] { Set(id, SettingValue{std::string{}}); };
         row->add(clear, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
         return row;
     }
-    case SettingTypeUVE::Enum: {
+    case SettingType::Enum: {
         std::vector<std::string> labels;
         int selected = 0;
         const std::int64_t current = std::get<std::int64_t>(value);
@@ -166,49 +166,49 @@ prism::Ref<prism::Widget> EditorSettingsWindowUVE::EditorForUVE(const SettingDes
             }
         }
         auto combo = prism::make<prism::ComboBox>(std::move(labels), selected);
-        const std::vector<Config::SettingEnumEntryUVE> entries = descriptor.enumEntries;
+        const std::vector<Config::SettingEnumEntry> entries = descriptor.enumEntries;
         combo->onChange = [this, id, entries](const int index) {
             if (index >= 0 && static_cast<std::size_t>(index) < entries.size()) {
-                SetUVE(id, SettingValueUVE{entries[static_cast<std::size_t>(index)].value});
+                Set(id, SettingValue{entries[static_cast<std::size_t>(index)].value});
             }
         };
         return combo;
     }
-    case SettingTypeUVE::Color: {
-        const auto& c = std::get<Config::SettingColorUVE>(value);
+    case SettingType::Color: {
+        const auto& c = std::get<Config::SettingColor>(value);
         const auto byte = [](const float v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F)); };
         auto field = prism::make<prism::ColorField>(prism::Color(byte(c.r), byte(c.g), byte(c.b), byte(c.a)));
         const bool alpha = descriptor.colorHasAlpha;
         field->onChange = [this, id, alpha](const prism::Color colour) {
-            SetUVE(id, SettingValueUVE{Config::SettingColorUVE{colour.r / 255.0F, colour.g / 255.0F, colour.b / 255.0F,
+            Set(id, SettingValue{Config::SettingColor{colour.r / 255.0F, colour.g / 255.0F, colour.b / 255.0F,
                                                                 alpha ? colour.a / 255.0F : 1.0F}});
         };
         return field;
     }
-    case SettingTypeUVE::Vector2:
-    case SettingTypeUVE::Vector3:
-    case SettingTypeUVE::Vector4: {
+    case SettingType::Vector2:
+    case SettingType::Vector3:
+    case SettingType::Vector4: {
         std::vector<double> parts;
-        if (const auto* v2 = std::get_if<Config::SettingVector2UVE>(&value)) {
+        if (const auto* v2 = std::get_if<Config::SettingVector2>(&value)) {
             parts = {v2->x, v2->y};
-        } else if (const auto* v3 = std::get_if<Config::SettingVector3UVE>(&value)) {
+        } else if (const auto* v3 = std::get_if<Config::SettingVector3>(&value)) {
             parts = {v3->x, v3->y, v3->z};
-        } else if (const auto* v4 = std::get_if<Config::SettingVector4UVE>(&value)) {
+        } else if (const auto* v4 = std::get_if<Config::SettingVector4>(&value)) {
             parts = {v4->x, v4->y, v4->z, v4->w};
         }
         auto row = prism::hbox(4.0F);
         for (std::size_t i = 0U; i < parts.size(); ++i) {
-            row->add(FieldUVE(NumberTextUVE(parts[i]), [this, id, descriptor, parts, i](const std::string& text) {
+            row->add(Field(NumberText(parts[i]), [this, id, descriptor, parts, i](const std::string& text) {
                 std::vector<double> next = parts;
-                if (const std::optional<double> parsed = ParseNumberUVE(text)) {
-                    next[i] = ClampUVE(descriptor, *parsed);
+                if (const std::optional<double> parsed = ParseNumber(text)) {
+                    next[i] = Clamp(descriptor, *parsed);
                 }
                 if (next.size() == 2U) {
-                    SetUVE(id, SettingValueUVE{Config::SettingVector2UVE{next[0], next[1]}});
+                    Set(id, SettingValue{Config::SettingVector2{next[0], next[1]}});
                 } else if (next.size() == 3U) {
-                    SetUVE(id, SettingValueUVE{Config::SettingVector3UVE{next[0], next[1], next[2]}});
+                    Set(id, SettingValue{Config::SettingVector3{next[0], next[1], next[2]}});
                 } else {
-                    SetUVE(id, SettingValueUVE{Config::SettingVector4UVE{next[0], next[1], next[2], next[3]}});
+                    Set(id, SettingValue{Config::SettingVector4{next[0], next[1], next[2], next[3]}});
                 }
             }), prism::Slot{1.0F});
         }
@@ -218,13 +218,13 @@ prism::Ref<prism::Widget> EditorSettingsWindowUVE::EditorForUVE(const SettingDes
     return prism::make<prism::Label>("");
 }
 
-void EditorSettingsWindowUVE::RebuildTreeUVE() {
+void EditorSettingsWindow::RebuildTree() {
     if (!m_tree || m_source.registry == nullptr) {
         return;
     }
-    std::vector<const SettingDescriptorUVE*> visible;
-    for (const SettingDescriptorUVE* descriptor : m_source.registry->GetAllUVE()) {
-        if (!descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE) && !descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+    std::vector<const SettingDescriptor*> visible;
+    for (const SettingDescriptor* descriptor : m_source.registry->GetAll()) {
+        if (!descriptor->HasFlag(Config::kSettingFlagHidden) && !descriptor->HasFlag(Config::kSettingFlagDeprecated)) {
             visible.push_back(descriptor);
         }
     }
@@ -232,7 +232,7 @@ void EditorSettingsWindowUVE::RebuildTreeUVE() {
     m_categoryPaths.clear();
     m_tree->addNode(nullptr, "All Settings", prism::Icon::Layers, 0)->toggles = false;
     std::vector<prism::TreeNode*> parents;
-    for (const SettingCategoryObjectUVE& object : BuildSettingCategoryTreeUVE(visible)) {
+    for (const SettingCategoryObject& object : BuildSettingCategoryTree(visible)) {
         m_categoryPaths.push_back(object.path);
         parents.resize(static_cast<std::size_t>(object.depth) + 1U, nullptr);
         prism::TreeNode* parent = object.depth > 0 ? parents[static_cast<std::size_t>(object.depth) - 1U] : nullptr;
@@ -243,7 +243,7 @@ void EditorSettingsWindowUVE::RebuildTreeUVE() {
     m_tree->refresh();
 }
 
-void EditorSettingsWindowUVE::RebuildRowsUVE() {
+void EditorSettingsWindow::RebuildRows() {
     m_rowsDirty = false;
     if (!m_rows || m_source.registry == nullptr) {
         return;
@@ -252,28 +252,28 @@ void EditorSettingsWindowUVE::RebuildRowsUVE() {
     const std::string query = m_search ? m_search->text() : std::string();
     const bool modifiedOnly = m_modifiedOnly && m_modifiedOnly->checked();
     const bool advanced = m_advanced && m_advanced->checked();
-    std::vector<const SettingDescriptorUVE*> shown;
+    std::vector<const SettingDescriptor*> shown;
     std::size_t restartChanges = 0U;
-    for (const SettingDescriptorUVE* descriptor : m_source.registry->GetAllUVE()) {
-        if (descriptor->HasFlagUVE(Config::kSettingFlagHiddenUVE) || descriptor->HasFlagUVE(Config::kSettingFlagDeprecatedUVE)) {
+    for (const SettingDescriptor* descriptor : m_source.registry->GetAll()) {
+        if (descriptor->HasFlag(Config::kSettingFlagHidden) || descriptor->HasFlag(Config::kSettingFlagDeprecated)) {
             continue;
         }
-        const std::optional<SettingValueUVE> value = m_source.get(descriptor->id);
+        const std::optional<SettingValue> value = m_source.get(descriptor->id);
         if (!value) {
             continue;
         }
-        if (descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) {
+        if (descriptor->HasFlag(Config::kSettingFlagRestartRequired)) {
             if (const auto base = m_restartBaseline.find(descriptor->id); base != m_restartBaseline.end() && base->second != *value) {
                 ++restartChanges;
             }
         }
-        if (descriptor->HasFlagUVE(Config::kSettingFlagAdvancedUVE) && !advanced) {
+        if (descriptor->HasFlag(Config::kSettingFlagAdvanced) && !advanced) {
             continue;
         }
-        if (!MatchesSettingSearchUVE(*descriptor, query)) {
+        if (!MatchesSettingSearch(*descriptor, query)) {
             continue;
         }
-        if (query.empty() && !m_category.empty() && !IsInSettingCategoryUVE(descriptor->category, m_category)) {
+        if (query.empty() && !m_category.empty() && !IsInSettingCategory(descriptor->category, m_category)) {
             continue;
         }
         if (modifiedOnly && *value == descriptor->defaultValue) {
@@ -281,32 +281,32 @@ void EditorSettingsWindowUVE::RebuildRowsUVE() {
         }
         shown.push_back(descriptor);
     }
-    std::stable_sort(shown.begin(), shown.end(), [](const SettingDescriptorUVE* a, const SettingDescriptorUVE* b) { return a->category < b->category; });
+    std::stable_sort(shown.begin(), shown.end(), [](const SettingDescriptor* a, const SettingDescriptor* b) { return a->category < b->category; });
     std::string current;
     int category = -1;
-    for (const SettingDescriptorUVE* descriptor : shown) {
+    for (const SettingDescriptor* descriptor : shown) {
         if (category < 0 || descriptor->category != current) {
             current = descriptor->category;
-            category = m_rows->addCategory(CategoryTitleUVE(current));
+            category = m_rows->addCategory(CategoryTitle(current));
         }
-        const SettingValueUVE value = *m_source.get(descriptor->id);
+        const SettingValue value = *m_source.get(descriptor->id);
         const bool modified = value != descriptor->defaultValue;
-        auto editor = EditorForUVE(*descriptor, value);
+        auto editor = EditorFor(*descriptor, value);
         auto cell = prism::hbox(4.0F);
         cell->add(editor, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         if (modified) {
             auto reset = prism::make<prism::Button>("", prism::Icon::Undo, prism::ButtonStyle::Flat);
-            reset->setTooltip("Reset to " + FormatSettingValueUVE(*descriptor, descriptor->defaultValue));
+            reset->setTooltip("Reset to " + FormatSettingValue(*descriptor, descriptor->defaultValue));
             const std::string id = descriptor->id;
-            const SettingValueUVE initial = descriptor->defaultValue;
-            reset->onClick = [this, id, initial] { SetUVE(id, initial); };
+            const SettingValue initial = descriptor->defaultValue;
+            reset->onClick = [this, id, initial] { Set(id, initial); };
             cell->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
         }
         std::string tip = descriptor->tooltip;
-        if (descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) {
+        if (descriptor->HasFlag(Config::kSettingFlagRestartRequired)) {
             tip += (tip.empty() ? "" : "\n") + std::string("Takes effect after the editor restarts.");
         }
-        tip += (tip.empty() ? "" : "\n") + std::string("Default: ") + FormatSettingValueUVE(*descriptor, descriptor->defaultValue);
+        tip += (tip.empty() ? "" : "\n") + std::string("Default: ") + FormatSettingValue(*descriptor, descriptor->defaultValue);
         const std::string label = (modified ? "\xE2\x80\xA2 " : "") + (descriptor->displayName.empty() ? descriptor->id : descriptor->displayName);
         m_rows->addRow(category, label, cell, tip);
     }
@@ -327,9 +327,9 @@ void EditorSettingsWindowUVE::RebuildRowsUVE() {
     }
 }
 
-prism::Ref<prism::Widget> EditorSettingsWindowUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorSettingsWindow::Build() {
     auto window = prism::vbox();
-    window->add(BuildToolWindowTitleBarUVE(m_source.title, prism::Icon::Settings, [this] { CloseUVE(); }));
+    window->add(BuildToolWindowTitleBar(m_source.title, prism::Icon::Settings, [this] { Close(); }));
 
     auto filters = prism::hbox(10.0F);
     filters->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
@@ -365,8 +365,8 @@ prism::Ref<prism::Widget> EditorSettingsWindowUVE::BuildUVE() {
     auto scroll = prism::make<prism::ScrollView>();
     scroll->setContent(m_rows);
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    body->add(PanelUVE(m_tree), prism::Splitter::Pane{220.0F, 160.0F, 400.0F, false});
-    body->add(PanelUVE(scroll), prism::Splitter::Pane{680.0F, 320.0F, 1e9F, true});
+    body->add(Panel(m_tree), prism::Splitter::Pane{220.0F, 160.0F, 400.0F, false});
+    body->add(Panel(scroll), prism::Splitter::Pane{680.0F, 320.0F, 1e9F, true});
     window->add(body, prism::Slot{1.0F});
 
     auto buttons = prism::hbox(6.0F);
@@ -383,7 +383,7 @@ prism::Ref<prism::Widget> EditorSettingsWindowUVE::BuildUVE() {
         buttons->add(m_save, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
     auto close = prism::make<prism::Button>("Close", prism::Icon::None, prism::ButtonStyle::Default);
-    close->onClick = [this] { CloseUVE(); };
+    close->onClick = [this] { Close(); };
     buttons->add(close, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto footer = prism::make<prism::Border>();
     footer->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -393,15 +393,15 @@ prism::Ref<prism::Widget> EditorSettingsWindowUVE::BuildUVE() {
     return window;
 }
 
-void EditorSettingsWindowUVE::CloseUVE() {
+void EditorSettingsWindow::Close() {
     m_visible = false;
     m_closePending = true;
 }
 
-void EditorSettingsWindowUVE::FrameUVE() {
-    if (m_window != 0 && m_host.WindowCloseRequestedUVE(m_window)) {
-        m_host.ClearCloseRequestUVE(m_window);
-        CloseUVE();
+void EditorSettingsWindow::Frame() {
+    if (m_window != 0 && m_host.WindowCloseRequested(m_window)) {
+        m_host.ClearCloseRequest(m_window);
+        Close();
     }
     if (m_window != 0 && (m_closePending || !m_visible)) {
         // Closed here, between frames: never from inside the window's own input. Unsaved project
@@ -409,7 +409,7 @@ void EditorSettingsWindowUVE::FrameUVE() {
         if (m_source.save && m_source.dirty && m_source.dirty()) {
             static_cast<void>(m_source.save());
         }
-        m_host.CloseWindowUVE(m_window);
+        m_host.CloseWindow(m_window);
         m_window = 0;
         m_closePending = false;
         m_search.reset();
@@ -435,21 +435,21 @@ void EditorSettingsWindowUVE::FrameUVE() {
         }
         // What the restart-only settings were when the window opened: a change to one is announced.
         m_restartBaseline.clear();
-        for (const SettingDescriptorUVE* descriptor : m_source.registry->GetAllUVE()) {
-            if (descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) {
-                if (const std::optional<SettingValueUVE> value = m_source.get(descriptor->id)) {
+        for (const SettingDescriptor* descriptor : m_source.registry->GetAll()) {
+            if (descriptor->HasFlag(Config::kSettingFlagRestartRequired)) {
+                if (const std::optional<SettingValue> value = m_source.get(descriptor->id)) {
                     m_restartBaseline.emplace(descriptor->id, *value);
                 }
             }
         }
-        m_window = m_host.OpenWindowUVE(BuildUVE(), m_source.title, kWidthUVE, kHeightUVE);
+        m_window = m_host.OpenWindow(Build(), m_source.title, kWidth, kHeight);
         if (m_window == 0) {
             m_visible = false;
             return;
         }
-        m_host.AppUVE().runInWindow(m_window, [this] {
-            RebuildTreeUVE();
-            RebuildRowsUVE();
+        m_host.App().runInWindow(m_window, [this] {
+            RebuildTree();
+            RebuildRows();
             if (m_search && prism::Application::exists() &&
                 !prism::Application::get().platform().singleSurface()) {
                 prism::Application::get().setFocus(m_search.get());
@@ -461,12 +461,12 @@ void EditorSettingsWindowUVE::FrameUVE() {
         if (m_focusPending != nullptr) {
             *m_focusPending = false;
         }
-        m_host.FocusWindowUVE(m_window);
+        m_host.FocusWindow(m_window);
     }
     if (m_rowsDirty) {
-        m_host.AppUVE().runInWindow(m_window, [this] { RebuildRowsUVE(); });
+        m_host.App().runInWindow(m_window, [this] { RebuildRows(); });
     }
-    m_host.RenderWindowUVE(m_window, {});
+    m_host.RenderWindow(m_window, {});
 }
 
 } // namespace UVE::Editor

@@ -10,11 +10,11 @@ namespace UVE::Scene {
 
 namespace {
 
-[[nodiscard]] bool IsParticleSystemAssetPathValidUVE(const std::string_view path) noexcept {
+[[nodiscard]] bool IsParticleSystemAssetPathValid(const std::string_view path) noexcept {
     if (path.empty()) {
         return true;
     }
-    if (path.size() > kMaximumParticleSystemAssetPathBytesUVE) {
+    if (path.size() > kMaximumParticleSystemAssetPathBytes) {
         return false;
     }
     if (path.find('\0') != std::string_view::npos) {
@@ -25,18 +25,18 @@ namespace {
 
 } // namespace
 
-[[nodiscard]] bool IsParticleEmitterComponentValidUVE(
-    const ParticleEmitterComponentUVE& component) noexcept {
-    return component.maxParticles > 0U && component.maxParticles <= kMaximumParticleEmitterParticlesUVE &&
+[[nodiscard]] bool IsParticleEmitterComponentValid(
+    const ParticleEmitterComponent& component) noexcept {
+    return component.maxParticles > 0U && component.maxParticles <= kMaximumParticleEmitterParticles &&
            std::isfinite(component.emissionRate) && component.emissionRate >= 0.0F &&
-           component.emissionRate <= kMaximumParticleEmitterEmissionRateUVE &&
+           component.emissionRate <= kMaximumParticleEmitterEmissionRate &&
            std::isfinite(component.lifetimeSeconds) && component.lifetimeSeconds > 0.0F &&
-           component.lifetimeSeconds <= kMaximumParticleEmitterLifetimeSecondsUVE &&
-           IsParticleSystemAssetPathValidUVE(component.systemAssetPath);
+           component.lifetimeSeconds <= kMaximumParticleEmitterLifetimeSeconds &&
+           IsParticleSystemAssetPathValid(component.systemAssetPath);
 }
 
-std::uint32_t ConsumeParticleEmitterAutoEmitCountUVE(float& remainder,
-                                                     const ParticleEmitterComponentUVE& component,
+std::uint32_t ConsumeParticleEmitterAutoEmitCount(float& remainder,
+                                                     const ParticleEmitterComponent& component,
                                                      const float deltaSeconds,
                                                      const std::uint32_t liveParticles) noexcept {
     if (!component.emitting || !std::isfinite(component.emissionRate) || component.emissionRate <= 0.0F ||

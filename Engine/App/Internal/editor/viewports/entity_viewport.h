@@ -9,34 +9,34 @@
 #include "viewport_surface.h"
 
 namespace UVE::Core {
-class EngineServicesUVE;
+class EngineServices;
 }
 
 namespace UVE::App::Viewports {
 
 /// Entity Editor 3D authoring viewport (`entity_viewport`).
 ///
-/// Composes `ViewportSurfaceUVE` and `ViewportSceneInteractionUVE` for isolated `.uventity` and
+/// Composes `ViewportSurface` and `ViewportSceneInteraction` for isolated `.uventity` and
 /// Widget 3D Stage authoring, completely decoupled from Play-in-Editor hooks and Game HUD passes.
-class EntityViewportUVE final {
+class EntityViewport final {
 public:
-    EntityViewportUVE(Editor::EditorUVE& editor, Core::EngineServicesUVE& services);
-    ~EntityViewportUVE() = default;
+    EntityViewport(Editor::Editor& editor, Core::EngineServices& services);
+    ~EntityViewport() = default;
 
-    EntityViewportUVE(const EntityViewportUVE&) = delete;
-    EntityViewportUVE& operator=(const EntityViewportUVE&) = delete;
-    EntityViewportUVE(EntityViewportUVE&&) = delete;
-    EntityViewportUVE& operator=(EntityViewportUVE&&) = delete;
+    EntityViewport(const EntityViewport&) = delete;
+    EntityViewport& operator=(const EntityViewport&) = delete;
+    EntityViewport(EntityViewport&&) = delete;
+    EntityViewport& operator=(EntityViewport&&) = delete;
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return m_surface.ServicesUVE(); }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return m_surface.Services(); }
 
-    [[nodiscard]] std::uint64_t RenderUVE(const Math::Vector2UVE& availableSize,
-                                          Math::Vector2UVE& outUsedSize,
-                                          const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    [[nodiscard]] std::uint64_t Render(const Math::Vector2& availableSize,
+                                          Math::Vector2& outUsedSize,
+                                          const Editor::Editor::ViewportOverlayState& overlayState);
 
 private:
-    ViewportSurfaceUVE m_surface;
-    ViewportSceneInteractionUVE m_interaction;
+    ViewportSurface m_surface;
+    ViewportSceneInteraction m_interaction;
 };
 
 } // namespace UVE::App::Viewports

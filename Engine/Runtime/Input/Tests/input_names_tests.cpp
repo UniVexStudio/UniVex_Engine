@@ -10,56 +10,56 @@
 namespace UVE::Input::Tests {
 namespace {
 
-TEST(InputNamesUVETest, EveryKeyHasAUniqueNameThatParsesBack) {
+TEST(InputNamesTest, EveryKeyHasAUniqueNameThatParsesBack) {
     std::set<std::string> seen;
-    for (int value = static_cast<int>(KeyCodeUVE::A); value < static_cast<int>(KeyCodeUVE::Count); ++value) {
-        const auto key = static_cast<KeyCodeUVE>(value);
-        const std::string_view name = GetKeyNameUVE(key);
+    for (int value = static_cast<int>(KeyCode::A); value < static_cast<int>(KeyCode::Count); ++value) {
+        const auto key = static_cast<KeyCode>(value);
+        const std::string_view name = GetKeyName(key);
         ASSERT_FALSE(name.empty()) << value;
         EXPECT_TRUE(seen.insert(std::string(name)).second) << name;
-        EXPECT_EQ(ParseKeyNameUVE(name), key) << name;
+        EXPECT_EQ(ParseKeyName(name), key) << name;
     }
-    EXPECT_EQ(GetKeyNameUVE(KeyCodeUVE::Unknown), "");
-    EXPECT_EQ(GetKeyNameUVE(KeyCodeUVE::Count), "");
-    EXPECT_FALSE(ParseKeyNameUVE("").has_value());
-    EXPECT_FALSE(ParseKeyNameUVE("space").has_value()); // names are exact
-    EXPECT_EQ(ParseKeyNameUVE("Space"), KeyCodeUVE::Space);
+    EXPECT_EQ(GetKeyName(KeyCode::Unknown), "");
+    EXPECT_EQ(GetKeyName(KeyCode::Count), "");
+    EXPECT_FALSE(ParseKeyName("").has_value());
+    EXPECT_FALSE(ParseKeyName("space").has_value()); // names are exact
+    EXPECT_EQ(ParseKeyName("Space"), KeyCode::Space);
 }
 
-TEST(InputNamesUVETest, ButtonsAxesAndDevicesRoundTrip) {
-    for (int value = 0; value < static_cast<int>(MouseButtonUVE::Count); ++value) {
-        const auto button = static_cast<MouseButtonUVE>(value);
-        EXPECT_EQ(ParseMouseButtonNameUVE(GetMouseButtonNameUVE(button)), button);
+TEST(InputNamesTest, ButtonsAxesAndDevicesRoundTrip) {
+    for (int value = 0; value < static_cast<int>(MouseButton::Count); ++value) {
+        const auto button = static_cast<MouseButton>(value);
+        EXPECT_EQ(ParseMouseButtonName(GetMouseButtonName(button)), button);
     }
-    for (int value = 0; value < static_cast<int>(GamepadButtonUVE::Count); ++value) {
-        const auto button = static_cast<GamepadButtonUVE>(value);
-        EXPECT_EQ(ParseGamepadButtonNameUVE(GetGamepadButtonNameUVE(button)), button);
+    for (int value = 0; value < static_cast<int>(GamepadButton::Count); ++value) {
+        const auto button = static_cast<GamepadButton>(value);
+        EXPECT_EQ(ParseGamepadButtonName(GetGamepadButtonName(button)), button);
     }
-    for (int value = 0; value < static_cast<int>(GamepadAxisUVE::Count); ++value) {
-        const auto axis = static_cast<GamepadAxisUVE>(value);
-        EXPECT_EQ(ParseGamepadAxisNameUVE(GetGamepadAxisNameUVE(axis)), axis);
+    for (int value = 0; value < static_cast<int>(GamepadAxis::Count); ++value) {
+        const auto axis = static_cast<GamepadAxis>(value);
+        EXPECT_EQ(ParseGamepadAxisName(GetGamepadAxisName(axis)), axis);
     }
-    EXPECT_EQ(ParseInputBindingSourceNameUVE("GamepadAxis"), InputBindingSourceUVE::GamepadAxis);
-    EXPECT_FALSE(ParseInputBindingSourceNameUVE("Joystick").has_value());
+    EXPECT_EQ(ParseInputBindingSourceName("GamepadAxis"), InputBindingSource::GamepadAxis);
+    EXPECT_FALSE(ParseInputBindingSourceName("Joystick").has_value());
 }
 
-TEST(InputNamesUVETest, BindingsReadTheWayAPersonSaysThem) {
-    EXPECT_EQ(DescribeInputBindingUVE(KeyBindingUVE(KeyCodeUVE::Space)), "Space");
-    EXPECT_EQ(DescribeInputBindingUVE(MouseBindingUVE(MouseButtonUVE::Right)), "Mouse Right");
-    EXPECT_EQ(DescribeInputBindingUVE(GamepadButtonBindingUVE(0U, GamepadButtonUVE::South)), "Pad 1 South");
-    EXPECT_EQ(DescribeInputBindingUVE(GamepadAxisBindingUVE(1U, GamepadAxisUVE::LeftX, -1.0F)), "Pad 2 LeftX -");
+TEST(InputNamesTest, BindingsReadTheWayAPersonSaysThem) {
+    EXPECT_EQ(DescribeInputBinding(KeyBinding(KeyCode::Space)), "Space");
+    EXPECT_EQ(DescribeInputBinding(MouseBinding(MouseButton::Right)), "Mouse Right");
+    EXPECT_EQ(DescribeInputBinding(GamepadButtonBinding(0U, GamepadButton::South)), "Pad 1 South");
+    EXPECT_EQ(DescribeInputBinding(GamepadAxisBinding(1U, GamepadAxis::LeftX, -1.0F)), "Pad 2 LeftX -");
 }
 
-TEST(InputNamesUVETest, SameInputIgnoresScaleButNotStickDirection) {
-    EXPECT_TRUE(IsSameInputUVE(KeyBindingUVE(KeyCodeUVE::W), KeyBindingUVE(KeyCodeUVE::W)));
-    EXPECT_FALSE(IsSameInputUVE(KeyBindingUVE(KeyCodeUVE::W), KeyBindingUVE(KeyCodeUVE::S)));
-    EXPECT_FALSE(IsSameInputUVE(KeyBindingUVE(KeyCodeUVE::A), MouseBindingUVE(MouseButtonUVE::Left)));
-    EXPECT_TRUE(IsSameInputUVE(GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 1.0F),
-                               GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 0.5F)));
-    EXPECT_FALSE(IsSameInputUVE(GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, 1.0F),
-                                GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX, -1.0F)));
-    EXPECT_FALSE(IsSameInputUVE(GamepadButtonBindingUVE(0U, GamepadButtonUVE::South),
-                                GamepadButtonBindingUVE(1U, GamepadButtonUVE::South)));
+TEST(InputNamesTest, SameInputIgnoresScaleButNotStickDirection) {
+    EXPECT_TRUE(IsSameInput(KeyBinding(KeyCode::W), KeyBinding(KeyCode::W)));
+    EXPECT_FALSE(IsSameInput(KeyBinding(KeyCode::W), KeyBinding(KeyCode::S)));
+    EXPECT_FALSE(IsSameInput(KeyBinding(KeyCode::A), MouseBinding(MouseButton::Left)));
+    EXPECT_TRUE(IsSameInput(GamepadAxisBinding(0U, GamepadAxis::LeftX, 1.0F),
+                               GamepadAxisBinding(0U, GamepadAxis::LeftX, 0.5F)));
+    EXPECT_FALSE(IsSameInput(GamepadAxisBinding(0U, GamepadAxis::LeftX, 1.0F),
+                                GamepadAxisBinding(0U, GamepadAxis::LeftX, -1.0F)));
+    EXPECT_FALSE(IsSameInput(GamepadButtonBinding(0U, GamepadButton::South),
+                                GamepadButtonBinding(1U, GamepadButton::South)));
 }
 
 } // namespace

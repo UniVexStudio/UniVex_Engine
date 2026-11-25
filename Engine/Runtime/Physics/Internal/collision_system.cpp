@@ -14,113 +14,113 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] bool LayersAcceptPairUVE(const Detail::ColliderWorldAabbUVE& first,
-                                       const Detail::ColliderWorldAabbUVE& second) noexcept {
+[[nodiscard]] bool LayersAcceptPair(const Detail::ColliderWorldAabb& first,
+                                       const Detail::ColliderWorldAabb& second) noexcept {
     return (first.collisionMask & second.collisionLayer) != 0U &&
            (second.collisionMask & first.collisionLayer) != 0U;
 }
 
-[[nodiscard]] std::optional<Math::PenetrationUVE> ComputePairPenetrationUVE(
-    const Detail::ColliderWorldAabbUVE& first, const Detail::ColliderWorldAabbUVE& second) {
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Sphere &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
-        return Detail::ComputeSphereSpherePenetrationUVE(
-            first.worldAabb.GetCenterUVE(), first.shapeRadius, second.worldAabb.GetCenterUVE(),
+[[nodiscard]] std::optional<Math::Penetration> ComputePairPenetration(
+    const Detail::ColliderWorldAabb& first, const Detail::ColliderWorldAabb& second) {
+    if (first.shapeType == Scene::ColliderShapeType::Sphere &&
+        second.shapeType == Scene::ColliderShapeType::Sphere) {
+        return Detail::ComputeSphereSpherePenetration(
+            first.worldAabb.GetCenter(), first.shapeRadius, second.worldAabb.GetCenter(),
             second.shapeRadius);
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Sphere &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Box) {
-        return Detail::ComputeSphereOrientedBoxPenetrationUVE(
-            second.worldAabb.GetCenterUVE(), second.shapeHalfExtents, second.shapeRotation,
-            first.worldAabb.GetCenterUVE(), first.shapeRadius);
+    if (first.shapeType == Scene::ColliderShapeType::Sphere &&
+        second.shapeType == Scene::ColliderShapeType::Box) {
+        return Detail::ComputeSphereOrientedBoxPenetration(
+            second.worldAabb.GetCenter(), second.shapeHalfExtents, second.shapeRotation,
+            first.worldAabb.GetCenter(), first.shapeRadius);
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Box &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
-        const std::optional<Math::PenetrationUVE> sphereToBox =
-            Detail::ComputeSphereOrientedBoxPenetrationUVE(
-                first.worldAabb.GetCenterUVE(), first.shapeHalfExtents, first.shapeRotation,
-                second.worldAabb.GetCenterUVE(), second.shapeRadius);
+    if (first.shapeType == Scene::ColliderShapeType::Box &&
+        second.shapeType == Scene::ColliderShapeType::Sphere) {
+        const std::optional<Math::Penetration> sphereToBox =
+            Detail::ComputeSphereOrientedBoxPenetration(
+                first.worldAabb.GetCenter(), first.shapeHalfExtents, first.shapeRotation,
+                second.worldAabb.GetCenter(), second.shapeRadius);
         if (!sphereToBox.has_value()) {
             return std::nullopt;
         }
-        return Math::PenetrationUVE{-sphereToBox->axis, sphereToBox->depth};
+        return Math::Penetration{-sphereToBox->axis, sphereToBox->depth};
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Capsule &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Capsule) {
-        return Detail::ComputeCapsuleCapsulePenetrationUVE(
+    if (first.shapeType == Scene::ColliderShapeType::Capsule &&
+        second.shapeType == Scene::ColliderShapeType::Capsule) {
+        return Detail::ComputeCapsuleCapsulePenetration(
             first.shapeSegmentStart, first.shapeSegmentEnd, first.shapeRadius,
             second.shapeSegmentStart, second.shapeSegmentEnd, second.shapeRadius);
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Capsule &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
-        return Detail::ComputeCapsuleSpherePenetrationUVE(
+    if (first.shapeType == Scene::ColliderShapeType::Capsule &&
+        second.shapeType == Scene::ColliderShapeType::Sphere) {
+        return Detail::ComputeCapsuleSpherePenetration(
             first.shapeSegmentStart, first.shapeSegmentEnd, first.shapeRadius,
-            second.worldAabb.GetCenterUVE(), second.shapeRadius);
+            second.worldAabb.GetCenter(), second.shapeRadius);
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Sphere &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Capsule) {
-        const std::optional<Math::PenetrationUVE> capsuleToSphere =
-            Detail::ComputeCapsuleSpherePenetrationUVE(
+    if (first.shapeType == Scene::ColliderShapeType::Sphere &&
+        second.shapeType == Scene::ColliderShapeType::Capsule) {
+        const std::optional<Math::Penetration> capsuleToSphere =
+            Detail::ComputeCapsuleSpherePenetration(
                 second.shapeSegmentStart, second.shapeSegmentEnd, second.shapeRadius,
-                first.worldAabb.GetCenterUVE(), first.shapeRadius);
+                first.worldAabb.GetCenter(), first.shapeRadius);
         if (!capsuleToSphere.has_value()) {
             return std::nullopt;
         }
-        return Math::PenetrationUVE{-capsuleToSphere->axis, capsuleToSphere->depth};
+        return Math::Penetration{-capsuleToSphere->axis, capsuleToSphere->depth};
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Capsule &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Box) {
-        return Detail::ComputeCapsuleOrientedBoxPenetrationUVE(
-            second.worldAabb.GetCenterUVE(), second.shapeHalfExtents, second.shapeRotation,
+    if (first.shapeType == Scene::ColliderShapeType::Capsule &&
+        second.shapeType == Scene::ColliderShapeType::Box) {
+        return Detail::ComputeCapsuleOrientedBoxPenetration(
+            second.worldAabb.GetCenter(), second.shapeHalfExtents, second.shapeRotation,
             first.shapeSegmentStart, first.shapeSegmentEnd, first.shapeRadius);
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Box &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Capsule) {
-        const std::optional<Math::PenetrationUVE> capsuleToBox =
-            Detail::ComputeCapsuleOrientedBoxPenetrationUVE(
-                first.worldAabb.GetCenterUVE(), first.shapeHalfExtents, first.shapeRotation,
+    if (first.shapeType == Scene::ColliderShapeType::Box &&
+        second.shapeType == Scene::ColliderShapeType::Capsule) {
+        const std::optional<Math::Penetration> capsuleToBox =
+            Detail::ComputeCapsuleOrientedBoxPenetration(
+                first.worldAabb.GetCenter(), first.shapeHalfExtents, first.shapeRotation,
                 second.shapeSegmentStart, second.shapeSegmentEnd, second.shapeRadius);
         if (!capsuleToBox.has_value()) {
             return std::nullopt;
         }
-        return Math::PenetrationUVE{-capsuleToBox->axis, capsuleToBox->depth};
+        return Math::Penetration{-capsuleToBox->axis, capsuleToBox->depth};
     }
-    if (first.shapeType == Scene::ColliderShapeTypeUVE::Box &&
-        second.shapeType == Scene::ColliderShapeTypeUVE::Box) {
-        return Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
-            first.worldAabb.GetCenterUVE(), first.shapeHalfExtents, first.shapeRotation,
-            second.worldAabb.GetCenterUVE(), second.shapeHalfExtents, second.shapeRotation);
+    if (first.shapeType == Scene::ColliderShapeType::Box &&
+        second.shapeType == Scene::ColliderShapeType::Box) {
+        return Detail::ComputeOrientedBoxOrientedBoxPenetration(
+            first.worldAabb.GetCenter(), first.shapeHalfExtents, first.shapeRotation,
+            second.worldAabb.GetCenter(), second.shapeHalfExtents, second.shapeRotation);
     }
-    return Math::ComputePenetrationUVE(first.worldAabb, second.worldAabb);
+    return Math::ComputePenetration(first.worldAabb, second.worldAabb);
 }
 
-void AppendPairIfOverlappingUVE(const std::vector<Detail::ColliderWorldAabbUVE>& colliders,
+void AppendPairIfOverlapping(const std::vector<Detail::ColliderWorldAabb>& colliders,
                                 const std::size_t firstIndex, const std::size_t secondIndex,
-                                std::vector<CollisionPairUVE>& pairs) {
-    const Detail::ColliderWorldAabbUVE& first = colliders[firstIndex];
-    const Detail::ColliderWorldAabbUVE& second = colliders[secondIndex];
-    if (!LayersAcceptPairUVE(first, second)) {
+                                std::vector<CollisionPair>& pairs) {
+    const Detail::ColliderWorldAabb& first = colliders[firstIndex];
+    const Detail::ColliderWorldAabb& second = colliders[secondIndex];
+    if (!LayersAcceptPair(first, second)) {
         return;
     }
 
-    const std::optional<Math::PenetrationUVE> penetration = ComputePairPenetrationUVE(first, second);
+    const std::optional<Math::Penetration> penetration = ComputePairPenetration(first, second);
     if (penetration.has_value()) {
-        pairs.push_back(CollisionPairUVE{first.entity, second.entity, penetration->axis, penetration->depth});
+        pairs.push_back(CollisionPair{first.entity, second.entity, penetration->axis, penetration->depth});
     }
 }
 
 } // namespace
 
-std::vector<CollisionPairUVE> CollisionSystemUVE::DetectCollisionsUVE(Scene::IEntityManagerUVE& entityManager) const {
-    Detail::DynamicAabbBvhUVE bvh(Detail::BuildColliderWorldAabbCacheUVE(entityManager));
-    const std::vector<Detail::ColliderWorldAabbUVE>& colliders = bvh.GetCollidersUVE();
+std::vector<CollisionPair> CollisionSystem::DetectCollisions(Scene::IEntityManager& entityManager) const {
+    Detail::DynamicAabbBvh bvh(Detail::BuildColliderWorldAabbCache(entityManager));
+    const std::vector<Detail::ColliderWorldAabb>& colliders = bvh.GetColliders();
 
-    std::vector<CollisionPairUVE> pairs;
+    std::vector<CollisionPair> pairs;
     std::vector<std::size_t> candidates;
     for (std::size_t firstIndex = 0U; firstIndex < colliders.size(); ++firstIndex) {
-        if (!bvh.QueryUVE(colliders[firstIndex].worldAabb, candidates)) {
+        if (!bvh.Query(colliders[firstIndex].worldAabb, candidates)) {
             for (std::size_t secondIndex = firstIndex + 1U; secondIndex < colliders.size(); ++secondIndex) {
-                AppendPairIfOverlappingUVE(colliders, firstIndex, secondIndex, pairs);
+                AppendPairIfOverlapping(colliders, firstIndex, secondIndex, pairs);
             }
             continue;
         }
@@ -128,7 +128,7 @@ std::vector<CollisionPairUVE> CollisionSystemUVE::DetectCollisionsUVE(Scene::IEn
         std::sort(candidates.begin(), candidates.end());
         for (const std::size_t secondIndex : candidates) {
             if (secondIndex > firstIndex) {
-                AppendPairIfOverlappingUVE(colliders, firstIndex, secondIndex, pairs);
+                AppendPairIfOverlapping(colliders, firstIndex, secondIndex, pairs);
             }
         }
     }

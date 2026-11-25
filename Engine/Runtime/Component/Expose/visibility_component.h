@@ -15,7 +15,7 @@ namespace UVE::Scene {
 /// both - overwriting the author's choice to propagate a parent's state loses the child's own
 /// setting the moment the parent is toggled back.
 ///
-/// Derived, not authored. SceneGraphUVE::UpdateUVE computes `visibleInHierarchy` during the same
+/// Derived, not authored. SceneGraph::Update computes `visibleInHierarchy` during the same
 /// root-first sweep that computes world transforms, because that sweep already guarantees a
 /// parent is processed before its children - which is exactly the ordering inheritance needs, and
 /// the reason this costs no extra walk.
@@ -25,15 +25,15 @@ namespace UVE::Scene {
 /// for by entities that actually use it.
 ///
 /// Thread-safety: value type; safe to copy and move freely with no shared state.
-struct VisibilityComponentUVE final {
+struct VisibilityComponent final {
     /// The authored switch. Written by the editor and by scene loading; never by the scene graph.
     bool visible = true;
 
     /// Derived: this entity's own `visible` AND every ancestor's. Written only by
-    /// SceneGraphUVE::UpdateUVE, read by the renderer and anything else that skips hidden
+    /// SceneGraph::Update, read by the renderer and anything else that skips hidden
     /// objects.
     ///
-    /// Stale until the first update after a change, exactly like WorldTransformComponentUVE -
+    /// Stale until the first update after a change, exactly like WorldTransformComponent -
     /// consumers already run after the scene graph updates, and one that does not is reading a
     /// stale transform too.
     bool visibleInHierarchy = true;
@@ -47,36 +47,36 @@ struct VisibilityComponentUVE final {
     /// visibility, not the camera rig it happens to be attached to. Forcing one hierarchy to serve
     /// both means re-parenting for a reason that has nothing to do with position.
     ///
-    /// kInvalidEntityUVE - the default - means inherit from the transform parent, which is what
+    /// kInvalidEntity - the default - means inherit from the transform parent, which is what
     /// almost everything wants and what every existing scene does.
     ///
     /// The target does NOT have to be an ancestor, or related at all. What it must not be is part
-    /// of a cycle: SceneGraphUVE::UpdateUVE detects one and falls back to the transform parent for
+    /// of a cycle: SceneGraph::Update detects one and falls back to the transform parent for
     /// the entities involved rather than looping or picking an arbitrary winner.
-    EntityUVE visibilityParent = kInvalidEntityUVE;
+    Entity visibilityParent = kInvalidEntity;
 };
 
 /// Always true: both fields are plain bools with no invalid state. Present so the component has
 /// the same validate seam every other component has - a caller writing generic code should not
 /// have to special-case which components can be checked.
-[[nodiscard]] bool IsVisibilityComponentValidUVE(const VisibilityComponentUVE& component) noexcept;
+[[nodiscard]] bool IsVisibilityComponentValid(const VisibilityComponent& component) noexcept;
 
 /// True when `component` does not redirect visibility to `selfEntity` (no immediate self-cycle).
-[[nodiscard]] bool IsVisibilityComponentValidForEntityUVE(
-    const VisibilityComponentUVE& component, EntityUVE selfEntity) noexcept;
+[[nodiscard]] bool IsVisibilityComponentValidForEntity(
+    const VisibilityComponent& component, Entity selfEntity) noexcept;
 
-/// True when `component.visibilityParent` is set (`!= kInvalidEntityUVE`).
-[[nodiscard]] bool HasVisibilityRedirectUVE(const VisibilityComponentUVE& component) noexcept;
+/// True when `component.visibilityParent` is set (`!= kInvalidEntity`).
+[[nodiscard]] bool HasVisibilityRedirect(const VisibilityComponent& component) noexcept;
 
 /// Resolves and writes `visibility->visibleInHierarchy` from `parentVisible` (passes through when null).
-[[nodiscard]] bool ResolveInheritedVisibilityUVE(VisibilityComponentUVE* visibility,
+[[nodiscard]] bool ResolveInheritedVisibility(VisibilityComponent* visibility,
                                                  bool parentVisible) noexcept;
 
 /// True when `visibility` is null (optional component absent -> visible) or `visibleInHierarchy` is true.
-[[nodiscard]] bool IsEffectivelyVisibleUVE(const VisibilityComponentUVE* visibility) noexcept;
+[[nodiscard]] bool IsEffectivelyVisible(const VisibilityComponent* visibility) noexcept;
 
 /// Clears a self-redirecting `visibilityParent` (`visibilityParent == selfEntity`).
-[[nodiscard]] VisibilityComponentUVE SanitizeVisibilityComponentForEntityUVE(
-    const VisibilityComponentUVE& component, EntityUVE selfEntity) noexcept;
+[[nodiscard]] VisibilityComponent SanitizeVisibilityComponentForEntity(
+    const VisibilityComponent& component, Entity selfEntity) noexcept;
 
 } // namespace UVE::Scene

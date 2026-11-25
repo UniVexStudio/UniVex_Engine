@@ -14,50 +14,50 @@ static_assert(std::numeric_limits<float>::is_iec559,
               "Float (de)serialization assumes IEEE-754 bit patterns.");
 static_assert(sizeof(float) == sizeof(std::uint32_t), "Float must be exactly 32 bits.");
 
-void AppendBytesUVE(std::vector<std::byte>& buffer, const void* data, std::size_t size) {
+void AppendBytes(std::vector<std::byte>& buffer, const void* data, std::size_t size) {
     const auto* const bytes = static_cast<const std::byte*>(data);
     buffer.insert(buffer.end(), bytes, bytes + size);
 }
 
-void AppendUint16LeUVE(std::vector<std::byte>& buffer, const std::uint16_t value) {
+void AppendUint16Le(std::vector<std::byte>& buffer, const std::uint16_t value) {
     for (unsigned int shift = 0U; shift < 16U; shift += 8U) {
         buffer.push_back(static_cast<std::byte>((value >> shift) & 0xFFU));
     }
 }
 
-void AppendUint32LeUVE(std::vector<std::byte>& buffer, const std::uint32_t value) {
+void AppendUint32Le(std::vector<std::byte>& buffer, const std::uint32_t value) {
     for (std::uint32_t shift = 0U; shift < 32U; shift += 8U) {
         buffer.push_back(static_cast<std::byte>((value >> shift) & 0xFFU));
     }
 }
 
-void AppendUint64LeUVE(std::vector<std::byte>& buffer, const std::uint64_t value) {
+void AppendUint64Le(std::vector<std::byte>& buffer, const std::uint64_t value) {
     for (std::uint64_t shift = 0U; shift < 64U; shift += 8U) {
         buffer.push_back(static_cast<std::byte>((value >> shift) & 0xFFU));
     }
 }
 
-void AppendFloatLeUVE(std::vector<std::byte>& buffer, const float value) {
-    AppendUint32LeUVE(buffer, std::bit_cast<std::uint32_t>(value));
+void AppendFloatLe(std::vector<std::byte>& buffer, const float value) {
+    AppendUint32Le(buffer, std::bit_cast<std::uint32_t>(value));
 }
 
-void AppendUint16BeUVE(std::vector<std::byte>& buffer, const std::uint16_t value) {
-    AppendUint16LeUVE(buffer, std::byteswap(value));
+void AppendUint16Be(std::vector<std::byte>& buffer, const std::uint16_t value) {
+    AppendUint16Le(buffer, std::byteswap(value));
 }
 
-void AppendUint32BeUVE(std::vector<std::byte>& buffer, const std::uint32_t value) {
-    AppendUint32LeUVE(buffer, std::byteswap(value));
+void AppendUint32Be(std::vector<std::byte>& buffer, const std::uint32_t value) {
+    AppendUint32Le(buffer, std::byteswap(value));
 }
 
-void AppendUint64BeUVE(std::vector<std::byte>& buffer, const std::uint64_t value) {
-    AppendUint64LeUVE(buffer, std::byteswap(value));
+void AppendUint64Be(std::vector<std::byte>& buffer, const std::uint64_t value) {
+    AppendUint64Le(buffer, std::byteswap(value));
 }
 
-void AppendFloatBeUVE(std::vector<std::byte>& buffer, const float value) {
-    AppendUint32BeUVE(buffer, std::bit_cast<std::uint32_t>(value));
+void AppendFloatBe(std::vector<std::byte>& buffer, const float value) {
+    AppendUint32Be(buffer, std::bit_cast<std::uint32_t>(value));
 }
 
-bool ReadUint16LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint16LeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint16_t& outValue) {
     if (offset > buffer.size() || buffer.size() - offset < sizeof(outValue)) {
         return false;
@@ -73,7 +73,7 @@ bool ReadUint16LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t
     return true;
 }
 
-bool ReadUint32LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint32LeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint32_t& outValue) {
     if (offset > buffer.size() || buffer.size() - offset < sizeof(outValue)) {
         return false;
@@ -88,7 +88,7 @@ bool ReadUint32LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t
     return true;
 }
 
-bool ReadUint64LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint64LeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint64_t& outValue) {
     if (offset > buffer.size() || buffer.size() - offset < sizeof(outValue)) {
         return false;
@@ -103,57 +103,57 @@ bool ReadUint64LeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t
     return true;
 }
 
-bool ReadFloatLeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadFloatLeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                               float& outValue) {
     std::uint32_t bits = 0U;
-    if (!ReadUint32LeFromBufferUVE(buffer, offset, bits)) {
+    if (!ReadUint32LeFromBuffer(buffer, offset, bits)) {
         return false;
     }
     outValue = std::bit_cast<float>(bits);
     return true;
 }
 
-bool ReadUint16BeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint16BeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint16_t& outValue) {
     std::uint16_t value = 0U;
-    if (!ReadUint16LeFromBufferUVE(buffer, offset, value)) {
+    if (!ReadUint16LeFromBuffer(buffer, offset, value)) {
         return false;
     }
     outValue = std::byteswap(value);
     return true;
 }
 
-bool ReadUint32BeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint32BeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint32_t& outValue) {
     std::uint32_t value = 0U;
-    if (!ReadUint32LeFromBufferUVE(buffer, offset, value)) {
+    if (!ReadUint32LeFromBuffer(buffer, offset, value)) {
         return false;
     }
     outValue = std::byteswap(value);
     return true;
 }
 
-bool ReadUint64BeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadUint64BeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                                std::uint64_t& outValue) {
     std::uint64_t value = 0U;
-    if (!ReadUint64LeFromBufferUVE(buffer, offset, value)) {
+    if (!ReadUint64LeFromBuffer(buffer, offset, value)) {
         return false;
     }
     outValue = std::byteswap(value);
     return true;
 }
 
-bool ReadFloatBeFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset,
+bool ReadFloatBeFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset,
                               float& outValue) {
     std::uint32_t bits = 0U;
-    if (!ReadUint32BeFromBufferUVE(buffer, offset, bits)) {
+    if (!ReadUint32BeFromBuffer(buffer, offset, bits)) {
         return false;
     }
     outValue = std::bit_cast<float>(bits);
     return true;
 }
 
-bool ReadBytesFromBufferUVE(const std::vector<std::byte>& buffer, std::size_t& offset, std::uint64_t length,
+bool ReadBytesFromBuffer(const std::vector<std::byte>& buffer, std::size_t& offset, std::uint64_t length,
                              std::vector<std::byte>& outBytes) {
     if (offset > buffer.size() || length > static_cast<std::uint64_t>(buffer.size() - offset)) {
         return false;

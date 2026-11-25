@@ -9,22 +9,22 @@
 
 namespace UVE::Editor {
 
-/// EditorBridgeStdioServerUVE exposes one EditorBridgeUVE through bounded length-prefixed UTF-8
+/// EditorBridgeStdioServer exposes one EditorBridge through bounded length-prefixed UTF-8
 /// JSON-RPC frames on caller-owned streams. It is main-thread only and is used exclusively by the
-/// headless bridge-server process mode; the editor's own UI never shares this server's EditorUVE instance.
-class EditorBridgeStdioServerUVE final {
+/// headless bridge-server process mode; the editor's own UI never shares this server's Editor instance.
+class EditorBridgeStdioServer final {
 public:
     /// Frames larger than this are rejected before allocating a JSON body.
-    static constexpr std::size_t kMaximumFrameBytesUVE = 1024U * 1024U;
+    static constexpr std::size_t kMaximumFrameBytes = 1024U * 1024U;
 
-    explicit EditorBridgeStdioServerUVE(EditorBridgeUVE& bridge) noexcept;
+    explicit EditorBridgeStdioServer(EditorBridge& bridge) noexcept;
 
     /// Serves frames until input reaches EOF. A malformed request returns one stable error frame and
     /// leaves the authoritative editor state unchanged. The caller owns lifecycle and stream closure.
-    [[nodiscard]] int ServeUVE(std::istream& input, std::ostream& output, std::ostream& diagnostics);
+    [[nodiscard]] int Serve(std::istream& input, std::ostream& output, std::ostream& diagnostics);
 
 private:
-    EditorBridgeUVE* m_bridge = nullptr;
+    EditorBridge* m_bridge = nullptr;
 };
 
 } // namespace UVE::Editor

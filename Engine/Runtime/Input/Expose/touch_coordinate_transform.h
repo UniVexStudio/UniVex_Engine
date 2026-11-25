@@ -4,9 +4,9 @@
 #include <cmath>
 #include <cstdint>
 namespace UVE::Input {
-enum class TouchOrientationUVE : std::uint8_t { Deg0, Deg90, Deg180, Deg270 };
+enum class TouchOrientation : std::uint8_t { Deg0, Deg90, Deg180, Deg270 };
 /// Safe-area fields are non-negative inset margins from the corresponding viewport edges.
-struct TouchCoordinateViewportUVE final {
+struct TouchCoordinateViewport final {
     float width = 0.0F;
     float height = 0.0F;
     float safeLeft = 0.0F;
@@ -17,8 +17,8 @@ struct TouchCoordinateViewportUVE final {
 
 /// Validates a copied mobile viewport/safe-area snapshot whose safe-area fields are inset margins,
 /// without acquiring native metrics or selecting a platform coordinate backend.
-[[nodiscard]] inline bool ValidateTouchCoordinateViewportUVE(
-    const TouchCoordinateViewportUVE& viewport) noexcept {
+[[nodiscard]] inline bool ValidateTouchCoordinateViewport(
+    const TouchCoordinateViewport& viewport) noexcept {
     return std::isfinite(viewport.width) && std::isfinite(viewport.height) &&
            std::isfinite(viewport.safeLeft) && std::isfinite(viewport.safeTop) &&
            std::isfinite(viewport.safeRight) && std::isfinite(viewport.safeBottom) &&
@@ -29,13 +29,13 @@ struct TouchCoordinateViewportUVE final {
            viewport.safeBottom < viewport.height - viewport.safeTop;
 }
 /// Applies a finite cardinal orientation to normalized [0,1] touch coordinates.
-[[nodiscard]] bool ApplyTouchOrientationUVE(Math::Vector2UVE normalizedPosition,
-                                             TouchOrientationUVE orientation,
-                                             Math::Vector2UVE& outOriented) noexcept;
+[[nodiscard]] bool ApplyTouchOrientation(Math::Vector2 normalizedPosition,
+                                             TouchOrientation orientation,
+                                             Math::Vector2& outOriented) noexcept;
 
 /// Maps finite pixel coordinates into safe-area normalized [0,1] coordinates.
 /// Value-only contract; it does not poll a platform, own lifecycle, or mutate input snapshots.
-[[nodiscard]] bool NormalizeTouchCoordinateUVE(Math::Vector2UVE pixelPosition,
-                                               const TouchCoordinateViewportUVE& viewport,
-                                               Math::Vector2UVE& outNormalized) noexcept;
+[[nodiscard]] bool NormalizeTouchCoordinate(Math::Vector2 pixelPosition,
+                                               const TouchCoordinateViewport& viewport,
+                                               Math::Vector2& outNormalized) noexcept;
 } // namespace UVE::Input

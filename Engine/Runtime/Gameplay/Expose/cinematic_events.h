@@ -9,12 +9,12 @@
 namespace UVE::Gameplay {
 
 /// Queued whenever a playing cinematic's playhead passes an event key: which shot, which key.
-struct CinematicEventFiredUVE final {
-    Scene::EntityUVE cinematic = Scene::kInvalidEntityUVE;
+struct CinematicEventFired final {
+    Scene::Entity cinematic = Scene::kInvalidEntity;
     std::string eventId;
     double timeSeconds = 0.0;
 
-    [[nodiscard]] bool operator==(const CinematicEventFiredUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicEventFired&) const = default;
 };
 
 } // namespace UVE::Gameplay

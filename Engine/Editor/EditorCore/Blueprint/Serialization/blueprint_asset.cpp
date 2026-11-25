@@ -16,41 +16,41 @@
 namespace UVE::Asset {
 namespace {
 
-using JsonUVE = nlohmann::json;
-constexpr std::string_view kBlueprintSchemaUVE = "uve-blueprint-v1";
+using Json = nlohmann::json;
+constexpr std::string_view kBlueprintSchema = "uve-blueprint-v1";
 
-[[nodiscard]] bool NameOkUVE(const std::string& name) noexcept {
-    return !name.empty() && name.size() <= kMaximumBlueprintNameBytesUVE && !name.contains('\0');
+[[nodiscard]] bool NameOk(const std::string& name) noexcept {
+    return !name.empty() && name.size() <= kMaximumBlueprintNameBytes && !name.contains('\0');
 }
 
 } // namespace
 
-bool IsBlueprintAssetValidUVE(const BlueprintAssetUVE& blueprint) noexcept {
-    if (!NameOkUVE(blueprint.parentKind) || blueprint.nodes.size() > kMaximumBlueprintNodesUVE ||
-        blueprint.variables.size() > kMaximumBlueprintVariablesUVE || blueprint.comments.size() > kMaximumBlueprintNodesUVE ||
-        blueprint.wires.size() > kMaximumBlueprintNodesUVE * 8U) {
+bool IsBlueprintAssetValid(const BlueprintAsset& blueprint) noexcept {
+    if (!NameOk(blueprint.parentKind) || blueprint.nodes.size() > kMaximumBlueprintNodes ||
+        blueprint.variables.size() > kMaximumBlueprintVariables || blueprint.comments.size() > kMaximumBlueprintNodes ||
+        blueprint.wires.size() > kMaximumBlueprintNodes * 8U) {
         return false;
     }
     std::set<std::string> names;
-    for (const BlueprintVariableUVE& variable : blueprint.variables) {
-        if (!NameOkUVE(variable.name) || variable.type == BlueprintPinTypeUVE::Exec ||
-            variable.type > BlueprintPinTypeUVE::StringArray || !names.insert(variable.name).second) {
+    for (const BlueprintVariable& variable : blueprint.variables) {
+        if (!NameOk(variable.name) || variable.type == BlueprintPinType::Exec ||
+            variable.type > BlueprintPinType::StringArray || !names.insert(variable.name).second) {
             return false;
         }
     }
     std::set<std::uint32_t> ids;
-    for (const BlueprintNodeUVE& node : blueprint.nodes) {
-        if (node.id == 0U || !ids.insert(node.id).second || node.type.empty() || node.type.size() > kMaximumBlueprintNameBytesUVE ||
+    for (const BlueprintNode& node : blueprint.nodes) {
+        if (node.id == 0U || !ids.insert(node.id).second || node.type.empty() || node.type.size() > kMaximumBlueprintNameBytes ||
             !std::isfinite(node.x) || !std::isfinite(node.y) || node.inputValues.size() > 64U) {
             return false;
         }
     }
-    for (const BlueprintWireUVE& wire : blueprint.wires) {
+    for (const BlueprintWire& wire : blueprint.wires) {
         if (!ids.contains(wire.fromNode) || !ids.contains(wire.toNode) || wire.fromPin > 64U || wire.toPin > 64U) {
             return false;
         }
     }
-    for (const BlueprintCommentUVE& comment : blueprint.comments) {
+    for (const BlueprintComment& comment : blueprint.comments) {
         if (comment.title.size() > 256U || !std::isfinite(comment.x) || !std::isfinite(comment.y) || !std::isfinite(comment.width) ||
             !std::isfinite(comment.height)) {
             return false;
@@ -59,50 +59,50 @@ bool IsBlueprintAssetValidUVE(const BlueprintAssetUVE& blueprint) noexcept {
     return true;
 }
 
-std::string SerializeBlueprintAssetUVE(const BlueprintAssetUVE& blueprint) {
-    JsonUVE variables = JsonUVE::array();
-    for (const BlueprintVariableUVE& v : blueprint.variables) {
+std::string SerializeBlueprintAsset(const BlueprintAsset& blueprint) {
+    Json variables = Json::array();
+    for (const BlueprintVariable& v : blueprint.variables) {
         variables.push_back({{"name", v.name}, {"type", static_cast<std::uint8_t>(v.type)}, {"default", v.defaultText}, {"exposed", v.exposed}});
     }
-    JsonUVE nodes = JsonUVE::array();
-    for (const BlueprintNodeUVE& n : blueprint.nodes) {
-        JsonUVE node{{"id", n.id}, {"type", n.type}, {"x", n.x}, {"y", n.y}, {"inputs", n.inputValues}};
+    Json nodes = Json::array();
+    for (const BlueprintNode& n : blueprint.nodes) {
+        Json node{{"id", n.id}, {"type", n.type}, {"x", n.x}, {"y", n.y}, {"inputs", n.inputValues}};
         if (!n.variable.empty()) {
             node["variable"] = n.variable;
         }
         nodes.push_back(std::move(node));
     }
-    JsonUVE wires = JsonUVE::array();
-    for (const BlueprintWireUVE& w : blueprint.wires) {
+    Json wires = Json::array();
+    for (const BlueprintWire& w : blueprint.wires) {
         wires.push_back({w.fromNode, w.fromPin, w.toNode, w.toPin});
     }
-    JsonUVE comments = JsonUVE::array();
-    for (const BlueprintCommentUVE& c : blueprint.comments) {
+    Json comments = Json::array();
+    for (const BlueprintComment& c : blueprint.comments) {
         comments.push_back({{"title", c.title}, {"x", c.x}, {"y", c.y}, {"w", c.width}, {"h", c.height}, {"color", c.color}});
     }
-    const JsonUVE document{{"schema", kBlueprintSchemaUVE}, {"parentKind", blueprint.parentKind}, {"variables", std::move(variables)},
+    const Json document{{"schema", kBlueprintSchema}, {"parentKind", blueprint.parentKind}, {"variables", std::move(variables)},
                            {"nodes", std::move(nodes)},       {"wires", std::move(wires)},             {"comments", std::move(comments)}};
     return document.dump(1);
 }
 
-std::optional<BlueprintAssetUVE> ParseBlueprintAssetUVE(const std::string& payload) {
+std::optional<BlueprintAsset> ParseBlueprintAsset(const std::string& payload) {
     try {
-        const JsonUVE document = JsonUVE::parse(payload);
-        if (!document.is_object() || document.value("schema", std::string{}) != kBlueprintSchemaUVE) {
+        const Json document = Json::parse(payload);
+        if (!document.is_object() || document.value("schema", std::string{}) != kBlueprintSchema) {
             return std::nullopt;
         }
-        BlueprintAssetUVE blueprint;
+        BlueprintAsset blueprint;
         blueprint.parentKind = document.value("parentKind", blueprint.parentKind);
-        for (const JsonUVE& v : document.value("variables", JsonUVE::array())) {
-            BlueprintVariableUVE variable;
+        for (const Json& v : document.value("variables", Json::array())) {
+            BlueprintVariable variable;
             variable.name = v.value("name", std::string{});
-            variable.type = static_cast<BlueprintPinTypeUVE>(v.value("type", std::uint8_t{3}));
+            variable.type = static_cast<BlueprintPinType>(v.value("type", std::uint8_t{3}));
             variable.defaultText = v.value("default", std::string{});
             variable.exposed = v.value("exposed", false);
             blueprint.variables.push_back(std::move(variable));
         }
-        for (const JsonUVE& n : document.value("nodes", JsonUVE::array())) {
-            BlueprintNodeUVE node;
+        for (const Json& n : document.value("nodes", Json::array())) {
+            BlueprintNode node;
             node.id = n.value("id", 0U);
             node.type = n.value("type", std::string{});
             node.variable = n.value("variable", std::string{});
@@ -111,14 +111,14 @@ std::optional<BlueprintAssetUVE> ParseBlueprintAssetUVE(const std::string& paylo
             node.inputValues = n.value("inputs", std::vector<std::string>{});
             blueprint.nodes.push_back(std::move(node));
         }
-        for (const JsonUVE& w : document.value("wires", JsonUVE::array())) {
+        for (const Json& w : document.value("wires", Json::array())) {
             if (w.is_array() && w.size() == 4U) {
-                blueprint.wires.push_back(BlueprintWireUVE{w[0].get<std::uint32_t>(), w[1].get<std::uint32_t>(), w[2].get<std::uint32_t>(),
+                blueprint.wires.push_back(BlueprintWire{w[0].get<std::uint32_t>(), w[1].get<std::uint32_t>(), w[2].get<std::uint32_t>(),
                                                            w[3].get<std::uint32_t>()});
             }
         }
-        for (const JsonUVE& c : document.value("comments", JsonUVE::array())) {
-            BlueprintCommentUVE comment;
+        for (const Json& c : document.value("comments", Json::array())) {
+            BlueprintComment comment;
             comment.title = c.value("title", comment.title);
             comment.x = c.value("x", 0.0F);
             comment.y = c.value("y", 0.0F);
@@ -127,7 +127,7 @@ std::optional<BlueprintAssetUVE> ParseBlueprintAssetUVE(const std::string& paylo
             comment.color = c.value("color", comment.color);
             blueprint.comments.push_back(std::move(comment));
         }
-        if (!IsBlueprintAssetValidUVE(blueprint)) {
+        if (!IsBlueprintAssetValid(blueprint)) {
             return std::nullopt;
         }
         return blueprint;
@@ -136,39 +136,39 @@ std::optional<BlueprintAssetUVE> ParseBlueprintAssetUVE(const std::string& paylo
     }
 }
 
-std::optional<BlueprintAssetUVE> DecodeBlueprintAssetUVE(const std::vector<std::byte>& file) {
-    const auto decoded = DecodeUveFileEnvelopeUVE(file, "blueprint");
-    if (!decoded.has_value() || decoded->first.assetType != AssetKindUVE::Blueprint || decoded->second.empty() ||
-        decoded->second.size() > kMaximumBlueprintPayloadBytesUVE) {
+std::optional<BlueprintAsset> DecodeBlueprintAsset(const std::vector<std::byte>& file) {
+    const auto decoded = DecodeUveFileEnvelope(file, "blueprint");
+    if (!decoded.has_value() || decoded->first.assetType != AssetKind::Blueprint || decoded->second.empty() ||
+        decoded->second.size() > kMaximumBlueprintPayloadBytes) {
         return std::nullopt;
     }
-    return ParseBlueprintAssetUVE(std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
+    return ParseBlueprintAsset(std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
 }
 
-bool SaveBlueprintAssetUVE(const BlueprintAssetUVE& blueprint, const std::filesystem::path& path) {
-    if (!IsBlueprintAssetValidUVE(blueprint)) {
-        UVE_ERROR("BlueprintAssetUVE: refusing to save an invalid blueprint to {}", path.string());
+bool SaveBlueprintAsset(const BlueprintAsset& blueprint, const std::filesystem::path& path) {
+    if (!IsBlueprintAssetValid(blueprint)) {
+        UVE_ERROR("BlueprintAsset: refusing to save an invalid blueprint to {}", path.string());
         return false;
     }
-    const std::string serialized = SerializeBlueprintAssetUVE(blueprint);
-    if (serialized.size() > kMaximumBlueprintPayloadBytesUVE) {
-        UVE_ERROR("BlueprintAssetUVE: payload too large for {}", path.string());
+    const std::string serialized = SerializeBlueprintAsset(blueprint);
+    if (serialized.size() > kMaximumBlueprintPayloadBytes) {
+        UVE_ERROR("BlueprintAsset: payload too large for {}", path.string());
         return false;
     }
     const auto* const bytes = reinterpret_cast<const std::byte*>(serialized.data());
-    return WriteUveFileUVE(path, AssetKindUVE::Blueprint, std::vector<std::byte>(bytes, bytes + serialized.size()));
+    return WriteUveFile(path, AssetKind::Blueprint, std::vector<std::byte>(bytes, bytes + serialized.size()));
 }
 
-bool LoadBlueprintAssetUVE(const std::filesystem::path& path, BlueprintAssetUVE& outBlueprint) {
-    const auto file = ReadUveFileUVE(path);
-    if (!file.has_value() || file->first.assetType != AssetKindUVE::Blueprint || file->second.size() > kMaximumBlueprintPayloadBytesUVE) {
-        UVE_ERROR("BlueprintAssetUVE: invalid blueprint envelope {}", path.string());
+bool LoadBlueprintAsset(const std::filesystem::path& path, BlueprintAsset& outBlueprint) {
+    const auto file = ReadUveFile(path);
+    if (!file.has_value() || file->first.assetType != AssetKind::Blueprint || file->second.size() > kMaximumBlueprintPayloadBytes) {
+        UVE_ERROR("BlueprintAsset: invalid blueprint envelope {}", path.string());
         return false;
     }
-    std::optional<BlueprintAssetUVE> parsed =
-        ParseBlueprintAssetUVE(std::string(reinterpret_cast<const char*>(file->second.data()), file->second.size()));
+    std::optional<BlueprintAsset> parsed =
+        ParseBlueprintAsset(std::string(reinterpret_cast<const char*>(file->second.data()), file->second.size()));
     if (!parsed.has_value()) {
-        UVE_ERROR("BlueprintAssetUVE: could not read {}", path.string());
+        UVE_ERROR("BlueprintAsset: could not read {}", path.string());
         return false;
     }
     outBlueprint = std::move(*parsed);

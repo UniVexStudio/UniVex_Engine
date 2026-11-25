@@ -14,59 +14,59 @@
 namespace UVE::Threading::Tests {
 namespace {
 
-TEST(JobCounterUVETest, FreshCounter_WaitReturnsImmediately) {
-    JobCounterUVE counter;
-    counter.WaitUVE(); // must not hang: pending count starts at zero
+TEST(JobCounterTest, FreshCounter_WaitReturnsImmediately) {
+    JobCounter counter;
+    counter.Wait(); // must not hang: pending count starts at zero
 }
 
-TEST(JobCounterUVETest, IncrementThenDecrementFromAnotherThread_UnblocksWait) {
-    JobCounterUVE counter;
-    counter.IncrementUVE();
+TEST(JobCounterTest, IncrementThenDecrementFromAnotherThread_UnblocksWait) {
+    JobCounter counter;
+    counter.Increment();
 
     std::thread worker([&counter] {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        counter.DecrementAndNotifyUVE();
+        counter.DecrementAndNotify();
     });
 
-    counter.WaitUVE(); // blocks until the worker thread decrements
+    counter.Wait(); // blocks until the worker thread decrements
     worker.join();
 }
 
-TEST(JobCounterUVETest, MultipleIncrementsRequireMatchingDecrements) {
-    JobCounterUVE counter;
-    counter.IncrementUVE();
-    counter.IncrementUVE();
-    counter.IncrementUVE();
+TEST(JobCounterTest, MultipleIncrementsRequireMatchingDecrements) {
+    JobCounter counter;
+    counter.Increment();
+    counter.Increment();
+    counter.Increment();
 
     std::atomic<int> decrementsDone{0};
     std::thread worker([&counter, &decrementsDone] {
         for (int i = 0; i < 3; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            counter.DecrementAndNotifyUVE();
+            counter.DecrementAndNotify();
             ++decrementsDone;
         }
     });
 
-    counter.WaitUVE();
+    counter.Wait();
     worker.join();
     EXPECT_EQ(decrementsDone.load(), 3);
 }
 
 #if UVE_DEBUG
-TEST(JobCounterUVEDeathTest, DecrementWithoutIncrement_Asserts) {
-    JobCounterUVE counter;
-    EXPECT_DEATH({ counter.DecrementAndNotifyUVE(); }, "");
+TEST(JobCounterDeathTest, DecrementWithoutIncrement_Asserts) {
+    JobCounter counter;
+    EXPECT_DEATH({ counter.DecrementAndNotify(); }, "");
 }
 #else
-TEST(JobCounterUVETest, DecrementWithoutIncrement_IgnoresExtraDecrementInsteadOfUnderflowing) {
-    JobCounterUVE counter;
-    EXPECT_NO_FATAL_FAILURE(counter.DecrementAndNotifyUVE());
-    counter.WaitUVE(); // must not hang: the ignored extra decrement must not have gone negative
+TEST(JobCounterTest, DecrementWithoutIncrement_IgnoresExtraDecrementInsteadOfUnderflowing) {
+    JobCounter counter;
+    EXPECT_NO_FATAL_FAILURE(counter.DecrementAndNotify());
+    counter.Wait(); // must not hang: the ignored extra decrement must not have gone negative
 
     // A legitimate subsequent increment/decrement pair still works correctly afterward.
-    counter.IncrementUVE();
-    counter.DecrementAndNotifyUVE();
-    counter.WaitUVE();
+    counter.Increment();
+    counter.DecrementAndNotify();
+    counter.Wait();
 }
 #endif
 

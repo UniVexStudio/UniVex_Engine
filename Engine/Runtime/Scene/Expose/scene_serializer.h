@@ -7,26 +7,26 @@
 
 namespace UVE::Scene {
 
-/// SceneSerializerUVE is the concrete, engine-standard implementation of ISceneSerializerUVE.
+/// SceneSerializer is the concrete, engine-standard implementation of ISceneSerializer.
 /// Holds no persistent members of its own (same "stateless, dependencies passed per-call" shape
-/// as SceneGraphUVE) — the per-component-type JSON (de)serialization table and the binary
+/// as SceneGraph) — the per-component-type JSON (de)serialization table and the binary
 /// envelope helpers are private implementation details entirely inside scene_serializer_uve.cpp,
 /// including the only `#include <nlohmann/json.hpp>` in this module.
-class SceneSerializerUVE final : public ISceneSerializerUVE {
+class SceneSerializer final : public ISceneSerializer {
 public:
-    SceneSerializerUVE() = default;
+    SceneSerializer() = default;
 
-    [[nodiscard]] std::optional<SceneSnapshotUVE> CaptureUVE(
-        IEntityManagerUVE& entityManager, const std::vector<EntityUVE>& rootEntities,
-        SceneAssetTypeUVE assetType) const override;
-    [[nodiscard]] std::vector<EntityUVE> RestoreUVE(IEntityManagerUVE& entityManager,
-                                                     const SceneSnapshotUVE& snapshot) const override;
+    [[nodiscard]] std::optional<SceneSnapshot> Capture(
+        IEntityManager& entityManager, const std::vector<Entity>& rootEntities,
+        SceneAssetType assetType) const override;
+    [[nodiscard]] std::vector<Entity> Restore(IEntityManager& entityManager,
+                                                     const SceneSnapshot& snapshot) const override;
 
-    [[nodiscard]] bool SaveUVE(IEntityManagerUVE& entityManager,
-                                const std::vector<EntityUVE>& rootEntities,
+    [[nodiscard]] bool Save(IEntityManager& entityManager,
+                                const std::vector<Entity>& rootEntities,
                                 const std::filesystem::path& path,
-                                SceneAssetTypeUVE assetType) override;
-    [[nodiscard]] std::vector<EntityUVE> LoadUVE(IEntityManagerUVE& entityManager,
+                                SceneAssetType assetType) override;
+    [[nodiscard]] std::vector<Entity> Load(IEntityManager& entityManager,
                                                   const std::filesystem::path& path) override;
 };
 

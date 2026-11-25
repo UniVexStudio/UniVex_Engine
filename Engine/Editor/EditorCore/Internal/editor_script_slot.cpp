@@ -29,12 +29,12 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr std::string_view kScriptFolderUVE = "scripts";
-constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
+constexpr std::string_view kScriptFolder = "scripts";
+constexpr std::string_view kUVScriptExtension = ".uvs";
 
 /// A file stem from an object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
-[[nodiscard]] std::string ScriptFileStemUVE(const std::string& name) {
+[[nodiscard]] std::string ScriptFileStem(const std::string& name) {
     std::string stem;
     for (const char character : name) {
         const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
@@ -48,44 +48,44 @@ constexpr std::string_view kUVScriptExtensionUVE = ".uvs";
     while (!stem.empty() && stem.back() == '_') {
         stem.pop_back();
     }
-    constexpr std::size_t kMaximumStemBytesUVE = 64U;
-    if (stem.size() > kMaximumStemBytesUVE) {
-        stem.resize(kMaximumStemBytesUVE);
+    constexpr std::size_t kMaximumStemBytes = 64U;
+    if (stem.size() > kMaximumStemBytes) {
+        stem.resize(kMaximumStemBytes);
     }
     return stem.empty() ? std::string{"script"} : stem;
 }
 
 /// The Script component's declared path property, through which every slot edit goes so it is one
 /// undo entry exactly like any other property edit.
-struct ScriptPathPropertyUVE final {
-    const Core::TypeMetadataEntryUVE* entry = nullptr;
-    const Core::TypeMetadataPropertyUVE* property = nullptr;
+struct ScriptPathProperty final {
+    const Core::TypeMetadataEntry* entry = nullptr;
+    const Core::TypeMetadataProperty* property = nullptr;
 };
 
-[[nodiscard]] ScriptPathPropertyUVE FindScriptPathPropertyUVE() {
-    const Core::TypeMetadataEntryUVE* const entry =
-        Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::ScriptComponentUVE)));
+[[nodiscard]] ScriptPathProperty FindScriptPathProperty() {
+    const Core::TypeMetadataEntry* const entry =
+        Scene::FindSceneComponentMetadata(std::type_index(typeid(Scene::ScriptComponent)));
     if (entry == nullptr) {
         return {};
     }
     const auto property = std::find_if(entry->properties.cbegin(), entry->properties.cend(),
-                                       [](const Core::TypeMetadataPropertyUVE& candidate) {
+                                       [](const Core::TypeMetadataProperty& candidate) {
                                            return candidate.name == "scriptAssetPath";
                                        });
-    return property == entry->properties.cend() ? ScriptPathPropertyUVE{} : ScriptPathPropertyUVE{entry, &*property};
+    return property == entry->properties.cend() ? ScriptPathProperty{} : ScriptPathProperty{entry, &*property};
 }
 
-[[nodiscard]] bool IsUVScriptPathUVE(const std::string_view path) noexcept { return path.ends_with(kUVScriptExtensionUVE); }
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(kUVScriptExtension); }
 
 /// A free script path for `stem`: not a file that exists, and not a path another object already
 /// names (it may not have been saved yet). Bounded, so a folder full of collisions gives up
 /// (empty) instead of spinning.
 template <typename ExistsFn>
-[[nodiscard]] std::string FindFreeScriptPathUVE(const std::string& stem, const std::vector<std::string>& taken,
+[[nodiscard]] std::string FindFreeScriptPath(const std::string& stem, const std::vector<std::string>& taken,
                                                 const std::string_view extension, const ExistsFn& exists) {
-    constexpr int kMaximumAttemptsUVE = 1000;
-    for (int attempt = 1; attempt <= kMaximumAttemptsUVE; ++attempt) {
-        const std::string candidate = std::string{kScriptFolderUVE} + "/" + stem +
+    constexpr int kMaximumAttempts = 1000;
+    for (int attempt = 1; attempt <= kMaximumAttempts; ++attempt) {
+        const std::string candidate = std::string{kScriptFolder} + "/" + stem +
                                       (attempt == 1 ? std::string{} : "_" + std::to_string(attempt)) +
                                       std::string{extension};
         if (std::find(taken.cbegin(), taken.cend(), candidate) == taken.cend() && !exists(candidate)) {
@@ -96,7 +96,7 @@ template <typename ExistsFn>
 }
 
 /// A UVScript identifier from free text: letters, digits and '_', never starting with a digit.
-[[nodiscard]] std::string ScriptIdentifierUVE(const std::string_view text, const std::string_view fallback) {
+[[nodiscard]] std::string ScriptIdentifier(const std::string_view text, const std::string_view fallback) {
     std::string identifier;
     for (const char character : text) {
         const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
@@ -113,44 +113,44 @@ template <typename ExistsFn>
 
 } // namespace
 
-std::string EditorUVE::DescribeScriptAssetProblemUVE(const std::string& path) const {
+std::string Editor::DescribeScriptAssetProblem(const std::string& path) const {
     if (path.empty()) {
         return "Enter the path of a script, such as scripts/player.uvs.";
     }
-    if (!Scene::IsScriptAssetPathValidUVE(path)) {
+    if (!Scene::IsScriptAssetPathValid(path)) {
         return "Use a project-relative path: no drive, no leading '/', no '..'.";
     }
-    if (!IsUVScriptPathUVE(path)) {
+    if (!IsUVScriptPath(path)) {
         return "A script is a UVScript file ending in .uvs.";
     }
-    if (!ReadProjectTextFileUVE(path).has_value()) {
+    if (!ReadProjectTextFile(path).has_value()) {
         return "There is no file at this path.";
     }
     // A script with errors is still assignable: the text editor shows them.
     return {};
 }
 
-std::vector<std::string> EditorUVE::GetKnownScriptAssetPathsUVE() const {
+std::vector<std::string> Editor::GetKnownScriptAssetPaths() const {
     std::vector<std::string> paths;
-    m_services->GetEntityManagerUVE().ForEachUVE<Scene::ScriptComponentUVE>(
-        [this, &paths](const Scene::EntityUVE entity, const Scene::ScriptComponentUVE& script) {
-            if (IsDocumentEntityUVE(entity) && !script.scriptAssetPath.empty()) {
+    m_services->GetEntityManager().ForEach<Scene::ScriptComponent>(
+        [this, &paths](const Scene::Entity entity, const Scene::ScriptComponent& script) {
+            if (IsDocumentEntity(entity) && !script.scriptAssetPath.empty()) {
                 paths.push_back(script.scriptAssetPath);
             }
         });
     // The scripts folder, resolved by the same rule scripts are written by.
-    std::filesystem::path folder = m_services->GetFileSystemUVE().ResolveRealPathUVE(kScriptFolderUVE);
+    std::filesystem::path folder = m_services->GetFileSystem().ResolveRealPath(kScriptFolder);
     if (folder.empty()) {
-        folder = std::filesystem::path{kScriptFolderUVE};
+        folder = std::filesystem::path{kScriptFolder};
     }
     std::error_code error;
     if (std::filesystem::is_directory(folder, error)) {
         for (std::filesystem::recursive_directory_iterator iterator{folder, error}, end; !error && iterator != end;
              iterator.increment(error)) {
-            if (iterator->is_regular_file(error) && iterator->path().extension() == kUVScriptExtensionUVE) {
+            if (iterator->is_regular_file(error) && iterator->path().extension() == kUVScriptExtension) {
                 const std::filesystem::path relative = std::filesystem::relative(iterator->path(), folder, error);
                 if (!error) {
-                    paths.push_back((std::filesystem::path{kScriptFolderUVE} / relative).generic_string());
+                    paths.push_back((std::filesystem::path{kScriptFolder} / relative).generic_string());
                 }
             }
         }
@@ -160,74 +160,74 @@ std::vector<std::string> EditorUVE::GetKnownScriptAssetPathsUVE() const {
     return paths;
 }
 
-bool EditorUVE::AssignScriptToSelectedEntityUVE(const std::string& path) {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE() ||
-        !m_services->GetEntityManagerUVE().HasComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity) ||
-        (!path.empty() && !DescribeScriptAssetProblemUVE(path).empty())) {
+bool Editor::AssignScriptToSelectedEntity(const std::string& path) {
+    if (!IsAuthoringCommandAllowed() || !HasSingleDocumentSelection() ||
+        !m_services->GetEntityManager().HasComponent<Scene::ScriptComponent>(m_selectedEntity) ||
+        (!path.empty() && !DescribeScriptAssetProblem(path).empty())) {
         return false;
     }
-    const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
-    return target.entry != nullptr && SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path);
+    const ScriptPathProperty target = FindScriptPathProperty();
+    return target.entry != nullptr && SetSelectedComponentProperty(*target.entry, *target.property, &path);
 }
 
-bool EditorUVE::CreateUVScriptForSelectedEntityUVE() {
-    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+bool Editor::CreateUVScriptForSelectedEntity() {
+    if (!IsAuthoringCommandAllowed() || !HasSingleDocumentSelection()) {
         return false;
     }
-    const Scene::EntityUVE entity = m_selectedEntity;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) ||
-        !entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath.empty()) {
+    const Scene::Entity entity = m_selectedEntity;
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent<Scene::ScriptComponent>(entity) ||
+        !entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath.empty()) {
         return false;
     }
-    const ScriptPathPropertyUVE target = FindScriptPathPropertyUVE();
+    const ScriptPathProperty target = FindScriptPathProperty();
     if (target.entry == nullptr) {
         return false;
     }
-    const std::string label = GetEntityDisplayLabelUVE(entity);
+    const std::string label = GetEntityDisplayLabel(entity);
     const std::string path =
-        FindFreeScriptPathUVE(ScriptFileStemUVE(label), GetKnownScriptAssetPathsUVE(), kUVScriptExtensionUVE,
-                              [this](const std::string& candidate) { return ReadProjectTextFileUVE(candidate).has_value(); });
-    if (path.empty() || !Scene::IsScriptAssetPathValidUVE(path)) {
+        FindFreeScriptPath(ScriptFileStem(label), GetKnownScriptAssetPaths(), kUVScriptExtension,
+                              [this](const std::string& candidate) { return ReadProjectTextFile(candidate).has_value(); });
+    if (path.empty() || !Scene::IsScriptAssetPathValid(path)) {
         return false;
     }
 
     // The header names the object and the kind it drives; the two handlers every script starts from.
-    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
-        Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
-    const std::string kind = ScriptIdentifierUVE(descriptor != nullptr ? descriptor->displayName : "Object", "Object");
-    const std::string text = "entity " + ScriptIdentifierUVE(label, "Object_") + " : " + kind +
+    const Scene::Objects::SceneObjectDescriptor* const descriptor =
+        Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
+    const std::string kind = ScriptIdentifier(descriptor != nullptr ? descriptor->displayName : "Object", "Object");
+    const std::string text = "entity " + ScriptIdentifier(label, "Object_") + " : " + kind +
                              "\n\non ready:\n    print(\"{name} is ready\")\n\non tick(dt):\n    pass\n";
     // The file first: if it cannot be written, nothing about the object has changed yet.
-    if (!WriteProjectTextFileUVE(path, text) || !SetSelectedComponentPropertyUVE(*target.entry, *target.property, &path)) {
+    if (!WriteProjectTextFile(path, text) || !SetSelectedComponentProperty(*target.entry, *target.property, &path)) {
         return false;
     }
-    return OpenUVScriptForEntityUVE(entity);
+    return OpenUVScriptForEntity(entity);
 }
 
-void EditorUVE::OpenCreateScriptModalUVE(const std::filesystem::path& targetDirectory, const Scene::EntityUVE entity) {
-    m_createScriptModal = CreateScriptModalStateUVE{};
+void Editor::OpenCreateScriptModal(const std::filesystem::path& targetDirectory, const Scene::Entity entity) {
+    m_createScriptModal = CreateScriptModalState{};
     m_createScriptModal.isOpen = true;
     m_createScriptModal.openRequested = true;
     m_createScriptModal.targetDirectory = targetDirectory.empty() ? m_assetTableDirectory : targetDirectory;
     m_createScriptModal.targetEntity = entity;
 
     std::string defaultName = "NewScript";
-    if (entity != Scene::kInvalidEntityUVE && m_services != nullptr) {
-        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        if (entityManager.IsAliveUVE(entity)) {
-            const std::string entityLabel = GetEntityDisplayLabelUVE(entity);
-            defaultName = ScriptIdentifierUVE(entityLabel, "Script");
-            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
-                Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+    if (entity != Scene::kInvalidEntity && m_services != nullptr) {
+        Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+        if (entityManager.IsAlive(entity)) {
+            const std::string entityLabel = GetEntityDisplayLabel(entity);
+            defaultName = ScriptIdentifier(entityLabel, "Script");
+            const Scene::Objects::SceneObjectDescriptor* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
             m_createScriptModal.inheritsClass =
-                descriptor != nullptr ? ScriptIdentifierUVE(descriptor->displayName, "Object") : "Object";
+                descriptor != nullptr ? ScriptIdentifier(descriptor->displayName, "Object") : "Object";
         }
     } else {
         m_createScriptModal.inheritsClass = "Object";
     }
 
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path contentRoot = snapshot.contentRoot;
     std::filesystem::path fullDir = m_createScriptModal.targetDirectory;
     if (fullDir.is_relative()) {

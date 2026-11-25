@@ -6,31 +6,31 @@
 
 namespace UVE::Window {
 
-enum class CursorInputModeUVE : std::uint8_t {
+enum class CursorInputMode : std::uint8_t {
     Normal,
     Hidden,
     Confined,
 };
 
-struct CursorInputResolutionUVE final {
-    CursorInputModeUVE mode = CursorInputModeUVE::Normal;
+struct CursorInputResolution final {
+    CursorInputMode mode = CursorInputMode::Normal;
     bool useCustomCursor = true;
     bool visibilityCompromised = false;
 
-    [[nodiscard]] constexpr bool operator==(const CursorInputResolutionUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const CursorInputResolution&) const noexcept = default;
 };
 
 /// Resolves portable cursor visibility/confinement preferences to GLFW's cursor modes. GLFW's
 /// portable disabled mode captures and hides the cursor, so it cannot satisfy visible+confined.
-[[nodiscard]] constexpr CursorInputResolutionUVE ResolveCursorInputPolicyUVE(
+[[nodiscard]] constexpr CursorInputResolution ResolveCursorInputPolicy(
     const bool visible, const bool confined) noexcept {
     if (confined) {
-        return {CursorInputModeUVE::Confined, false, visible};
+        return {CursorInputMode::Confined, false, visible};
     }
     if (!visible) {
-        return {CursorInputModeUVE::Hidden, false, false};
+        return {CursorInputMode::Hidden, false, false};
     }
-    return {CursorInputModeUVE::Normal, true, false};
+    return {CursorInputMode::Normal, true, false};
 }
 
 } // namespace UVE::Window

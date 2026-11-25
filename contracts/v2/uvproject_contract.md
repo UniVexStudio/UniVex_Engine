@@ -38,7 +38,7 @@ Every UniVex project has a JSON manifest with the `.uvproject` extension at its 
 - `assetDatabasePath`: project-relative filename (typically `".uvassetdb"`)
 - `settingsPath`: project-relative filename (typically `"project.uvsettings"`)
 - `startupScenePath`: content-relative startup scene path, or empty string `""` when not yet configured
-- Optional blocks: `productMetadata` (`EditorProjectProductMetadataUVE`) and `applicationSettings` (`EditorProjectApplicationSettingsUVE`), preserved round-trip without data loss.
+- Optional blocks: `productMetadata` (`EditorProjectProductMetadata`) and `applicationSettings` (`EditorProjectApplicationSettings`), preserved round-trip without data loss.
 
 ## 2. Project Templates (`template.json` & `starter_scene.uvstarter`)
 

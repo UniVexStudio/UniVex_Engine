@@ -15,9 +15,9 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-enum class UIExtendedButtonKindUVE : std::uint8_t {
+enum class UIExtendedButtonKind : std::uint8_t {
     ToggleSwitch = 0,
     MenuButton = 1,
     HyperlinkButton = 2,
@@ -25,26 +25,26 @@ enum class UIExtendedButtonKindUVE : std::uint8_t {
     ColorPickerButton = 4,
 };
 
-struct UIExtendedButtonComponentUVE final {
-    UIExtendedButtonKindUVE kind = UIExtendedButtonKindUVE::ToggleSwitch;
+struct UIExtendedButtonComponent final {
+    UIExtendedButtonKind kind = UIExtendedButtonKind::ToggleSwitch;
     std::string label{"Button"};
     std::string uri{};
-    Math::ColorUVE pickedColor{1.0F, 1.0F, 1.0F};
+    Math::Color pickedColor{1.0F, 1.0F, 1.0F};
     bool toggledOn = false;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const UIExtendedButtonComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIExtendedButtonComponent&) const = default;
 };
 
-struct UIExtendedButtonObjectDefinitionUVE final {
+struct UIExtendedButtonObjectDefinition final {
     static constexpr std::string_view defaultName = "UIExtendedButton";
-    UIExtendedButtonComponentUVE button{};
+    UIExtendedButtonComponent button{};
 };
 
-void ApplyUIExtendedButtonObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                              const UIExtendedButtonObjectDefinitionUVE& value);
+void ApplyUIExtendedButtonObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                              const UIExtendedButtonObjectDefinition& value);
 
-enum class UIDisplayWidgetKindUVE : std::uint8_t {
+enum class UIDisplayWidgetKind : std::uint8_t {
     RichText = 0,
     MultilineTextEdit = 1,
     CodeEdit = 2,
@@ -54,71 +54,71 @@ enum class UIDisplayWidgetKindUVE : std::uint8_t {
     VideoStreamPlayer = 6,
 };
 
-struct UIDisplayWidgetComponentUVE final {
-    UIDisplayWidgetKindUVE kind = UIDisplayWidgetKindUVE::RichText;
+struct UIDisplayWidgetComponent final {
+    UIDisplayWidgetKind kind = UIDisplayWidgetKind::RichText;
     std::string content{};
-    Math::ColorUVE fillColor{0.2F, 0.2F, 0.25F};
+    Math::Color fillColor{0.2F, 0.2F, 0.25F};
     float playbackPositionSeconds = 0.0F;
     bool playing = false;
     bool showLineNumbers = true;
 
-    [[nodiscard]] bool operator==(const UIDisplayWidgetComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIDisplayWidgetComponent&) const = default;
 };
 
-struct UIDisplayWidgetObjectDefinitionUVE final {
+struct UIDisplayWidgetObjectDefinition final {
     static constexpr std::string_view defaultName = "UIDisplayWidget";
-    UIDisplayWidgetComponentUVE display{};
+    UIDisplayWidgetComponent display{};
 };
 
-void ApplyUIDisplayWidgetObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                             const UIDisplayWidgetObjectDefinitionUVE& value);
+void ApplyUIDisplayWidgetObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                             const UIDisplayWidgetObjectDefinition& value);
 
-enum class UIRangeControlKindUVE : std::uint8_t {
+enum class UIRangeControlKind : std::uint8_t {
     TextureProgressBar = 0,
     SpinBox = 1,
 };
 
-struct UIRangeControlComponentUVE final {
-    UIRangeControlKindUVE kind = UIRangeControlKindUVE::SpinBox;
+struct UIRangeControlComponent final {
+    UIRangeControlKind kind = UIRangeControlKind::SpinBox;
     float minValue = 0.0F;
     float maxValue = 100.0F;
     float stepValue = 1.0F;
     float value = 0.0F;
 
-    [[nodiscard]] bool operator==(const UIRangeControlComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIRangeControlComponent&) const = default;
 };
 
-struct UIRangeControlObjectDefinitionUVE final {
+struct UIRangeControlObjectDefinition final {
     static constexpr std::string_view defaultName = "UIRangeControl";
-    UIRangeControlComponentUVE range{};
+    UIRangeControlComponent range{};
 };
 
-void ApplyUIRangeControlObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                            const UIRangeControlObjectDefinitionUVE& value);
+void ApplyUIRangeControlObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                            const UIRangeControlObjectDefinition& value);
 
-enum class UISelectionWidgetKindUVE : std::uint8_t {
+enum class UISelectionWidgetKind : std::uint8_t {
     ItemList = 0,
     TreeView = 1,
     TabBar = 2,
 };
 
-struct UISelectionWidgetComponentUVE final {
-    UISelectionWidgetKindUVE kind = UISelectionWidgetKindUVE::ItemList;
+struct UISelectionWidgetComponent final {
+    UISelectionWidgetKind kind = UISelectionWidgetKind::ItemList;
     std::vector<std::string> items{};
     std::int32_t selectedIndex = -1;
 
-    [[nodiscard]] bool operator==(const UISelectionWidgetComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UISelectionWidgetComponent&) const = default;
 };
 
-struct UISelectionWidgetObjectDefinitionUVE final {
+struct UISelectionWidgetObjectDefinition final {
     static constexpr std::string_view defaultName = "UISelectionWidget";
-    UISelectionWidgetComponentUVE selection{};
+    UISelectionWidgetComponent selection{};
 };
 
-void ApplyUISelectionWidgetObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                               const UISelectionWidgetObjectDefinitionUVE& value);
+void ApplyUISelectionWidgetObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                               const UISelectionWidgetObjectDefinition& value);
 
-enum class UIDialogWindowKindUVE : std::uint8_t {
+enum class UIDialogWindowKind : std::uint8_t {
     SubWindow = 0,
     PopupPanel = 1,
     PopupMenu = 2,
@@ -128,49 +128,49 @@ enum class UIDialogWindowKindUVE : std::uint8_t {
     FileDialog = 6,
 };
 
-struct UIDialogWindowComponentUVE final {
-    UIDialogWindowKindUVE kind = UIDialogWindowKindUVE::AcceptDialog;
+struct UIDialogWindowComponent final {
+    UIDialogWindowKind kind = UIDialogWindowKind::AcceptDialog;
     std::string title{"Dialog"};
     std::string selectedPath{};
     bool visible = false;
     bool confirmed = false;
 
-    [[nodiscard]] bool operator==(const UIDialogWindowComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIDialogWindowComponent&) const = default;
 };
 
-struct UIDialogWindowObjectDefinitionUVE final {
+struct UIDialogWindowObjectDefinition final {
     static constexpr std::string_view defaultName = "UIDialogWindow";
-    UIDialogWindowComponentUVE dialog{};
+    UIDialogWindowComponent dialog{};
 };
 
-void ApplyUIDialogWindowObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                            const UIDialogWindowObjectDefinitionUVE& value);
+void ApplyUIDialogWindowObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                            const UIDialogWindowObjectDefinition& value);
 
-enum class UISpecialInputKindUVE : std::uint8_t {
+enum class UISpecialInputKind : std::uint8_t {
     ColorPicker = 0,
     VirtualJoystick = 1,
 };
 
-struct UISpecialInputComponentUVE final {
-    UISpecialInputKindUVE kind = UISpecialInputKindUVE::VirtualJoystick;
-    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
-    Math::Vector2UVE joystickAxis{0.0F, 0.0F};
+struct UISpecialInputComponent final {
+    UISpecialInputKind kind = UISpecialInputKind::VirtualJoystick;
+    Math::Color color{1.0F, 1.0F, 1.0F};
+    Math::Vector2 joystickAxis{0.0F, 0.0F};
     float deadzone = 0.1F;
 
-    [[nodiscard]] bool operator==(const UISpecialInputComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UISpecialInputComponent&) const = default;
 };
 
-struct UISpecialInputObjectDefinitionUVE final {
+struct UISpecialInputObjectDefinition final {
     static constexpr std::string_view defaultName = "UISpecialInput";
-    UISpecialInputComponentUVE input{};
+    UISpecialInputComponent input{};
 };
 
-void ApplyUISpecialInputObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                            const UISpecialInputObjectDefinitionUVE& value);
+void ApplyUISpecialInputObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                            const UISpecialInputObjectDefinition& value);
 
-/// Sanitizes and steps all extended UI controls (clamping `UIRangeControlComponentUVE::value` to
+/// Sanitizes and steps all extended UI controls (clamping `UIRangeControlComponent::value` to
 /// `[minValue, maxValue]` on `stepValue` increments, advancing playing `VideoStreamPlayer`
 /// widgets, and applying radial deadzones to `VirtualJoystick` axes).
-std::size_t UpdateUIExtendedObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds);
+std::size_t UpdateUIExtendedObjects(IEntityManager& entityManager, float deltaTimeSeconds);
 
 } // namespace UVE::Scene

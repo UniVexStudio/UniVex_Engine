@@ -8,39 +8,39 @@
 
 namespace UVE::ProjectCheck {
 
-enum class ProjectCheckSeverityUVE {
+enum class ProjectCheckSeverity {
     Warning,
     Error,
 };
 
-struct ProjectCheckDiagnosticUVE final {
-    ProjectCheckSeverityUVE severity = ProjectCheckSeverityUVE::Error;
+struct ProjectCheckDiagnostic final {
+    ProjectCheckSeverity severity = ProjectCheckSeverity::Error;
     std::string code;
     std::filesystem::path path;
     std::string message;
     std::string recovery;
 };
 
-struct ProjectCheckReportUVE final {
+struct ProjectCheckReport final {
     std::filesystem::path projectRoot;
-    std::vector<ProjectCheckDiagnosticUVE> diagnostics;
+    std::vector<ProjectCheckDiagnostic> diagnostics;
 
-    [[nodiscard]] bool HasErrorsUVE() const noexcept;
+    [[nodiscard]] bool HasErrors() const noexcept;
 };
 
-struct ProjectCheckOptionsUVE final {
+struct ProjectCheckOptions final {
     std::filesystem::path projectRoot;
     std::filesystem::path assetDatabasePath;
 };
 
 /// Read-only, deterministic project health validation. The checker never writes,
 /// imports, registers assets, loads an editor scene, follows symlinks, or starts a window.
-class ProjectCheckerUVE final {
+class ProjectChecker final {
 public:
-    [[nodiscard]] ProjectCheckReportUVE RunUVE(const ProjectCheckOptionsUVE& options) const;
+    [[nodiscard]] ProjectCheckReport Run(const ProjectCheckOptions& options) const;
 };
 
-[[nodiscard]] std::string RenderProjectCheckTextUVE(const ProjectCheckReportUVE& report);
-[[nodiscard]] std::string RenderProjectCheckJsonUVE(const ProjectCheckReportUVE& report);
+[[nodiscard]] std::string RenderProjectCheckText(const ProjectCheckReport& report);
+[[nodiscard]] std::string RenderProjectCheckJson(const ProjectCheckReport& report);
 
 } // namespace UVE::ProjectCheck

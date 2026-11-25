@@ -10,70 +10,70 @@
 
 namespace UVE::Scene {
 
-bool IsStatic3DObjectDefinitionValidUVE(const Static3DObjectDefinitionUVE& value) noexcept {
-    return IsColliderComponentValidUVE(value.collider);
+bool IsStatic3DObjectDefinitionValid(const Static3DObjectDefinition& value) noexcept {
+    return IsColliderComponentValid(value.collider);
 }
 
-void ApplyStatic3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                      const Static3DObjectDefinitionUVE& value) {
+void ApplyStatic3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                      const Static3DObjectDefinition& value) {
     // Static3D is Object3D plus its own components: the shared baseline guarantee comes first,
     // then this kind's part goes on top.
-    EnsureObject3DBaselineUVE(entityManager, entity, Static3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+    EnsureObject3DBaseline(entityManager, entity, Static3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ColliderComponent>(entity, value.collider);
 }
 
-bool Static3DUVE::IsImmovableUVE() noexcept {
+bool Static3D::IsImmovable() noexcept {
     return true;
 }
 
-float Static3DUVE::InverseMassUVE() noexcept {
+float Static3D::InverseMass() noexcept {
     return 0.0F;
 }
 
-Math::Vector3UVE Static3DUVE::ResolveZeroVelocityUVE() noexcept {
-    return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+Math::Vector3 Static3D::ResolveZeroVelocity() noexcept {
+    return Math::Vector3{0.0F, 0.0F, 0.0F};
 }
 
-Math::Vector3UVE Static3DUVE::ResolveZeroAngularVelocityUVE() noexcept {
-    return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+Math::Vector3 Static3D::ResolveZeroAngularVelocity() noexcept {
+    return Math::Vector3{0.0F, 0.0F, 0.0F};
 }
 
-bool Static3DUVE::IsWorldGeometryUVE(const IEntityManagerUVE& entityManager,
-                                     const EntityUVE entity) noexcept {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
+bool Static3D::IsWorldGeometry(const IEntityManager& entityManager,
+                                     const Entity entity) noexcept {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<ColliderComponent>(entity)) {
         return false;
     }
-    if (!Collider3DUVE::IsParticipatingUVE(
-            entityManager.GetComponentUVE<ColliderComponentUVE>(entity))) {
+    if (!Collider3D::IsParticipating(
+            entityManager.GetComponent<ColliderComponent>(entity))) {
         return false;
     }
-    if (!entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity)) {
+    if (!entityManager.HasComponent<Rigid3DComponent>(entity)) {
         return true;
     }
-    const Rigid3DComponentUVE& body = entityManager.GetComponentUVE<Rigid3DComponentUVE>(entity);
-    return !Rigid3DUVE::IsDynamicUVE(body) || Rigid3DUVE::InverseMassUVE(body) <= 0.0F;
+    const Rigid3DComponent& body = entityManager.GetComponent<Rigid3DComponent>(entity);
+    return !Rigid3D::IsDynamic(body) || Rigid3D::InverseMass(body) <= 0.0F;
 }
 
-Math::AabbUVE Static3DUVE::ComputeWorldAabbUVE(
-    const ColliderComponentUVE& collider,
-    const WorldTransformComponentUVE& worldTransform) noexcept {
-    return Collider3DUVE::GetWorldAabbUVE(collider, worldTransform.worldPosition,
+Math::Aabb Static3D::ComputeWorldAabb(
+    const ColliderComponent& collider,
+    const WorldTransformComponent& worldTransform) noexcept {
+    return Collider3D::GetWorldAabb(collider, worldTransform.worldPosition,
                                           worldTransform.worldRotation, worldTransform.worldScale);
 }
 
-bool Static3DUVE::ContainsWorldPointUVE(const ColliderComponentUVE& collider,
-                                        const WorldTransformComponentUVE& worldTransform,
-                                        const Math::Vector3UVE& worldPoint) noexcept {
-    return Collider3DUVE::ContainsPointUVE(ScaleColliderUVE(collider, worldTransform.worldScale),
+bool Static3D::ContainsWorldPoint(const ColliderComponent& collider,
+                                        const WorldTransformComponent& worldTransform,
+                                        const Math::Vector3& worldPoint) noexcept {
+    return Collider3D::ContainsPoint(ScaleCollider(collider, worldTransform.worldScale),
                                            worldTransform.worldPosition, worldTransform.worldRotation,
                                            worldPoint);
 }
 
-std::optional<Math::RayHitUVE> Static3DUVE::IntersectWorldRayUVE(
-    const ColliderComponentUVE& collider, const WorldTransformComponentUVE& worldTransform,
-    const Math::RayUVE& ray, const float maxDistance) noexcept {
-    return Collider3DUVE::IntersectRayUVE(ScaleColliderUVE(collider, worldTransform.worldScale),
+std::optional<Math::RayHit> Static3D::IntersectWorldRay(
+    const ColliderComponent& collider, const WorldTransformComponent& worldTransform,
+    const Math::Ray& ray, const float maxDistance) noexcept {
+    return Collider3D::IntersectRay(ScaleCollider(collider, worldTransform.worldScale),
                                           worldTransform.worldPosition, worldTransform.worldRotation, ray,
                                           maxDistance);
 }

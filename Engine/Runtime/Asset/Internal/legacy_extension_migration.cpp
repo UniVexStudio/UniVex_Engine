@@ -19,7 +19,7 @@ namespace UVE::Asset {
 namespace {
 
 // Longest names first, so ".uveshadercache" is not read as ".uveshader" + "cache" in text.
-constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamedExtensionsUVE{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamedExtensions{{
     {".uveshadercache", ".uvshadercache"},
     {".uveimportcache", ".uvimportcache"},
     {".uvesettings", ".uvsettings"},
@@ -47,15 +47,15 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamed
     {".uvesky", ".uvsky"},
 }};
 
-[[nodiscard]] std::string LowerUVE(std::string_view text) {
+[[nodiscard]] std::string Lower(std::string_view text) {
     std::string lower{text};
     std::ranges::transform(lower, lower.begin(),
                            [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return lower;
 }
 
-[[nodiscard]] std::string_view LegacyExtensionForUVE(const std::string_view currentExtension) noexcept {
-    for (const auto& [legacy, current] : kRenamedExtensionsUVE) {
+[[nodiscard]] std::string_view LegacyExtensionFor(const std::string_view currentExtension) noexcept {
+    for (const auto& [legacy, current] : kRenamedExtensions) {
         if (current == currentExtension) {
             return legacy;
         }
@@ -63,16 +63,16 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamed
     return {};
 }
 
-[[nodiscard]] bool IsNameCharacterUVE(const char c) noexcept {
+[[nodiscard]] bool IsNameCharacter(const char c) noexcept {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
 
 } // namespace
 
-std::string_view GetRenamedExtensionUVE(const std::string_view extension) noexcept {
+std::string_view GetRenamedExtension(const std::string_view extension) noexcept {
     try {
-        const std::string lower = LowerUVE(extension);
-        for (const auto& [legacy, current] : kRenamedExtensionsUVE) {
+        const std::string lower = Lower(extension);
+        for (const auto& [legacy, current] : kRenamedExtensions) {
             if (legacy == lower) {
                 return current;
             }
@@ -82,9 +82,9 @@ std::string_view GetRenamedExtensionUVE(const std::string_view extension) noexce
     return {};
 }
 
-bool MigrateLegacyFileUVE(const std::filesystem::path& currentPath) {
+bool MigrateLegacyFile(const std::filesystem::path& currentPath) {
     std::error_code error;
-    const std::string_view legacy = LegacyExtensionForUVE(LowerUVE(currentPath.extension().string()));
+    const std::string_view legacy = LegacyExtensionFor(Lower(currentPath.extension().string()));
     if (legacy.empty() || std::filesystem::exists(currentPath, error)) {
         return false;
     }
@@ -102,8 +102,8 @@ bool MigrateLegacyFileUVE(const std::filesystem::path& currentPath) {
     return true;
 }
 
-LegacyMigrationReportUVE MigrateLegacyContentUVE(const std::filesystem::path& root) {
-    LegacyMigrationReportUVE report;
+LegacyMigrationReport MigrateLegacyContent(const std::filesystem::path& root) {
+    LegacyMigrationReport report;
     std::error_code error;
     if (!std::filesystem::is_directory(root, error)) {
         return report;
@@ -113,13 +113,13 @@ LegacyMigrationReportUVE MigrateLegacyContentUVE(const std::filesystem::path& ro
     for (auto it = std::filesystem::recursive_directory_iterator(
              root, std::filesystem::directory_options::skip_permission_denied, error);
          !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
-        if (it->is_regular_file(error) && !GetRenamedExtensionUVE(it->path().extension().string()).empty()) {
+        if (it->is_regular_file(error) && !GetRenamedExtension(it->path().extension().string()).empty()) {
             legacyFiles.push_back(it->path());
         }
     }
     for (const std::filesystem::path& legacy : legacyFiles) {
         std::filesystem::path current = legacy;
-        current.replace_extension(std::string{GetRenamedExtensionUVE(legacy.extension().string())});
+        current.replace_extension(std::string{GetRenamedExtension(legacy.extension().string())});
         if (std::filesystem::exists(current, error)) {
             ++report.skipped;
             continue;
@@ -138,7 +138,7 @@ LegacyMigrationReportUVE MigrateLegacyContentUVE(const std::filesystem::path& ro
     return report;
 }
 
-bool RewriteLegacyExtensionsInTextFileUVE(const std::filesystem::path& file) {
+bool RewriteLegacyExtensionsInTextFile(const std::filesystem::path& file) {
     std::ifstream in(file, std::ios::binary);
     if (!in) {
         return false;
@@ -151,10 +151,10 @@ bool RewriteLegacyExtensionsInTextFileUVE(const std::filesystem::path& file) {
     for (std::size_t i = 0U; i < text.size();) {
         bool replaced = false;
         if (text[i] == '.') {
-            for (const auto& [legacy, current] : kRenamedExtensionsUVE) {
+            for (const auto& [legacy, current] : kRenamedExtensions) {
                 const std::size_t end = i + legacy.size();
-                if (end <= text.size() && LowerUVE(std::string_view{text}.substr(i, legacy.size())) == legacy &&
-                    (end == text.size() || !IsNameCharacterUVE(text[end]))) {
+                if (end <= text.size() && Lower(std::string_view{text}.substr(i, legacy.size())) == legacy &&
+                    (end == text.size() || !IsNameCharacter(text[end]))) {
                     out += current;
                     i = end;
                     replaced = changed = true;

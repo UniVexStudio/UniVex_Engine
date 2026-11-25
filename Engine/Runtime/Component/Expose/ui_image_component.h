@@ -11,12 +11,12 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUIImageSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUIImageSizePixelsUVE = 8192.0F;
+inline constexpr float kMinimumUIImageSizePixels = 1.0F;
+inline constexpr float kMaximumUIImageSizePixels = 8192.0F;
 
 /// A screen-space UI image quad covering `rect` (raw window pixel coordinates, top-left origin).
 /// `textureAssetGuid` names an imported
-/// texture asset the same way MeshComponentUVE::materialGuid names a material - a zero/invalid guid
+/// texture asset the same way MeshComponent::materialGuid names a material - a zero/invalid guid
 /// is a valid authored state (renders as a flat `tintColor` quad with no texture sampled), matching
 /// how an unset asset reference is handled elsewhere in this codebase rather than being rejected.
 ///
@@ -30,35 +30,35 @@ inline constexpr float kMaximumUIImageSizePixelsUVE = 8192.0F;
 /// proportionally rather than overlapping, flat fills (zero guid) always draw one quad, and
 /// non-finite margins fall back to the plain stretched quad - slicing never emits garbage.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UIImageComponentUVE final {
-    Asset::AssetGuidUVE textureAssetGuid{};
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{64.0F, 64.0F}};
-    Math::Vector3UVE tintColor{1.0F, 1.0F, 1.0F};
+struct UIImageComponent final {
+    Asset::AssetGuid textureAssetGuid{};
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{64.0F, 64.0F}};
+    Math::Vector3 tintColor{1.0F, 1.0F, 1.0F};
     float alpha = 1.0F;
     bool nineSliceEnabled = false;
     bool sliceFillCenter = true;
-    Math::Vector2UVE sliceMarginMin{0.0F, 0.0F};
-    Math::Vector2UVE sliceMarginMax{0.0F, 0.0F};
-    Math::Vector2UVE sliceUVMin{0.0F, 0.0F};
-    Math::Vector2UVE sliceUVMax{0.0F, 0.0F};
-    [[nodiscard]] bool operator==(const UIImageComponentUVE&) const = default;
+    Math::Vector2 sliceMarginMin{0.0F, 0.0F};
+    Math::Vector2 sliceMarginMax{0.0F, 0.0F};
+    Math::Vector2 sliceUVMin{0.0F, 0.0F};
+    Math::Vector2 sliceUVMax{0.0F, 0.0F};
+    [[nodiscard]] bool operator==(const UIImageComponent&) const = default;
 };
 
-[[nodiscard]] bool IsUIImageComponentValidUVE(const UIImageComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUIImageComponentValid(const UIImageComponent& component) noexcept;
 
-/// Sanitizes `component` so `rect`, `tintColor`, `alpha`, and 9-slice margins/UVs pass `IsUIImageComponentValidUVE`.
-[[nodiscard]] UIImageComponentUVE SanitizeUIImageComponentUVE(
-    const UIImageComponentUVE& component) noexcept;
+/// Sanitizes `component` so `rect`, `tintColor`, `alpha`, and 9-slice margins/UVs pass `IsUIImageComponentValid`.
+[[nodiscard]] UIImageComponent SanitizeUIImageComponent(
+    const UIImageComponent& component) noexcept;
 
-/// True when `component.textureAssetGuid != Asset::kInvalidAssetGuidUVE`.
-[[nodiscard]] bool HasAssignedUIImageTextureUVE(const UIImageComponentUVE& component) noexcept;
+/// True when `component.textureAssetGuid != Asset::kInvalidAssetGuid`.
+[[nodiscard]] bool HasAssignedUIImageTexture(const UIImageComponent& component) noexcept;
 
 /// True when `nineSliceEnabled` is true, a texture is assigned, and the component is valid.
-[[nodiscard]] bool UsesUIImageNineSliceSplittingUVE(
-    const UIImageComponentUVE& component) noexcept;
+[[nodiscard]] bool UsesUIImageNineSliceSplitting(
+    const UIImageComponent& component) noexcept;
 
 /// Computes the inner center-slice rectangle of `component.rect` (after proportional margin clamping).
-[[nodiscard]] Math::RectUVE ResolveUIImageNineSliceCenterRectUVE(
-    const UIImageComponentUVE& component) noexcept;
+[[nodiscard]] Math::Rect ResolveUIImageNineSliceCenterRect(
+    const UIImageComponent& component) noexcept;
 
 } // namespace UVE::Scene

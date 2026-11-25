@@ -11,39 +11,39 @@ namespace UVE::Audio {
 
 /// Fixed insert-slot count per mixer bus. Slots run in ascending index order, which is the order the
 /// caller authored: slot 0 sees the signal first, the last slot sees what the earlier ones produced.
-inline constexpr std::size_t kMaximumAudioBusInsertsUVE = 4U;
+inline constexpr std::size_t kMaximumAudioBusInserts = 4U;
 
-inline constexpr float kDefaultAudioSampleRateUVE = 48000.0F;
-inline constexpr float kMinimumAudioSampleRateUVE = 8000.0F;
-inline constexpr float kMaximumAudioSampleRateUVE = 384000.0F;
+inline constexpr float kDefaultAudioSampleRate = 48000.0F;
+inline constexpr float kMinimumAudioSampleRate = 8000.0F;
+inline constexpr float kMaximumAudioSampleRate = 384000.0F;
 
-inline constexpr float kMinimumAudioFilterFrequencyHzUVE = 10.0F;
+inline constexpr float kMinimumAudioFilterFrequencyHz = 10.0F;
 /// Biquads are only well behaved strictly below Nyquist, and every design formula stays accurate at
 /// 0.45 of it - so a cutoff is clamped here instead of being allowed to blow the filter up.
-inline constexpr float kMaximumAudioFilterFrequencyRatioUVE = 0.45F;
-inline constexpr float kMinimumAudioFilterQUVE = 0.1F;
-inline constexpr float kMaximumAudioFilterQUVE = 10.0F;
+inline constexpr float kMaximumAudioFilterFrequencyRatio = 0.45F;
+inline constexpr float kMinimumAudioFilterQ = 0.1F;
+inline constexpr float kMaximumAudioFilterQ = 10.0F;
 
 /// Amplitude gain ceiling for the Gain insert (+24 dB). Bounded so a typo cannot produce a
 /// denormal-driven mush or an audio-path surprise; the bus output is clamped to [-1, 1] anyway.
-inline constexpr float kMinimumAudioInsertGainUVE = 0.0F;
-inline constexpr float kMaximumAudioInsertGainUVE = 16.0F;
-inline constexpr float kMaximumAudioEqGainDbUVE = 24.0F;
+inline constexpr float kMinimumAudioInsertGain = 0.0F;
+inline constexpr float kMaximumAudioInsertGain = 16.0F;
+inline constexpr float kMaximumAudioEqGainDb = 24.0F;
 
-inline constexpr float kMinimumAudioDynamicsThresholdDbUVE = -96.0F;
-inline constexpr float kMaximumAudioDynamicsThresholdDbUVE = 0.0F;
-inline constexpr float kMinimumAudioCompressorRatioUVE = 1.0F;
-inline constexpr float kMaximumAudioCompressorRatioUVE = 100.0F;
-inline constexpr float kMinimumAudioDynamicsTimeMsUVE = 0.1F;
-inline constexpr float kMaximumAudioDynamicsTimeMsUVE = 2000.0F;
+inline constexpr float kMinimumAudioDynamicsThresholdDb = -96.0F;
+inline constexpr float kMaximumAudioDynamicsThresholdDb = 0.0F;
+inline constexpr float kMinimumAudioCompressorRatio = 1.0F;
+inline constexpr float kMaximumAudioCompressorRatio = 100.0F;
+inline constexpr float kMinimumAudioDynamicsTimeMs = 0.1F;
+inline constexpr float kMaximumAudioDynamicsTimeMs = 2000.0F;
 
-inline constexpr float kMinimumAudioReverbRoomSizeUVE = 0.0F;
-inline constexpr float kMaximumAudioReverbRoomSizeUVE = 1.0F;
-inline constexpr float kMinimumAudioReverbDampingUVE = 0.0F;
-inline constexpr float kMaximumAudioReverbDampingUVE = 1.0F;
-inline constexpr float kMaximumAudioReverbMixUVE = 1.0F;
+inline constexpr float kMinimumAudioReverbRoomSize = 0.0F;
+inline constexpr float kMaximumAudioReverbRoomSize = 1.0F;
+inline constexpr float kMinimumAudioReverbDamping = 0.0F;
+inline constexpr float kMaximumAudioReverbDamping = 1.0F;
+inline constexpr float kMaximumAudioReverbMix = 1.0F;
 
-enum class AudioInsertKindUVE : std::uint8_t {
+enum class AudioInsertKind : std::uint8_t {
     Gain = 0,
     /// RBJ low-pass; the filter an occluded or muffled source is routed through.
     LowPass,
@@ -61,7 +61,7 @@ enum class AudioInsertKindUVE : std::uint8_t {
 
 /// Every field an insert can read. Only the fields the kind names are validated and used, so a
 /// caller can leave the rest at their defaults.
-struct AudioInsertParamsUVE final {
+struct AudioInsertParams final {
     /// Gain insert multiplier, and the compressor's output makeup gain.
     float gain = 1.0F;
     /// LowPass/HighPass cutoff, PeakEq centre, in Hz.
@@ -83,21 +83,21 @@ struct AudioInsertParamsUVE final {
     float wet = 0.3F;
     float dry = 1.0F;
 
-    [[nodiscard]] bool operator==(const AudioInsertParamsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AudioInsertParams&) const noexcept = default;
 };
 
-struct AudioInsertDescUVE final {
-    AudioInsertKindUVE kind = AudioInsertKindUVE::Gain;
-    AudioInsertParamsUVE params;
+struct AudioInsertDesc final {
+    AudioInsertKind kind = AudioInsertKind::Gain;
+    AudioInsertParams params;
 
-    [[nodiscard]] bool operator==(const AudioInsertDescUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AudioInsertDesc&) const noexcept = default;
 };
 
 /// True when every field this kind reads is finite and inside its documented range. A cleared slot
-/// is not a description - use ClearInsertUVE() rather than relying on some "kind == None" value.
-[[nodiscard]] bool IsAudioInsertDescValidUVE(const AudioInsertDescUVE& desc) noexcept;
+/// is not a description - use ClearInsert() rather than relying on some "kind == None" value.
+[[nodiscard]] bool IsAudioInsertDescValid(const AudioInsertDesc& desc) noexcept;
 
-/// One insert slot's processor. Configured at control rate; ProcessUVE() runs on the audio path and
+/// One insert slot's processor. Configured at control rate; Process() runs on the audio path and
 /// never allocates, throws, or reads configuration the caller is still writing.
 ///
 /// References, since none of this is invented here:
@@ -108,48 +108,48 @@ struct AudioInsertDescUVE final {
 ///
 /// Thread-safety: not thread-safe. Configure on the main/audio thread between blocks, exactly like
 /// every other audio-path object in this module.
-class AudioInsertUVE final {
+class AudioInsert final {
 public:
-    AudioInsertUVE() = default;
-    ~AudioInsertUVE() = default;
-    AudioInsertUVE(const AudioInsertUVE&) = delete;
-    AudioInsertUVE& operator=(const AudioInsertUVE&) = delete;
-    AudioInsertUVE(AudioInsertUVE&&) noexcept = default;
-    AudioInsertUVE& operator=(AudioInsertUVE&&) noexcept = default;
+    AudioInsert() = default;
+    ~AudioInsert() = default;
+    AudioInsert(const AudioInsert&) = delete;
+    AudioInsert& operator=(const AudioInsert&) = delete;
+    AudioInsert(AudioInsert&&) noexcept = default;
+    AudioInsert& operator=(AudioInsert&&) noexcept = default;
 
     /// Validates, then installs `desc`. Reverb delay lines - the only thing here that needs memory -
-    /// are allocated HERE so ProcessUVE() never can. On false nothing changes: the previous
+    /// are allocated HERE so Process() never can. On false nothing changes: the previous
     /// description, the previous coefficients, and the running DSP state all survive.
-    [[nodiscard]] bool ConfigureUVE(const AudioInsertDescUVE& desc, float sampleRateHz);
+    [[nodiscard]] bool Configure(const AudioInsertDesc& desc, float sampleRateHz);
 
     /// Bypasses the slot and resets its history. The description is discarded.
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 
-    [[nodiscard]] bool IsActiveUVE() const noexcept { return m_active; }
-    [[nodiscard]] const AudioInsertDescUVE& GetDescriptionUVE() const noexcept { return m_desc; }
-    [[nodiscard]] AudioInsertKindUVE GetKindUVE() const noexcept { return m_desc.kind; }
+    [[nodiscard]] bool IsActive() const noexcept { return m_active; }
+    [[nodiscard]] const AudioInsertDesc& GetDescription() const noexcept { return m_desc; }
+    [[nodiscard]] AudioInsertKind GetKind() const noexcept { return m_desc.kind; }
 
     /// Rebuilds coefficients and delay lines for a new device rate. False when the rebuild could not
     /// happen (only an allocation failure can cause that), in which case the slot is bypassed rather
     /// than left running coefficients for the wrong rate.
-    [[nodiscard]] bool SetSampleRateUVE(float sampleRateHz) noexcept;
+    [[nodiscard]] bool SetSampleRate(float sampleRateHz) noexcept;
 
     /// In-place. A bypassed slot leaves the buffer untouched. No allocation, no throw.
-    void ProcessUVE(float* samples, std::size_t frameCount) noexcept;
+    void Process(float* samples, std::size_t frameCount) noexcept;
 
 private:
     /// Transposed direct form II: two history words per biquad, no per-sample coefficient math.
-    struct BiquadStateUVE final {
+    struct BiquadState final {
         float z1 = 0.0F;
         float z2 = 0.0F;
     };
-    struct DynamicsStateUVE final {
+    struct DynamicsState final {
         /// Attack/release follower over the rectified signal, in linear amplitude.
         float envelope = 0.0F;
         /// Smoothed gain the limiter applies; dropped instantly, raised on release.
         float gain = 1.0F;
     };
-    struct ReverbStateUVE final {
+    struct ReverbState final {
         std::array<std::vector<float>, 4> combBuffers;
         std::array<std::size_t, 4> combIndices{};
         /// One sample of damping memory per comb (Freeverb's lowpass inside the feedback path).
@@ -158,65 +158,65 @@ private:
         std::array<std::size_t, 2> allpassIndices{};
     };
 
-    [[nodiscard]] bool BuildReverbUVE(float sampleRateHz);
-    void ResetStateUVE() noexcept;
-    void ComputeBiquadCoefficientsUVE(float sampleRateHz) noexcept;
-    void ProcessBiquadUVE(float* samples, std::size_t frameCount) noexcept;
-    void ProcessGainUVE(float* samples, std::size_t frameCount) noexcept;
-    void ProcessCompressorUVE(float* samples, std::size_t frameCount) noexcept;
-    void ProcessLimiterUVE(float* samples, std::size_t frameCount) noexcept;
-    void ProcessReverbUVE(float* samples, std::size_t frameCount) noexcept;
+    [[nodiscard]] bool BuildReverb(float sampleRateHz);
+    void ResetState() noexcept;
+    void ComputeBiquadCoefficients(float sampleRateHz) noexcept;
+    void ProcessBiquad(float* samples, std::size_t frameCount) noexcept;
+    void ProcessGain(float* samples, std::size_t frameCount) noexcept;
+    void ProcessCompressor(float* samples, std::size_t frameCount) noexcept;
+    void ProcessLimiter(float* samples, std::size_t frameCount) noexcept;
+    void ProcessReverb(float* samples, std::size_t frameCount) noexcept;
 
-    AudioInsertDescUVE m_desc;
+    AudioInsertDesc m_desc;
     bool m_active = false;
-    float m_sampleRate = kDefaultAudioSampleRateUVE;
+    float m_sampleRate = kDefaultAudioSampleRate;
 
     float m_b0 = 1.0F;
     float m_b1 = 0.0F;
     float m_b2 = 0.0F;
     float m_a1 = 0.0F;
     float m_a2 = 0.0F;
-    BiquadStateUVE m_biquad;
-    DynamicsStateUVE m_dynamics;
+    BiquadState m_biquad;
+    DynamicsState m_dynamics;
     /// One-pole coefficients for the envelope follower and the limiter's release.
     float m_attackCoefficient = 1.0F;
     float m_releaseCoefficient = 1.0F;
     /// Compressor makeup gain, precomputed.
     float m_makeupGain = 1.0F;
-    ReverbStateUVE m_reverb;
+    ReverbState m_reverb;
 };
 
 /// Fixed, ordered insert stack owned by one mixer bus. Owns no bus, device, voice, stream or sample
 /// buffer: the caller supplies the samples it processes.
-class AudioBusInsertChainUVE final {
+class AudioBusInsertChain final {
 public:
-    AudioBusInsertChainUVE() = default;
-    ~AudioBusInsertChainUVE() = default;
-    AudioBusInsertChainUVE(const AudioBusInsertChainUVE&) = delete;
-    AudioBusInsertChainUVE& operator=(const AudioBusInsertChainUVE&) = delete;
-    AudioBusInsertChainUVE(AudioBusInsertChainUVE&&) noexcept = default;
-    AudioBusInsertChainUVE& operator=(AudioBusInsertChainUVE&&) noexcept = default;
+    AudioBusInsertChain() = default;
+    ~AudioBusInsertChain() = default;
+    AudioBusInsertChain(const AudioBusInsertChain&) = delete;
+    AudioBusInsertChain& operator=(const AudioBusInsertChain&) = delete;
+    AudioBusInsertChain(AudioBusInsertChain&&) noexcept = default;
+    AudioBusInsertChain& operator=(AudioBusInsertChain&&) noexcept = default;
 
-    [[nodiscard]] bool SetInsertUVE(std::size_t slot, const AudioInsertDescUVE& desc);
+    [[nodiscard]] bool SetInsert(std::size_t slot, const AudioInsertDesc& desc);
     /// Clears one slot; false for an out-of-range index.
-    [[nodiscard]] bool ClearInsertUVE(std::size_t slot) noexcept;
+    [[nodiscard]] bool ClearInsert(std::size_t slot) noexcept;
     /// Reads one slot's description; false when the index is out of range or the slot is bypassed.
-    [[nodiscard]] bool GetInsertUVE(std::size_t slot, AudioInsertDescUVE& outDesc) const noexcept;
-    [[nodiscard]] bool HasActiveInsertsUVE() const noexcept;
+    [[nodiscard]] bool GetInsert(std::size_t slot, AudioInsertDesc& outDesc) const noexcept;
+    [[nodiscard]] bool HasActiveInserts() const noexcept;
 
-    void SetSampleRateUVE(float sampleRateHz) noexcept;
-    [[nodiscard]] float GetSampleRateUVE() const noexcept { return m_sampleRate; }
+    void SetSampleRate(float sampleRateHz) noexcept;
+    [[nodiscard]] float GetSampleRate() const noexcept { return m_sampleRate; }
 
     /// Copies input to output once, runs every active insert in ascending slot order in place, then
     /// clamps the result into [-1, 1] exactly once - inserts are not limited individually, because a
     /// stage that clips before the next filter is run is a distortion the caller never asked for.
-    void ProcessUVE(const float* inputSamples, float* outputSamples, std::size_t frameCount) noexcept;
+    void Process(const float* inputSamples, float* outputSamples, std::size_t frameCount) noexcept;
     /// Same chain without the copy, for a caller that already owns the buffer in place.
-    void ProcessInPlaceUVE(float* samples, std::size_t frameCount) noexcept;
+    void ProcessInPlace(float* samples, std::size_t frameCount) noexcept;
 
 private:
-    std::array<AudioInsertUVE, kMaximumAudioBusInsertsUVE> m_inserts;
-    float m_sampleRate = kDefaultAudioSampleRateUVE;
+    std::array<AudioInsert, kMaximumAudioBusInserts> m_inserts;
+    float m_sampleRate = kDefaultAudioSampleRate;
 };
 
 } // namespace UVE::Audio

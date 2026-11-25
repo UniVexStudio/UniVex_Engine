@@ -10,144 +10,144 @@
 
 namespace UVE::Render {
 
-/// MeshRendererUVE is the concrete, engine-standard implementation of IMeshRendererUVE.
-/// Integrates DynamicMeshBvhUVE as an internal spatial acceleration structure to eliminate
+/// MeshRenderer is the concrete, engine-standard implementation of IMeshRenderer.
+/// Integrates DynamicMeshBvh as an internal spatial acceleration structure to eliminate
 /// linear O(N) entity traversal during visibility set generation and cull off-screen subtrees
 /// before candidate placement, component inspection, or layer checks.
-class MeshRendererUVE final : public IMeshRendererUVE {
+class MeshRenderer final : public IMeshRenderer {
 public:
-    MeshRendererUVE() = default;
-    ~MeshRendererUVE() override = default;
+    MeshRenderer() = default;
+    ~MeshRenderer() override = default;
 
-    MeshRendererUVE(const MeshRendererUVE&) = default;
-    MeshRendererUVE& operator=(const MeshRendererUVE&) = default;
-    MeshRendererUVE(MeshRendererUVE&&) noexcept = default;
-    MeshRendererUVE& operator=(MeshRendererUVE&&) noexcept = default;
+    MeshRenderer(const MeshRenderer&) = default;
+    MeshRenderer& operator=(const MeshRenderer&) = default;
+    MeshRenderer(MeshRenderer&&) noexcept = default;
+    MeshRenderer& operator=(MeshRenderer&&) noexcept = default;
 
-    // --- IMeshRendererUVE Interface Overrides ---
+    // --- IMeshRenderer Interface Overrides ---
 
-    [[nodiscard]] RenderQueueUVE ExtractRenderQueueUVE(Scene::IEntityManagerUVE& entityManager,
-                                                         Asset::IAssetManagerUVE& assetManager,
-                                                         Asset::IAssetDatabaseUVE& assetDatabase,
-                                                         const Math::FrustumUVE& cullFrustum) const override;
+    [[nodiscard]] RenderQueue ExtractRenderQueue(Scene::IEntityManager& entityManager,
+                                                         Asset::IAssetManager& assetManager,
+                                                         Asset::IAssetDatabase& assetDatabase,
+                                                         const Math::Frustum& cullFrustum) const override;
 
-    void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
-                               Asset::IAssetDatabaseUVE& assetDatabase,
-                               MeshVisibilitySetUVE& outVisibilitySet) const override;
+    void BuildVisibilitySet(Scene::IEntityManager& entityManager, Asset::IAssetManager& assetManager,
+                               Asset::IAssetDatabase& assetDatabase,
+                               MeshVisibilitySet& outVisibilitySet) const override;
 
-    void CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet, const Math::FrustumUVE& cullFrustum,
-                                  RenderQueueUVE& outQueue) const override;
+    void CullVisibilitySetInto(const MeshVisibilitySet& visibilitySet, const Math::Frustum& cullFrustum,
+                                  RenderQueue& outQueue) const override;
 
-    void ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
-                                   Asset::IAssetDatabaseUVE& assetDatabase, const Math::FrustumUVE& cullFrustum,
-                                   RenderQueueUVE& outQueue) const override;
+    void ExtractRenderQueueInto(Scene::IEntityManager& entityManager, Asset::IAssetManager& assetManager,
+                                   Asset::IAssetDatabase& assetDatabase, const Math::Frustum& cullFrustum,
+                                   RenderQueue& outQueue) const override;
 
     // --- Spatial Acceleration Query Overloads ---
 
     /// Builds this frame's candidate set accelerated by the provided view cull frustum.
-    /// Traverses the internal DynamicMeshBvhUVE hierarchy, immediately pruning subtrees outside
+    /// Traverses the internal DynamicMeshBvh hierarchy, immediately pruning subtrees outside
     /// the frustum planes and populating candidates only from surviving entities.
-    void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
-                               Asset::IAssetDatabaseUVE& assetDatabase, const Math::FrustumUVE& cullFrustum,
-                               MeshVisibilitySetUVE& outVisibilitySet) const;
+    void BuildVisibilitySet(Scene::IEntityManager& entityManager, Asset::IAssetManager& assetManager,
+                               Asset::IAssetDatabase& assetDatabase, const Math::Frustum& cullFrustum,
+                               MeshVisibilitySet& outVisibilitySet) const;
 
     /// Builds this frame's candidate set accelerated across multiple active view/cascade frustums.
     /// Surviving entities intersecting any frustum in the list are retained.
-    void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
-                               Asset::IAssetDatabaseUVE& assetDatabase,
-                               const std::vector<Math::FrustumUVE>& cullFrustums,
-                               MeshVisibilitySetUVE& outVisibilitySet) const;
+    void BuildVisibilitySet(Scene::IEntityManager& entityManager, Asset::IAssetManager& assetManager,
+                               Asset::IAssetDatabase& assetDatabase,
+                               const std::vector<Math::Frustum>& cullFrustums,
+                               MeshVisibilitySet& outVisibilitySet) const;
 
     /// Builds this frame's candidate set accelerated by an active spatial scene bounding box region.
-    void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager, Asset::IAssetManagerUVE& assetManager,
-                               Asset::IAssetDatabaseUVE& assetDatabase, const Math::AabbUVE& boundingRegion,
-                               MeshVisibilitySetUVE& outVisibilitySet) const;
+    void BuildVisibilitySet(Scene::IEntityManager& entityManager, Asset::IAssetManager& assetManager,
+                               Asset::IAssetDatabase& assetDatabase, const Math::Aabb& boundingRegion,
+                               MeshVisibilitySet& outVisibilitySet) const;
 
     // --- Active View/Frustum State Management ---
 
-    /// Sets an active camera/view frustum used by BuildVisibilitySetUVE(...) when no explicit frustum is passed.
-    void SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept override;
+    /// Sets an active camera/view frustum used by BuildVisibilitySet(...) when no explicit frustum is passed.
+    void SetActiveCullFrustum(const Math::Frustum& frustum) const noexcept override;
 
-    /// Sets active camera view + shadow cascade frustums used by BuildVisibilitySetUVE(...).
-    void SetActiveCullFrustumsUVE(std::vector<Math::FrustumUVE> frustums) const noexcept;
+    /// Sets active camera view + shadow cascade frustums used by BuildVisibilitySet(...).
+    void SetActiveCullFrustums(std::vector<Math::Frustum> frustums) const noexcept;
 
-    /// Sets an active spatial bounding region used by BuildVisibilitySetUVE(...).
-    void SetActiveSceneBoundingRegionUVE(const Math::AabbUVE& region) const noexcept;
+    /// Sets an active spatial bounding region used by BuildVisibilitySet(...).
+    void SetActiveSceneBoundingRegion(const Math::Aabb& region) const noexcept;
 
     /// Clears any configured active cull frustum.
-    void ClearActiveCullFrustumUVE() const noexcept override;
+    void ClearActiveCullFrustum() const noexcept override;
 
     /// Clears any configured active bounding region.
-    void ClearActiveSceneBoundingRegionUVE() const noexcept;
+    void ClearActiveSceneBoundingRegion() const noexcept;
 
-    [[nodiscard]] bool HasActiveCullFrustumUVE() const noexcept;
-    [[nodiscard]] const Math::FrustumUVE& GetActiveCullFrustumUVE() const noexcept;
-    [[nodiscard]] bool HasActiveSceneBoundingRegionUVE() const noexcept;
-    [[nodiscard]] const Math::AabbUVE& GetActiveSceneBoundingRegionUVE() const noexcept;
+    [[nodiscard]] bool HasActiveCullFrustum() const noexcept;
+    [[nodiscard]] const Math::Frustum& GetActiveCullFrustum() const noexcept;
+    [[nodiscard]] bool HasActiveSceneBoundingRegion() const noexcept;
+    [[nodiscard]] const Math::Aabb& GetActiveSceneBoundingRegion() const noexcept;
 
     // --- BVH Maintenance & Dynamic Synchronization ---
 
     /// Inserts or updates an entity's bounding volume in the spatial BVH in O(log N) time with bottom-up refitting.
-    void UpdateEntitySpatialIndexUVE(Scene::EntityUVE entity, const Math::AabbUVE& worldBounds) const;
+    void UpdateEntitySpatialIndex(Scene::Entity entity, const Math::Aabb& worldBounds) const;
 
     /// Resolves an entity's current world bounds from its WorldTransformComponent and MeshComponent,
     /// updating its entry in the spatial BVH.
-    void UpdateEntitySpatialIndexUVE(Scene::IEntityManagerUVE& entityManager,
-                                     Asset::IAssetManagerUVE& assetManager,
-                                     Asset::IAssetDatabaseUVE& assetDatabase,
-                                     Scene::EntityUVE entity) const;
+    void UpdateEntitySpatialIndex(Scene::IEntityManager& entityManager,
+                                     Asset::IAssetManager& assetManager,
+                                     Asset::IAssetDatabase& assetDatabase,
+                                     Scene::Entity entity) const;
 
     /// Removes an entity from the spatial BVH in O(log N) time.
-    void RemoveEntitySpatialIndexUVE(Scene::EntityUVE entity) const;
+    void RemoveEntitySpatialIndex(Scene::Entity entity) const;
 
     /// Synchronizes the internal spatial BVH with all valid mesh entities in the scene entity manager.
-    void SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
-                                          Asset::IAssetManagerUVE& assetManager,
-                                          Asset::IAssetDatabaseUVE& assetDatabase) const override;
+    void SynchronizeSpatialAcceleration(Scene::IEntityManager& entityManager,
+                                          Asset::IAssetManager& assetManager,
+                                          Asset::IAssetDatabase& assetDatabase) const override;
 
     /// Forces a full rebuild of the spatial BVH from scratch using median-split partitioning.
-    void RebuildSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
-                                       Asset::IAssetManagerUVE& assetManager,
-                                       Asset::IAssetDatabaseUVE& assetDatabase) const;
+    void RebuildSpatialAcceleration(Scene::IEntityManager& entityManager,
+                                       Asset::IAssetManager& assetManager,
+                                       Asset::IAssetDatabase& assetDatabase) const;
 
     /// Clears the spatial BVH and active query parameters.
-    void ClearSpatialAccelerationUVE() const noexcept;
+    void ClearSpatialAcceleration() const noexcept;
 
     // --- Spatial BVH Direct Inspection Accessors ---
 
-    [[nodiscard]] const DynamicMeshBvhUVE& GetSpatialBvhUVE() const noexcept { return m_spatialBvh; }
-    [[nodiscard]] DynamicMeshBvhUVE& GetSpatialBvhUVE() noexcept { return m_spatialBvh; }
+    [[nodiscard]] const DynamicMeshBvh& GetSpatialBvh() const noexcept { return m_spatialBvh; }
+    [[nodiscard]] DynamicMeshBvh& GetSpatialBvh() noexcept { return m_spatialBvh; }
 
 private:
-    void GetAllIndexedEntitiesUVE(std::vector<Scene::EntityUVE>& outEntities) const;
+    void GetAllIndexedEntities(std::vector<Scene::Entity>& outEntities) const;
 
-    void QueryFrustumsUVE(const std::vector<Math::FrustumUVE>& frustums,
-                          std::vector<Scene::EntityUVE>& outEntities) const;
+    void QueryFrustums(const std::vector<Math::Frustum>& frustums,
+                          std::vector<Scene::Entity>& outEntities) const;
 
     /// Drops any BVH entry and records the entity as unindexable. Entities without a finite
     /// spatial index (an invalid material-without-mesh pair, or non-finite placement bounds)
     /// cannot be frustum-tested, but they must still reach the visibility walk: that is where
     /// Debug builds assert the misconfiguration and where the diagnostics count it.
-    void MarkUnindexableUVE(Scene::EntityUVE entity) const;
+    void MarkUnindexable(Scene::Entity entity) const;
 
     /// Removes the unindexable record once the entity is indexable again (or gone entirely).
-    void ForgetUnindexableUVE(Scene::EntityUVE entity) const;
+    void ForgetUnindexable(Scene::Entity entity) const;
 
     /// Appends every unindexable entity to a BVH survivor list so the walk always sees them.
-    void AppendUnindexableEntitiesUVE(std::vector<Scene::EntityUVE>& survivingEntities) const;
+    void AppendUnindexableEntities(std::vector<Scene::Entity>& survivingEntities) const;
 
-    void BuildCandidatesFromSurvivingEntitiesUVE(
-        const std::vector<Scene::EntityUVE>& survivingEntities,
-        Scene::IEntityManagerUVE& entityManager,
-        Asset::IAssetManagerUVE& assetManager,
-        Asset::IAssetDatabaseUVE& assetDatabase,
-        MeshVisibilitySetUVE& outVisibilitySet) const;
+    void BuildCandidatesFromSurvivingEntities(
+        const std::vector<Scene::Entity>& survivingEntities,
+        Scene::IEntityManager& entityManager,
+        Asset::IAssetManager& assetManager,
+        Asset::IAssetDatabase& assetDatabase,
+        MeshVisibilitySet& outVisibilitySet) const;
 
-    mutable DynamicMeshBvhUVE m_spatialBvh;
-    mutable std::vector<Scene::EntityUVE> m_unindexableEntities;
-    mutable std::optional<Math::FrustumUVE> m_activeCullFrustum;
-    mutable std::vector<Math::FrustumUVE> m_activeCullFrustums;
-    mutable std::optional<Math::AabbUVE> m_activeBoundingRegion;
+    mutable DynamicMeshBvh m_spatialBvh;
+    mutable std::vector<Scene::Entity> m_unindexableEntities;
+    mutable std::optional<Math::Frustum> m_activeCullFrustum;
+    mutable std::vector<Math::Frustum> m_activeCullFrustums;
+    mutable std::optional<Math::Aabb> m_activeBoundingRegion;
 };
 
 } // namespace UVE::Render

@@ -9,7 +9,7 @@
 namespace UVE::Blueprint::Tests {
 namespace {
 
-constexpr const char* kPlayerUVE = R"(entity Player : Character3D
+constexpr const char* kPlayer = R"(entity Player : Character3D
 
 # fields
 export speed: float = 6.0
@@ -43,23 +43,23 @@ fn heal(amount: int) -> bool:
     return health >= max_health
 )";
 
-TEST(UVScriptParserUVETest, ParsesAWholeEntityScript) {
-    const ParseResultUVE result = ParseUVScriptUVE(kPlayerUVE);
-    for (const DiagnosticUVE& d : result.diagnostics) {
+TEST(UVScriptParserTest, ParsesAWholeEntityScript) {
+    const ParseResult result = ParseUVScript(kPlayer);
+    for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
-    const FileUVE& file = result.file;
+    const File& file = result.file;
     ASSERT_TRUE(file.header.has_value());
     EXPECT_EQ(file.header->name, "Player");
     EXPECT_EQ(file.header->baseKind, "Character3D");
 
     ASSERT_EQ(file.fields.size(), 4U);
-    EXPECT_EQ(file.fields[0].kind, FieldKindUVE::Export);
+    EXPECT_EQ(file.fields[0].kind, FieldKind::Export);
     EXPECT_EQ(file.fields[0].type->name, "float");
     EXPECT_EQ(file.fields[1].initializer->unit, "m");
-    EXPECT_EQ(file.fields[2].kind, FieldKindUVE::Var);
+    EXPECT_EQ(file.fields[2].kind, FieldKind::Var);
     EXPECT_TRUE(file.fields[2].initializer->isInteger);
-    EXPECT_EQ(file.fields[3].kind, FieldKindUVE::Const);
+    EXPECT_EQ(file.fields[3].kind, FieldKind::Const);
     EXPECT_EQ(file.fields[3].initializer->unit, "deg");
 
     ASSERT_EQ(file.handlers.size(), 3U);
@@ -67,58 +67,58 @@ TEST(UVScriptParserUVETest, ParsesAWholeEntityScript) {
     EXPECT_EQ(file.handlers[1].params[0].name, "dt");
     EXPECT_EQ(file.handlers[2].params[0].type->name, "Object3D");
 
-    const BlockUVE& tick = file.handlers[1].body;
+    const Block& tick = file.handlers[1].body;
     ASSERT_EQ(tick.size(), 3U);
-    EXPECT_EQ(tick[0]->kind, StmtKindUVE::Let);
-    EXPECT_EQ(tick[1]->kind, StmtKindUVE::Assign);
-    EXPECT_EQ(tick[1]->target->kind, ExprKindUVE::Member);
-    EXPECT_EQ(tick[2]->kind, StmtKindUVE::If);
+    EXPECT_EQ(tick[0]->kind, StmtKind::Let);
+    EXPECT_EQ(tick[1]->kind, StmtKind::Assign);
+    EXPECT_EQ(tick[1]->target->kind, ExprKind::Member);
+    EXPECT_EQ(tick[2]->kind, StmtKind::If);
     EXPECT_EQ(tick[2]->branches.size(), 2U);
     EXPECT_EQ(tick[2]->elseBody.size(), 1U);
     EXPECT_EQ(tick[2]->branches[0].body[1]->op, "+=");
 
-    const BlockUVE& entered = file.handlers[2].body;
-    EXPECT_EQ(entered[0]->kind, StmtKindUVE::Wait);
+    const Block& entered = file.handlers[2].body;
+    EXPECT_EQ(entered[0]->kind, StmtKind::Wait);
     EXPECT_EQ(entered[0]->value->unit, "s");
     EXPECT_DOUBLE_EQ(entered[0]->value->number, 0.5);
-    EXPECT_EQ(entered[1]->value->kind, ExprKindUVE::Call);
+    EXPECT_EQ(entered[1]->value->kind, ExprKind::Call);
 
     ASSERT_EQ(file.functions.size(), 1U);
-    const FunctionUVE& heal = file.functions[0];
+    const Function& heal = file.functions[0];
     EXPECT_EQ(heal.returnType->name, "bool");
-    EXPECT_EQ(heal.body[0]->kind, StmtKindUVE::For);
+    EXPECT_EQ(heal.body[0]->kind, StmtKind::For);
     EXPECT_EQ(heal.body[0]->value->text, "..");
-    EXPECT_EQ(heal.body[1]->kind, StmtKindUVE::While);
-    EXPECT_EQ(heal.body[2]->kind, StmtKindUVE::Return);
+    EXPECT_EQ(heal.body[1]->kind, StmtKind::While);
+    EXPECT_EQ(heal.body[2]->kind, StmtKind::Return);
 }
 
-TEST(UVScriptParserUVETest, BindsOperatorsByPrecedence) {
-    const ParseResultUVE result = ParseUVScriptUVE("fn f():\n    return 1 + 2 * 3 == 7 and not a or b\n");
-    ASSERT_TRUE(result.IsSuccessUVE());
-    const ExprUVE& root = *result.file.functions[0].body[0]->value;
+TEST(UVScriptParserTest, BindsOperatorsByPrecedence) {
+    const ParseResult result = ParseUVScript("fn f():\n    return 1 + 2 * 3 == 7 and not a or b\n");
+    ASSERT_TRUE(result.IsSuccess());
+    const Expr& root = *result.file.functions[0].body[0]->value;
     ASSERT_EQ(root.text, "or");
-    const ExprUVE& conjunction = *root.operands[0];
+    const Expr& conjunction = *root.operands[0];
     ASSERT_EQ(conjunction.text, "and");
-    const ExprUVE& equals = *conjunction.operands[0];
+    const Expr& equals = *conjunction.operands[0];
     ASSERT_EQ(equals.text, "==");
-    const ExprUVE& sum = *equals.operands[0];
+    const Expr& sum = *equals.operands[0];
     ASSERT_EQ(sum.text, "+");
     EXPECT_EQ(sum.operands[1]->text, "*");
     EXPECT_EQ(conjunction.operands[1]->text, "not");
 }
 
-TEST(UVScriptParserUVETest, SplitsStringInterpolation) {
-    const ParseResultUVE result = ParseUVScriptUVE("on ready:\n    print(\"hp {hp} / {max_hp} {{ok}}\")\n");
-    ASSERT_TRUE(result.IsSuccessUVE());
-    const ExprUVE& text = *result.file.handlers[0].body[0]->value->operands[1];
-    ASSERT_EQ(text.kind, ExprKindUVE::String);
+TEST(UVScriptParserTest, SplitsStringInterpolation) {
+    const ParseResult result = ParseUVScript("on ready:\n    print(\"hp {hp} / {max_hp} {{ok}}\")\n");
+    ASSERT_TRUE(result.IsSuccess());
+    const Expr& text = *result.file.handlers[0].body[0]->value->operands[1];
+    ASSERT_EQ(text.kind, ExprKind::String);
     EXPECT_EQ(text.segments, (std::vector<std::string>{"hp ", " / ", " {ok}"}));
     ASSERT_EQ(text.operands.size(), 2U);
     EXPECT_EQ(text.operands[1]->text, "max_hp");
 }
 
-TEST(UVScriptParserUVETest, ReportsErrorsWithLinesAndKeepsGoing) {
-    const ParseResultUVE result = ParseUVScriptUVE(
+TEST(UVScriptParserTest, ReportsErrorsWithLinesAndKeepsGoing) {
+    const ParseResult result = ParseUVScript(
         "entity Door\n"            // 1: missing ": Kind"
         "on open:\n"
         "    let = 3\n"             // 3: missing name
@@ -139,30 +139,30 @@ TEST(UVScriptParserUVETest, ReportsErrorsWithLinesAndKeepsGoing) {
     EXPECT_EQ(result.file.handlers[0].body[0]->value->unit, "deg");
 }
 
-TEST(UVScriptParserUVETest, RejectsBadIndentationAndStrayCode) {
-    EXPECT_FALSE(ParseUVScriptUVE("on ready:\n        a = 1\n    b = 2\n").IsSuccessUVE());
-    EXPECT_FALSE(ParseUVScriptUVE("x = 1\n").IsSuccessUVE());
-    EXPECT_FALSE(ParseUVScriptUVE("on ready:\n    print(\"open\n").IsSuccessUVE());
-    EXPECT_FALSE(ParseUVScriptUVE("on ready:\npass\n").IsSuccessUVE());
+TEST(UVScriptParserTest, RejectsBadIndentationAndStrayCode) {
+    EXPECT_FALSE(ParseUVScript("on ready:\n        a = 1\n    b = 2\n").IsSuccess());
+    EXPECT_FALSE(ParseUVScript("x = 1\n").IsSuccess());
+    EXPECT_FALSE(ParseUVScript("on ready:\n    print(\"open\n").IsSuccess());
+    EXPECT_FALSE(ParseUVScript("on ready:\npass\n").IsSuccess());
 }
 
-TEST(UVScriptParserUVETest, JoinsLinesInsideBracketsAndReadsUnits) {
-    const ParseResultUVE result = ParseUVScriptUVE("on ready:\n    move(1,\n         2)\n    wait 150 ms\n");
-    ASSERT_TRUE(result.IsSuccessUVE());
+TEST(UVScriptParserTest, JoinsLinesInsideBracketsAndReadsUnits) {
+    const ParseResult result = ParseUVScript("on ready:\n    move(1,\n         2)\n    wait 150 ms\n");
+    ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.file.handlers[0].body[0]->value->operands.size(), 3U);
     EXPECT_EQ(result.file.handlers[0].body[1]->value->unit, "ms");
-    EXPECT_TRUE(IsUVScriptUnitUVE("rad"));
-    EXPECT_FALSE(IsUVScriptUnitUVE("hours"));
+    EXPECT_TRUE(IsUVScriptUnit("rad"));
+    EXPECT_FALSE(IsUVScriptUnit("hours"));
 }
 
-TEST(UVScriptParserUVETest, RejectsDeeplyNestedExpressionsWithoutStackOverflow) {
+TEST(UVScriptParserTest, RejectsDeeplyNestedExpressionsWithoutStackOverflow) {
     std::string source = "on ready:\n    let x = ";
     source.append(200U, '(');
     source += "1";
     source.append(200U, ')');
     source += "\n";
-    const ParseResultUVE result = ParseUVScriptUVE(source);
-    EXPECT_FALSE(result.IsSuccessUVE());
+    const ParseResult result = ParseUVScript(source);
+    EXPECT_FALSE(result.IsSuccess());
     ASSERT_FALSE(result.diagnostics.empty());
 }
 

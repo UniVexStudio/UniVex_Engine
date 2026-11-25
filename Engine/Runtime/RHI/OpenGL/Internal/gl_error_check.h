@@ -21,14 +21,14 @@
 
 namespace UVE::Render::Detail {
 
-/// Registers `GlDebugMessageCallbackUVE` as the driver's `GL_KHR_debug` callback, if the function
+/// Registers `GlDebugMessageCallback` as the driver's `GL_KHR_debug` callback, if the function
 /// pointer loaded (desktop GL 4.3+ and most GLES 3.2+ drivers; this engine's Android baseline is a
 /// fixed GLES 3.0 context, so `functions.glDebugMessageCallback` is expected to be null there -
 /// see UVE_GL_CHECK_ERROR_UVE()'s doc comment for the fallback that covers that gap). A no-op
 /// outside debug builds and when the pointer failed to load. Call once, right after the GL context
-/// is confirmed usable (`GlFunctionsUVE::IsCompleteUVE()`), same as this engine's other one-time
-/// per-context setup (see the max-limits `glGetIntegerv` calls in GlRenderDeviceUVE's constructor).
-void RegisterGlDebugCallbackUVE(const GlFunctionsUVE& functions) noexcept;
+/// is confirmed usable (`GlFunctions::IsComplete()`), same as this engine's other one-time
+/// per-context setup (see the max-limits `glGetIntegerv` calls in GlRenderDevice's constructor).
+void RegisterGlDebugCallback(const GlFunctions& functions) noexcept;
 
 } // namespace UVE::Render::Detail
 
@@ -37,11 +37,11 @@ void RegisterGlDebugCallbackUVE(const GlFunctionsUVE& functions) noexcept;
 /// "return one flagged error and clear it", so this keeps calling it until GL_NO_ERROR) and logs
 /// each one via UVE_ERROR, tagged with `label` so the log names which call site raised it.
 ///
-/// This is specifically the fallback path RegisterGlDebugCallbackUVE()'s doc comment refers to:
+/// This is specifically the fallback path RegisterGlDebugCallback()'s doc comment refers to:
 /// GL_KHR_debug's callback is the primary, comprehensive mechanism this engine relies on when it's
 /// available, but this engine's Android target is a fixed GLES 3.0 context, which does not
 /// guarantee that extension - polling glGetError() manually at a handful of call sites already
-/// known to have zero error checking (CreateBufferUVE/CreateTextureUVE below; shader
+/// known to have zero error checking (CreateBuffer/CreateTexture below; shader
 /// compile/link failures are already surfaced through their own info-log checks, a genuinely
 /// different and already-correct case) is what actually catches runtime GL API misuse there.
 /// Running it unconditionally in debug builds even where the callback IS also registered is
@@ -53,7 +53,7 @@ void RegisterGlDebugCallbackUVE(const GlFunctionsUVE& functions) noexcept;
 /// call-site contract (see assert_uve.h) - never queries glGetError() in release, so this carries
 /// no per-call overhead there.
 #if UVE_DEBUG
-#define UVE_GL_CHECK_ERROR_UVE(label) ::UVE::Render::Detail::DrainGlErrorsUVE(label)
+#define UVE_GL_CHECK_ERROR_UVE(label) ::UVE::Render::Detail::DrainGlErrors(label)
 #else
 #define UVE_GL_CHECK_ERROR_UVE(label) \
     do {                              \
@@ -63,7 +63,7 @@ void RegisterGlDebugCallbackUVE(const GlFunctionsUVE& functions) noexcept;
 namespace UVE::Render::Detail {
 
 #if UVE_DEBUG
-inline void DrainGlErrorsUVE(const std::string_view label) noexcept {
+inline void DrainGlErrors(const std::string_view label) noexcept {
     for (GLenum error = glGetError(); error != GL_NO_ERROR; error = glGetError()) {
         const char* errorName = "GL_UNKNOWN_ERROR";
         switch (error) {
@@ -85,7 +85,7 @@ inline void DrainGlErrorsUVE(const std::string_view label) noexcept {
             default:
                 break;
         }
-        UVE_ERROR("GlRenderDeviceUVE: {} raised {} (0x{:04X})", label, errorName, static_cast<unsigned int>(error));
+        UVE_ERROR("GlRenderDevice: {} raised {} (0x{:04X})", label, errorName, static_cast<unsigned int>(error));
     }
 }
 #endif

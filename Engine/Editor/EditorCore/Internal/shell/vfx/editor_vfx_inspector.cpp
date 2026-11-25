@@ -34,9 +34,9 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr float kCurveTimeEpsilonUVE = 1e-4F;
+constexpr float kCurveTimeEpsilon = 1e-4F;
 
-[[nodiscard]] prism::Ref<prism::NumberField> MakeTypedNumberFieldUVE(
+[[nodiscard]] prism::Ref<prism::NumberField> MakeTypedNumberField(
     const float value,
     const float step,
     const int decimals,
@@ -47,78 +47,78 @@ constexpr float kCurveTimeEpsilonUVE = 1e-4F;
     return field;
 }
 
-[[nodiscard]] prism::Ref<prism::Vec3Field> MakeTypedVec3FieldUVE(
-    const Math::Vector3UVE& v,
-    std::function<void(const Math::Vector3UVE&)> onCommit) {
+[[nodiscard]] prism::Ref<prism::Vec3Field> MakeTypedVec3Field(
+    const Math::Vector3& v,
+    std::function<void(const Math::Vector3&)> onCommit) {
     auto field = prism::make<prism::Vec3Field>(0.1F, 2);
     field->setScrubbable(false);
     field->setValue(v.x, v.y, v.z);
     prism::Vec3Field* const raw = field.get();
     field->onChange = [raw, onCommit = std::move(onCommit)](const int, const float) {
         if (onCommit) {
-            onCommit(Math::Vector3UVE{raw->get(0), raw->get(1), raw->get(2)});
+            onCommit(Math::Vector3{raw->get(0), raw->get(1), raw->get(2)});
         }
     };
     return field;
 }
 
-[[nodiscard]] Asset::ParticleModuleUVE* FindMutableModuleInEmitterUVE(
-    Asset::ParticleEmitterAssetUVE& emitter,
+[[nodiscard]] Asset::ParticleModule* FindMutableModuleInEmitter(
+    Asset::ParticleEmitterAsset& emitter,
     const std::uint32_t moduleId) noexcept {
-    auto findIn = [moduleId](std::vector<Asset::ParticleModuleUVE>& list) -> Asset::ParticleModuleUVE* {
-        for (Asset::ParticleModuleUVE& m : list) {
+    auto findIn = [moduleId](std::vector<Asset::ParticleModule>& list) -> Asset::ParticleModule* {
+        for (Asset::ParticleModule& m : list) {
             if (m.id == moduleId) {
                 return &m;
             }
         }
         return nullptr;
     };
-    if (Asset::ParticleModuleUVE* m = findIn(emitter.emitterUpdate)) {
+    if (Asset::ParticleModule* m = findIn(emitter.emitterUpdate)) {
         return m;
     }
-    if (Asset::ParticleModuleUVE* m = findIn(emitter.particleSpawn)) {
+    if (Asset::ParticleModule* m = findIn(emitter.particleSpawn)) {
         return m;
     }
-    if (Asset::ParticleModuleUVE* m = findIn(emitter.particleUpdate)) {
+    if (Asset::ParticleModule* m = findIn(emitter.particleUpdate)) {
         return m;
     }
-    if (Asset::ParticleModuleUVE* m = findIn(emitter.render)) {
+    if (Asset::ParticleModule* m = findIn(emitter.render)) {
         return m;
     }
     return findIn(emitter.detached);
 }
 
-[[nodiscard]] const Asset::ParticleModuleUVE* FindConstModuleInEmitterUVE(
-    const Asset::ParticleEmitterAssetUVE& emitter,
+[[nodiscard]] const Asset::ParticleModule* FindConstModuleInEmitter(
+    const Asset::ParticleEmitterAsset& emitter,
     const std::uint32_t moduleId) noexcept {
-    auto findIn = [moduleId](const std::vector<Asset::ParticleModuleUVE>& list) -> const Asset::ParticleModuleUVE* {
-        for (const Asset::ParticleModuleUVE& m : list) {
+    auto findIn = [moduleId](const std::vector<Asset::ParticleModule>& list) -> const Asset::ParticleModule* {
+        for (const Asset::ParticleModule& m : list) {
             if (m.id == moduleId) {
                 return &m;
             }
         }
         return nullptr;
     };
-    if (const Asset::ParticleModuleUVE* m = findIn(emitter.emitterUpdate)) {
+    if (const Asset::ParticleModule* m = findIn(emitter.emitterUpdate)) {
         return m;
     }
-    if (const Asset::ParticleModuleUVE* m = findIn(emitter.particleSpawn)) {
+    if (const Asset::ParticleModule* m = findIn(emitter.particleSpawn)) {
         return m;
     }
-    if (const Asset::ParticleModuleUVE* m = findIn(emitter.particleUpdate)) {
+    if (const Asset::ParticleModule* m = findIn(emitter.particleUpdate)) {
         return m;
     }
-    if (const Asset::ParticleModuleUVE* m = findIn(emitter.render)) {
+    if (const Asset::ParticleModule* m = findIn(emitter.render)) {
         return m;
     }
     return findIn(emitter.detached);
 }
 
-[[nodiscard]] std::vector<std::string> MatchingUserParametersUVE(
-    const Asset::ParticleSystemAssetUVE& system,
-    const Asset::ParticleUserParameterTypeUVE desiredType) {
+[[nodiscard]] std::vector<std::string> MatchingUserParameters(
+    const Asset::ParticleSystemAsset& system,
+    const Asset::ParticleUserParameterType desiredType) {
     std::vector<std::string> names;
-    for (const Asset::ParticleUserParameterUVE& param : system.parameters) {
+    for (const Asset::ParticleUserParameter& param : system.parameters) {
         if (param.type == desiredType && !param.name.empty()) {
             names.push_back(param.name);
         }
@@ -132,7 +132,7 @@ constexpr float kCurveTimeEpsilonUVE = 1e-4F;
 // Curve & Gradient Pure Helpers
 // -----------------------------------------------------------------------------
 
-std::size_t AddVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
+std::size_t AddVfxCurveKey(Asset::ParticleCurve& curve,
                               const float time,
                               const float value,
                               const float inTangent,
@@ -143,7 +143,7 @@ std::size_t AddVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
     const float safeOut = std::isfinite(outTangent) ? outTangent : 0.0F;
 
     for (std::size_t i = 0U; i < curve.keys.size(); ++i) {
-        if (std::fabs(curve.keys[i].time - clampedTime) <= kCurveTimeEpsilonUVE) {
+        if (std::fabs(curve.keys[i].time - clampedTime) <= kCurveTimeEpsilon) {
             curve.keys[i].time = clampedTime;
             curve.keys[i].value = safeValue;
             curve.keys[i].inTangent = safeIn;
@@ -152,11 +152,11 @@ std::size_t AddVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
         }
     }
 
-    if (curve.keys.size() >= Asset::kMaximumCurveKeysUVE) {
+    if (curve.keys.size() >= Asset::kMaximumCurveKeys) {
         return curve.keys.size() - 1U;
     }
 
-    Asset::ParticleCurveKeyUVE key{};
+    Asset::ParticleCurveKey key{};
     key.time = clampedTime;
     key.value = safeValue;
     key.inTangent = safeIn;
@@ -164,33 +164,33 @@ std::size_t AddVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
 
     const auto insertPos = std::lower_bound(
         curve.keys.begin(), curve.keys.end(), clampedTime,
-        [](const Asset::ParticleCurveKeyUVE& a, const float t) { return a.time < t; });
+        [](const Asset::ParticleCurveKey& a, const float t) { return a.time < t; });
     const auto idx = static_cast<std::size_t>(std::distance(curve.keys.begin(), insertPos));
     curve.keys.insert(insertPos, key);
     return idx;
 }
 
-std::size_t MoveVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
+std::size_t MoveVfxCurveKey(Asset::ParticleCurve& curve,
                                const std::size_t keyIndex,
                                const float newTime,
                                const float newValue) {
     if (keyIndex >= curve.keys.size()) {
         return 0U;
     }
-    Asset::ParticleCurveKeyUVE moved = curve.keys[keyIndex];
+    Asset::ParticleCurveKey moved = curve.keys[keyIndex];
     moved.time = std::clamp(std::isfinite(newTime) ? newTime : moved.time, 0.0F, 1.0F);
     moved.value = std::isfinite(newValue) ? newValue : moved.value;
     curve.keys.erase(curve.keys.begin() + static_cast<std::ptrdiff_t>(keyIndex));
 
     const auto insertPos = std::lower_bound(
         curve.keys.begin(), curve.keys.end(), moved.time,
-        [](const Asset::ParticleCurveKeyUVE& a, const float t) { return a.time < t; });
+        [](const Asset::ParticleCurveKey& a, const float t) { return a.time < t; });
     const auto newIdx = static_cast<std::size_t>(std::distance(curve.keys.begin(), insertPos));
     curve.keys.insert(insertPos, moved);
     return newIdx;
 }
 
-bool DeleteVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
+bool DeleteVfxCurveKey(Asset::ParticleCurve& curve,
                           const std::size_t keyIndex,
                           const bool keepMinimumOne) {
     if (keyIndex >= curve.keys.size()) {
@@ -203,7 +203,7 @@ bool DeleteVfxCurveKeyUVE(Asset::ParticleCurveUVE& curve,
     return true;
 }
 
-bool SetVfxCurveKeyTangentsUVE(Asset::ParticleCurveUVE& curve,
+bool SetVfxCurveKeyTangents(Asset::ParticleCurve& curve,
                                const std::size_t keyIndex,
                                const float inTangent,
                                const float outTangent) {
@@ -215,48 +215,48 @@ bool SetVfxCurveKeyTangentsUVE(Asset::ParticleCurveUVE& curve,
     return true;
 }
 
-void ApplyVfxCurvePresetUVE(Asset::ParticleCurveUVE& curve, const VfxCurvePresetUVE preset) {
+void ApplyVfxCurvePreset(Asset::ParticleCurve& curve, const VfxCurvePreset preset) {
     curve.keys.clear();
     curve.smooth = true;
     switch (preset) {
-        case VfxCurvePresetUVE::Linear:
+        case VfxCurvePreset::Linear:
             curve.smooth = false;
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.0F, 0.0F, 1.0F, 1.0F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{1.0F, 1.0F, 1.0F, 1.0F});
+            curve.keys.push_back(Asset::ParticleCurveKey{0.0F, 0.0F, 1.0F, 1.0F});
+            curve.keys.push_back(Asset::ParticleCurveKey{1.0F, 1.0F, 1.0F, 1.0F});
             break;
-        case VfxCurvePresetUVE::EaseIn:
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.0F, 0.0F, 0.0F, 0.0F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{1.0F, 1.0F, 2.0F, 2.0F});
+        case VfxCurvePreset::EaseIn:
+            curve.keys.push_back(Asset::ParticleCurveKey{0.0F, 0.0F, 0.0F, 0.0F});
+            curve.keys.push_back(Asset::ParticleCurveKey{1.0F, 1.0F, 2.0F, 2.0F});
             break;
-        case VfxCurvePresetUVE::EaseOut:
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.0F, 0.0F, 2.0F, 2.0F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{1.0F, 1.0F, 0.0F, 0.0F});
+        case VfxCurvePreset::EaseOut:
+            curve.keys.push_back(Asset::ParticleCurveKey{0.0F, 0.0F, 2.0F, 2.0F});
+            curve.keys.push_back(Asset::ParticleCurveKey{1.0F, 1.0F, 0.0F, 0.0F});
             break;
-        case VfxCurvePresetUVE::Bell:
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.0F, 0.0F, 0.0F, 2.5F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.5F, 1.0F, 0.0F, 0.0F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{1.0F, 0.0F, -2.5F, 0.0F});
+        case VfxCurvePreset::Bell:
+            curve.keys.push_back(Asset::ParticleCurveKey{0.0F, 0.0F, 0.0F, 2.5F});
+            curve.keys.push_back(Asset::ParticleCurveKey{0.5F, 1.0F, 0.0F, 0.0F});
+            curve.keys.push_back(Asset::ParticleCurveKey{1.0F, 0.0F, -2.5F, 0.0F});
             break;
-        case VfxCurvePresetUVE::FadeOut:
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{0.0F, 1.0F, 0.0F, -0.5F});
-            curve.keys.push_back(Asset::ParticleCurveKeyUVE{1.0F, 0.0F, -1.5F, 0.0F});
+        case VfxCurvePreset::FadeOut:
+            curve.keys.push_back(Asset::ParticleCurveKey{0.0F, 1.0F, 0.0F, -0.5F});
+            curve.keys.push_back(Asset::ParticleCurveKey{1.0F, 0.0F, -1.5F, 0.0F});
             break;
     }
 }
 
-std::size_t AddVfxGradientStopUVE(Asset::ParticleGradientUVE& gradient,
+std::size_t AddVfxGradientStop(Asset::ParticleGradient& gradient,
                                   const float time,
-                                  const Math::ColorUVE& color,
+                                  const Math::Color& color,
                                   const float alpha) {
     const float clampedTime = std::clamp(std::isfinite(time) ? time : 0.0F, 0.0F, 1.0F);
     const float clampedAlpha = std::clamp(std::isfinite(alpha) ? alpha : 1.0F, 0.0F, 1.0F);
-    Math::ColorUVE safeColor = color;
+    Math::Color safeColor = color;
     if (!std::isfinite(safeColor.r) || safeColor.r < 0.0F) { safeColor.r = 0.0F; }
     if (!std::isfinite(safeColor.g) || safeColor.g < 0.0F) { safeColor.g = 0.0F; }
     if (!std::isfinite(safeColor.b) || safeColor.b < 0.0F) { safeColor.b = 0.0F; }
 
     for (std::size_t i = 0U; i < gradient.stops.size(); ++i) {
-        if (std::fabs(gradient.stops[i].time - clampedTime) <= kCurveTimeEpsilonUVE) {
+        if (std::fabs(gradient.stops[i].time - clampedTime) <= kCurveTimeEpsilon) {
             gradient.stops[i].time = clampedTime;
             gradient.stops[i].color = safeColor;
             gradient.stops[i].alpha = clampedAlpha;
@@ -264,42 +264,42 @@ std::size_t AddVfxGradientStopUVE(Asset::ParticleGradientUVE& gradient,
         }
     }
 
-    if (gradient.stops.size() >= Asset::kMaximumGradientStopsUVE) {
+    if (gradient.stops.size() >= Asset::kMaximumGradientStops) {
         return gradient.stops.size() - 1U;
     }
 
-    Asset::ParticleGradientStopUVE stop{};
+    Asset::ParticleGradientStop stop{};
     stop.time = clampedTime;
     stop.color = safeColor;
     stop.alpha = clampedAlpha;
 
     const auto insertPos = std::lower_bound(
         gradient.stops.begin(), gradient.stops.end(), clampedTime,
-        [](const Asset::ParticleGradientStopUVE& a, const float t) { return a.time < t; });
+        [](const Asset::ParticleGradientStop& a, const float t) { return a.time < t; });
     const auto idx = static_cast<std::size_t>(std::distance(gradient.stops.begin(), insertPos));
     gradient.stops.insert(insertPos, stop);
     return idx;
 }
 
-std::size_t MoveVfxGradientStopUVE(Asset::ParticleGradientUVE& gradient,
+std::size_t MoveVfxGradientStop(Asset::ParticleGradient& gradient,
                                    const std::size_t stopIndex,
                                    const float newTime) {
     if (stopIndex >= gradient.stops.size()) {
         return 0U;
     }
-    Asset::ParticleGradientStopUVE moved = gradient.stops[stopIndex];
+    Asset::ParticleGradientStop moved = gradient.stops[stopIndex];
     moved.time = std::clamp(std::isfinite(newTime) ? newTime : moved.time, 0.0F, 1.0F);
     gradient.stops.erase(gradient.stops.begin() + static_cast<std::ptrdiff_t>(stopIndex));
 
     const auto insertPos = std::lower_bound(
         gradient.stops.begin(), gradient.stops.end(), moved.time,
-        [](const Asset::ParticleGradientStopUVE& a, const float t) { return a.time < t; });
+        [](const Asset::ParticleGradientStop& a, const float t) { return a.time < t; });
     const auto newIdx = static_cast<std::size_t>(std::distance(gradient.stops.begin(), insertPos));
     gradient.stops.insert(insertPos, moved);
     return newIdx;
 }
 
-bool DeleteVfxGradientStopUVE(Asset::ParticleGradientUVE& gradient,
+bool DeleteVfxGradientStop(Asset::ParticleGradient& gradient,
                               const std::size_t stopIndex,
                               const bool keepMinimumOne) {
     if (stopIndex >= gradient.stops.size()) {
@@ -312,7 +312,7 @@ bool DeleteVfxGradientStopUVE(Asset::ParticleGradientUVE& gradient,
     return true;
 }
 
-void SyncGradientEditorFromAssetUVE(const Asset::ParticleGradientUVE& assetGrad,
+void SyncGradientEditorFromAsset(const Asset::ParticleGradient& assetGrad,
                                     prism::GradientEditor& widget) {
     std::vector<prism::GradientColorStop> cStops;
     std::vector<prism::GradientAlphaStop> aStops;
@@ -322,7 +322,7 @@ void SyncGradientEditorFromAssetUVE(const Asset::ParticleGradientUVE& assetGrad,
         aStops.push_back({0.0F, 1.0F});
         aStops.push_back({1.0F, 1.0F});
     } else {
-        for (const Asset::ParticleGradientStopUVE& s : assetGrad.stops) {
+        for (const Asset::ParticleGradientStop& s : assetGrad.stops) {
             cStops.push_back({s.time, s.color.r, s.color.g, s.color.b});
             aStops.push_back({s.time, s.alpha});
         }
@@ -330,8 +330,8 @@ void SyncGradientEditorFromAssetUVE(const Asset::ParticleGradientUVE& assetGrad,
     widget.setStops(std::move(cStops), std::move(aStops));
 }
 
-void SyncAssetFromGradientEditorUVE(const prism::GradientEditor& widget,
-                                    Asset::ParticleGradientUVE& outGrad) {
+void SyncAssetFromGradientEditor(const prism::GradientEditor& widget,
+                                    Asset::ParticleGradient& outGrad) {
     std::vector<float> times;
     for (const prism::GradientColorStop& cs : widget.colorStops()) {
         times.push_back(std::clamp(cs.t, 0.0F, 1.0F));
@@ -350,7 +350,7 @@ void SyncAssetFromGradientEditorUVE(const prism::GradientEditor& widget,
         uniqueTimes.push_back(0.0F);
         uniqueTimes.push_back(1.0F);
     }
-    while (uniqueTimes.size() > Asset::kMaximumGradientStopsUVE) {
+    while (uniqueTimes.size() > Asset::kMaximumGradientStops) {
         uniqueTimes.pop_back();
     }
 
@@ -362,30 +362,30 @@ void SyncAssetFromGradientEditorUVE(const prism::GradientEditor& widget,
         const float g = linear.g;
         const float b = linear.b;
         const float a = linear.a;
-        Asset::ParticleGradientStopUVE stop{};
+        Asset::ParticleGradientStop stop{};
         stop.time = t;
-        stop.color = Math::ColorUVE{r, g, b};
+        stop.color = Math::Color{r, g, b};
         stop.alpha = a;
         outGrad.stops.push_back(stop);
     }
 }
 
 // -----------------------------------------------------------------------------
-// VfxCurveEditWidgetUVE
+// VfxCurveEditWidget
 // -----------------------------------------------------------------------------
 
-VfxCurveEditWidgetUVE::VfxCurveEditWidgetUVE(Asset::ParticleCurveUVE curve)
+VfxCurveEditWidget::VfxCurveEditWidget(Asset::ParticleCurve curve)
     : m_curve(std::move(curve)) {
     if (m_curve.keys.empty()) {
-        ApplyVfxCurvePresetUVE(m_curve, VfxCurvePresetUVE::Linear);
+        ApplyVfxCurvePreset(m_curve, VfxCurvePreset::Linear);
     }
     setMinSize(180.0F, 112.0F);
 }
 
-void VfxCurveEditWidgetUVE::setCurve(const Asset::ParticleCurveUVE& curve) {
+void VfxCurveEditWidget::setCurve(const Asset::ParticleCurve& curve) {
     m_curve = curve;
     if (m_curve.keys.empty()) {
-        ApplyVfxCurvePresetUVE(m_curve, VfxCurvePresetUVE::Linear);
+        ApplyVfxCurvePreset(m_curve, VfxCurvePreset::Linear);
     }
     if (m_selectedKey >= static_cast<int>(m_curve.keys.size())) {
         m_selectedKey = static_cast<int>(m_curve.keys.size()) - 1;
@@ -393,7 +393,7 @@ void VfxCurveEditWidgetUVE::setCurve(const Asset::ParticleCurveUVE& curve) {
     invalidate();
 }
 
-void VfxCurveEditWidgetUVE::setSelectedKey(const int index) {
+void VfxCurveEditWidget::setSelectedKey(const int index) {
     const int clamped = (index >= 0 && static_cast<std::size_t>(index) < m_curve.keys.size()) ? index : -1;
     if (m_selectedKey != clamped) {
         m_selectedKey = clamped;
@@ -401,50 +401,50 @@ void VfxCurveEditWidgetUVE::setSelectedKey(const int index) {
     }
 }
 
-prism::Vec2 VfxCurveEditWidgetUVE::measure(const prism::Vec2 avail) {
+prism::Vec2 VfxCurveEditWidget::measure(const prism::Vec2 avail) {
     return m_desired = constrain({std::max(180.0F, avail.x), 112.0F});
 }
 
-VfxCurveEditWidgetUVE::ValueRangeUVE VfxCurveEditWidgetUVE::ComputeRangeUVE() const noexcept {
+VfxCurveEditWidget::ValueRange VfxCurveEditWidget::ComputeRange() const noexcept {
     if (m_draggingKey) {
         return m_dragRange;
     }
     float lo = 0.0F;
     float hi = 1.0F;
-    for (const Asset::ParticleCurveKeyUVE& k : m_curve.keys) {
+    for (const Asset::ParticleCurveKey& k : m_curve.keys) {
         lo = std::min(lo, k.value);
         hi = std::max(hi, k.value);
     }
     if (hi - lo < 1e-3F) {
         hi = lo + 1.0F;
     }
-    return ValueRangeUVE{lo, hi};
+    return ValueRange{lo, hi};
 }
 
-prism::Rect VfxCurveEditWidgetUVE::PlotRectUVE() const noexcept {
+prism::Rect VfxCurveEditWidget::PlotRect() const noexcept {
     return m_rect.deflated(8.0F);
 }
 
-prism::Vec2 VfxCurveEditWidgetUVE::KeyToScreenUVE(
-    const float time, const float value, const prism::Rect& plot, const ValueRangeUVE range) const noexcept {
+prism::Vec2 VfxCurveEditWidget::KeyToScreen(
+    const float time, const float value, const prism::Rect& plot, const ValueRange range) const noexcept {
     const float span = std::max(1e-5F, range.maxVal - range.minVal);
     const float x = plot.x + std::clamp(time, 0.0F, 1.0F) * plot.w;
     const float y = plot.bottom() - ((value - range.minVal) / span) * plot.h;
     return {x, y};
 }
 
-std::pair<float, float> VfxCurveEditWidgetUVE::ScreenToKeyUVE(
-    const prism::Vec2 pt, const prism::Rect& plot, const ValueRangeUVE range) const noexcept {
+std::pair<float, float> VfxCurveEditWidget::ScreenToKey(
+    const prism::Vec2 pt, const prism::Rect& plot, const ValueRange range) const noexcept {
     const float t = plot.w > 1.0F ? std::clamp((pt.x - plot.x) / plot.w, 0.0F, 1.0F) : 0.0F;
     const float normY = plot.h > 1.0F ? std::clamp((plot.bottom() - pt.y) / plot.h, 0.0F, 1.0F) : 0.0F;
     const float v = range.minVal + normY * (range.maxVal - range.minVal);
     return {t, v};
 }
 
-int VfxCurveEditWidgetUVE::HitTestKeyUVE(
-    const prism::Vec2 pt, const prism::Rect& plot, const ValueRangeUVE range) const noexcept {
+int VfxCurveEditWidget::HitTestKey(
+    const prism::Vec2 pt, const prism::Rect& plot, const ValueRange range) const noexcept {
     for (int i = 0; i < static_cast<int>(m_curve.keys.size()); ++i) {
-        const prism::Vec2 kp = KeyToScreenUVE(
+        const prism::Vec2 kp = KeyToScreen(
             m_curve.keys[static_cast<std::size_t>(i)].time,
             m_curve.keys[static_cast<std::size_t>(i)].value,
             plot, range);
@@ -457,24 +457,24 @@ int VfxCurveEditWidgetUVE::HitTestKeyUVE(
     return -1;
 }
 
-void VfxCurveEditWidgetUVE::NotifyChangedUVE() {
+void VfxCurveEditWidget::NotifyChanged() {
     invalidate();
     if (onChanged) {
         onChanged(m_curve);
     }
 }
 
-void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
+void VfxCurveEditWidget::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     c.fillRoundRect(m_rect, 4.0F, t.field);
     c.strokeRoundRect(m_rect, 4.0F, focused() ? t.highlight : t.border, 1.0F);
 
-    const prism::Rect plot = PlotRectUVE();
+    const prism::Rect plot = PlotRect();
     if (plot.w <= 4.0F || plot.h <= 4.0F) {
         return;
     }
 
-    const ValueRangeUVE range = ComputeRangeUVE();
+    const ValueRange range = ComputeRange();
     // Grid lines (25%, 50%, 75%).
     for (int i = 1; i <= 3; ++i) {
         const float f = static_cast<float>(i) * 0.25F;
@@ -490,8 +490,8 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
     prism::Vec2 prevPt{};
     for (int s = 0; s <= kSamples; ++s) {
         const float u = static_cast<float>(s) / static_cast<float>(kSamples);
-        const float val = VFX::EvaluateVfxCurveExactUVE(m_curve, u);
-        const prism::Vec2 curPt = KeyToScreenUVE(u, val, plot, range);
+        const float val = VFX::EvaluateVfxCurveExact(m_curve, u);
+        const prism::Vec2 curPt = KeyToScreen(u, val, plot, range);
         if (s > 0) {
             c.line(prevPt, curPt, t.highlight, 2.0F);
         }
@@ -500,14 +500,14 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
 
     // Draw keys and tangent handles for the selected key.
     for (int i = 0; i < static_cast<int>(m_curve.keys.size()); ++i) {
-        const Asset::ParticleCurveKeyUVE& key = m_curve.keys[static_cast<std::size_t>(i)];
-        const prism::Vec2 kp = KeyToScreenUVE(key.time, key.value, plot, range);
+        const Asset::ParticleCurveKey& key = m_curve.keys[static_cast<std::size_t>(i)];
+        const prism::Vec2 kp = KeyToScreen(key.time, key.value, plot, range);
         const bool sel = (i == m_selectedKey);
         if (sel && m_curve.smooth) {
             const float dt = 0.08F;
-            const prism::Vec2 outPt = KeyToScreenUVE(
+            const prism::Vec2 outPt = KeyToScreen(
                 std::min(1.0F, key.time + dt), key.value + key.outTangent * dt, plot, range);
-            const prism::Vec2 inPt = KeyToScreenUVE(
+            const prism::Vec2 inPt = KeyToScreen(
                 std::max(0.0F, key.time - dt), key.value - key.inTangent * dt, plot, range);
             c.line(kp, outPt, t.textDim, 1.0F);
             c.line(kp, inPt, t.textDim, 1.0F);
@@ -520,21 +520,21 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
     c.popClip();
 }
 
-bool VfxCurveEditWidgetUVE::onMouseDown(const prism::MouseEvent& e) {
+bool VfxCurveEditWidget::onMouseDown(const prism::MouseEvent& e) {
     if (e.button != prism::MouseButton::Left) {
         return false;
     }
     if (prism::Application::exists()) {
         prism::Application::get().setFocus(this);
     }
-    const prism::Rect plot = PlotRectUVE();
-    const ValueRangeUVE range = ComputeRangeUVE();
-    const int hit = HitTestKeyUVE(e.pos, plot, range);
+    const prism::Rect plot = PlotRect();
+    const ValueRange range = ComputeRange();
+    const int hit = HitTestKey(e.pos, plot, range);
 
     if (e.clicks >= 2 && hit < 0) {
-        const auto [t, v] = ScreenToKeyUVE(e.pos, plot, range);
-        m_selectedKey = static_cast<int>(AddVfxCurveKeyUVE(m_curve, t, v, 0.0F, 0.0F));
-        NotifyChangedUVE();
+        const auto [t, v] = ScreenToKey(e.pos, plot, range);
+        m_selectedKey = static_cast<int>(AddVfxCurveKey(m_curve, t, v, 0.0F, 0.0F));
+        NotifyChanged();
         return true;
     }
 
@@ -560,34 +560,34 @@ bool VfxCurveEditWidgetUVE::onMouseDown(const prism::MouseEvent& e) {
     return true;
 }
 
-bool VfxCurveEditWidgetUVE::onMouseMove(const prism::MouseEvent& e) {
+bool VfxCurveEditWidget::onMouseMove(const prism::MouseEvent& e) {
     if (!m_draggingKey && !m_draggingTangent) {
         return false;
     }
     if (m_selectedKey < 0 || static_cast<std::size_t>(m_selectedKey) >= m_curve.keys.size()) {
         return false;
     }
-    const prism::Rect plot = PlotRectUVE();
-    const auto [t, v] = ScreenToKeyUVE(e.pos, plot, m_dragRange);
+    const prism::Rect plot = PlotRect();
+    const auto [t, v] = ScreenToKey(e.pos, plot, m_dragRange);
 
     if (m_draggingTangent) {
-        const Asset::ParticleCurveKeyUVE& key = m_curve.keys[static_cast<std::size_t>(m_selectedKey)];
+        const Asset::ParticleCurveKey& key = m_curve.keys[static_cast<std::size_t>(m_selectedKey)];
         const float dt = t - key.time;
         const float dv = v - key.value;
         const float slope = std::fabs(dt) > 1e-3F ? std::clamp(dv / dt, -20.0F, 20.0F) : 0.0F;
-        SetVfxCurveKeyTangentsUVE(m_curve, static_cast<std::size_t>(m_selectedKey), slope, slope);
+        SetVfxCurveKeyTangents(m_curve, static_cast<std::size_t>(m_selectedKey), slope, slope);
         m_curve.smooth = true;
-        NotifyChangedUVE();
+        NotifyChanged();
         return true;
     }
 
     m_selectedKey = static_cast<int>(
-        MoveVfxCurveKeyUVE(m_curve, static_cast<std::size_t>(m_selectedKey), t, v));
-    NotifyChangedUVE();
+        MoveVfxCurveKey(m_curve, static_cast<std::size_t>(m_selectedKey), t, v));
+    NotifyChanged();
     return true;
 }
 
-bool VfxCurveEditWidgetUVE::onMouseUp(const prism::MouseEvent&) {
+bool VfxCurveEditWidget::onMouseUp(const prism::MouseEvent&) {
     if (m_draggingKey || m_draggingTangent) {
         m_draggingKey = false;
         m_draggingTangent = false;
@@ -599,13 +599,13 @@ bool VfxCurveEditWidgetUVE::onMouseUp(const prism::MouseEvent&) {
     return false;
 }
 
-bool VfxCurveEditWidgetUVE::onKeyDown(const prism::KeyEvent& e) {
+bool VfxCurveEditWidget::onKeyDown(const prism::KeyEvent& e) {
     if ((e.key == prism::Key::Delete || e.key == prism::Key::Backspace) && m_selectedKey >= 0) {
-        if (DeleteVfxCurveKeyUVE(m_curve, static_cast<std::size_t>(m_selectedKey), true)) {
+        if (DeleteVfxCurveKey(m_curve, static_cast<std::size_t>(m_selectedKey), true)) {
             if (m_selectedKey >= static_cast<int>(m_curve.keys.size())) {
                 m_selectedKey = static_cast<int>(m_curve.keys.size()) - 1;
             }
-            NotifyChangedUVE();
+            NotifyChanged();
             return true;
         }
     }
@@ -613,28 +613,28 @@ bool VfxCurveEditWidgetUVE::onKeyDown(const prism::KeyEvent& e) {
 }
 
 // -----------------------------------------------------------------------------
-// BuildVfxInspectorContentUVE
+// BuildVfxInspectorContent
 // -----------------------------------------------------------------------------
 
-prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
-    EditorUVE& editor,
+prism::Ref<prism::Widget> BuildVfxInspectorContent(
+    Editor& editor,
     const std::size_t selectedEmitterIndex,
     const std::uint32_t selectedModuleId,
     const std::function<void()>& onAssetMutated) {
-    EditorUVE::VfxEditSessionUVE* const session = editor.VfxEditSessionPtrUVE();
+    Editor::VfxEditSession* const session = editor.VfxEditSessionPtr();
     if (session == nullptr) {
         return prism::make<prism::Spacer>();
     }
 
-    const Asset::ParticleSystemAssetUVE& sys = session->system;
+    const Asset::ParticleSystemAsset& sys = session->system;
     auto grid = prism::make<prism::PropertyGrid>();
 
     // 1. Selected Module section (if any valid module is selected).
     if (selectedEmitterIndex < sys.emitters.size() && selectedModuleId != 0U) {
-        const Asset::ParticleEmitterAssetUVE& emitter = sys.emitters[selectedEmitterIndex];
-        if (const Asset::ParticleModuleUVE* const mod = FindConstModuleInEmitterUVE(emitter, selectedModuleId)) {
-            const Asset::ParticleModuleDescriptorUVE* const desc =
-                Asset::FindParticleModuleDescriptorUVE(mod->type);
+        const Asset::ParticleEmitterAsset& emitter = sys.emitters[selectedEmitterIndex];
+        if (const Asset::ParticleModule* const mod = FindConstModuleInEmitter(emitter, selectedModuleId)) {
+            const Asset::ParticleModuleDescriptor* const desc =
+                Asset::FindParticleModuleDescriptor(mod->type);
             const std::string title = desc != nullptr
                                           ? "Module: " + std::string(desc->displayName)
                                           : "Module #" + std::to_string(mod->id);
@@ -648,9 +648,9 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
             auto modEnabled = prism::make<prism::CheckBox>("", mod->enabled);
             modEnabled->onChange = [&editor, selectedEmitterIndex, selectedModuleId, onAssetMutated](const bool v) {
-                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                     if (selectedEmitterIndex < s.emitters.size()) {
-                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
                             m->enabled = v;
                         }
                     }
@@ -665,43 +665,43 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                 // Float inputs.
                 for (const auto& [pinName, defVal] : desc->defaultFloats) {
                     const auto it = mod->floats.find(pinName);
-                    const Asset::ParticleFloatInputUVE cur = (it != mod->floats.end()) ? it->second : defVal;
+                    const Asset::ParticleFloatInput cur = (it != mod->floats.end()) ? it->second : defVal;
 
                     auto pinBox = prism::vbox(4.0F);
-                    const int modeIdx = (cur.kind == Asset::ParticleValueKindUVE::RandomRange)     ? 1
-                                        : (cur.kind == Asset::ParticleValueKindUVE::Curve)         ? 2
-                                        : (cur.kind == Asset::ParticleValueKindUVE::UserParameter) ? 3
+                    const int modeIdx = (cur.kind == Asset::ParticleValueKind::RandomRange)     ? 1
+                                        : (cur.kind == Asset::ParticleValueKind::Curve)         ? 2
+                                        : (cur.kind == Asset::ParticleValueKind::UserParameter) ? 3
                                                                                                    : 0;
                     auto modeCombo = prism::make<prism::ComboBox>(
                         std::vector<std::string>{"Constant", "Random Range", "Curve", "User Parameter"}, modeIdx);
                     modeCombo->onChange = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const int idx) {
-                        editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                             if (selectedEmitterIndex >= s.emitters.size()) {
                                 return;
                             }
-                            Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId);
+                            Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId);
                             if (m == nullptr) {
                                 return;
                             }
-                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                             if (idx == 1) {
-                                val.kind = Asset::ParticleValueKindUVE::RandomRange;
+                                val.kind = Asset::ParticleValueKind::RandomRange;
                                 if (val.max < val.min) {
                                     val.max = val.min + 1.0F;
                                 }
                             } else if (idx == 2) {
-                                val.kind = Asset::ParticleValueKindUVE::Curve;
+                                val.kind = Asset::ParticleValueKind::Curve;
                                 if (val.curve.keys.empty()) {
-                                    ApplyVfxCurvePresetUVE(val.curve, VfxCurvePresetUVE::Linear);
+                                    ApplyVfxCurvePreset(val.curve, VfxCurvePreset::Linear);
                                 }
                             } else if (idx == 3) {
-                                val.kind = Asset::ParticleValueKindUVE::UserParameter;
-                                const auto params = MatchingUserParametersUVE(s, Asset::ParticleUserParameterTypeUVE::Float);
+                                val.kind = Asset::ParticleValueKind::UserParameter;
+                                const auto params = MatchingUserParameters(s, Asset::ParticleUserParameterType::Float);
                                 if (val.parameter.empty() && !params.empty()) {
                                     val.parameter = params.front();
                                 }
                             } else {
-                                val.kind = Asset::ParticleValueKindUVE::Constant;
+                                val.kind = Asset::ParticleValueKind::Constant;
                             }
                             m->floats[pinName] = std::move(val);
                         });
@@ -711,13 +711,13 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                     };
                     pinBox->add(modeCombo);
 
-                    if (cur.kind == Asset::ParticleValueKindUVE::Constant || cur.kind == Asset::ParticleValueKindUVE::Wire) {
-                        pinBox->add(MakeTypedNumberFieldUVE(cur.constant, 0.1F, 2,
+                    if (cur.kind == Asset::ParticleValueKind::Constant || cur.kind == Asset::ParticleValueKind::Wire) {
+                        pinBox->add(MakeTypedNumberField(cur.constant, 0.1F, 2,
                             [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const float v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                                             val.constant = v;
                                             m->floats[pinName] = std::move(val);
                                         }
@@ -727,14 +727,14 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                     onAssetMutated();
                                 }
                             }));
-                    } else if (cur.kind == Asset::ParticleValueKindUVE::RandomRange) {
+                    } else if (cur.kind == Asset::ParticleValueKind::RandomRange) {
                         auto minMaxRow = prism::hbox(4.0F);
-                        minMaxRow->add(MakeTypedNumberFieldUVE(cur.min, 0.1F, 2,
+                        minMaxRow->add(MakeTypedNumberField(cur.min, 0.1F, 2,
                             [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const float v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                                             val.min = v;
                                             if (val.max < val.min) {
                                                 val.max = val.min;
@@ -747,12 +747,12 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                     onAssetMutated();
                                 }
                             }), prism::Slot{1.0F});
-                        minMaxRow->add(MakeTypedNumberFieldUVE(cur.max, 0.1F, 2,
+                        minMaxRow->add(MakeTypedNumberField(cur.max, 0.1F, 2,
                             [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const float v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                                             val.max = std::max(val.min, v);
                                             m->floats[pinName] = std::move(val);
                                         }
@@ -763,15 +763,15 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                 }
                             }), prism::Slot{1.0F});
                         pinBox->add(minMaxRow);
-                    } else if (cur.kind == Asset::ParticleValueKindUVE::Curve) {
-                        auto curveEditor = prism::make<VfxCurveEditWidgetUVE>(cur.curve);
+                    } else if (cur.kind == Asset::ParticleValueKind::Curve) {
+                        auto curveEditor = prism::make<VfxCurveEditWidget>(cur.curve);
                         curveEditor->onChanged = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](
-                                                     const Asset::ParticleCurveUVE& updatedCurve) {
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                                     const Asset::ParticleCurve& updatedCurve) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
-                                        val.kind = Asset::ParticleValueKindUVE::Curve;
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                        val.kind = Asset::ParticleValueKind::Curve;
                                         val.curve = updatedCurve;
                                         m->floats[pinName] = std::move(val);
                                     }
@@ -785,22 +785,22 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
                         // Preset bar + scale field.
                         auto presetRow = prism::hbox(3.0F);
-                        const std::array<std::pair<const char*, VfxCurvePresetUVE>, 5> kPresets{{
-                            {"Linear", VfxCurvePresetUVE::Linear},
-                            {"Ease In", VfxCurvePresetUVE::EaseIn},
-                            {"Ease Out", VfxCurvePresetUVE::EaseOut},
-                            {"Bell", VfxCurvePresetUVE::Bell},
-                            {"Fade Out", VfxCurvePresetUVE::FadeOut},
+                        const std::array<std::pair<const char*, VfxCurvePreset>, 5> kPresets{{
+                            {"Linear", VfxCurvePreset::Linear},
+                            {"Ease In", VfxCurvePreset::EaseIn},
+                            {"Ease Out", VfxCurvePreset::EaseOut},
+                            {"Bell", VfxCurvePreset::Bell},
+                            {"Fade Out", VfxCurvePreset::FadeOut},
                         }};
                         for (const auto& [label, preset] : kPresets) {
                             auto btn = prism::make<prism::Button>(label, prism::Icon::None, prism::ButtonStyle::Flat);
                             btn->onClick = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, preset, onAssetMutated] {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
-                                            val.kind = Asset::ParticleValueKindUVE::Curve;
-                                            ApplyVfxCurvePresetUVE(val.curve, preset);
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                            val.kind = Asset::ParticleValueKind::Curve;
+                                            ApplyVfxCurvePreset(val.curve, preset);
                                             m->floats[pinName] = std::move(val);
                                         }
                                     }
@@ -816,12 +816,12 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                         auto scaleRow = prism::hbox(4.0F);
                         scaleRow->add(prism::make<prism::Label>("Scale", prism::FontRole::Small),
                                       prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-                        scaleRow->add(MakeTypedNumberFieldUVE(cur.scale, 0.1F, 2,
+                        scaleRow->add(MakeTypedNumberField(cur.scale, 0.1F, 2,
                             [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const float v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                                             val.scale = v;
                                             m->floats[pinName] = std::move(val);
                                         }
@@ -832,8 +832,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                 }
                             }), prism::Slot{1.0F});
                         pinBox->add(scaleRow);
-                    } else if (cur.kind == Asset::ParticleValueKindUVE::UserParameter) {
-                        std::vector<std::string> choices = MatchingUserParametersUVE(sys, Asset::ParticleUserParameterTypeUVE::Float);
+                    } else if (cur.kind == Asset::ParticleValueKind::UserParameter) {
+                        std::vector<std::string> choices = MatchingUserParameters(sys, Asset::ParticleUserParameterType::Float);
                         if (choices.empty()) {
                             choices.push_back("(none)");
                         }
@@ -850,10 +850,10 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                 return;
                             }
                             const std::string chosen = choices[static_cast<std::size_t>(idx)] == "(none)" ? "" : choices[static_cast<std::size_t>(idx)];
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleFloatInputUVE val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleFloatInput val = m->floats.count(pinName) ? m->floats[pinName] : defVal;
                                         val.parameter = chosen;
                                         m->floats[pinName] = std::move(val);
                                     }
@@ -871,34 +871,34 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                 // Vector inputs.
                 for (const auto& [pinName, defVal] : desc->defaultVectors) {
                     const auto it = mod->vectors.find(pinName);
-                    const Asset::ParticleVectorInputUVE cur = (it != mod->vectors.end()) ? it->second : defVal;
+                    const Asset::ParticleVectorInput cur = (it != mod->vectors.end()) ? it->second : defVal;
 
                     auto pinBox = prism::vbox(4.0F);
-                    const int modeIdx = (cur.kind == Asset::ParticleValueKindUVE::RandomRange)     ? 1
-                                        : (cur.kind == Asset::ParticleValueKindUVE::UserParameter) ? 2
+                    const int modeIdx = (cur.kind == Asset::ParticleValueKind::RandomRange)     ? 1
+                                        : (cur.kind == Asset::ParticleValueKind::UserParameter) ? 2
                                                                                                    : 0;
                     auto modeCombo = prism::make<prism::ComboBox>(
                         std::vector<std::string>{"Constant", "Random Range", "User Parameter"}, modeIdx);
                     modeCombo->onChange = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const int idx) {
-                        editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                             if (selectedEmitterIndex >= s.emitters.size()) {
                                 return;
                             }
-                            Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId);
+                            Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId);
                             if (m == nullptr) {
                                 return;
                             }
-                            Asset::ParticleVectorInputUVE val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
+                            Asset::ParticleVectorInput val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
                             if (idx == 1) {
-                                val.kind = Asset::ParticleValueKindUVE::RandomRange;
+                                val.kind = Asset::ParticleValueKind::RandomRange;
                             } else if (idx == 2) {
-                                val.kind = Asset::ParticleValueKindUVE::UserParameter;
-                                const auto params = MatchingUserParametersUVE(s, Asset::ParticleUserParameterTypeUVE::Vector);
+                                val.kind = Asset::ParticleValueKind::UserParameter;
+                                const auto params = MatchingUserParameters(s, Asset::ParticleUserParameterType::Vector);
                                 if (val.parameter.empty() && !params.empty()) {
                                     val.parameter = params.front();
                                 }
                             } else {
-                                val.kind = Asset::ParticleValueKindUVE::Constant;
+                                val.kind = Asset::ParticleValueKind::Constant;
                             }
                             m->vectors[pinName] = std::move(val);
                         });
@@ -908,13 +908,13 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                     };
                     pinBox->add(modeCombo);
 
-                    if (cur.kind == Asset::ParticleValueKindUVE::RandomRange) {
-                        pinBox->add(MakeTypedVec3FieldUVE(cur.min,
-                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3UVE& v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                    if (cur.kind == Asset::ParticleValueKind::RandomRange) {
+                        pinBox->add(MakeTypedVec3Field(cur.min,
+                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3& v) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleVectorInputUVE val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleVectorInput val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
                                             val.min = v;
                                             val.max.x = std::max(val.min.x, val.max.x);
                                             val.max.y = std::max(val.min.y, val.max.y);
@@ -927,12 +927,12 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                     onAssetMutated();
                                 }
                             }));
-                        pinBox->add(MakeTypedVec3FieldUVE(cur.max,
-                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3UVE& v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        pinBox->add(MakeTypedVec3Field(cur.max,
+                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3& v) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleVectorInputUVE val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleVectorInput val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
                                             val.max.x = std::max(val.min.x, v.x);
                                             val.max.y = std::max(val.min.y, v.y);
                                             val.max.z = std::max(val.min.z, v.z);
@@ -944,8 +944,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                     onAssetMutated();
                                 }
                             }));
-                    } else if (cur.kind == Asset::ParticleValueKindUVE::UserParameter) {
-                        std::vector<std::string> choices = MatchingUserParametersUVE(sys, Asset::ParticleUserParameterTypeUVE::Vector);
+                    } else if (cur.kind == Asset::ParticleValueKind::UserParameter) {
+                        std::vector<std::string> choices = MatchingUserParameters(sys, Asset::ParticleUserParameterType::Vector);
                         if (choices.empty()) {
                             choices.push_back("(none)");
                         }
@@ -962,10 +962,10 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                 return;
                             }
                             const std::string chosen = choices[static_cast<std::size_t>(idx)] == "(none)" ? "" : choices[static_cast<std::size_t>(idx)];
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleVectorInputUVE val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleVectorInput val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
                                         val.parameter = chosen;
                                         m->vectors[pinName] = std::move(val);
                                     }
@@ -977,12 +977,12 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                         };
                         pinBox->add(paramCombo);
                     } else {
-                        pinBox->add(MakeTypedVec3FieldUVE(cur.constant,
-                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3UVE& v) {
-                                editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        pinBox->add(MakeTypedVec3Field(cur.constant,
+                            [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const Math::Vector3& v) {
+                                editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
-                                        if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                            Asset::ParticleVectorInputUVE val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
+                                        if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                            Asset::ParticleVectorInput val = m->vectors.count(pinName) ? m->vectors[pinName] : defVal;
                                             val.constant = v;
                                             m->vectors[pinName] = std::move(val);
                                         }
@@ -999,41 +999,41 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                 // Color inputs.
                 for (const auto& [pinName, defVal] : desc->defaultColors) {
                     const auto it = mod->colors.find(pinName);
-                    const Asset::ParticleColorInputUVE cur = (it != mod->colors.end()) ? it->second : defVal;
+                    const Asset::ParticleColorInput cur = (it != mod->colors.end()) ? it->second : defVal;
 
                     auto pinBox = prism::vbox(4.0F);
-                    const int modeIdx = (cur.kind == Asset::ParticleValueKindUVE::Gradient)      ? 1
-                                        : (cur.kind == Asset::ParticleValueKindUVE::RandomRange) ? 2
-                                        : (cur.kind == Asset::ParticleValueKindUVE::UserParameter) ? 3
+                    const int modeIdx = (cur.kind == Asset::ParticleValueKind::Gradient)      ? 1
+                                        : (cur.kind == Asset::ParticleValueKind::RandomRange) ? 2
+                                        : (cur.kind == Asset::ParticleValueKind::UserParameter) ? 3
                                                                                                    : 0;
                     auto modeCombo = prism::make<prism::ComboBox>(
                         std::vector<std::string>{"Constant", "Gradient", "Random Range", "User Parameter"}, modeIdx);
                     modeCombo->onChange = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const int idx) {
-                        editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                             if (selectedEmitterIndex >= s.emitters.size()) {
                                 return;
                             }
-                            Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId);
+                            Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId);
                             if (m == nullptr) {
                                 return;
                             }
-                            Asset::ParticleColorInputUVE val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
+                            Asset::ParticleColorInput val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
                             if (idx == 1) {
-                                val.kind = Asset::ParticleValueKindUVE::Gradient;
+                                val.kind = Asset::ParticleValueKind::Gradient;
                                 if (val.gradient.stops.empty()) {
-                                    AddVfxGradientStopUVE(val.gradient, 0.0F, Math::ColorUVE{1.0F, 1.0F, 1.0F}, 1.0F);
-                                    AddVfxGradientStopUVE(val.gradient, 1.0F, Math::ColorUVE{1.0F, 1.0F, 1.0F}, 0.0F);
+                                    AddVfxGradientStop(val.gradient, 0.0F, Math::Color{1.0F, 1.0F, 1.0F}, 1.0F);
+                                    AddVfxGradientStop(val.gradient, 1.0F, Math::Color{1.0F, 1.0F, 1.0F}, 0.0F);
                                 }
                             } else if (idx == 2) {
-                                val.kind = Asset::ParticleValueKindUVE::RandomRange;
+                                val.kind = Asset::ParticleValueKind::RandomRange;
                             } else if (idx == 3) {
-                                val.kind = Asset::ParticleValueKindUVE::UserParameter;
-                                const auto params = MatchingUserParametersUVE(s, Asset::ParticleUserParameterTypeUVE::Color);
+                                val.kind = Asset::ParticleValueKind::UserParameter;
+                                const auto params = MatchingUserParameters(s, Asset::ParticleUserParameterType::Color);
                                 if (val.parameter.empty() && !params.empty()) {
                                     val.parameter = params.front();
                                 }
                             } else {
-                                val.kind = Asset::ParticleValueKindUVE::Constant;
+                                val.kind = Asset::ParticleValueKind::Constant;
                             }
                             m->colors[pinName] = std::move(val);
                         });
@@ -1043,22 +1043,22 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                     };
                     pinBox->add(modeCombo);
 
-                    if (cur.kind == Asset::ParticleValueKindUVE::Gradient) {
+                    if (cur.kind == Asset::ParticleValueKind::Gradient) {
                         auto gradWidget = prism::make<prism::GradientEditor>();
-                        SyncGradientEditorFromAssetUVE(cur.gradient, *gradWidget);
+                        SyncGradientEditorFromAsset(cur.gradient, *gradWidget);
                         std::weak_ptr<prism::GradientEditor> weakGrad = gradWidget;
                         gradWidget->onChanged = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, weakGrad, onAssetMutated] {
                             const auto gw = weakGrad.lock();
                             if (!gw) {
                                 return;
                             }
-                            Asset::ParticleGradientUVE synced;
-                            SyncAssetFromGradientEditorUVE(*gw, synced);
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            Asset::ParticleGradient synced;
+                            SyncAssetFromGradientEditor(*gw, synced);
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleColorInputUVE val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
-                                        val.kind = Asset::ParticleValueKindUVE::Gradient;
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleColorInput val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
+                                        val.kind = Asset::ParticleValueKind::Gradient;
                                         val.gradient = synced;
                                         m->colors[pinName] = std::move(val);
                                     }
@@ -1069,8 +1069,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                             }
                         };
                         pinBox->add(gradWidget);
-                    } else if (cur.kind == Asset::ParticleValueKindUVE::UserParameter) {
-                        std::vector<std::string> choices = MatchingUserParametersUVE(sys, Asset::ParticleUserParameterTypeUVE::Color);
+                    } else if (cur.kind == Asset::ParticleValueKind::UserParameter) {
+                        std::vector<std::string> choices = MatchingUserParameters(sys, Asset::ParticleUserParameterType::Color);
                         if (choices.empty()) {
                             choices.push_back("(none)");
                         }
@@ -1087,10 +1087,10 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                 return;
                             }
                             const std::string chosen = choices[static_cast<std::size_t>(idx)] == "(none)" ? "" : choices[static_cast<std::size_t>(idx)];
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleColorInputUVE val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleColorInput val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
                                         val.parameter = chosen;
                                         m->colors[pinName] = std::move(val);
                                     }
@@ -1109,11 +1109,11 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                             static_cast<std::uint8_t>(std::clamp(cur.alpha, 0.0F, 1.0F) * 255.0F + 0.5F));
                         auto swatch = prism::make<prism::ColorField>(initCol);
                         swatch->onChange = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const prism::Color c) {
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
-                                        Asset::ParticleColorInputUVE val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
-                                        val.constant = Math::ColorUVE{
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                        Asset::ParticleColorInput val = m->colors.count(pinName) ? m->colors[pinName] : defVal;
+                                        val.constant = Math::Color{
                                             static_cast<float>(c.r) / 255.0F,
                                             static_cast<float>(c.g) / 255.0F,
                                             static_cast<float>(c.b) / 255.0F};
@@ -1135,11 +1135,11 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                 for (const auto& [pinName, defVal] : desc->defaultInts) {
                     const auto it = mod->ints.find(pinName);
                     const std::int32_t cur = (it != mod->ints.end()) ? it->second : defVal;
-                    grid->addRow(modCat, pinName, MakeTypedNumberFieldUVE(static_cast<float>(cur), 1.0F, 0,
+                    grid->addRow(modCat, pinName, MakeTypedNumberField(static_cast<float>(cur), 1.0F, 0,
                         [&editor, selectedEmitterIndex, selectedModuleId, pinName, onAssetMutated](const float v) {
-                            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
-                                    if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                    if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
                                         m->ints[pinName] = static_cast<std::int32_t>( std::lround(v));
                                     }
                                 }
@@ -1156,9 +1156,9 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                     const std::string cur = (it != mod->strings.end()) ? it->second : defVal;
                     auto textIn = prism::make<prism::TextInput>(cur, pinName);
                     textIn->onCommit = [&editor, selectedEmitterIndex, selectedModuleId, pinName, onAssetMutated](const std::string& v) {
-                        editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                             if (selectedEmitterIndex < s.emitters.size()) {
-                                if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
+                                if (Asset::ParticleModule* m = FindMutableModuleInEmitter(s.emitters[selectedEmitterIndex], selectedModuleId)) {
                                     m->strings[pinName] = v;
                                 }
                             }
@@ -1175,7 +1175,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
     // 2. Selected Emitter section.
     if (selectedEmitterIndex < sys.emitters.size()) {
-        const Asset::ParticleEmitterAssetUVE& emitter = sys.emitters[selectedEmitterIndex];
+        const Asset::ParticleEmitterAsset& emitter = sys.emitters[selectedEmitterIndex];
         const int emCat = grid->addCategory("Emitter: " + emitter.name);
 
         auto nameInput = prism::make<prism::TextInput>(emitter.name, "Emitter Name");
@@ -1183,7 +1183,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
             if (v.empty()) {
                 return;
             }
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 if (selectedEmitterIndex < s.emitters.size()) {
                     s.emitters[selectedEmitterIndex].name = v;
                 }
@@ -1196,7 +1196,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
         auto emEnabled = prism::make<prism::CheckBox>("", emitter.enabled);
         emEnabled->onChange = [&editor, selectedEmitterIndex, onAssetMutated](const bool v) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 if (selectedEmitterIndex < s.emitters.size()) {
                     s.emitters[selectedEmitterIndex].enabled = v;
                 }
@@ -1209,12 +1209,12 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
         auto spaceCombo = prism::make<prism::ComboBox>(
             std::vector<std::string>{"World", "Local"},
-            emitter.space == Asset::ParticleSimSpaceUVE::Local ? 1 : 0);
+            emitter.space == Asset::ParticleSimSpace::Local ? 1 : 0);
         spaceCombo->onChange = [&editor, selectedEmitterIndex, onAssetMutated](const int idx) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 if (selectedEmitterIndex < s.emitters.size()) {
                     s.emitters[selectedEmitterIndex].space =
-                        (idx == 1) ? Asset::ParticleSimSpaceUVE::Local : Asset::ParticleSimSpaceUVE::World;
+                        (idx == 1) ? Asset::ParticleSimSpace::Local : Asset::ParticleSimSpace::World;
                 }
             });
             if (onAssetMutated) {
@@ -1227,10 +1227,10 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
             std::vector<std::string>{"CPU", "GPU", "Auto"},
             static_cast<int>(emitter.target));
         targetCombo->onChange = [&editor, selectedEmitterIndex, onAssetMutated](const int idx) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 if (selectedEmitterIndex < s.emitters.size()) {
                     s.emitters[selectedEmitterIndex].target =
-                        static_cast<Asset::ParticleSimTargetUVE>(std::clamp(idx, 0, 2));
+                        static_cast<Asset::ParticleSimTarget>(std::clamp(idx, 0, 2));
                 }
             });
             if (onAssetMutated) {
@@ -1240,11 +1240,11 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
         grid->addRow(emCat, "Simulation Target", targetCombo);
 
         grid->addRow(emCat, "Max Particles",
-            MakeTypedNumberFieldUVE(static_cast<float>(emitter.maxParticles), 100.0F, 0,
+            MakeTypedNumberField(static_cast<float>(emitter.maxParticles), 100.0F, 0,
                 [&editor, selectedEmitterIndex, onAssetMutated](const float v) {
                     const auto clamped = static_cast<std::uint32_t>(
-                        std::clamp(std::lround(v), 1L, static_cast<long>(Asset::kMaximumParticlesPerEmitterUVE)));
-                    editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                        std::clamp(std::lround(v), 1L, static_cast<long>(Asset::kMaximumParticlesPerEmitter)));
+                    editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                         if (selectedEmitterIndex < s.emitters.size()) {
                             s.emitters[selectedEmitterIndex].maxParticles = clamped;
                         }
@@ -1255,10 +1255,10 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                 }));
 
         grid->addRow(emCat, "Seed",
-            MakeTypedNumberFieldUVE(static_cast<float>(emitter.seed), 1.0F, 0,
+            MakeTypedNumberField(static_cast<float>(emitter.seed), 1.0F, 0,
                 [&editor, selectedEmitterIndex, onAssetMutated](const float v) {
                     const auto seedVal = static_cast<std::uint32_t>(std::max(0L, std::lround(v)));
-                    editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+                    editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                         if (selectedEmitterIndex < s.emitters.size()) {
                             s.emitters[selectedEmitterIndex].seed = seedVal;
                         }
@@ -1272,8 +1272,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
     // 3. Particle System settings section.
     const int sysCat = grid->addCategory("Particle System");
     grid->addRow(sysCat, "Duration (s)",
-        MakeTypedNumberFieldUVE(sys.duration, 0.1F, 2, [&editor, onAssetMutated](const float v) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+        MakeTypedNumberField(sys.duration, 0.1F, 2, [&editor, onAssetMutated](const float v) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 s.duration = std::clamp(v, 0.05F, 3600.0F);
             });
             if (onAssetMutated) {
@@ -1283,7 +1283,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
 
     auto loopCheck = prism::make<prism::CheckBox>("", sys.looping);
     loopCheck->onChange = [&editor, onAssetMutated](const bool v) {
-        editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) { s.looping = v; });
+        editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) { s.looping = v; });
         if (onAssetMutated) {
             onAssetMutated();
         }
@@ -1291,8 +1291,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
     grid->addRow(sysCat, "Looping", loopCheck);
 
     grid->addRow(sysCat, "Warm-Up (s)",
-        MakeTypedNumberFieldUVE(sys.warmUpSeconds, 0.1F, 2, [&editor, onAssetMutated](const float v) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+        MakeTypedNumberField(sys.warmUpSeconds, 0.1F, 2, [&editor, onAssetMutated](const float v) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 s.warmUpSeconds = std::clamp(v, 0.0F, 10.0F);
             });
             if (onAssetMutated) {
@@ -1301,8 +1301,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
         }));
 
     grid->addRow(sysCat, "Bounds Min",
-        MakeTypedVec3FieldUVE(sys.fixedBounds.min, [&editor, onAssetMutated](const Math::Vector3UVE& v) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+        MakeTypedVec3Field(sys.fixedBounds.min, [&editor, onAssetMutated](const Math::Vector3& v) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 s.fixedBounds.min = v;
                 s.fixedBounds.max.x = std::max(s.fixedBounds.min.x + 0.1F, s.fixedBounds.max.x);
                 s.fixedBounds.max.y = std::max(s.fixedBounds.min.y + 0.1F, s.fixedBounds.max.y);
@@ -1314,8 +1314,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
         }));
 
     grid->addRow(sysCat, "Bounds Max",
-        MakeTypedVec3FieldUVE(sys.fixedBounds.max, [&editor, onAssetMutated](const Math::Vector3UVE& v) {
-            editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
+        MakeTypedVec3Field(sys.fixedBounds.max, [&editor, onAssetMutated](const Math::Vector3& v) {
+            editor.EditVfxSystem([&](Asset::ParticleSystemAsset& s) {
                 s.fixedBounds.max.x = std::max(s.fixedBounds.min.x + 0.1F, v.x);
                 s.fixedBounds.max.y = std::max(s.fixedBounds.min.y + 0.1F, v.y);
                 s.fixedBounds.max.z = std::max(s.fixedBounds.min.z + 0.1F, v.z);
@@ -1325,7 +1325,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
             }
         }));
 
-    return prism::make<FitWidthUVE>(grid);
+    return prism::make<FitWidth>(grid);
 }
 
 } // namespace UVE::Editor

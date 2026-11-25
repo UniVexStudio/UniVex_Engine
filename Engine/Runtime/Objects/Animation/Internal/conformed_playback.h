@@ -12,17 +12,17 @@ namespace UVE::Scene {
 
 /// How `clip` is played on `skeleton`: inactive unless the clip is conformed, in which case only the
 /// bones that place the body (root, hips, IK) take its translation, scaled to this character.
-[[nodiscard]] inline Retarget::ConformedPlaybackUVE PlanConformedPlaybackForUVE(
-    const Asset::AnimationClipAssetUVE& clip, const Skeleton3DComponentUVE& skeleton) {
+[[nodiscard]] inline Retarget::ConformedPlayback PlanConformedPlaybackFor(
+    const Asset::AnimationClipAsset& clip, const Skeleton3DComponent& skeleton) {
     if (!clip.conformed) {
         return {};
     }
-    std::vector<Retarget::RestBoneViewUVE> rest;
+    std::vector<Retarget::RestBoneView> rest;
     rest.reserve(skeleton.bones.size());
-    for (const SkeletonBoneUVE& bone : skeleton.bones) {
-        rest.push_back(Retarget::RestBoneViewUVE{bone.name, bone.parentIndex, bone.localPosition, bone.localRotation});
+    for (const SkeletonBone& bone : skeleton.bones) {
+        rest.push_back(Retarget::RestBoneView{bone.name, bone.parentIndex, bone.localPosition, bone.localRotation});
     }
-    return Retarget::PlanConformedPlaybackUVE(clip, rest);
+    return Retarget::PlanConformedPlayback(clip, rest);
 }
 
 } // namespace UVE::Scene

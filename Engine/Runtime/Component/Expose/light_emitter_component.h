@@ -8,7 +8,7 @@
 
 namespace UVE::Scene {
 
-enum class LightBakeModeUVE : std::uint8_t {
+enum class LightBakeMode : std::uint8_t {
     /// Real-time only; ignored by baking.
     Disabled = 0,
     /// Fully baked; costs nothing at runtime, must not change.
@@ -20,8 +20,8 @@ enum class LightBakeModeUVE : std::uint8_t {
 /// The shared state of LightEmitter3D, the abstract base (under RenderInstance3D) of every light.
 /// No object is a LightEmitter3D on its own; its kinds - directional, point, spot - carry this
 /// component and add their own shape.
-struct LightEmitterComponentUVE final {
-    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
+struct LightEmitterComponent final {
+    Math::Color color{1.0F, 1.0F, 1.0F};
     float energy = 1.0F;
     /// Scales this light's contribution to bounced (indirect) lighting.
     float indirectEnergy = 1.0F;
@@ -29,7 +29,7 @@ struct LightEmitterComponentUVE final {
     float volumetricFogEnergy = 1.0F;
     /// Strength of the highlight it leaves on shiny surfaces.
     float specular = 0.5F;
-    LightBakeModeUVE bakeMode = LightBakeModeUVE::Dynamic;
+    LightBakeMode bakeMode = LightBakeMode::Dynamic;
     /// The render layers it lights.
     std::uint32_t cullMask = 0xFFFFFFFFU;
 
@@ -49,27 +49,27 @@ struct LightEmitterComponentUVE final {
     float distanceFadeShadow = 50.0F;
     float distanceFadeLength = 10.0F;
 
-    [[nodiscard]] bool operator==(const LightEmitterComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const LightEmitterComponent&) const = default;
 };
 
 /// A known bake mode; finite values; colour channels and energies not negative; shadow opacity in
 /// [0, 1]; and fade distances not negative.
-[[nodiscard]] bool IsLightEmitterComponentValidUVE(const LightEmitterComponentUVE& component) noexcept;
+[[nodiscard]] bool IsLightEmitterComponentValid(const LightEmitterComponent& component) noexcept;
 
 /// Sanitizes `component` so bake mode, color, energies, shadow opacity, and fade distances are valid.
-[[nodiscard]] LightEmitterComponentUVE SanitizeLightEmitterComponentUVE(
-    const LightEmitterComponentUVE& component) noexcept;
+[[nodiscard]] LightEmitterComponent SanitizeLightEmitterComponent(
+    const LightEmitterComponent& component) noexcept;
 
 /// True when `component.cullMask` shares at least one bit with `surfaceLayerMask`.
-[[nodiscard]] bool DoesLightEmitterAffectSurfaceLayerMaskUVE(
-    const LightEmitterComponentUVE& component, std::uint32_t surfaceLayerMask) noexcept;
+[[nodiscard]] bool DoesLightEmitterAffectSurfaceLayerMask(
+    const LightEmitterComponent& component, std::uint32_t surfaceLayerMask) noexcept;
 
 /// True when the light casts runtime shadows (`shadowEnabled`, `shadowOpacity > 0`, and `cullMask != 0`).
-[[nodiscard]] bool DoesLightEmitterCastActiveShadowUVE(
-    const LightEmitterComponentUVE& component) noexcept;
+[[nodiscard]] bool DoesLightEmitterCastActiveShadow(
+    const LightEmitterComponent& component) noexcept;
 
 /// Evaluates the distance fade multiplier in `[0, 1]` at `cameraDistanceMeters` (`1` when `distanceFadeEnabled` is false).
-[[nodiscard]] float EvaluateLightEmitterDistanceFadeUVE(
-    const LightEmitterComponentUVE& component, float cameraDistanceMeters) noexcept;
+[[nodiscard]] float EvaluateLightEmitterDistanceFade(
+    const LightEmitterComponent& component, float cameraDistanceMeters) noexcept;
 
 } // namespace UVE::Scene

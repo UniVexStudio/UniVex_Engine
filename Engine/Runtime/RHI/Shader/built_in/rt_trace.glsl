@@ -1,12 +1,12 @@
 #version 430 core
 
 // Compute ray-traced shadows, 1-bounce specular reflections, and 1-bounce diffuse GI over the
-// scene AABB proxy buffer (RtSceneBoxNodeUVE). Works universally on desktop OpenGL 4.3+ and
+// scene AABB proxy buffer (RtSceneBoxNode). Works universally on desktop OpenGL 4.3+ and
 // Vulkan compute queues (including software lavapipe in CI).
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-struct RtSceneBoxNodeUVE {
+struct RtSceneBoxNode {
     vec4 minAndMetallic;
     vec4 maxAndRoughness;
     vec4 albedo;
@@ -14,7 +14,7 @@ struct RtSceneBoxNodeUVE {
 };
 
 layout(std430, binding = 0) readonly buffer RtSceneBoxesBlock {
-    RtSceneBoxNodeUVE sceneBoxes[];
+    RtSceneBoxNode sceneBoxes[];
 };
 
 layout(std430, binding = 1) readonly buffer RtParamsBlock {
@@ -28,7 +28,7 @@ layout(std430, binding = 1) readonly buffer RtParamsBlock {
 layout(binding = 0) uniform sampler2D uDepthTexture;
 layout(rgba16f, binding = 1) uniform writeonly image2D uRtOutputImage;
 
-bool IntersectBoxUVE(vec3 origin, vec3 invDir, RtSceneBoxNodeUVE box, float tMin, float tMax,
+bool IntersectBox(vec3 origin, vec3 invDir, RtSceneBoxNode box, float tMin, float tMax,
                      out float outT, out vec3 outNormal) {
     vec3 t0 = (box.minAndMetallic.xyz - origin) * invDir;
     vec3 t1 = (box.maxAndRoughness.xyz - origin) * invDir;
@@ -81,7 +81,7 @@ void main() {
     float hitT = 0.0;
     vec3 hitN = vec3(0.0, 1.0, 0.0);
     for (uint i = 0u; i < boxCount; ++i) {
-        if (IntersectBoxUVE(worldPos + sunDir * 0.02, invSunDir, sceneBoxes[i], 0.005, 250.0, hitT, hitN)) {
+        if (IntersectBox(worldPos + sunDir * 0.02, invSunDir, sceneBoxes[i], 0.005, 250.0, hitT, hitN)) {
             sunVis = 0.0;
             break;
         }

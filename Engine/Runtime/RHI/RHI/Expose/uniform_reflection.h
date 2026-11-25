@@ -10,14 +10,14 @@
 
 namespace UVE::Render {
 
-/// One uniform IRenderDeviceUVE::GetPipelineUniformsUVE() discovered by reflecting a linked
+/// One uniform IRenderDevice::GetPipelineUniforms() discovered by reflecting a linked
 /// pipeline. `location` is a backend-internal identifier (a raw GL uniform location for
-/// GlRenderDeviceUVE) that callers never need to interpret themselves — it exists purely so a
-/// backend can look one up quickly from a name without leaking any GL type; a NullRenderDeviceUVE
-/// pipeline never populates this (see GetPipelineUniformsUVE()'s own doc comment).
-struct UniformReflectionUVE {
+/// GlRenderDevice) that callers never need to interpret themselves — it exists purely so a
+/// backend can look one up quickly from a name without leaking any GL type; a NullRenderDevice
+/// pipeline never populates this (see GetPipelineUniforms()'s own doc comment).
+struct UniformReflection {
     std::string name;
-    ShaderDataTypeUVE type = ShaderDataTypeUVE::Float;
+    ShaderDataType type = ShaderDataType::Float;
     std::int32_t location = -1;
     std::uint32_t arraySize = 1;
 };

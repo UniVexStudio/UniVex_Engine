@@ -20,7 +20,7 @@ namespace {
 // Per-component stillness: every axis within the epsilon means the entity never moved. A NaN
 // sample compares unequal to everything (including the epsilon), so corrupt samplers ship
 // every tick - loud, like before, instead of silently going quiet.
-[[nodiscard]] bool UnchangedUVE(const Math::Vector3UVE& sampled, const Math::Vector3UVE& baseline,
+[[nodiscard]] bool Unchanged(const Math::Vector3& sampled, const Math::Vector3& baseline,
                                 const float epsilon) noexcept {
     return std::fabs(sampled.x - baseline.x) <= epsilon &&
            std::fabs(sampled.y - baseline.y) <= epsilon &&
@@ -28,44 +28,44 @@ namespace {
 }
 
 // Ownership-control kinds: the third byte of a control frame, after the marker.
-inline constexpr std::uint8_t kTransferRequestKindUVE = 0x01U;
-inline constexpr std::uint8_t kTransferAcceptKindUVE = 0x02U;
-inline constexpr std::uint8_t kTransferDenyKindUVE = 0x03U;
-inline constexpr std::size_t kTransferControlBytesUVE = 7U;
+inline constexpr std::uint8_t kTransferRequestKind = 0x01U;
+inline constexpr std::uint8_t kTransferAcceptKind = 0x02U;
+inline constexpr std::uint8_t kTransferDenyKind = 0x03U;
+inline constexpr std::size_t kTransferControlBytes = 7U;
 
 } // namespace
 
-NetworkReplicatorUVE::NetworkReplicatorUVE(NetworkSessionUVE&& session,
+NetworkReplicator::NetworkReplicator(NetworkSession&& session,
                                            const std::uint64_t sendIntervalMs) noexcept
     : m_session(std::move(session)), m_sendIntervalMs(sendIntervalMs) {}
 
-NetworkReplicatorUVE::NetworkReplicatorUVE(NetworkSessionUVE& sharedSession,
-                                           const NetworkChannelIdUVE channel,
+NetworkReplicator::NetworkReplicator(NetworkSession& sharedSession,
+                                           const NetworkChannelId channel,
                                            const std::uint64_t sendIntervalMs) noexcept
     : m_session(&sharedSession), m_channel(channel), m_sendIntervalMs(sendIntervalMs) {}
 
-bool NetworkReplicatorUVE::SendPayloadUVE(const std::vector<std::uint8_t>& payload) {
-    if (std::holds_alternative<NetworkSessionUVE*>(m_session)) {
-        return SessionUVE().SendChannelDataUVE(m_channel, payload);
+bool NetworkReplicator::SendPayload(const std::vector<std::uint8_t>& payload) {
+    if (std::holds_alternative<NetworkSession*>(m_session)) {
+        return Session().SendChannelData(m_channel, payload);
     }
-    return SessionUVE().SendDataUVE(payload);
+    return Session().SendData(payload);
 }
 
-std::optional<std::vector<std::uint8_t>> NetworkReplicatorUVE::ReceivePayloadUVE() {
-    if (std::holds_alternative<NetworkSessionUVE*>(m_session)) {
-        return SessionUVE().TryReceiveChannelDataUVE(m_channel);
+std::optional<std::vector<std::uint8_t>> NetworkReplicator::ReceivePayload() {
+    if (std::holds_alternative<NetworkSession*>(m_session)) {
+        return Session().TryReceiveChannelData(m_channel);
     }
-    return SessionUVE().TryReceiveDataUVE();
+    return Session().TryReceiveData();
 }
 
-bool NetworkReplicatorUVE::RegisterEntityUVE(const NetworkEntityIdUVE netId, PositionSamplerUVE sampler,
-                                             PositionApplierUVE applier,
-                                             const ReplicationAuthorityUVE authority,
-                                             RelevancyCheckUVE relevancy) {
+bool NetworkReplicator::RegisterEntity(const NetworkEntityId netId, PositionSampler sampler,
+                                             PositionApplier applier,
+                                             const ReplicationAuthority authority,
+                                             RelevancyCheck relevancy) {
     if (sampler == nullptr || applier == nullptr || m_entries.contains(netId)) {
         return false;
     }
-    ReplicationEntryUVE entry;
+    ReplicationEntry entry;
     entry.sampler = std::move(sampler);
     entry.applier = std::move(applier);
     entry.authority = authority;
@@ -74,7 +74,7 @@ bool NetworkReplicatorUVE::RegisterEntityUVE(const NetworkEntityIdUVE netId, Pos
     return true;
 }
 
-bool NetworkReplicatorUVE::UnregisterEntityUVE(const NetworkEntityIdUVE netId) noexcept {
+bool NetworkReplicator::UnregisterEntity(const NetworkEntityId netId) noexcept {
     m_baselines.erase(netId);
     for (auto prop = m_properties.begin(); prop != m_properties.end();) {
         if (prop->first.first == netId) {
@@ -88,8 +88,8 @@ bool NetworkReplicatorUVE::UnregisterEntityUVE(const NetworkEntityIdUVE netId) n
     return m_entries.erase(netId) > 0U;
 }
 
-bool NetworkReplicatorUVE::SetAuthorityUVE(const NetworkEntityIdUVE netId,
-                                           const ReplicationAuthorityUVE authority) noexcept {
+bool NetworkReplicator::SetAuthority(const NetworkEntityId netId,
+                                           const ReplicationAuthority authority) noexcept {
     const auto entry = m_entries.find(netId);
     if (entry == m_entries.end()) {
         return false;
@@ -102,8 +102,8 @@ bool NetworkReplicatorUVE::SetAuthorityUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkReplicatorUVE::SetRelevancyUVE(const NetworkEntityIdUVE netId,
-                                           RelevancyCheckUVE relevancy) noexcept {
+bool NetworkReplicator::SetRelevancy(const NetworkEntityId netId,
+                                           RelevancyCheck relevancy) noexcept {
     const auto entry = m_entries.find(netId);
     if (entry == m_entries.end()) {
         return false;
@@ -112,13 +112,13 @@ bool NetworkReplicatorUVE::SetRelevancyUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkReplicatorUVE::RegisterPropertyUVE(const NetworkEntityIdUVE netId,
-                                               const ReplicationPropertyIdUVE propId,
-                                               PropertyApplierUVE applier) {
+bool NetworkReplicator::RegisterProperty(const NetworkEntityId netId,
+                                               const ReplicationPropertyId propId,
+                                               PropertyApplier applier) {
     if (m_entries.find(netId) == m_entries.end() || applier == nullptr) {
         return false;
     }
-    PropertyStateUVE& prop = m_properties[{netId, propId}];
+    PropertyState& prop = m_properties[{netId, propId}];
     if (prop.applier != nullptr) {
         return false;
     }
@@ -126,14 +126,14 @@ bool NetworkReplicatorUVE::RegisterPropertyUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkReplicatorUVE::UnregisterPropertyUVE(const NetworkEntityIdUVE netId,
-                                                 const ReplicationPropertyIdUVE propId) noexcept {
+bool NetworkReplicator::UnregisterProperty(const NetworkEntityId netId,
+                                                 const ReplicationPropertyId propId) noexcept {
     return m_properties.erase({netId, propId}) > 0U;
 }
 
-bool NetworkReplicatorUVE::SetPropertyUVE(const NetworkEntityIdUVE netId,
-                                          const ReplicationPropertyIdUVE propId,
-                                          const Blueprint::ValueUVE& value) {
+bool NetworkReplicator::SetProperty(const NetworkEntityId netId,
+                                          const ReplicationPropertyId propId,
+                                          const Blueprint::Value& value) {
     if (m_entries.find(netId) == m_entries.end()) {
         return false;
     }
@@ -141,12 +141,12 @@ bool NetworkReplicatorUVE::SetPropertyUVE(const NetworkEntityIdUVE netId,
     // encodes (never fails) and the dirty check is an exact byte compare - two values with
     // identical bytes are the same value on the wire, whatever == says.
     std::vector<std::byte> encoded;
-    if (!AppendWireValueUVE(encoded, value, 0U) ||
-        encoded.size() > kReplicationMaximumPropertyBytesUVE) {
+    if (!AppendWireValue(encoded, value, 0U) ||
+        encoded.size() > kReplicationMaximumPropertyBytes) {
         ++m_stats.propertiesSkippedOversized;
         return false;
     }
-    PropertyStateUVE& prop = m_properties[{netId, propId}];
+    PropertyState& prop = m_properties[{netId, propId}];
     if (prop.hasValue && prop.encoded == encoded) {
         return true;
     }
@@ -156,7 +156,7 @@ bool NetworkReplicatorUVE::SetPropertyUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkReplicatorUVE::SetFullSnapshotPeriodUVE(const std::uint32_t period) noexcept {
+bool NetworkReplicator::SetFullSnapshotPeriod(const std::uint32_t period) noexcept {
     if (period == 0U) {
         return false;
     }
@@ -164,7 +164,7 @@ bool NetworkReplicatorUVE::SetFullSnapshotPeriodUVE(const std::uint32_t period) 
     return true;
 }
 
-bool NetworkReplicatorUVE::SetPositionEpsilonUVE(const float epsilon) noexcept {
+bool NetworkReplicator::SetPositionEpsilon(const float epsilon) noexcept {
     if (!std::isfinite(epsilon) || epsilon < 0.0F) {
         return false;
     }
@@ -172,7 +172,7 @@ bool NetworkReplicatorUVE::SetPositionEpsilonUVE(const float epsilon) noexcept {
     return true;
 }
 
-bool NetworkReplicatorUVE::SetMaxSnapshotChunksPerTickUVE(const std::size_t maxChunks) noexcept {
+bool NetworkReplicator::SetMaxSnapshotChunksPerTick(const std::size_t maxChunks) noexcept {
     if (maxChunks == 0U) {
         return false;
     }
@@ -180,12 +180,12 @@ bool NetworkReplicatorUVE::SetMaxSnapshotChunksPerTickUVE(const std::size_t maxC
     return true;
 }
 
-bool NetworkReplicatorUVE::RequestOwnershipUVE(const NetworkEntityIdUVE netId,
+bool NetworkReplicator::RequestOwnership(const NetworkEntityId netId,
                                               const std::uint64_t nowMs) {
     const auto entry = m_entries.find(netId);
-    if (entry == m_entries.end() || entry->second.authority != ReplicationAuthorityUVE::Proxy ||
+    if (entry == m_entries.end() || entry->second.authority != ReplicationAuthority::Proxy ||
         m_openRequests.find(netId) != m_openRequests.end() ||
-        !SendControlUVE(kTransferRequestKindUVE, netId)) {
+        !SendControl(kTransferRequestKind, netId)) {
         return false;
     }
     m_openRequests.emplace(netId, nowMs);
@@ -193,23 +193,23 @@ bool NetworkReplicatorUVE::RequestOwnershipUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkReplicatorUVE::AcceptTransferUVE(const NetworkEntityIdUVE netId) {
+bool NetworkReplicator::AcceptTransfer(const NetworkEntityId netId) {
     const auto entry = m_entries.find(netId);
     if (entry == m_entries.end() || m_awaitingDecision.find(netId) == m_awaitingDecision.end() ||
-        !SendControlUVE(kTransferAcceptKindUVE, netId)) {
+        !SendControl(kTransferAcceptKind, netId)) {
         return false;
     }
     m_awaitingDecision.erase(netId);
-    entry->second.authority = ReplicationAuthorityUVE::Proxy;
+    entry->second.authority = ReplicationAuthority::Proxy;
     ++m_stats.transfersCompleted;
-    NotifyUVE(netId, OwnershipTransferEventUVE::Completed);
+    Notify(netId, OwnershipTransferEvent::Completed);
     return true;
 }
 
-bool NetworkReplicatorUVE::DenyTransferUVE(const NetworkEntityIdUVE netId) {
+bool NetworkReplicator::DenyTransfer(const NetworkEntityId netId) {
     if (m_entries.find(netId) == m_entries.end() ||
         m_awaitingDecision.find(netId) == m_awaitingDecision.end() ||
-        !SendControlUVE(kTransferDenyKindUVE, netId)) {
+        !SendControl(kTransferDenyKind, netId)) {
         return false;
     }
     m_awaitingDecision.erase(netId);
@@ -217,11 +217,11 @@ bool NetworkReplicatorUVE::DenyTransferUVE(const NetworkEntityIdUVE netId) {
     return true;
 }
 
-void NetworkReplicatorUVE::SetOwnershipTransferHandlerUVE(OwnershipTransferHandlerUVE handler) {
+void NetworkReplicator::SetOwnershipTransferHandler(OwnershipTransferHandler handler) {
     m_transferHandler = std::move(handler);
 }
 
-bool NetworkReplicatorUVE::SetOwnershipTimeoutUVE(const std::uint64_t timeoutMs) noexcept {
+bool NetworkReplicator::SetOwnershipTimeout(const std::uint64_t timeoutMs) noexcept {
     if (timeoutMs == 0U) {
         return false;
     }
@@ -229,20 +229,20 @@ bool NetworkReplicatorUVE::SetOwnershipTimeoutUVE(const std::uint64_t timeoutMs)
     return true;
 }
 
-void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
-    SessionUVE().UpdateUVE(nowMs);
+void NetworkReplicator::Update(const std::uint64_t nowMs) {
+    Session().Update(nowMs);
     for (;;) {
-        const std::optional<std::vector<std::uint8_t>> payload = ReceivePayloadUVE();
+        const std::optional<std::vector<std::uint8_t>> payload = ReceivePayload();
         if (!payload.has_value()) {
             break;
         }
-        HandleSnapshotUVE(*payload);
+        HandleSnapshot(*payload);
     }
     // Answers land before deadlines: anything the pump just completed is already gone from
     // the open set, so only the truly unanswered expire. Runs unconditionally - a dropped
     // session must not freeze a request past its time.
-    ExpireRequestsUVE(nowMs);
-    if (SessionUVE().StateUVE() != SessionStateUVE::Established ||
+    ExpireRequests(nowMs);
+    if (Session().State() != SessionState::Established ||
         nowMs - m_lastSendMs < m_sendIntervalMs) {
         return;
     }
@@ -251,14 +251,14 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
     // heals at worst by the next full - the full is the backstop for loss, truncation, and
     // anything an authority flip hid.
     const bool full = m_sendsCompleted % m_fullPeriod == 0U;
-    std::vector<std::pair<NetworkEntityIdUVE, Math::Vector3UVE>> included;
+    std::vector<std::pair<NetworkEntityId, Math::Vector3>> included;
     const std::size_t maxTotalEntries =
-        kReplicationMaximumEntriesPerSnapshotUVE * std::max<std::size_t>(1U, m_maxSnapshotChunksPerTick);
+        kReplicationMaximumEntriesPerSnapshot * std::max<std::size_t>(1U, m_maxSnapshotChunksPerTick);
     // Relevancy runs once per entity per tick: the property frame reuses these verdicts
     // instead of re-running app predicates.
-    std::set<NetworkEntityIdUVE> relevantSenders;
+    std::set<NetworkEntityId> relevantSenders;
     for (const auto& [netId, entry] : m_entries) {
-        if (entry.authority == ReplicationAuthorityUVE::Proxy) {
+        if (entry.authority == ReplicationAuthority::Proxy) {
             continue;
         }
         if (entry.relevancy != nullptr && !entry.relevancy()) {
@@ -266,11 +266,11 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
             continue;
         }
         relevantSenders.insert(netId);
-        const Math::Vector3UVE position = entry.sampler();
+        const Math::Vector3 position = entry.sampler();
         if (!full) {
             const auto baseline = m_baselines.find(netId);
             if (baseline != m_baselines.end() &&
-                UnchangedUVE(position, baseline->second, m_positionEpsilon)) {
+                Unchanged(position, baseline->second, m_positionEpsilon)) {
                 ++m_stats.entriesSkippedUnchanged;
                 continue;
             }
@@ -284,32 +284,32 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
     const std::size_t chunkCount =
         included.empty()
             ? 1U
-            : ((included.size() + kReplicationMaximumEntriesPerSnapshotUVE - 1U) /
-               kReplicationMaximumEntriesPerSnapshotUVE);
+            : ((included.size() + kReplicationMaximumEntriesPerSnapshot - 1U) /
+               kReplicationMaximumEntriesPerSnapshot);
     bool anyChunkSent = false;
     for (std::size_t chunkIndex = 0U; chunkIndex < chunkCount; ++chunkIndex) {
-        const std::size_t beginIndex = chunkIndex * kReplicationMaximumEntriesPerSnapshotUVE;
+        const std::size_t beginIndex = chunkIndex * kReplicationMaximumEntriesPerSnapshot;
         const std::size_t endIndex =
-            std::min(included.size(), beginIndex + kReplicationMaximumEntriesPerSnapshotUVE);
+            std::min(included.size(), beginIndex + kReplicationMaximumEntriesPerSnapshot);
         const std::size_t chunkSize = endIndex - beginIndex;
         std::vector<std::byte> framed;
         if (!full) {
-            Utilities::AppendUint16LeUVE(framed, kReplicationDeltaMarkerUVE);
+            Utilities::AppendUint16Le(framed, kReplicationDeltaMarker);
         }
-        Utilities::AppendUint16LeUVE(framed, static_cast<std::uint16_t>(chunkSize));
+        Utilities::AppendUint16Le(framed, static_cast<std::uint16_t>(chunkSize));
         for (std::size_t i = beginIndex; i < endIndex; ++i) {
             const auto& [netId, position] = included[i];
-            Utilities::AppendUint32LeUVE(framed, netId);
-            Utilities::AppendFloatLeUVE(framed, position.x);
-            Utilities::AppendFloatLeUVE(framed, position.y);
-            Utilities::AppendFloatLeUVE(framed, position.z);
+            Utilities::AppendUint32Le(framed, netId);
+            Utilities::AppendFloatLe(framed, position.x);
+            Utilities::AppendFloatLe(framed, position.y);
+            Utilities::AppendFloatLe(framed, position.z);
         }
         std::vector<std::uint8_t> datagram;
         datagram.reserve(framed.size());
         for (const std::byte byte : framed) {
             datagram.push_back(static_cast<std::uint8_t>(byte));
         }
-        if (!SendPayloadUVE(datagram)) {
+        if (!SendPayload(datagram)) {
             break;
         }
         for (std::size_t i = beginIndex; i < endIndex; ++i) {
@@ -329,30 +329,30 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
     // Property frames ride the snapshot tick - same cadence, same full schedule - but send
     // independently: a failed snapshot still leaves the properties their own attempt, and a
     // quiet tick (nothing dirty, no full due) sends no frame at all.
-    SendPropertiesUVE(full, relevantSenders);
+    SendProperties(full, relevantSenders);
 }
 
-void NetworkReplicatorUVE::SendPropertiesUVE(
-    const bool full, const std::set<NetworkEntityIdUVE>& relevantSenders) {
-    std::vector<std::pair<NetworkEntityIdUVE, ReplicationPropertyIdUVE>> included;
+void NetworkReplicator::SendProperties(
+    const bool full, const std::set<NetworkEntityId>& relevantSenders) {
+    std::vector<std::pair<NetworkEntityId, ReplicationPropertyId>> included;
     std::vector<std::byte> entries;
     for (const auto& [key, prop] : m_properties) {
         const auto entry = m_entries.find(key.first);
         if (entry == m_entries.end() ||
-            entry->second.authority == ReplicationAuthorityUVE::Proxy ||
+            entry->second.authority == ReplicationAuthority::Proxy ||
             relevantSenders.find(key.first) == relevantSenders.end() || !prop.hasValue ||
             (!full && !prop.dirty)) {
             continue;
         }
-        constexpr std::size_t kPropertyHeaderBytesUVE = 2U * sizeof(std::uint16_t);
-        const std::size_t entryBytes = sizeof(NetworkEntityIdUVE) +
-                                       sizeof(ReplicationPropertyIdUVE) + prop.encoded.size();
-        if (kPropertyHeaderBytesUVE + entries.size() + entryBytes >
-            kSessionMaximumPayloadBytesUVE) {
+        constexpr std::size_t kPropertyHeaderBytes = 2U * sizeof(std::uint16_t);
+        const std::size_t entryBytes = sizeof(NetworkEntityId) +
+                                       sizeof(ReplicationPropertyId) + prop.encoded.size();
+        if (kPropertyHeaderBytes + entries.size() + entryBytes >
+            kSessionMaximumPayloadBytes) {
             ++m_stats.propertiesTruncated;
             continue;
         }
-        Utilities::AppendUint32LeUVE(entries, key.first);
+        Utilities::AppendUint32Le(entries, key.first);
         entries.push_back(static_cast<std::byte>(key.second));
         entries.insert(entries.end(), prop.encoded.begin(), prop.encoded.end());
         included.push_back(key);
@@ -361,15 +361,15 @@ void NetworkReplicatorUVE::SendPropertiesUVE(
         return;
     }
     std::vector<std::byte> framed;
-    Utilities::AppendUint16LeUVE(framed, kReplicationPropertyMarkerUVE);
-    Utilities::AppendUint16LeUVE(framed, static_cast<std::uint16_t>(included.size()));
+    Utilities::AppendUint16Le(framed, kReplicationPropertyMarker);
+    Utilities::AppendUint16Le(framed, static_cast<std::uint16_t>(included.size()));
     framed.insert(framed.end(), entries.begin(), entries.end());
     std::vector<std::uint8_t> datagram;
     datagram.reserve(framed.size());
     for (const std::byte byte : framed) {
         datagram.push_back(static_cast<std::uint8_t>(byte));
     }
-    if (!SendPayloadUVE(datagram)) {
+    if (!SendPayload(datagram)) {
         return;
     }
     for (const auto& key : included) {
@@ -378,7 +378,7 @@ void NetworkReplicatorUVE::SendPropertiesUVE(
     ++m_stats.propertyFramesSent;
 }
 
-void NetworkReplicatorUVE::HandleSnapshotUVE(const std::vector<std::uint8_t>& payload) {
+void NetworkReplicator::HandleSnapshot(const std::vector<std::uint8_t>& payload) {
     // Strict framing: the byte count must match the declared entry count exactly, or the whole
     // message goes out unapplied - no partial snapshots, no trailing bytes, no exceptions.
     // Delta entries are absolute positions, identical in shape to full ones, so both kinds
@@ -391,58 +391,58 @@ void NetworkReplicatorUVE::HandleSnapshotUVE(const std::vector<std::uint8_t>& pa
     }
     std::size_t offset = 0U;
     std::uint16_t first = 0U;
-    if (!Utilities::ReadUint16LeFromBufferUVE(buffer, offset, first)) {
+    if (!Utilities::ReadUint16LeFromBuffer(buffer, offset, first)) {
         ++m_stats.messagesIgnoredMalformed;
         return;
     }
-    if (first == kReplicationControlMarkerUVE) {
-        if (buffer.size() != kTransferControlBytesUVE) {
+    if (first == kReplicationControlMarker) {
+        if (buffer.size() != kTransferControlBytes) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
         const std::uint8_t kind = std::to_integer<std::uint8_t>(buffer[offset++]);
-        NetworkEntityIdUVE netId = 0U;
-        if (kind != kTransferRequestKindUVE && kind != kTransferAcceptKindUVE &&
-            kind != kTransferDenyKindUVE) {
+        NetworkEntityId netId = 0U;
+        if (kind != kTransferRequestKind && kind != kTransferAcceptKind &&
+            kind != kTransferDenyKind) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
-        if (!Utilities::ReadUint32LeFromBufferUVE(buffer, offset, netId)) {
+        if (!Utilities::ReadUint32LeFromBuffer(buffer, offset, netId)) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
-        HandleControlUVE(kind, netId);
+        HandleControl(kind, netId);
         return;
     }
-    if (first == kReplicationPropertyMarkerUVE) {
-        HandlePropertiesUVE(buffer, offset);
+    if (first == kReplicationPropertyMarker) {
+        HandleProperties(buffer, offset);
         return;
     }
-    const bool delta = first == kReplicationDeltaMarkerUVE;
+    const bool delta = first == kReplicationDeltaMarker;
     std::uint16_t entryCount = first;
     std::size_t headerBytes = sizeof(std::uint16_t);
     if (delta) {
         headerBytes += sizeof(std::uint16_t);
-        if (!Utilities::ReadUint16LeFromBufferUVE(buffer, offset, entryCount)) {
+        if (!Utilities::ReadUint16LeFromBuffer(buffer, offset, entryCount)) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
     }
     if (buffer.size() !=
         headerBytes + static_cast<std::size_t>(entryCount) *
-                          (sizeof(NetworkEntityIdUVE) + 3U * sizeof(float))) {
+                          (sizeof(NetworkEntityId) + 3U * sizeof(float))) {
         ++m_stats.messagesIgnoredMalformed;
         return;
     }
-    std::vector<std::pair<NetworkEntityIdUVE, Math::Vector3UVE>> parsed;
+    std::vector<std::pair<NetworkEntityId, Math::Vector3>> parsed;
     parsed.reserve(entryCount);
     for (std::uint16_t i = 0U; i < entryCount; ++i) {
-        NetworkEntityIdUVE netId = 0U;
-        Math::Vector3UVE position{};
-        if (!Utilities::ReadUint32LeFromBufferUVE(buffer, offset, netId) ||
-            !Utilities::ReadFloatLeFromBufferUVE(buffer, offset, position.x) ||
-            !Utilities::ReadFloatLeFromBufferUVE(buffer, offset, position.y) ||
-            !Utilities::ReadFloatLeFromBufferUVE(buffer, offset, position.z)) {
+        NetworkEntityId netId = 0U;
+        Math::Vector3 position{};
+        if (!Utilities::ReadUint32LeFromBuffer(buffer, offset, netId) ||
+            !Utilities::ReadFloatLeFromBuffer(buffer, offset, position.x) ||
+            !Utilities::ReadFloatLeFromBuffer(buffer, offset, position.y) ||
+            !Utilities::ReadFloatLeFromBuffer(buffer, offset, position.z)) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
@@ -458,7 +458,7 @@ void NetworkReplicatorUVE::HandleSnapshotUVE(const std::vector<std::uint8_t>& pa
             ++m_stats.entriesIgnoredUnknown;
             continue;
         }
-        if (entry->second.authority == ReplicationAuthorityUVE::Owner) {
+        if (entry->second.authority == ReplicationAuthority::Owner) {
             ++m_stats.entriesIgnoredOwned;
             continue;
         }
@@ -467,22 +467,22 @@ void NetworkReplicatorUVE::HandleSnapshotUVE(const std::vector<std::uint8_t>& pa
     }
 }
 
-void NetworkReplicatorUVE::HandleControlUVE(const std::uint8_t kind,
-                                            const NetworkEntityIdUVE netId) {
-    if (kind == kTransferRequestKindUVE) {
+void NetworkReplicator::HandleControl(const std::uint8_t kind,
+                                            const NetworkEntityId netId) {
+    if (kind == kTransferRequestKind) {
         const auto entry = m_entries.find(netId);
         // Only an owner with a handler can decide: anything else answers deny on the spot,
         // best-effort - a lost deny degrades to the requester's timeout, which tells the
         // same story one second later.
-        if (entry == m_entries.end() || entry->second.authority != ReplicationAuthorityUVE::Owner ||
+        if (entry == m_entries.end() || entry->second.authority != ReplicationAuthority::Owner ||
             m_transferHandler == nullptr) {
-            if (SendControlUVE(kTransferDenyKindUVE, netId)) {
+            if (SendControl(kTransferDenyKind, netId)) {
                 ++m_stats.transfersDenied;
             }
             return;
         }
         m_awaitingDecision.insert(netId);
-        NotifyUVE(netId, OwnershipTransferEventUVE::Requested);
+        Notify(netId, OwnershipTransferEvent::Requested);
         return;
     }
     const auto open = m_openRequests.find(netId);
@@ -490,45 +490,45 @@ void NetworkReplicatorUVE::HandleControlUVE(const std::uint8_t kind,
         ++m_stats.transfersIgnoredStale;
         return;
     }
-    if (kind == kTransferAcceptKindUVE) {
+    if (kind == kTransferAcceptKind) {
         const auto entry = m_entries.find(netId);
         if (entry == m_entries.end()) {
             ++m_stats.transfersIgnoredStale;
             return;
         }
         m_openRequests.erase(open);
-        entry->second.authority = ReplicationAuthorityUVE::Owner;
+        entry->second.authority = ReplicationAuthority::Owner;
         ++m_stats.transfersCompleted;
-        NotifyUVE(netId, OwnershipTransferEventUVE::Completed);
+        Notify(netId, OwnershipTransferEvent::Completed);
         return;
     }
     m_openRequests.erase(open);
     ++m_stats.transfersDenied;
-    NotifyUVE(netId, OwnershipTransferEventUVE::Denied);
+    Notify(netId, OwnershipTransferEvent::Denied);
 }
 
-void NetworkReplicatorUVE::HandlePropertiesUVE(const std::vector<std::byte>& buffer,
+void NetworkReplicator::HandleProperties(const std::vector<std::byte>& buffer,
                                                std::size_t offset) {
     // Strict like snapshots, but variable-length: entries parse in order and the frame must
     // end exactly where the last value does - anything short, over, or undecodable fails
     // the whole frame unapplied.
     std::uint16_t entryCount = 0U;
-    if (!Utilities::ReadUint16LeFromBufferUVE(buffer, offset, entryCount)) {
+    if (!Utilities::ReadUint16LeFromBuffer(buffer, offset, entryCount)) {
         ++m_stats.messagesIgnoredMalformed;
         return;
     }
-    std::vector<std::tuple<NetworkEntityIdUVE, ReplicationPropertyIdUVE, Blueprint::ValueUVE>> parsed;
+    std::vector<std::tuple<NetworkEntityId, ReplicationPropertyId, Blueprint::Value>> parsed;
     parsed.reserve(entryCount);
     for (std::uint16_t i = 0U; i < entryCount; ++i) {
-        NetworkEntityIdUVE netId = 0U;
-        if (!Utilities::ReadUint32LeFromBufferUVE(buffer, offset, netId) ||
+        NetworkEntityId netId = 0U;
+        if (!Utilities::ReadUint32LeFromBuffer(buffer, offset, netId) ||
             offset >= buffer.size()) {
             ++m_stats.messagesIgnoredMalformed;
             return;
         }
-        const ReplicationPropertyIdUVE propId =
-            std::to_integer<ReplicationPropertyIdUVE>(buffer[offset++]);
-        std::optional<Blueprint::ValueUVE> value = ReadWireValueUVE(buffer, offset, 0U);
+        const ReplicationPropertyId propId =
+            std::to_integer<ReplicationPropertyId>(buffer[offset++]);
+        std::optional<Blueprint::Value> value = ReadWireValue(buffer, offset, 0U);
         if (!value.has_value()) {
             ++m_stats.messagesIgnoredMalformed;
             return;
@@ -548,7 +548,7 @@ void NetworkReplicatorUVE::HandlePropertiesUVE(const std::vector<std::byte>& buf
             ++m_stats.propertiesIgnoredUnknown;
             continue;
         }
-        if (entry->second.authority == ReplicationAuthorityUVE::Owner) {
+        if (entry->second.authority == ReplicationAuthority::Owner) {
             ++m_stats.propertiesIgnoredOwned;
             continue;
         }
@@ -557,35 +557,35 @@ void NetworkReplicatorUVE::HandlePropertiesUVE(const std::vector<std::byte>& buf
     }
 }
 
-bool NetworkReplicatorUVE::SendControlUVE(const std::uint8_t kind,
-                                          const NetworkEntityIdUVE netId) {
+bool NetworkReplicator::SendControl(const std::uint8_t kind,
+                                          const NetworkEntityId netId) {
     std::vector<std::byte> framed;
-    Utilities::AppendUint16LeUVE(framed, kReplicationControlMarkerUVE);
+    Utilities::AppendUint16Le(framed, kReplicationControlMarker);
     framed.push_back(static_cast<std::byte>(kind));
-    Utilities::AppendUint32LeUVE(framed, netId);
+    Utilities::AppendUint32Le(framed, netId);
     std::vector<std::uint8_t> datagram;
     datagram.reserve(framed.size());
     for (const std::byte byte : framed) {
         datagram.push_back(static_cast<std::uint8_t>(byte));
     }
-    return SendPayloadUVE(datagram);
+    return SendPayload(datagram);
 }
 
-void NetworkReplicatorUVE::ExpireRequestsUVE(const std::uint64_t nowMs) {
+void NetworkReplicator::ExpireRequests(const std::uint64_t nowMs) {
     for (auto open = m_openRequests.begin(); open != m_openRequests.end();) {
         if (nowMs - open->second < m_ownershipTimeoutMs) {
             ++open;
             continue;
         }
-        const NetworkEntityIdUVE netId = open->first;
+        const NetworkEntityId netId = open->first;
         open = m_openRequests.erase(open);
         ++m_stats.transfersTimedOut;
-        NotifyUVE(netId, OwnershipTransferEventUVE::TimedOut);
+        Notify(netId, OwnershipTransferEvent::TimedOut);
     }
 }
 
-void NetworkReplicatorUVE::NotifyUVE(const NetworkEntityIdUVE netId,
-                                     const OwnershipTransferEventUVE event) {
+void NetworkReplicator::Notify(const NetworkEntityId netId,
+                                     const OwnershipTransferEvent event) {
     if (m_transferHandler != nullptr) {
         m_transferHandler(netId, event);
     }

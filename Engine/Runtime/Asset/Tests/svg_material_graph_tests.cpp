@@ -10,7 +10,7 @@
 namespace UVE::Asset {
 namespace {
 
-TEST(SvgImporterUVETest, RasterizesRectCircleAndPathIntoRgba8Texture) {
+TEST(SvgImporterTest, RasterizesRectCircleAndPathIntoRgba8Texture) {
     const std::string_view svg =
         R"SVG(<svg width="32" height="32" viewBox="0 0 32 32">
             <rect x="0" y="0" width="32" height="32" fill="#204080"/>
@@ -18,13 +18,13 @@ TEST(SvgImporterUVETest, RasterizesRectCircleAndPathIntoRgba8Texture) {
             <path d="M 2 2 L 10 2 L 6 10 Z" fill="#00ff00"/>
         </svg>)SVG";
 
-    SvgRasterOptionsUVE opts{};
+    SvgRasterOptions opts{};
     opts.rasterScale = 2.0F;
-    TextureAssetUVE tex{};
-    ASSERT_TRUE(RasterizeSvgToTextureAssetUVE(svg, opts, tex));
+    TextureAsset tex{};
+    ASSERT_TRUE(RasterizeSvgToTextureAsset(svg, opts, tex));
     EXPECT_EQ(tex.width, 64U);
     EXPECT_EQ(tex.height, 64U);
-    EXPECT_EQ(tex.format, TextureAssetFormatUVE::RGBA8Unorm);
+    EXPECT_EQ(tex.format, TextureAssetFormat::RGBA8Unorm);
     ASSERT_EQ(tex.pixels.size(), 64U * 64U * 4U);
 
     // Center pixel (32, 32) is inside the red circle.
@@ -38,40 +38,40 @@ TEST(SvgImporterUVETest, RasterizesRectCircleAndPathIntoRgba8Texture) {
     EXPECT_EQ(static_cast<unsigned int>(tex.pixels[cornerIdx + 3U]), 255U);
 }
 
-TEST(MaterialGraphCompilerUVETest, CompilesGraphDetectsCyclesAndRoundTripsFile) {
-    MaterialGraphAssetUVE graph = CreateDefaultPbrMaterialGraphUVE();
-    const auto compiled = CompileMaterialGraphToGlslUVE(graph);
+TEST(MaterialGraphCompilerTest, CompilesGraphDetectsCyclesAndRoundTripsFile) {
+    MaterialGraphAsset graph = CreateDefaultPbrMaterialGraph();
+    const auto compiled = CompileMaterialGraphToGlsl(graph);
     ASSERT_TRUE(compiled.ok);
     EXPECT_TRUE(compiled.errors.empty());
-    EXPECT_NE(compiled.glslSource.find("EvaluateMaterialGraphUVE"), std::string::npos);
+    EXPECT_NE(compiled.glslSource.find("EvaluateMaterialGraph"), std::string::npos);
     EXPECT_NE(compiled.glslSource.find("s.baseColor = n_1;"), std::string::npos);
     EXPECT_NE(compiled.glslSource.find("s.roughness = clamp(n_2"), std::string::npos);
 
     // Save and reload round-trip.
     const std::filesystem::path tmp =
         std::filesystem::temp_directory_path() / "uve_test_matgraph.uvmatgraph";
-    ASSERT_TRUE(SaveMaterialGraphAssetUVE(graph, tmp));
-    MaterialGraphAssetUVE reloaded{};
-    ASSERT_TRUE(LoadMaterialGraphAssetUVE(tmp, reloaded));
+    ASSERT_TRUE(SaveMaterialGraphAsset(graph, tmp));
+    MaterialGraphAsset reloaded{};
+    ASSERT_TRUE(LoadMaterialGraphAsset(tmp, reloaded));
     std::filesystem::remove(tmp);
     EXPECT_EQ(reloaded.name, graph.name);
     EXPECT_EQ(reloaded.nodes.size(), graph.nodes.size());
     EXPECT_EQ(reloaded.links.size(), graph.links.size());
 
     // Cycle detection rejects cyclic graphs.
-    MaterialGraphAssetUVE cyclic = CreateDefaultPbrMaterialGraphUVE();
-    MaterialGraphNodeUVE addA{};
+    MaterialGraphAsset cyclic = CreateDefaultPbrMaterialGraph();
+    MaterialGraphNode addA{};
     addA.id = 10U;
-    addA.kind = MaterialGraphNodeKindUVE::Add;
-    MaterialGraphNodeUVE addB{};
+    addA.kind = MaterialGraphNodeKind::Add;
+    MaterialGraphNode addB{};
     addB.id = 11U;
-    addB.kind = MaterialGraphNodeKindUVE::Add;
+    addB.kind = MaterialGraphNodeKind::Add;
     cyclic.nodes.push_back(addA);
     cyclic.nodes.push_back(addB);
-    cyclic.links.push_back(MaterialGraphLinkUVE{10U, 0U, 11U, 0U});
-    cyclic.links.push_back(MaterialGraphLinkUVE{11U, 0U, 10U, 0U});
-    cyclic.links.push_back(MaterialGraphLinkUVE{11U, 0U, 3U, 3U});
-    const auto bad = CompileMaterialGraphToGlslUVE(cyclic);
+    cyclic.links.push_back(MaterialGraphLink{10U, 0U, 11U, 0U});
+    cyclic.links.push_back(MaterialGraphLink{11U, 0U, 10U, 0U});
+    cyclic.links.push_back(MaterialGraphLink{11U, 0U, 3U, 3U});
+    const auto bad = CompileMaterialGraphToGlsl(cyclic);
     EXPECT_FALSE(bad.ok);
     EXPECT_FALSE(bad.errors.empty());
 }

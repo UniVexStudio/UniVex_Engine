@@ -20,37 +20,37 @@
 namespace UVE::Render {
 namespace {
 
-static_assert(sizeof(DebugLineVertexUVE) == 24U, "position + color, tightly packed for one upload");
-static_assert(offsetof(DebugLineVertexUVE, color) == 12U);
+static_assert(sizeof(DebugLineVertex) == 24U, "position + color, tightly packed for one upload");
+static_assert(offsetof(DebugLineVertex, color) == 12U);
 
-[[nodiscard]] bool IsValidLineUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to,
-                                  const Math::Vector3UVE& color) noexcept {
-    return Math::IsFiniteUVE(from) && Math::IsFiniteUVE(to) && Math::IsFiniteUVE(color);
+[[nodiscard]] bool IsValidLine(const Math::Vector3& from, const Math::Vector3& to,
+                                  const Math::Vector3& color) noexcept {
+    return Math::IsFinite(from) && Math::IsFinite(to) && Math::IsFinite(color);
 }
 
 } // namespace
 
-DebugRendererUVE::~DebugRendererUVE() {
+DebugRenderer::~DebugRenderer() {
     // The program is RAII (its deleter destroys the pipeline on the device), but the vertex
     // buffer is a raw handle: a renderer that submitted and never shut down leaks it, which is
     // a programming error worth aborting a debug build over rather than hiding.
-    UVE_ASSERT(m_lineResources.vertexBuffer == kInvalidBufferHandleUVE);
-    UVE_ASSERT(m_pointResources.vertexBuffer == kInvalidBufferHandleUVE);
+    UVE_ASSERT(m_lineResources.vertexBuffer == kInvalidBufferHandle);
+    UVE_ASSERT(m_pointResources.vertexBuffer == kInvalidBufferHandle);
 }
 
-void DebugRendererUVE::DrawLine3D(const Math::Vector3UVE& from, const Math::Vector3UVE& to,
-                                  const Math::Vector3UVE& color) {
-    if (!IsValidLineUVE(from, to, color)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a line with a non-finite endpoint or color");
+void DebugRenderer::DrawLine3D(const Math::Vector3& from, const Math::Vector3& to,
+                                  const Math::Vector3& color) {
+    if (!IsValidLine(from, to, color)) {
+        UVE_WARNING("DebugRenderer: ignoring a line with a non-finite endpoint or color");
         return;
     }
-    PushLineUVE(from, to, color);
+    PushLine(from, to, color);
 }
 
-void DebugRendererUVE::DrawBox3D(const Math::AabbUVE& bounds, const Math::Vector3UVE& color) {
-    if (!Math::IsFiniteUVE(bounds.min) || !Math::IsFiniteUVE(bounds.max) ||
-        !Math::IsFiniteUVE(color)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a box with non-finite bounds or color");
+void DebugRenderer::DrawBox3D(const Math::Aabb& bounds, const Math::Vector3& color) {
+    if (!Math::IsFinite(bounds.min) || !Math::IsFinite(bounds.max) ||
+        !Math::IsFinite(color)) {
+        UVE_WARNING("DebugRenderer: ignoring a box with non-finite bounds or color");
         return;
     }
     const float x0 = bounds.min.x;
@@ -59,126 +59,126 @@ void DebugRendererUVE::DrawBox3D(const Math::AabbUVE& bounds, const Math::Vector
     const float x1 = bounds.max.x;
     const float y1 = bounds.max.y;
     const float z1 = bounds.max.z;
-    PushLineUVE(Math::Vector3UVE{x0, y0, z0}, Math::Vector3UVE{x1, y0, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y0, z0}, Math::Vector3UVE{x1, y0, z1}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y0, z1}, Math::Vector3UVE{x0, y0, z1}, color);
-    PushLineUVE(Math::Vector3UVE{x0, y0, z1}, Math::Vector3UVE{x0, y0, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x0, y1, z0}, Math::Vector3UVE{x1, y1, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y1, z0}, Math::Vector3UVE{x1, y1, z1}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y1, z1}, Math::Vector3UVE{x0, y1, z1}, color);
-    PushLineUVE(Math::Vector3UVE{x0, y1, z1}, Math::Vector3UVE{x0, y1, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x0, y0, z0}, Math::Vector3UVE{x0, y1, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y0, z0}, Math::Vector3UVE{x1, y1, z0}, color);
-    PushLineUVE(Math::Vector3UVE{x1, y0, z1}, Math::Vector3UVE{x1, y1, z1}, color);
-    PushLineUVE(Math::Vector3UVE{x0, y0, z1}, Math::Vector3UVE{x0, y1, z1}, color);
+    PushLine(Math::Vector3{x0, y0, z0}, Math::Vector3{x1, y0, z0}, color);
+    PushLine(Math::Vector3{x1, y0, z0}, Math::Vector3{x1, y0, z1}, color);
+    PushLine(Math::Vector3{x1, y0, z1}, Math::Vector3{x0, y0, z1}, color);
+    PushLine(Math::Vector3{x0, y0, z1}, Math::Vector3{x0, y0, z0}, color);
+    PushLine(Math::Vector3{x0, y1, z0}, Math::Vector3{x1, y1, z0}, color);
+    PushLine(Math::Vector3{x1, y1, z0}, Math::Vector3{x1, y1, z1}, color);
+    PushLine(Math::Vector3{x1, y1, z1}, Math::Vector3{x0, y1, z1}, color);
+    PushLine(Math::Vector3{x0, y1, z1}, Math::Vector3{x0, y1, z0}, color);
+    PushLine(Math::Vector3{x0, y0, z0}, Math::Vector3{x0, y1, z0}, color);
+    PushLine(Math::Vector3{x1, y0, z0}, Math::Vector3{x1, y1, z0}, color);
+    PushLine(Math::Vector3{x1, y0, z1}, Math::Vector3{x1, y1, z1}, color);
+    PushLine(Math::Vector3{x0, y0, z1}, Math::Vector3{x0, y1, z1}, color);
 }
 
-void DebugRendererUVE::DrawSphere3D(const Math::Vector3UVE& center, const float radius,
-                                    const Math::Vector3UVE& color) {
-    if (!Math::IsFiniteUVE(center) || !std::isfinite(radius) || radius <= 0.0F ||
-        !Math::IsFiniteUVE(color)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a sphere with a bad center, radius, or color");
+void DebugRenderer::DrawSphere3D(const Math::Vector3& center, const float radius,
+                                    const Math::Vector3& color) {
+    if (!Math::IsFinite(center) || !std::isfinite(radius) || radius <= 0.0F ||
+        !Math::IsFinite(color)) {
+        UVE_WARNING("DebugRenderer: ignoring a sphere with a bad center, radius, or color");
         return;
     }
-    std::array<float, kDebugSphereSegmentsUVE + 1U> cosTable{};
-    std::array<float, kDebugSphereSegmentsUVE + 1U> sinTable{};
-    for (std::size_t s = 0U; s <= kDebugSphereSegmentsUVE; ++s) {
+    std::array<float, kDebugSphereSegments + 1U> cosTable{};
+    std::array<float, kDebugSphereSegments + 1U> sinTable{};
+    for (std::size_t s = 0U; s <= kDebugSphereSegments; ++s) {
         const float angle = 2.0F * std::numbers::pi_v<float> * static_cast<float>(s) /
-                            static_cast<float>(kDebugSphereSegmentsUVE);
+                            static_cast<float>(kDebugSphereSegments);
         cosTable[s] = std::cos(angle);
         sinTable[s] = std::sin(angle);
     }
-    for (std::size_t s = 0U; s < kDebugSphereSegmentsUVE; ++s) {
-        const Math::Vector3UVE xy0{radius * cosTable[s], radius * sinTable[s], 0.0F};
-        const Math::Vector3UVE xy1{radius * cosTable[s + 1U], radius * sinTable[s + 1U], 0.0F};
-        PushLineUVE(center + xy0, center + xy1, color);
+    for (std::size_t s = 0U; s < kDebugSphereSegments; ++s) {
+        const Math::Vector3 xy0{radius * cosTable[s], radius * sinTable[s], 0.0F};
+        const Math::Vector3 xy1{radius * cosTable[s + 1U], radius * sinTable[s + 1U], 0.0F};
+        PushLine(center + xy0, center + xy1, color);
     }
-    for (std::size_t s = 0U; s < kDebugSphereSegmentsUVE; ++s) {
-        const Math::Vector3UVE xz0{radius * cosTable[s], 0.0F, radius * sinTable[s]};
-        const Math::Vector3UVE xz1{radius * cosTable[s + 1U], 0.0F, radius * sinTable[s + 1U]};
-        PushLineUVE(center + xz0, center + xz1, color);
+    for (std::size_t s = 0U; s < kDebugSphereSegments; ++s) {
+        const Math::Vector3 xz0{radius * cosTable[s], 0.0F, radius * sinTable[s]};
+        const Math::Vector3 xz1{radius * cosTable[s + 1U], 0.0F, radius * sinTable[s + 1U]};
+        PushLine(center + xz0, center + xz1, color);
     }
-    for (std::size_t s = 0U; s < kDebugSphereSegmentsUVE; ++s) {
-        const Math::Vector3UVE yz0{0.0F, radius * cosTable[s], radius * sinTable[s]};
-        const Math::Vector3UVE yz1{0.0F, radius * cosTable[s + 1U], radius * sinTable[s + 1U]};
-        PushLineUVE(center + yz0, center + yz1, color);
+    for (std::size_t s = 0U; s < kDebugSphereSegments; ++s) {
+        const Math::Vector3 yz0{0.0F, radius * cosTable[s], radius * sinTable[s]};
+        const Math::Vector3 yz1{0.0F, radius * cosTable[s + 1U], radius * sinTable[s + 1U]};
+        PushLine(center + yz0, center + yz1, color);
     }
 }
 
-void DebugRendererUVE::DrawRect2D(const Math::Vector2UVE& min, const Math::Vector2UVE& max,
-                                  const Math::Vector3UVE& color) {
-    if (!Math::IsFiniteUVE(min) || !Math::IsFiniteUVE(max) || !Math::IsFiniteUVE(color)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a rect with non-finite corners or color");
+void DebugRenderer::DrawRect2D(const Math::Vector2& min, const Math::Vector2& max,
+                                  const Math::Vector3& color) {
+    if (!Math::IsFinite(min) || !Math::IsFinite(max) || !Math::IsFinite(color)) {
+        UVE_WARNING("DebugRenderer: ignoring a rect with non-finite corners or color");
         return;
     }
-    PushLineUVE(Math::Vector3UVE{min.x, min.y, 0.0F}, Math::Vector3UVE{max.x, min.y, 0.0F}, color);
-    PushLineUVE(Math::Vector3UVE{max.x, min.y, 0.0F}, Math::Vector3UVE{max.x, max.y, 0.0F}, color);
-    PushLineUVE(Math::Vector3UVE{max.x, max.y, 0.0F}, Math::Vector3UVE{min.x, max.y, 0.0F}, color);
-    PushLineUVE(Math::Vector3UVE{min.x, max.y, 0.0F}, Math::Vector3UVE{min.x, min.y, 0.0F}, color);
+    PushLine(Math::Vector3{min.x, min.y, 0.0F}, Math::Vector3{max.x, min.y, 0.0F}, color);
+    PushLine(Math::Vector3{max.x, min.y, 0.0F}, Math::Vector3{max.x, max.y, 0.0F}, color);
+    PushLine(Math::Vector3{max.x, max.y, 0.0F}, Math::Vector3{min.x, max.y, 0.0F}, color);
+    PushLine(Math::Vector3{min.x, max.y, 0.0F}, Math::Vector3{min.x, min.y, 0.0F}, color);
 }
 
-void DebugRendererUVE::DrawPoint3D(const Math::Vector3UVE& position, const Math::Vector3UVE& color) {
-    if (!Math::IsFiniteUVE(position) || !Math::IsFiniteUVE(color)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a point with a non-finite position or color");
+void DebugRenderer::DrawPoint3D(const Math::Vector3& position, const Math::Vector3& color) {
+    if (!Math::IsFinite(position) || !Math::IsFinite(color)) {
+        UVE_WARNING("DebugRenderer: ignoring a point with a non-finite position or color");
         return;
     }
-    if (m_points.size() + 1U > kMaximumDebugPointVerticesUVE) {
+    if (m_points.size() + 1U > kMaximumDebugPointVertices) {
         ++m_droppedPoints;
         return;
     }
-    m_points.push_back(DebugLineVertexUVE{position, color});
+    m_points.push_back(DebugLineVertex{position, color});
 }
 
-void DebugRendererUVE::SetPointSizeUVE(const float pixels) {
+void DebugRenderer::SetPointSize(const float pixels) {
     if (!std::isfinite(pixels)) {
-        UVE_WARNING("DebugRendererUVE: ignoring a non-finite point size");
+        UVE_WARNING("DebugRenderer: ignoring a non-finite point size");
         return;
     }
-    m_pointSizePixels = std::clamp(pixels, kMinimumDebugPointSizeUVE, kMaximumDebugPointSizeUVE);
+    m_pointSizePixels = std::clamp(pixels, kMinimumDebugPointSize, kMaximumDebugPointSize);
 }
 
-float DebugRendererUVE::PointSizeUVE() const noexcept {
+float DebugRenderer::PointSize() const noexcept {
     return m_pointSizePixels;
 }
 
-std::span<const DebugLineVertexUVE> DebugRendererUVE::LinesUVE() const noexcept {
+std::span<const DebugLineVertex> DebugRenderer::Lines() const noexcept {
     return m_lines;
 }
 
-std::span<const DebugLineVertexUVE> DebugRendererUVE::PointsUVE() const noexcept {
+std::span<const DebugLineVertex> DebugRenderer::Points() const noexcept {
     return m_points;
 }
 
-std::size_t DebugRendererUVE::DroppedLineCountUVE() const noexcept {
+std::size_t DebugRenderer::DroppedLineCount() const noexcept {
     return m_droppedLines;
 }
 
-std::size_t DebugRendererUVE::DroppedPointCountUVE() const noexcept {
+std::size_t DebugRenderer::DroppedPointCount() const noexcept {
     return m_droppedPoints;
 }
 
-void DebugRendererUVE::ClearUVE() noexcept {
+void DebugRenderer::Clear() noexcept {
     m_lines.clear();
     m_points.clear();
     m_droppedLines = 0U;
     m_droppedPoints = 0U;
 }
 
-bool DebugRendererUVE::SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
-                                 ICommandBufferUVE& commands,
-                                 const Math::Matrix4x4UVE& viewProjection) {
+bool DebugRenderer::Submit(IRenderDevice& device, Shader::IShaderManager& shaders,
+                                 ICommandBuffer& commands,
+                                 const Math::Matrix4x4& viewProjection) {
     if (m_lines.empty() && m_points.empty()) {
         return true;
     }
     bool deferred = false;
     if (!m_lines.empty() &&
-        !SubmitBatchUVE(device, shaders, commands, viewProjection, m_lineResources, m_lines,
-                        PrimitiveTopologyUVE::Lines, deferred)) {
+        !SubmitBatch(device, shaders, commands, viewProjection, m_lineResources, m_lines,
+                        PrimitiveTopology::Lines, deferred)) {
         return false;
     }
     if (!m_points.empty() &&
-        !SubmitBatchUVE(device, shaders, commands, viewProjection, m_pointResources, m_points,
-                        PrimitiveTopologyUVE::Points, deferred)) {
+        !SubmitBatch(device, shaders, commands, viewProjection, m_pointResources, m_points,
+                        PrimitiveTopology::Points, deferred)) {
         return false;
     }
     if (deferred) {
@@ -186,90 +186,90 @@ bool DebugRendererUVE::SubmitUVE(IRenderDeviceUVE& device, Shader::IShaderManage
         // next submit draws the frame whole rather than lines now and points later.
         return true;
     }
-    ClearUVE();
+    Clear();
     return true;
 }
 
-bool DebugRendererUVE::SubmitBatchUVE(IRenderDeviceUVE& device, Shader::IShaderManagerUVE& shaders,
-                                      ICommandBufferUVE& commands, const Math::Matrix4x4UVE& viewProjection,
-                                      BatchResourcesUVE& resources,
-                                      const std::span<const DebugLineVertexUVE> vertices,
-                                      const PrimitiveTopologyUVE topology, bool& deferred) {
-    const bool points = topology == PrimitiveTopologyUVE::Points;
+bool DebugRenderer::SubmitBatch(IRenderDevice& device, Shader::IShaderManager& shaders,
+                                      ICommandBuffer& commands, const Math::Matrix4x4& viewProjection,
+                                      BatchResources& resources,
+                                      const std::span<const DebugLineVertex> vertices,
+                                      const PrimitiveTopology topology, bool& deferred) {
+    const bool points = topology == PrimitiveTopology::Points;
     if (resources.program == nullptr) {
-        Shader::ShaderProgramDescUVE desc;
+        Shader::ShaderProgramDesc desc;
         desc.virtualFilePath = std::string(points ? Shader::BuiltIn::kDebugPointVirtualPath
                                                   : Shader::BuiltIn::kDebugLineVirtualPath);
         desc.embeddedFallbackSourceCode = std::string(points ? Shader::BuiltIn::kDebugPointSource
                                                              : Shader::BuiltIn::kDebugLineSource);
         desc.vertexLayout = {
-            VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3,
-                               offsetof(DebugLineVertexUVE, position)},
-            VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float3,
-                               offsetof(DebugLineVertexUVE, color)},
+            VertexAttribute{"POSITION", VertexAttributeFormat::Float3,
+                               offsetof(DebugLineVertex, position)},
+            VertexAttribute{"COLOR", VertexAttributeFormat::Float3,
+                               offsetof(DebugLineVertex, color)},
         };
-        desc.vertexStride = static_cast<std::uint32_t>(sizeof(DebugLineVertexUVE));
+        desc.vertexStride = static_cast<std::uint32_t>(sizeof(DebugLineVertex));
         desc.topology = topology;
         desc.depthTestEnabled = true;
         // Paint, not geometry (the decal rule): debug lines hide behind the scene but never
         // occlude each other, so coplanar lines don't z-fight.
         desc.depthWriteEnabled = false;
-        desc.debugNameUVE = points ? "DebugPoint" : "DebugLine";
-        resources.program = shaders.CreateProgramUVE(desc);
+        desc.debugName = points ? "DebugPoint" : "DebugLine";
+        resources.program = shaders.CreateProgram(desc);
         if (resources.program == nullptr) {
             return false;
         }
     }
-    if (!resources.program->IsValidUVE()) {
+    if (!resources.program->IsValid()) {
         // Async compile still in flight: keep the batch and let the next submit retry.
         deferred = true;
         return true;
     }
-    if (resources.vertexBuffer == kInvalidBufferHandleUVE) {
+    if (resources.vertexBuffer == kInvalidBufferHandle) {
         // Rewritten from the CPU every submit: host-visible, streamed placement (on Vulkan a
         // memcpy into mapped memory instead of a staging submit per frame; GL_STREAM_DRAW on GL).
-        const std::size_t capacity = points ? kMaximumDebugPointVerticesUVE : kMaximumDebugLineVerticesUVE;
-        resources.vertexBuffer = device.CreateBufferUVE(
-            BufferDescUVE{sizeof(DebugLineVertexUVE) * capacity, BufferUsageUVE::Vertex,
-                          BufferMemoryUVE::Upload, BufferUpdateFrequencyUVE::Stream});
-        if (resources.vertexBuffer == kInvalidBufferHandleUVE) {
+        const std::size_t capacity = points ? kMaximumDebugPointVertices : kMaximumDebugLineVertices;
+        resources.vertexBuffer = device.CreateBuffer(
+            BufferDesc{sizeof(DebugLineVertex) * capacity, BufferUsage::Vertex,
+                          BufferMemory::Upload, BufferUpdateFrequency::Stream});
+        if (resources.vertexBuffer == kInvalidBufferHandle) {
             return false;
         }
     }
-    if (!device.UpdateBufferUVE(resources.vertexBuffer, std::as_bytes(vertices), 0U)) {
+    if (!device.UpdateBuffer(resources.vertexBuffer, std::as_bytes(vertices), 0U)) {
         return false;
     }
-    resources.program->SetMatrix4x4UVE("uViewProjection", viewProjection);
+    resources.program->SetMatrix4x4("uViewProjection", viewProjection);
     if (points) {
-        resources.program->SetFloatUVE("uPointSize", m_pointSizePixels);
+        resources.program->SetFloat("uPointSize", m_pointSizePixels);
     }
     // Binds the pipeline and flushes the queued uniforms; then the batch draws as one.
-    resources.program->ApplyToUVE(commands);
-    commands.BindVertexBufferUVE(resources.vertexBuffer);
-    commands.DrawUVE(static_cast<std::uint32_t>(vertices.size()));
+    resources.program->ApplyTo(commands);
+    commands.BindVertexBuffer(resources.vertexBuffer);
+    commands.Draw(static_cast<std::uint32_t>(vertices.size()));
     return true;
 }
 
-void DebugRendererUVE::ShutdownUVE(IRenderDeviceUVE& device) {
-    for (BatchResourcesUVE* const resources : {&m_lineResources, &m_pointResources}) {
-        if (resources->vertexBuffer != kInvalidBufferHandleUVE) {
-            device.DestroyBufferUVE(resources->vertexBuffer);
-            resources->vertexBuffer = kInvalidBufferHandleUVE;
+void DebugRenderer::Shutdown(IRenderDevice& device) {
+    for (BatchResources* const resources : {&m_lineResources, &m_pointResources}) {
+        if (resources->vertexBuffer != kInvalidBufferHandle) {
+            device.DestroyBuffer(resources->vertexBuffer);
+            resources->vertexBuffer = kInvalidBufferHandle;
         }
         // Releasing the program destroys its pipeline on the device through the manager's deleter.
         resources->program.reset();
     }
-    ClearUVE();
+    Clear();
 }
 
-void DebugRendererUVE::PushLineUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to,
-                                   const Math::Vector3UVE& color) {
-    if (m_lines.size() + 2U > kMaximumDebugLineVerticesUVE) {
+void DebugRenderer::PushLine(const Math::Vector3& from, const Math::Vector3& to,
+                                   const Math::Vector3& color) {
+    if (m_lines.size() + 2U > kMaximumDebugLineVertices) {
         ++m_droppedLines;
         return;
     }
-    m_lines.push_back(DebugLineVertexUVE{from, color});
-    m_lines.push_back(DebugLineVertexUVE{to, color});
+    m_lines.push_back(DebugLineVertex{from, color});
+    m_lines.push_back(DebugLineVertex{to, color});
 }
 
 } // namespace UVE::Render

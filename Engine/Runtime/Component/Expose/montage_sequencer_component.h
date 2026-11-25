@@ -11,7 +11,7 @@
 namespace UVE::Scene {
 
 /// Where a montage is in its playback.
-enum class MontagePhaseUVE : std::uint8_t {
+enum class MontagePhase : std::uint8_t {
     Stopped = 0,
     BlendIn,
     Playing,
@@ -19,8 +19,8 @@ enum class MontagePhaseUVE : std::uint8_t {
 };
 
 /// A montage's live playback (runtime only, never saved).
-struct MontagePlaybackUVE final {
-    MontagePhaseUVE phase = MontagePhaseUVE::Stopped;
+struct MontagePlayback final {
+    MontagePhase phase = MontagePhase::Stopped;
     double time = 0.0;              ///< montage seconds
     std::string section;            ///< the section playing
     double phaseTime = 0.0;         ///< seconds into the blend in / out
@@ -30,7 +30,7 @@ struct MontagePlaybackUVE final {
 };
 
 /// What a script asked of the slot; the engine carries it out on its next animation pass.
-enum class MontageRequestUVE : std::uint8_t {
+enum class MontageRequest : std::uint8_t {
     None = 0,
     Play,
     JumpTo,
@@ -41,36 +41,36 @@ enum class MontageRequestUVE : std::uint8_t {
 /// attacks, reloads, emotes. A script plays one by its file name: `montage.play("Attack")` plays
 /// the montage file Attack.uvmontage set here. While it plays, its pose is blended over what the
 /// character's AnimationSequencer / AnimationGraph poses, and its notifies reach the script.
-struct MontageSequencerComponentUVE final {
-    Asset::AssetGuidUVE montage1;
-    Asset::AssetGuidUVE montage2;
-    Asset::AssetGuidUVE montage3;
-    Asset::AssetGuidUVE montage4;
-    Asset::AssetGuidUVE montage5;
-    Asset::AssetGuidUVE montage6;
-    Asset::AssetGuidUVE montage7;
-    Asset::AssetGuidUVE montage8;
+struct MontageSequencerComponent final {
+    Asset::AssetGuid montage1;
+    Asset::AssetGuid montage2;
+    Asset::AssetGuid montage3;
+    Asset::AssetGuid montage4;
+    Asset::AssetGuid montage5;
+    Asset::AssetGuid montage6;
+    Asset::AssetGuid montage7;
+    Asset::AssetGuid montage8;
     /// A `.uvmontagelib` this player is linked to: its montages play by name as the slots' do.
-    Asset::AssetGuidUVE libraryRef;
+    Asset::AssetGuid libraryRef;
 
     // ---- Runtime state; never saved -------------------------------------------------------------
-    MontageRequestUVE request = MontageRequestUVE::None;
+    MontageRequest request = MontageRequest::None;
     std::string requestMontage;   ///< Play: the montage's name (file stem)
     std::string requestSection;   ///< Play / JumpTo: the section (empty: the first)
-    Asset::AssetGuidUVE playing;  ///< the montage playing
+    Asset::AssetGuid playing;  ///< the montage playing
     std::string playingName;
-    MontagePlaybackUVE playback;
+    MontagePlayback playback;
     /// The playing montage's curves at the playhead, for `montage.curve(name)`.
     std::vector<std::pair<std::string, float>> curveValues;
 
-    [[nodiscard]] Asset::AssetGuidUVE MontageAtUVE(const std::size_t index) const noexcept {
-        const Asset::AssetGuidUVE all[] = {montage1, montage2, montage3, montage4, montage5, montage6, montage7, montage8};
-        return index < 8U ? all[index] : Asset::AssetGuidUVE{};
+    [[nodiscard]] Asset::AssetGuid MontageAt(const std::size_t index) const noexcept {
+        const Asset::AssetGuid all[] = {montage1, montage2, montage3, montage4, montage5, montage6, montage7, montage8};
+        return index < 8U ? all[index] : Asset::AssetGuid{};
     }
-    [[nodiscard]] bool IsPlayingUVE() const noexcept { return playback.phase != MontagePhaseUVE::Stopped; }
+    [[nodiscard]] bool IsPlaying() const noexcept { return playback.phase != MontagePhase::Stopped; }
 
     /// Authored data only: a playing slot equals its saved self.
-    [[nodiscard]] bool operator==(const MontageSequencerComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const MontageSequencerComponent& other) const noexcept {
         return montage1 == other.montage1 && montage2 == other.montage2 && montage3 == other.montage3 &&
                montage4 == other.montage4 && montage5 == other.montage5 && montage6 == other.montage6 &&
                montage7 == other.montage7 && montage8 == other.montage8 && libraryRef == other.libraryRef;

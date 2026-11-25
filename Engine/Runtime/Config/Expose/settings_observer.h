@@ -14,28 +14,28 @@ namespace UVE::Config {
 
 /// One effective setting value changing. Composite settings (colours, vectors) are reported as one
 /// complete before/after event, never as separate component notifications.
-struct SettingChangedEventUVE final {
+struct SettingChangedEvent final {
     std::string id;
-    SettingValueUVE previousValue;
-    SettingValueUVE newValue;
+    SettingValue previousValue;
+    SettingValue newValue;
 };
 
-class SettingsObserverHubUVE;
+class SettingsObserverHub;
 
 /// Opaque handle returned by a settings observer owner. A handle can only be unsubscribed from the
 /// hub that issued it.
-struct SettingsObserverSubscriptionUVE final {
+struct SettingsObserverSubscription final {
     std::uint64_t id = 0U;
-    const SettingsObserverHubUVE* owner = nullptr;
+    const SettingsObserverHub* owner = nullptr;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept { return id != 0U && owner != nullptr; }
+    [[nodiscard]] bool IsValid() const noexcept { return id != 0U && owner != nullptr; }
 };
 
-using SettingsObserverCallbackUVE = std::function<void(const SettingChangedEventUVE&)>;
+using SettingsObserverCallback = std::function<void(const SettingChangedEvent&)>;
 
 /// Shared exact-id/category-prefix observer dispatch for settings owners such as
-/// SettingsDocumentUVE and EditorUVE. The owner commits a change first, then calls
-/// NotifyChangedUVE with its effective before/after values.
+/// SettingsDocument and Editor. The owner commits a change first, then calls
+/// NotifyChanged with its effective before/after values.
 ///
 /// Not thread-safe: the registry and hub must stay on the owner's thread. Callbacks run
 /// synchronously on that thread after commit. A callback-triggered mutation dispatches its own
@@ -43,54 +43,54 @@ using SettingsObserverCallbackUVE = std::function<void(const SettingChangedEvent
 /// subscriptions during dispatch take effect at once: an observer removed before its turn is
 /// skipped, while a new observer starts with the next change. Callbacks should not throw; if one
 /// does, the already-committed change remains and the exception propagates to the owner.
-class SettingsObserverHubUVE final {
+class SettingsObserverHub final {
 public:
-    explicit SettingsObserverHubUVE(const SettingsRegistryUVE& registry) noexcept;
+    explicit SettingsObserverHub(const SettingsRegistry& registry) noexcept;
 
-    SettingsObserverHubUVE(const SettingsObserverHubUVE&) = delete;
-    SettingsObserverHubUVE& operator=(const SettingsObserverHubUVE&) = delete;
-    SettingsObserverHubUVE(SettingsObserverHubUVE&&) = delete;
-    SettingsObserverHubUVE& operator=(SettingsObserverHubUVE&&) = delete;
+    SettingsObserverHub(const SettingsObserverHub&) = delete;
+    SettingsObserverHub& operator=(const SettingsObserverHub&) = delete;
+    SettingsObserverHub(SettingsObserverHub&&) = delete;
+    SettingsObserverHub& operator=(SettingsObserverHub&&) = delete;
 
     /// Calls `callback` after future effective value changes to exactly `id`. Returns an invalid
     /// handle for an unknown setting or empty callback.
-    [[nodiscard]] SettingsObserverSubscriptionUVE SubscribeToSettingUVE(
-        std::string_view id, SettingsObserverCallbackUVE callback);
+    [[nodiscard]] SettingsObserverSubscription SubscribeToSetting(
+        std::string_view id, SettingsObserverCallback callback);
     /// Calls `callback` after changes to settings in `categoryPrefix` or any descendant category.
     /// Category paths are slash-separated and matched on segment boundaries, so "Render/Shadows"
     /// does not match "Render/ShadowsExtra". Returns an invalid handle for an empty callback or a
     /// prefix that currently matches no registered setting.
-    [[nodiscard]] SettingsObserverSubscriptionUVE SubscribeToCategoryUVE(
-        std::string_view categoryPrefix, SettingsObserverCallbackUVE callback);
+    [[nodiscard]] SettingsObserverSubscription SubscribeToCategory(
+        std::string_view categoryPrefix, SettingsObserverCallback callback);
     /// Removes a subscription from this hub. Returns false for an invalid or already removed
     /// handle. A handle issued by a different hub cannot remove this hub's observer.
-    [[nodiscard]] bool UnsubscribeUVE(SettingsObserverSubscriptionUVE subscription);
+    [[nodiscard]] bool Unsubscribe(SettingsObserverSubscription subscription);
 
     /// Dispatches a committed setting change to matching observers. Equal before/after values and
     /// ids absent from the registry are ignored. Owners should call this only after applying a
     /// successful mutation, so callbacks always observe committed state.
-    void NotifyChangedUVE(std::string_view id, const SettingValueUVE& previousValue,
-                          const SettingValueUVE& newValue);
+    void NotifyChanged(std::string_view id, const SettingValue& previousValue,
+                          const SettingValue& newValue);
 
 private:
-    enum class ObserverFilterKindUVE {
+    enum class ObserverFilterKind {
         SettingId,
         CategoryPrefix,
     };
 
-    struct ObserverUVE final {
+    struct Observer final {
         std::uint64_t id = 0U;
-        ObserverFilterKindUVE filterKind = ObserverFilterKindUVE::SettingId;
+        ObserverFilterKind filterKind = ObserverFilterKind::SettingId;
         std::string filter;
-        SettingsObserverCallbackUVE callback;
+        SettingsObserverCallback callback;
     };
 
-    [[nodiscard]] SettingsObserverSubscriptionUVE AddObserverUVE(ObserverFilterKindUVE filterKind,
+    [[nodiscard]] SettingsObserverSubscription AddObserver(ObserverFilterKind filterKind,
                                                                   std::string filter,
-                                                                  SettingsObserverCallbackUVE callback);
+                                                                  SettingsObserverCallback callback);
 
-    const SettingsRegistryUVE* m_registry = nullptr;
-    std::vector<ObserverUVE> m_observers;
+    const SettingsRegistry* m_registry = nullptr;
+    std::vector<Observer> m_observers;
     std::uint64_t m_nextObserverId = 1U;
 };
 

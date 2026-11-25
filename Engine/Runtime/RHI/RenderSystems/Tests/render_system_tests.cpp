@@ -13,115 +13,115 @@
 namespace UVE::Render::Tests {
 namespace {
 
-TEST(RenderSystemUVETest, FrameIndex_StartsAtZero) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, FrameIndex_StartsAtZero) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 0U);
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 0U);
 }
 
-TEST(RenderSystemUVETest, BeginFrameThenEndFrame_AdvancesFrameIndex) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, BeginFrameThenEndFrame_AdvancesFrameIndex) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.BeginFrameUVE();
-    renderSystem.EndFrameUVE();
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 1U);
+    renderSystem.BeginFrame();
+    renderSystem.EndFrame();
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 1U);
 
-    renderSystem.BeginFrameUVE();
-    renderSystem.EndFrameUVE();
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 2U);
+    renderSystem.BeginFrame();
+    renderSystem.EndFrame();
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 2U);
 }
 
-TEST(RenderSystemUVETest, GetFrameCommandBufferUVE_ReturnsUsableCommandBufferDuringActiveFrame) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, GetFrameCommandBuffer_ReturnsUsableCommandBufferDuringActiveFrame) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.BeginFrameUVE();
-    ICommandBufferUVE& commandBuffer = renderSystem.GetFrameCommandBufferUVE();
-    RenderPassDescUVE passDesc;
-    commandBuffer.BeginRenderPassUVE(passDesc);
-    commandBuffer.EndRenderPassUVE();
-    renderSystem.EndFrameUVE();
+    renderSystem.BeginFrame();
+    ICommandBuffer& commandBuffer = renderSystem.GetFrameCommandBuffer();
+    RenderPassDesc passDesc;
+    commandBuffer.BeginRenderPass(passDesc);
+    commandBuffer.EndRenderPass();
+    renderSystem.EndFrame();
 
-    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    const std::vector<RecordedCommand>& recorded = device.GetLastSubmittedCommands();
     ASSERT_EQ(recorded.size(), 2U);
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[0]));
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommand>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommand>(recorded[1]));
 }
 
-TEST(RenderSystemUVETest, EndFrameUVE_SubmitsTheSameCommandBufferThatWasRecordedInto) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, EndFrame_SubmitsTheSameCommandBufferThatWasRecordedInto) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.BeginFrameUVE();
-    ICommandBufferUVE& commandBuffer = renderSystem.GetFrameCommandBufferUVE();
-    commandBuffer.BeginRenderPassUVE(RenderPassDescUVE{});
-    commandBuffer.EndRenderPassUVE();
-    renderSystem.EndFrameUVE();
+    renderSystem.BeginFrame();
+    ICommandBuffer& commandBuffer = renderSystem.GetFrameCommandBuffer();
+    commandBuffer.BeginRenderPass(RenderPassDesc{});
+    commandBuffer.EndRenderPass();
+    renderSystem.EndFrame();
 
-    EXPECT_FALSE(device.GetLastSubmittedCommandsUVE().empty());
+    EXPECT_FALSE(device.GetLastSubmittedCommands().empty());
 }
 
 #if UVE_DEBUG
-TEST(RenderSystemUVEDeathTest, GetFrameCommandBufferUVE_WithoutActiveFrame_Asserts) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemDeathTest, GetFrameCommandBuffer_WithoutActiveFrame_Asserts) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    EXPECT_DEATH({ static_cast<void>(renderSystem.GetFrameCommandBufferUVE()); }, "");
+    EXPECT_DEATH({ static_cast<void>(renderSystem.GetFrameCommandBuffer()); }, "");
 }
 
-TEST(RenderSystemUVEDeathTest, EndFrameUVE_WithoutActiveFrame_Asserts) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemDeathTest, EndFrame_WithoutActiveFrame_Asserts) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    EXPECT_DEATH({ renderSystem.EndFrameUVE(); }, "");
+    EXPECT_DEATH({ renderSystem.EndFrame(); }, "");
 }
 
-TEST(RenderSystemUVEDeathTest, BeginFrameUVE_WhileFrameAlreadyActive_Asserts) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemDeathTest, BeginFrame_WhileFrameAlreadyActive_Asserts) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.BeginFrameUVE();
-    EXPECT_DEATH({ renderSystem.BeginFrameUVE(); }, "");
+    renderSystem.BeginFrame();
+    EXPECT_DEATH({ renderSystem.BeginFrame(); }, "");
 }
 #endif
 
 #if !UVE_DEBUG
-TEST(RenderSystemUVETest, Release_GetFrameCommandBufferUVE_WithoutActiveFrameIsSafe) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, Release_GetFrameCommandBuffer_WithoutActiveFrameIsSafe) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    ICommandBufferUVE& fallback = renderSystem.GetFrameCommandBufferUVE();
-    fallback.BeginRenderPassUVE(RenderPassDescUVE{});
-    fallback.EndRenderPassUVE();
+    ICommandBuffer& fallback = renderSystem.GetFrameCommandBuffer();
+    fallback.BeginRenderPass(RenderPassDesc{});
+    fallback.EndRenderPass();
 
-    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 0U);
+    EXPECT_TRUE(device.GetLastSubmittedCommands().empty());
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 0U);
 }
 
-TEST(RenderSystemUVETest, Release_EndFrameUVE_WithoutActiveFrameIsSafeNoOp) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, Release_EndFrame_WithoutActiveFrameIsSafeNoOp) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.EndFrameUVE();
+    renderSystem.EndFrame();
 
-    EXPECT_TRUE(device.GetLastSubmittedCommandsUVE().empty());
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 0U);
+    EXPECT_TRUE(device.GetLastSubmittedCommands().empty());
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 0U);
 }
 
-TEST(RenderSystemUVETest, Release_BeginFrameUVE_WhileActivePreservesCurrentFrame) {
-    NullRenderDeviceUVE device;
-    RenderSystemUVE renderSystem(device);
+TEST(RenderSystemTest, Release_BeginFrame_WhileActivePreservesCurrentFrame) {
+    NullRenderDevice device;
+    RenderSystem renderSystem(device);
 
-    renderSystem.BeginFrameUVE();
-    ICommandBufferUVE* const firstBuffer = &renderSystem.GetFrameCommandBufferUVE();
-    renderSystem.BeginFrameUVE();
-    ICommandBufferUVE* const preservedBuffer = &renderSystem.GetFrameCommandBufferUVE();
+    renderSystem.BeginFrame();
+    ICommandBuffer* const firstBuffer = &renderSystem.GetFrameCommandBuffer();
+    renderSystem.BeginFrame();
+    ICommandBuffer* const preservedBuffer = &renderSystem.GetFrameCommandBuffer();
 
     EXPECT_EQ(preservedBuffer, firstBuffer);
-    renderSystem.EndFrameUVE();
-    EXPECT_EQ(renderSystem.GetFrameIndexUVE(), 1U);
+    renderSystem.EndFrame();
+    EXPECT_EQ(renderSystem.GetFrameIndex(), 1U);
 }
 #endif
 

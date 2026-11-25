@@ -25,22 +25,22 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] ShaderAssetUVE MakeTestShaderUVE() {
-    ShaderAssetUVE shader;
-    shader.stage = ShaderStageKindUVE::Fragment;
+[[nodiscard]] ShaderAsset MakeTestShader() {
+    ShaderAsset shader;
+    shader.stage = ShaderStageKind::Fragment;
     shader.sourceCode = "void main() { }";
     shader.entryPointName = "main";
     return shader;
 }
 
-TEST(ShaderAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
+TEST(ShaderAssetTest, SaveThenLoad_RoundTripsFieldExact) {
     const std::filesystem::path path = "uve_shader_asset_tests_round_trip.uvshader";
     std::filesystem::remove(path);
-    const ShaderAssetUVE original = MakeTestShaderUVE();
-    ASSERT_TRUE(SaveShaderAssetUVE(original, path));
+    const ShaderAsset original = MakeTestShader();
+    ASSERT_TRUE(SaveShaderAsset(original, path));
 
-    ShaderAssetUVE loaded;
-    ASSERT_TRUE(LoadShaderAssetUVE(path, loaded));
+    ShaderAsset loaded;
+    ASSERT_TRUE(LoadShaderAsset(path, loaded));
 
     EXPECT_EQ(loaded.stage, original.stage);
     EXPECT_EQ(loaded.sourceCode, original.sourceCode);
@@ -49,24 +49,24 @@ TEST(ShaderAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, LoadShaderAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
+TEST(ShaderAssetTest, LoadShaderAsset_WrongAssetKind_FailsCleanlyAndLogsError) {
     const std::filesystem::path path = "uve_shader_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, {}));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    ShaderAssetUVE shader;
-    EXPECT_FALSE(LoadShaderAssetUVE(path, shader));
+    ShaderAsset shader;
+    EXPECT_FALSE(LoadShaderAsset(path, shader));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("not a shader file");
         });
     EXPECT_TRUE(foundError);
@@ -75,35 +75,35 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_WrongAssetKind_FailsCleanlyAndLogsEr
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MissingFile_ReturnsFalse) {
+TEST(ShaderAssetTest, LoadShaderAsset_MissingFile_ReturnsFalse) {
     const std::filesystem::path path = "uve_shader_asset_tests_nonexistent.uvshader";
     std::filesystem::remove(path);
 
-    ShaderAssetUVE shader;
-    EXPECT_FALSE(LoadShaderAssetUVE(path, shader));
+    ShaderAsset shader;
+    EXPECT_FALSE(LoadShaderAsset(path, shader));
 }
 
-TEST(ShaderAssetUVETest, LoadShaderAssetUVE_EmptySourceCode_FailsAndLogsError) {
+TEST(ShaderAssetTest, LoadShaderAsset_EmptySourceCode_FailsAndLogsError) {
     const std::filesystem::path path = "uve_shader_asset_tests_empty_source.uvshader";
     std::filesystem::remove(path);
 
-    ShaderAssetUVE invalidShader = MakeTestShaderUVE();
+    ShaderAsset invalidShader = MakeTestShader();
     invalidShader.sourceCode.clear();
-    ASSERT_TRUE(SaveShaderAssetUVE(invalidShader, path));
+    ASSERT_TRUE(SaveShaderAsset(invalidShader, path));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    ShaderAssetUVE loaded;
-    EXPECT_FALSE(LoadShaderAssetUVE(path, loaded));
+    ShaderAsset loaded;
+    EXPECT_FALSE(LoadShaderAsset(path, loaded));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("empty source code");
         });
     EXPECT_TRUE(foundError);
@@ -112,63 +112,63 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_EmptySourceCode_FailsAndLogsError) {
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, LoadShaderAssetUVE_UnknownStageFailsBeforePublication) {
+TEST(ShaderAssetTest, LoadShaderAsset_UnknownStageFailsBeforePublication) {
     const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage.uvshader";
     std::filesystem::remove(path);
     const std::string invalidPayload =
         R"({"stage":255,"sourceCode":"void main() { }","entryPointName":"main"})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(invalidPayload.data());
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Shader,
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Shader,
                                 std::vector<std::byte>(payloadBytes, payloadBytes + invalidPayload.size())));
 
-    ShaderAssetUVE loaded = MakeTestShaderUVE();
-    const ShaderAssetUVE original = loaded;
-    EXPECT_FALSE(LoadShaderAssetUVE(path, loaded));
+    ShaderAsset loaded = MakeTestShader();
+    const ShaderAsset original = loaded;
+    EXPECT_FALSE(LoadShaderAsset(path, loaded));
     EXPECT_EQ(loaded.stage, original.stage);
     EXPECT_EQ(loaded.sourceCode, original.sourceCode);
     EXPECT_EQ(loaded.entryPointName, original.entryPointName);
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, SaveShaderAssetUVE_UnknownStagePreservesExistingEnvelope) {
+TEST(ShaderAssetTest, SaveShaderAsset_UnknownStagePreservesExistingEnvelope) {
     const std::filesystem::path path = "uve_shader_asset_tests_unknown_stage_save.uvshader";
     std::filesystem::remove(path);
-    const ShaderAssetUVE original = MakeTestShaderUVE();
-    ASSERT_TRUE(SaveShaderAssetUVE(original, path));
+    const ShaderAsset original = MakeTestShader();
+    ASSERT_TRUE(SaveShaderAsset(original, path));
 
-    ShaderAssetUVE invalid = original;
-    invalid.stage = static_cast<ShaderStageKindUVE>(0xFFU);
-    EXPECT_FALSE(SaveShaderAssetUVE(invalid, path));
+    ShaderAsset invalid = original;
+    invalid.stage = static_cast<ShaderStageKind>(0xFFU);
+    EXPECT_FALSE(SaveShaderAsset(invalid, path));
 
-    ShaderAssetUVE loaded;
-    ASSERT_TRUE(LoadShaderAssetUVE(path, loaded));
+    ShaderAsset loaded;
+    ASSERT_TRUE(LoadShaderAsset(path, loaded));
     EXPECT_EQ(loaded.stage, original.stage);
     EXPECT_EQ(loaded.sourceCode, original.sourceCode);
     EXPECT_EQ(loaded.entryPointName, original.entryPointName);
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MalformedJson_FailsAndLogsError) {
+TEST(ShaderAssetTest, LoadShaderAsset_MalformedJson_FailsAndLogsError) {
     const std::filesystem::path path = "uve_shader_asset_tests_malformed_json.uvshader";
     std::filesystem::remove(path);
     const std::string garbage = "{ not valid json";
     const auto* const garbageBytes = reinterpret_cast<const std::byte*>(garbage.data());
     ASSERT_TRUE(
-        WriteUveFileUVE(path, AssetKindUVE::Shader, std::vector<std::byte>(garbageBytes, garbageBytes + garbage.size())));
+        WriteUveFile(path, AssetKind::Shader, std::vector<std::byte>(garbageBytes, garbageBytes + garbage.size())));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    ShaderAssetUVE shader;
-    EXPECT_FALSE(LoadShaderAssetUVE(path, shader));
+    ShaderAsset shader;
+    EXPECT_FALSE(LoadShaderAsset(path, shader));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error;
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error;
         });
     EXPECT_TRUE(foundError);
 
@@ -176,31 +176,31 @@ TEST(ShaderAssetUVETest, LoadShaderAssetUVE_MalformedJson_FailsAndLogsError) {
     std::filesystem::remove(path);
 }
 
-TEST(ShaderAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
+TEST(ShaderAssetTest, EndToEnd_RegisterLoaderThenLoad_ReachesLoadedWithMatchingData) {
     const std::filesystem::path path = "uve_shader_asset_tests_end_to_end.uvshader";
     std::filesystem::remove(path);
-    const ShaderAssetUVE original = MakeTestShaderUVE();
-    ASSERT_TRUE(SaveShaderAssetUVE(original, path));
+    const ShaderAsset original = MakeTestShader();
+    ASSERT_TRUE(SaveShaderAsset(original, path));
 
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE assetDatabase;
-    AssetManagerUVE assetManager(threadPool, eventSystem);
-    assetManager.RegisterLoaderUVE<ShaderAssetUVE>(&LoadShaderAssetUVE);
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetDatabase assetDatabase;
+    AssetManager assetManager(threadPool, eventSystem);
+    assetManager.RegisterLoader<ShaderAsset>(&LoadShaderAsset);
 
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
-    const AssetHandleUVE<ShaderAssetUVE> handle = assetManager.LoadUVE<ShaderAssetUVE>(guid, assetDatabase);
+    const AssetGuid guid = assetDatabase.Register(path);
+    const AssetHandle<ShaderAsset> handle = assetManager.Load<ShaderAsset>(guid, assetDatabase);
 
     bool ready = false;
     for (int iteration = 0; iteration < 200000 && !ready; ++iteration) {
-        ready = handle.IsReadyUVE() || handle.HasFailedUVE();
+        ready = handle.IsReady() || handle.HasFailed();
         if (!ready) {
             std::this_thread::yield();
         }
     }
     ASSERT_TRUE(ready);
-    ASSERT_TRUE(handle.IsReadyUVE());
-    const ShaderAssetUVE* const loaded = handle.TryGetUVE();
+    ASSERT_TRUE(handle.IsReady());
+    const ShaderAsset* const loaded = handle.TryGet();
     ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->sourceCode, original.sourceCode);
 

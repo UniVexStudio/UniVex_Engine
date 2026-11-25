@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <vector>
 namespace UVE::Save {
-inline constexpr std::size_t kMaximumCompressedSavePayloadBytesUVE = 64U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumCompressedSavePayloadBytes = 64U * 1024U * 1024U;
 /// Compresses a fixed save payload when bounded RLE is smaller; otherwise returns an unchanged copy.
-[[nodiscard]] std::vector<std::byte> CompressSavePayloadUVE(const std::vector<std::byte>& payload);
+[[nodiscard]] std::vector<std::byte> CompressSavePayload(const std::vector<std::byte>& payload);
 /// Expands a compressed payload or copies a legacy raw payload; output is unchanged on failure.
-[[nodiscard]] bool DecompressSavePayloadUVE(const std::vector<std::byte>& payload,
+[[nodiscard]] bool DecompressSavePayload(const std::vector<std::byte>& payload,
                                              std::vector<std::byte>& outPayload);
 } // namespace UVE::Save

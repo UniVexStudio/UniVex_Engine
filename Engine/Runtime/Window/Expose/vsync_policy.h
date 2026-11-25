@@ -8,28 +8,28 @@ namespace UVE::Window {
 
 /// OpenGL exposes a swap interval, not Vulkan-style present modes. Resolve the portable request
 /// into the interval GLFW should receive and the policy the backend can actually honor.
-struct OpenGlVSyncResolutionUVE final {
-    Platform::VSyncModeUVE effectiveMode = Platform::VSyncModeUVE::On;
+struct OpenGlVSyncResolution final {
+    Platform::VSyncMode effectiveMode = Platform::VSyncMode::On;
     int swapInterval = 1;
 
-    [[nodiscard]] constexpr bool operator==(const OpenGlVSyncResolutionUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const OpenGlVSyncResolution&) const noexcept = default;
 };
 
-[[nodiscard]] constexpr OpenGlVSyncResolutionUVE ResolveOpenGlVSyncUVE(
-    const Platform::VSyncModeUVE requestedMode, const bool adaptiveIntervalSupported) noexcept {
+[[nodiscard]] constexpr OpenGlVSyncResolution ResolveOpenGlVSync(
+    const Platform::VSyncMode requestedMode, const bool adaptiveIntervalSupported) noexcept {
     switch (requestedMode) {
-    case Platform::VSyncModeUVE::Off:
-        return {Platform::VSyncModeUVE::Off, 0};
-    case Platform::VSyncModeUVE::On:
-        return {Platform::VSyncModeUVE::On, 1};
-    case Platform::VSyncModeUVE::Adaptive:
+    case Platform::VSyncMode::Off:
+        return {Platform::VSyncMode::Off, 0};
+    case Platform::VSyncMode::On:
+        return {Platform::VSyncMode::On, 1};
+    case Platform::VSyncMode::Adaptive:
         return adaptiveIntervalSupported
-                   ? OpenGlVSyncResolutionUVE{Platform::VSyncModeUVE::Adaptive, -1}
-                   : OpenGlVSyncResolutionUVE{Platform::VSyncModeUVE::On, 1};
-    case Platform::VSyncModeUVE::Mailbox:
-        return {Platform::VSyncModeUVE::Off, 0};
+                   ? OpenGlVSyncResolution{Platform::VSyncMode::Adaptive, -1}
+                   : OpenGlVSyncResolution{Platform::VSyncMode::On, 1};
+    case Platform::VSyncMode::Mailbox:
+        return {Platform::VSyncMode::Off, 0};
     }
-    return {Platform::VSyncModeUVE::On, 1};
+    return {Platform::VSyncMode::On, 1};
 }
 
 } // namespace UVE::Window

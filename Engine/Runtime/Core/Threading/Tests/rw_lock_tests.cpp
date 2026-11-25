@@ -13,8 +13,8 @@
 namespace UVE::Threading::Tests {
 namespace {
 
-TEST(RwLockUVETest, ReadersShareAndWriterExcludes) {
-    RwLockUVE lock;
+TEST(RwLockTest, ReadersShareAndWriterExcludes) {
+    RwLock lock;
     int value = 0;
     // A held writer blocks a shared try-lock — deterministic (no timing involved).
     lock.lock();
@@ -32,35 +32,35 @@ TEST(RwLockUVETest, ReadersShareAndWriterExcludes) {
     lock.unlock_shared();
     // Full cycle through the STL guards.
     {
-        const std::unique_lock<RwLockUVE> write{lock};
+        const std::unique_lock<RwLock> write{lock};
         value = 42;
     }
     {
-        const std::shared_lock<RwLockUVE> read{lock};
+        const std::shared_lock<RwLock> read{lock};
         EXPECT_EQ(value, 42);
     }
 }
 
-TEST(RwLockUVETest, ConcurrentReaders_AllSeeThePublishedValue) {
-    RwLockUVE lock;
+TEST(RwLockTest, ConcurrentReaders_AllSeeThePublishedValue) {
+    RwLock lock;
     int value = 0;
     {
-        const std::unique_lock<RwLockUVE> write{lock};
+        const std::unique_lock<RwLock> write{lock};
         value = 7;
     }
-    constexpr int kReadersUVE = 8;
+    constexpr int kReaders = 8;
     std::vector<std::thread> readers;
     std::atomic<int> sum{0};
-    for (int reader = 0; reader < kReadersUVE; ++reader) {
+    for (int reader = 0; reader < kReaders; ++reader) {
         readers.emplace_back([&lock, &value, &sum] {
-            const std::shared_lock<RwLockUVE> read{lock};
+            const std::shared_lock<RwLock> read{lock};
             sum.fetch_add(value, std::memory_order_relaxed);
         });
     }
     for (std::thread& reader : readers) {
         reader.join();
     }
-    EXPECT_EQ(sum.load(), kReadersUVE * 7);
+    EXPECT_EQ(sum.load(), kReaders * 7);
 }
 
 } // namespace

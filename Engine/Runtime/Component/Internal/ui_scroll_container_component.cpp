@@ -7,11 +7,11 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUIScrollContainerComponentValidUVE(const UIScrollContainerComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) && component.rect.size.x >= kMinimumUIScrollSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUIScrollSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUIScrollSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUIScrollSizePixelsUVE && std::isfinite(component.padding) &&
+[[nodiscard]] bool IsUIScrollContainerComponentValid(const UIScrollContainerComponent& component) noexcept {
+    return Math::IsFinite(component.rect) && component.rect.size.x >= kMinimumUIScrollSizePixels &&
+           component.rect.size.x <= kMaximumUIScrollSizePixels &&
+           component.rect.size.y >= kMinimumUIScrollSizePixels &&
+           component.rect.size.y <= kMaximumUIScrollSizePixels && std::isfinite(component.padding) &&
            component.padding >= 0.0F && std::isfinite(component.gap) && component.gap >= 0.0F &&
            std::isfinite(component.wheelStep) && component.wheelStep >= 0.0F &&
            std::isfinite(component.scrollOffset.x) && component.scrollOffset.x >= 0.0F &&
@@ -20,48 +20,48 @@ namespace UVE::Scene {
            std::isfinite(component.contentSize.y) && component.contentSize.y >= 0.0F;
 }
 
-Math::Vector2UVE ResolveUIScrollMaxOffsetUVE(
-    const UIScrollContainerComponentUVE& component) noexcept {
-    if (!Math::IsFiniteUVE(component.rect) || !Math::IsFiniteUVE(component.contentSize)) {
-        return Math::Vector2UVE{0.0F, 0.0F};
+Math::Vector2 ResolveUIScrollMaxOffset(
+    const UIScrollContainerComponent& component) noexcept {
+    if (!Math::IsFinite(component.rect) || !Math::IsFinite(component.contentSize)) {
+        return Math::Vector2{0.0F, 0.0F};
     }
-    return Math::Vector2UVE{
+    return Math::Vector2{
         std::max(0.0F, component.contentSize.x - std::max(0.0F, component.rect.size.x)),
         std::max(0.0F, component.contentSize.y - std::max(0.0F, component.rect.size.y)),
     };
 }
 
-Math::Vector2UVE ClampUIScrollOffsetUVE(const UIScrollContainerComponentUVE& component,
-                                        const Math::Vector2UVE& desiredScrollOffset) noexcept {
-    const Math::Vector2UVE maxOffset = ResolveUIScrollMaxOffsetUVE(component);
+Math::Vector2 ClampUIScrollOffset(const UIScrollContainerComponent& component,
+                                        const Math::Vector2& desiredScrollOffset) noexcept {
+    const Math::Vector2 maxOffset = ResolveUIScrollMaxOffset(component);
     const float sx = std::isfinite(desiredScrollOffset.x)
                          ? std::clamp(desiredScrollOffset.x, 0.0F, maxOffset.x)
                          : 0.0F;
     const float sy = std::isfinite(desiredScrollOffset.y)
                          ? std::clamp(desiredScrollOffset.y, 0.0F, maxOffset.y)
                          : 0.0F;
-    return Math::Vector2UVE{sx, sy};
+    return Math::Vector2{sx, sy};
 }
 
-bool HasUIScrollVerticalOverflowUVE(const UIScrollContainerComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) && Math::IsFiniteUVE(component.contentSize) &&
+bool HasUIScrollVerticalOverflow(const UIScrollContainerComponent& component) noexcept {
+    return Math::IsFinite(component.rect) && Math::IsFinite(component.contentSize) &&
            component.contentSize.y > component.rect.size.y;
 }
 
-Math::Vector2UVE ApplyUIScrollWheelDeltaUVE(UIScrollContainerComponentUVE& component,
+Math::Vector2 ApplyUIScrollWheelDelta(UIScrollContainerComponent& component,
                                             const float wheelDeltaUnits,
                                             const bool horizontalWheel) noexcept {
     if (!std::isfinite(wheelDeltaUnits) || !std::isfinite(component.wheelStep) ||
         component.wheelStep <= 0.0F) {
-        component.scrollOffset = ClampUIScrollOffsetUVE(component, component.scrollOffset);
+        component.scrollOffset = ClampUIScrollOffset(component, component.scrollOffset);
         return component.scrollOffset;
     }
     const float deltaPixels = -wheelDeltaUnits * component.wheelStep;
-    const Math::Vector2UVE desired{
+    const Math::Vector2 desired{
         horizontalWheel ? (component.scrollOffset.x + deltaPixels) : component.scrollOffset.x,
         horizontalWheel ? component.scrollOffset.y : (component.scrollOffset.y + deltaPixels),
     };
-    component.scrollOffset = ClampUIScrollOffsetUVE(component, desired);
+    component.scrollOffset = ClampUIScrollOffset(component, desired);
     return component.scrollOffset;
 }
 

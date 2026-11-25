@@ -19,36 +19,36 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteFixtureFileUVE(const std::filesystem::path& path, std::string_view contents) {
+void WriteFixtureFile(const std::filesystem::path& path, std::string_view contents) {
     std::ofstream file(path);
     ASSERT_TRUE(file.is_open());
     file << contents;
 }
 
-class CurrentWorkingDirectoryGuardUVE final {
+class CurrentWorkingDirectoryGuard final {
 public:
-    CurrentWorkingDirectoryGuardUVE() : m_originalPath(std::filesystem::current_path()) {}
+    CurrentWorkingDirectoryGuard() : m_originalPath(std::filesystem::current_path()) {}
 
-    ~CurrentWorkingDirectoryGuardUVE() {
+    ~CurrentWorkingDirectoryGuard() {
         std::error_code errorCode;
         std::filesystem::current_path(m_originalPath, errorCode);
     }
 
-    CurrentWorkingDirectoryGuardUVE(const CurrentWorkingDirectoryGuardUVE&) = delete;
-    CurrentWorkingDirectoryGuardUVE& operator=(const CurrentWorkingDirectoryGuardUVE&) = delete;
+    CurrentWorkingDirectoryGuard(const CurrentWorkingDirectoryGuard&) = delete;
+    CurrentWorkingDirectoryGuard& operator=(const CurrentWorkingDirectoryGuard&) = delete;
 
 private:
     std::filesystem::path m_originalPath;
 };
 
-TEST(AssetDatabaseUVETest, GetRegisteredAssetsUVE_EmptyDatabase_ReturnsEmptySnapshot) {
-    AssetDatabaseUVE database;
-    EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
+TEST(AssetDatabaseTest, GetRegisteredAssets_EmptyDatabase_ReturnsEmptySnapshot) {
+    AssetDatabase database;
+    EXPECT_TRUE(database.GetRegisteredAssets().empty());
 }
 
-TEST(AssetDatabaseUVETest, GetRegisteredAssetsUVE_SortsLexicallyThenByGuid) {
+TEST(AssetDatabaseTest, GetRegisteredAssets_SortsLexicallyThenByGuid) {
     const std::filesystem::path fixturePath = "uve_asset_database_tests_snapshot_sort.uvassetdb";
-    WriteFixtureFileUVE(
+    WriteFixtureFile(
         fixturePath,
         R"({
             "0000000000000020": "assets/same.uvprefab",
@@ -57,75 +57,75 @@ TEST(AssetDatabaseUVETest, GetRegisteredAssetsUVE_SortsLexicallyThenByGuid) {
             "0000000000000040": "assets/apple.uvprefab"
         })");
 
-    AssetDatabaseUVE database;
-    ASSERT_TRUE(database.LoadUVE(fixturePath));
-    const std::vector<AssetRecordUVE> records = database.GetRegisteredAssetsUVE();
+    AssetDatabase database;
+    ASSERT_TRUE(database.Load(fixturePath));
+    const std::vector<AssetRecord> records = database.GetRegisteredAssets();
 
     ASSERT_EQ(records.size(), 4U);
     EXPECT_EQ(records[0].path, std::filesystem::path("assets/apple.uvprefab"));
-    EXPECT_EQ(records[0].guid, AssetGuidUVE{0x40U});
+    EXPECT_EQ(records[0].guid, AssetGuid{0x40U});
     EXPECT_EQ(records[1].path, std::filesystem::path("assets/same.uvprefab"));
-    EXPECT_EQ(records[1].guid, AssetGuidUVE{0x10U});
+    EXPECT_EQ(records[1].guid, AssetGuid{0x10U});
     EXPECT_EQ(records[2].path, std::filesystem::path("assets/same.uvprefab"));
-    EXPECT_EQ(records[2].guid, AssetGuidUVE{0x20U});
+    EXPECT_EQ(records[2].guid, AssetGuid{0x20U});
     EXPECT_EQ(records[3].path, std::filesystem::path("assets/zebra.uvprefab"));
-    EXPECT_EQ(records[3].guid, AssetGuidUVE{0x30U});
+    EXPECT_EQ(records[3].guid, AssetGuid{0x30U});
 
     std::filesystem::remove(fixturePath);
 }
 
-TEST(AssetDatabaseUVETest, GetRegisteredAssetsUVE_ReturnsSnapshotIsolatedFromLaterRegistration) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE initialGuid = database.RegisterUVE("assets/initial.uvprefab");
-    const std::vector<AssetRecordUVE> snapshot = database.GetRegisteredAssetsUVE();
+TEST(AssetDatabaseTest, GetRegisteredAssets_ReturnsSnapshotIsolatedFromLaterRegistration) {
+    AssetDatabase database;
+    const AssetGuid initialGuid = database.Register("assets/initial.uvprefab");
+    const std::vector<AssetRecord> snapshot = database.GetRegisteredAssets();
 
-    static_cast<void>(database.RegisterUVE("assets/later.uvprefab"));
+    static_cast<void>(database.Register("assets/later.uvprefab"));
 
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_EQ(snapshot.front().guid, initialGuid);
     EXPECT_EQ(snapshot.front().path, std::filesystem::path("assets/initial.uvprefab"));
-    EXPECT_EQ(database.GetRegisteredAssetsUVE().size(), 2U);
+    EXPECT_EQ(database.GetRegisteredAssets().size(), 2U);
 }
 
-TEST(AssetDatabaseUVETest, RegisterUVE_SamePathTwice_ReturnsSameGuid) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE first = database.RegisterUVE("meshes/cube.uvmodel");
-    const AssetGuidUVE second = database.RegisterUVE("meshes/cube.uvmodel");
+TEST(AssetDatabaseTest, Register_SamePathTwice_ReturnsSameGuid) {
+    AssetDatabase database;
+    const AssetGuid first = database.Register("meshes/cube.uvmodel");
+    const AssetGuid second = database.Register("meshes/cube.uvmodel");
     EXPECT_EQ(first, second);
 }
 
-TEST(AssetDatabaseUVETest, RelocateUVE_KeepsTheGuidAtTheNewPath) {
-    AssetDatabaseUVE db;
-    const AssetGuidUVE run = db.RegisterUVE("anims/Run.uvanim");
-    const AssetGuidUVE walk = db.RegisterUVE("anims/Walk.uvanim");
-    ASSERT_TRUE(db.RelocateUVE(run, "anims/Sprint.uvanim"));
-    EXPECT_EQ(db.ResolveUVE(run), std::filesystem::path("anims/Sprint.uvanim"));
-    EXPECT_EQ(db.RegisterUVE("anims/Sprint.uvanim"), run) << "the new path is the same asset";
-    EXPECT_NE(db.RegisterUVE("anims/Run.uvanim"), run) << "the old path is free again";
-    EXPECT_FALSE(db.RelocateUVE(walk, "anims/Sprint.uvanim")) << "taken by another asset";
-    EXPECT_FALSE(db.RelocateUVE(AssetGuidUVE{12345U}, "anims/X.uvanim")) << "unknown guid";
+TEST(AssetDatabaseTest, Relocate_KeepsTheGuidAtTheNewPath) {
+    AssetDatabase db;
+    const AssetGuid run = db.Register("anims/Run.uvanim");
+    const AssetGuid walk = db.Register("anims/Walk.uvanim");
+    ASSERT_TRUE(db.Relocate(run, "anims/Sprint.uvanim"));
+    EXPECT_EQ(db.Resolve(run), std::filesystem::path("anims/Sprint.uvanim"));
+    EXPECT_EQ(db.Register("anims/Sprint.uvanim"), run) << "the new path is the same asset";
+    EXPECT_NE(db.Register("anims/Run.uvanim"), run) << "the old path is free again";
+    EXPECT_FALSE(db.Relocate(walk, "anims/Sprint.uvanim")) << "taken by another asset";
+    EXPECT_FALSE(db.Relocate(AssetGuid{12345U}, "anims/X.uvanim")) << "unknown guid";
 }
 
-TEST(AssetDatabaseUVETest, RegisterUVE_DifferentPaths_ReturnDifferentGuids) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE first = database.RegisterUVE("meshes/cube.uvmodel");
-    const AssetGuidUVE second = database.RegisterUVE("meshes/sphere.uvmodel");
+TEST(AssetDatabaseTest, Register_DifferentPaths_ReturnDifferentGuids) {
+    AssetDatabase database;
+    const AssetGuid first = database.Register("meshes/cube.uvmodel");
+    const AssetGuid second = database.Register("meshes/sphere.uvmodel");
     EXPECT_NE(first, second);
 }
 
-TEST(AssetDatabaseUVETest, RegisterUVE_EquivalentLexicalPaths_ReturnSameGuidAndNormalizedStoredPath) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE first = database.RegisterUVE("meshes/generated/../cube.uvmodel");
-    const AssetGuidUVE second = database.RegisterUVE("meshes/cube.uvmodel");
+TEST(AssetDatabaseTest, Register_EquivalentLexicalPaths_ReturnSameGuidAndNormalizedStoredPath) {
+    AssetDatabase database;
+    const AssetGuid first = database.Register("meshes/generated/../cube.uvmodel");
+    const AssetGuid second = database.Register("meshes/cube.uvmodel");
 
     EXPECT_EQ(first, second);
-    EXPECT_EQ(database.ResolveUVE(first), std::filesystem::path("meshes/cube.uvmodel"));
-    const std::vector<AssetRecordUVE> records = database.GetRegisteredAssetsUVE();
+    EXPECT_EQ(database.Resolve(first), std::filesystem::path("meshes/cube.uvmodel"));
+    const std::vector<AssetRecord> records = database.GetRegisteredAssets();
     ASSERT_EQ(records.size(), 1U);
     EXPECT_EQ(records.front().path, std::filesystem::path("meshes/cube.uvmodel"));
 }
 
-TEST(AssetDatabaseUVETest, RegisterUVE_StableRelativePath_IsIndependentOfCurrentWorkingDirectory) {
+TEST(AssetDatabaseTest, Register_StableRelativePath_IsIndependentOfCurrentWorkingDirectory) {
     std::error_code errorCode;
     const std::filesystem::path fixtureRoot =
         std::filesystem::absolute("uve_asset_database_tests_working_directory", errorCode);
@@ -137,95 +137,95 @@ TEST(AssetDatabaseUVETest, RegisterUVE_StableRelativePath_IsIndependentOfCurrent
     std::filesystem::create_directories(secondWorkingDirectory);
 
     {
-        CurrentWorkingDirectoryGuardUVE workingDirectoryGuard;
+        CurrentWorkingDirectoryGuard workingDirectoryGuard;
         errorCode.clear();
-        AssetDatabaseUVE database;
+        AssetDatabase database;
         std::filesystem::current_path(firstWorkingDirectory, errorCode);
         ASSERT_FALSE(errorCode);
-        const AssetGuidUVE firstGuid = database.RegisterUVE("assets/tree.uvprefab");
+        const AssetGuid firstGuid = database.Register("assets/tree.uvprefab");
 
         std::filesystem::current_path(secondWorkingDirectory, errorCode);
         ASSERT_FALSE(errorCode);
-        const AssetGuidUVE secondGuid = database.RegisterUVE("assets/tree.uvprefab");
+        const AssetGuid secondGuid = database.Register("assets/tree.uvprefab");
 
         EXPECT_EQ(firstGuid, secondGuid);
-        EXPECT_EQ(database.ResolveUVE(firstGuid), std::filesystem::path("assets/tree.uvprefab"));
+        EXPECT_EQ(database.Resolve(firstGuid), std::filesystem::path("assets/tree.uvprefab"));
     }
     std::filesystem::remove_all(fixtureRoot);
 }
 
-TEST(AssetDatabaseUVETest, ResolveUVE_RoundTripsRegisteredPath) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = database.RegisterUVE("prefabs/tree.uvprefab");
-    EXPECT_EQ(database.ResolveUVE(guid), std::filesystem::path("prefabs/tree.uvprefab"));
+TEST(AssetDatabaseTest, Resolve_RoundTripsRegisteredPath) {
+    AssetDatabase database;
+    const AssetGuid guid = database.Register("prefabs/tree.uvprefab");
+    EXPECT_EQ(database.Resolve(guid), std::filesystem::path("prefabs/tree.uvprefab"));
 }
 
-TEST(AssetDatabaseUVETest, ResolveUVE_UnknownGuid_ReturnsEmptyPath) {
-    AssetDatabaseUVE database;
-    EXPECT_TRUE(database.ResolveUVE(AssetGuidUVE{12345}).empty());
+TEST(AssetDatabaseTest, Resolve_UnknownGuid_ReturnsEmptyPath) {
+    AssetDatabase database;
+    EXPECT_TRUE(database.Resolve(AssetGuid{12345}).empty());
 }
 
-TEST(AssetDatabaseUVETest, HasGuidUVE_TrueForRegisteredFalseOtherwise) {
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = database.RegisterUVE("prefabs/rock.uvprefab");
-    EXPECT_TRUE(database.HasGuidUVE(guid));
-    EXPECT_FALSE(database.HasGuidUVE(AssetGuidUVE{999}));
-    EXPECT_FALSE(database.HasGuidUVE(kInvalidAssetGuidUVE));
+TEST(AssetDatabaseTest, HasGuid_TrueForRegisteredFalseOtherwise) {
+    AssetDatabase database;
+    const AssetGuid guid = database.Register("prefabs/rock.uvprefab");
+    EXPECT_TRUE(database.HasGuid(guid));
+    EXPECT_FALSE(database.HasGuid(AssetGuid{999}));
+    EXPECT_FALSE(database.HasGuid(kInvalidAssetGuid));
 }
 
-TEST(AssetDatabaseUVETest, LoadUVE_LegacyEquivalentPathAliases_UsesSmallestGuidForFutureRegistration) {
+TEST(AssetDatabaseTest, Load_LegacyEquivalentPathAliases_UsesSmallestGuidForFutureRegistration) {
     const std::filesystem::path fixturePath = "uve_asset_database_tests_legacy_aliases.uvassetdb";
-    WriteFixtureFileUVE(
+    WriteFixtureFile(
         fixturePath,
         R"({
             "0000000000000020": "assets/generated/../tree.uvprefab",
             "0000000000000010": "assets/tree.uvprefab"
         })");
 
-    AssetDatabaseUVE database;
-    ASSERT_TRUE(database.LoadUVE(fixturePath));
-    EXPECT_EQ(database.RegisterUVE("assets/tree.uvprefab"), AssetGuidUVE{0x10U});
-    EXPECT_EQ(database.RegisterUVE("assets/./tree.uvprefab"), AssetGuidUVE{0x10U});
+    AssetDatabase database;
+    ASSERT_TRUE(database.Load(fixturePath));
+    EXPECT_EQ(database.Register("assets/tree.uvprefab"), AssetGuid{0x10U});
+    EXPECT_EQ(database.Register("assets/./tree.uvprefab"), AssetGuid{0x10U});
 
-    const std::vector<AssetRecordUVE> records = database.GetRegisteredAssetsUVE();
+    const std::vector<AssetRecord> records = database.GetRegisteredAssets();
     ASSERT_EQ(records.size(), 2U);
     EXPECT_EQ(records[0].path, std::filesystem::path("assets/tree.uvprefab"));
     EXPECT_EQ(records[1].path, std::filesystem::path("assets/tree.uvprefab"));
     std::filesystem::remove(fixturePath);
 }
 
-TEST(AssetDatabaseUVETest, SaveThenLoad_RoundTripsThroughDisk) {
+TEST(AssetDatabaseTest, SaveThenLoad_RoundTripsThroughDisk) {
     const std::filesystem::path savePath = "uve_asset_database_tests_roundtrip.uvassetdb";
     std::filesystem::remove(savePath);
 
-    AssetGuidUVE guid{};
+    AssetGuid guid{};
     {
-        AssetDatabaseUVE writer;
-        guid = writer.RegisterUVE("prefabs/tree.uvprefab");
-        ASSERT_TRUE(writer.SaveUVE(savePath));
+        AssetDatabase writer;
+        guid = writer.Register("prefabs/tree.uvprefab");
+        ASSERT_TRUE(writer.Save(savePath));
     }
 
-    AssetDatabaseUVE reader;
-    ASSERT_TRUE(reader.LoadUVE(savePath));
-    EXPECT_EQ(reader.ResolveUVE(guid), std::filesystem::path("prefabs/tree.uvprefab"));
+    AssetDatabase reader;
+    ASSERT_TRUE(reader.Load(savePath));
+    EXPECT_EQ(reader.Resolve(guid), std::filesystem::path("prefabs/tree.uvprefab"));
 
     std::filesystem::remove(savePath);
 }
 
-TEST(AssetDatabaseUVETest, LoadUVE_MissingFile_LogsWarning) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(AssetDatabaseTest, Load_MissingFile_LogsWarning) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    AssetDatabaseUVE database;
-    EXPECT_FALSE(database.LoadUVE("uve_asset_database_tests_nonexistent.uvassetdb"));
+    AssetDatabase database;
+    EXPECT_FALSE(database.Load("uve_asset_database_tests_nonexistent.uvassetdb"));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundWarning =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Warning &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Warning &&
                    message.message.contains("not found");
         });
     EXPECT_TRUE(foundWarning);
@@ -233,49 +233,49 @@ TEST(AssetDatabaseUVETest, LoadUVE_MissingFile_LogsWarning) {
     logger.Shutdown();
 }
 
-TEST(AssetDatabaseUVETest, LoadUVE_MalformedJson_PreservesPreviousRegistryAndSaveTarget) {
+TEST(AssetDatabaseTest, Load_MalformedJson_PreservesPreviousRegistryAndSaveTarget) {
     const std::filesystem::path previousPath = "uve_asset_database_tests_previous_target.uvassetdb";
     const std::filesystem::path malformedPath = "uve_asset_database_tests_malformed_target.uvassetdb";
     std::filesystem::remove(previousPath);
     std::filesystem::remove(malformedPath);
 
-    AssetDatabaseUVE database;
-    const AssetGuidUVE stableGuid = database.RegisterUVE("assets/stable.uvasset");
-    ASSERT_TRUE(database.SaveUVE(previousPath));
-    WriteFixtureFileUVE(malformedPath, "{ not valid json");
+    AssetDatabase database;
+    const AssetGuid stableGuid = database.Register("assets/stable.uvasset");
+    ASSERT_TRUE(database.Save(previousPath));
+    WriteFixtureFile(malformedPath, "{ not valid json");
 
-    EXPECT_FALSE(database.LoadUVE(malformedPath));
-    EXPECT_TRUE(database.HasGuidUVE(stableGuid));
-    const AssetGuidUVE laterGuid = database.RegisterUVE("assets/later.uvasset");
-    ASSERT_TRUE(database.SaveUVE());
+    EXPECT_FALSE(database.Load(malformedPath));
+    EXPECT_TRUE(database.HasGuid(stableGuid));
+    const AssetGuid laterGuid = database.Register("assets/later.uvasset");
+    ASSERT_TRUE(database.Save());
 
-    AssetDatabaseUVE reader;
-    ASSERT_TRUE(reader.LoadUVE(previousPath));
-    EXPECT_TRUE(reader.HasGuidUVE(stableGuid));
-    EXPECT_TRUE(reader.HasGuidUVE(laterGuid));
+    AssetDatabase reader;
+    ASSERT_TRUE(reader.Load(previousPath));
+    EXPECT_TRUE(reader.HasGuid(stableGuid));
+    EXPECT_TRUE(reader.HasGuid(laterGuid));
     EXPECT_EQ(std::ifstream(malformedPath).peek(), std::char_traits<char>::to_int_type('{'));
 
     std::filesystem::remove(previousPath);
     std::filesystem::remove(malformedPath);
 }
 
-TEST(AssetDatabaseUVETest, LoadUVE_MalformedJson_ReturnsFalseAndLogsError) {
+TEST(AssetDatabaseTest, Load_MalformedJson_ReturnsFalseAndLogsError) {
     const std::filesystem::path fixturePath = "uve_asset_database_tests_malformed.uvassetdb";
-    WriteFixtureFileUVE(fixturePath, "{ not valid json");
+    WriteFixtureFile(fixturePath, "{ not valid json");
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    AssetDatabaseUVE database;
-    EXPECT_FALSE(database.LoadUVE(fixturePath));
+    AssetDatabase database;
+    EXPECT_FALSE(database.Load(fixturePath));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundParseError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("failed to parse");
         });
     EXPECT_TRUE(foundParseError);

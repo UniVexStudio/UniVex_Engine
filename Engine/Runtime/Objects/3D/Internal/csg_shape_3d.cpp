@@ -10,39 +10,39 @@
 
 namespace UVE::Scene {
 
-bool IsCSGShape3DComponentValidUVE(const CSGShape3DComponentUVE& value) noexcept {
+bool IsCSGShape3DComponentValid(const CSGShape3DComponent& value) noexcept {
     if (static_cast<std::uint8_t>(value.primitiveKind) >
-            static_cast<std::uint8_t>(CSGPrimitiveKindUVE::Combiner) ||
+            static_cast<std::uint8_t>(CSGPrimitiveKind::Combiner) ||
         static_cast<std::uint8_t>(value.operation) >
-            static_cast<std::uint8_t>(CSGOperationUVE::Subtraction) ||
-        !IsFinite3DObjectVectorUVE(value.boxSize) || value.boxSize.x <= 0.0F ||
+            static_cast<std::uint8_t>(CSGOperation::Subtraction) ||
+        !IsFinite3DObjectVector(value.boxSize) || value.boxSize.x <= 0.0F ||
         value.boxSize.y <= 0.0F || value.boxSize.z <= 0.0F || !std::isfinite(value.radius) ||
         value.radius <= 0.0F || !std::isfinite(value.innerRadius) || value.innerRadius <= 0.0F ||
         value.innerRadius >= value.radius || !std::isfinite(value.height) || value.height <= 0.0F ||
         value.polygonVertices2D.size() > 512U) {
         return false;
     }
-    for (const Math::Vector2UVE& v : value.polygonVertices2D) {
-        if (!Math::IsFiniteUVE(v)) {
+    for (const Math::Vector2& v : value.polygonVertices2D) {
+        if (!Math::IsFinite(v)) {
             return false;
         }
     }
     return true;
 }
 
-CSGShape3DComponentUVE SanitizeCSGShape3DComponentUVE(const CSGShape3DComponentUVE& value) {
-    CSGShape3DComponentUVE out = value;
+CSGShape3DComponent SanitizeCSGShape3DComponent(const CSGShape3DComponent& value) {
+    CSGShape3DComponent out = value;
     if (static_cast<std::uint8_t>(out.primitiveKind) >
-        static_cast<std::uint8_t>(CSGPrimitiveKindUVE::Combiner)) {
-        out.primitiveKind = CSGPrimitiveKindUVE::Box;
+        static_cast<std::uint8_t>(CSGPrimitiveKind::Combiner)) {
+        out.primitiveKind = CSGPrimitiveKind::Box;
     }
     if (static_cast<std::uint8_t>(out.operation) >
-        static_cast<std::uint8_t>(CSGOperationUVE::Subtraction)) {
-        out.operation = CSGOperationUVE::Union;
+        static_cast<std::uint8_t>(CSGOperation::Subtraction)) {
+        out.operation = CSGOperation::Union;
     }
-    if (!IsFinite3DObjectVectorUVE(out.boxSize) || out.boxSize.x <= 0.0F ||
+    if (!IsFinite3DObjectVector(out.boxSize) || out.boxSize.x <= 0.0F ||
         out.boxSize.y <= 0.0F || out.boxSize.z <= 0.0F) {
-        out.boxSize = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        out.boxSize = Math::Vector3{1.0F, 1.0F, 1.0F};
     }
     if (!std::isfinite(out.radius) || out.radius <= 0.0F) {
         out.radius = 0.5F;
@@ -57,9 +57,9 @@ CSGShape3DComponentUVE SanitizeCSGShape3DComponentUVE(const CSGShape3DComponentU
     if (out.polygonVertices2D.size() > 512U) {
         out.polygonVertices2D.resize(512U);
     }
-    for (Math::Vector2UVE& v : out.polygonVertices2D) {
-        if (!Math::IsFiniteUVE(v)) {
-            v = Math::Vector2UVE{0.0F, 0.0F};
+    for (Math::Vector2& v : out.polygonVertices2D) {
+        if (!Math::IsFinite(v)) {
+            v = Math::Vector2{0.0F, 0.0F};
         }
     }
     return out;
@@ -67,94 +67,94 @@ CSGShape3DComponentUVE SanitizeCSGShape3DComponentUVE(const CSGShape3DComponentU
 
 namespace {
 
-void ApplyCSGKindDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+void ApplyCSGKindDefinition(IEntityManager& entityManager, const Entity entity,
                                const std::string_view defaultName,
-                               const CSGShape3DComponentUVE& csg,
-                               const CSGPrimitiveKindUVE kind) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, defaultName);
-    CSGShape3DComponentUVE sanitized = SanitizeCSGShape3DComponentUVE(csg);
+                               const CSGShape3DComponent& csg,
+                               const CSGPrimitiveKind kind) {
+    ApplySurfaceInstance3DBase(entityManager, entity, defaultName);
+    CSGShape3DComponent sanitized = SanitizeCSGShape3DComponent(csg);
     sanitized.primitiveKind = kind;
-    entityManager.AddComponentUVE<CSGShape3DComponentUVE>(entity, std::move(sanitized));
+    entityManager.AddComponent<CSGShape3DComponent>(entity, std::move(sanitized));
 }
 
 } // namespace
 
-void ApplyCSGBox3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                      const CSGBox3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGBox3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Box);
+void ApplyCSGBox3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                      const CSGBox3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGBox3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Box);
 }
-void ApplyCSGSphere3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                         const CSGSphere3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGSphere3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Sphere);
+void ApplyCSGSphere3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                         const CSGSphere3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGSphere3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Sphere);
 }
-void ApplyCSGCylinder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                           const EntityUVE entity,
-                                           const CSGCylinder3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGCylinder3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Cylinder);
+void ApplyCSGCylinder3DObjectDefinition(IEntityManager& entityManager,
+                                           const Entity entity,
+                                           const CSGCylinder3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGCylinder3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Cylinder);
 }
-void ApplyCSGTorus3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                        const CSGTorus3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGTorus3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Torus);
+void ApplyCSGTorus3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                        const CSGTorus3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGTorus3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Torus);
 }
-void ApplyCSGMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const CSGMesh3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGMesh3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Mesh);
+void ApplyCSGMesh3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                       const CSGMesh3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGMesh3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Mesh);
 }
-void ApplyCSGPolygon3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                          const CSGPolygon3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGPolygon3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Polygon);
+void ApplyCSGPolygon3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                          const CSGPolygon3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGPolygon3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Polygon);
 }
-void ApplyCSGCombiner3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                           const EntityUVE entity,
-                                           const CSGCombiner3DObjectDefinitionUVE& value) {
-    ApplyCSGKindDefinitionUVE(entityManager, entity, CSGCombiner3DObjectDefinitionUVE::defaultName,
-                              value.csg, CSGPrimitiveKindUVE::Combiner);
+void ApplyCSGCombiner3DObjectDefinition(IEntityManager& entityManager,
+                                           const Entity entity,
+                                           const CSGCombiner3DObjectDefinition& value) {
+    ApplyCSGKindDefinition(entityManager, entity, CSGCombiner3DObjectDefinition::defaultName,
+                              value.csg, CSGPrimitiveKind::Combiner);
 }
 
-Math::AabbUVE CSGShape3DUVE::ComputeLocalAabbUVE(const CSGShape3DComponentUVE& shape) noexcept {
-    const CSGShape3DComponentUVE safe = SanitizeCSGShape3DComponentUVE(shape);
+Math::Aabb CSGShape3D::ComputeLocalAabb(const CSGShape3DComponent& shape) noexcept {
+    const CSGShape3DComponent safe = SanitizeCSGShape3DComponent(shape);
     switch (safe.primitiveKind) {
-    case CSGPrimitiveKindUVE::Box:
-    case CSGPrimitiveKindUVE::Mesh:
-    case CSGPrimitiveKindUVE::Combiner:
-        return Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+    case CSGPrimitiveKind::Box:
+    case CSGPrimitiveKind::Mesh:
+    case CSGPrimitiveKind::Combiner:
+        return Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, 0.0F},
                                                    safe.boxSize * 0.5F);
-    case CSGPrimitiveKindUVE::Sphere:
-        return Math::AabbUVE::FromCenterExtentsUVE(
-            Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-            Math::Vector3UVE{safe.radius, safe.radius, safe.radius});
-    case CSGPrimitiveKindUVE::Cylinder:
-    case CSGPrimitiveKindUVE::Polygon:
-        return Math::AabbUVE::FromCenterExtentsUVE(
-            Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-            Math::Vector3UVE{safe.radius, 0.5F * safe.height, safe.radius});
-    case CSGPrimitiveKindUVE::Torus: {
+    case CSGPrimitiveKind::Sphere:
+        return Math::Aabb::FromCenterExtents(
+            Math::Vector3{0.0F, 0.0F, 0.0F},
+            Math::Vector3{safe.radius, safe.radius, safe.radius});
+    case CSGPrimitiveKind::Cylinder:
+    case CSGPrimitiveKind::Polygon:
+        return Math::Aabb::FromCenterExtents(
+            Math::Vector3{0.0F, 0.0F, 0.0F},
+            Math::Vector3{safe.radius, 0.5F * safe.height, safe.radius});
+    case CSGPrimitiveKind::Torus: {
         const float outerR = safe.radius + safe.innerRadius;
-        return Math::AabbUVE::FromCenterExtentsUVE(
-            Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-            Math::Vector3UVE{outerR, safe.innerRadius, outerR});
+        return Math::Aabb::FromCenterExtents(
+            Math::Vector3{0.0F, 0.0F, 0.0F},
+            Math::Vector3{outerR, safe.innerRadius, outerR});
     }
     }
-    return Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                                               Math::Vector3UVE{0.5F, 0.5F, 0.5F});
+    return Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, 0.0F},
+                                               Math::Vector3{0.5F, 0.5F, 0.5F});
 }
 
-float CSGShape3DUVE::EvaluateLocalSignedDistanceUVE(
-    const CSGShape3DComponentUVE& shape, const Math::Vector3UVE& localPoint) noexcept {
-    if (!IsFinite3DObjectVectorUVE(localPoint)) {
+float CSGShape3D::EvaluateLocalSignedDistance(
+    const CSGShape3DComponent& shape, const Math::Vector3& localPoint) noexcept {
+    if (!IsFinite3DObjectVector(localPoint)) {
         return 1.0F;
     }
-    const CSGShape3DComponentUVE safe = SanitizeCSGShape3DComponentUVE(shape);
-    if (safe.primitiveKind == CSGPrimitiveKindUVE::Sphere) {
-        return std::sqrt(Math::LengthSquaredUVE(localPoint)) - safe.radius;
+    const CSGShape3DComponent safe = SanitizeCSGShape3DComponent(shape);
+    if (safe.primitiveKind == CSGPrimitiveKind::Sphere) {
+        return std::sqrt(Math::LengthSquared(localPoint)) - safe.radius;
     }
-    if (safe.primitiveKind == CSGPrimitiveKindUVE::Cylinder) {
+    if (safe.primitiveKind == CSGPrimitiveKind::Cylinder) {
         const float radial =
             std::sqrt(localPoint.x * localPoint.x + localPoint.z * localPoint.z) - safe.radius;
         const float vertical = std::fabs(localPoint.y) - 0.5F * safe.height;
@@ -162,23 +162,23 @@ float CSGShape3DUVE::EvaluateLocalSignedDistanceUVE(
         const float outY = std::max(vertical, 0.0F);
         return std::min(std::max(radial, vertical), 0.0F) + std::sqrt(outX * outX + outY * outY);
     }
-    const Math::Vector3UVE halfExtents = safe.boxSize * 0.5F;
-    const Math::Vector3UVE q{std::fabs(localPoint.x) - halfExtents.x,
+    const Math::Vector3 halfExtents = safe.boxSize * 0.5F;
+    const Math::Vector3 q{std::fabs(localPoint.x) - halfExtents.x,
                              std::fabs(localPoint.y) - halfExtents.y,
                              std::fabs(localPoint.z) - halfExtents.z};
-    const Math::Vector3UVE maxQ{std::max(q.x, 0.0F), std::max(q.y, 0.0F), std::max(q.z, 0.0F)};
-    return std::sqrt(Math::LengthSquaredUVE(maxQ)) +
+    const Math::Vector3 maxQ{std::max(q.x, 0.0F), std::max(q.y, 0.0F), std::max(q.z, 0.0F)};
+    return std::sqrt(Math::LengthSquared(maxQ)) +
            std::min(std::max({q.x, q.y, q.z}), 0.0F);
 }
 
-float CSGShape3DUVE::CombineSignedDistanceUVE(const CSGOperationUVE operation, const float sdfA,
+float CSGShape3D::CombineSignedDistance(const CSGOperation operation, const float sdfA,
                                               const float sdfB) noexcept {
     switch (operation) {
-    case CSGOperationUVE::Union:
+    case CSGOperation::Union:
         return std::min(sdfA, sdfB);
-    case CSGOperationUVE::Intersection:
+    case CSGOperation::Intersection:
         return std::max(sdfA, sdfB);
-    case CSGOperationUVE::Subtraction:
+    case CSGOperation::Subtraction:
         return std::max(sdfA, -sdfB);
     }
     return std::min(sdfA, sdfB);

@@ -20,28 +20,28 @@ namespace UVE::Blueprint::Editor {
 // Undo / Redo Stack
 // ---------------------------------------------------------------------------
 
-struct BlueprintUndoEntryUVE final {
+struct BlueprintUndoEntry final {
     std::string label;
-    Asset::BlueprintAssetUVE snapshot;
+    Asset::BlueprintAsset snapshot;
 };
 
-class BlueprintUndoStackUVE final {
+class BlueprintUndoStack final {
 public:
-    explicit BlueprintUndoStackUVE(std::size_t maxHistory = 64U) noexcept;
+    explicit BlueprintUndoStack(std::size_t maxHistory = 64U) noexcept;
 
-    void ResetUVE(const Asset::BlueprintAssetUVE& initialState, std::string label = "Initial");
-    void PushSnapshotUVE(const Asset::BlueprintAssetUVE& newState, std::string label);
+    void Reset(const Asset::BlueprintAsset& initialState, std::string label = "Initial");
+    void PushSnapshot(const Asset::BlueprintAsset& newState, std::string label);
 
-    [[nodiscard]] bool CanUndoUVE() const noexcept;
-    [[nodiscard]] bool CanRedoUVE() const noexcept;
-    [[nodiscard]] std::optional<Asset::BlueprintAssetUVE> UndoUVE();
-    [[nodiscard]] std::optional<Asset::BlueprintAssetUVE> RedoUVE();
-    [[nodiscard]] std::string_view CurrentLabelUVE() const noexcept;
-    [[nodiscard]] std::size_t HistoryCountUVE() const noexcept { return m_history.size(); }
+    [[nodiscard]] bool CanUndo() const noexcept;
+    [[nodiscard]] bool CanRedo() const noexcept;
+    [[nodiscard]] std::optional<Asset::BlueprintAsset> Undo();
+    [[nodiscard]] std::optional<Asset::BlueprintAsset> Redo();
+    [[nodiscard]] std::string_view CurrentLabel() const noexcept;
+    [[nodiscard]] std::size_t HistoryCount() const noexcept { return m_history.size(); }
 
 private:
     std::size_t m_maxHistory = 64U;
-    std::vector<BlueprintUndoEntryUVE> m_history;
+    std::vector<BlueprintUndoEntry> m_history;
     std::size_t m_cursor = 0U;
 };
 
@@ -49,7 +49,7 @@ private:
 // Clipboard (Copy / Paste Selection with ID Remapping)
 // ---------------------------------------------------------------------------
 
-struct BlueprintPasteResultUVE final {
+struct BlueprintPasteResult final {
     bool success = false;
     std::vector<std::uint32_t> createdNodeIds;
     std::size_t createdWireCount = 0U;
@@ -57,11 +57,11 @@ struct BlueprintPasteResultUVE final {
 };
 
 /// Serializes the selected node IDs (and wires connecting selected nodes) into a JSON clipboard payload.
-[[nodiscard]] std::string CopyBlueprintSelectionUVE(const Asset::BlueprintAssetUVE& blueprint,
+[[nodiscard]] std::string CopyBlueprintSelection(const Asset::BlueprintAsset& blueprint,
                                                     std::span<const std::uint32_t> selectedNodeIds);
 
 /// Pastes a JSON clipboard payload into `target`, allocating fresh non-colliding IDs and offsetting positions.
-[[nodiscard]] BlueprintPasteResultUVE PasteBlueprintSelectionUVE(Asset::BlueprintAssetUVE& target,
+[[nodiscard]] BlueprintPasteResult PasteBlueprintSelection(Asset::BlueprintAsset& target,
                                                                  std::string_view clipboardJson,
                                                                  float offsetX = 40.0F, float offsetY = 40.0F);
 
@@ -69,7 +69,7 @@ struct BlueprintPasteResultUVE final {
 // Graph Search
 // ---------------------------------------------------------------------------
 
-enum class BlueprintSearchHitKindUVE : std::uint8_t {
+enum class BlueprintSearchHitKind : std::uint8_t {
     NodeTitle = 0,
     NodeKey,
     NodeInputValue,
@@ -77,38 +77,38 @@ enum class BlueprintSearchHitKindUVE : std::uint8_t {
     Comment,
 };
 
-struct BlueprintGraphSearchHitUVE final {
-    BlueprintSearchHitKindUVE kind = BlueprintSearchHitKindUVE::NodeTitle;
+struct BlueprintGraphSearchHit final {
+    BlueprintSearchHitKind kind = BlueprintSearchHitKind::NodeTitle;
     std::uint32_t nodeId = 0U;
     std::string summary;
 };
 
-[[nodiscard]] std::vector<BlueprintGraphSearchHitUVE> SearchBlueprintGraphUVE(
-    const Asset::BlueprintAssetUVE& blueprint, std::string_view query);
+[[nodiscard]] std::vector<BlueprintGraphSearchHit> SearchBlueprintGraph(
+    const Asset::BlueprintAsset& blueprint, std::string_view query);
 
 // ---------------------------------------------------------------------------
 // Context Menu / Node Palette
 // ---------------------------------------------------------------------------
 
-struct BlueprintPaletteEntryUVE final {
+struct BlueprintPaletteEntry final {
     std::string key;
     std::string title;
     std::string category;
     std::string tooltip;
-    Asset::BlueprintNodeRoleUVE role = Asset::BlueprintNodeRoleUVE::Action;
+    Asset::BlueprintNodeRole role = Asset::BlueprintNodeRole::Action;
 };
 
 /// Builds a filtered palette list for graph context menus, optionally requiring pin compatibility.
-[[nodiscard]] std::vector<BlueprintPaletteEntryUVE> BuildBlueprintPaletteUVE(
-    Asset::BlueprintGraphKindUVE graphKind, std::string_view filterText = {},
-    std::optional<Asset::BlueprintPinTypeUVE> compatibleInputPinType = std::nullopt,
+[[nodiscard]] std::vector<BlueprintPaletteEntry> BuildBlueprintPalette(
+    Asset::BlueprintGraphKind graphKind, std::string_view filterText = {},
+    std::optional<Asset::BlueprintPinType> compatibleInputPinType = std::nullopt,
     const std::set<std::string>* availableComponents = nullptr);
 
 // ---------------------------------------------------------------------------
 // Keyboard Shortcuts
 // ---------------------------------------------------------------------------
 
-enum class BlueprintShortcutActionUVE : std::uint8_t {
+enum class BlueprintShortcutAction : std::uint8_t {
     Compile = 0,
     Save,
     Find,
@@ -127,8 +127,8 @@ enum class BlueprintShortcutActionUVE : std::uint8_t {
     DebugStepInto,
 };
 
-struct BlueprintShortcutBindingUVE final {
-    BlueprintShortcutActionUVE action = BlueprintShortcutActionUVE::Compile;
+struct BlueprintShortcutBinding final {
+    BlueprintShortcutAction action = BlueprintShortcutAction::Compile;
     std::string_view keyName;
     bool ctrl = false;
     bool shift = false;
@@ -136,15 +136,15 @@ struct BlueprintShortcutBindingUVE final {
     std::string_view description;
 };
 
-[[nodiscard]] std::span<const BlueprintShortcutBindingUVE> GetDefaultBlueprintShortcutsUVE() noexcept;
-[[nodiscard]] std::optional<BlueprintShortcutActionUVE> MatchBlueprintShortcutUVE(std::string_view keyName, bool ctrl,
+[[nodiscard]] std::span<const BlueprintShortcutBinding> GetDefaultBlueprintShortcuts() noexcept;
+[[nodiscard]] std::optional<BlueprintShortcutAction> MatchBlueprintShortcut(std::string_view keyName, bool ctrl,
                                                                                   bool shift, bool alt) noexcept;
 
 // ---------------------------------------------------------------------------
 // Execution Visualization & Accessibility
 // ---------------------------------------------------------------------------
 
-struct BlueprintWireFlowPulseUVE final {
+struct BlueprintWireFlowPulse final {
     std::uint32_t fromNode = 0U;
     std::uint32_t fromPin = 0U;
     std::uint32_t toNode = 0U;
@@ -152,19 +152,19 @@ struct BlueprintWireFlowPulseUVE final {
     float remainingSeconds = 0.0F;
 };
 
-class BlueprintExecutionVisualizationUVE final {
+class BlueprintExecutionVisualization final {
 public:
-    void TriggerWirePulseUVE(const Asset::BlueprintWireUVE& wire, float durationSeconds = 0.75F);
-    void TickUVE(float deltaSeconds) noexcept;
-    void ClearUVE() noexcept { m_pulses.clear(); }
-    [[nodiscard]] const std::vector<BlueprintWireFlowPulseUVE>& ActivePulsesUVE() const noexcept { return m_pulses; }
+    void TriggerWirePulse(const Asset::BlueprintWire& wire, float durationSeconds = 0.75F);
+    void Tick(float deltaSeconds) noexcept;
+    void Clear() noexcept { m_pulses.clear(); }
+    [[nodiscard]] const std::vector<BlueprintWireFlowPulse>& ActivePulses() const noexcept { return m_pulses; }
 
 private:
-    std::vector<BlueprintWireFlowPulseUVE> m_pulses;
+    std::vector<BlueprintWireFlowPulse> m_pulses;
 };
 
 /// Builds a concise, screen-reader-friendly description of a node, its connections, and optional error state.
-[[nodiscard]] std::string DescribeBlueprintNodeForAccessibilityUVE(const Asset::BlueprintAssetUVE& blueprint,
+[[nodiscard]] std::string DescribeBlueprintNodeForAccessibility(const Asset::BlueprintAsset& blueprint,
                                                                    std::uint32_t nodeId,
                                                                    std::string_view errorText = {});
 

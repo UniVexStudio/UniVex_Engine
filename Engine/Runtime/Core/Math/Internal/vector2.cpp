@@ -8,24 +8,24 @@
 
 namespace UVE::Math {
 
-float LengthUVE(const Vector2UVE& v) noexcept {
+float Length(const Vector2& v) noexcept {
     return std::hypot(v.x, v.y);
 }
 
-Vector2UVE NormalizeUVE(const Vector2UVE& v) noexcept {
+Vector2 Normalize(const Vector2& v) noexcept {
     const float scale = std::max(std::fabs(v.x), std::fabs(v.y));
     if (scale == 0.0F || !std::isfinite(scale)) {
-        return v * (1.0F / LengthUVE(v));
+        return v * (1.0F / Length(v));
     }
-    const Vector2UVE scaled{v.x / scale, v.y / scale};
-    return scaled * (1.0F / LengthUVE(scaled));
+    const Vector2 scaled{v.x / scale, v.y / scale};
+    return scaled * (1.0F / Length(scaled));
 }
 
-bool IsFiniteUVE(const Vector2UVE& value) noexcept {
+bool IsFinite(const Vector2& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y);
 }
 
-std::string ToStringUVE(const Vector2UVE& vector) {
+std::string ToString(const Vector2& vector) {
     return "(" + std::to_string(vector.x) + ", " + std::to_string(vector.y) + ")";
 }
 

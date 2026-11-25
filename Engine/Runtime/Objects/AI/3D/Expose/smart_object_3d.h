@@ -15,22 +15,22 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Marks a 3D entity as an interactive AI object (`interactionTag`, `interactionOffset`,
 /// `maxSimultaneousUsers`, `cooldownSeconds`) that AI agents can discover, claim, and release.
-struct SmartObject3DComponentUVE final {
+struct SmartObject3DComponent final {
     std::string interactionTag{"Interact"};
-    Math::Vector3UVE interactionOffset{0.0F, 0.0F, 1.0F};
+    Math::Vector3 interactionOffset{0.0F, 0.0F, 1.0F};
     std::uint32_t maxSimultaneousUsers = 1U;
     float cooldownSeconds = 0.0F;
     bool enabled = true;
 
     // Runtime state, never persisted:
-    std::vector<EntityUVE> activeUsers{};
+    std::vector<Entity> activeUsers{};
     float remainingCooldownSeconds = 0.0F;
 
-    [[nodiscard]] bool operator==(const SmartObject3DComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const SmartObject3DComponent& other) const noexcept {
         return interactionTag == other.interactionTag &&
                interactionOffset == other.interactionOffset &&
                maxSimultaneousUsers == other.maxSimultaneousUsers &&
@@ -38,48 +38,48 @@ struct SmartObject3DComponentUVE final {
     }
 };
 
-[[nodiscard]] bool IsSmartObject3DComponentValidUVE(
-    const SmartObject3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsSmartObject3DComponentValid(
+    const SmartObject3DComponent& value) noexcept;
 
-[[nodiscard]] SmartObject3DComponentUVE SanitizeSmartObject3DComponentUVE(
-    const SmartObject3DComponentUVE& value);
+[[nodiscard]] SmartObject3DComponent SanitizeSmartObject3DComponent(
+    const SmartObject3DComponent& value);
 
-struct SmartObject3DObjectDefinitionUVE final {
+struct SmartObject3DObjectDefinition final {
     static constexpr std::string_view defaultName = "SmartObject3D";
-    SmartObject3DComponentUVE smartObject{};
+    SmartObject3DComponent smartObject{};
 };
 
-[[nodiscard]] bool IsSmartObject3DObjectDefinitionValidUVE(
-    const SmartObject3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsSmartObject3DObjectDefinitionValid(
+    const SmartObject3DObjectDefinition& value) noexcept;
 
-void ApplySmartObject3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                           const SmartObject3DObjectDefinitionUVE& value);
+void ApplySmartObject3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                           const SmartObject3DObjectDefinition& value);
 
-class SmartObject3DUVE final {
+class SmartObject3D final {
 public:
-    SmartObject3DUVE() = delete;
+    SmartObject3D() = delete;
 
     /// True when `smartObject` is enabled, off cooldown, and has a free slot (or is already
     /// claimed by `agent`).
-    [[nodiscard]] static bool CanClaimUVE(const SmartObject3DComponentUVE& smartObject,
-                                          EntityUVE agent) noexcept;
+    [[nodiscard]] static bool CanClaim(const SmartObject3DComponent& smartObject,
+                                          Entity agent) noexcept;
 
     /// Claims a slot for `agent` when available. Returns true on success.
-    [[nodiscard]] static bool TryClaimUVE(SmartObject3DComponentUVE& smartObject, EntityUVE agent);
+    [[nodiscard]] static bool TryClaim(SmartObject3DComponent& smartObject, Entity agent);
 
     /// Releases `agent`'s claim and starts `cooldownSeconds` when the last user leaves.
-    static bool ReleaseUVE(SmartObject3DComponentUVE& smartObject, EntityUVE agent) noexcept;
+    static bool Release(SmartObject3DComponent& smartObject, Entity agent) noexcept;
 
-    /// Resolves the world-space interaction stand point (`TransformWorldPointUVE(world, interactionOffset)`).
-    [[nodiscard]] static Math::Vector3UVE ResolveWorldInteractionPointUVE(
-        const SmartObject3DComponentUVE& smartObject,
-        const WorldTransformComponentUVE& worldTransform) noexcept;
+    /// Resolves the world-space interaction stand point (`TransformWorldPoint(world, interactionOffset)`).
+    [[nodiscard]] static Math::Vector3 ResolveWorldInteractionPoint(
+        const SmartObject3DComponent& smartObject,
+        const WorldTransformComponent& worldTransform) noexcept;
 };
 
 /// Tactical world-query component (`searchRadiusMetres`, `optimalDistanceMetres`, `requiredTag`,
 /// `preferUnclaimedSmartObjects`) that scores candidate positions/entities in the scene and caches
 /// the best candidate (`bestEntity`, `bestWorldPosition`, `bestScore`).
-struct WorldQuery3DComponentUVE final {
+struct WorldQuery3DComponent final {
     std::string requiredTag{};
     float searchRadiusMetres = 25.0F;
     float optimalDistanceMetres = 5.0F;
@@ -87,11 +87,11 @@ struct WorldQuery3DComponentUVE final {
     bool enabled = true;
 
     // Runtime state, never persisted:
-    EntityUVE bestEntity = kInvalidEntityUVE;
-    Math::Vector3UVE bestWorldPosition{0.0F, 0.0F, 0.0F};
+    Entity bestEntity = kInvalidEntity;
+    Math::Vector3 bestWorldPosition{0.0F, 0.0F, 0.0F};
     float bestScore = 0.0F;
 
-    [[nodiscard]] bool operator==(const WorldQuery3DComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const WorldQuery3DComponent& other) const noexcept {
         return requiredTag == other.requiredTag &&
                searchRadiusMetres == other.searchRadiusMetres &&
                optimalDistanceMetres == other.optimalDistanceMetres &&
@@ -100,25 +100,25 @@ struct WorldQuery3DComponentUVE final {
     }
 };
 
-[[nodiscard]] bool IsWorldQuery3DComponentValidUVE(const WorldQuery3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsWorldQuery3DComponentValid(const WorldQuery3DComponent& value) noexcept;
 
-[[nodiscard]] WorldQuery3DComponentUVE SanitizeWorldQuery3DComponentUVE(
-    const WorldQuery3DComponentUVE& value);
+[[nodiscard]] WorldQuery3DComponent SanitizeWorldQuery3DComponent(
+    const WorldQuery3DComponent& value);
 
-struct WorldQuery3DObjectDefinitionUVE final {
+struct WorldQuery3DObjectDefinition final {
     static constexpr std::string_view defaultName = "WorldQuery3D";
-    WorldQuery3DComponentUVE query{};
+    WorldQuery3DComponent query{};
 };
 
-[[nodiscard]] bool IsWorldQuery3DObjectDefinitionValidUVE(
-    const WorldQuery3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsWorldQuery3DObjectDefinitionValid(
+    const WorldQuery3DObjectDefinition& value) noexcept;
 
-void ApplyWorldQuery3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                          const WorldQuery3DObjectDefinitionUVE& value);
+void ApplyWorldQuery3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                          const WorldQuery3DObjectDefinition& value);
 
-/// Ticks all `SmartObject3DComponentUVE` cooldowns (pruning destroyed users) and evaluates all
-/// enabled `WorldQuery3DComponentUVE` entities. Returns the number of queries that found a match.
-std::size_t UpdateSmartObjectAndWorldQuery3DUVE(IEntityManagerUVE& entityManager,
+/// Ticks all `SmartObject3DComponent` cooldowns (pruning destroyed users) and evaluates all
+/// enabled `WorldQuery3DComponent` entities. Returns the number of queries that found a match.
+std::size_t UpdateSmartObjectAndWorldQuery3D(IEntityManager& entityManager,
                                                 float deltaTimeSeconds);
 
 } // namespace UVE::Scene

@@ -6,77 +6,77 @@
 
 namespace UVE::Asset {
 
-bool DataTableRegistryUVE::RegisterUVE(DataTableUVE table) {
-    const DataTableSnapshotUVE candidate = table.GetSnapshotUVE();
-    if (!IsValidTableSnapshotUVE(candidate) || ContainsUVE(candidate.name) ||
-        m_tables.size() >= kMaximumTablesUVE) {
+bool DataTableRegistry::Register(DataTable table) {
+    const DataTableSnapshot candidate = table.GetSnapshot();
+    if (!IsValidTableSnapshot(candidate) || Contains(candidate.name) ||
+        m_tables.size() >= kMaximumTables) {
         return false;
     }
     m_tables.push_back(std::move(table));
-    IncrementGenerationUVE();
+    IncrementGeneration();
     return true;
 }
 
-bool DataTableRegistryUVE::RemoveUVE(const std::string_view name) {
-    const auto iterator = std::find_if(m_tables.begin(), m_tables.end(), [name](const DataTableUVE& table) {
-        return table.GetSnapshotUVE().name == name;
+bool DataTableRegistry::Remove(const std::string_view name) {
+    const auto iterator = std::find_if(m_tables.begin(), m_tables.end(), [name](const DataTable& table) {
+        return table.GetSnapshot().name == name;
     });
     if (iterator == m_tables.end()) {
         return false;
     }
     m_tables.erase(iterator);
-    IncrementGenerationUVE();
+    IncrementGeneration();
     return true;
 }
 
-bool DataTableRegistryUVE::ClearUVE() noexcept {
+bool DataTableRegistry::Clear() noexcept {
     if (m_tables.empty()) {
         return false;
     }
     m_tables.clear();
-    IncrementGenerationUVE();
+    IncrementGeneration();
     return true;
 }
 
-bool DataTableRegistryUVE::TryGetSnapshotUVE(const std::string_view name, DataTableSnapshotUVE& snapshot) const {
-    const auto iterator = std::find_if(m_tables.begin(), m_tables.end(), [name](const DataTableUVE& table) {
-        return table.GetSnapshotUVE().name == name;
+bool DataTableRegistry::TryGetSnapshot(const std::string_view name, DataTableSnapshot& snapshot) const {
+    const auto iterator = std::find_if(m_tables.begin(), m_tables.end(), [name](const DataTable& table) {
+        return table.GetSnapshot().name == name;
     });
     if (iterator == m_tables.end()) {
         return false;
     }
-    snapshot = iterator->GetSnapshotUVE();
+    snapshot = iterator->GetSnapshot();
     return true;
 }
 
-DataTableCatalogSnapshotUVE DataTableRegistryUVE::GetCatalogSnapshotUVE() const {
-    DataTableCatalogUVE catalog;
-    for (const DataTableUVE& table : m_tables) {
-        const DataTableSnapshotUVE snapshot = table.GetSnapshotUVE();
-        static_cast<void>(catalog.UpsertUVE(snapshot));
+DataTableCatalogSnapshot DataTableRegistry::GetCatalogSnapshot() const {
+    DataTableCatalog catalog;
+    for (const DataTable& table : m_tables) {
+        const DataTableSnapshot snapshot = table.GetSnapshot();
+        static_cast<void>(catalog.Upsert(snapshot));
     }
-    DataTableCatalogSnapshotUVE snapshot = catalog.GetSnapshotUVE();
+    DataTableCatalogSnapshot snapshot = catalog.GetSnapshot();
     snapshot.generation = m_generation;
     return snapshot;
 }
 
-bool DataTableRegistryUVE::ContainsUVE(const std::string_view name) const {
-    return std::any_of(m_tables.begin(), m_tables.end(), [name](const DataTableUVE& table) {
-        return table.GetSnapshotUVE().name == name;
+bool DataTableRegistry::Contains(const std::string_view name) const {
+    return std::any_of(m_tables.begin(), m_tables.end(), [name](const DataTable& table) {
+        return table.GetSnapshot().name == name;
     });
 }
 
-std::size_t DataTableRegistryUVE::SizeUVE() const noexcept {
+std::size_t DataTableRegistry::Size() const noexcept {
     return m_tables.size();
 }
 
-void DataTableRegistryUVE::IncrementGenerationUVE() noexcept {
+void DataTableRegistry::IncrementGeneration() noexcept {
     if (m_generation < std::numeric_limits<std::uint64_t>::max()) {
         ++m_generation;
     }
 }
 
-bool DataTableRegistryUVE::IsValidTableSnapshotUVE(const DataTableSnapshotUVE& snapshot) noexcept {
+bool DataTableRegistry::IsValidTableSnapshot(const DataTableSnapshot& snapshot) noexcept {
     return !snapshot.name.empty() && snapshot.diagnostics.empty();
 }
 

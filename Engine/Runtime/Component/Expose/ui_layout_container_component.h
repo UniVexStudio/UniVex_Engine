@@ -8,12 +8,12 @@
 
 namespace UVE::Scene {
 
-enum class UILayoutDirectionUVE : std::uint8_t {
+enum class UILayoutDirection : std::uint8_t {
     Vertical = 0,
     Horizontal = 1,
 };
 
-enum class UILayoutAlignmentUVE : std::uint8_t {
+enum class UILayoutAlignment : std::uint8_t {
     Start = 0,
     Center = 1,
     End = 2,
@@ -47,33 +47,33 @@ enum class UILayoutAlignmentUVE : std::uint8_t {
 /// the font atlas's advance sums, so horizontal stacks and grids pace text exactly as it draws.
 /// Persistence rides the metadata-driven serializer: every field above is a declared property,
 /// so no hand-written JSON exists for this component.
-struct UILayoutContainerComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{320.0F, 240.0F}};
-    UILayoutDirectionUVE direction = UILayoutDirectionUVE::Vertical;
-    UILayoutAlignmentUVE alignment = UILayoutAlignmentUVE::Start;
+struct UILayoutContainerComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{320.0F, 240.0F}};
+    UILayoutDirection direction = UILayoutDirection::Vertical;
+    UILayoutAlignment alignment = UILayoutAlignment::Start;
     float padding = 0.0F;
     float spacing = 0.0F;
     std::uint32_t wrapAfter = 0U;
     bool autoSizeWidth = false;
     bool autoSizeHeight = false;
 
-    [[nodiscard]] bool operator==(const UILayoutContainerComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UILayoutContainerComponent&) const = default;
 };
 
 /// Finite rect position and size, non-negative size, finite non-negative padding and spacing,
 /// and known direction/alignment values.
-[[nodiscard]] bool IsUILayoutContainerComponentValidUVE(const UILayoutContainerComponentUVE& value) noexcept;
+[[nodiscard]] bool IsUILayoutContainerComponentValid(const UILayoutContainerComponent& value) noexcept;
 
 /// Sanitizes `value` so `direction`, `alignment`, `rect`, `padding`, and `spacing` are valid.
-[[nodiscard]] UILayoutContainerComponentUVE SanitizeUILayoutContainerComponentUVE(
-    const UILayoutContainerComponentUVE& value) noexcept;
+[[nodiscard]] UILayoutContainerComponent SanitizeUILayoutContainerComponent(
+    const UILayoutContainerComponent& value) noexcept;
 
 /// Computes the padded inner content rectangle (`rect` inset by `padding` on all four sides).
-[[nodiscard]] Math::RectUVE ResolveUILayoutContentRectUVE(
-    const UILayoutContainerComponentUVE& value) noexcept;
+[[nodiscard]] Math::Rect ResolveUILayoutContentRect(
+    const UILayoutContainerComponent& value) noexcept;
 
 /// Computes the number of wrapped lines needed for `childCount` items (`1` when `wrapAfter == 0` and `childCount > 0`).
-[[nodiscard]] std::uint32_t ComputeUILayoutLineCountUVE(
-    const UILayoutContainerComponentUVE& value, std::uint32_t childCount) noexcept;
+[[nodiscard]] std::uint32_t ComputeUILayoutLineCount(
+    const UILayoutContainerComponent& value, std::uint32_t childCount) noexcept;
 
 } // namespace UVE::Scene

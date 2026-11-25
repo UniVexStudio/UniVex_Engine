@@ -9,31 +9,31 @@
 
 namespace UVE::Scene {
 
-bool IsBoxMesh3DObjectDefinitionValidUVE(const BoxMesh3DObjectDefinitionUVE& value) noexcept {
-    return IsPrimitiveMeshComponentValidUVE(value.mesh) && IsColliderComponentValidUVE(value.collider);
+bool IsBoxMesh3DObjectDefinitionValid(const BoxMesh3DObjectDefinition& value) noexcept {
+    return IsPrimitiveMeshComponentValid(value.mesh) && IsColliderComponentValid(value.collider);
 }
 
-void ApplyBoxMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const BoxMesh3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, BoxMesh3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(entity, value.mesh);
-    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+void ApplyBoxMesh3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                       const BoxMesh3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, BoxMesh3DObjectDefinition::defaultName);
+    entityManager.AddComponent<PrimitiveMeshComponent>(entity, value.mesh);
+    entityManager.AddComponent<ColliderComponent>(entity, value.collider);
 }
 
-bool BoxMesh3DUVE::IsBoxMeshUVE(const PrimitiveMeshComponentUVE& mesh) noexcept {
-    return IsPrimitiveMeshComponentValidUVE(mesh) && mesh.kind == PrimitiveMeshKindUVE::Cube;
+bool BoxMesh3D::IsBoxMesh(const PrimitiveMeshComponent& mesh) noexcept {
+    return IsPrimitiveMeshComponentValid(mesh) && mesh.kind == PrimitiveMeshKind::Cube;
 }
 
-Math::Vector3UVE BoxMesh3DUVE::DefaultColliderHalfExtentsUVE() noexcept {
-    return kDefaultHalfExtentsUVE;
+Math::Vector3 BoxMesh3D::DefaultColliderHalfExtents() noexcept {
+    return kDefaultHalfExtents;
 }
 
-Math::AabbUVE BoxMesh3DUVE::LocalBoundsUVE() noexcept {
-    return Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{}, kDefaultHalfExtentsUVE);
+Math::Aabb BoxMesh3D::LocalBounds() noexcept {
+    return Math::Aabb::FromCenterExtents(Math::Vector3{}, kDefaultHalfExtents);
 }
 
-float BoxMesh3DUVE::VolumeFromScaleUVE(const Math::Vector3UVE& worldScale) noexcept {
-    if (!Math::IsFiniteUVE(worldScale) || worldScale.x <= 0.0F || worldScale.y <= 0.0F ||
+float BoxMesh3D::VolumeFromScale(const Math::Vector3& worldScale) noexcept {
+    if (!Math::IsFinite(worldScale) || worldScale.x <= 0.0F || worldScale.y <= 0.0F ||
         worldScale.z <= 0.0F) {
         return 0.0F;
     }
@@ -41,9 +41,9 @@ float BoxMesh3DUVE::VolumeFromScaleUVE(const Math::Vector3UVE& worldScale) noexc
     return std::isfinite(volume) ? volume : 0.0F;
 }
 
-void BoxMesh3DUVE::SyncColliderToBoxUVE(ColliderComponentUVE& collider) noexcept {
-    collider.shapeType = ColliderShapeTypeUVE::Box;
-    collider.halfExtents = kDefaultHalfExtentsUVE;
+void BoxMesh3D::SyncColliderToBox(ColliderComponent& collider) noexcept {
+    collider.shapeType = ColliderShapeType::Box;
+    collider.halfExtents = kDefaultHalfExtents;
 }
 
 } // namespace UVE::Scene

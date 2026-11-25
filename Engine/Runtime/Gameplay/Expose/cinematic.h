@@ -23,7 +23,7 @@ namespace UVE::Scene {
 // the active camera, all evaluated from one currentTime. The component mixes authored data (keys,
 // cuts, duration) with player state (isPlaying, finished, currentTime), the same shape as the
 // AnimationSequencer player. Everything here is pure: stepping returns what fired and which camera
-// is live, and the engine sync turns that into queued events plus SetActiveCameraUVE.
+// is live, and the engine sync turns that into queued events plus SetActiveCamera.
 //
 // Firing rules, stated once: keys fire going forward only, in passing order, exclusive of the
 // time the playhead sits on (a key exactly under the playhead does not refire every frame).
@@ -38,116 +38,116 @@ namespace UVE::Scene {
 // names a player plus an optional clip override - an invalid guid plays the player's own clip.
 // Audio cues are fire-and-forget one-shots - 2D, or spatial at a baked world position; the engine
 // tracks their voices in liveOneShots and
-// sweeps the stopped ones every frame. Those are bare handle values, not VoiceHandleUVE:
+// sweeps the stopped ones every frame. Those are bare handle values, not VoiceHandle:
 // gameplay cannot link uve_audio, which would cycle back through uve_scene.
 
-inline constexpr std::size_t kMaximumCinematicEventsUVE = 64U;
-inline constexpr std::size_t kMaximumCinematicCutsUVE = 32U;
-inline constexpr std::size_t kMaximumCinematicCameraKeysUVE = 64U;
-inline constexpr std::size_t kMaximumCinematicAnimationKeysUVE = 64U;
-inline constexpr std::size_t kMaximumCinematicAudioKeysUVE = 64U;
-inline constexpr std::size_t kMaximumCinematicAudioPathBytesUVE = 256U;
-inline constexpr std::size_t kMaximumCinematicLiveOneShotsUVE = 16U;
-inline constexpr std::size_t kMaximumCinematicEventIdBytesUVE = 64U;
+inline constexpr std::size_t kMaximumCinematicEvents = 64U;
+inline constexpr std::size_t kMaximumCinematicCuts = 32U;
+inline constexpr std::size_t kMaximumCinematicCameraKeys = 64U;
+inline constexpr std::size_t kMaximumCinematicAnimationKeys = 64U;
+inline constexpr std::size_t kMaximumCinematicAudioKeys = 64U;
+inline constexpr std::size_t kMaximumCinematicAudioPathBytes = 256U;
+inline constexpr std::size_t kMaximumCinematicLiveOneShots = 16U;
+inline constexpr std::size_t kMaximumCinematicEventIdBytes = 64U;
 
-enum class CinematicLoopModeUVE : std::uint8_t {
+enum class CinematicLoopMode : std::uint8_t {
     Once = 0,
     Loop,
 };
 
-struct CinematicEventKeyUVE final {
+struct CinematicEventKey final {
     double timeSeconds = 0.0;
     std::string eventId;
 
-    [[nodiscard]] bool operator==(const CinematicEventKeyUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicEventKey&) const = default;
 };
 
-struct CinematicCameraCutUVE final {
+struct CinematicCameraCut final {
     double timeSeconds = 0.0;
-    EntityUVE camera = kInvalidEntityUVE;
+    Entity camera = kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const CinematicCameraCutUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicCameraCut&) const = default;
 };
 
 /// One camera pose on the move track: world-space position plus a unit-quaternion rotation.
 /// Stored rotations are always normalized (Add normalizes, the validator demands it), so the
 /// sampler never has to ask whether a slerp endpoint is usable.
-struct CinematicCameraKeyUVE final {
+struct CinematicCameraKey final {
     double timeSeconds = 0.0;
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
 
-    [[nodiscard]] bool operator==(const CinematicCameraKeyUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicCameraKey&) const = default;
 };
 
 /// The move track sampled at one instant: what the live camera takes this frame.
-struct CinematicCameraPoseUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
+struct CinematicCameraPose final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
 
-    [[nodiscard]] bool operator==(const CinematicCameraPoseUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicCameraPose&) const = default;
 };
 
 /// Edge cue: start `target`'s player, switching it to `clip` first unless the guid is invalid.
-struct CinematicAnimationCueUVE final {
-    EntityUVE target = kInvalidEntityUVE;
-    Asset::AssetGuidUVE clip{};
+struct CinematicAnimationCue final {
+    Entity target = kInvalidEntity;
+    Asset::AssetGuid clip{};
 
-    [[nodiscard]] bool operator==(const CinematicAnimationCueUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicAnimationCue&) const = default;
 };
 
 /// Edge cue: play a one-shot of `audioAssetPath` at `volume` - 2D, or spatial at `position`
 /// (baked when fired; one-shots never move) inside `minDistance`..`maxDistance`.
-struct CinematicAudioCueUVE final {
+struct CinematicAudioCue final {
     std::string audioAssetPath;
     float volume = 1.0F;
     bool spatial = false;
-    Math::Vector3UVE position{};
+    Math::Vector3 position{};
     float minDistance = 1.0F;
     float maxDistance = 25.0F;
 
-    [[nodiscard]] bool operator==(const CinematicAudioCueUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicAudioCue&) const = default;
 };
 
-struct CinematicAnimationKeyUVE final {
+struct CinematicAnimationKey final {
     double timeSeconds = 0.0;
-    EntityUVE target = kInvalidEntityUVE;
-    Asset::AssetGuidUVE clip{};
+    Entity target = kInvalidEntity;
+    Asset::AssetGuid clip{};
 
-    [[nodiscard]] bool operator==(const CinematicAnimationKeyUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicAnimationKey&) const = default;
 };
 
-struct CinematicAudioKeyUVE final {
+struct CinematicAudioKey final {
     double timeSeconds = 0.0;
     std::string audioAssetPath;
     float volume = 1.0F;
     bool spatial = false;
-    Math::Vector3UVE position{};
+    Math::Vector3 position{};
     float minDistance = 1.0F;
     float maxDistance = 25.0F;
 
-    [[nodiscard]] bool operator==(const CinematicAudioKeyUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicAudioKey&) const = default;
 };
 
-struct CinematicComponentUVE final {
+struct CinematicComponent final {
     double durationSeconds = 0.0;
-    std::vector<CinematicEventKeyUVE> events;
-    std::vector<CinematicCameraCutUVE> cuts;
-    std::vector<CinematicCameraKeyUVE> cameraKeys;
-    std::vector<CinematicAnimationKeyUVE> animationKeys;
-    std::vector<CinematicAudioKeyUVE> audioKeys;
-    /// Runtime state, never saved: Audio::VoiceHandleUVE values of one-shots this cinematic fired
+    std::vector<CinematicEventKey> events;
+    std::vector<CinematicCameraCut> cuts;
+    std::vector<CinematicCameraKey> cameraKeys;
+    std::vector<CinematicAnimationKey> animationKeys;
+    std::vector<CinematicAudioKey> audioKeys;
+    /// Runtime state, never saved: Audio::VoiceHandle values of one-shots this cinematic fired
     /// that have not stopped yet, swept by the engine every frame.
     std::vector<std::uint32_t> liveOneShots;
     /// Cutscenes stay parked until something presses play; autoplay is opt-in per shot.
     bool autoplay = false;
     float speed = 1.0F;
-    CinematicLoopModeUVE loopMode = CinematicLoopModeUVE::Once;
+    CinematicLoopMode loopMode = CinematicLoopMode::Once;
     bool isPlaying = false;
     bool finished = false;
     double currentTimeSeconds = 0.0;
 
-    [[nodiscard]] bool operator==(const CinematicComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicComponent&) const = default;
 };
 
 /// Finite positive duration and speed, key times inside [0, duration], usable event ids, valid
@@ -155,87 +155,87 @@ struct CinematicComponentUVE final {
 /// whose positions are finite and whose rotations are finite unit quaternions. Animation keys
 /// name valid targets; audio keys name usable paths at finite non-negative volume with valid
 /// distance bands and finite positions.
-[[nodiscard]] bool IsCinematicComponentValidUVE(const CinematicComponentUVE& value) noexcept;
+[[nodiscard]] bool IsCinematicComponentValid(const CinematicComponent& value) noexcept;
 
 /// Inserts an event key keeping time order (equal times keep insertion order). False for a bad
 /// id, a time outside [0, duration], or a full track. Times are judged against the duration the
 /// component has now; changing the duration afterwards can strand keys past the end.
-[[nodiscard]] bool AddCinematicEventUVE(CinematicComponentUVE& cinematic, double timeSeconds,
+[[nodiscard]] bool AddCinematicEvent(CinematicComponent& cinematic, double timeSeconds,
                                         std::string eventId);
 
 /// Inserts a camera cut keeping time order. False for an invalid camera, a time outside
 /// [0, duration], or a full track.
-[[nodiscard]] bool AddCinematicCutUVE(CinematicComponentUVE& cinematic, double timeSeconds,
-                                      EntityUVE camera);
+[[nodiscard]] bool AddCinematicCut(CinematicComponent& cinematic, double timeSeconds,
+                                      Entity camera);
 
 /// Removes the key/cut at `index`. False when out of range.
-[[nodiscard]] bool RemoveCinematicEventUVE(CinematicComponentUVE& cinematic, std::size_t index);
-[[nodiscard]] bool RemoveCinematicCutUVE(CinematicComponentUVE& cinematic, std::size_t index);
+[[nodiscard]] bool RemoveCinematicEvent(CinematicComponent& cinematic, std::size_t index);
+[[nodiscard]] bool RemoveCinematicCut(CinematicComponent& cinematic, std::size_t index);
 
 /// Inserts a camera key keeping time order. The rotation is normalized on store. False for a
 /// non-finite position, a zero-length rotation, a time outside [0, duration], or a full track.
-[[nodiscard]] bool AddCinematicCameraKeyUVE(CinematicComponentUVE& cinematic, double timeSeconds,
-                                            Math::Vector3UVE position, Math::QuaternionUVE rotation);
+[[nodiscard]] bool AddCinematicCameraKey(CinematicComponent& cinematic, double timeSeconds,
+                                            Math::Vector3 position, Math::Quaternion rotation);
 
 /// Removes the camera key at `index`. False when out of range.
-[[nodiscard]] bool RemoveCinematicCameraKeyUVE(CinematicComponentUVE& cinematic, std::size_t index);
+[[nodiscard]] bool RemoveCinematicCameraKey(CinematicComponent& cinematic, std::size_t index);
 
 /// Inserts an animation key keeping time order. False for an invalid target, a time outside
 /// [0, duration], or a full track. An invalid `clip` plays the target player's own clip.
-[[nodiscard]] bool AddCinematicAnimationKeyUVE(CinematicComponentUVE& cinematic, double timeSeconds,
-                                               EntityUVE target, Asset::AssetGuidUVE clip);
+[[nodiscard]] bool AddCinematicAnimationKey(CinematicComponent& cinematic, double timeSeconds,
+                                               Entity target, Asset::AssetGuid clip);
 /// Removes the animation key at `index`. False when out of range.
-[[nodiscard]] bool RemoveCinematicAnimationKeyUVE(CinematicComponentUVE& cinematic, std::size_t index);
+[[nodiscard]] bool RemoveCinematicAnimationKey(CinematicComponent& cinematic, std::size_t index);
 /// Inserts a 2D audio key keeping time order: non-spatial, default distance band. False for an
 /// empty or overlong path, a non-finite or negative volume, a time outside [0, duration], or a
 /// full track.
-[[nodiscard]] bool AddCinematicAudioKeyUVE(CinematicComponentUVE& cinematic, double timeSeconds,
+[[nodiscard]] bool AddCinematicAudioKey(CinematicComponent& cinematic, double timeSeconds,
                                            std::string audioAssetPath, float volume);
 /// Inserts a fully-specified audio key (spatial cues included) keeping time order. False when any
 /// field is unusable: bad path, volume, distance band (finite, min above zero, max above min), or
 /// position, a time outside [0, duration], or a full track.
-[[nodiscard]] bool AddCinematicAudioKeyUVE(CinematicComponentUVE& cinematic, CinematicAudioKeyUVE key);
+[[nodiscard]] bool AddCinematicAudioKey(CinematicComponent& cinematic, CinematicAudioKey key);
 /// Removes the audio key at `index`. False when out of range.
-[[nodiscard]] bool RemoveCinematicAudioKeyUVE(CinematicComponentUVE& cinematic, std::size_t index);
+[[nodiscard]] bool RemoveCinematicAudioKey(CinematicComponent& cinematic, std::size_t index);
 
 /// The move track at `timeSeconds`: linear position, spherical rotation between the two keys
 /// around it, clamped to the first and last. Nullopt when the track is empty or the time is not
 /// finite - what scrubbing previews and what each step carries.
-[[nodiscard]] std::optional<CinematicCameraPoseUVE>
-SampleCinematicCameraUVE(const CinematicComponentUVE& cinematic, double timeSeconds) noexcept;
+[[nodiscard]] std::optional<CinematicCameraPose>
+SampleCinematicCamera(const CinematicComponent& cinematic, double timeSeconds) noexcept;
 
 /// Writes `pose` into a camera's local transform: position outright, rotation normalized and
 /// mirrored into the stored Euler angles so the Inspector shows what is on screen - the same two
-/// channels WriteAnimatedPoseUVE would write, without the scale channel a camera has no use for.
+/// channels WriteAnimatedPose would write, without the scale channel a camera has no use for.
 /// A zero rotation keeps the previous orientation rather than collapsing it.
-void WriteCinematicCameraPoseUVE(const CinematicCameraPoseUVE& pose,
-                                 TransformComponentUVE& target) noexcept;
+void WriteCinematicCameraPose(const CinematicCameraPose& pose,
+                                 TransformComponent& target) noexcept;
 
 /// What Play fires: the event, animation, and audio keys sitting exactly at 0.0.
-struct CinematicPlayResultUVE final {
+struct CinematicPlayResult final {
     std::vector<std::string> firedEventIds;
-    std::vector<CinematicAnimationCueUVE> animationCues;
-    std::vector<CinematicAudioCueUVE> audioCues;
+    std::vector<CinematicAnimationCue> animationCues;
+    std::vector<CinematicAudioCue> audioCues;
 
-    [[nodiscard]] bool operator==(const CinematicPlayResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicPlayResult&) const = default;
 };
 
 /// Restarts the clock and fires the keys sitting exactly at 0.0. A non-positive duration starts
 /// nothing and fires nothing.
-[[nodiscard]] CinematicPlayResultUVE PlayCinematicUVE(CinematicComponentUVE& cinematic) noexcept;
+[[nodiscard]] CinematicPlayResult PlayCinematic(CinematicComponent& cinematic) noexcept;
 
 /// Parks the playhead where it is. Play restarts from zero.
-void StopCinematicUVE(CinematicComponentUVE& cinematic) noexcept;
+void StopCinematic(CinematicComponent& cinematic) noexcept;
 
-struct CinematicStepResultUVE final {
+struct CinematicStepResult final {
     std::vector<std::string> firedEventIds;
-    EntityUVE activeCamera = kInvalidEntityUVE;
-    std::optional<CinematicCameraPoseUVE> cameraPose;
-    std::vector<CinematicAnimationCueUVE> firedAnimationCues;
-    std::vector<CinematicAudioCueUVE> firedAudioCues;
+    Entity activeCamera = kInvalidEntity;
+    std::optional<CinematicCameraPose> cameraPose;
+    std::vector<CinematicAnimationCue> firedAnimationCues;
+    std::vector<CinematicAudioCue> firedAudioCues;
     bool justFinished = false;
 
-    [[nodiscard]] bool operator==(const CinematicStepResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const CinematicStepResult&) const = default;
 };
 
 /// Advances a playing cinematic by `deltaSeconds` (scaled by speed): collects the fired event,
@@ -243,10 +243,10 @@ struct CinematicStepResultUVE final {
 /// resolves the live camera cut, samples the move track at the new time, and parks at the end
 /// for Once (looping wraps instead). Returns
 /// nothing and moves nothing when parked, finished, or stepped by a non-positive/non-finite dt.
-[[nodiscard]] CinematicStepResultUVE StepCinematicUVE(CinematicComponentUVE& cinematic, float deltaSeconds);
+[[nodiscard]] CinematicStepResult StepCinematic(CinematicComponent& cinematic, float deltaSeconds);
 
 /// The cut live at `timeSeconds` without moving anything: what scrubbing previews.
-[[nodiscard]] EntityUVE ActiveCinematicCameraUVE(const CinematicComponentUVE& cinematic,
+[[nodiscard]] Entity ActiveCinematicCamera(const CinematicComponent& cinematic,
                                                  double timeSeconds) noexcept;
 
 } // namespace UVE::Scene

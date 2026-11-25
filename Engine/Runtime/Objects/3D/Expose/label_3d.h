@@ -14,46 +14,46 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-/// 3D billboard text component built on `SurfaceInstance3DBaseUVE`.
-struct Label3DComponentUVE final {
+/// 3D billboard text component built on `SurfaceInstance3DBase`.
+struct Label3DComponent final {
     std::string text{"Label3D"};
-    Asset::AssetGuidUVE fontAssetGuid = Asset::kInvalidAssetGuidUVE;
+    Asset::AssetGuid fontAssetGuid = Asset::kInvalidAssetGuid;
     float fontSizePixels = 32.0F;
     float pixelSizeMetres = 0.01F;
-    Math::ColorUVE modulate{1.0F, 1.0F, 1.0F};
-    Math::ColorUVE outlineModulate{0.0F, 0.0F, 0.0F};
+    Math::Color modulate{1.0F, 1.0F, 1.0F};
+    Math::Color outlineModulate{0.0F, 0.0F, 0.0F};
     float outlineSizePixels = 0.0F;
-    BillboardMode3DUVE billboardMode = BillboardMode3DUVE::Disabled;
+    BillboardMode3D billboardMode = BillboardMode3D::Disabled;
     bool doubleSided = true;
 
-    [[nodiscard]] bool operator==(const Label3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const Label3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsLabel3DComponentValidUVE(const Label3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsLabel3DComponentValid(const Label3DComponent& value) noexcept;
 
-[[nodiscard]] Label3DComponentUVE SanitizeLabel3DComponentUVE(const Label3DComponentUVE& value);
+[[nodiscard]] Label3DComponent SanitizeLabel3DComponent(const Label3DComponent& value);
 
-struct Label3DObjectDefinitionUVE final {
+struct Label3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Label3D";
-    Label3DComponentUVE label{};
+    Label3DComponent label{};
 };
 
-[[nodiscard]] bool IsLabel3DObjectDefinitionValidUVE(
-    const Label3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsLabel3DObjectDefinitionValid(
+    const Label3DObjectDefinition& value) noexcept;
 
-void ApplyLabel3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                     const Label3DObjectDefinitionUVE& value);
+void ApplyLabel3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                     const Label3DObjectDefinition& value);
 
-class Label3DUVE final {
+class Label3D final {
 public:
-    Label3DUVE() = delete;
+    Label3D() = delete;
 
     /// Estimates the world-space width and height in metres of `label.text` using `fontSizePixels`
     /// and `pixelSizeMetres` (accounting for newline breaks).
-    [[nodiscard]] static Math::Vector2UVE EstimateWorldSizeMetresUVE(
-        const Label3DComponentUVE& label) noexcept;
+    [[nodiscard]] static Math::Vector2 EstimateWorldSizeMetres(
+        const Label3DComponent& label) noexcept;
 };
 
 } // namespace UVE::Scene

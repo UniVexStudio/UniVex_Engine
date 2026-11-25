@@ -15,110 +15,110 @@
 
 namespace UVE::Input {
 
-inline constexpr std::size_t kMaximumInputActionNameBytesUVE = 128U;
-inline constexpr std::size_t kMaximumInputActionsUVE = 256U;
+inline constexpr std::size_t kMaximumInputActionNameBytes = 128U;
+inline constexpr std::size_t kMaximumInputActions = 256U;
 
-/// InputSystemUVE is the concrete, engine-standard implementation of IInputSystemUVE. Composes an
-/// Events::IEventSystemUVE& (dependency injection, matching Renderer3DUVE/PhysicsSystemUVE's
+/// InputSystem is the concrete, engine-standard implementation of IInputSystem. Composes an
+/// Events::IEventSystem& (dependency injection, matching Renderer3D/PhysicsSystem's
 /// precedent for a service that needs a constructor-injected collaborator) to queue
-/// InputActionTriggeredEventUVE.
+/// InputActionTriggeredEvent.
 ///
-/// Uses a triple-buffered state model per device field: a "live" value Set*StateUVE() writes to
-/// immediately, and a "current"/"previous" pair that only UpdateUVE() ever touches. UpdateUVE()
+/// Uses a triple-buffered state model per device field: a "live" value Set*State() writes to
+/// immediately, and a "current"/"previous" pair that only Update() ever touches. Update()
 /// shifts current->previous *before* snapshotting live->current, so current/previous always
 /// differ by exactly one full frame throughout the frame that follows — the frame-stability
-/// WasKeyPressedThisFrameUVE()-style edge queries need (comparing live directly against a
-/// same-call snapshot would make "pressed this frame" false immediately after the very UpdateUVE()
+/// WasKeyPressedThisFrame()-style edge queries need (comparing live directly against a
+/// same-call snapshot would make "pressed this frame" false immediately after the very Update()
 /// call that should report it true).
 ///
-/// Thread-safety: an internal mutex guards only the "live" fields Set*StateUVE() writes and
-/// UpdateUVE() reads from — matching EventSystemUVE's own mutex-guarded-state precedent, and
-/// backing the documented "Set*StateUVE() safe from any thread" contract. The "current"/
+/// Thread-safety: an internal mutex guards only the "live" fields Set*State() writes and
+/// Update() reads from — matching EventSystem's own mutex-guarded-state precedent, and
+/// backing the documented "Set*State() safe from any thread" contract. The "current"/
 /// "previous" frame-snapshot fields (and the action registry) are written and read exclusively by
-/// UpdateUVE()/the query methods/RegisterActionUVE()/UnregisterActionUVE() — all main-thread-only
+/// Update()/the query methods/RegisterAction()/UnregisterAction() — all main-thread-only
 /// by contract — so they need no synchronization of their own.
-class InputSystemUVE final : public IInputSystemUVE {
+class InputSystem final : public IInputSystem {
 public:
-    /// `eventSystem` must outlive this InputSystemUVE.
-    explicit InputSystemUVE(Events::IEventSystemUVE& eventSystem,
-                            IGamepadInputSystemUVE* gamepadInputSystem = nullptr);
+    /// `eventSystem` must outlive this InputSystem.
+    explicit InputSystem(Events::IEventSystem& eventSystem,
+                            IGamepadInputSystem* gamepadInputSystem = nullptr);
 
-    void SetKeyStateUVE(KeyCodeUVE key, bool isDown) override;
-    void SetMouseButtonStateUVE(MouseButtonUVE button, bool isDown) override;
-    void SetMousePositionUVE(Math::Vector2UVE position) override;
-    void SetMouseScrollDeltaUVE(float delta) override;
-    void UpdateUVE() override;
+    void SetKeyState(KeyCode key, bool isDown) override;
+    void SetMouseButtonState(MouseButton button, bool isDown) override;
+    void SetMousePosition(Math::Vector2 position) override;
+    void SetMouseScrollDelta(float delta) override;
+    void Update() override;
 
-    [[nodiscard]] bool IsKeyDownUVE(KeyCodeUVE key) const override;
-    [[nodiscard]] bool WasKeyPressedThisFrameUVE(KeyCodeUVE key) const override;
-    [[nodiscard]] bool WasKeyReleasedThisFrameUVE(KeyCodeUVE key) const override;
-    [[nodiscard]] bool IsMouseButtonDownUVE(MouseButtonUVE button) const override;
-    [[nodiscard]] bool WasMouseButtonPressedThisFrameUVE(MouseButtonUVE button) const override;
-    [[nodiscard]] bool WasMouseButtonReleasedThisFrameUVE(MouseButtonUVE button) const override;
-    [[nodiscard]] Math::Vector2UVE GetMousePositionUVE() const override;
-    [[nodiscard]] Math::Vector2UVE GetMouseDeltaUVE() const override;
-    [[nodiscard]] float GetMouseScrollDeltaUVE() const override;
+    [[nodiscard]] bool IsKeyDown(KeyCode key) const override;
+    [[nodiscard]] bool WasKeyPressedThisFrame(KeyCode key) const override;
+    [[nodiscard]] bool WasKeyReleasedThisFrame(KeyCode key) const override;
+    [[nodiscard]] bool IsMouseButtonDown(MouseButton button) const override;
+    [[nodiscard]] bool WasMouseButtonPressedThisFrame(MouseButton button) const override;
+    [[nodiscard]] bool WasMouseButtonReleasedThisFrame(MouseButton button) const override;
+    [[nodiscard]] Math::Vector2 GetMousePosition() const override;
+    [[nodiscard]] Math::Vector2 GetMouseDelta() const override;
+    [[nodiscard]] float GetMouseScrollDelta() const override;
 
     /// Rejects malformed or over-cap binding vectors before registration or replacement; empty
     /// vectors remain valid for actions that intentionally start unbound.
-    void RegisterActionUVE(InputActionUVE&& action) override;
-    bool UnregisterActionUVE(std::string_view actionName) override;
-    bool RemapActionUVE(std::string_view actionName, std::vector<InputBindingUVE> positiveBindings,
-                        std::vector<InputBindingUVE> negativeBindings) override;
-    [[nodiscard]] bool IsActionTriggeredUVE(std::string_view actionName) const override;
-    [[nodiscard]] bool IsActionHeldUVE(std::string_view actionName) const override;
-    [[nodiscard]] bool IsActionReleasedUVE(std::string_view actionName) const override;
-    [[nodiscard]] float GetAxisValueUVE(std::string_view actionName) const override;
-    [[nodiscard]] bool HasActionUVE(std::string_view actionName) const override;
+    void RegisterAction(InputAction&& action) override;
+    bool UnregisterAction(std::string_view actionName) override;
+    bool RemapAction(std::string_view actionName, std::vector<InputBinding> positiveBindings,
+                        std::vector<InputBinding> negativeBindings) override;
+    [[nodiscard]] bool IsActionTriggered(std::string_view actionName) const override;
+    [[nodiscard]] bool IsActionHeld(std::string_view actionName) const override;
+    [[nodiscard]] bool IsActionReleased(std::string_view actionName) const override;
+    [[nodiscard]] float GetAxisValue(std::string_view actionName) const override;
+    [[nodiscard]] bool HasAction(std::string_view actionName) const override;
 
 private:
-    static constexpr std::size_t kKeyCodeCount = static_cast<std::size_t>(KeyCodeUVE::Count);
-    static constexpr std::size_t kMouseButtonCount = static_cast<std::size_t>(MouseButtonUVE::Count);
-    using GamepadSnapshotArrayUVE = std::array<GamepadStateSnapshotUVE, kMaximumGamepadCountUVE>;
-    static constexpr std::size_t kMaximumBindingsPerSideUVE = 32U;
+    static constexpr std::size_t kKeyCodeCount = static_cast<std::size_t>(KeyCode::Count);
+    static constexpr std::size_t kMouseButtonCount = static_cast<std::size_t>(MouseButton::Count);
+    using GamepadSnapshotArray = std::array<GamepadStateSnapshot, kMaximumGamepadCount>;
+    static constexpr std::size_t kMaximumBindingsPerSide = 32U;
 
-    [[nodiscard]] static bool AreBindingsValidUVE(
-        const std::vector<InputBindingUVE>& bindings) noexcept;
+    [[nodiscard]] static bool AreBindingsValid(
+        const std::vector<InputBinding>& bindings) noexcept;
 
     /// True iff any binding in `bindings` is down in the given state arrays.
-    [[nodiscard]] static bool AnyBindingDownUVE(const std::vector<InputBindingUVE>& bindings,
+    [[nodiscard]] static bool AnyBindingDown(const std::vector<InputBinding>& bindings,
                                                  const std::array<bool, kKeyCodeCount>& keyState,
                                                  const std::array<bool, kMouseButtonCount>& mouseState,
-                                                 const GamepadSnapshotArrayUVE& currentGamepadState,
-                                                 const GamepadSnapshotArrayUVE& previousGamepadState,
+                                                 const GamepadSnapshotArray& currentGamepadState,
+                                                 const GamepadSnapshotArray& previousGamepadState,
                                                  bool usePreviousGamepadSnapshot) noexcept;
-    [[nodiscard]] static float GetBindingValueUVE(const InputBindingUVE& binding,
+    [[nodiscard]] static float GetBindingValue(const InputBinding& binding,
                                                    const std::array<bool, kKeyCodeCount>& keyState,
                                                    const std::array<bool, kMouseButtonCount>& mouseState,
-                                                   const GamepadSnapshotArrayUVE& currentGamepadState,
-                                                   const GamepadSnapshotArrayUVE& previousGamepadState,
+                                                   const GamepadSnapshotArray& currentGamepadState,
+                                                   const GamepadSnapshotArray& previousGamepadState,
                                                    bool usePreviousGamepadSnapshot) noexcept;
 
-    Events::IEventSystemUVE* m_eventSystem;
-    IGamepadInputSystemUVE* m_gamepadInputSystem;
+    Events::IEventSystem* m_eventSystem;
+    IGamepadInputSystem* m_gamepadInputSystem;
 
-    // "Live" state — written by Set*StateUVE() (any thread), read only by UpdateUVE() under
+    // "Live" state — written by Set*State() (any thread), read only by Update() under
     // m_liveStateMutex.
     mutable std::mutex m_liveStateMutex;
     std::array<bool, kKeyCodeCount> m_liveKeyState{};
     std::array<bool, kMouseButtonCount> m_liveMouseButtonState{};
-    Math::Vector2UVE m_liveMousePosition{};
+    Math::Vector2 m_liveMousePosition{};
     float m_scrollDeltaAccumulator = 0.0F;
 
-    // Frame-snapshot state — written only by UpdateUVE(), read only by the query methods; both
+    // Frame-snapshot state — written only by Update(), read only by the query methods; both
     // main-thread-only by contract, so no synchronization is needed for these fields.
     std::array<bool, kKeyCodeCount> m_currentKeyState{};
     std::array<bool, kKeyCodeCount> m_previousKeyState{};
     std::array<bool, kMouseButtonCount> m_currentMouseButtonState{};
     std::array<bool, kMouseButtonCount> m_previousMouseButtonState{};
-    GamepadSnapshotArrayUVE m_currentGamepadState{};
-    GamepadSnapshotArrayUVE m_previousGamepadState{};
-    Math::Vector2UVE m_currentMousePosition{};
-    Math::Vector2UVE m_previousMousePosition{};
-    Math::Vector2UVE m_mouseDelta{};
+    GamepadSnapshotArray m_currentGamepadState{};
+    GamepadSnapshotArray m_previousGamepadState{};
+    Math::Vector2 m_currentMousePosition{};
+    Math::Vector2 m_previousMousePosition{};
+    Math::Vector2 m_mouseDelta{};
     float m_mouseScrollDelta = 0.0F;
 
-    std::unordered_map<std::string, InputActionUVE> m_actions;
+    std::unordered_map<std::string, InputAction> m_actions;
 };
 
 } // namespace UVE::Input

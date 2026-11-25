@@ -7,14 +7,14 @@
 
 namespace UVE::Physics {
 
-/// CollisionSystemUVE is the concrete, engine-standard implementation of ICollisionSystemUVE.
-/// Deliberately stateless (no members, no PIMPL) — matches CameraSystemUVE's/MeshRendererUVE's
-/// precedent for utility services that always take the IEntityManagerUVE& they operate on as an
+/// CollisionSystem is the concrete, engine-standard implementation of ICollisionSystem.
+/// Deliberately stateless (no members, no PIMPL) — matches CameraSystem's/MeshRenderer's
+/// precedent for utility services that always take the IEntityManager& they operate on as an
 /// explicit parameter rather than owning a reference to one.
-class CollisionSystemUVE final : public ICollisionSystemUVE {
+class CollisionSystem final : public ICollisionSystem {
 public:
-    [[nodiscard]] std::vector<CollisionPairUVE> DetectCollisionsUVE(
-        Scene::IEntityManagerUVE& entityManager) const override;
+    [[nodiscard]] std::vector<CollisionPair> DetectCollisions(
+        Scene::IEntityManager& entityManager) const override;
 };
 
 } // namespace UVE::Physics

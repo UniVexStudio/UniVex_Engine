@@ -12,65 +12,65 @@ namespace UVE::Editor {
 namespace {
 
 /// The keys a shortcut may use, with the names they are shown and stored by.
-struct ShortcutKeyNameUVE final {
-    EditorKeyUVE key;
+struct ShortcutKeyName final {
+    EditorKey key;
     std::string_view name;
 };
 
-constexpr std::array kShortcutKeysUVE{
-    ShortcutKeyNameUVE{EditorKeyUVE::A, "A"},           ShortcutKeyNameUVE{EditorKeyUVE::B, "B"},
-    ShortcutKeyNameUVE{EditorKeyUVE::C, "C"},           ShortcutKeyNameUVE{EditorKeyUVE::D, "D"},
-    ShortcutKeyNameUVE{EditorKeyUVE::E, "E"},           ShortcutKeyNameUVE{EditorKeyUVE::F, "F"},
-    ShortcutKeyNameUVE{EditorKeyUVE::G, "G"},           ShortcutKeyNameUVE{EditorKeyUVE::H, "H"},
-    ShortcutKeyNameUVE{EditorKeyUVE::I, "I"},           ShortcutKeyNameUVE{EditorKeyUVE::J, "J"},
-    ShortcutKeyNameUVE{EditorKeyUVE::K, "K"},           ShortcutKeyNameUVE{EditorKeyUVE::L, "L"},
-    ShortcutKeyNameUVE{EditorKeyUVE::M, "M"},           ShortcutKeyNameUVE{EditorKeyUVE::N, "N"},
-    ShortcutKeyNameUVE{EditorKeyUVE::O, "O"},           ShortcutKeyNameUVE{EditorKeyUVE::P, "P"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Q, "Q"},           ShortcutKeyNameUVE{EditorKeyUVE::R, "R"},
-    ShortcutKeyNameUVE{EditorKeyUVE::S, "S"},           ShortcutKeyNameUVE{EditorKeyUVE::T, "T"},
-    ShortcutKeyNameUVE{EditorKeyUVE::U, "U"},           ShortcutKeyNameUVE{EditorKeyUVE::V, "V"},
-    ShortcutKeyNameUVE{EditorKeyUVE::W, "W"},           ShortcutKeyNameUVE{EditorKeyUVE::X, "X"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Y, "Y"},           ShortcutKeyNameUVE{EditorKeyUVE::Z, "Z"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Digit0, "0"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit1, "1"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Digit2, "2"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit3, "3"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Digit4, "4"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit5, "5"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Digit6, "6"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit7, "7"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Digit8, "8"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit9, "9"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F1, "F1"},         ShortcutKeyNameUVE{EditorKeyUVE::F2, "F2"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F3, "F3"},         ShortcutKeyNameUVE{EditorKeyUVE::F4, "F4"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F5, "F5"},         ShortcutKeyNameUVE{EditorKeyUVE::F6, "F6"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F7, "F7"},         ShortcutKeyNameUVE{EditorKeyUVE::F8, "F8"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F9, "F9"},         ShortcutKeyNameUVE{EditorKeyUVE::F10, "F10"},
-    ShortcutKeyNameUVE{EditorKeyUVE::F11, "F11"},       ShortcutKeyNameUVE{EditorKeyUVE::F12, "F12"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Left, "Left"}, ShortcutKeyNameUVE{EditorKeyUVE::Right, "Right"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Up, "Up"},    ShortcutKeyNameUVE{EditorKeyUVE::Down, "Down"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Delete, "Delete"}, ShortcutKeyNameUVE{EditorKeyUVE::Backspace, "Backspace"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Insert, "Insert"}, ShortcutKeyNameUVE{EditorKeyUVE::Home, "Home"},
-    ShortcutKeyNameUVE{EditorKeyUVE::End, "End"},       ShortcutKeyNameUVE{EditorKeyUVE::PageUp, "PageUp"},
-    ShortcutKeyNameUVE{EditorKeyUVE::PageDown, "PageDown"}, ShortcutKeyNameUVE{EditorKeyUVE::Space, "Space"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Enter, "Enter"},   ShortcutKeyNameUVE{EditorKeyUVE::Tab, "Tab"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Comma, "Comma"},   ShortcutKeyNameUVE{EditorKeyUVE::Period, "Period"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Slash, "Slash"},   ShortcutKeyNameUVE{EditorKeyUVE::Minus, "Minus"},
-    ShortcutKeyNameUVE{EditorKeyUVE::Equal, "Equal"},   ShortcutKeyNameUVE{EditorKeyUVE::LeftBracket, "LeftBracket"},
-    ShortcutKeyNameUVE{EditorKeyUVE::RightBracket, "RightBracket"},
+constexpr std::array kShortcutKeys{
+    ShortcutKeyName{EditorKey::A, "A"},           ShortcutKeyName{EditorKey::B, "B"},
+    ShortcutKeyName{EditorKey::C, "C"},           ShortcutKeyName{EditorKey::D, "D"},
+    ShortcutKeyName{EditorKey::E, "E"},           ShortcutKeyName{EditorKey::F, "F"},
+    ShortcutKeyName{EditorKey::G, "G"},           ShortcutKeyName{EditorKey::H, "H"},
+    ShortcutKeyName{EditorKey::I, "I"},           ShortcutKeyName{EditorKey::J, "J"},
+    ShortcutKeyName{EditorKey::K, "K"},           ShortcutKeyName{EditorKey::L, "L"},
+    ShortcutKeyName{EditorKey::M, "M"},           ShortcutKeyName{EditorKey::N, "N"},
+    ShortcutKeyName{EditorKey::O, "O"},           ShortcutKeyName{EditorKey::P, "P"},
+    ShortcutKeyName{EditorKey::Q, "Q"},           ShortcutKeyName{EditorKey::R, "R"},
+    ShortcutKeyName{EditorKey::S, "S"},           ShortcutKeyName{EditorKey::T, "T"},
+    ShortcutKeyName{EditorKey::U, "U"},           ShortcutKeyName{EditorKey::V, "V"},
+    ShortcutKeyName{EditorKey::W, "W"},           ShortcutKeyName{EditorKey::X, "X"},
+    ShortcutKeyName{EditorKey::Y, "Y"},           ShortcutKeyName{EditorKey::Z, "Z"},
+    ShortcutKeyName{EditorKey::Digit0, "0"},           ShortcutKeyName{EditorKey::Digit1, "1"},
+    ShortcutKeyName{EditorKey::Digit2, "2"},           ShortcutKeyName{EditorKey::Digit3, "3"},
+    ShortcutKeyName{EditorKey::Digit4, "4"},           ShortcutKeyName{EditorKey::Digit5, "5"},
+    ShortcutKeyName{EditorKey::Digit6, "6"},           ShortcutKeyName{EditorKey::Digit7, "7"},
+    ShortcutKeyName{EditorKey::Digit8, "8"},           ShortcutKeyName{EditorKey::Digit9, "9"},
+    ShortcutKeyName{EditorKey::F1, "F1"},         ShortcutKeyName{EditorKey::F2, "F2"},
+    ShortcutKeyName{EditorKey::F3, "F3"},         ShortcutKeyName{EditorKey::F4, "F4"},
+    ShortcutKeyName{EditorKey::F5, "F5"},         ShortcutKeyName{EditorKey::F6, "F6"},
+    ShortcutKeyName{EditorKey::F7, "F7"},         ShortcutKeyName{EditorKey::F8, "F8"},
+    ShortcutKeyName{EditorKey::F9, "F9"},         ShortcutKeyName{EditorKey::F10, "F10"},
+    ShortcutKeyName{EditorKey::F11, "F11"},       ShortcutKeyName{EditorKey::F12, "F12"},
+    ShortcutKeyName{EditorKey::Left, "Left"}, ShortcutKeyName{EditorKey::Right, "Right"},
+    ShortcutKeyName{EditorKey::Up, "Up"},    ShortcutKeyName{EditorKey::Down, "Down"},
+    ShortcutKeyName{EditorKey::Delete, "Delete"}, ShortcutKeyName{EditorKey::Backspace, "Backspace"},
+    ShortcutKeyName{EditorKey::Insert, "Insert"}, ShortcutKeyName{EditorKey::Home, "Home"},
+    ShortcutKeyName{EditorKey::End, "End"},       ShortcutKeyName{EditorKey::PageUp, "PageUp"},
+    ShortcutKeyName{EditorKey::PageDown, "PageDown"}, ShortcutKeyName{EditorKey::Space, "Space"},
+    ShortcutKeyName{EditorKey::Enter, "Enter"},   ShortcutKeyName{EditorKey::Tab, "Tab"},
+    ShortcutKeyName{EditorKey::Comma, "Comma"},   ShortcutKeyName{EditorKey::Period, "Period"},
+    ShortcutKeyName{EditorKey::Slash, "Slash"},   ShortcutKeyName{EditorKey::Minus, "Minus"},
+    ShortcutKeyName{EditorKey::Equal, "Equal"},   ShortcutKeyName{EditorKey::LeftBracket, "LeftBracket"},
+    ShortcutKeyName{EditorKey::RightBracket, "RightBracket"},
 };
 
-[[nodiscard]] char LowerUVE(const char c) noexcept {
+[[nodiscard]] char Lower(const char c) noexcept {
     return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 }
 
 } // namespace
 
-bool IsShortcutKeyUVE(const int key) noexcept {
-    return std::any_of(kShortcutKeysUVE.begin(), kShortcutKeysUVE.end(),
-                       [key](const ShortcutKeyNameUVE& entry) { return static_cast<int>(entry.key) == key; });
+bool IsShortcutKey(const int key) noexcept {
+    return std::any_of(kShortcutKeys.begin(), kShortcutKeys.end(),
+                       [key](const ShortcutKeyName& entry) { return static_cast<int>(entry.key) == key; });
 }
 
-std::string FormatEditorShortcutUVE(const EditorShortcutUVE& shortcut) {
-    const auto entry = std::find_if(kShortcutKeysUVE.begin(), kShortcutKeysUVE.end(), [&](const ShortcutKeyNameUVE& e) {
+std::string FormatEditorShortcut(const EditorShortcut& shortcut) {
+    const auto entry = std::find_if(kShortcutKeys.begin(), kShortcutKeys.end(), [&](const ShortcutKeyName& e) {
         return static_cast<int>(e.key) == shortcut.key;
     });
-    if (entry == kShortcutKeysUVE.end()) {
+    if (entry == kShortcutKeys.end()) {
         return {};
     }
     std::string text;
@@ -81,12 +81,12 @@ std::string FormatEditorShortcutUVE(const EditorShortcutUVE& shortcut) {
     return text;
 }
 
-std::string DisplayEditorShortcutUVE(const EditorShortcutUVE& shortcut) {
-    std::string text = FormatEditorShortcutUVE(shortcut);
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 7> kPunctuationUVE{{
+std::string DisplayEditorShortcut(const EditorShortcut& shortcut) {
+    std::string text = FormatEditorShortcut(shortcut);
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 7> kPunctuation{{
         {"Comma", ","}, {"Period", "."}, {"Slash", "/"}, {"Minus", "-"}, {"Equal", "="},
         {"LeftBracket", "["}, {"RightBracket", "]"}}};
-    for (const auto& [name, symbol] : kPunctuationUVE) {
+    for (const auto& [name, symbol] : kPunctuation) {
         if (text.ends_with(name) && (text.size() == name.size() || text[text.size() - name.size() - 1U] == '+')) {
             text.replace(text.size() - name.size(), name.size(), symbol);
             break;
@@ -95,8 +95,8 @@ std::string DisplayEditorShortcutUVE(const EditorShortcutUVE& shortcut) {
     return text;
 }
 
-std::optional<EditorShortcutUVE> ParseEditorShortcutUVE(const std::string_view text) {
-    EditorShortcutUVE shortcut;
+std::optional<EditorShortcut> ParseEditorShortcut(const std::string_view text) {
+    EditorShortcut shortcut;
     if (text.empty()) {
         return shortcut;
     }
@@ -115,20 +115,20 @@ std::optional<EditorShortcutUVE> ParseEditorShortcutUVE(const std::string_view t
         *flag = true;
         rest.remove_prefix(plus + 1U);
     }
-    const auto entry = std::find_if(kShortcutKeysUVE.begin(), kShortcutKeysUVE.end(),
-                                    [rest](const ShortcutKeyNameUVE& e) { return e.name == rest; });
-    if (entry == kShortcutKeysUVE.end()) {
+    const auto entry = std::find_if(kShortcutKeys.begin(), kShortcutKeys.end(),
+                                    [rest](const ShortcutKeyName& e) { return e.name == rest; });
+    if (entry == kShortcutKeys.end()) {
         return std::nullopt;
     }
     shortcut.key = static_cast<int>(entry->key);
     return shortcut;
 }
 
-int ScoreFuzzyMatchUVE(const std::string_view text, const std::string_view query) {
+int ScoreFuzzyMatch(const std::string_view text, const std::string_view query) {
     std::string needle;
     for (const char c : query) {
         if (c != ' ') {
-            needle.push_back(LowerUVE(c));
+            needle.push_back(Lower(c));
         }
     }
     if (needle.empty()) {
@@ -137,7 +137,7 @@ int ScoreFuzzyMatchUVE(const std::string_view text, const std::string_view query
     std::string haystack;
     haystack.reserve(text.size());
     for (const char c : text) {
-        haystack.push_back(LowerUVE(c));
+        haystack.push_back(Lower(c));
     }
     if (haystack.starts_with(needle)) {
         return 300;

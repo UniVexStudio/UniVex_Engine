@@ -38,8 +38,8 @@ class CompileShadersTest(unittest.TestCase):
             hdr = Path(td) / "gen_spirv.h"
             compile_shaders.emit_cpp_header({"DemoVert": b"\x03\x02\x23\x07"}, hdr)
             text = hdr.read_text(encoding="utf-8")
-            self.assertIn("kDemoVertSpirvBytesUVE", text)
-            self.assertIn("kDemoVertSpirvSizeUVE = 4U", text)
+            self.assertIn("kDemoVertSpirvBytes", text)
+            self.assertIn("kDemoVertSpirvSize = 4U", text)
 
 
 if __name__ == "__main__":

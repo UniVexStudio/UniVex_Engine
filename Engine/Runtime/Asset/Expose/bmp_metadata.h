@@ -8,9 +8,9 @@
 
 namespace UVE::Asset {
 
-inline constexpr std::size_t kMaximumBmpDecodedPixelBytesUVE = 64U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumBmpDecodedPixelBytes = 64U * 1024U * 1024U;
 
-struct BmpRgba8ImageUVE final {
+struct BmpRgba8Image final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::vector<std::byte> pixels;
@@ -20,7 +20,7 @@ struct BmpRgba8ImageUVE final {
 /// BI_RGB, BI_RLE4, BI_RLE8, the supported BI_BITFIELDS forms, or BI_ALPHABITFIELDS, and bottom-up or top-down rows into copied top-down RGBA8 pixels with source alpha only for validated exact-mask BGRA bitfields.
 /// Unsupported headers, malformed bounds, oversized dimensions, and allocation failures return false
 /// without publishing partial output.
-[[nodiscard]] bool DecodeBmpRgba8ImageUVE(
-    const std::vector<std::byte>& bytes, BmpRgba8ImageUVE& outImage) noexcept;
+[[nodiscard]] bool DecodeBmpRgba8Image(
+    const std::vector<std::byte>& bytes, BmpRgba8Image& outImage) noexcept;
 
 } // namespace UVE::Asset

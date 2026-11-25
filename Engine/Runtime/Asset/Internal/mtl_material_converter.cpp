@@ -20,7 +20,7 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] std::string_view NextTokenUVE(std::string_view& rest) noexcept {
+[[nodiscard]] std::string_view NextToken(std::string_view& rest) noexcept {
     while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
         rest.remove_prefix(1U);
     }
@@ -30,7 +30,7 @@ namespace {
     return token;
 }
 
-[[nodiscard]] bool ParseDirectiveUVE(std::string_view line, std::string_view& outDirective) noexcept {
+[[nodiscard]] bool ParseDirective(std::string_view line, std::string_view& outDirective) noexcept {
     const std::size_t commentStart = line.find('#');
     if (commentStart != std::string_view::npos) {
         line = line.substr(0U, commentStart);
@@ -39,28 +39,28 @@ namespace {
         line.remove_prefix(1U);
     }
     std::string_view rest = line;
-    outDirective = NextTokenUVE(rest);
+    outDirective = NextToken(rest);
     return !outDirective.empty();
 }
 
-[[nodiscard]] float AverageVectorUVE(const std::array<float, 3U>& value) noexcept {
+[[nodiscard]] float AverageVector(const std::array<float, 3U>& value) noexcept {
     return (value[0] + value[1] + value[2]) / 3.0F;
 }
 
-[[nodiscard]] bool IsUnitIntervalUVE(const float value) noexcept {
+[[nodiscard]] bool IsUnitInterval(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
 }
 
 } // namespace
 
-bool ConvertMtlMaterialUVE(const std::string_view source, MaterialAssetUVE& outMaterial) {
-    if (source.empty() || source.size() > kMaximumMtlMaterialSourceBytesUVE ||
+bool ConvertMtlMaterial(const std::string_view source, MaterialAsset& outMaterial) {
+    if (source.empty() || source.size() > kMaximumMtlMaterialSourceBytes ||
         source.contains('\0')) {
         return false;
     }
 
     try {
-        MaterialAssetUVE candidate;
+        MaterialAsset candidate;
         bool hasMaterialName = false;
         std::size_t lineStart = 0U;
         while (lineStart <= source.size()) {
@@ -81,52 +81,52 @@ bool ConvertMtlMaterialUVE(const std::string_view source, MaterialAssetUVE& outM
 
             if (!line.empty()) {
                 std::string_view directive;
-                if (!ParseDirectiveUVE(line, directive)) {
+                if (!ParseDirective(line, directive)) {
                     return false;
                 }
                 if (directive == "newmtl") {
                     std::string_view rest = line;
-                    static_cast<void>(NextTokenUVE(rest));
+                    static_cast<void>(NextToken(rest));
                     if (hasMaterialName) {
                         return false;
                     }
-                    if (NextTokenUVE(rest).empty() || !NextTokenUVE(rest).empty()) {
+                    if (NextToken(rest).empty() || !NextToken(rest).empty()) {
                         return false;
                     }
                     hasMaterialName = true;
                 } else if (!hasMaterialName) {
                     return false;
                 } else if (directive.rfind("map_", 0U) == 0U) {
-                    MtlTextureMapUVE map;
-                    if (!ParseMtlTextureMapUVE(line, map)) {
+                    MtlTextureMap map;
+                    if (!ParseMtlTextureMap(line, map)) {
                         return false;
                     }
-                    // MaterialAssetUVE stores only AssetGuidUVE slots. The validated source path
+                    // MaterialAsset stores only AssetGuid slots. The validated source path
                     // remains syntax-only until an explicit texture resolver/import policy exists.
                 } else {
-                    MtlMaterialPropertyUVE property;
-                    if (!ParseMtlMaterialPropertyUVE(line, property)) {
+                    MtlMaterialProperty property;
+                    if (!ParseMtlMaterialProperty(line, property)) {
                         return false;
                     }
                     if (directive == "Kd") {
                         // MTL colors are display-authored (sRGB); the material stores linear.
-                        candidate.albedoColor = Math::ColorFromDisplayUVE(Math::Vector3UVE{
+                        candidate.albedoColor = Math::ColorFromDisplay(Math::Vector3{
                             property.vectorValue[0], property.vectorValue[1], property.vectorValue[2]});
                     } else if (directive == "Ke") {
-                        candidate.emissiveColor = Math::ColorFromDisplayUVE(Math::Vector3UVE{
+                        candidate.emissiveColor = Math::ColorFromDisplay(Math::Vector3{
                             property.vectorValue[0], property.vectorValue[1], property.vectorValue[2]});
                     } else if (directive == "Ks") {
-                        candidate.metallic = std::clamp(AverageVectorUVE(property.vectorValue), 0.0F, 1.0F);
+                        candidate.metallic = std::clamp(AverageVector(property.vectorValue), 0.0F, 1.0F);
                     } else if (directive == "Ns") {
                         const float normalized = std::clamp(property.scalarValue, 0.0F, 1000.0F) / 1000.0F;
                         candidate.roughness = std::clamp(1.0F - normalized, 0.04F, 1.0F);
                     } else if (directive == "d") {
-                        if (!IsUnitIntervalUVE(property.scalarValue)) {
+                        if (!IsUnitInterval(property.scalarValue)) {
                             return false;
                         }
                         candidate.isTransparent = property.scalarValue < 1.0F;
                     } else if (directive == "Tr") {
-                        if (!IsUnitIntervalUVE(property.scalarValue)) {
+                        if (!IsUnitInterval(property.scalarValue)) {
                             return false;
                         }
                         candidate.isTransparent = property.scalarValue > 0.0F;
@@ -154,7 +154,7 @@ namespace {
 
 /// Reads the single token after `directive` on a comment-stripped MTL line. Used for `newmtl`
 /// names and map directives, which both take one required argument.
-[[nodiscard]] std::string_view TrimmedLineUVE(std::string_view line) noexcept {
+[[nodiscard]] std::string_view TrimmedLine(std::string_view line) noexcept {
     const std::size_t commentStart = line.find('#');
     if (commentStart != std::string_view::npos) {
         line = line.substr(0U, commentStart);
@@ -171,7 +171,7 @@ namespace {
 /// `map_Bump`, `map_bump`, `bump`, `norm` and `map_normal` all describe the tangent-space normal in
 /// the wild; anything else is matched by name. The alias table is deliberately small and explicit
 /// rather than a fuzzy match, so a typo cannot silently claim a slot.
-[[nodiscard]] std::string* TextureFileSlotUVE(MtlLibraryMaterialUVE& material, const std::string_view directive) {
+[[nodiscard]] std::string* TextureFileSlot(MtlLibraryMaterial& material, const std::string_view directive) {
     if (directive == "map_Kd") {
         return &material.albedoTextureFile;
     }
@@ -193,9 +193,9 @@ namespace {
 
 } // namespace
 
-bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibrary) {
-    outLibrary = MtlLibraryUVE{};
-    if (source.empty() || source.size() > kMaximumMtlLibrarySourceBytesUVE || source.contains('\0')) {
+bool ConvertMtlLibrary(const std::string_view source, MtlLibrary& outLibrary) {
+    outLibrary = MtlLibrary{};
+    if (source.empty() || source.size() > kMaximumMtlLibrarySourceBytes || source.contains('\0')) {
         return false;
     }
 
@@ -209,16 +209,16 @@ bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibra
             if (!inBlock) {
                 return;
             }
-            MaterialAssetUVE converted;
-            const bool convertedOk = ConvertMtlMaterialUVE(block, converted);
+            MaterialAsset converted;
+            const bool convertedOk = ConvertMtlMaterial(block, converted);
             if (!convertedOk) {
                 ++outLibrary.skippedMaterials;
             } else {
-                MtlLibraryMaterialUVE entry;
+                MtlLibraryMaterial entry;
                 entry.name = materialName;
                 entry.material = std::move(converted);
                 for (const auto& [slotDirective, file] : textureFiles) {
-                    if (std::string* const slot = TextureFileSlotUVE(entry, slotDirective); slot != nullptr) {
+                    if (std::string* const slot = TextureFileSlot(entry, slotDirective); slot != nullptr) {
                         // First occurrence wins, matching how a texture-map list is authored: the
                         // later duplicate of one slot is an authoring mistake, not an override.
                         if (slot->empty()) {
@@ -238,13 +238,13 @@ bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibra
             const std::string_view rawLine =
                 source.substr(lineStart, lineEnd == std::string_view::npos ? std::string_view::npos
                                                                            : lineEnd - lineStart);
-            const std::string_view line = TrimmedLineUVE(rawLine);
+            const std::string_view line = TrimmedLine(rawLine);
             if (!line.empty()) {
                 std::string_view rest = line;
-                const std::string_view directive = NextTokenUVE(rest);
+                const std::string_view directive = NextToken(rest);
                 if (directive == "newmtl") {
                     if (outLibrary.materials.size() + outLibrary.skippedMaterials >=
-                        kMaximumMtlLibraryMaterialsUVE) {
+                        kMaximumMtlLibraryMaterials) {
                         // Bounded work: the blocks past the cap are not read into a material at all.
                         // Stopping here keeps every material before the cap, which is strictly more
                         // useful than dropping the whole library because it was large.
@@ -253,7 +253,7 @@ bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibra
                         return true;
                     }
                     flushBlock();
-                    materialName = std::string(TrimmedLineUVE(rest));
+                    materialName = std::string(TrimmedLine(rest));
                     if (materialName.empty()) {
                         return false;
                     }
@@ -267,15 +267,15 @@ bool ConvertMtlLibraryUVE(const std::string_view source, MtlLibraryUVE& outLibra
                     std::string_view blockLine = line;
                     std::string_view blockDirective = directive;
                     if (directive == "bump" || directive == "norm") {
-                        remapped = "map_Bump " + std::string(TrimmedLineUVE(rest));
+                        remapped = "map_Bump " + std::string(TrimmedLine(rest));
                         blockLine = remapped;
                         blockDirective = "map_Bump";
                     }
                     block.append(blockLine.data(), blockLine.size());
                     block.push_back('\n');
                     if (blockDirective.rfind("map_", 0U) == 0U) {
-                        MtlTextureMapUVE map;
-                        if (ParseMtlTextureMapUVE(blockLine, map)) {
+                        MtlTextureMap map;
+                        if (ParseMtlTextureMap(blockLine, map)) {
                             textureFiles.emplace_back(std::string(blockDirective), map.textureReference);
                         }
                         // A map line that does not parse is left for the single-material converter

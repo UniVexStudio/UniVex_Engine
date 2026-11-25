@@ -13,7 +13,7 @@
 namespace UVE::Render::Shader::Detail {
 
 /// One entry read back from the on-disk GL program-binary cache (Increment 21).
-struct CacheEntryUVE {
+struct CacheEntry {
     std::uint32_t glBinaryFormat = 0;
     std::vector<std::byte> payload;
 };
@@ -23,7 +23,7 @@ struct CacheEntryUVE {
 /// engine/platform's own `#if defined(...)` idiom. Never touches the filesystem itself (no
 /// existence check, no directory creation) — purely a deterministic path computation, so it's
 /// trivially unit-testable.
-[[nodiscard]] std::filesystem::path GetCacheFilePathUVE(const std::filesystem::path& cachePath,
+[[nodiscard]] std::filesystem::path GetCacheFilePath(const std::filesystem::path& cachePath,
                                                          std::uint64_t contentHash);
 
 /// Reads and validates the small binary envelope this cache uses (an 8-byte magic + a
@@ -31,13 +31,13 @@ struct CacheEntryUVE {
 /// engine's `.uve*` asset envelope — this is pure derived data, never a shippable asset). Returns
 /// `std::nullopt` (never throws) for a missing file, a bad magic/version, or a truncated payload —
 /// every one of these is an ordinary cache miss to the caller, not a hard error.
-[[nodiscard]] std::optional<CacheEntryUVE> ReadCacheEntryUVE(const std::filesystem::path& filePath);
+[[nodiscard]] std::optional<CacheEntry> ReadCacheEntry(const std::filesystem::path& filePath);
 
 /// Writes `payload` (tagged with `glBinaryFormat`, the backend-reported binary format
-/// IRenderDeviceUVE::GetPipelineBinaryUVE() produced it with) to `filePath`, creating parent
+/// IRenderDevice::GetPipelineBinary() produced it with) to `filePath`, creating parent
 /// directories as needed. Returns false (logging at WARNING, not ERROR — a cache write failure is
 /// never fatal, it just means the next startup recompiles from source) on any I/O failure.
-[[nodiscard]] bool WriteCacheEntryUVE(const std::filesystem::path& filePath, std::uint32_t glBinaryFormat,
+[[nodiscard]] bool WriteCacheEntry(const std::filesystem::path& filePath, std::uint32_t glBinaryFormat,
                                       std::span<const std::byte> payload);
 
 } // namespace UVE::Render::Shader::Detail

@@ -7,12 +7,12 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUISliderComponentValidUVE(const UISliderComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUISliderSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUISliderSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUISliderSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUISliderSizePixelsUVE && std::isfinite(component.value) &&
+[[nodiscard]] bool IsUISliderComponentValid(const UISliderComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUISliderSizePixels &&
+           component.rect.size.x <= kMaximumUISliderSizePixels &&
+           component.rect.size.y >= kMinimumUISliderSizePixels &&
+           component.rect.size.y <= kMaximumUISliderSizePixels && std::isfinite(component.value) &&
            std::isfinite(component.minValue) && std::isfinite(component.maxValue) &&
            component.minValue <= component.maxValue && std::isfinite(component.step) && component.step >= 0.0F &&
            std::isfinite(component.thumbWidth) && component.thumbWidth >= 0.0F &&
@@ -23,15 +23,15 @@ namespace UVE::Scene {
            std::isfinite(component.thumbColor.z);
 }
 
-UISliderComponentUVE SanitizeUISliderComponentUVE(const UISliderComponentUVE& component) noexcept {
-    UISliderComponentUVE out = component;
-    if (!Math::IsFiniteUVE(out.rect)) {
-        out.rect = Math::RectUVE{{0.0F, 0.0F}, {200.0F, 24.0F}};
+UISliderComponent SanitizeUISliderComponent(const UISliderComponent& component) noexcept {
+    UISliderComponent out = component;
+    if (!Math::IsFinite(out.rect)) {
+        out.rect = Math::Rect{{0.0F, 0.0F}, {200.0F, 24.0F}};
     } else {
-        out.rect.size.x = std::clamp(out.rect.size.x, kMinimumUISliderSizePixelsUVE,
-                                     kMaximumUISliderSizePixelsUVE);
-        out.rect.size.y = std::clamp(out.rect.size.y, kMinimumUISliderSizePixelsUVE,
-                                     kMaximumUISliderSizePixelsUVE);
+        out.rect.size.x = std::clamp(out.rect.size.x, kMinimumUISliderSizePixels,
+                                     kMaximumUISliderSizePixels);
+        out.rect.size.y = std::clamp(out.rect.size.y, kMinimumUISliderSizePixels,
+                                     kMaximumUISliderSizePixels);
     }
     if (!std::isfinite(out.minValue)) {
         out.minValue = 0.0F;
@@ -42,11 +42,11 @@ UISliderComponentUVE SanitizeUISliderComponentUVE(const UISliderComponentUVE& co
     out.step = (std::isfinite(out.step) && out.step >= 0.0F) ? out.step : 0.0F;
     out.thumbWidth =
         (std::isfinite(out.thumbWidth) && out.thumbWidth >= 0.0F) ? out.thumbWidth : 12.0F;
-    out.value = SnapAndClampUISliderValueUVE(out, out.value);
+    out.value = SnapAndClampUISliderValue(out, out.value);
     return out;
 }
 
-float SnapAndClampUISliderValueUVE(const UISliderComponentUVE& component,
+float SnapAndClampUISliderValue(const UISliderComponent& component,
                                    const float rawValue) noexcept {
     if (!std::isfinite(component.minValue) || !std::isfinite(component.maxValue) ||
         component.maxValue < component.minValue) {
@@ -63,8 +63,8 @@ float SnapAndClampUISliderValueUVE(const UISliderComponentUVE& component,
     return v;
 }
 
-float ResolveUISliderNormalizedRatioUVE(const UISliderComponentUVE& component) noexcept {
-    if (!IsUISliderComponentValidUVE(component)) {
+float ResolveUISliderNormalizedRatio(const UISliderComponent& component) noexcept {
+    if (!IsUISliderComponentValid(component)) {
         return 0.0F;
     }
     const float span = component.maxValue - component.minValue;
@@ -75,9 +75,9 @@ float ResolveUISliderNormalizedRatioUVE(const UISliderComponentUVE& component) n
     return std::clamp((clamped - component.minValue) / span, 0.0F, 1.0F);
 }
 
-float ResolveUISliderValueFromPointerXUVE(const UISliderComponentUVE& component,
+float ResolveUISliderValueFromPointerX(const UISliderComponent& component,
                                           const float pointerXPixels) noexcept {
-    if (!IsUISliderComponentValidUVE(component) || !std::isfinite(pointerXPixels)) {
+    if (!IsUISliderComponentValid(component) || !std::isfinite(pointerXPixels)) {
         return component.minValue;
     }
     const float thumbW = std::min(component.rect.size.x, std::max(0.0F, component.thumbWidth));
@@ -88,10 +88,10 @@ float ResolveUISliderValueFromPointerXUVE(const UISliderComponentUVE& component,
     const float t = std::clamp(
         ((pointerXPixels - component.rect.position.x) - thumbW * 0.5F) / travel, 0.0F, 1.0F);
     const float raw = component.minValue + (component.maxValue - component.minValue) * t;
-    return SnapAndClampUISliderValueUVE(component, raw);
+    return SnapAndClampUISliderValue(component, raw);
 }
 
-void ResetUISliderRuntimeStateUVE(UISliderComponentUVE& component) noexcept {
+void ResetUISliderRuntimeState(UISliderComponent& component) noexcept {
     component.isHovered = false;
     component.isDragging = false;
     component.wasChangedThisFrame = false;

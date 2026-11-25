@@ -10,19 +10,19 @@
 
 namespace UVE::Pack {
 
-struct ProjectPackOptionsUVE final {
-    /// Path to the project's `.uvproject` package (see Platform::EditorProjectPackageCodecUVE).
+struct ProjectPackOptions final {
+    /// Path to the project's `.uvproject` package (see Platform::EditorProjectPackageCodec).
     std::filesystem::path projectFile;
     /// Path to the already-built `uve_runtime` executable to copy into the distributable folder.
     std::filesystem::path runtimeExecutablePath;
     /// Destination folder for the packaged, distributable project. Created if it does not exist;
     /// must be empty or not yet exist (this is a "produce a fresh distributable" tool, not an
-    /// incremental updater - see ProjectPackagerUVE::PackUVE's own doc comment).
+    /// incremental updater - see ProjectPackager::Pack's own doc comment).
     std::filesystem::path outputDirectory;
-    std::optional<CookTargetUVE> cookTarget;
+    std::optional<CookTarget> cookTarget;
 };
 
-enum class ProjectPackCodeUVE : std::uint8_t {
+enum class ProjectPackCode : std::uint8_t {
     Success = 0,
     InvalidProjectFile,
     NoStartupSceneConfigured,
@@ -33,18 +33,18 @@ enum class ProjectPackCodeUVE : std::uint8_t {
     CopyFailed,
 };
 
-struct ProjectPackResultUVE final {
-    ProjectPackCodeUVE code = ProjectPackCodeUVE::InvalidProjectFile;
+struct ProjectPackResult final {
+    ProjectPackCode code = ProjectPackCode::InvalidProjectFile;
     std::string message;
 
-    [[nodiscard]] bool IsSuccessUVE() const noexcept { return code == ProjectPackCodeUVE::Success; }
+    [[nodiscard]] bool IsSuccess() const noexcept { return code == ProjectPackCode::Success; }
 };
 
 /// Roadmap item #7's minimal packaging/export pipeline: produces one self-contained, runnable
 /// distributable folder from an authored project - exactly the roadmap's own stated bar ("copy the
 /// runtime binary + content folder + a manifest naming the startup scene into one distributable
 /// folder"). No new manifest format is invented: the project's own `.uvproject` package (already
-/// real, tested, and now carrying `startupScenePath` - see EditorProjectPackageUVE) is copied
+/// real, tested, and now carrying `startupScenePath` - see EditorProjectPackage) is copied
 /// verbatim alongside the content it references, so every relative path inside it still resolves
 /// unchanged in the copy. The result is directly runnable in place:
 /// `<outputDirectory>/uve_runtime --project <outputDirectory>/<projectFile's own filename>`.
@@ -53,9 +53,9 @@ struct ProjectPackResultUVE final {
 /// asset stripping/optimization, no content-database pruning to only-referenced assets, no
 /// platform cross-compilation (the copied binary is whatever was already built for the host
 /// platform), no installer/archive creation - a plain folder is the deliverable.
-class ProjectPackagerUVE final {
+class ProjectPackager final {
 public:
-    [[nodiscard]] static ProjectPackResultUVE PackUVE(const ProjectPackOptionsUVE& options);
+    [[nodiscard]] static ProjectPackResult Pack(const ProjectPackOptions& options);
 };
 
 } // namespace UVE::Pack

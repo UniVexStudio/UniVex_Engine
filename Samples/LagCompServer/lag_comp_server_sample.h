@@ -6,7 +6,7 @@
 // the whole 487 stack firing at sample scale:
 //
 //   record:  the server numbers its lag snapshots with the ticks its prediction layer
-//            applied (ShooterViewTickUVE's no-mapping-table contract), filling every tick;
+//            applied (ShooterViewTick's no-mapping-table contract), filling every tick;
 //   lag:     the bot pumps its prediction stream every 10th server tick, so its acked view
 //            trails the server by ~10-20 ticks while the victim walks on;
 //   shots:   each tick the bot fires a shot intent (stale view tick + fire fraction):
@@ -19,7 +19,7 @@
 // Transports are loopback (in-process, deterministic, no ports and no clock but the sim's).
 // The victim never dies (10k health): the story is about saved hits, not kill handling.
 //
-// RunLagCompServerSampleUVE() runs the whole story synchronously and answers a verdict:
+// RunLagCompServerSample() runs the whole story synchronously and answers a verdict:
 // success plus statistics, or the list of violated invariants. The binary prints the log
 // and exits by the verdict; the test suite runs it silent and asserts green.
 //
@@ -31,7 +31,7 @@
 
 namespace UVE::Samples {
 
-struct LagCompServerSampleConfigUVE final {
+struct LagCompServerSampleConfig final {
     /// Fixed server ticks to run. The victim crosses the turret's overlap window around
     /// tick 80 and exits ray range around tick 347, so runs below ~360 ticks fail the
     /// checks that need both edges (shot saves need the window, ray saves the exit).
@@ -40,7 +40,7 @@ struct LagCompServerSampleConfigUVE final {
     std::function<void(const std::string&)> log;
 };
 
-struct LagCompServerSampleStatsUVE final {
+struct LagCompServerSampleStats final {
     std::uint64_t ticks = 0U;
     /// Ticks the bot fired (every tick once the server applied anything).
     std::uint64_t shotsFired = 0U;
@@ -66,13 +66,13 @@ struct LagCompServerSampleStatsUVE final {
     float victimHealth = 0.0F;
 };
 
-struct LagCompServerSampleResultUVE final {
+struct LagCompServerSampleResult final {
     bool success = false;
     std::vector<std::string> failures;
-    LagCompServerSampleStatsUVE stats;
+    LagCompServerSampleStats stats;
 };
 
-[[nodiscard]] LagCompServerSampleResultUVE RunLagCompServerSampleUVE(
-    const LagCompServerSampleConfigUVE& config = LagCompServerSampleConfigUVE{});
+[[nodiscard]] LagCompServerSampleResult RunLagCompServerSample(
+    const LagCompServerSampleConfig& config = LagCompServerSampleConfig{});
 
 } // namespace UVE::Samples

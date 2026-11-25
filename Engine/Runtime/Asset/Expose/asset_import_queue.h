@@ -11,26 +11,26 @@
 namespace UVE::Asset {
 
 /// Engine-standard deterministic v1 import scheduler. It calls the already-registered generic
-/// IAssetImporterUVE implementation synchronously from TickUVE(), with no hidden worker jobs or
-/// automatic filesystem watches. Thread-safe queue access; callers still control when TickUVE()
-/// runs, and EngineCoreUVE invokes it once from the main update pipeline.
-class AssetImportQueueUVE final : public IAssetImportQueueUVE {
+/// IAssetImporter implementation synchronously from Tick(), with no hidden worker jobs or
+/// automatic filesystem watches. Thread-safe queue access; callers still control when Tick()
+/// runs, and EngineCore invokes it once from the main update pipeline.
+class AssetImportQueue final : public IAssetImportQueue {
 public:
-    AssetImportQueueUVE(IAssetImporterUVE& importer, IAssetDatabaseUVE& assetDatabase,
-                        IDerivedArtifactCacheUVE& derivedArtifactCache);
-    ~AssetImportQueueUVE() override;
+    AssetImportQueue(IAssetImporter& importer, IAssetDatabase& assetDatabase,
+                        IDerivedArtifactCache& derivedArtifactCache);
+    ~AssetImportQueue() override;
 
-    AssetImportQueueUVE(const AssetImportQueueUVE&) = delete;
-    AssetImportQueueUVE& operator=(const AssetImportQueueUVE&) = delete;
+    AssetImportQueue(const AssetImportQueue&) = delete;
+    AssetImportQueue& operator=(const AssetImportQueue&) = delete;
 
-    [[nodiscard]] std::optional<AssetImportJobIdUVE> EnqueueUVE(AssetImportRequestUVE request) override;
-    [[nodiscard]] bool TickUVE() override;
-    [[nodiscard]] bool RetryUVE(AssetImportJobIdUVE id) override;
-    [[nodiscard]] std::vector<AssetImportJobUVE> GetJobsUVE() const override;
+    [[nodiscard]] std::optional<AssetImportJobId> Enqueue(AssetImportRequest request) override;
+    [[nodiscard]] bool Tick() override;
+    [[nodiscard]] bool Retry(AssetImportJobId id) override;
+    [[nodiscard]] std::vector<AssetImportJob> GetJobs() const override;
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Asset

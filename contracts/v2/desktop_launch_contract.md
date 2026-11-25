@@ -30,7 +30,7 @@ The working directory for launch is `<installRoot>` so relative `prism_assets/`,
 
 UniVex Hub (`uve_hub` / `uve_hub.exe`) exposes:
 
-- `--version`: prints `kHubVersionUVE` and exits `0`.
+- `--version`: prints `kHubVersion` and exits `0`.
 - `--engine-root <dir>`: treats `<dir>` as a local development engine build (reading `engine.json` or probing `uve_editor --version`).
 - `--install-package <file.uvpackage>`: installs an offline engine package (verifying `<file>.sha256` if present) and exits.
 - `--project-registry <file>` / `--settings <file>`: overrides per-user registry/settings paths for isolated testing.

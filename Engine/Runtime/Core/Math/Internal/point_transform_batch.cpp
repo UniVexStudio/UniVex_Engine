@@ -11,15 +11,15 @@
 namespace UVE::Math {
 namespace {
 #if UVE_POINT_BATCH_SSE2
-void Sse2UVE(const Matrix4x4UVE &matrix, std::span<const Vector3UVE> input,
-             std::span<Vector3UVE> output) noexcept {
+void Sse2(const Matrix4x4 &matrix, std::span<const Vector3> input,
+             std::span<Vector3> output) noexcept {
     // Two output rows per lane pair; scalar field loads avoid overreading Vector3 or requiring alignment.
     const auto cx = _mm_set_pd(matrix.m[1][0], matrix.m[0][0]);
     const auto cy = _mm_set_pd(matrix.m[1][1], matrix.m[0][1]);
     const auto cz = _mm_set_pd(matrix.m[1][2], matrix.m[0][2]);
     const auto translation = _mm_set_pd(matrix.m[1][3], matrix.m[0][3]);
     for (std::size_t i = 0; i < input.size(); ++i) {
-        const Vector3UVE point = input[i];
+        const Vector3 point = input[i];
         const double x = point.x, y = point.y, z = point.z;
         auto xy = _mm_mul_pd(cx, _mm_set1_pd(x));
         xy = _mm_add_pd(xy, _mm_mul_pd(cy, _mm_set1_pd(y)));
@@ -36,39 +36,39 @@ void Sse2UVE(const Matrix4x4UVE &matrix, std::span<const Vector3UVE> input,
 }
 #endif
 } // namespace
-PointTransformBackendUVE GetPointTransformBackendUVE() noexcept {
+PointTransformBackend GetPointTransformBackend() noexcept {
 #if UVE_POINT_BATCH_SSE2
-    return PointTransformBackendUVE::Sse2;
+    return PointTransformBackend::Sse2;
 #else
-    return PointTransformBackendUVE::Scalar;
+    return PointTransformBackend::Scalar;
 #endif
 }
-bool TryTransformPointsUVE(const Matrix4x4UVE &matrix, std::span<const Vector3UVE> input,
-                           std::span<Vector3UVE> output, PointTransformPathUVE path) noexcept {
-    if (path != PointTransformPathUVE::Automatic && path != PointTransformPathUVE::Scalar &&
-        path != PointTransformPathUVE::Simd)
+bool TryTransformPoints(const Matrix4x4 &matrix, std::span<const Vector3> input,
+                           std::span<Vector3> output, PointTransformPath path) noexcept {
+    if (path != PointTransformPath::Automatic && path != PointTransformPath::Scalar &&
+        path != PointTransformPath::Simd)
         return false;
-    if (path == PointTransformPathUVE::Simd &&
-        GetPointTransformBackendUVE() == PointTransformBackendUVE::Scalar)
+    if (path == PointTransformPath::Simd &&
+        GetPointTransformBackend() == PointTransformBackend::Scalar)
         return false;
     if (input.size() != output.size())
         return false;
     if (input.empty())
         return true;
     if (input.data() != output.data()) {
-        const std::less<const Vector3UVE *> less;
+        const std::less<const Vector3 *> less;
         if (less(input.data(), output.data() + output.size()) &&
             less(output.data(), input.data() + input.size()))
             return false;
     }
 #if UVE_POINT_BATCH_SSE2
-    if (path != PointTransformPathUVE::Scalar) {
-        Sse2UVE(matrix, input, output);
+    if (path != PointTransformPath::Scalar) {
+        Sse2(matrix, input, output);
         return true;
     }
 #endif
     for (std::size_t i = 0; i < input.size(); ++i)
-        output[i] = TransformPointUVE(matrix, input[i]);
+        output[i] = TransformPoint(matrix, input[i]);
     return true;
 }
 } // namespace UVE::Math

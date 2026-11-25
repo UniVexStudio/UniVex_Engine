@@ -11,18 +11,18 @@
 namespace UVE::Core::Tests {
 namespace {
 
-using Clock = FramePacingDecisionUVE::Clock;
+using Clock = FramePacingDecision::Clock;
 
-TEST(FramePacingUVETest, SelectsFocusedAndUnfocusedCapsAndLeavesHeadlessRuntimeUncapped) {
-    EXPECT_EQ(SelectFrameRateCapUVE(true, true, 60U, 15U), 60U);
-    EXPECT_EQ(SelectFrameRateCapUVE(true, false, 60U, 15U), 15U);
-    EXPECT_EQ(SelectFrameRateCapUVE(false, true, 60U, 15U), 0U);
+TEST(FramePacingTest, SelectsFocusedAndUnfocusedCapsAndLeavesHeadlessRuntimeUncapped) {
+    EXPECT_EQ(SelectFrameRateCap(true, true, 60U, 15U), 60U);
+    EXPECT_EQ(SelectFrameRateCap(true, false, 60U, 15U), 15U);
+    EXPECT_EQ(SelectFrameRateCap(false, true, 60U, 15U), 0U);
 }
 
-TEST(FramePacingUVETest, FirstFrameEstablishesPeriodWithoutSleeping) {
+TEST(FramePacingTest, FirstFrameEstablishesPeriodWithoutSleeping) {
     const Clock::time_point now{};
-    const FramePacingDecisionUVE decision =
-        ComputeFramePacingDecisionUVE(60U, 0U, std::nullopt, now);
+    const FramePacingDecision decision =
+        ComputeFramePacingDecision(60U, 0U, std::nullopt, now);
 
     EXPECT_EQ(decision.frameRateCap, 60U);
     EXPECT_EQ(decision.framePeriod,
@@ -30,31 +30,31 @@ TEST(FramePacingUVETest, FirstFrameEstablishesPeriodWithoutSleeping) {
     EXPECT_FALSE(decision.sleepUntil.has_value());
 }
 
-TEST(FramePacingUVETest, WaitsUntilTheSameCapDeadlineButNotAtOrAfterIt) {
+TEST(FramePacingTest, WaitsUntilTheSameCapDeadlineButNotAtOrAfterIt) {
     const Clock::time_point start{};
     const auto period = std::chrono::duration_cast<Clock::duration>(
         std::chrono::duration<double>{1.0 / 60.0});
     const Clock::time_point deadline = start + period;
 
-    const FramePacingDecisionUVE early = ComputeFramePacingDecisionUVE(
+    const FramePacingDecision early = ComputeFramePacingDecision(
         60U, 60U, deadline, start + std::chrono::milliseconds{5});
     ASSERT_TRUE(early.sleepUntil.has_value());
     EXPECT_EQ(*early.sleepUntil, deadline);
 
-    const FramePacingDecisionUVE onTime =
-        ComputeFramePacingDecisionUVE(60U, 60U, deadline, deadline);
+    const FramePacingDecision onTime =
+        ComputeFramePacingDecision(60U, 60U, deadline, deadline);
     EXPECT_FALSE(onTime.sleepUntil.has_value());
 
-    const FramePacingDecisionUVE late = ComputeFramePacingDecisionUVE(
+    const FramePacingDecision late = ComputeFramePacingDecision(
         60U, 60U, deadline, deadline + std::chrono::milliseconds{1});
     EXPECT_FALSE(late.sleepUntil.has_value());
 }
 
-TEST(FramePacingUVETest, CapChangeStartsANewPacingWindowInsteadOfUsingStaleDeadline) {
+TEST(FramePacingTest, CapChangeStartsANewPacingWindowInsteadOfUsingStaleDeadline) {
     const Clock::time_point start{};
     const Clock::time_point staleDeadline = start + std::chrono::seconds{1};
 
-    const FramePacingDecisionUVE decision = ComputeFramePacingDecisionUVE(
+    const FramePacingDecision decision = ComputeFramePacingDecision(
         30U, 60U, staleDeadline, start + std::chrono::milliseconds{1});
 
     EXPECT_EQ(decision.frameRateCap, 30U);
@@ -63,17 +63,17 @@ TEST(FramePacingUVETest, CapChangeStartsANewPacingWindowInsteadOfUsingStaleDeadl
     EXPECT_FALSE(decision.sleepUntil.has_value());
 }
 
-TEST(FramePacingUVETest, ZeroOrInvalidCapDisablesPacing) {
+TEST(FramePacingTest, ZeroOrInvalidCapDisablesPacing) {
     const Clock::time_point now{};
     const Clock::time_point deadline = now + std::chrono::seconds{1};
 
-    const FramePacingDecisionUVE uncapped = ComputeFramePacingDecisionUVE(0U, 60U, deadline, now);
+    const FramePacingDecision uncapped = ComputeFramePacingDecision(0U, 60U, deadline, now);
     EXPECT_EQ(uncapped.frameRateCap, 0U);
     EXPECT_EQ(uncapped.framePeriod, Clock::duration{});
     EXPECT_FALSE(uncapped.sleepUntil.has_value());
 
-    const FramePacingDecisionUVE invalid = ComputeFramePacingDecisionUVE(
-        kMaximumFrameRateCapUVE + 1U, 0U, std::nullopt, now);
+    const FramePacingDecision invalid = ComputeFramePacingDecision(
+        kMaximumFrameRateCap + 1U, 0U, std::nullopt, now);
     EXPECT_EQ(invalid.frameRateCap, 0U);
     EXPECT_FALSE(invalid.sleepUntil.has_value());
 }

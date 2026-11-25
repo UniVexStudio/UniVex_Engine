@@ -35,14 +35,14 @@ namespace UVE::Render {
 /// streaming in, or is hot-reloaded with different geometry, keeps the same transform while its
 /// bounds change completely - keying on the transform alone would pin that object to the bounds of
 /// whatever placeholder it had when first seen.
-struct MeshPlacementKeyUVE final {
-    Math::Vector3UVE worldPosition{};
-    Math::QuaternionUVE worldRotation{};
-    Math::Vector3UVE worldScale{};
-    Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
-    Math::AabbUVE localBounds{};
+struct MeshPlacementKey final {
+    Math::Vector3 worldPosition{};
+    Math::Quaternion worldRotation{};
+    Math::Vector3 worldScale{};
+    Asset::AssetGuid meshGuid = Asset::kInvalidAssetGuid;
+    Math::Aabb localBounds{};
 
-    [[nodiscard]] bool MatchesUVE(const MeshPlacementKeyUVE& other) const noexcept;
+    [[nodiscard]] bool Matches(const MeshPlacementKey& other) const noexcept;
 };
 
 /// One renderable entity, resolved and placed, with no frustum yet applied.
@@ -52,17 +52,17 @@ struct MeshPlacementKeyUVE final {
 /// the main view of a single frame.
 /// A cached placement plus the key it was computed from, and the frame stamp that says whether it
 /// was touched this frame.
-struct MeshPlacementCacheEntryUVE final {
-    MeshPlacementKeyUVE key;
-    MeshRenderPlacementUVE placement;
+struct MeshPlacementCacheEntry final {
+    MeshPlacementKey key;
+    MeshRenderPlacement placement;
     std::uint64_t lastSeenFrame = 0U;
 };
 
 /// One frame's resolution of a single asset GUID, shared by every entity that references it.
 ///
-/// WHY THIS EXISTS. Resolving an asset handle is not free: LoadUVE takes the asset manager's mutex
-/// and hashes the GUID, the returned handle takes it again to add a reference, each IsReadyUVE,
-/// HasFailedUVE and TryGetUVE takes it again, and the destructor takes it once more to release.
+/// WHY THIS EXISTS. Resolving an asset handle is not free: Load takes the asset manager's mutex
+/// and hashes the GUID, the returned handle takes it again to add a reference, each IsReady,
+/// HasFailed and TryGet takes it again, and the destructor takes it once more to release.
 /// The mesh walk did all of that per ENTITY, twice over (mesh and material), every frame - about
 /// fourteen locked lookups each, measured at roughly 83 us per 1000 meshes.
 ///
@@ -75,48 +75,48 @@ struct MeshPlacementCacheEntryUVE final {
 /// pending load becoming ready, a hot reload replacing a pointer, or a load failing must all be
 /// observed on the very next frame. Caching this across frames would be a correctness bug.
 template <typename T>
-struct ResolvedAssetUVE final {
-    Asset::AssetHandleUVE<T> handle;
+struct ResolvedAsset final {
+    Asset::AssetHandle<T> handle;
     T* value = nullptr;
     bool failed = false;
     bool pending = false;
 
     /// True when the handle is neither pending nor failed, so `value` is safe to dereference.
-    [[nodiscard]] bool IsUsableUVE() const noexcept { return value != nullptr && !failed && !pending; }
+    [[nodiscard]] bool IsUsable() const noexcept { return value != nullptr && !failed && !pending; }
 };
 
 /// One distinct mesh+material pair used by this frame, holding the references that keep both
 /// assets loaded for the whole frame.
 ///
-/// WHY THIS EXISTS. Candidates used to carry their own pair of AssetHandleUVE. Each one cost two
+/// WHY THIS EXISTS. Candidates used to carry their own pair of AssetHandle. Each one cost two
 /// reference-count increments when it was pushed and two decrements when the set was cleared, and
 /// every one of those takes the asset manager's mutex and hashes a GUID. On a 2000-entity scene
 /// that is 8000 mutex-guarded operations per frame - and they nearly all name the SAME asset,
 /// because many entities share one mesh and one material. Measured at about 98 us per frame, which
 /// was roughly a third of the build.
 ///
-/// The references are genuinely needed: CollectGarbageUVE() runs once per frame between the build
+/// The references are genuinely needed: CollectGarbage() runs once per frame between the build
 /// and the render, so something must hold these assets alive across it. But "something" is one
 /// reference per distinct asset, not one per entity that happens to use it. Two references now do
 /// the job four thousand used to.
-struct MeshVisibilityAssetPairUVE final {
-    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle;
-    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle;
+struct MeshVisibilityAssetPair final {
+    Asset::AssetHandle<Asset::MeshAsset> meshHandle;
+    Asset::AssetHandle<Asset::MaterialAsset> materialHandle;
 };
 
-struct MeshVisibilityCandidateUVE final {
-    /// Index into MeshVisibilitySetUVE::assetPairs. A plain index rather than a handle: the set
+struct MeshVisibilityCandidate final {
+    /// Index into MeshVisibilitySet::assetPairs. A plain index rather than a handle: the set
     /// owns the reference, the candidate only needs to say which one it uses.
     ///
     /// Valid only against the set this candidate came from, and only until that set is rebuilt.
     /// That is the same lifetime the candidate itself has, so it adds no new rule to remember.
     std::size_t assetPairIndex = 0U;
-    MeshRenderPlacementUVE placement;
+    MeshRenderPlacement placement;
     bool isTransparent = false;
     /// The entity this candidate was placed from. Carried because the candidate is what a pass has
     /// in hand, and some of what a pass needs to decide - the render layers a decal projects onto,
     /// for one - lives on another component of that entity rather than on the placement.
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    Scene::Entity entity = Scene::kInvalidEntity;
     /// RenderInstance3D layers, or layer 1 when the entity has no render instance. The view mask
     /// is tested against this in the build, so an off-layer mesh never becomes a candidate.
     std::uint32_t renderLayers = 1U;
@@ -136,7 +136,7 @@ struct MeshVisibilityCandidateUVE final {
     /// what turns a multi-material mesh into one candidate per material. `indexCount == 0` means
     /// "the mesh's whole index buffer", which is what an overlay (and every pre-surface caller)
     /// wants.
-    Asset::MeshSurfaceUVE surface{};
+    Asset::MeshSurface surface{};
 };
 
 /// This frame's renderable set, built once and then culled against as many frusta as the frame
@@ -153,14 +153,14 @@ struct MeshVisibilityCandidateUVE final {
 /// view of it: an asset that failed to load failed once, and reporting it four times would make a
 /// single broken material look like four.
 ///
-/// Caller-owned, exactly like RenderQueueUVE, so MeshRendererUVE stays stateless as its contract
+/// Caller-owned, exactly like RenderQueue, so MeshRenderer stays stateless as its contract
 /// promises and the storage can be reused across frames instead of reallocated.
-struct MeshVisibilitySetUVE final {
-    std::vector<MeshVisibilityCandidateUVE> candidates;
+struct MeshVisibilitySet final {
+    std::vector<MeshVisibilityCandidate> candidates;
 
     /// The distinct mesh+material pairs this frame's candidates refer to, and the only place asset
-    /// references are held. Indexed by MeshVisibilityCandidateUVE::assetPairIndex.
-    std::vector<MeshVisibilityAssetPairUVE> assetPairs;
+    /// references are held. Indexed by MeshVisibilityCandidate::assetPairIndex.
+    std::vector<MeshVisibilityAssetPair> assetPairs;
 
     /// Last frame's placement per entity, reused when nothing about that entity changed.
     ///
@@ -171,10 +171,10 @@ struct MeshVisibilitySetUVE final {
     /// scenes do not move in a given frame, so most of that work is recomputing an answer the
     /// previous frame already had.
     ///
-    /// Keyed by EntityUVE, which is generational - a destroyed entity whose index is reused gets a
+    /// Keyed by Entity, which is generational - a destroyed entity whose index is reused gets a
     /// new generation and therefore a different key, so a recycled slot cannot inherit the dead
     /// entity's bounds.
-    std::unordered_map<Scene::EntityUVE, MeshPlacementCacheEntryUVE> placementCache;
+    std::unordered_map<Scene::Entity, MeshPlacementCacheEntry> placementCache;
 
     /// Per-frame cache statistics. Kept because a cache with no visibility into its own hit rate
     /// is a cache nobody can tell is broken: a subtle key bug that silently misses every frame
@@ -248,12 +248,12 @@ struct MeshVisibilitySetUVE final {
     /// Where the camera is this frame, in world space.
     ///
     /// Set by the caller before the build, like the interpolation alpha and for the same reason:
-    /// BuildVisibilitySetUVE is a virtual with existing overriders and callers, and threading a
+    /// BuildVisibilitySet is a virtual with existing overriders and callers, and threading a
     /// camera through its signature would change every one of them to serve one feature.
     ///
     /// Left at the origin it simply means distances are measured from there - LOD groups are the
     /// only consumer, and a caller that has none is unaffected.
-    Math::Vector3UVE cameraWorldPosition{};
+    Math::Vector3 cameraWorldPosition{};
 
     /// Which RenderInstance3D layers this view draws. Set by the caller before the build, like the
     /// camera position. Default is every layer, so a caller that has never heard of layers sees
@@ -267,7 +267,7 @@ struct MeshVisibilitySetUVE final {
 
     /// When true, the cull skips frustum rejection entirely: every candidate this set holds is
     /// queued, wherever the frustum points. This is the renderer's frustum-culling debug freeze
-    /// (CullingSettingsUVE), and it is a PER-CULL flag for the same reason `shadowPass` is - one
+    /// (CullingSettings), and it is a PER-CULL flag for the same reason `shadowPass` is - one
     /// frame culls this set four times, and only the caller knows which of those views is frozen.
     /// Shadow cascades leave it false so a frozen colour view does not also multiply shadow work.
     ///
@@ -284,8 +284,8 @@ struct MeshVisibilitySetUVE final {
     /// One run of candidates that are near each other in space, plus the box that encloses all of
     /// them. A frustum that misses the enclosing box misses every candidate inside it, so the
     /// whole run is rejected with one plane test instead of `count` of them.
-    struct CandidateClusterUVE final {
-        Math::AabbUVE bounds{};
+    struct CandidateCluster final {
+        Math::Aabb bounds{};
         std::size_t first = 0U;
         std::size_t count = 0U;
     };
@@ -308,11 +308,11 @@ struct MeshVisibilitySetUVE final {
     ///   N=8000  534 us -> 260 us  (2.05x)
     /// The win grows with scene size, which is the right shape for spatial work: a small scene
     /// pays a small overhead, a large one gets most of its culling skipped.
-    std::vector<CandidateClusterUVE> clusters;
+    std::vector<CandidateCluster> clusters;
 
     /// Clears this frame's candidates and counters. Deliberately does NOT clear placementCache -
     /// the cache's entire purpose is to survive into the next frame.
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 
     /// Orders `candidates` spatially and fills `clusters` over the result. Called by the build
     /// once the candidate list is complete, before any cull reads it.
@@ -320,22 +320,22 @@ struct MeshVisibilitySetUVE final {
     /// This REORDERS candidates. Nothing downstream may depend on candidate order: a cull already
     /// sorts its own queue by depth, and the order candidates happened to come out of the entity
     /// walk in was creation order, which carries no meaning anyone is entitled to rely on.
-    void BuildSpatialClustersUVE();
+    void BuildSpatialClusters();
 
     /// Drops cached placements for entities that were not seen this frame, so a cache built over a
     /// long session does not retain every entity the scene ever had. Called after the walk, when
     /// "seen this frame" is known.
-    void PruneUnseenPlacementsUVE();
+    void PruneUnseenPlacements();
 
 private:
-    /// Scratch for the counting pass in BuildSpatialClustersUVE. Members rather than locals so a
+    /// Scratch for the counting pass in BuildSpatialClusters. Members rather than locals so a
     /// scene-sized reorder does not allocate every frame; they are scratch, not state - their
     /// contents mean nothing between calls and every use refills them before reading.
     std::vector<std::uint32_t> m_clusterKeyScratch;
     std::vector<std::size_t> m_clusterOffsetScratch;
     std::vector<std::size_t> m_clusterSlotScratch;
     std::vector<std::size_t> m_clusterSourceScratch;
-    std::vector<MeshVisibilityCandidateUVE> m_candidateScratch;
+    std::vector<MeshVisibilityCandidate> m_candidateScratch;
 };
 
 } // namespace UVE::Render

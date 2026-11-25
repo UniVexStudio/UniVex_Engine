@@ -19,132 +19,132 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] bool ValidateUniformTypeUVE(
-    const Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE& uniform,
-    ShaderDataTypeUVE expectedType, std::string_view name) noexcept {
+[[nodiscard]] bool ValidateUniformType(
+    const Detail::GlDeviceState::PipelineRecord::UniformRecord& uniform,
+    ShaderDataType expectedType, std::string_view name) noexcept {
     if (uniform.type == expectedType) {
         return true;
     }
-    UVE_ERROR("GlCommandBufferUVE: uniform type mismatch for '{}'", name);
+    UVE_ERROR("GlCommandBuffer: uniform type mismatch for '{}'", name);
     return false;
 }
 
-[[nodiscard]] bool RequireInsideRenderPassUVE(bool insideRenderPass, std::string_view operation) noexcept {
+[[nodiscard]] bool RequireInsideRenderPass(bool insideRenderPass, std::string_view operation) noexcept {
     UVE_ASSERT(insideRenderPass);
     if (!insideRenderPass) {
-        UVE_ERROR("GlCommandBufferUVE: {} must be called inside a render pass", operation);
+        UVE_ERROR("GlCommandBuffer: {} must be called inside a render pass", operation);
         return false;
     }
     return true;
 }
 
-[[nodiscard]] bool RequireOutsideRenderPassUVE(bool insideRenderPass) noexcept {
+[[nodiscard]] bool RequireOutsideRenderPass(bool insideRenderPass) noexcept {
     UVE_ASSERT(!insideRenderPass);
     if (insideRenderPass) {
-        UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE does not support nested render passes");
+        UVE_ERROR("GlCommandBuffer: BeginRenderPass does not support nested render passes");
         return false;
     }
     return true;
 }
 
-[[nodiscard]] GLenum ToGlCompareUVE(const DepthCompareUVE compare) noexcept {
+[[nodiscard]] GLenum ToGlCompare(const DepthCompare compare) noexcept {
     switch (compare) {
-        case DepthCompareUVE::Never: return GL_NEVER;
-        case DepthCompareUVE::Less: return GL_LESS;
-        case DepthCompareUVE::Equal: return GL_EQUAL;
-        case DepthCompareUVE::LessOrEqual: return GL_LEQUAL;
-        case DepthCompareUVE::Greater: return GL_GREATER;
-        case DepthCompareUVE::NotEqual: return GL_NOTEQUAL;
-        case DepthCompareUVE::GreaterOrEqual: return GL_GEQUAL;
-        case DepthCompareUVE::Always: return GL_ALWAYS;
+        case DepthCompare::Never: return GL_NEVER;
+        case DepthCompare::Less: return GL_LESS;
+        case DepthCompare::Equal: return GL_EQUAL;
+        case DepthCompare::LessOrEqual: return GL_LEQUAL;
+        case DepthCompare::Greater: return GL_GREATER;
+        case DepthCompare::NotEqual: return GL_NOTEQUAL;
+        case DepthCompare::GreaterOrEqual: return GL_GEQUAL;
+        case DepthCompare::Always: return GL_ALWAYS;
     }
     return GL_ALWAYS;
 }
 
-[[nodiscard]] GLenum ToGlStencilOpUVE(const StencilOpUVE op) noexcept {
+[[nodiscard]] GLenum ToGlStencilOp(const StencilOp op) noexcept {
     switch (op) {
-        case StencilOpUVE::Keep: return GL_KEEP;
-        case StencilOpUVE::Zero: return GL_ZERO;
-        case StencilOpUVE::Replace: return GL_REPLACE;
-        case StencilOpUVE::IncrementClamp: return GL_INCR;
-        case StencilOpUVE::DecrementClamp: return GL_DECR;
-        case StencilOpUVE::Invert: return GL_INVERT;
-        case StencilOpUVE::IncrementWrap: return GL_INCR_WRAP;
-        case StencilOpUVE::DecrementWrap: return GL_DECR_WRAP;
+        case StencilOp::Keep: return GL_KEEP;
+        case StencilOp::Zero: return GL_ZERO;
+        case StencilOp::Replace: return GL_REPLACE;
+        case StencilOp::IncrementClamp: return GL_INCR;
+        case StencilOp::DecrementClamp: return GL_DECR;
+        case StencilOp::Invert: return GL_INVERT;
+        case StencilOp::IncrementWrap: return GL_INCR_WRAP;
+        case StencilOp::DecrementWrap: return GL_DECR_WRAP;
     }
     return GL_KEEP;
 }
 
-void ApplyStencilFaceUVE(const Detail::GlFunctionsUVE& gl, const GLenum face,
-                         const StencilFaceStateUVE& state) noexcept {
-    gl.glStencilFuncSeparate(face, ToGlCompareUVE(state.compare), static_cast<GLint>(state.reference),
+void ApplyStencilFace(const Detail::GlFunctions& gl, const GLenum face,
+                         const StencilFaceState& state) noexcept {
+    gl.glStencilFuncSeparate(face, ToGlCompare(state.compare), static_cast<GLint>(state.reference),
                           static_cast<GLuint>(state.compareMask));
-    gl.glStencilOpSeparate(face, ToGlStencilOpUVE(state.stencilFail), ToGlStencilOpUVE(state.depthFail),
-                        ToGlStencilOpUVE(state.depthPass));
+    gl.glStencilOpSeparate(face, ToGlStencilOp(state.stencilFail), ToGlStencilOp(state.depthFail),
+                        ToGlStencilOp(state.depthPass));
     gl.glStencilMaskSeparate(face, static_cast<GLuint>(state.writeMask));
 }
 
-[[nodiscard]] GLenum ToGlDrawModeUVE(PrimitiveTopologyUVE topology) noexcept {
+[[nodiscard]] GLenum ToGlDrawMode(PrimitiveTopology topology) noexcept {
     switch (topology) {
-        case PrimitiveTopologyUVE::Triangles:
+        case PrimitiveTopology::Triangles:
             return GL_TRIANGLES;
-        case PrimitiveTopologyUVE::Lines:
+        case PrimitiveTopology::Lines:
             return GL_LINES;
-        case PrimitiveTopologyUVE::Points:
+        case PrimitiveTopology::Points:
             return GL_POINTS;
-        case PrimitiveTopologyUVE::LineStrip:
+        case PrimitiveTopology::LineStrip:
             return GL_LINE_STRIP;
-        case PrimitiveTopologyUVE::TriangleStrip:
+        case PrimitiveTopology::TriangleStrip:
             return GL_TRIANGLE_STRIP;
     }
     return GL_TRIANGLES;
 }
 
 /// The glVertexAttrib(I)Pointer arguments for one RHI attribute format.
-struct GlVertexAttributeFetchUVE final {
+struct GlVertexAttributeFetch final {
     GLint componentCount = 3;
     GLenum type = GL_FLOAT;
     GLboolean normalized = GL_FALSE;
     bool integer = false; ///< glVertexAttribIPointer instead of glVertexAttribPointer
 };
 
-[[nodiscard]] GlVertexAttributeFetchUVE VertexAttributeFetchUVE(VertexAttributeFormatUVE format) noexcept {
+[[nodiscard]] GlVertexAttributeFetch VertexAttributeFetch(VertexAttributeFormat format) noexcept {
     switch (format) {
-        case VertexAttributeFormatUVE::Float2:
+        case VertexAttributeFormat::Float2:
             return {2, GL_FLOAT, GL_FALSE, false};
-        case VertexAttributeFormatUVE::Float3:
+        case VertexAttributeFormat::Float3:
             return {3, GL_FLOAT, GL_FALSE, false};
-        case VertexAttributeFormatUVE::Float4:
+        case VertexAttributeFormat::Float4:
             return {4, GL_FLOAT, GL_FALSE, false};
-        case VertexAttributeFormatUVE::UByte4Norm:
+        case VertexAttributeFormat::UByte4Norm:
             return {4, GL_UNSIGNED_BYTE, GL_TRUE, false};
-        case VertexAttributeFormatUVE::UShort4:
+        case VertexAttributeFormat::UShort4:
             return {4, GL_UNSIGNED_SHORT, GL_FALSE, true};
-        case VertexAttributeFormatUVE::UInt4:
+        case VertexAttributeFormat::UInt4:
             return {4, GL_UNSIGNED_INT, GL_FALSE, true};
-        case VertexAttributeFormatUVE::Short2Norm:
+        case VertexAttributeFormat::Short2Norm:
             return {2, GL_SHORT, GL_TRUE, false};
-        case VertexAttributeFormatUVE::Half2:
+        case VertexAttributeFormat::Half2:
             return {2, GL_HALF_FLOAT, GL_FALSE, false};
-        case VertexAttributeFormatUVE::Half4:
+        case VertexAttributeFormat::Half4:
             return {4, GL_HALF_FLOAT, GL_FALSE, false};
     }
     return {};
 }
 
-[[nodiscard]] bool IsFiniteVector2UVE(const Math::Vector2UVE& value) noexcept {
+[[nodiscard]] bool IsFiniteVector2(const Math::Vector2& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y);
 }
 
-[[nodiscard]] bool IsFiniteVector3UVE(const Math::Vector3UVE& value) noexcept {
+[[nodiscard]] bool IsFiniteVector3(const Math::Vector3& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-[[nodiscard]] bool IsFiniteVector4UVE(const Math::Vector4UVE& value) noexcept {
+[[nodiscard]] bool IsFiniteVector4(const Math::Vector4& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z) && std::isfinite(value.w);
 }
 
-[[nodiscard]] bool IsFiniteMatrix4x4UVE(const Math::Matrix4x4UVE& value) noexcept {
+[[nodiscard]] bool IsFiniteMatrix4x4(const Math::Matrix4x4& value) noexcept {
     for (const auto& row : value.m) {
         for (const float component : row) {
             if (!std::isfinite(component)) {
@@ -156,8 +156,8 @@ struct GlVertexAttributeFetchUVE final {
 }
 
 /// Resolves and applies the pass's GL viewport: the full `targetWidth`x`targetHeight` by default,
-/// or `renderPassDesc.viewportOverride` if set (Phase 3's ViewportManagerUVE split-view support -
-/// see RenderPassDescUVE's doc comment). Returns false without calling glViewport() if an override
+/// or `renderPassDesc.viewportOverride` if set (Phase 3's ViewportManager split-view support -
+/// see RenderPassDesc's doc comment). Returns false without calling glViewport() if an override
 /// is present but does not fit within the target, matching this function's existing "reject a
 /// malformed pass descriptor" convention rather than silently clamping it.
 ///
@@ -167,19 +167,19 @@ struct GlVertexAttributeFetchUVE final {
 /// wipe out a first pane already drawn into the same default framebuffer. Explicitly setting this
 /// on every call (both branches) rather than only when an override is present means no scissor
 /// state can leak from a previous pass into one that doesn't ask for it.
-[[nodiscard]] bool ApplyViewportUVE(const RenderPassDescUVE& renderPassDesc, const std::uint32_t targetWidth,
+[[nodiscard]] bool ApplyViewport(const RenderPassDesc& renderPassDesc, const std::uint32_t targetWidth,
                                      const std::uint32_t targetHeight) noexcept {
     if (!renderPassDesc.viewportOverride.has_value()) {
         glViewport(0, 0, static_cast<GLsizei>(targetWidth), static_cast<GLsizei>(targetHeight));
         glDisable(GL_SCISSOR_TEST);
         return true;
     }
-    const ViewportRectUVE& rect = *renderPassDesc.viewportOverride;
-    const ViewportRectUVE targetBounds{Math::Vector2iUVE{0, 0},
-                                        Math::Vector2iUVE{static_cast<std::int32_t>(targetWidth),
+    const ViewportRect& rect = *renderPassDesc.viewportOverride;
+    const ViewportRect targetBounds{Math::Vector2i{0, 0},
+                                        Math::Vector2i{static_cast<std::int32_t>(targetWidth),
                                                           static_cast<std::int32_t>(targetHeight)}};
-    if (rect.size.x <= 0 || rect.size.y <= 0 || !Math::ContainsUVE(targetBounds, rect)) {
-        UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE viewportOverride ({}, {}, {}x{}) does not fit within "
+    if (rect.size.x <= 0 || rect.size.y <= 0 || !Math::Contains(targetBounds, rect)) {
+        UVE_ERROR("GlCommandBuffer: BeginRenderPass viewportOverride ({}, {}, {}x{}) does not fit within "
                   "the {}x{} target",
                   rect.position.x, rect.position.y, rect.size.x, rect.size.y, targetWidth, targetHeight);
         return false;
@@ -192,59 +192,59 @@ struct GlVertexAttributeFetchUVE final {
 
 } // namespace
 
-GlCommandBufferUVE::GlCommandBufferUVE(Detail::GlDeviceStateUVE& state) : m_state(&state) {}
+GlCommandBuffer::GlCommandBuffer(Detail::GlDeviceState& state) : m_state(&state) {}
 
-void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) {
+void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
     ++m_passEpoch;
-    if (!RequireOutsideRenderPassUVE(m_insideRenderPass)) {
+    if (!RequireOutsideRenderPass(m_insideRenderPass)) {
         return;
     }
-    if (!IsLoadOpValidUVE(renderPassDesc.colorLoadOp) || !IsLoadOpValidUVE(renderPassDesc.depthLoadOp)) {
-        UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown load operation");
+    if (!IsLoadOpValid(renderPassDesc.colorLoadOp) || !IsLoadOpValid(renderPassDesc.depthLoadOp)) {
+        UVE_ERROR("GlCommandBuffer: BeginRenderPass received an unknown load operation");
         return;
     }
     // Tier 2.5: store ops validate like load ops (garbage in = error, even on passes whose
     // store is later ignored — the default framebuffer never invalidates).
     m_passDiscardCount = 0U;
-    if (!IsStoreOpValidUVE(renderPassDesc.colorStoreOp) || !IsStoreOpValidUVE(renderPassDesc.depthStoreOp)) {
-        UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown store operation");
+    if (!IsStoreOpValid(renderPassDesc.colorStoreOp) || !IsStoreOpValid(renderPassDesc.depthStoreOp)) {
+        UVE_ERROR("GlCommandBuffer: BeginRenderPass received an unknown store operation");
         return;
     }
-    if (renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
+    if (renderPassDesc.colorLoadOp == LoadOp::Clear) {
         for (const float clearChannel : renderPassDesc.clearColor) {
             if (!std::isfinite(clearChannel)) {
-                UVE_ERROR("GlCommandBufferUVE: color clear value must be finite");
+                UVE_ERROR("GlCommandBuffer: color clear value must be finite");
                 return;
             }
         }
     }
-    if (renderPassDesc.depthLoadOp == LoadOpUVE::Clear && !std::isfinite(renderPassDesc.clearDepth)) {
-        UVE_ERROR("GlCommandBufferUVE: depth clear value must be finite");
+    if (renderPassDesc.depthLoadOp == LoadOp::Clear && !std::isfinite(renderPassDesc.clearDepth)) {
+        UVE_ERROR("GlCommandBuffer: depth clear value must be finite");
         return;
     }
 
     // Tier 2.4: extras alone make a pass offscreen (they ride the offscreen branch's
     // validation — a default-framebuffer pass must not silently drop them).
     bool hasExtraAttachments = false;
-    for (const ColorAttachmentUVE& extra : renderPassDesc.extraColorAttachments) {
-        if (extra.target != kInvalidTextureHandleUVE) {
+    for (const ColorAttachment& extra : renderPassDesc.extraColorAttachments) {
+        if (extra.target != kInvalidTextureHandle) {
             hasExtraAttachments = true;
             break;
         }
     }
     std::uint32_t extraCount = 0U; // resolved by the offscreen branch below
-    if (renderPassDesc.colorAttachment == kInvalidTextureHandleUVE &&
-        renderPassDesc.depthAttachment == kInvalidTextureHandleUVE && !hasExtraAttachments) {
-        if (m_state->windowManager == nullptr || !m_state->windowManager->IsValidUVE()) {
-            UVE_ERROR("GlCommandBufferUVE: default framebuffer render pass requires a valid window surface");
+    if (renderPassDesc.colorAttachment == kInvalidTextureHandle &&
+        renderPassDesc.depthAttachment == kInvalidTextureHandle && !hasExtraAttachments) {
+        if (m_state->windowManager == nullptr || !m_state->windowManager->IsValid()) {
+            UVE_ERROR("GlCommandBuffer: default framebuffer render pass requires a valid window surface");
             return;
         }
-        const std::uint32_t width = m_state->windowManager->GetWidthUVE();
-        const std::uint32_t height = m_state->windowManager->GetHeightUVE();
+        const std::uint32_t width = m_state->windowManager->GetWidth();
+        const std::uint32_t height = m_state->windowManager->GetHeight();
         if (width == 0U || height == 0U ||
             width > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
             height > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-            UVE_ERROR("GlCommandBufferUVE: default framebuffer dimensions are invalid ({}x{})", width, height);
+            UVE_ERROR("GlCommandBuffer: default framebuffer dimensions are invalid ({}x{})", width, height);
             return;
         }
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -261,70 +261,70 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         }
         glReadBuffer(GL_BACK);
 #endif
-        if (!ApplyViewportUVE(renderPassDesc, width, height)) {
+        if (!ApplyViewport(renderPassDesc, width, height)) {
             return;
         }
     } else {
-        const auto colorIt = renderPassDesc.colorAttachment == kInvalidTextureHandleUVE
+        const auto colorIt = renderPassDesc.colorAttachment == kInvalidTextureHandle
                                  ? m_state->textures.end()
                                  : m_state->textures.find(renderPassDesc.colorAttachment.value);
-        if (renderPassDesc.colorAttachment != kInvalidTextureHandleUVE && colorIt == m_state->textures.end()) {
-            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE referenced an unknown colorAttachment handle");
+        if (renderPassDesc.colorAttachment != kInvalidTextureHandle && colorIt == m_state->textures.end()) {
+            UVE_ERROR("GlCommandBuffer: BeginRenderPass referenced an unknown colorAttachment handle");
             return;
         }
-        const auto depthIt = renderPassDesc.depthAttachment == kInvalidTextureHandleUVE
+        const auto depthIt = renderPassDesc.depthAttachment == kInvalidTextureHandle
                                  ? m_state->textures.end()
                                  : m_state->textures.find(renderPassDesc.depthAttachment.value);
-        if (renderPassDesc.depthAttachment != kInvalidTextureHandleUVE && depthIt == m_state->textures.end()) {
-            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE referenced an unknown depthAttachment handle");
+        if (renderPassDesc.depthAttachment != kInvalidTextureHandle && depthIt == m_state->textures.end()) {
+            UVE_ERROR("GlCommandBuffer: BeginRenderPass referenced an unknown depthAttachment handle");
             return;
         }
-        if (colorIt != m_state->textures.end() && IsDepthFormatUVE(colorIt->second.desc.format)) {
-            UVE_ERROR("GlCommandBufferUVE: colorAttachment must use a color texture format");
+        if (colorIt != m_state->textures.end() && IsDepthFormat(colorIt->second.desc.format)) {
+            UVE_ERROR("GlCommandBuffer: colorAttachment must use a color texture format");
             return;
         }
         if (colorIt != m_state->textures.end() &&
-            IsTextureFormatCompressedUVE(colorIt->second.desc.format)) {
-            UVE_ERROR("GlCommandBufferUVE: block-compressed textures are sampled-only and cannot be color attachments");
+            IsTextureFormatCompressed(colorIt->second.desc.format)) {
+            UVE_ERROR("GlCommandBuffer: block-compressed textures are sampled-only and cannot be color attachments");
             return;
         }
-        if (depthIt != m_state->textures.end() && !IsDepthFormatUVE(depthIt->second.desc.format)) {
-            UVE_ERROR("GlCommandBufferUVE: depthAttachment must use a depth texture format");
+        if (depthIt != m_state->textures.end() && !IsDepthFormat(depthIt->second.desc.format)) {
+            UVE_ERROR("GlCommandBuffer: depthAttachment must use a depth texture format");
             return;
         }
         // Usage set: a texture created without RenderTarget (a sampled-only asset, a volume)
         // is refused here, before any FBO state changes, instead of failing completeness later.
         if ((colorIt != m_state->textures.end() &&
-             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(colorIt->second.desc), TextureUsageUVE::RenderTarget)) ||
+             !HasTextureUsage(GetEffectiveTextureUsage(colorIt->second.desc), TextureUsage::RenderTarget)) ||
             (depthIt != m_state->textures.end() &&
-             !HasTextureUsageUVE(GetEffectiveTextureUsageUVE(depthIt->second.desc), TextureUsageUVE::RenderTarget))) {
-            UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE attachment was created without "
-                      "TextureUsageUVE::RenderTarget");
+             !HasTextureUsage(GetEffectiveTextureUsage(depthIt->second.desc), TextureUsage::RenderTarget))) {
+            UVE_ERROR("GlCommandBuffer: BeginRenderPass attachment was created without "
+                      "TextureUsage::RenderTarget");
             return;
         }
         // Tier 2.4: extras need location 0 (a pass with extras but no colorAttachment is
         // malformed — the swapchain/default framebuffer never takes extras).
         if (hasExtraAttachments && colorIt == m_state->textures.end()) {
-            UVE_ERROR("GlCommandBufferUVE: extra color attachments need location 0 "
+            UVE_ERROR("GlCommandBuffer: extra color attachments need location 0 "
                       "(a pass with extras but no colorAttachment is malformed)");
             return;
         }
         if (colorIt != m_state->textures.end() && depthIt != m_state->textures.end() &&
             (colorIt->second.desc.width != depthIt->second.desc.width ||
              colorIt->second.desc.height != depthIt->second.desc.height)) {
-            UVE_ERROR("GlCommandBufferUVE: colorAttachment and depthAttachment dimensions must match");
+            UVE_ERROR("GlCommandBuffer: colorAttachment and depthAttachment dimensions must match");
             return;
         }
         // Tier 2.3: layer selection must sit inside the attachment's layer count (2D textures
         // carry exactly one layer, so any nonzero layer on them fails here too).
         if (colorIt != m_state->textures.end() &&
             renderPassDesc.colorLayer >= colorIt->second.desc.arrayLayers) {
-            UVE_ERROR("GlCommandBufferUVE: colorLayer exceeds the color attachment's layer count");
+            UVE_ERROR("GlCommandBuffer: colorLayer exceeds the color attachment's layer count");
             return;
         }
         if (depthIt != m_state->textures.end() &&
             renderPassDesc.depthLayer >= depthIt->second.desc.arrayLayers) {
-            UVE_ERROR("GlCommandBufferUVE: depthLayer exceeds the depth attachment's layer count");
+            UVE_ERROR("GlCommandBuffer: depthLayer exceeds the depth attachment's layer count");
             return;
         }
 
@@ -332,79 +332,79 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         // (known color-format handle, matching dims, layer in range), pairwise distinct from
         // location 0, the depth, and each other (one texture may not feed two attachments).
         // Loader entries are checked here too so an MRT pass fails BEFORE allocating its FBO.
-        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraHandles{};
-        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraLayers{};
+        std::array<std::uint32_t, kExtraColorAttachmentCount> extraHandles{};
+        std::array<std::uint32_t, kExtraColorAttachmentCount> extraLayers{};
         {
             bool gapSeen = false;
-            bool anyColorClear = renderPassDesc.colorLoadOp == LoadOpUVE::Clear;
-            for (const ColorAttachmentUVE& slot : renderPassDesc.extraColorAttachments) {
-                if (slot.target == kInvalidTextureHandleUVE) {
+            bool anyColorClear = renderPassDesc.colorLoadOp == LoadOp::Clear;
+            for (const ColorAttachment& slot : renderPassDesc.extraColorAttachments) {
+                if (slot.target == kInvalidTextureHandle) {
                     gapSeen = true;
                     continue;
                 }
                 if (gapSeen) {
-                    UVE_ERROR("GlCommandBufferUVE: extra color attachments must be a contiguous "
+                    UVE_ERROR("GlCommandBuffer: extra color attachments must be a contiguous "
                               "prefix (a gap is malformed)");
                     return;
                 }
-                if (!IsLoadOpValidUVE(slot.loadOp) || !IsStoreOpValidUVE(slot.storeOp)) {
-                    UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE received an unknown extra "
+                if (!IsLoadOpValid(slot.loadOp) || !IsStoreOpValid(slot.storeOp)) {
+                    UVE_ERROR("GlCommandBuffer: BeginRenderPass received an unknown extra "
                               "attachment load or store operation");
                     return;
                 }
-                if (slot.loadOp == LoadOpUVE::Clear) {
+                if (slot.loadOp == LoadOp::Clear) {
                     anyColorClear = true;
                     for (const float clearChannel : slot.clearColor) {
                         if (!std::isfinite(clearChannel)) {
-                            UVE_ERROR("GlCommandBufferUVE: extra color clear value must be finite");
+                            UVE_ERROR("GlCommandBuffer: extra color clear value must be finite");
                             return;
                         }
                     }
                 }
                 const auto extraIt = m_state->textures.find(slot.target.value);
                 if (extraIt == m_state->textures.end()) {
-                    UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE referenced an unknown extra "
+                    UVE_ERROR("GlCommandBuffer: BeginRenderPass referenced an unknown extra "
                               "color attachment handle");
                     return;
                 }
-                if (IsDepthFormatUVE(extraIt->second.desc.format) ||
-                    IsTextureFormatCompressedUVE(extraIt->second.desc.format)) {
-                    UVE_ERROR("GlCommandBufferUVE: extra color attachments must use a color texture "
+                if (IsDepthFormat(extraIt->second.desc.format) ||
+                    IsTextureFormatCompressed(extraIt->second.desc.format)) {
+                    UVE_ERROR("GlCommandBuffer: extra color attachments must use a color texture "
                               "format (block-compressed textures are sampled-only)");
                     return;
                 }
-                if (!HasTextureUsageUVE(GetEffectiveTextureUsageUVE(extraIt->second.desc),
-                                        TextureUsageUVE::RenderTarget)) {
-                    UVE_ERROR("GlCommandBufferUVE: extra color attachment was created without "
-                              "TextureUsageUVE::RenderTarget");
+                if (!HasTextureUsage(GetEffectiveTextureUsage(extraIt->second.desc),
+                                        TextureUsage::RenderTarget)) {
+                    UVE_ERROR("GlCommandBuffer: extra color attachment was created without "
+                              "TextureUsage::RenderTarget");
                     return;
                 }
                 if (extraIt->second.desc.width != colorIt->second.desc.width ||
                     extraIt->second.desc.height != colorIt->second.desc.height) {
-                    UVE_ERROR("GlCommandBufferUVE: every color attachment must match location 0's "
+                    UVE_ERROR("GlCommandBuffer: every color attachment must match location 0's "
                               "dimensions (FBO completeness)");
                     return;
                 }
                 if (slot.layer >= extraIt->second.desc.arrayLayers) {
-                    UVE_ERROR("GlCommandBufferUVE: an extra color layer exceeds its attachment's "
+                    UVE_ERROR("GlCommandBuffer: an extra color layer exceeds its attachment's "
                               "layer count");
                     return;
                 }
-                if (extraIt->second.desc.type != TextureTypeUVE::Texture2D &&
+                if (extraIt->second.desc.type != TextureType::Texture2D &&
                     m_state->gl.glFramebufferTextureLayer == nullptr) {
-                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                    UVE_ERROR("GlCommandBuffer: layered render targets need "
                               "glFramebufferTextureLayer (GL 3.2+)");
                     return;
                 }
                 if (slot.target.value == renderPassDesc.colorAttachment.value ||
                     slot.target.value == renderPassDesc.depthAttachment.value) {
-                    UVE_ERROR("GlCommandBufferUVE: one texture may not feed two attachments of the "
+                    UVE_ERROR("GlCommandBuffer: one texture may not feed two attachments of the "
                               "same pass");
                     return;
                 }
                 for (std::uint32_t j = 0U; j < extraCount; ++j) {
                     if (extraHandles[j] == slot.target.value) {
-                        UVE_ERROR("GlCommandBufferUVE: one texture may not feed two attachments of "
+                        UVE_ERROR("GlCommandBuffer: one texture may not feed two attachments of "
                                   "the same pass");
                         return;
                     }
@@ -414,16 +414,16 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                 ++extraCount;
             }
             if (extraCount > 0U && m_state->gl.glDrawBuffers == nullptr) {
-                UVE_ERROR("GlCommandBufferUVE: multi-target passes need glDrawBuffers");
+                UVE_ERROR("GlCommandBuffer: multi-target passes need glDrawBuffers");
                 return;
             }
             if (extraCount > 0U && anyColorClear && m_state->gl.glClearBufferfv == nullptr) {
-                UVE_ERROR("GlCommandBufferUVE: multi-target clears need glClearBufferfv");
+                UVE_ERROR("GlCommandBuffer: multi-target clears need glClearBufferfv");
                 return;
             }
         }
 
-        const Detail::GlDeviceStateUVE::FramebufferKeyUVE framebufferKey{
+        const Detail::GlDeviceState::FramebufferKey framebufferKey{
             renderPassDesc.colorAttachment.value, renderPassDesc.depthAttachment.value,
             renderPassDesc.colorLayer, renderPassDesc.depthLayer, extraHandles, extraLayers};
         GLuint framebuffer = 0;
@@ -460,7 +460,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                 glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
                 if (maxDrawBuffers < 1 ||
                     1U + extraCount > static_cast<std::uint32_t>(maxDrawBuffers)) {
-                    UVE_ERROR("GlCommandBufferUVE: the pass names more color attachments than the "
+                    UVE_ERROR("GlCommandBuffer: the pass names more color attachments than the "
                               "context offers ({} > GL_MAX_DRAW_BUFFERS {})",
                               1U + extraCount, maxDrawBuffers);
                     m_state->gl.glDeleteFramebuffers(1, &framebuffer);
@@ -473,11 +473,11 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             if (colorIt != m_state->textures.end()) {
                 // Tier 2.3: arrays/cubes attach one layer (cube faces ARE layers 0..5).
                 const bool colorIsLayered =
-                    colorIt->second.desc.type != TextureTypeUVE::Texture2D;
+                    colorIt->second.desc.type != TextureType::Texture2D;
                 if (colorIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
                     // No layered attach on this context (pre-3.2): skip the attachment so the
                     // status check below tears the FBO down through the standard path.
-                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                    UVE_ERROR("GlCommandBuffer: layered render targets need "
                               "glFramebufferTextureLayer (GL 3.2+)");
                 } else if (colorIsLayered) {
                     m_state->gl.glFramebufferTextureLayer(
@@ -494,7 +494,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                         m_state->textures.find(extraHandles[i]); // validated known above
                     const GLenum extraPoint =
                         static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + 1U + i);
-                    if (extraIt->second.desc.type != TextureTypeUVE::Texture2D) {
+                    if (extraIt->second.desc.type != TextureType::Texture2D) {
                         m_state->gl.glFramebufferTextureLayer(
                             GL_FRAMEBUFFER, extraPoint, extraIt->second.glTexture, 0,
                             static_cast<GLint>(extraLayers[i]));
@@ -507,7 +507,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
                 if (extraCount > 0U) {
                     // Draw-buffer routing is per-FBO state: set once at creation, baked into the
                     // cached FBO. (glDrawBuffers was validated non-null above.)
-                    std::array<GLenum, 1U + kExtraColorAttachmentCountUVE> drawBuffers{};
+                    std::array<GLenum, 1U + kExtraColorAttachmentCount> drawBuffers{};
                     for (std::uint32_t i = 0U; i < 1U + extraCount; ++i) {
                         drawBuffers[i] = static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + i);
                     }
@@ -528,12 +528,12 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             }
             if (depthIt != m_state->textures.end()) {
                 const GLenum depthAttachmentPoint =
-                    IsDepthStencilFormatUVE(depthIt->second.desc.format) ? GL_DEPTH_STENCIL_ATTACHMENT
+                    IsDepthStencilFormat(depthIt->second.desc.format) ? GL_DEPTH_STENCIL_ATTACHMENT
                                                                           : GL_DEPTH_ATTACHMENT;
                 const bool depthIsLayered =
-                    depthIt->second.desc.type != TextureTypeUVE::Texture2D;
+                    depthIt->second.desc.type != TextureType::Texture2D;
                 if (depthIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
-                    UVE_ERROR("GlCommandBufferUVE: layered render targets need "
+                    UVE_ERROR("GlCommandBuffer: layered render targets need "
                               "glFramebufferTextureLayer (GL 3.2+)");
                 } else if (depthIsLayered) {
                     m_state->gl.glFramebufferTextureLayer(
@@ -546,7 +546,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             }
             const GLenum framebufferStatus = m_state->gl.glCheckFramebufferStatus(GL_FRAMEBUFFER);
             if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
-                UVE_ERROR("GlCommandBufferUVE: BeginRenderPassUVE built an incomplete framebuffer");
+                UVE_ERROR("GlCommandBuffer: BeginRenderPass built an incomplete framebuffer");
 #if defined(__ANDROID__)
                 __android_log_print(ANDROID_LOG_ERROR, "UVEAndroidGLES",
                                     "FBO incomplete: status=0x%04x color=%u depth=%u",
@@ -561,7 +561,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             }
         }
 
-        if (!ApplyViewportUVE(renderPassDesc, attachmentWidth, attachmentHeight)) {
+        if (!ApplyViewport(renderPassDesc, attachmentWidth, attachmentHeight)) {
             if (framebufferCreated) {
                 m_state->gl.glDeleteFramebuffers(1, &framebuffer);
                 m_state->framebufferCache.erase(framebufferKey);
@@ -569,24 +569,24 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
             }
             return;
         }
-        // Tier 2.5: remember the DontCare attachments — EndRenderPassUVE invalidates them while
+        // Tier 2.5: remember the DontCare attachments — EndRenderPass invalidates them while
         // the FBO is still bound (a discard hint, never a correctness requirement).
         m_passDiscardCount = 0U;
-        if (renderPassDesc.colorStoreOp == StoreOpUVE::DontCare &&
+        if (renderPassDesc.colorStoreOp == StoreOp::DontCare &&
             colorIt != m_state->textures.end()) {
             m_passDiscardAttachments[m_passDiscardCount++] = GL_COLOR_ATTACHMENT0;
         }
         for (std::uint32_t i = 0U; i < extraCount; ++i) {
-            if (renderPassDesc.extraColorAttachments[i].storeOp == StoreOpUVE::DontCare) {
+            if (renderPassDesc.extraColorAttachments[i].storeOp == StoreOp::DontCare) {
                 m_passDiscardAttachments[m_passDiscardCount++] =
                     static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + 1U + i);
             }
         }
-        if (renderPassDesc.depthStoreOp == StoreOpUVE::DontCare &&
+        if (renderPassDesc.depthStoreOp == StoreOp::DontCare &&
             depthIt != m_state->textures.end()) {
             // Invalidation takes individual aspects, not the combined FBO attachment token.
             m_passDiscardAttachments[m_passDiscardCount++] = GL_DEPTH_ATTACHMENT;
-            if (IsDepthStencilFormatUVE(depthIt->second.desc.format)) {
+            if (IsDepthStencilFormat(depthIt->second.desc.format)) {
                 m_passDiscardAttachments[m_passDiscardCount++] = GL_STENCIL_ATTACHMENT;
             }
         }
@@ -594,26 +594,26 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
     }
 
     GLbitfield clearMask = 0;
-    if (extraCount == 0U && renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
+    if (extraCount == 0U && renderPassDesc.colorLoadOp == LoadOp::Clear) {
         glClearColor(renderPassDesc.clearColor[0], renderPassDesc.clearColor[1], renderPassDesc.clearColor[2],
                      renderPassDesc.clearColor[3]);
         clearMask |= GL_COLOR_BUFFER_BIT;
     }
     // Tier 2.4: glClear would paint every draw buffer one color — multi-target passes clear
     // per slot instead (glClearBufferfv was validated non-null above when any color clears).
-    if (extraCount > 0U && renderPassDesc.colorLoadOp == LoadOpUVE::Clear) {
+    if (extraCount > 0U && renderPassDesc.colorLoadOp == LoadOp::Clear) {
         m_state->gl.glClearBufferfv(GL_COLOR, 0, renderPassDesc.clearColor.data());
     }
     if (extraCount > 0U) {
         for (std::uint32_t i = 0U; i < extraCount; ++i) {
-            const ColorAttachmentUVE& slot = renderPassDesc.extraColorAttachments[i];
-            if (slot.loadOp == LoadOpUVE::Clear) {
+            const ColorAttachment& slot = renderPassDesc.extraColorAttachments[i];
+            if (slot.loadOp == LoadOp::Clear) {
                 m_state->gl.glClearBufferfv(GL_COLOR, static_cast<GLint>(1U + i),
                                              slot.clearColor.data());
             }
         }
     }
-    if (renderPassDesc.depthLoadOp == LoadOpUVE::Clear) {
+    if (renderPassDesc.depthLoadOp == LoadOp::Clear) {
         // glClear(GL_DEPTH_BUFFER_BIT) respects GL_DEPTH_WRITEMASK. A prior fullscreen pass
         // deliberately disables depth writes, so a render pass that explicitly requests a depth
         // clear must restore the write mask first or its clear becomes a silent no-op and all
@@ -631,7 +631,7 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
         clearMask |= GL_DEPTH_BUFFER_BIT;
         const auto clearDepthIt = m_state->textures.find(renderPassDesc.depthAttachment.value);
         if (clearDepthIt != m_state->textures.end() &&
-            IsDepthStencilFormatUVE(clearDepthIt->second.desc.format)) {
+            IsDepthStencilFormat(clearDepthIt->second.desc.format)) {
             glStencilMask(0xFFU);
             glClearStencil(static_cast<GLint>(renderPassDesc.clearStencil & 0xFFU));
             clearMask |= GL_STENCIL_BUFFER_BIT;
@@ -644,12 +644,12 @@ void GlCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassD
     m_insideRenderPass = true;
 }
 
-void GlCommandBufferUVE::EndRenderPassUVE() {
+void GlCommandBuffer::EndRenderPass() {
     ++m_passEpoch;
     if (m_activeQuery != 0U && m_state != nullptr && m_state->activeOcclusion == m_activeQuery) {
         // A bracket may not span the pass boundary: close it loudly so the GL query object is
-        // left in a valid state; the caller's late EndQueryUVE reports InvalidState.
-        UVE_ERROR("GlCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
+        // left in a valid state; the caller's late EndQuery reports InvalidState.
+        UVE_ERROR("GlCommandBuffer: EndRenderPass closed an occlusion query that was still open");
         m_state->gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
         const auto found = m_state->queries.find(m_activeQuery);
         if (found != m_state->queries.end())
@@ -657,7 +657,7 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
         m_state->activeOcclusion = 0U;
         m_activeQuery = 0U;
     }
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "EndRenderPass")) {
         return;
     }
     if (m_tempFramebuffer != 0) {
@@ -682,13 +682,13 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
     m_insideRenderPass = false;
 }
 
-void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
+void GlCommandBuffer::BindPipeline(PipelineHandle pipeline) {
     // M5a: no inside-pass gate here anymore. Compute pipelines MUST bind outside render-pass
     // markers (mirroring Vulkan, where binding COMPUTE inside a pass instance is illegal), and
     // glUseProgram/glBindVertexArray are equally legal outside a pass. The real structural gates
-    // live on the consuming commands: DrawUVE (inside) and DispatchUVE (outside).
-    if (pipeline == kInvalidPipelineHandleUVE) {
-        UVE_ERROR("GlCommandBufferUVE: BindPipelineUVE referenced an invalid pipeline handle");
+    // live on the consuming commands: Draw (inside) and Dispatch (outside).
+    if (pipeline == kInvalidPipelineHandle) {
+        UVE_ERROR("GlCommandBuffer: BindPipeline referenced an invalid pipeline handle");
         return;
     }
     if (m_currentPipeline == pipeline) {
@@ -696,14 +696,14 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     }
     const auto pipelineIt = m_state->pipelines.find(pipeline.value);
     if (pipelineIt == m_state->pipelines.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindPipelineUVE referenced an unknown pipeline handle");
+        UVE_ERROR("GlCommandBuffer: BindPipeline referenced an unknown pipeline handle");
         return;
     }
     m_currentProgram = pipelineIt->second.glProgram;
     m_currentVao = pipelineIt->second.glVao;
     m_currentPipeline = pipeline;
-    m_boundVertexBuffer = kInvalidBufferHandleUVE;
-    m_boundIndexBuffer = kInvalidBufferHandleUVE;
+    m_boundVertexBuffer = kInvalidBufferHandle;
+    m_boundIndexBuffer = kInvalidBufferHandle;
     m_currentVertexStride = pipelineIt->second.vertexStride;
     m_state->gl.glUseProgram(m_currentProgram);
     if (pipelineIt->second.isCompute) {
@@ -722,35 +722,35 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     // by a plain SourceAlphaOver one would keep GL_FUNC_REVERSE_SUBTRACT if the equation were only
     // ever set by the mode that needed it.
     switch (pipelineIt->second.blendMode) {
-        case PipelineBlendModeUVE::SourceAlphaOver:
+        case PipelineBlendMode::SourceAlphaOver:
             glEnable(GL_BLEND);
             m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             break;
-        case PipelineBlendModeUVE::Additive:
+        case PipelineBlendMode::Additive:
             glEnable(GL_BLEND);
             m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE);
             break;
-        case PipelineBlendModeUVE::Multiply:
+        case PipelineBlendMode::Multiply:
             glEnable(GL_BLEND);
             m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_DST_COLOR, GL_ZERO);
             break;
-        case PipelineBlendModeUVE::PremultipliedAlpha:
+        case PipelineBlendMode::PremultipliedAlpha:
             // The source baked its alpha into rgb, so it is added as-is and only the destination is
             // attenuated.
             glEnable(GL_BLEND);
             m_state->gl.glBlendEquation(GL_FUNC_ADD);
             glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
             break;
-        case PipelineBlendModeUVE::Subtractive:
+        case PipelineBlendMode::Subtractive:
             // dst - src*srcA. Reverse subtract, because GL's FUNC_SUBTRACT is src - dst.
             glEnable(GL_BLEND);
             m_state->gl.glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             break;
-        case PipelineBlendModeUVE::Opaque:
+        case PipelineBlendMode::Opaque:
             glDisable(GL_BLEND);
             break;
     }
@@ -758,36 +758,36 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     // exactly (culling off, CCW, fill, no polygon offset, LESS compare — the compare call is
     // new but LESS is what the untouched context default always gave us).
     switch (pipelineIt->second.cullMode) {
-        case CullModeUVE::None:
+        case CullMode::None:
             glDisable(GL_CULL_FACE);
             break;
-        case CullModeUVE::Front:
+        case CullMode::Front:
             glEnable(GL_CULL_FACE);
             glCullFace(GL_FRONT);
             break;
-        case CullModeUVE::Back:
+        case CullMode::Back:
             glEnable(GL_CULL_FACE);
             glCullFace(GL_BACK);
             break;
-        case CullModeUVE::FrontAndBack:
+        case CullMode::FrontAndBack:
             glEnable(GL_CULL_FACE);
             glCullFace(GL_FRONT_AND_BACK);
             break;
     }
     switch (pipelineIt->second.frontFace) {
-        case FrontFaceUVE::CounterClockwise:
+        case FrontFace::CounterClockwise:
             glFrontFace(GL_CCW);
             break;
-        case FrontFaceUVE::Clockwise:
+        case FrontFace::Clockwise:
             glFrontFace(GL_CW);
             break;
     }
 #if !defined(__ANDROID__)
     switch (pipelineIt->second.fillMode) {
-        case FillModeUVE::Fill:
+        case FillMode::Fill:
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             break;
-        case FillModeUVE::Wireframe:
+        case FillMode::Wireframe:
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             break;
     }
@@ -796,7 +796,7 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
     // Points take their size from the vertex shader's gl_PointSize, which desktop GL ignores
     // unless program point size is enabled (GLES always honours it). Toggled per pipeline so a
     // Points pipeline never leaks the mode into the next triangle pipeline's state.
-    if (pipelineIt->second.topology == PrimitiveTopologyUVE::Points) {
+    if (pipelineIt->second.topology == PrimitiveTopology::Points) {
         glEnable(GL_PROGRAM_POINT_SIZE);
     } else {
         glDisable(GL_PROGRAM_POINT_SIZE);
@@ -810,34 +810,34 @@ void GlCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
         glDisable(GL_POLYGON_OFFSET_FILL);
     }
     switch (pipelineIt->second.depthCompare) {
-        case DepthCompareUVE::Never:          glDepthFunc(GL_NEVER);   break;
-        case DepthCompareUVE::Less:           glDepthFunc(GL_LESS);    break;
-        case DepthCompareUVE::Equal:          glDepthFunc(GL_EQUAL);   break;
-        case DepthCompareUVE::LessOrEqual:    glDepthFunc(GL_LEQUAL);  break;
-        case DepthCompareUVE::Greater:        glDepthFunc(GL_GREATER); break;
-        case DepthCompareUVE::NotEqual:       glDepthFunc(GL_NOTEQUAL); break;
-        case DepthCompareUVE::GreaterOrEqual: glDepthFunc(GL_GEQUAL);  break;
-        case DepthCompareUVE::Always:         glDepthFunc(GL_ALWAYS);  break;
+        case DepthCompare::Never:          glDepthFunc(GL_NEVER);   break;
+        case DepthCompare::Less:           glDepthFunc(GL_LESS);    break;
+        case DepthCompare::Equal:          glDepthFunc(GL_EQUAL);   break;
+        case DepthCompare::LessOrEqual:    glDepthFunc(GL_LEQUAL);  break;
+        case DepthCompare::Greater:        glDepthFunc(GL_GREATER); break;
+        case DepthCompare::NotEqual:       glDepthFunc(GL_NOTEQUAL); break;
+        case DepthCompare::GreaterOrEqual: glDepthFunc(GL_GEQUAL);  break;
+        case DepthCompare::Always:         glDepthFunc(GL_ALWAYS);  break;
     }
     if (pipelineIt->second.stencil.enabled) {
         glEnable(GL_STENCIL_TEST);
-        ApplyStencilFaceUVE(m_state->gl, GL_FRONT, pipelineIt->second.stencil.front);
-        ApplyStencilFaceUVE(m_state->gl, GL_BACK, pipelineIt->second.stencil.back);
+        ApplyStencilFace(m_state->gl, GL_FRONT, pipelineIt->second.stencil.front);
+        ApplyStencilFace(m_state->gl, GL_BACK, pipelineIt->second.stencil.back);
     } else {
         glDisable(GL_STENCIL_TEST);
         glStencilMask(0U);
     }
 }
 
-void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindVertexBufferUVE")) {
+void GlCommandBuffer::BindVertexBuffer(BufferHandle buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindVertexBuffer")) {
         return;
     }
     static_cast<void>(slot); // This minimal RHI describes one interleaved vertex layout per
                               // pipeline, not a per-slot binding table — every attribute in
                               // vertexLayout is configured against whichever buffer is bound here.
-    if (buffer == kInvalidBufferHandleUVE) {
-        UVE_ERROR("GlCommandBufferUVE: BindVertexBufferUVE referenced an invalid buffer handle");
+    if (buffer == kInvalidBufferHandle) {
+        UVE_ERROR("GlCommandBuffer: BindVertexBuffer referenced an invalid buffer handle");
         return;
     }
     if (m_boundVertexBuffer == buffer) {
@@ -845,24 +845,24 @@ void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32
     }
     const auto bufferIt = m_state->buffers.find(buffer.value);
     if (bufferIt == m_state->buffers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindVertexBufferUVE referenced an unknown buffer handle");
+        UVE_ERROR("GlCommandBuffer: BindVertexBuffer referenced an unknown buffer handle");
         return;
     }
     if (bufferIt->second.target != GL_ARRAY_BUFFER) {
-        UVE_ERROR("GlCommandBufferUVE: BindVertexBufferUVE requires a vertex buffer");
+        UVE_ERROR("GlCommandBuffer: BindVertexBuffer requires a vertex buffer");
         return;
     }
-    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    const auto* const pipelineRecord = FindCurrentPipeline();
     if (pipelineRecord == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: BindVertexBufferUVE called without a live pipeline");
+        UVE_ERROR("GlCommandBuffer: BindVertexBuffer called without a live pipeline");
         return;
     }
     m_state->gl.glBindBuffer(GL_ARRAY_BUFFER, bufferIt->second.glBuffer);
 
     for (std::size_t index = 0; index < pipelineRecord->vertexLayout.size(); ++index) {
-        const VertexAttributeUVE& attribute = pipelineRecord->vertexLayout[index];
+        const VertexAttribute& attribute = pipelineRecord->vertexLayout[index];
         const auto attributeIndex = static_cast<GLuint>(index);
-        const GlVertexAttributeFetchUVE fetch = VertexAttributeFetchUVE(attribute.format);
+        const GlVertexAttributeFetch fetch = VertexAttributeFetch(attribute.format);
         const auto* const pointer = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(attribute.offset));
         if (fetch.integer) {
             // Pipeline creation refused integer layouts when this entry point is absent.
@@ -878,12 +878,12 @@ void GlCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32
     m_boundVertexBuffer = buffer;
 }
 
-void GlCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindIndexBufferUVE")) {
+void GlCommandBuffer::BindIndexBuffer(BufferHandle buffer) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindIndexBuffer")) {
         return;
     }
-    if (buffer == kInvalidBufferHandleUVE) {
-        UVE_ERROR("GlCommandBufferUVE: BindIndexBufferUVE referenced an invalid buffer handle");
+    if (buffer == kInvalidBufferHandle) {
+        UVE_ERROR("GlCommandBuffer: BindIndexBuffer referenced an invalid buffer handle");
         return;
     }
     if (m_boundIndexBuffer == buffer) {
@@ -891,40 +891,40 @@ void GlCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
     }
     const auto bufferIt = m_state->buffers.find(buffer.value);
     if (bufferIt == m_state->buffers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindIndexBufferUVE referenced an unknown buffer handle");
+        UVE_ERROR("GlCommandBuffer: BindIndexBuffer referenced an unknown buffer handle");
         return;
     }
     if (bufferIt->second.target != GL_ELEMENT_ARRAY_BUFFER) {
-        UVE_ERROR("GlCommandBufferUVE: BindIndexBufferUVE requires an index buffer");
+        UVE_ERROR("GlCommandBuffer: BindIndexBuffer requires an index buffer");
         return;
     }
     m_state->gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferIt->second.glBuffer);
     m_boundIndexBuffer = buffer;
 }
 
-void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) {
-    // M5b: BindTextureUVE now also feeds STORAGE-image slots (the unified texture-slot
+void GlCommandBuffer::BindTexture(TextureHandle texture, std::uint32_t slot) {
+    // M5b: BindTexture now also feeds STORAGE-image slots (the unified texture-slot
     // space), and the compute flow (bind compute pipeline → bind its textures → dispatch)
     // lives entirely OUTSIDE pass markers — so while a compute pipeline is the bound one,
     // this call passes the gate; graphics-side misuse keeps the strict inside-pass rule
-    // (the same M5a relaxation BindStorageBufferUVE and the SetUniform* calls got).
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindTextureUVE");
+    // (the same M5a relaxation BindStorageBuffer and the SetUniform* calls got).
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) {
+        (void)RequireInsideRenderPass(m_insideRenderPass, "BindTexture");
         return;
     }
     if (m_state->maxCombinedTextureImageUnits <= 0 ||
         slot >= static_cast<std::uint32_t>(m_state->maxCombinedTextureImageUnits)) {
-        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE texture slot exceeds GL texture-unit limits");
+        UVE_ERROR("GlCommandBuffer: BindTexture texture slot exceeds GL texture-unit limits");
         return;
     }
     const auto textureIt = m_state->textures.find(texture.value);
     if (textureIt == m_state->textures.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE referenced an unknown texture handle");
+        UVE_ERROR("GlCommandBuffer: BindTexture referenced an unknown texture handle");
         return;
     }
-    const TextureUsageUVE textureUsage = GetEffectiveTextureUsageUVE(textureIt->second.desc);
-    if (!HasTextureUsageUVE(textureUsage, TextureUsageUVE::Sampled)) {
-        UVE_ERROR("GlCommandBufferUVE: BindTextureUVE texture was created without TextureUsageUVE::Sampled; "
+    const TextureUsage textureUsage = GetEffectiveTextureUsage(textureIt->second.desc);
+    if (!HasTextureUsage(textureUsage, TextureUsage::Sampled)) {
+        UVE_ERROR("GlCommandBuffer: BindTexture texture was created without TextureUsage::Sampled; "
                   "the slot keeps its previous binding");
         return;
     }
@@ -935,11 +935,11 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
         m_state->gl.glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + slot));
         // Tier 2.3: bind under the texture's own target (targets coexist per unit in GL, so
         // a cube bound after a 2D on the same slot cannot disturb the earlier binding).
-        const GLenum bindTarget = textureIt->second.desc.type == TextureTypeUVE::Cubemap
+        const GLenum bindTarget = textureIt->second.desc.type == TextureType::Cubemap
                                       ? GL_TEXTURE_CUBE_MAP
-                                  : textureIt->second.desc.type == TextureTypeUVE::Texture2DArray
+                                  : textureIt->second.desc.type == TextureType::Texture2DArray
                                       ? GL_TEXTURE_2D_ARRAY
-                                  : textureIt->second.desc.type == TextureTypeUVE::Texture3D
+                                  : textureIt->second.desc.type == TextureType::Texture3D
                                       ? GL_TEXTURE_3D
                                       : GL_TEXTURE_2D;
         glBindTexture(bindTarget, textureIt->second.glTexture);
@@ -953,56 +953,56 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
     // Only supported linear, uncompressed color formats are image-bound here; depth,
     // block-compressed and sRGB textures remain available to samplers only.
     if (m_state->gl.glBindImageTexture != nullptr) {
-        const auto* const pipelineRecord = FindCurrentPipelineUVE();
+        const auto* const pipelineRecord = FindCurrentPipeline();
         if (pipelineRecord != nullptr && pipelineRecord->hasImageUniforms) {
             GLenum imageFormat = 0;
             switch (textureIt->second.desc.format) {
-                case TextureFormatUVE::RGBA8Unorm:
+                case TextureFormat::RGBA8Unorm:
                     // OpenGL does not provide storage-image access to sRGB texture storage.
                     // Keep sRGB textures available to samplers, but refuse their image-unit
                     // binding instead of issuing writes that drivers may silently discard.
-                    imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
+                    imageFormat = textureIt->second.desc.colorSpace == TextureColorSpace::Srgb
                                       ? 0U
                                       : GL_RGBA8;
                     break;
-                case TextureFormatUVE::RGBA16Float:
+                case TextureFormat::RGBA16Float:
                     imageFormat = GL_RGBA16F;
                     break;
-                case TextureFormatUVE::R8Unorm:
+                case TextureFormat::R8Unorm:
                     imageFormat = GL_R8;
                     break;
-                case TextureFormatUVE::RG8Unorm:
+                case TextureFormat::RG8Unorm:
                     imageFormat = GL_RG8;
                     break;
-                case TextureFormatUVE::R16Float:
+                case TextureFormat::R16Float:
                     imageFormat = GL_R16F;
                     break;
-                case TextureFormatUVE::RG16Float:
+                case TextureFormat::RG16Float:
                     imageFormat = GL_RG16F;
                     break;
-                case TextureFormatUVE::R32Float:
+                case TextureFormat::R32Float:
                     imageFormat = GL_R32F;
                     break;
-                case TextureFormatUVE::RG32Float:
+                case TextureFormat::RG32Float:
                     imageFormat = GL_RG32F;
                     break;
-                case TextureFormatUVE::RGBA32Float:
+                case TextureFormat::RGBA32Float:
                     imageFormat = GL_RGBA32F;
                     break;
-                case TextureFormatUVE::Depth32Float:
-                case TextureFormatUVE::Depth24Stencil8:
-                case TextureFormatUVE::BC1RGB:
-                case TextureFormatUVE::BC3RGBA:
-                case TextureFormatUVE::BC7RGBA:
-                case TextureFormatUVE::ETC2RGB8:
-                case TextureFormatUVE::ETC2RGBA8:
-                case TextureFormatUVE::ASTC4x4RGBA:
+                case TextureFormat::Depth32Float:
+                case TextureFormat::Depth24Stencil8:
+                case TextureFormat::BC1RGB:
+                case TextureFormat::BC3RGBA:
+                case TextureFormat::BC7RGBA:
+                case TextureFormat::ETC2RGB8:
+                case TextureFormat::ETC2RGBA8:
+                case TextureFormat::ASTC4x4RGBA:
                     imageFormat = 0;
                     break;
             }
             // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
             // sampler-only, matching the Vulkan backend's black-sink fallback.
-            const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+            const bool storageAllowed = HasTextureUsage(textureUsage, TextureUsage::Storage);
             if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
                 m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
                                                0, GL_READ_WRITE, imageFormat);
@@ -1011,19 +1011,19 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
                 // texture cannot legally serve as a storage image.
                 m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
                 if (!storageAllowed) {
-                    UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                    UVE_ERROR("GlCommandBuffer: texture was created without TextureUsage::Storage; "
                               "the image unit is left unbound");
                 } else if (textureIt->second.desc.arrayLayers > 1U) {
-                    UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
+                    UVE_ERROR("GlCommandBuffer: array/cubemap textures cannot be bound as "
                               "storage images in Tier 2.3; the image unit is left unbound");
-                } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
-                    UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
+                } else if (IsTextureFormatCompressed(textureIt->second.desc.format)) {
+                    UVE_ERROR("GlCommandBuffer: block-compressed textures cannot be bound as storage "
                               "images; the image unit is left unbound");
-                } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
-                    UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
+                } else if (textureIt->second.desc.colorSpace == TextureColorSpace::Srgb) {
+                    UVE_ERROR("GlCommandBuffer: sRGB textures cannot be bound as storage images; "
                               "the image unit is left unbound");
                 } else {
-                    UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
+                    UVE_ERROR("GlCommandBuffer: depth textures cannot be bound as storage "
                               "images; the image unit is left unbound");
                 }
             }
@@ -1031,20 +1031,20 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
     }
 }
 
-void GlCommandBufferUVE::BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) {
-    // Same compute-aware gate as BindTextureUVE: sampler binds pair with texture binds.
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindSamplerUVE");
+void GlCommandBuffer::BindSampler(SamplerHandle sampler, std::uint32_t slot) {
+    // Same compute-aware gate as BindTexture: sampler binds pair with texture binds.
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) {
+        (void)RequireInsideRenderPass(m_insideRenderPass, "BindSampler");
         return;
     }
     if (m_state->maxCombinedTextureImageUnits <= 0 ||
         slot >= static_cast<std::uint32_t>(m_state->maxCombinedTextureImageUnits)) {
-        UVE_ERROR("GlCommandBufferUVE: BindSamplerUVE sampler slot exceeds GL texture-unit limits");
+        UVE_ERROR("GlCommandBuffer: BindSampler sampler slot exceeds GL texture-unit limits");
         return;
     }
     const auto samplerIt = m_state->samplers.find(sampler.value);
     if (samplerIt == m_state->samplers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindSamplerUVE referenced an unknown sampler handle");
+        UVE_ERROR("GlCommandBuffer: BindSampler referenced an unknown sampler handle");
         return;
     }
     const auto boundSamplerIt = m_boundSamplers.find(slot);
@@ -1057,56 +1057,56 @@ void GlCommandBufferUVE::BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t 
     }
 }
 
-void GlCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindUniformBufferUVE")) {
+void GlCommandBuffer::BindUniformBuffer(BufferHandle buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindUniformBuffer")) {
         return;
     }
     if (m_state->maxUniformBufferBindings <= 0 ||
         slot >= static_cast<std::uint32_t>(m_state->maxUniformBufferBindings)) {
-        UVE_ERROR("GlCommandBufferUVE: BindUniformBufferUVE slot exceeds GL uniform-buffer limits");
+        UVE_ERROR("GlCommandBuffer: BindUniformBuffer slot exceeds GL uniform-buffer limits");
         return;
     }
     const auto bufferIt = m_state->buffers.find(buffer.value);
     if (bufferIt == m_state->buffers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindUniformBufferUVE referenced an unknown buffer handle");
+        UVE_ERROR("GlCommandBuffer: BindUniformBuffer referenced an unknown buffer handle");
         return;
     }
     if (bufferIt->second.target != GL_UNIFORM_BUFFER) {
-        UVE_ERROR("GlCommandBufferUVE: BindUniformBufferUVE requires a uniform buffer");
+        UVE_ERROR("GlCommandBuffer: BindUniformBuffer requires a uniform buffer");
         return;
     }
     m_state->gl.glBindBufferBase(GL_UNIFORM_BUFFER, slot, bufferIt->second.glBuffer);
 }
 
-void GlCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
+void GlCommandBuffer::BindStorageBuffer(BufferHandle buffer, std::uint32_t slot) {
     // M5a: the compute flow (bind compute pipeline, bind its SSBOs, set its uniforms,
     // dispatch) lives entirely OUTSIDE pass markers — so while a compute pipeline is the
     // bound one, these calls pass the gate; graphics-side misuse keeps the strict inside-pass
-    // rule (GL knows the bound pipeline's kind, unlike NullCommandBufferUVE).
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) {
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "BindStorageBufferUVE");
+    // rule (GL knows the bound pipeline's kind, unlike NullCommandBuffer).
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) {
+        (void)RequireInsideRenderPass(m_insideRenderPass, "BindStorageBuffer");
         return;
     }
     // SSBOs are core in desktop GL 4.3 (the same floor as compute shaders); the cached gate
     // doubles as the "this context knows GL_SHADER_STORAGE_BUFFER at all" answer - on older
     // or GLES contexts the enum itself doesn't exist, so refuse before naming it.
-    if (!m_state->supportsComputeShadersUVE || m_state->maxShaderStorageBindings <= 0) {
-        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE needs a desktop GL 4.3+ context "
+    if (!m_state->supportsComputeShaders || m_state->maxShaderStorageBindings <= 0) {
+        UVE_ERROR("GlCommandBuffer: BindStorageBuffer needs a desktop GL 4.3+ context "
                   "(shader storage buffers); this context does not offer them");
         return;
     }
     if (slot >= static_cast<std::uint32_t>(m_state->maxShaderStorageBindings)) {
-        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE slot exceeds GL shader-storage limits");
+        UVE_ERROR("GlCommandBuffer: BindStorageBuffer slot exceeds GL shader-storage limits");
         return;
     }
     const auto bufferIt = m_state->buffers.find(buffer.value);
     if (bufferIt == m_state->buffers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE referenced an unknown buffer handle");
+        UVE_ERROR("GlCommandBuffer: BindStorageBuffer referenced an unknown buffer handle");
         return;
     }
 #if !defined(__ANDROID__)
     if (bufferIt->second.target != GL_SHADER_STORAGE_BUFFER) {
-        UVE_ERROR("GlCommandBufferUVE: BindStorageBufferUVE requires a Storage-usage buffer");
+        UVE_ERROR("GlCommandBuffer: BindStorageBuffer requires a Storage-usage buffer");
         return;
     }
     // Whole-buffer base binding, matching the Vulkan backend's whole-buffer STORAGE_BUFFER
@@ -1115,13 +1115,13 @@ void GlCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint3
 #endif
 }
 
-bool GlCommandBufferUVE::ActivePipelineIsComputeUVE() const noexcept {
-    const auto* const record = FindCurrentPipelineUVE();
+bool GlCommandBuffer::ActivePipelineIsCompute() const noexcept {
+    const auto* const record = FindCurrentPipeline();
     return record != nullptr && record->isCompute;
 }
 
-const Detail::GlDeviceStateUVE::PipelineRecordUVE* GlCommandBufferUVE::FindCurrentPipelineUVE() const {
-    if (m_currentPipeline == kInvalidPipelineHandleUVE) {
+const Detail::GlDeviceState::PipelineRecord* GlCommandBuffer::FindCurrentPipeline() const {
+    if (m_currentPipeline == kInvalidPipelineHandle) {
         return nullptr;
     }
     const auto pipelineIt = m_state->pipelines.find(m_currentPipeline.value);
@@ -1131,125 +1131,125 @@ const Detail::GlDeviceStateUVE::PipelineRecordUVE* GlCommandBufferUVE::FindCurre
     return &pipelineIt->second;
 }
 
-const GlCommandBufferUVE::UniformRecordUVE* GlCommandBufferUVE::FindUniformUVE(std::string_view name) const {
-    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+const GlCommandBuffer::UniformRecord* GlCommandBuffer::FindUniform(std::string_view name) const {
+    const auto* const pipelineRecord = FindCurrentPipeline();
     if (pipelineRecord == nullptr) {
-        UVE_WARNING("GlCommandBufferUVE: SetUniform*UVE called without a live pipeline (uniform \"{}\")", name);
+        UVE_WARNING("GlCommandBuffer: SetUniform*UVE called without a live pipeline (uniform \"{}\")", name);
         return nullptr;
     }
     const auto it = pipelineRecord->uniforms.find(name);
     if (it == pipelineRecord->uniforms.end()) {
         const auto element = pipelineRecord->uniformElements.find(name);
         if (element != pipelineRecord->uniformElements.end()) return &element->second;
-        UVE_WARNING("GlCommandBufferUVE: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
+        UVE_WARNING("GlCommandBuffer: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
                      name);
         return nullptr;
     }
     return &it->second;
 }
 
-void GlCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformFloatUVE");
+void GlCommandBuffer::SetUniformFloat(std::string_view name, float value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformFloat");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Float, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Float, name)) {
         return;
     }
     if (!std::isfinite(value)) {
-        UVE_ERROR("GlCommandBufferUVE: float uniform '{}' must be finite", name);
+        UVE_ERROR("GlCommandBuffer: float uniform '{}' must be finite", name);
         return;
     }
     m_state->gl.glUniform1f(uniform->location, value);
 }
 
-void GlCommandBufferUVE::SetUniformIntUVE(std::string_view name, std::int32_t value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformIntUVE");
+void GlCommandBuffer::SetUniformInt(std::string_view name, std::int32_t value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformInt");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Int, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Int, name)) {
         return;
     }
     m_state->gl.glUniform1i(uniform->location, static_cast<GLint>(value));
 }
 
-void GlCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformBoolUVE");
+void GlCommandBuffer::SetUniformBool(std::string_view name, bool value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformBool");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Bool, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Bool, name)) {
         return;
     }
     m_state->gl.glUniform1i(uniform->location, value ? 1 : 0);
 }
 
-void GlCommandBufferUVE::SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector2UVE");
+void GlCommandBuffer::SetUniformVector2(std::string_view name, const Math::Vector2& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformVector2");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Vec2, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Vec2, name)) {
         return;
     }
-    if (!IsFiniteVector2UVE(value)) {
-        UVE_ERROR("GlCommandBufferUVE: vector uniform '{}' must be finite", name);
+    if (!IsFiniteVector2(value)) {
+        UVE_ERROR("GlCommandBuffer: vector uniform '{}' must be finite", name);
         return;
     }
     m_state->gl.glUniform2fv(uniform->location, 1, &value.x);
 }
 
-void GlCommandBufferUVE::SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector4UVE");
+void GlCommandBuffer::SetUniformVector4(std::string_view name, const Math::Vector4& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformVector4");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Vec4, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Vec4, name)) {
         return;
     }
-    if (!IsFiniteVector4UVE(value)) {
-        UVE_ERROR("GlCommandBufferUVE: vector uniform '{}' must be finite", name);
+    if (!IsFiniteVector4(value)) {
+        UVE_ERROR("GlCommandBuffer: vector uniform '{}' must be finite", name);
         return;
     }
     m_state->gl.glUniform4fv(uniform->location, 1, &value.x);
 }
 
-void GlCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformVector3UVE");
+void GlCommandBuffer::SetUniformVector3(std::string_view name, const Math::Vector3& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformVector3");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Vec3, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Vec3, name)) {
         return;
     }
-    if (!IsFiniteVector3UVE(value)) {
-        UVE_ERROR("GlCommandBufferUVE: vector uniform '{}' must be finite", name);
+    if (!IsFiniteVector3(value)) {
+        UVE_ERROR("GlCommandBuffer: vector uniform '{}' must be finite", name);
         return;
     }
     m_state->gl.glUniform3fv(uniform->location, 1, &value.x);
 }
 
-void GlCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {
-    if (!m_insideRenderPass && !ActivePipelineIsComputeUVE()) { // M5a compute flow
-        (void)RequireInsideRenderPassUVE(m_insideRenderPass, "SetUniformMatrix4x4UVE");
+void GlCommandBuffer::SetUniformMatrix4x4(std::string_view name, const Math::Matrix4x4& value) {
+    if (!m_insideRenderPass && !ActivePipelineIsCompute()) { // M5a compute flow
+        (void)RequireInsideRenderPass(m_insideRenderPass, "SetUniformMatrix4x4");
         return;
     }
-    const UniformRecordUVE* const uniform = FindUniformUVE(name);
-    if (uniform == nullptr || !ValidateUniformTypeUVE(*uniform, ShaderDataTypeUVE::Mat4, name)) {
+    const UniformRecord* const uniform = FindUniform(name);
+    if (uniform == nullptr || !ValidateUniformType(*uniform, ShaderDataType::Mat4, name)) {
         return;
     }
-    if (!IsFiniteMatrix4x4UVE(value)) {
-        UVE_ERROR("GlCommandBufferUVE: matrix uniform '{}' must be finite", name);
+    if (!IsFiniteMatrix4x4(value)) {
+        UVE_ERROR("GlCommandBuffer: matrix uniform '{}' must be finite", name);
         return;
     }
-    // Matrix4x4UVE is row-major storage (docs/CODING_STANDARDS.md, "Matrix convention"). Desktop
+    // Matrix4x4 is row-major storage (docs/CODING_STANDARDS.md, "Matrix convention"). Desktop
     // GL accepts GL_TRUE and performs the transpose, but GLES3 requires transpose == GL_FALSE, so
     // Android uploads an explicit column-major stack copy instead of issuing an invalid call.
 #if defined(__ANDROID__)
@@ -1265,23 +1265,23 @@ void GlCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Mat
 #endif
 }
 
-void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount,
+void GlCommandBuffer::DrawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount,
                                         std::uint32_t firstIndex) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedUVE")) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "DrawIndexed")) {
         return;
     }
-    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    const auto* const pipelineRecord = FindCurrentPipeline();
     if (pipelineRecord == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE called without a live pipeline");
+        UVE_ERROR("GlCommandBuffer: DrawIndexed called without a live pipeline");
         return;
     }
-    if (m_boundIndexBuffer == kInvalidBufferHandleUVE) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE called without a bound index buffer");
+    if (m_boundIndexBuffer == kInvalidBufferHandle) {
+        UVE_ERROR("GlCommandBuffer: DrawIndexed called without a bound index buffer");
         return;
     }
     const auto indexBufferIt = m_state->buffers.find(m_boundIndexBuffer.value);
     if (indexBufferIt == m_state->buffers.end() || indexBufferIt->second.target != GL_ELEMENT_ARRAY_BUFFER) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE has no valid bound index buffer");
+        UVE_ERROR("GlCommandBuffer: DrawIndexed has no valid bound index buffer");
         return;
     }
     const std::uint64_t indexCapacity = indexBufferIt->second.sizeBytes / sizeof(std::uint32_t);
@@ -1289,7 +1289,7 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     // an indexCount check on its own and still reads past the binding.
     const std::uint64_t rangeEnd = static_cast<std::uint64_t>(firstIndex) + indexCount;
     if (rangeEnd > indexCapacity) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE range [{}, {}) exceeds the bound index buffer "
+        UVE_ERROR("GlCommandBuffer: DrawIndexed range [{}, {}) exceeds the bound index buffer "
                   "of {} indices",
                   firstIndex, rangeEnd, indexCapacity);
         return;
@@ -1299,20 +1299,20 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
     }
     if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
         instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE count exceeds the GLsizei range");
+        UVE_ERROR("GlCommandBuffer: DrawIndexed count exceeds the GLsizei range");
         return;
     }
     // GL takes a byte offset here, unlike every other API in this engine which speaks indices.
     const auto indexOffsetBytes =
         static_cast<std::uintptr_t>(firstIndex) * static_cast<std::uintptr_t>(sizeof(std::uint32_t));
-    const GLenum drawMode = ToGlDrawModeUVE(pipelineRecord->topology);
+    const GLenum drawMode = ToGlDrawMode(pipelineRecord->topology);
     if (instanceCount > 1U) {
         if (m_state->gl.glDrawElementsInstanced != nullptr) {
             m_state->gl.glDrawElementsInstanced(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
                                                 reinterpret_cast<const void*>(indexOffsetBytes),
                                                 static_cast<GLsizei>(instanceCount));
         } else {
-            UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 requires "
+            UVE_WARNING("GlCommandBuffer: DrawIndexed instanceCount > 1 requires "
                         "glDrawElementsInstanced - drawing once");
             glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
                            reinterpret_cast<const void*>(indexOffsetBytes));
@@ -1321,45 +1321,45 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
         glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
                        reinterpret_cast<const void*>(indexOffsetBytes));
     }
-    UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
+    UVE_GL_CHECK_ERROR_UVE("DrawIndexed");
 }
 
-void GlCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
+void GlCommandBuffer::DrawIndexedIndirect(const BufferHandle buffer,
                                                 const std::uint64_t offsetBytes) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "DrawIndexedIndirect")) {
         return;
     }
-    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    const auto* const pipelineRecord = FindCurrentPipeline();
     if (pipelineRecord == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE called without a live pipeline");
+        UVE_ERROR("GlCommandBuffer: DrawIndexedIndirect called without a live pipeline");
         return;
     }
-    if (m_boundIndexBuffer == kInvalidBufferHandleUVE) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE called without a bound index buffer");
+    if (m_boundIndexBuffer == kInvalidBufferHandle) {
+        UVE_ERROR("GlCommandBuffer: DrawIndexedIndirect called without a bound index buffer");
         return;
     }
     if (m_state->gl.glDrawElementsIndirect == nullptr) {
         // GL below 4.0, or a driver that did not export it. Warn and skip rather than call
         // through null - the same degradation the compute paths use.
-        UVE_WARNING("GlCommandBufferUVE: DrawIndexedIndirectUVE needs GL 4.0+ indirect draw, "
+        UVE_WARNING("GlCommandBuffer: DrawIndexedIndirect needs GL 4.0+ indirect draw, "
                     "which this context does not provide; the draw is skipped");
         return;
     }
     const auto indirectIt = m_state->buffers.find(buffer.value);
     if (indirectIt == m_state->buffers.end()) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE was given an unknown buffer handle");
+        UVE_ERROR("GlCommandBuffer: DrawIndexedIndirect was given an unknown buffer handle");
         return;
     }
-    if (!IsStorageBindableUsageUVE(indirectIt->second.usage)) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE needs an IndirectStorage buffer");
+    if (!IsStorageBindableUsage(indirectIt->second.usage)) {
+        UVE_ERROR("GlCommandBuffer: DrawIndexedIndirect needs an IndirectStorage buffer");
         return;
     }
     // The whole command must lie inside the buffer. Reading parameters off the end would produce
     // a draw with garbage counts, which is precisely the failure indirect draw makes invisible -
     // nothing on the CPU would ever see the numbers.
     if (offsetBytes > indirectIt->second.sizeBytes ||
-        indirectIt->second.sizeBytes - offsetBytes < sizeof(DrawIndexedIndirectCommandUVE)) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedIndirectUVE offset leaves no whole command "
+        indirectIt->second.sizeBytes - offsetBytes < sizeof(DrawIndexedIndirectCommand)) {
+        UVE_ERROR("GlCommandBuffer: DrawIndexedIndirect offset leaves no whole command "
                   "inside the buffer");
         return;
     }
@@ -1372,32 +1372,32 @@ void GlCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
     }
     m_state->gl.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectIt->second.glBuffer);
     m_state->gl.glDrawElementsIndirect(
-        ToGlDrawModeUVE(pipelineRecord->topology), GL_UNSIGNED_INT,
+        ToGlDrawMode(pipelineRecord->topology), GL_UNSIGNED_INT,
         reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offsetBytes)));
-    UVE_GL_CHECK_ERROR_UVE("DrawIndexedIndirectUVE");
+    UVE_GL_CHECK_ERROR_UVE("DrawIndexedIndirect");
     // Leave no lingering indirect binding: the buffer's home target is the SSBO one, and a stale
     // GL_DRAW_INDIRECT_BUFFER binding would silently feed the next indirect draw.
     m_state->gl.glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0U);
 }
 
-void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawUVE")) {
+void GlCommandBuffer::Draw(std::uint32_t vertexCount, std::uint32_t instanceCount) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "Draw")) {
         return;
     }
-    if (m_currentPipeline != kInvalidPipelineHandleUVE && FindCurrentPipelineUVE() == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: DrawUVE called with a destroyed pipeline");
+    if (m_currentPipeline != kInvalidPipelineHandle && FindCurrentPipeline() == nullptr) {
+        UVE_ERROR("GlCommandBuffer: Draw called with a destroyed pipeline");
         return;
     }
-    if (m_boundVertexBuffer != kInvalidBufferHandleUVE) {
+    if (m_boundVertexBuffer != kInvalidBufferHandle) {
         const auto vertexBufferIt = m_state->buffers.find(m_boundVertexBuffer.value);
         if (vertexBufferIt == m_state->buffers.end() || vertexBufferIt->second.target != GL_ARRAY_BUFFER) {
-            UVE_ERROR("GlCommandBufferUVE: DrawUVE has no valid bound vertex buffer");
+            UVE_ERROR("GlCommandBuffer: Draw has no valid bound vertex buffer");
             return;
         }
         if (m_currentVertexStride > 0U &&
             static_cast<std::uint64_t>(vertexCount) >
                 vertexBufferIt->second.sizeBytes / static_cast<std::uint64_t>(m_currentVertexStride)) {
-            UVE_ERROR("GlCommandBufferUVE: DrawUVE vertexCount exceeds the bound vertex buffer");
+            UVE_ERROR("GlCommandBuffer: Draw vertexCount exceeds the bound vertex buffer");
             return;
         }
     }
@@ -1406,80 +1406,80 @@ void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instan
     }
     if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
         instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawUVE count exceeds the GLsizei range");
+        UVE_ERROR("GlCommandBuffer: Draw count exceeds the GLsizei range");
         return;
     }
-    const auto* const drawPipelineRecord = FindCurrentPipelineUVE();
+    const auto* const drawPipelineRecord = FindCurrentPipeline();
     const GLenum drawMode = drawPipelineRecord != nullptr
-                                ? ToGlDrawModeUVE(drawPipelineRecord->topology)
+                                ? ToGlDrawMode(drawPipelineRecord->topology)
                                 : GL_TRIANGLES;
     if (instanceCount > 1U) {
         if (m_state->gl.glDrawArraysInstanced != nullptr) {
             m_state->gl.glDrawArraysInstanced(drawMode, 0, static_cast<GLsizei>(vertexCount),
                                               static_cast<GLsizei>(instanceCount));
         } else {
-            UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 requires glDrawArraysInstanced "
+            UVE_WARNING("GlCommandBuffer: Draw instanceCount > 1 requires glDrawArraysInstanced "
                         "- drawing once");
             glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
         }
     } else {
         glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
     }
-    UVE_GL_CHECK_ERROR_UVE("DrawUVE");
+    UVE_GL_CHECK_ERROR_UVE("Draw");
 }
 
-void GlCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+void GlCommandBuffer::Dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,
                                      std::uint32_t groupCountZ) {
-    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of DrawUVE's inside-pass
+    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of Draw's inside-pass
     // gate (Vulkan forbids compute inside a render-pass instance, so the portable flow binds the
     // compute pipeline and dispatches before/after pass markers).
     UVE_ASSERT(!m_insideRenderPass);
     if (m_insideRenderPass) {
-        UVE_ERROR("GlCommandBufferUVE: DispatchUVE must be called outside a render pass");
+        UVE_ERROR("GlCommandBuffer: Dispatch must be called outside a render pass");
         return;
     }
-    const auto* const pipelineRecord = FindCurrentPipelineUVE();
+    const auto* const pipelineRecord = FindCurrentPipeline();
     if (pipelineRecord == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires a live compute pipeline to be bound");
+        UVE_ERROR("GlCommandBuffer: Dispatch requires a live compute pipeline to be bound");
         return;
     }
     if (!pipelineRecord->isCompute) {
-        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires a compute pipeline (a graphics pipeline is bound)");
+        UVE_ERROR("GlCommandBuffer: Dispatch requires a compute pipeline (a graphics pipeline is bound)");
         return;
     }
     if (m_state->gl.glDispatchCompute == nullptr || m_state->gl.glMemoryBarrier == nullptr) {
-        UVE_ERROR("GlCommandBufferUVE: DispatchUVE requires an OpenGL 4.3+ context");
+        UVE_ERROR("GlCommandBuffer: Dispatch requires an OpenGL 4.3+ context");
         return;
     }
-    // GL executes at record time: BindPipelineUVE already ran glUseProgram for this program.
+    // GL executes at record time: BindPipeline already ran glUseProgram for this program.
     m_state->gl.glDispatchCompute(groupCountX, groupCountY, groupCountZ);
     // Conservative global barrier — makes the compute writes visible to every later reader
     // (glGetBufferSubData readback and the fragment palette sampling in the M5a proof).
     m_state->gl.glMemoryBarrier(GL_ALL_BARRIER_BITS);
-    UVE_GL_CHECK_ERROR_UVE("DispatchUVE");
+    UVE_GL_CHECK_ERROR_UVE("Dispatch");
 }
 
 } // namespace UVE::Render
 
 namespace UVE::Render {
-RenderFeatureSupportUVE GlCommandBufferUVE::GetMemoryBarrierSupportUVE() const noexcept {
+RenderFeatureSupport GlCommandBuffer::GetMemoryBarrierSupport() const noexcept {
 #if defined(__ANDROID__)
-    return RenderFeatureSupportUVE::Unsupported;
+    return RenderFeatureSupport::Unsupported;
 #else
-    return m_state->supportsComputeShadersUVE && m_state->gl.glMemoryBarrier
-        ? RenderFeatureSupportUVE::Native : RenderFeatureSupportUVE::Unsupported;
+    return m_state->supportsComputeShaders && m_state->gl.glMemoryBarrier
+        ? RenderFeatureSupport::Native : RenderFeatureSupport::Unsupported;
 #endif
 }
-RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
-    if (!IsMemoryBarrierMaskValidUVE(mask))
-        return RenderOperationResultUVE::InvalidArgument;
+RenderOperationResult GlCommandBuffer::MemoryBarrier(MemoryBarrierMask mask) {
+    if (!IsMemoryBarrierMaskValid(mask))
+        return RenderOperationResult::InvalidArgument;
     if (m_insideRenderPass)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
 #if defined(__ANDROID__)
-    return RenderOperationResultUVE::Unsupported;
+    return RenderOperationResult::Unsupported;
 #else
-    if (!m_state->supportsComputeShadersUVE || !m_state->gl.glMemoryBarrier)
-        return RenderOperationResultUVE::Unsupported;
+    if (!m_state->supportsComputeShaders || !m_state->gl.glMemoryBarrier)
+        return RenderOperationResult::Unsupported;
     const auto bits = static_cast<std::uint32_t>(mask);
     GLbitfield native = 0U;
     if ((bits & 1U) != 0U)
@@ -1495,69 +1495,69 @@ RenderOperationResultUVE GlCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskU
     if ((bits & 32U) != 0U)
         native |= GL_FRAMEBUFFER_BARRIER_BIT;
     m_state->gl.glMemoryBarrier(native);
-    return glGetError() == GL_NO_ERROR ? RenderOperationResultUVE::Success
-                                       : RenderOperationResultUVE::SystemError;
+    return glGetError() == GL_NO_ERROR ? RenderOperationResult::Success
+                                       : RenderOperationResult::SystemError;
 #endif
 }
 } // namespace UVE::Render
 
 namespace UVE::Render {
-RenderOperationResultUVE GlCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+RenderOperationResult GlCommandBuffer::BeginQuery(const QueryHandle query) {
     if (m_state == nullptr)
-        return RenderOperationResultUVE::DeviceUnavailable;
+        return RenderOperationResult::DeviceUnavailable;
     auto& state = *m_state;
     if (state.gl.glBeginQuery == nullptr || state.gl.glEndQuery == nullptr)
-        return RenderOperationResultUVE::Unsupported;
+        return RenderOperationResult::Unsupported;
     const auto found = state.queries.find(query.value);
     if (found == state.queries.end())
-        return RenderOperationResultUVE::InvalidHandle;
-    if (found->second.kind != RenderQueryKindUVE::AnySamplesPassed)
-        return RenderOperationResultUVE::InvalidArgument;
+        return RenderOperationResult::InvalidHandle;
+    if (found->second.kind != RenderQueryKind::AnySamplesPassed)
+        return RenderOperationResult::InvalidArgument;
     if (state.activeOcclusion != 0U || m_activeQuery != 0U)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     state.gl.glBeginQuery(GL_ANY_SAMPLES_PASSED, found->second.native);
     state.activeOcclusion = query.value;
     found->second.issued = false;
     m_activeQuery = query.value;
     m_activeQueryPassEpoch = m_passEpoch;
-    return RenderOperationResultUVE::Recorded;
+    return RenderOperationResult::Recorded;
 }
 
-RenderOperationResultUVE GlCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+RenderOperationResult GlCommandBuffer::EndQuery(const QueryHandle query) {
     if (m_state == nullptr)
-        return RenderOperationResultUVE::DeviceUnavailable;
+        return RenderOperationResult::DeviceUnavailable;
     auto& state = *m_state;
     const auto found = state.queries.find(query.value);
     if (found == state.queries.end())
-        return RenderOperationResultUVE::InvalidHandle;
+        return RenderOperationResult::InvalidHandle;
     if (m_activeQuery != query.value || state.activeOcclusion != query.value)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     if (m_activeQueryPassEpoch != m_passEpoch)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     state.gl.glEndQuery(GL_ANY_SAMPLES_PASSED);
     state.activeOcclusion = 0U;
     m_activeQuery = 0U;
     found->second.issued = true;
-    return RenderOperationResultUVE::Recorded;
+    return RenderOperationResult::Recorded;
 }
 
-RenderOperationResultUVE GlCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+RenderOperationResult GlCommandBuffer::WriteTimestamp(const QueryHandle query) {
     if (m_state == nullptr)
-        return RenderOperationResultUVE::DeviceUnavailable;
+        return RenderOperationResult::DeviceUnavailable;
     auto& state = *m_state;
     const auto found = state.queries.find(query.value);
     if (found == state.queries.end())
-        return RenderOperationResultUVE::InvalidHandle;
-    if (found->second.kind != RenderQueryKindUVE::Timestamp)
-        return RenderOperationResultUVE::InvalidArgument;
+        return RenderOperationResult::InvalidHandle;
+    if (found->second.kind != RenderQueryKind::Timestamp)
+        return RenderOperationResult::InvalidArgument;
 #if defined(__ANDROID__)
-    return RenderOperationResultUVE::Unsupported;
+    return RenderOperationResult::Unsupported;
 #else
     if (state.gl.glQueryCounter == nullptr)
-        return RenderOperationResultUVE::Unsupported;
+        return RenderOperationResult::Unsupported;
     state.gl.glQueryCounter(found->second.native, GL_TIMESTAMP);
     found->second.issued = true;
-    return RenderOperationResultUVE::Recorded;
+    return RenderOperationResult::Recorded;
 #endif
 }
 } // namespace UVE::Render

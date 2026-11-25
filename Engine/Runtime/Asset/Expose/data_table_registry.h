@@ -9,30 +9,30 @@
 
 namespace UVE::Asset {
 
-class DataTableRegistryUVE final {
+class DataTableRegistry final {
 public:
-    static constexpr std::size_t kMaximumTablesUVE = 128U;
+    static constexpr std::size_t kMaximumTables = 128U;
 
-    DataTableRegistryUVE() = default;
-    DataTableRegistryUVE(const DataTableRegistryUVE&) = delete;
-    DataTableRegistryUVE& operator=(const DataTableRegistryUVE&) = delete;
-    DataTableRegistryUVE(DataTableRegistryUVE&&) noexcept = default;
-    DataTableRegistryUVE& operator=(DataTableRegistryUVE&&) noexcept = default;
-    ~DataTableRegistryUVE() = default;
+    DataTableRegistry() = default;
+    DataTableRegistry(const DataTableRegistry&) = delete;
+    DataTableRegistry& operator=(const DataTableRegistry&) = delete;
+    DataTableRegistry(DataTableRegistry&&) noexcept = default;
+    DataTableRegistry& operator=(DataTableRegistry&&) noexcept = default;
+    ~DataTableRegistry() = default;
 
-    [[nodiscard]] bool RegisterUVE(DataTableUVE table);
-    [[nodiscard]] bool RemoveUVE(std::string_view name);
-    [[nodiscard]] bool ClearUVE() noexcept;
-    [[nodiscard]] bool TryGetSnapshotUVE(std::string_view name, DataTableSnapshotUVE& snapshot) const;
-    [[nodiscard]] DataTableCatalogSnapshotUVE GetCatalogSnapshotUVE() const;
-    [[nodiscard]] bool ContainsUVE(std::string_view name) const;
-    [[nodiscard]] std::size_t SizeUVE() const noexcept;
+    [[nodiscard]] bool Register(DataTable table);
+    [[nodiscard]] bool Remove(std::string_view name);
+    [[nodiscard]] bool Clear() noexcept;
+    [[nodiscard]] bool TryGetSnapshot(std::string_view name, DataTableSnapshot& snapshot) const;
+    [[nodiscard]] DataTableCatalogSnapshot GetCatalogSnapshot() const;
+    [[nodiscard]] bool Contains(std::string_view name) const;
+    [[nodiscard]] std::size_t Size() const noexcept;
 
 private:
-    void IncrementGenerationUVE() noexcept;
-    [[nodiscard]] static bool IsValidTableSnapshotUVE(const DataTableSnapshotUVE& snapshot) noexcept;
+    void IncrementGeneration() noexcept;
+    [[nodiscard]] static bool IsValidTableSnapshot(const DataTableSnapshot& snapshot) noexcept;
 
-    std::vector<DataTableUVE> m_tables;
+    std::vector<DataTable> m_tables;
     std::uint64_t m_generation = 1U;
 };
 

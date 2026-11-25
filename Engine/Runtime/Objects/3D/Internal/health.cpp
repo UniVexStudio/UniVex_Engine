@@ -10,34 +10,34 @@
 
 namespace UVE::Scene {
 
-bool IsHealthComponentValidUVE(const HealthComponentUVE& value) noexcept {
+bool IsHealthComponentValid(const HealthComponent& value) noexcept {
     return std::isfinite(value.maxHealth) && value.maxHealth > 0.0F && std::isfinite(value.health) &&
            value.health >= 0.0F;
 }
 
-EntityUVE FindHealthEntityUVE(IEntityManagerUVE& entityManager, EntityUVE from) {
-    EntityUVE entity = from;
-    while (entityManager.IsAliveUVE(entity)) {
-        if (entityManager.HasComponentUVE<HealthComponentUVE>(entity) &&
-            IsHealthComponentValidUVE(entityManager.GetComponentUVE<HealthComponentUVE>(entity))) {
+Entity FindHealthEntity(IEntityManager& entityManager, Entity from) {
+    Entity entity = from;
+    while (entityManager.IsAlive(entity)) {
+        if (entityManager.HasComponent<HealthComponent>(entity) &&
+            IsHealthComponentValid(entityManager.GetComponent<HealthComponent>(entity))) {
             return entity;
         }
-        if (!entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+        if (!entityManager.HasComponent<HierarchyComponent>(entity)) {
             break;
         }
-        const EntityUVE parent = entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent;
+        const Entity parent = entityManager.GetComponent<HierarchyComponent>(entity).parent;
         if (parent == entity) {
             break;
         }
         entity = parent;
     }
-    return kInvalidEntityUVE;
+    return kInvalidEntity;
 }
 
-HealthDamageResultUVE ApplyHealthDamageUVE(HealthComponentUVE& health, const float amount) noexcept {
-    HealthDamageResultUVE result;
+HealthDamageResult ApplyHealthDamage(HealthComponent& health, const float amount) noexcept {
+    HealthDamageResult result;
     result.remaining = health.health;
-    if (!IsHealthComponentValidUVE(health) || health.invulnerable || health.health <= 0.0F ||
+    if (!IsHealthComponentValid(health) || health.invulnerable || health.health <= 0.0F ||
         !std::isfinite(amount) || amount <= 0.0F) {
         return result;
     }
@@ -49,10 +49,10 @@ HealthDamageResultUVE ApplyHealthDamageUVE(HealthComponentUVE& health, const flo
     return result;
 }
 
-HealthDamageResultUVE ApplyHealthHealUVE(HealthComponentUVE& health, const float amount) noexcept {
-    HealthDamageResultUVE result;
+HealthDamageResult ApplyHealthHeal(HealthComponent& health, const float amount) noexcept {
+    HealthDamageResult result;
     result.remaining = health.health;
-    if (!IsHealthComponentValidUVE(health) || !std::isfinite(amount) || amount <= 0.0F ||
+    if (!IsHealthComponentValid(health) || !std::isfinite(amount) || amount <= 0.0F ||
         health.health >= health.maxHealth) {
         return result;
     }
@@ -63,14 +63,14 @@ HealthDamageResultUVE ApplyHealthHealUVE(HealthComponentUVE& health, const float
     return result;
 }
 
-HealthDamageResultUVE ApplyHitboxStrikeToHealthUVE(IEntityManagerUVE& entityManager, const EntityUVE hurtbox,
+HealthDamageResult ApplyHitboxStrikeToHealth(IEntityManager& entityManager, const Entity hurtbox,
                                                    const float amount) {
-    const EntityUVE entity = FindHealthEntityUVE(entityManager, hurtbox);
-    if (entity == kInvalidEntityUVE) {
+    const Entity entity = FindHealthEntity(entityManager, hurtbox);
+    if (entity == kInvalidEntity) {
         return {};
     }
-    HealthDamageResultUVE result =
-        ApplyHealthDamageUVE(entityManager.GetComponentUVE<HealthComponentUVE>(entity), amount);
+    HealthDamageResult result =
+        ApplyHealthDamage(entityManager.GetComponent<HealthComponent>(entity), amount);
     result.entity = entity;
     return result;
 }

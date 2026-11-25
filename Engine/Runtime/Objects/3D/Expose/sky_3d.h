@@ -11,10 +11,10 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Where a Sky's colour comes from, and therefore which of its fields mean anything.
-enum class SkySourceUVE : std::uint8_t {
+enum class SkySource : std::uint8_t {
     /// Three authored bands - zenith, horizon, ground - blended by two curves. This is the sky the
     /// renderer has always drawn, exposed as an object so it can be authored instead of inherited
     /// from whatever the WorldEnvironment happened to hold.
@@ -41,14 +41,14 @@ enum class SkySourceUVE : std::uint8_t {
 /// else. With no Sky the WorldEnvironment's sky fields are used exactly as before, and a scene with
 /// neither renders as it does today - so adding this object to an existing scene changes nothing
 /// until its fields are authored.
-struct Sky3DComponentUVE final {
-    SkySourceUVE source = SkySourceUVE::Gradient;
+struct Sky3DComponent final {
+    SkySource source = SkySource::Gradient;
 
     /// The three bands. Named as the environment named them, because these are the same values and
     /// a level that migrates must not change colour.
-    Math::Vector3UVE skyColor{0.31F, 0.54F, 0.91F};
-    Math::Vector3UVE horizonColor{0.78F, 0.86F, 0.94F};
-    Math::Vector3UVE groundColor{0.24F, 0.21F, 0.18F};
+    Math::Vector3 skyColor{0.31F, 0.54F, 0.91F};
+    Math::Vector3 horizonColor{0.78F, 0.86F, 0.94F};
+    Math::Vector3 groundColor{0.24F, 0.21F, 0.18F};
 
     /// How quickly the zenith and the ground take over from the horizon band. Small values keep
     /// the horizon wide; large ones compress it into a line.
@@ -170,7 +170,7 @@ struct Sky3DComponentUVE final {
     /// of zero extends, but explicit.
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const Sky3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const Sky3DComponent&) const = default;
 };
 
 /// The ambient light a sky throws on a scene, split by hemisphere: the light arriving from above
@@ -181,11 +181,11 @@ struct Sky3DComponentUVE final {
 /// through the same air the sky pass integrates, so the fill goes warm and dim at dusk, neutral at
 /// noon, and to nothing after astronomical twilight without a keyframe anywhere. It is a pure
 /// function of the sky and the sun, so it is testable without a GPU.
-struct SkyAmbientUVE final {
+struct SkyAmbient final {
     /// Irradiance from the upper hemisphere, in the same units the environment's ambient uses.
-    Math::Vector3UVE sky{};
+    Math::Vector3 sky{};
     /// Irradiance from the lower hemisphere: the ground band, dimmer than the sky above it.
-    Math::Vector3UVE ground{};
+    Math::Vector3 ground{};
     /// 0 at astronomical night and 1 in full daylight. Reported so a caller can fade other night
     /// effects with the same curve instead of inventing a second one.
     float daylight = 0.0F;
@@ -194,7 +194,7 @@ struct SkyAmbientUVE final {
 /// Sunlight left after a path through the air, per channel: 1 at the top of the atmosphere, and
 /// dimmer and redder as the sun approaches the horizon. `sunAltitudeRadians` is measured from the
 /// horizon, negative below it; `rayleighDensity` scales the gas, matching the atmosphere's own.
-[[nodiscard]] Math::Vector3UVE SkySunTransmittanceUVE(float sunAltitudeRadians, float rayleighDensity) noexcept;
+[[nodiscard]] Math::Vector3 SkySunTransmittance(float sunAltitudeRadians, float rayleighDensity) noexcept;
 
 /// The ambient three bands provide for a given sun direction (a unit vector pointing toward the
 /// sun). Takes the bands rather than the component because the frame the renderer builds has
@@ -203,35 +203,35 @@ struct SkyAmbientUVE final {
 ///
 /// Sanitised: a non-finite direction is treated as the zenith, and every value is clamped to
 /// something the shader can use.
-[[nodiscard]] SkyAmbientUVE ResolveSkyAmbientUVE(const Math::Vector3UVE& skyColor,
-                                                 const Math::Vector3UVE& horizonColor,
-                                                 const Math::Vector3UVE& groundColor,
+[[nodiscard]] SkyAmbient ResolveSkyAmbient(const Math::Vector3& skyColor,
+                                                 const Math::Vector3& horizonColor,
+                                                 const Math::Vector3& groundColor,
                                                  float rayleighDensity, float strength,
-                                                 const Math::Vector3UVE& sunDirection) noexcept;
+                                                 const Math::Vector3& sunDirection) noexcept;
 
 /// The same, read straight off a Sky component.
-[[nodiscard]] SkyAmbientUVE ResolveSkyAmbientUVE(const Sky3DComponentUVE& sky,
-                                                 const Math::Vector3UVE& sunDirection) noexcept;
+[[nodiscard]] SkyAmbient ResolveSkyAmbient(const Sky3DComponent& sky,
+                                                 const Math::Vector3& sunDirection) noexcept;
 
 /// The fog colour this sky implies: the light distant geometry would be seen through, which is the
 /// horizon band with a little of the ground under it. How far the scene actually moves toward it is
 /// the caller's blend, because that is an authoring choice and this is physics.
-[[nodiscard]] Math::Vector3UVE ResolveSkyFogColorUVE(const Math::Vector3UVE& groundColor,
-                                                     const Math::Vector3UVE& horizonColor) noexcept;
+[[nodiscard]] Math::Vector3 ResolveSkyFogColor(const Math::Vector3& groundColor,
+                                                     const Math::Vector3& horizonColor) noexcept;
 
 /// True when every field is inside the range the renderer and the serializer can work with.
 /// A Sky that fails this is skipped, not clamped: a half-believed sky is worse than none, because
 /// it silently disagrees with what the Inspector showed.
-[[nodiscard]] bool IsSky3DObjectComponentValidUVE(const Sky3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsSky3DObjectComponentValid(const Sky3DComponent& value) noexcept;
 
-struct Sky3DObjectDefinitionUVE final {
+struct Sky3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Sky";
-    Sky3DComponentUVE sky{};
+    Sky3DComponent sky{};
 };
 
 /// Builds a Sky entity: Object3D's baseline, then this object's own component. A component already
 /// on the entity keeps its values.
-void ApplySky3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                   const Sky3DObjectDefinitionUVE& value);
+void ApplySky3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                   const Sky3DObjectDefinition& value);
 
 } // namespace UVE::Scene

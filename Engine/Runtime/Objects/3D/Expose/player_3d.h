@@ -18,12 +18,12 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Marks a Character3D as the possessed player: input, spawn, look, and interact go here. While
 /// possessOnPlay is set, the engine keeps the body self-possessed whenever its possession links
 /// are free - never stealing it back from a director mid-takeover.
-struct PlayerComponentUVE final {
+struct PlayerComponent final {
     bool possessOnPlay = true;
     bool lookEnabled = true;
     float lookSensitivity = 0.12F;
@@ -33,56 +33,56 @@ struct PlayerComponentUVE final {
     float pitchDegrees = 0.0F;
 };
 
-[[nodiscard]] bool IsPlayer3DObjectComponentValidUVE(const PlayerComponentUVE& value) noexcept;
+[[nodiscard]] bool IsPlayer3DObjectComponentValid(const PlayerComponent& value) noexcept;
 
-struct Player3DObjectDefinitionUVE final {
+struct Player3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Player3D";
 
     /// No collider of its own, for the same reason a Character3D has none: the body's shape is a
     /// Collider3D the author adds under it, where it can be seen, selected and given a shape. A
     /// built-in capsule made that Collider3D a second shape in the same place, and the controller
     /// pushed the body out of the one nobody had asked for.
-    std::optional<ColliderComponentUVE> collider = std::nullopt;
-    CharacterControllerComponentUVE controller{};
-    PlayerComponentUVE player{};
-    HealthComponentUVE health{};
+    std::optional<ColliderComponent> collider = std::nullopt;
+    CharacterControllerComponent controller{};
+    PlayerComponent player{};
+    HealthComponent health{};
     // Only the kind is authored: possession links and pawn input are runtime state, so the
     // definition carries no Pawn/Controller components to overwrite them with.
-    ControllerKindUVE controllerKind = ControllerKindUVE::Player;
+    ControllerKind controllerKind = ControllerKind::Player;
 };
 
-[[nodiscard]] bool IsPlayer3DObjectDefinitionValidUVE(const Player3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsPlayer3DObjectDefinitionValid(const Player3DObjectDefinition& value) noexcept;
 
-void ApplyPlayer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                      const Player3DObjectDefinitionUVE& value);
+void ApplyPlayer3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                      const Player3DObjectDefinition& value);
 
 /// The earliest player-marked body currently driven through mutual possession by a
 /// Player-kind controller - a self-possessed player, or a pawn a Player-kind director holds.
 /// AI-held and unpossessed bodies never resolve, whatever their flags say.
-[[nodiscard]] EntityUVE ResolvePossessedPlayerUVE(IEntityManagerUVE& entityManager);
+[[nodiscard]] Entity ResolvePossessedPlayer(IEntityManager& entityManager);
 
 /// Opportunistic self-possession fill for player-marked bodies: every entity with a valid
-/// PlayerComponentUVE whose possessOnPlay is set, carrying a Player-kind controller that drives
+/// PlayerComponent whose possessOnPlay is set, carrying a Player-kind controller that drives
 /// nothing and a pawn driven by nothing, is self-possessed. Never steals, so a director's
 /// takeover survives until released - and the fill hands the body back the frame after. The
 /// engine calls this before resolving or routing, every frame; safe to call whenever.
-void MaintainPlayerPossessionUVE(IEntityManagerUVE& entityManager);
+void MaintainPlayerPossession(IEntityManager& entityManager);
 
-[[nodiscard]] EntityUVE ResolvePlayCharacterUVE(IEntityManagerUVE& entityManager);
+[[nodiscard]] Entity ResolvePlayCharacter(IEntityManager& entityManager);
 
-[[nodiscard]] EntityUVE FindPlayerLookTargetUVE(IEntityManagerUVE& entityManager, EntityUVE player);
+[[nodiscard]] Entity FindPlayerLookTarget(IEntityManager& entityManager, Entity player);
 
-[[nodiscard]] EntityUVE FindPlayerCameraUVE(IEntityManagerUVE& entityManager, EntityUVE player);
+[[nodiscard]] Entity FindPlayerCamera(IEntityManager& entityManager, Entity player);
 
-void MakePlayerCameraCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE player);
+void MakePlayerCameraCurrent(IEntityManager& entityManager, Entity player);
 
-[[nodiscard]] Math::Vector3UVE FaceMoveFromLookUVE(const Math::QuaternionUVE& yawRotation,
-                                                   const Math::Vector3UVE& move) noexcept;
+[[nodiscard]] Math::Vector3 FaceMoveFromLook(const Math::Quaternion& yawRotation,
+                                                   const Math::Vector3& move) noexcept;
 
-void ApplyPlayerLookUVE(PlayerComponentUVE& player, TransformComponentUVE& body,
-                        TransformComponentUVE* lookTarget, Math::Vector2UVE pointerDelta,
-                        Math::Vector2UVE stick, float deltaTimeSeconds) noexcept;
+void ApplyPlayerLook(PlayerComponent& player, TransformComponent& body,
+                        TransformComponent* lookTarget, Math::Vector2 pointerDelta,
+                        Math::Vector2 stick, float deltaTimeSeconds) noexcept;
 
-[[nodiscard]] EntityUVE FindFocusedInteractionAreaUVE(IEntityManagerUVE& entityManager);
+[[nodiscard]] Entity FindFocusedInteractionArea(IEntityManager& entityManager);
 
 } // namespace UVE::Scene

@@ -11,30 +11,30 @@
 
 namespace UVE::Asset {
 
-/// Error tolerances for `AnimationClipCompressionUVE`. Every field is the TOTAL bound the
+/// Error tolerances for `AnimationClipCompression`. Every field is the TOTAL bound the
 /// compressed clip is designed to honour against the uncompressed samples, measured the same way
-/// `MeasureAnimationCompressionErrorUVE` measures it: worst-case over probe times, position and
+/// `MeasureAnimationCompressionError` measures it: worst-case over probe times, position and
 /// scale in euclidean distance, rotation in radians of angular distance between unit quaternions.
 /// The codec splits the budget between keyframe reduction (40%) and quantization (40%), leaving
 /// 20% as numerical margin for float interpolation and time rounding. Values must be finite and
 /// strictly positive, and are bounded above so a mis-typed tolerance cannot silently disable
 /// compression checks.
-struct AnimationCompressionSettingsUVE final {
-    static constexpr double kMaximumPositionErrorMetresUVE = 10.0;
-    static constexpr double kMaximumRotationErrorRadiansUVE = 3.14159265358979323846;
-    static constexpr double kMaximumScaleErrorUVE = 10.0;
+struct AnimationCompressionSettings final {
+    static constexpr double kMaximumPositionErrorMetres = 10.0;
+    static constexpr double kMaximumRotationErrorRadians = 3.14159265358979323846;
+    static constexpr double kMaximumScaleError = 10.0;
     // The codec's floors: tolerances below these cannot be guaranteed because the quantizer
     // cannot resolve finer steps, so settings validation rejects them explicitly instead of
     // silently producing a clip that misses its stated bound.
-    static constexpr double kMinimumPositionErrorMetresUVE = 1.0e-6;
-    static constexpr double kMinimumRotationErrorRadiansUVE = 2.0e-4;
-    static constexpr double kMinimumScaleErrorUVE = 1.0e-6;
+    static constexpr double kMinimumPositionErrorMetres = 1.0e-6;
+    static constexpr double kMinimumRotationErrorRadians = 2.0e-4;
+    static constexpr double kMinimumScaleError = 1.0e-6;
 
     double maximumPositionErrorMetres = 0.001;
     double maximumRotationErrorRadians = 0.002;
     double maximumScaleError = 0.001;
 
-    [[nodiscard]] bool operator==(const AnimationCompressionSettingsUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationCompressionSettings&) const = default;
 };
 
 /// One compressed motion track: the clip's object samples (empty `bone`) or one bone's local
@@ -52,96 +52,96 @@ struct AnimationCompressionSettingsUVE final {
 /// A zero-extent range axis stores its constant exactly (the quantized value is always zero and
 /// the decoder returns the minimum). `keyData` size must be exactly the record stride times an
 /// integer key count, so the layout can never silently desynchronize.
-struct CompressedAnimationTrackUVE final {
+struct CompressedAnimationTrack final {
     /// Empty for the clip's object track; otherwise the bone name from the source track.
     std::string bone;
-    Math::Vector3UVE positionRangeMinimum{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE positionRangeExtent{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE scaleRangeMinimum{1.0F, 1.0F, 1.0F};
-    Math::Vector3UVE scaleRangeExtent{0.0F, 0.0F, 0.0F};
+    Math::Vector3 positionRangeMinimum{0.0F, 0.0F, 0.0F};
+    Math::Vector3 positionRangeExtent{0.0F, 0.0F, 0.0F};
+    Math::Vector3 scaleRangeMinimum{1.0F, 1.0F, 1.0F};
+    Math::Vector3 scaleRangeExtent{0.0F, 0.0F, 0.0F};
     std::uint8_t positionComponentBits = 16;
     std::uint8_t scaleComponentBits = 16;
     std::vector<std::uint8_t> keyData;
 
-    [[nodiscard]] std::size_t KeyStrideBytesUVE() const noexcept;
-    [[nodiscard]] std::size_t KeyCountUVE() const noexcept;
-    [[nodiscard]] bool operator==(const CompressedAnimationTrackUVE&) const = default;
+    [[nodiscard]] std::size_t KeyStrideBytes() const noexcept;
+    [[nodiscard]] std::size_t KeyCount() const noexcept;
+    [[nodiscard]] bool operator==(const CompressedAnimationTrack&) const = default;
 };
 
-/// A compressed clip: the same content as `AnimationClipAssetUVE` (object track, bone tracks,
-/// events, rest skeleton) with the sample streams rebuilt by `CompressAnimationClipAssetUVE`.
+/// A compressed clip: the same content as `AnimationClipAsset` (object track, bone tracks,
+/// events, rest skeleton) with the sample streams rebuilt by `CompressAnimationClipAsset`.
 /// Events and the rest skeleton stay lossless - they are metadata, not per-frame payload - so
 /// retargeting and gameplay timing are bit-identical before and after compression. `conformed`
 /// carries over unchanged.
-struct CompressedAnimationClipUVE final {
+struct CompressedAnimationClip final {
     std::string clipId;
     double durationSeconds = 0.0;
     bool conformed = false;
-    /// `KeyCountUVE() == 0` means the source clip had no object samples.
-    CompressedAnimationTrackUVE object;
-    std::vector<CompressedAnimationTrackUVE> bones;
-    std::vector<AnimationAssetEventUVE> events;
-    std::vector<AnimationAssetRestBoneUVE> rest;
+    /// `KeyCount() == 0` means the source clip had no object samples.
+    CompressedAnimationTrack object;
+    std::vector<CompressedAnimationTrack> bones;
+    std::vector<AnimationAssetEvent> events;
+    std::vector<AnimationAssetRestBone> rest;
 
-    [[nodiscard]] bool operator==(const CompressedAnimationClipUVE&) const = default;
+    [[nodiscard]] bool operator==(const CompressedAnimationClip&) const = default;
 };
 
-struct AnimationCompressionErrorReportUVE final {
+struct AnimationCompressionErrorReport final {
     double maximumPositionErrorMetres = 0.0;
     double maximumRotationErrorRadians = 0.0;
     double maximumScaleError = 0.0;
     std::size_t probeCount = 0U;
 
-    [[nodiscard]] bool operator==(const AnimationCompressionErrorReportUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationCompressionErrorReport&) const = default;
 };
 
-[[nodiscard]] bool IsAnimationCompressionSettingsValidUVE(
-    const AnimationCompressionSettingsUVE& settings) noexcept;
+[[nodiscard]] bool IsAnimationCompressionSettingsValid(
+    const AnimationCompressionSettings& settings) noexcept;
 
 /// Bounds and layout validation for a compressed clip: finite ranges, legal component bits,
 /// stride-consistent key streams, bounded key and track counts, and duplicate-free bone names.
-[[nodiscard]] bool IsCompressedAnimationClipValidUVE(const CompressedAnimationClipUVE& clip) noexcept;
+[[nodiscard]] bool IsCompressedAnimationClipValid(const CompressedAnimationClip& clip) noexcept;
 
 /// Keyframe-reduces and quantizes a validated clip's sample streams. The source is validated with
-/// `IsAnimationClipAssetValidUVE`; events and the rest skeleton are copied through losslessly.
+/// `IsAnimationClipAssetValid`; events and the rest skeleton are copied through losslessly.
 /// Fails closed and leaves `outCompressed` untouched on invalid input, invalid settings, or a
 /// capacity overflow. Compression is deterministic: the same input and settings always produce an
-/// equal `CompressedAnimationClipUVE`.
-[[nodiscard]] bool CompressAnimationClipAssetUVE(const AnimationClipAssetUVE& clip,
-                                                 const AnimationCompressionSettingsUVE& settings,
-                                                 CompressedAnimationClipUVE& outCompressed);
+/// equal `CompressedAnimationClip`.
+[[nodiscard]] bool CompressAnimationClipAsset(const AnimationClipAsset& clip,
+                                                 const AnimationCompressionSettings& settings,
+                                                 CompressedAnimationClip& outCompressed);
 
 /// The runtime decompression path: reconstructs one track's pose at `timeSeconds` from its packed
 /// keys. Semantics mirror the uncompressed clip sampler exactly: times clamp at both ends, position
 /// and scale lerp linearly, rotations nlerp and re-normalize (no shortest-path sign flip, matching
-/// `InterpolatePoseUVE`), and `looping` wraps through the clip duration. Fails closed on invalid
+/// `InterpolatePose`), and `looping` wraps through the clip duration. Fails closed on invalid
 /// tracks, non-finite times, or a non-positive duration.
-[[nodiscard]] bool TrySampleCompressedAnimationTrackUVE(const CompressedAnimationTrackUVE& track,
+[[nodiscard]] bool TrySampleCompressedAnimationTrack(const CompressedAnimationTrack& track,
                                                         double durationSeconds, double timeSeconds,
                                                         bool looping,
-                                                        AnimationAssetPoseUVE& outPose) noexcept;
+                                                        AnimationAssetPose& outPose) noexcept;
 
 /// Rebuilds an uncompressed clip from a compressed one. Keys decode to their quantized values, so
 /// the result is within the codec's error bounds of the original rather than bit-identical to it;
 /// events and the rest skeleton round-trip exactly. Intended for tools and tests that need the
 /// sample model, not for the runtime path.
-[[nodiscard]] bool TryDecompressAnimationClipAssetUVE(const CompressedAnimationClipUVE& compressed,
-                                                      AnimationClipAssetUVE& outClip);
+[[nodiscard]] bool TryDecompressAnimationClipAsset(const CompressedAnimationClip& compressed,
+                                                      AnimationClipAsset& outClip);
 
 /// Samples both representations on a uniform time grid and reports the worst deviation per
 /// channel, in the same units the settings use. Used by the codec's tests and by tools that want
 /// to prove a particular compressed clip still meets its tolerances.
-[[nodiscard]] AnimationCompressionErrorReportUVE MeasureAnimationCompressionErrorUVE(
-    const AnimationClipAssetUVE& original, const CompressedAnimationClipUVE& compressed,
+[[nodiscard]] AnimationCompressionErrorReport MeasureAnimationCompressionError(
+    const AnimationClipAsset& original, const CompressedAnimationClip& compressed,
     std::size_t probeCount = 256U);
 
 /// Reference (uncompressed) sample-stream size in bytes: every source sample is its time plus
-/// position, rotation and scale floats. Compare against `GetCompressedAnimationClipByteSizeUVE`.
-[[nodiscard]] std::size_t GetAnimationClipAssetSampleByteSizeUVE(
-    const AnimationClipAssetUVE& clip) noexcept;
+/// position, rotation and scale floats. Compare against `GetCompressedAnimationClipByteSize`.
+[[nodiscard]] std::size_t GetAnimationClipAssetSampleByteSize(
+    const AnimationClipAsset& clip) noexcept;
 
 /// Total heap footprint of a compressed clip's own containers (tracks, key streams, events, rest).
-[[nodiscard]] std::size_t GetCompressedAnimationClipByteSizeUVE(
-    const CompressedAnimationClipUVE& clip) noexcept;
+[[nodiscard]] std::size_t GetCompressedAnimationClipByteSize(
+    const CompressedAnimationClip& clip) noexcept;
 
 } // namespace UVE::Asset

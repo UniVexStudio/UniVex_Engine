@@ -23,77 +23,77 @@
 
 namespace UVE::Render::Shader {
 
-struct ShaderManagerUVE::ImplUVE {
-    Threading::IThreadPoolUVE& threadPool;
-    Events::IEventSystemUVE& eventSystem;
-    IRenderDeviceUVE& renderDevice;
-    Asset::IFileSystemUVE& fileSystem;
-    ShaderManagerConfigUVE config;
+struct ShaderManager::Impl {
+    Threading::IThreadPool& threadPool;
+    Events::IEventSystem& eventSystem;
+    IRenderDevice& renderDevice;
+    Asset::IFileSystem& fileSystem;
+    ShaderManagerConfig config;
 
-    Threading::JobCounterUVE pendingJobs;
+    Threading::JobCounter pendingJobs;
     mutable std::mutex mutex;
     std::size_t pendingJobCount = 0;
 
-    struct SourceJobUVE {
-        std::shared_ptr<ShaderSourceUVE> target;
-        ShaderSourceCompileDescUVE desc;
-        Detail::PreprocessResultUVE preprocess;
+    struct SourceJob {
+        std::shared_ptr<ShaderSource> target;
+        ShaderSourceCompileDesc desc;
+        Detail::PreprocessResult preprocess;
     };
-    std::vector<SourceJobUVE> completedSourceJobs; // guarded by mutex - written from worker threads
+    std::vector<SourceJob> completedSourceJobs; // guarded by mutex - written from worker threads
 
     /// Internal normalized representation shared by the legacy unified-source API and the
     /// Increment 34 separate-stage API. Source hot-reload flags are disabled here because linked
     /// program tracking owns the union of both stage dependency closures.
-    struct ProgramRequestDescUVE {
-        ShaderSourceCompileDescUVE vertexSource;
-        ShaderSourceCompileDescUVE fragmentSource;
-        std::vector<VertexAttributeUVE> vertexLayout;
+    struct ProgramRequestDesc {
+        ShaderSourceCompileDesc vertexSource;
+        ShaderSourceCompileDesc fragmentSource;
+        std::vector<VertexAttribute> vertexLayout;
         std::uint32_t vertexStride = 0;
-        PrimitiveTopologyUVE topology = PrimitiveTopologyUVE::Triangles;
+        PrimitiveTopology topology = PrimitiveTopology::Triangles;
         bool depthTestEnabled = true;
         bool depthWriteEnabled = true;
-        PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
-        CullModeUVE cullMode = CullModeUVE::None;
-        FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
-        FillModeUVE fillMode = FillModeUVE::Fill;
+        PipelineBlendMode blendMode = PipelineBlendMode::Opaque;
+        CullMode cullMode = CullMode::None;
+        FrontFace frontFace = FrontFace::CounterClockwise;
+        FillMode fillMode = FillMode::Fill;
         bool depthBiasEnabled = false;
         float depthBiasConstantFactor = 0.0F;
         float depthBiasSlopeFactor = 0.0F;
-        DepthCompareUVE depthCompare = DepthCompareUVE::Less;
-        bool hotReloadEnabledUVE = true;
-        std::string debugNameUVE;
+        DepthCompare depthCompare = DepthCompare::Less;
+        bool hotReloadEnabled = true;
+        std::string debugName;
     };
 
-    struct PendingProgramLinkUVE {
-        std::shared_ptr<ShaderProgramUVE> program;
-        std::shared_ptr<ShaderSourceUVE> vertexSource;
-        std::shared_ptr<ShaderSourceUVE> fragmentSource;
-        ProgramRequestDescUVE desc;
+    struct PendingProgramLink {
+        std::shared_ptr<ShaderProgram> program;
+        std::shared_ptr<ShaderSource> vertexSource;
+        std::shared_ptr<ShaderSource> fragmentSource;
+        ProgramRequestDesc desc;
     };
-    std::vector<PendingProgramLinkUVE> pendingProgramLinks; // main-thread only
+    std::vector<PendingProgramLink> pendingProgramLinks; // main-thread only
 
-    struct TrackedDependenciesUVE {
+    struct TrackedDependencies {
         std::vector<std::string> dependencyClosure;
         std::unordered_map<std::string, std::filesystem::file_time_type> lastKnownWriteTimes;
     };
-    struct TrackedSourceUVE {
-        std::weak_ptr<ShaderSourceUVE> target;
-        ShaderSourceCompileDescUVE desc;
-        TrackedDependenciesUVE dependencies;
+    struct TrackedSource {
+        std::weak_ptr<ShaderSource> target;
+        ShaderSourceCompileDesc desc;
+        TrackedDependencies dependencies;
     };
-    struct TrackedProgramUVE {
-        std::weak_ptr<ShaderProgramUVE> target;
-        ProgramRequestDescUVE desc;
-        TrackedDependenciesUVE dependencies;
+    struct TrackedProgram {
+        std::weak_ptr<ShaderProgram> target;
+        ProgramRequestDesc desc;
+        TrackedDependencies dependencies;
     };
-    std::vector<TrackedSourceUVE> trackedSources;   // main-thread only
-    std::vector<TrackedProgramUVE> trackedPrograms; // main-thread only
+    std::vector<TrackedSource> trackedSources;   // main-thread only
+    std::vector<TrackedProgram> trackedPrograms; // main-thread only
 
     double hotReloadAccumulatorSeconds = 0.0;
     bool lastCompileUsedCache = false;
 
-    ImplUVE(Threading::IThreadPoolUVE& threadPoolIn, Events::IEventSystemUVE& eventSystemIn,
-            IRenderDeviceUVE& renderDeviceIn, Asset::IFileSystemUVE& fileSystemIn, ShaderManagerConfigUVE configIn)
+    Impl(Threading::IThreadPool& threadPoolIn, Events::IEventSystem& eventSystemIn,
+            IRenderDevice& renderDeviceIn, Asset::IFileSystem& fileSystemIn, ShaderManagerConfig configIn)
         : threadPool(threadPoolIn),
           eventSystem(eventSystemIn),
           renderDevice(renderDeviceIn),
@@ -103,22 +103,22 @@ struct ShaderManagerUVE::ImplUVE {
 
 namespace {
 
-[[nodiscard]] const char* ShaderStageDefineNameUVE(ShaderStageUVE stage) noexcept {
+[[nodiscard]] const char* ShaderStageDefineName(ShaderStage stage) noexcept {
     switch (stage) {
-        case ShaderStageUVE::Vertex:
+        case ShaderStage::Vertex:
             return "VERTEX_SHADER";
-        case ShaderStageUVE::Fragment:
+        case ShaderStage::Fragment:
             return "FRAGMENT_SHADER";
-        case ShaderStageUVE::Compute:
+        case ShaderStage::Compute:
             return "COMPUTE_SHADER";
-        case ShaderStageUVE::Geometry:
+        case ShaderStage::Geometry:
             return "GEOMETRY_SHADER";
     }
     return "";
 }
 
-[[nodiscard]] std::vector<std::pair<std::string, std::string>> BuildDefinesUVE(
-    ShaderStageUVE stage, bool injectDebugDefine, const std::vector<std::pair<std::string, std::string>>& extraDefines) {
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> BuildDefines(
+    ShaderStage stage, bool injectDebugDefine, const std::vector<std::pair<std::string, std::string>>& extraDefines) {
     std::vector<std::pair<std::string, std::string>> defines;
     defines.reserve(extraDefines.size() + 4);
     defines.emplace_back("UVE_DEBUG", injectDebugDefine ? "1" : "0");
@@ -128,64 +128,64 @@ namespace {
     defines.emplace_back("UVE_MOBILE", "0");
 #endif
     defines.emplace_back("UVE_BACKEND_GL", "1"); // Reserved for a future non-GL backend to define its own instead.
-    defines.emplace_back(ShaderStageDefineNameUVE(stage), "1");
+    defines.emplace_back(ShaderStageDefineName(stage), "1");
     defines.insert(defines.end(), extraDefines.begin(), extraDefines.end());
     return defines;
 }
 
-[[nodiscard]] std::filesystem::file_time_type GetRealFileWriteTimeUVE(Asset::IFileSystemUVE& fileSystem,
+[[nodiscard]] std::filesystem::file_time_type GetRealFileWriteTime(Asset::IFileSystem& fileSystem,
                                                                        const std::string& virtualPath) {
-    const std::filesystem::path realPath = fileSystem.ResolveRealPathUVE(virtualPath);
+    const std::filesystem::path realPath = fileSystem.ResolveRealPath(virtualPath);
     std::error_code errorCode;
     const auto writeTime = std::filesystem::last_write_time(realPath, errorCode);
     return errorCode ? std::filesystem::file_time_type{} : writeTime;
 }
 
-[[nodiscard]] std::uint64_t ComputeSourceContentHashUVE(IRenderDeviceUVE& renderDevice, const std::string& resolvedSource,
-                                                         ShaderStageUVE stage, const std::string& entryPoint) {
+[[nodiscard]] std::uint64_t ComputeSourceContentHash(IRenderDevice& renderDevice, const std::string& resolvedSource,
+                                                         ShaderStage stage, const std::string& entryPoint) {
     std::string combined = resolvedSource;
     combined += '|';
-    combined += ShaderStageDefineNameUVE(stage);
+    combined += ShaderStageDefineName(stage);
     combined += '|';
     combined += entryPoint;
     combined += '|';
-    combined += std::string(renderDevice.GetBackendNameUVE());
-    return Utilities::HashStringUVE(combined);
+    combined += std::string(renderDevice.GetBackendName());
+    return Utilities::HashString(combined);
 }
 
-[[nodiscard]] std::uint64_t ComputeProgramContentHashUVE(const ShaderSourceUVE& vertexSource,
-                                                          const ShaderSourceUVE& fragmentSource) {
+[[nodiscard]] std::uint64_t ComputeProgramContentHash(const ShaderSource& vertexSource,
+                                                          const ShaderSource& fragmentSource) {
     const std::string combined =
-        std::to_string(vertexSource.GetContentHashUVE()) + "|" + std::to_string(fragmentSource.GetContentHashUVE());
-    return Utilities::HashStringUVE(combined);
+        std::to_string(vertexSource.GetContentHash()) + "|" + std::to_string(fragmentSource.GetContentHash());
+    return Utilities::HashString(combined);
 }
 
-[[nodiscard]] ShaderSourceCompileDescUVE NormalizeProgramStageDescUVE(ShaderSourceCompileDescUVE desc,
-                                                                        ShaderStageUVE stage,
+[[nodiscard]] ShaderSourceCompileDesc NormalizeProgramStageDesc(ShaderSourceCompileDesc desc,
+                                                                        ShaderStage stage,
                                                                         const std::string& programDebugName) {
     desc.stage = stage;
     // Dependency tracking happens at the linked-program level (the union of both stage closures),
     // so individual child sources never create competing tracking entries.
-    desc.hotReloadEnabledUVE = false;
-    if (desc.debugNameUVE.empty()) {
-        desc.debugNameUVE = programDebugName;
+    desc.hotReloadEnabled = false;
+    if (desc.debugName.empty()) {
+        desc.debugName = programDebugName;
     }
-    desc.debugNameUVE += stage == ShaderStageUVE::Vertex ? " (vertex)" : " (fragment)";
+    desc.debugName += stage == ShaderStage::Vertex ? " (vertex)" : " (fragment)";
     return desc;
 }
 
-[[nodiscard]] ShaderManagerUVE::ImplUVE::ProgramRequestDescUVE BuildProgramRequestDescUVE(
-    const ShaderProgramDescUVE& desc) {
-    ShaderManagerUVE::ImplUVE::ProgramRequestDescUVE request;
-    request.debugNameUVE = desc.debugNameUVE;
-    request.vertexSource = NormalizeProgramStageDescUVE(
-        ShaderSourceCompileDescUVE{ShaderStageUVE::Vertex, desc.virtualFilePath, desc.embeddedFallbackSourceCode,
+[[nodiscard]] ShaderManager::Impl::ProgramRequestDesc BuildProgramRequestDesc(
+    const ShaderProgramDesc& desc) {
+    ShaderManager::Impl::ProgramRequestDesc request;
+    request.debugName = desc.debugName;
+    request.vertexSource = NormalizeProgramStageDesc(
+        ShaderSourceCompileDesc{ShaderStage::Vertex, desc.virtualFilePath, desc.embeddedFallbackSourceCode,
                                    desc.extraDefines, desc.entryPointName, false, {}},
-        ShaderStageUVE::Vertex, request.debugNameUVE);
-    request.fragmentSource = NormalizeProgramStageDescUVE(
-        ShaderSourceCompileDescUVE{ShaderStageUVE::Fragment, desc.virtualFilePath, desc.embeddedFallbackSourceCode,
+        ShaderStage::Vertex, request.debugName);
+    request.fragmentSource = NormalizeProgramStageDesc(
+        ShaderSourceCompileDesc{ShaderStage::Fragment, desc.virtualFilePath, desc.embeddedFallbackSourceCode,
                                    desc.extraDefines, desc.entryPointName, false, {}},
-        ShaderStageUVE::Fragment, request.debugNameUVE);
+        ShaderStage::Fragment, request.debugName);
     request.vertexLayout = desc.vertexLayout;
     request.vertexStride = desc.vertexStride;
     request.topology = desc.topology;
@@ -199,17 +199,17 @@ namespace {
     request.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     request.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     request.depthCompare = desc.depthCompare;
-    request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
+    request.hotReloadEnabled = desc.hotReloadEnabled;
     return request;
 }
 
-[[nodiscard]] ShaderManagerUVE::ImplUVE::ProgramRequestDescUVE BuildProgramRequestDescUVE(
-    const ShaderProgramStagesDescUVE& desc) {
-    ShaderManagerUVE::ImplUVE::ProgramRequestDescUVE request;
-    request.debugNameUVE = desc.debugNameUVE;
-    request.vertexSource = NormalizeProgramStageDescUVE(desc.vertexSource, ShaderStageUVE::Vertex, request.debugNameUVE);
+[[nodiscard]] ShaderManager::Impl::ProgramRequestDesc BuildProgramRequestDesc(
+    const ShaderProgramStagesDesc& desc) {
+    ShaderManager::Impl::ProgramRequestDesc request;
+    request.debugName = desc.debugName;
+    request.vertexSource = NormalizeProgramStageDesc(desc.vertexSource, ShaderStage::Vertex, request.debugName);
     request.fragmentSource =
-        NormalizeProgramStageDescUVE(desc.fragmentSource, ShaderStageUVE::Fragment, request.debugNameUVE);
+        NormalizeProgramStageDesc(desc.fragmentSource, ShaderStage::Fragment, request.debugName);
     request.vertexLayout = desc.vertexLayout;
     request.vertexStride = desc.vertexStride;
     request.topology = desc.topology;
@@ -223,17 +223,17 @@ namespace {
     request.depthBiasConstantFactor = desc.depthBiasConstantFactor;
     request.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
     request.depthCompare = desc.depthCompare;
-    request.hotReloadEnabledUVE = desc.hotReloadEnabledUVE;
+    request.hotReloadEnabled = desc.hotReloadEnabled;
     return request;
 }
 
 } // namespace
 
-std::shared_ptr<ShaderSourceUVE> ShaderManagerUVE::MakeSourceUVE(IRenderDeviceUVE& renderDevice, ShaderStageUVE stage) {
+std::shared_ptr<ShaderSource> ShaderManager::MakeSource(IRenderDevice& renderDevice, ShaderStage stage) {
     auto* const renderDevicePtr = &renderDevice;
-    std::shared_ptr<ShaderSourceUVE> source(new ShaderSourceUVE(), [renderDevicePtr](ShaderSourceUVE* pointer) {
+    std::shared_ptr<ShaderSource> source(new ShaderSource(), [renderDevicePtr](ShaderSource* pointer) {
         if (pointer->m_valid) {
-            renderDevicePtr->DestroyShaderUVE(pointer->m_handle);
+            renderDevicePtr->DestroyShader(pointer->m_handle);
         }
         delete pointer;
     });
@@ -241,28 +241,28 @@ std::shared_ptr<ShaderSourceUVE> ShaderManagerUVE::MakeSourceUVE(IRenderDeviceUV
     return source;
 }
 
-std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::MakeProgramUVE(IRenderDeviceUVE& renderDevice) {
+std::shared_ptr<ShaderProgram> ShaderManager::MakeProgram(IRenderDevice& renderDevice) {
     auto* const renderDevicePtr = &renderDevice;
-    std::shared_ptr<ShaderProgramUVE> program(new ShaderProgramUVE(), [renderDevicePtr](ShaderProgramUVE* pointer) {
+    std::shared_ptr<ShaderProgram> program(new ShaderProgram(), [renderDevicePtr](ShaderProgram* pointer) {
         if (pointer->m_valid) {
-            renderDevicePtr->DestroyPipelineUVE(pointer->m_pipeline);
+            renderDevicePtr->DestroyPipeline(pointer->m_pipeline);
         }
         delete pointer;
     });
     return program;
 }
 
-void ShaderManagerUVE::SubmitSourceCompileJobUVE(ImplUVE& impl, const std::shared_ptr<ShaderSourceUVE>& target,
-                                                  const ShaderSourceCompileDescUVE& desc) {
-    if (impl.config.compileSynchronouslyUVE) {
+void ShaderManager::SubmitSourceCompileJob(Impl& impl, const std::shared_ptr<ShaderSource>& target,
+                                                  const ShaderSourceCompileDesc& desc) {
+    if (impl.config.compileSynchronously) {
         const std::vector<std::pair<std::string, std::string>> defines =
-            BuildDefinesUVE(desc.stage, impl.config.injectDebugDefineUVE, desc.extraDefines);
-        Detail::PreprocessResultUVE preprocess = Detail::PreprocessShaderSourceUVE(
+            BuildDefines(desc.stage, impl.config.injectDebugDefine, desc.extraDefines);
+        Detail::PreprocessResult preprocess = Detail::PreprocessShaderSource(
             impl.fileSystem, desc.virtualFilePath, desc.embeddedFallbackSourceCode, defines);
         std::lock_guard<std::mutex> lock(impl.mutex);
         ++impl.pendingJobCount;
         impl.completedSourceJobs.push_back(
-            ImplUVE::SourceJobUVE{target, desc, std::move(preprocess)});
+            Impl::SourceJob{target, desc, std::move(preprocess)});
         return;
     }
 
@@ -270,13 +270,13 @@ void ShaderManagerUVE::SubmitSourceCompileJobUVE(ImplUVE& impl, const std::share
         std::lock_guard<std::mutex> lock(impl.mutex);
         ++impl.pendingJobCount;
     }
-    impl.threadPool.SubmitUVE(
+    impl.threadPool.Submit(
         // Init-captures: a plain capture of these const& parameters would be const, and the
         // moves below would quietly copy.
         [&impl, target = target, desc = desc]() mutable {
             const std::vector<std::pair<std::string, std::string>> defines =
-                BuildDefinesUVE(desc.stage, impl.config.injectDebugDefineUVE, desc.extraDefines);
-            Detail::PreprocessResultUVE preprocess = Detail::PreprocessShaderSourceUVE(
+                BuildDefines(desc.stage, impl.config.injectDebugDefine, desc.extraDefines);
+            Detail::PreprocessResult preprocess = Detail::PreprocessShaderSource(
                 impl.fileSystem, desc.virtualFilePath, desc.embeddedFallbackSourceCode, defines);
 
             // Hand the target over rather than copying it. A copy left in this job's captures
@@ -285,13 +285,13 @@ void ShaderManagerUVE::SubmitSourceCompileJobUVE(ImplUVE& impl, const std::share
             // moment the pool gets round to destroying the job.
             std::lock_guard<std::mutex> lock(impl.mutex);
             impl.completedSourceJobs.push_back(
-                ImplUVE::SourceJobUVE{std::move(target), std::move(desc), std::move(preprocess)});
+                Impl::SourceJob{std::move(target), std::move(desc), std::move(preprocess)});
         },
         impl.pendingJobs);
 }
 
-void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
-    std::vector<ImplUVE::SourceJobUVE> completedJobs;
+void ShaderManager::DrainCompletedSourceJobs(Impl& impl) {
+    std::vector<Impl::SourceJob> completedJobs;
     {
         std::lock_guard<std::mutex> lock(impl.mutex);
         completedJobs.swap(impl.completedSourceJobs);
@@ -299,31 +299,31 @@ void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
     }
 
     for (auto& job : completedJobs) {
-        ShaderSourceUVE& source = *job.target;
+        ShaderSource& source = *job.target;
 
         if (!job.preprocess.success) {
             source.m_ready = true;
             source.m_valid = false; // A failed hot-reload preprocess leaves any prior valid handle untouched.
-            source.m_diagnostics = ShaderCompileDiagnosticsUVE{false, {}, job.preprocess.errorMessage};
+            source.m_diagnostics = ShaderCompileDiagnostics{false, {}, job.preprocess.errorMessage};
             impl.eventSystem.QueueEvent(
-                ShaderCompileFailedEventUVE{job.desc.debugNameUVE, job.desc.stage, source.m_diagnostics});
+                ShaderCompileFailedEvent{job.desc.debugName, job.desc.stage, source.m_diagnostics});
         } else {
             std::string infoLog;
-            const ShaderHandleUVE newHandle = impl.renderDevice.CreateShaderUVE(
-                ShaderDescUVE{job.desc.stage, job.preprocess.resolvedSource, job.desc.entryPointName}, &infoLog);
-            const bool succeeded = (newHandle != kInvalidShaderHandleUVE);
-            const std::vector<ShaderCompileErrorUVE> diagnosticsList =
-                Detail::ParseGlInfoLogUVE(infoLog, job.preprocess.fileIndexTable);
+            const ShaderHandle newHandle = impl.renderDevice.CreateShader(
+                ShaderDesc{job.desc.stage, job.preprocess.resolvedSource, job.desc.entryPointName}, &infoLog);
+            const bool succeeded = (newHandle != kInvalidShaderHandle);
+            const std::vector<ShaderCompileError> diagnosticsList =
+                Detail::ParseGlInfoLog(infoLog, job.preprocess.fileIndexTable);
 
             if (succeeded) {
                 if (source.m_valid) {
                     // Hot-reload swap: the new shader compiled successfully, so it's safe to
                     // destroy the old one now - never before a replacement is confirmed live.
-                    impl.renderDevice.DestroyShaderUVE(source.m_handle);
+                    impl.renderDevice.DestroyShader(source.m_handle);
                 }
                 source.m_handle = newHandle;
                 source.m_resolvedSource = job.preprocess.resolvedSource;
-                source.m_contentHash = ComputeSourceContentHashUVE(impl.renderDevice, job.preprocess.resolvedSource,
+                source.m_contentHash = ComputeSourceContentHash(impl.renderDevice, job.preprocess.resolvedSource,
                                                                     job.desc.stage, job.desc.entryPointName);
                 source.m_dependencyClosure = job.preprocess.dependencyClosure;
                 source.m_valid = true;
@@ -332,15 +332,15 @@ void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
             // source keeps rendering its last-known-good state rather than going dark on a typo.
 
             source.m_ready = true;
-            source.m_diagnostics = ShaderCompileDiagnosticsUVE{succeeded, diagnosticsList, infoLog};
+            source.m_diagnostics = ShaderCompileDiagnostics{succeeded, diagnosticsList, infoLog};
 
             if (!succeeded) {
                 impl.eventSystem.QueueEvent(
-                    ShaderCompileFailedEventUVE{job.desc.debugNameUVE, job.desc.stage, source.m_diagnostics});
+                    ShaderCompileFailedEvent{job.desc.debugName, job.desc.stage, source.m_diagnostics});
             }
         }
 
-        if (job.desc.hotReloadEnabledUVE && !job.preprocess.dependencyClosure.empty()) {
+        if (job.desc.hotReloadEnabled && !job.preprocess.dependencyClosure.empty()) {
             bool found = false;
             for (auto& tracked : impl.trackedSources) {
                 if (tracked.target.lock() == job.target) {
@@ -349,7 +349,7 @@ void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
                     for (const std::string& path : job.preprocess.dependencyClosure) {
                         if (!tracked.dependencies.lastKnownWriteTimes.contains(path)) {
                             tracked.dependencies.lastKnownWriteTimes[path] =
-                                GetRealFileWriteTimeUVE(impl.fileSystem, path);
+                                GetRealFileWriteTime(impl.fileSystem, path);
                         }
                     }
                     found = true;
@@ -357,12 +357,12 @@ void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
                 }
             }
             if (!found) {
-                ImplUVE::TrackedSourceUVE entry;
+                Impl::TrackedSource entry;
                 entry.target = job.target;
                 entry.desc = job.desc;
                 entry.dependencies.dependencyClosure = job.preprocess.dependencyClosure;
                 for (const std::string& path : job.preprocess.dependencyClosure) {
-                    entry.dependencies.lastKnownWriteTimes[path] = GetRealFileWriteTimeUVE(impl.fileSystem, path);
+                    entry.dependencies.lastKnownWriteTimes[path] = GetRealFileWriteTime(impl.fileSystem, path);
                 }
                 impl.trackedSources.push_back(std::move(entry));
             }
@@ -370,27 +370,27 @@ void ShaderManagerUVE::DrainCompletedSourceJobsUVE(ImplUVE& impl) {
     }
 }
 
-void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
-    std::vector<ImplUVE::PendingProgramLinkUVE> stillPendingLinks;
+void ShaderManager::ApplyPendingProgramLinks(Impl& impl) {
+    std::vector<Impl::PendingProgramLink> stillPendingLinks;
     for (auto& pending : impl.pendingProgramLinks) {
-        if (!(pending.vertexSource->IsReadyUVE() && pending.fragmentSource->IsReadyUVE())) {
+        if (!(pending.vertexSource->IsReady() && pending.fragmentSource->IsReady())) {
             stillPendingLinks.push_back(std::move(pending));
             continue;
         }
 
-        ShaderProgramUVE& program = *pending.program;
-        const bool stagesValid = pending.vertexSource->IsValidUVE() && pending.fragmentSource->IsValidUVE();
+        ShaderProgram& program = *pending.program;
+        const bool stagesValid = pending.vertexSource->IsValid() && pending.fragmentSource->IsValid();
 
         bool linkSucceeded = false;
-        std::vector<ShaderCompileErrorUVE> diagnosticsList;
+        std::vector<ShaderCompileError> diagnosticsList;
         std::string infoLog;
 
         if (stagesValid) {
             const std::uint64_t programHash =
-                ComputeProgramContentHashUVE(*pending.vertexSource, *pending.fragmentSource);
+                ComputeProgramContentHash(*pending.vertexSource, *pending.fragmentSource);
             const std::filesystem::path cacheFilePath =
-                Detail::GetCacheFilePathUVE(impl.config.cachePath, programHash);
-            PipelineBinaryDescUVE binaryDesc;
+                Detail::GetCacheFilePath(impl.config.cachePath, programHash);
+            PipelineBinaryDesc binaryDesc;
             binaryDesc.vertexLayout = pending.desc.vertexLayout;
             binaryDesc.vertexStride = pending.desc.vertexStride;
             binaryDesc.topology = pending.desc.topology;
@@ -405,20 +405,20 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
             binaryDesc.depthBiasSlopeFactor = pending.desc.depthBiasSlopeFactor;
             binaryDesc.depthCompare = pending.desc.depthCompare;
 
-            PipelineHandleUVE newPipeline = kInvalidPipelineHandleUVE;
+            PipelineHandle newPipeline = kInvalidPipelineHandle;
             bool usedCache = false;
 
-            const std::optional<Detail::CacheEntryUVE> cacheEntry = Detail::ReadCacheEntryUVE(cacheFilePath);
+            const std::optional<Detail::CacheEntry> cacheEntry = Detail::ReadCacheEntry(cacheFilePath);
             if (cacheEntry.has_value()) {
-                newPipeline = impl.renderDevice.CreatePipelineFromBinaryUVE(
+                newPipeline = impl.renderDevice.CreatePipelineFromBinary(
                     cacheEntry->payload, cacheEntry->glBinaryFormat, binaryDesc);
-                usedCache = (newPipeline != kInvalidPipelineHandleUVE);
+                usedCache = (newPipeline != kInvalidPipelineHandle);
             }
 
-            if (newPipeline == kInvalidPipelineHandleUVE) {
-                PipelineDescUVE pipelineDesc;
-                pipelineDesc.vertexShader = pending.vertexSource->GetHandleUVE();
-                pipelineDesc.fragmentShader = pending.fragmentSource->GetHandleUVE();
+            if (newPipeline == kInvalidPipelineHandle) {
+                PipelineDesc pipelineDesc;
+                pipelineDesc.vertexShader = pending.vertexSource->GetHandle();
+                pipelineDesc.fragmentShader = pending.fragmentSource->GetHandle();
                 pipelineDesc.vertexLayout = pending.desc.vertexLayout;
                 pipelineDesc.topology = pending.desc.topology;
                 pipelineDesc.depthTestEnabled = pending.desc.depthTestEnabled;
@@ -432,48 +432,48 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
                 pipelineDesc.depthBiasSlopeFactor = pending.desc.depthBiasSlopeFactor;
                 pipelineDesc.depthCompare = pending.desc.depthCompare;
                 pipelineDesc.vertexStride = pending.desc.vertexStride;
-                newPipeline = impl.renderDevice.CreatePipelineUVE(pipelineDesc, &infoLog);
+                newPipeline = impl.renderDevice.CreatePipeline(pipelineDesc, &infoLog);
 
-                if (newPipeline != kInvalidPipelineHandleUVE) {
+                if (newPipeline != kInvalidPipelineHandle) {
                     std::vector<std::byte> binary;
                     std::uint32_t binaryFormat = 0;
-                    if (impl.renderDevice.GetPipelineBinaryUVE(newPipeline, binary, binaryFormat)) {
+                    if (impl.renderDevice.GetPipelineBinary(newPipeline, binary, binaryFormat)) {
                         // Best-effort: a cache write failure is never fatal, just logged by
-                        // WriteCacheEntryUVE itself - the next startup simply recompiles from
+                        // WriteCacheEntry itself - the next startup simply recompiles from
                         // source.
-                        static_cast<void>(Detail::WriteCacheEntryUVE(cacheFilePath, binaryFormat, binary));
+                        static_cast<void>(Detail::WriteCacheEntry(cacheFilePath, binaryFormat, binary));
                     }
                 }
             }
 
             impl.lastCompileUsedCache = usedCache;
-            diagnosticsList = Detail::ParseGlInfoLogUVE(infoLog, {});
-            linkSucceeded = (newPipeline != kInvalidPipelineHandleUVE);
+            diagnosticsList = Detail::ParseGlInfoLog(infoLog, {});
+            linkSucceeded = (newPipeline != kInvalidPipelineHandle);
 
             if (linkSucceeded) {
                 if (program.m_valid) {
-                    impl.renderDevice.DestroyPipelineUVE(program.m_pipeline);
+                    impl.renderDevice.DestroyPipeline(program.m_pipeline);
                 }
                 program.m_pipeline = newPipeline;
-                program.m_uniforms = impl.renderDevice.GetPipelineUniformsUVE(newPipeline);
+                program.m_uniforms = impl.renderDevice.GetPipelineUniforms(newPipeline);
                 program.m_contentHash = programHash;
                 program.m_valid = true;
             }
         } else {
             impl.lastCompileUsedCache = false;
-            diagnosticsList = pending.vertexSource->GetDiagnosticsUVE().diagnostics;
-            const std::vector<ShaderCompileErrorUVE>& fragmentDiagnostics =
-                pending.fragmentSource->GetDiagnosticsUVE().diagnostics;
+            diagnosticsList = pending.vertexSource->GetDiagnostics().diagnostics;
+            const std::vector<ShaderCompileError>& fragmentDiagnostics =
+                pending.fragmentSource->GetDiagnostics().diagnostics;
             diagnosticsList.insert(diagnosticsList.end(), fragmentDiagnostics.begin(), fragmentDiagnostics.end());
-            infoLog = pending.vertexSource->GetDiagnosticsUVE().rawInfoLog +
-                      pending.fragmentSource->GetDiagnosticsUVE().rawInfoLog;
+            infoLog = pending.vertexSource->GetDiagnostics().rawInfoLog +
+                      pending.fragmentSource->GetDiagnostics().rawInfoLog;
         }
 
         program.m_ready = true;
-        program.m_diagnostics = ShaderCompileDiagnosticsUVE{linkSucceeded, diagnosticsList, infoLog};
-        impl.eventSystem.QueueEvent(ShaderProgramReloadedEventUVE{pending.desc.debugNameUVE, linkSucceeded});
+        program.m_diagnostics = ShaderCompileDiagnostics{linkSucceeded, diagnosticsList, infoLog};
+        impl.eventSystem.QueueEvent(ShaderProgramReloadedEvent{pending.desc.debugName, linkSucceeded});
 
-        if (pending.desc.hotReloadEnabledUVE) {
+        if (pending.desc.hotReloadEnabled) {
             std::vector<std::string> combinedClosure = pending.vertexSource->m_dependencyClosure;
             for (const std::string& path : pending.fragmentSource->m_dependencyClosure) {
                 if (std::find(combinedClosure.begin(), combinedClosure.end(), path) == combinedClosure.end()) {
@@ -489,7 +489,7 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
                         for (const std::string& path : combinedClosure) {
                             if (!tracked.dependencies.lastKnownWriteTimes.contains(path)) {
                                 tracked.dependencies.lastKnownWriteTimes[path] =
-                                    GetRealFileWriteTimeUVE(impl.fileSystem, path);
+                                    GetRealFileWriteTime(impl.fileSystem, path);
                             }
                         }
                         found = true;
@@ -497,12 +497,12 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
                     }
                 }
                 if (!found) {
-                    ImplUVE::TrackedProgramUVE entry;
+                    Impl::TrackedProgram entry;
                     entry.target = pending.program;
                     entry.desc = pending.desc;
                     entry.dependencies.dependencyClosure = combinedClosure;
                     for (const std::string& path : combinedClosure) {
-                        entry.dependencies.lastKnownWriteTimes[path] = GetRealFileWriteTimeUVE(impl.fileSystem, path);
+                        entry.dependencies.lastKnownWriteTimes[path] = GetRealFileWriteTime(impl.fileSystem, path);
                     }
                     impl.trackedPrograms.push_back(std::move(entry));
                 }
@@ -512,16 +512,16 @@ void ShaderManagerUVE::ApplyPendingProgramLinksUVE(ImplUVE& impl) {
     impl.pendingProgramLinks = std::move(stillPendingLinks);
 }
 
-void ShaderManagerUVE::PollHotReloadUVE(ImplUVE& impl) {
-    std::vector<ImplUVE::TrackedSourceUVE> stillTrackedSources;
+void ShaderManager::PollHotReload(Impl& impl) {
+    std::vector<Impl::TrackedSource> stillTrackedSources;
     for (auto& tracked : impl.trackedSources) {
-        std::shared_ptr<ShaderSourceUVE> target = tracked.target.lock();
+        std::shared_ptr<ShaderSource> target = tracked.target.lock();
         if (!target) {
             continue; // Expired - the caller released it; drop the tracking entry.
         }
         bool dirty = false;
         for (const std::string& path : tracked.dependencies.dependencyClosure) {
-            const auto currentWriteTime = GetRealFileWriteTimeUVE(impl.fileSystem, path);
+            const auto currentWriteTime = GetRealFileWriteTime(impl.fileSystem, path);
             std::filesystem::file_time_type& lastKnown = tracked.dependencies.lastKnownWriteTimes[path];
             if (currentWriteTime != std::filesystem::file_time_type{} && currentWriteTime != lastKnown) {
                 dirty = true;
@@ -529,21 +529,21 @@ void ShaderManagerUVE::PollHotReloadUVE(ImplUVE& impl) {
             lastKnown = currentWriteTime;
         }
         if (dirty) {
-            SubmitSourceCompileJobUVE(impl, target, tracked.desc);
+            SubmitSourceCompileJob(impl, target, tracked.desc);
         }
         stillTrackedSources.push_back(std::move(tracked));
     }
     impl.trackedSources = std::move(stillTrackedSources);
 
-    std::vector<ImplUVE::TrackedProgramUVE> stillTrackedPrograms;
+    std::vector<Impl::TrackedProgram> stillTrackedPrograms;
     for (auto& tracked : impl.trackedPrograms) {
-        std::shared_ptr<ShaderProgramUVE> target = tracked.target.lock();
+        std::shared_ptr<ShaderProgram> target = tracked.target.lock();
         if (!target) {
             continue;
         }
         bool dirty = false;
         for (const std::string& path : tracked.dependencies.dependencyClosure) {
-            const auto currentWriteTime = GetRealFileWriteTimeUVE(impl.fileSystem, path);
+            const auto currentWriteTime = GetRealFileWriteTime(impl.fileSystem, path);
             std::filesystem::file_time_type& lastKnown = tracked.dependencies.lastKnownWriteTimes[path];
             if (currentWriteTime != std::filesystem::file_time_type{} && currentWriteTime != lastKnown) {
                 dirty = true;
@@ -551,116 +551,116 @@ void ShaderManagerUVE::PollHotReloadUVE(ImplUVE& impl) {
             lastKnown = currentWriteTime;
         }
         if (dirty) {
-            std::shared_ptr<ShaderSourceUVE> vertexSource = MakeSourceUVE(impl.renderDevice, ShaderStageUVE::Vertex);
-            std::shared_ptr<ShaderSourceUVE> fragmentSource =
-                MakeSourceUVE(impl.renderDevice, ShaderStageUVE::Fragment);
-            SubmitSourceCompileJobUVE(impl, vertexSource, tracked.desc.vertexSource);
-            SubmitSourceCompileJobUVE(impl, fragmentSource, tracked.desc.fragmentSource);
+            std::shared_ptr<ShaderSource> vertexSource = MakeSource(impl.renderDevice, ShaderStage::Vertex);
+            std::shared_ptr<ShaderSource> fragmentSource =
+                MakeSource(impl.renderDevice, ShaderStage::Fragment);
+            SubmitSourceCompileJob(impl, vertexSource, tracked.desc.vertexSource);
+            SubmitSourceCompileJob(impl, fragmentSource, tracked.desc.fragmentSource);
             std::lock_guard<std::mutex> lock(impl.mutex);
             impl.pendingProgramLinks.push_back(
-                ImplUVE::PendingProgramLinkUVE{target, vertexSource, fragmentSource, tracked.desc});
+                Impl::PendingProgramLink{target, vertexSource, fragmentSource, tracked.desc});
         }
         stillTrackedPrograms.push_back(std::move(tracked));
     }
     impl.trackedPrograms = std::move(stillTrackedPrograms);
 }
 
-ShaderManagerUVE::ShaderManagerUVE(Threading::IThreadPoolUVE& threadPool, Events::IEventSystemUVE& eventSystem,
-                                    IRenderDeviceUVE& renderDevice, Asset::IFileSystemUVE& fileSystem,
-                                    ShaderManagerConfigUVE config)
-    : m_impl(std::make_unique<ImplUVE>(threadPool, eventSystem, renderDevice, fileSystem, std::move(config))) {}
+ShaderManager::ShaderManager(Threading::IThreadPool& threadPool, Events::IEventSystem& eventSystem,
+                                    IRenderDevice& renderDevice, Asset::IFileSystem& fileSystem,
+                                    ShaderManagerConfig config)
+    : m_impl(std::make_unique<Impl>(threadPool, eventSystem, renderDevice, fileSystem, std::move(config))) {}
 
-ShaderManagerUVE::~ShaderManagerUVE() {
-    // Drains every background job still referencing this ImplUVE, which must never outlive it.
+ShaderManager::~ShaderManager() {
+    // Drains every background job still referencing this Impl, which must never outlive it.
     //
-    // This also has to hold the shader deleters: MakeSourceUVE/MakeProgramUVE capture a raw
-    // IRenderDeviceUVE*, so a ShaderSourceUVE released after the render device is gone calls a
+    // This also has to hold the shader deleters: MakeSource/MakeProgram capture a raw
+    // IRenderDevice*, so a ShaderSource released after the render device is gone calls a
     // virtual function on a destroyed object. Compile jobs capture their target shared_ptr, so
-    // the last reference can be the worker's. ThreadPoolUVE::RunJobUVE therefore releases a
+    // the last reference can be the worker's. ThreadPool::RunJob therefore releases a
     // job's captured state before decrementing the counter this waits on - without that
     // ordering, this drain returns while a worker still owns a shader, and the deleter fires
     // into a dead device. An earlier revision of this comment claimed the deleters capturing
-    // only IRenderDeviceUVE& made a late release safe; that was exactly backwards.
-    m_impl->pendingJobs.WaitUVE();
+    // only IRenderDevice& made a late release safe; that was exactly backwards.
+    m_impl->pendingJobs.Wait();
 }
 
-std::shared_ptr<ShaderSourceUVE> ShaderManagerUVE::CreateSourceUVE(const ShaderSourceCompileDescUVE& desc) {
-    std::shared_ptr<ShaderSourceUVE> target = MakeSourceUVE(m_impl->renderDevice, desc.stage);
-    SubmitSourceCompileJobUVE(*m_impl, target, desc);
-    if (m_impl->config.compileSynchronouslyUVE) {
-        DrainCompletedSourceJobsUVE(*m_impl);
+std::shared_ptr<ShaderSource> ShaderManager::CreateSource(const ShaderSourceCompileDesc& desc) {
+    std::shared_ptr<ShaderSource> target = MakeSource(m_impl->renderDevice, desc.stage);
+    SubmitSourceCompileJob(*m_impl, target, desc);
+    if (m_impl->config.compileSynchronously) {
+        DrainCompletedSourceJobs(*m_impl);
     }
     return target;
 }
 
-std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::CreateProgramUVE(const ShaderProgramDescUVE& desc) {
-    const ImplUVE::ProgramRequestDescUVE request = BuildProgramRequestDescUVE(desc);
-    std::shared_ptr<ShaderProgramUVE> program = MakeProgramUVE(m_impl->renderDevice);
-    std::shared_ptr<ShaderSourceUVE> vertexSource = MakeSourceUVE(m_impl->renderDevice, ShaderStageUVE::Vertex);
-    std::shared_ptr<ShaderSourceUVE> fragmentSource = MakeSourceUVE(m_impl->renderDevice, ShaderStageUVE::Fragment);
+std::shared_ptr<ShaderProgram> ShaderManager::CreateProgram(const ShaderProgramDesc& desc) {
+    const Impl::ProgramRequestDesc request = BuildProgramRequestDesc(desc);
+    std::shared_ptr<ShaderProgram> program = MakeProgram(m_impl->renderDevice);
+    std::shared_ptr<ShaderSource> vertexSource = MakeSource(m_impl->renderDevice, ShaderStage::Vertex);
+    std::shared_ptr<ShaderSource> fragmentSource = MakeSource(m_impl->renderDevice, ShaderStage::Fragment);
 
-    SubmitSourceCompileJobUVE(*m_impl, vertexSource, request.vertexSource);
-    SubmitSourceCompileJobUVE(*m_impl, fragmentSource, request.fragmentSource);
-
-    {
-        std::lock_guard<std::mutex> lock(m_impl->mutex);
-        m_impl->pendingProgramLinks.push_back(
-            ImplUVE::PendingProgramLinkUVE{program, vertexSource, fragmentSource, request});
-    }
-    if (m_impl->config.compileSynchronouslyUVE) {
-        DrainCompletedSourceJobsUVE(*m_impl);
-        ApplyPendingProgramLinksUVE(*m_impl);
-    }
-    return program;
-}
-
-std::shared_ptr<ShaderProgramUVE> ShaderManagerUVE::CreateProgramFromStagesUVE(
-    const ShaderProgramStagesDescUVE& desc) {
-    const ImplUVE::ProgramRequestDescUVE request = BuildProgramRequestDescUVE(desc);
-    std::shared_ptr<ShaderProgramUVE> program = MakeProgramUVE(m_impl->renderDevice);
-    std::shared_ptr<ShaderSourceUVE> vertexSource = MakeSourceUVE(m_impl->renderDevice, ShaderStageUVE::Vertex);
-    std::shared_ptr<ShaderSourceUVE> fragmentSource = MakeSourceUVE(m_impl->renderDevice, ShaderStageUVE::Fragment);
-
-    SubmitSourceCompileJobUVE(*m_impl, vertexSource, request.vertexSource);
-    SubmitSourceCompileJobUVE(*m_impl, fragmentSource, request.fragmentSource);
+    SubmitSourceCompileJob(*m_impl, vertexSource, request.vertexSource);
+    SubmitSourceCompileJob(*m_impl, fragmentSource, request.fragmentSource);
 
     {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
         m_impl->pendingProgramLinks.push_back(
-            ImplUVE::PendingProgramLinkUVE{program, vertexSource, fragmentSource, request});
+            Impl::PendingProgramLink{program, vertexSource, fragmentSource, request});
     }
-    if (m_impl->config.compileSynchronouslyUVE) {
-        DrainCompletedSourceJobsUVE(*m_impl);
-        ApplyPendingProgramLinksUVE(*m_impl);
+    if (m_impl->config.compileSynchronously) {
+        DrainCompletedSourceJobs(*m_impl);
+        ApplyPendingProgramLinks(*m_impl);
     }
     return program;
 }
 
-void ShaderManagerUVE::UpdateUVE(double deltaTimeSeconds) {
-    DrainCompletedSourceJobsUVE(*m_impl);
-    ApplyPendingProgramLinksUVE(*m_impl);
+std::shared_ptr<ShaderProgram> ShaderManager::CreateProgramFromStages(
+    const ShaderProgramStagesDesc& desc) {
+    const Impl::ProgramRequestDesc request = BuildProgramRequestDesc(desc);
+    std::shared_ptr<ShaderProgram> program = MakeProgram(m_impl->renderDevice);
+    std::shared_ptr<ShaderSource> vertexSource = MakeSource(m_impl->renderDevice, ShaderStage::Vertex);
+    std::shared_ptr<ShaderSource> fragmentSource = MakeSource(m_impl->renderDevice, ShaderStage::Fragment);
 
-    if (!m_impl->config.hotReloadEnabledUVE) {
+    SubmitSourceCompileJob(*m_impl, vertexSource, request.vertexSource);
+    SubmitSourceCompileJob(*m_impl, fragmentSource, request.fragmentSource);
+
+    {
+        std::lock_guard<std::mutex> lock(m_impl->mutex);
+        m_impl->pendingProgramLinks.push_back(
+            Impl::PendingProgramLink{program, vertexSource, fragmentSource, request});
+    }
+    if (m_impl->config.compileSynchronously) {
+        DrainCompletedSourceJobs(*m_impl);
+        ApplyPendingProgramLinks(*m_impl);
+    }
+    return program;
+}
+
+void ShaderManager::Update(double deltaTimeSeconds) {
+    DrainCompletedSourceJobs(*m_impl);
+    ApplyPendingProgramLinks(*m_impl);
+
+    if (!m_impl->config.hotReloadEnabled) {
         return;
     }
     m_impl->hotReloadAccumulatorSeconds += deltaTimeSeconds;
-    if (m_impl->hotReloadAccumulatorSeconds < m_impl->config.hotReloadPollIntervalSecondsUVE) {
+    if (m_impl->hotReloadAccumulatorSeconds < m_impl->config.hotReloadPollIntervalSeconds) {
         return;
     }
     m_impl->hotReloadAccumulatorSeconds = 0.0;
-    PollHotReloadUVE(*m_impl);
-    if (m_impl->config.compileSynchronouslyUVE) {
-        DrainCompletedSourceJobsUVE(*m_impl);
-        ApplyPendingProgramLinksUVE(*m_impl);
+    PollHotReload(*m_impl);
+    if (m_impl->config.compileSynchronously) {
+        DrainCompletedSourceJobs(*m_impl);
+        ApplyPendingProgramLinks(*m_impl);
     }
 }
 
-std::size_t ShaderManagerUVE::GetPendingJobCountUVE() const noexcept {
+std::size_t ShaderManager::GetPendingJobCount() const noexcept {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->pendingJobCount;
 }
 
-bool ShaderManagerUVE::GetLastCompileUsedCacheUVE() const noexcept {
+bool ShaderManager::GetLastCompileUsedCache() const noexcept {
     return m_impl->lastCompileUsedCache;
 }
 

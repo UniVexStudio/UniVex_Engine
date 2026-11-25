@@ -15,7 +15,7 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] std::uint32_t MaximumMipLevelCountUVE(std::uint32_t width, std::uint32_t height) noexcept {
+[[nodiscard]] std::uint32_t MaximumMipLevelCount(std::uint32_t width, std::uint32_t height) noexcept {
     if (width == 0U || height == 0U) {
         return 0U;
     }
@@ -28,13 +28,13 @@ namespace {
     return levelCount;
 }
 
-[[nodiscard]] bool InitializeKtx2TranscoderUVE(const TextureAssetUVE& texture,
+[[nodiscard]] bool InitializeKtx2Transcoder(const TextureAsset& texture,
                                                 basist::ktx2_transcoder& transcoder,
-                                                TextureCompressionInfoUVE& outInfo) noexcept {
-    if (texture.payloadEncoding != TexturePayloadEncodingUVE::BasisUniversalKtx2 ||
-        texture.format != TextureAssetFormatUVE::RGBA8Unorm || !texture.pixels.empty() ||
-        !texture.mipLevels.empty() || !IsTextureAssetMetadataValidUVE(texture) ||
-        !IsTextureAssetValidUVE(texture) || !Detail::EnsureBasisUniversalInitializedUVE()) {
+                                                TextureCompressionInfo& outInfo) noexcept {
+    if (texture.payloadEncoding != TexturePayloadEncoding::BasisUniversalKtx2 ||
+        texture.format != TextureAssetFormat::RGBA8Unorm || !texture.pixels.empty() ||
+        !texture.mipLevels.empty() || !IsTextureAssetMetadataValid(texture) ||
+        !IsTextureAssetValid(texture) || !Detail::EnsureBasisUniversalInitialized()) {
         return false;
     }
 
@@ -49,15 +49,15 @@ namespace {
         transcoder.get_height() != texture.height || transcoder.get_levels() == 0U ||
         transcoder.get_faces() != 1U || transcoder.get_layers() != 0U ||
         header.m_pixel_depth.get_uint32() != 0U ||
-        transcoder.is_srgb() != (texture.colorSpace == TextureAssetColorSpaceUVE::Srgb)) {
+        transcoder.is_srgb() != (texture.colorSpace == TextureAssetColorSpace::Srgb)) {
         return false;
     }
-    const std::uint32_t maximumMipLevels = MaximumMipLevelCountUVE(texture.width, texture.height);
+    const std::uint32_t maximumMipLevels = MaximumMipLevelCount(texture.width, texture.height);
     if (transcoder.get_levels() > maximumMipLevels) {
         return false;
     }
 
-    TextureCompressionInfoUVE candidate;
+    TextureCompressionInfo candidate;
     candidate.width = transcoder.get_width();
     candidate.height = transcoder.get_height();
     candidate.mipLevels = transcoder.get_levels();
@@ -66,40 +66,40 @@ namespace {
     return true;
 }
 
-[[nodiscard]] bool MapBasisTranscodeFormatUVE(const TextureTranscodeTargetUVE target,
+[[nodiscard]] bool MapBasisTranscodeFormat(const TextureTranscodeTarget target,
                                                basist::transcoder_texture_format& outFormat) noexcept {
     switch (target) {
-        case TextureTranscodeTargetUVE::Rgba8Unorm:
+        case TextureTranscodeTarget::Rgba8Unorm:
             outFormat = basist::transcoder_texture_format::cTFRGBA32;
             return true;
-        case TextureTranscodeTargetUVE::Bc1Rgb:
+        case TextureTranscodeTarget::Bc1Rgb:
             outFormat = basist::transcoder_texture_format::cTFBC1_RGB;
             return true;
-        case TextureTranscodeTargetUVE::Bc3Rgba:
+        case TextureTranscodeTarget::Bc3Rgba:
             outFormat = basist::transcoder_texture_format::cTFBC3_RGBA;
             return true;
-        case TextureTranscodeTargetUVE::Bc7Rgba:
+        case TextureTranscodeTarget::Bc7Rgba:
             outFormat = basist::transcoder_texture_format::cTFBC7_RGBA;
             return true;
-        case TextureTranscodeTargetUVE::Etc2Rgb:
+        case TextureTranscodeTarget::Etc2Rgb:
             // ETC1's 4x4 RGB block layout is a valid ETC2_RGB8 representation.
             outFormat = basist::transcoder_texture_format::cTFETC1_RGB;
             return true;
-        case TextureTranscodeTargetUVE::Etc2Rgba:
+        case TextureTranscodeTarget::Etc2Rgba:
             outFormat = basist::transcoder_texture_format::cTFETC2_RGBA;
             return true;
-        case TextureTranscodeTargetUVE::Astc4x4Rgba:
+        case TextureTranscodeTarget::Astc4x4Rgba:
             outFormat = basist::transcoder_texture_format::cTFASTC_LDR_4x4_RGBA;
             return true;
     }
     return false;
 }
 
-[[nodiscard]] bool IsAlphaCapableTargetUVE(const TextureTranscodeTargetUVE target) noexcept {
-    return target != TextureTranscodeTargetUVE::Bc1Rgb && target != TextureTranscodeTargetUVE::Etc2Rgb;
+[[nodiscard]] bool IsAlphaCapableTarget(const TextureTranscodeTarget target) noexcept {
+    return target != TextureTranscodeTarget::Bc1Rgb && target != TextureTranscodeTarget::Etc2Rgb;
 }
 
-[[nodiscard]] bool CalculateTargetMipByteCountUVE(const TextureTranscodeTargetUVE target,
+[[nodiscard]] bool CalculateTargetMipByteCount(const TextureTranscodeTarget target,
                                                    const std::uint32_t width,
                                                    const std::uint32_t height,
                                                    std::uint64_t& outBytes,
@@ -107,7 +107,7 @@ namespace {
     if (width == 0U || height == 0U) {
         return false;
     }
-    if (target == TextureTranscodeTargetUVE::Rgba8Unorm) {
+    if (target == TextureTranscodeTarget::Rgba8Unorm) {
         const std::uint64_t pixelCount = static_cast<std::uint64_t>(width) * height;
         if (pixelCount > std::numeric_limits<std::uint32_t>::max() ||
             pixelCount > std::numeric_limits<std::uint64_t>::max() / 4U) {
@@ -120,17 +120,17 @@ namespace {
 
     std::uint32_t bytesPerBlock = 0U;
     switch (target) {
-        case TextureTranscodeTargetUVE::Bc1Rgb:
-        case TextureTranscodeTargetUVE::Etc2Rgb:
+        case TextureTranscodeTarget::Bc1Rgb:
+        case TextureTranscodeTarget::Etc2Rgb:
             bytesPerBlock = 8U;
             break;
-        case TextureTranscodeTargetUVE::Bc3Rgba:
-        case TextureTranscodeTargetUVE::Bc7Rgba:
-        case TextureTranscodeTargetUVE::Etc2Rgba:
-        case TextureTranscodeTargetUVE::Astc4x4Rgba:
+        case TextureTranscodeTarget::Bc3Rgba:
+        case TextureTranscodeTarget::Bc7Rgba:
+        case TextureTranscodeTarget::Etc2Rgba:
+        case TextureTranscodeTarget::Astc4x4Rgba:
             bytesPerBlock = 16U;
             break;
-        case TextureTranscodeTargetUVE::Rgba8Unorm:
+        case TextureTranscodeTarget::Rgba8Unorm:
             return false;
     }
     const std::uint64_t blocksX = (static_cast<std::uint64_t>(width) + 3U) / 4U;
@@ -147,34 +147,34 @@ namespace {
 
 } // namespace
 
-bool GetTextureCompressionInfoUVE(const TextureAssetUVE& texture, TextureCompressionInfoUVE& outInfo) {
+bool GetTextureCompressionInfo(const TextureAsset& texture, TextureCompressionInfo& outInfo) {
     basist::ktx2_transcoder transcoder;
-    TextureCompressionInfoUVE candidate;
-    if (!InitializeKtx2TranscoderUVE(texture, transcoder, candidate)) {
+    TextureCompressionInfo candidate;
+    if (!InitializeKtx2Transcoder(texture, transcoder, candidate)) {
         return false;
     }
     outInfo = candidate;
     return true;
 }
 
-bool TranscodeTextureAssetUVE(const TextureAssetUVE& texture, const TextureTranscodeTargetUVE target,
-                              TextureTranscodedMipChainUVE& outMipChain) {
+bool TranscodeTextureAsset(const TextureAsset& texture, const TextureTranscodeTarget target,
+                              TextureTranscodedMipChain& outMipChain) {
     basist::ktx2_transcoder transcoder;
-    TextureCompressionInfoUVE compressionInfo;
-    if (!InitializeKtx2TranscoderUVE(texture, transcoder, compressionInfo) ||
-        (compressionInfo.hasAlpha && !IsAlphaCapableTargetUVE(target))) {
+    TextureCompressionInfo compressionInfo;
+    if (!InitializeKtx2Transcoder(texture, transcoder, compressionInfo) ||
+        (compressionInfo.hasAlpha && !IsAlphaCapableTarget(target))) {
         return false;
     }
 
     basist::transcoder_texture_format basisTarget{};
-    if (!MapBasisTranscodeFormatUVE(target, basisTarget) ||
+    if (!MapBasisTranscodeFormat(target, basisTarget) ||
         !basist::basis_is_format_supported(basisTarget, transcoder.get_basis_tex_format()) ||
         !transcoder.start_transcoding()) {
         return false;
     }
 
     try {
-        TextureTranscodedMipChainUVE candidate;
+        TextureTranscodedMipChain candidate;
         candidate.target = target;
         candidate.width = compressionInfo.width;
         candidate.height = compressionInfo.height;
@@ -193,7 +193,7 @@ bool TranscodeTextureAssetUVE(const TextureAssetUVE& texture, const TextureTrans
             }
             std::uint64_t levelBytes = 0U;
             std::uint32_t levelBlocksOrPixels = 0U;
-            if (!CalculateTargetMipByteCountUVE(target, levelWidth, levelHeight, levelBytes,
+            if (!CalculateTargetMipByteCount(target, levelWidth, levelHeight, levelBytes,
                                                 levelBlocksOrPixels) ||
                 levelBytes > std::numeric_limits<std::uint64_t>::max() - totalBytes) {
                 return false;

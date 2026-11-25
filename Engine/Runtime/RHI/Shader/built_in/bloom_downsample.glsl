@@ -17,7 +17,7 @@ out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
 
-vec3 SampleClampedUVE(vec2 uv, vec2 halfTexel) {
+vec3 SampleClamped(vec2 uv, vec2 halfTexel) {
     return max(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb, vec3(0.0));
 }
 
@@ -29,22 +29,22 @@ void main() {
     float x = texel.x;
     float y = texel.y;
 
-    vec3 a = SampleClampedUVE(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
-    vec3 b = SampleClampedUVE(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
-    vec3 c = SampleClampedUVE(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
+    vec3 a = SampleClamped(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
+    vec3 b = SampleClamped(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
+    vec3 c = SampleClamped(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
 
-    vec3 d = SampleClampedUVE(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
-    vec3 e = SampleClampedUVE(vTexCoord,                            halfTexel);
-    vec3 f = SampleClampedUVE(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
+    vec3 d = SampleClamped(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
+    vec3 e = SampleClamped(vTexCoord,                            halfTexel);
+    vec3 f = SampleClamped(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
 
-    vec3 g = SampleClampedUVE(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
-    vec3 h = SampleClampedUVE(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
-    vec3 i = SampleClampedUVE(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
+    vec3 g = SampleClamped(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
+    vec3 h = SampleClamped(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
+    vec3 i = SampleClamped(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
 
-    vec3 j = SampleClampedUVE(vTexCoord + vec2(    -x,       y), halfTexel);
-    vec3 k = SampleClampedUVE(vTexCoord + vec2(     x,       y), halfTexel);
-    vec3 l = SampleClampedUVE(vTexCoord + vec2(    -x,      -y), halfTexel);
-    vec3 m = SampleClampedUVE(vTexCoord + vec2(     x,      -y), halfTexel);
+    vec3 j = SampleClamped(vTexCoord + vec2(    -x,       y), halfTexel);
+    vec3 k = SampleClamped(vTexCoord + vec2(     x,       y), halfTexel);
+    vec3 l = SampleClamped(vTexCoord + vec2(    -x,      -y), halfTexel);
+    vec3 m = SampleClamped(vTexCoord + vec2(     x,      -y), halfTexel);
 
     vec3 downsampled = e * 0.125;
     downsampled += (a + c + g + i) * 0.03125;

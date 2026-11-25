@@ -16,10 +16,10 @@
 
 namespace univex::integration {
 
-using UVE::Scene::EntityUVE;
+using UVE::Scene::Entity;
 
-std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrianglesUVE(
-    UVE::Scene::IEntityManagerUVE& entityManager, const std::vector<EntityUVE>& selection, const EntityUVE active) {
+std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTriangles(
+    UVE::Scene::IEntityManager& entityManager, const std::vector<Entity>& selection, const Entity active) {
     std::vector<univex::render::SelectionOutlineVertex> triangles;
     if (selection.empty()) {
         return triangles;
@@ -27,29 +27,29 @@ std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrian
 
     // Parent -> children from one pass over the hierarchy, so walking below each selected object does
     // not rescan the scene per object.
-    std::vector<std::pair<EntityUVE, EntityUVE>> links;
-    entityManager.ForEachUVE<UVE::Scene::HierarchyComponentUVE>(
-        [&links](const EntityUVE child, const UVE::Scene::HierarchyComponentUVE& hierarchy) {
+    std::vector<std::pair<Entity, Entity>> links;
+    entityManager.ForEach<UVE::Scene::HierarchyComponent>(
+        [&links](const Entity child, const UVE::Scene::HierarchyComponent& hierarchy) {
             links.emplace_back(hierarchy.parent, child);
         });
-    std::unordered_map<EntityUVE, std::vector<EntityUVE>> childrenOf;
+    std::unordered_map<Entity, std::vector<Entity>> childrenOf;
     for (const auto& [parent, child] : links) {
-        if (parent != UVE::Scene::kInvalidEntityUVE) {
+        if (parent != UVE::Scene::kInvalidEntity) {
             childrenOf[parent].push_back(child);
         }
     }
 
     // How strongly each object is selected: its own selection, or the strongest selected ancestor.
-    std::unordered_map<EntityUVE, float> weights;
-    for (const EntityUVE selected : selection) {
-        if (!entityManager.IsAliveUVE(selected)) {
+    std::unordered_map<Entity, float> weights;
+    for (const Entity selected : selection) {
+        if (!entityManager.IsAlive(selected)) {
             continue;
         }
         const float weight = selected == active ? univex::render::kSelectionOutlineActiveWeight
                                                 : univex::render::kSelectionOutlineOtherWeight;
-        std::vector<EntityUVE> pending{selected};
+        std::vector<Entity> pending{selected};
         while (!pending.empty()) {
-            const EntityUVE current = pending.back();
+            const Entity current = pending.back();
             pending.pop_back();
             const auto [slot, inserted] = weights.try_emplace(current, weight);
             if (!inserted) {
@@ -65,28 +65,28 @@ std::vector<univex::render::SelectionOutlineVertex> CollectSelectionOutlineTrian
     }
 
     for (const auto& [entity, weight] : weights) {
-        if (!entityManager.HasComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(entity) ||
-            !entityManager.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity) ||
-            entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity)) {
+        if (!entityManager.HasComponent<UVE::Scene::PrimitiveMeshComponent>(entity) ||
+            !entityManager.HasComponent<UVE::Scene::WorldTransformComponent>(entity) ||
+            entityManager.HasComponent<UVE::Scene::EditorInternalEntityComponent>(entity)) {
             continue;
         }
-        if (entityManager.HasComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity) &&
-            !entityManager.GetComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity).visibleInHierarchy) {
+        if (entityManager.HasComponent<UVE::Scene::VisibilityComponent>(entity) &&
+            !entityManager.GetComponent<UVE::Scene::VisibilityComponent>(entity).visibleInHierarchy) {
             continue; // the renderer does not draw it, so there is no shape to outline
         }
-        const auto& primitive = entityManager.GetComponentUVE<UVE::Scene::PrimitiveMeshComponentUVE>(entity);
-        const auto& worldTransform = entityManager.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity);
-        UVE::Math::Matrix4x4UVE worldMatrix{};
-        if (worldTransform.dirty || !UVE::Scene::IsPrimitiveMeshComponentValidUVE(primitive) ||
-            !TryComputeWorldMatrixUVE(worldTransform, worldMatrix)) {
+        const auto& primitive = entityManager.GetComponent<UVE::Scene::PrimitiveMeshComponent>(entity);
+        const auto& worldTransform = entityManager.GetComponent<UVE::Scene::WorldTransformComponent>(entity);
+        UVE::Math::Matrix4x4 worldMatrix{};
+        if (worldTransform.dirty || !UVE::Scene::IsPrimitiveMeshComponentValid(primitive) ||
+            !TryComputeWorldMatrix(worldTransform, worldMatrix)) {
             continue;
         }
-        const UVE::Render::PrimitiveGeometryUVE& geometry = UVE::Render::GetPrimitiveGeometryUVE(primitive.kind);
+        const UVE::Render::PrimitiveGeometry& geometry = UVE::Render::GetPrimitiveGeometry(primitive.kind);
         const std::size_t indexCount = geometry.indices.size() - (geometry.indices.size() % 3U);
         triangles.reserve(triangles.size() + indexCount);
         for (std::size_t index = 0; index < indexCount; ++index) {
-            const UVE::Math::Vector3UVE world =
-                UVE::Math::TransformPointUVE(worldMatrix, geometry.vertices[geometry.indices[index]].position);
+            const UVE::Math::Vector3 world =
+                UVE::Math::TransformPoint(worldMatrix, geometry.vertices[geometry.indices[index]].position);
             triangles.push_back(univex::render::SelectionOutlineVertex{world.x, world.y, world.z, weight});
         }
     }

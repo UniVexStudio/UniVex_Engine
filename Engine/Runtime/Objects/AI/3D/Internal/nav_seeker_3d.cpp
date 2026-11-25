@@ -9,9 +9,9 @@
 
 namespace UVE::Scene {
 
-bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.targetPosition) && IsFinite3DObjectVectorUVE(value.nextPathPosition) &&
-           IsFinite3DObjectVectorUVE(value.desiredVelocity) && std::isfinite(value.radius) && value.radius > 0.0F &&
+bool IsNavSeeker3DObjectComponentValid(const NavSeeker3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.targetPosition) && IsFinite3DObjectVector(value.nextPathPosition) &&
+           IsFinite3DObjectVector(value.desiredVelocity) && std::isfinite(value.radius) && value.radius > 0.0F &&
            std::isfinite(value.height) && value.height >= value.radius * 2.0F && std::isfinite(value.maxSpeed) &&
            value.maxSpeed > 0.0F && std::isfinite(value.pathUpdateInterval) && value.pathUpdateInterval > 0.0F &&
            value.pathUpdateInterval <= 10.0F && std::isfinite(value.acceleration) &&
@@ -19,35 +19,35 @@ bool IsNavSeeker3DObjectComponentValidUVE(const NavSeeker3DComponentUVE& value) 
            std::isfinite(value.targetTolerance) && value.targetTolerance >= 0.0F &&
            std::isfinite(value.slowDownRadius) && value.slowDownRadius >= 0.0F &&
            std::isfinite(value.avoidanceRadius) && value.avoidanceRadius >= 0.0F &&
-           value.navigationLayers != 0U && value.pathStatus <= NavigationAgentPathStatusUVE::Failed;
+           value.navigationLayers != 0U && value.pathStatus <= NavigationAgentPathStatus::Failed;
 }
 
-bool IsNavSeeker3DObjectDefinitionValidUVE(
-    const NavSeeker3DObjectDefinitionUVE& value) noexcept {
-    return IsNavSeeker3DObjectComponentValidUVE(value.seeker);
+bool IsNavSeeker3DObjectDefinitionValid(
+    const NavSeeker3DObjectDefinition& value) noexcept {
+    return IsNavSeeker3DObjectComponentValid(value.seeker);
 }
 
-void ApplyNavSeeker3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                         const EntityUVE entity,
-                                         const NavSeeker3DObjectDefinitionUVE& value) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyNavSeeker3DObjectDefinition(IEntityManager& entityManager,
+                                         const Entity entity,
+                                         const NavSeeker3DObjectDefinition& value) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              NavSeeker3DObjectDefinitionUVE::defaultName);
-    if (entityManager.HasComponentUVE<NavSeeker3DComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(entity) = value.seeker;
+    EnsureObject3DBaseline(entityManager, entity,
+                              NavSeeker3DObjectDefinition::defaultName);
+    if (entityManager.HasComponent<NavSeeker3DComponent>(entity)) {
+        entityManager.GetComponent<NavSeeker3DComponent>(entity) = value.seeker;
     } else {
-        entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(entity, value.seeker);
+        entityManager.AddComponent<NavSeeker3DComponent>(entity, value.seeker);
     }
 }
 
-bool NavSeeker3DUVE::IsActiveUVE(const NavSeeker3DComponentUVE& seeker) noexcept {
-    return seeker.enabled && IsNavSeeker3DObjectComponentValidUVE(seeker);
+bool NavSeeker3D::IsActive(const NavSeeker3DComponent& seeker) noexcept {
+    return seeker.enabled && IsNavSeeker3DObjectComponentValid(seeker);
 }
 
-float NavSeeker3DUVE::EffectiveAvoidanceRadiusUVE(
-    const NavSeeker3DComponentUVE& seeker) noexcept {
+float NavSeeker3D::EffectiveAvoidanceRadius(
+    const NavSeeker3DComponent& seeker) noexcept {
     if (!seeker.avoidanceEnabled || !std::isfinite(seeker.avoidanceRadius) ||
         seeker.avoidanceRadius <= 0.0F) {
         return 0.0F;
@@ -55,10 +55,10 @@ float NavSeeker3DUVE::EffectiveAvoidanceRadiusUVE(
     return seeker.avoidanceRadius;
 }
 
-float NavSeeker3DUVE::PlanarDistanceToTargetUVE(
-    const NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept {
-    if (!IsFinite3DObjectVectorUVE(currentPosition) ||
-        !IsFinite3DObjectVectorUVE(seeker.targetPosition)) {
+float NavSeeker3D::PlanarDistanceToTarget(
+    const NavSeeker3DComponent& seeker, const Math::Vector3& currentPosition) noexcept {
+    if (!IsFinite3DObjectVector(currentPosition) ||
+        !IsFinite3DObjectVector(seeker.targetPosition)) {
         return 0.0F;
     }
     const float dx = seeker.targetPosition.x - currentPosition.x;
@@ -66,18 +66,18 @@ float NavSeeker3DUVE::PlanarDistanceToTargetUVE(
     return std::sqrt(dx * dx + dz * dz);
 }
 
-bool NavSeeker3DUVE::IsWithinTargetToleranceUVE(
-    const NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept {
-    if (!IsNavSeeker3DObjectComponentValidUVE(seeker) ||
-        !IsFinite3DObjectVectorUVE(currentPosition)) {
+bool NavSeeker3D::IsWithinTargetTolerance(
+    const NavSeeker3DComponent& seeker, const Math::Vector3& currentPosition) noexcept {
+    if (!IsNavSeeker3DObjectComponentValid(seeker) ||
+        !IsFinite3DObjectVector(currentPosition)) {
         return false;
     }
-    return PlanarDistanceToTargetUVE(seeker, currentPosition) <= seeker.targetTolerance;
+    return PlanarDistanceToTarget(seeker, currentPosition) <= seeker.targetTolerance;
 }
 
-float NavSeeker3DUVE::ResolveArrivalSpeedScaleUVE(
-    const NavSeeker3DComponentUVE& seeker, const float distanceToTargetMetres) noexcept {
-    if (!IsNavSeeker3DObjectComponentValidUVE(seeker) || !std::isfinite(distanceToTargetMetres) ||
+float NavSeeker3D::ResolveArrivalSpeedScale(
+    const NavSeeker3DComponent& seeker, const float distanceToTargetMetres) noexcept {
+    if (!IsNavSeeker3DObjectComponentValid(seeker) || !std::isfinite(distanceToTargetMetres) ||
         distanceToTargetMetres <= seeker.targetTolerance) {
         return 0.0F;
     }
@@ -89,18 +89,18 @@ float NavSeeker3DUVE::ResolveArrivalSpeedScaleUVE(
     return std::clamp((distanceToTargetMetres - seeker.targetTolerance) / span, 0.0F, 1.0F);
 }
 
-void NavSeeker3DUVE::PublishIdleStateUVE(
-    NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& currentPosition) noexcept {
-    seeker.desiredVelocity = Math::Vector3UVE{};
+void NavSeeker3D::PublishIdleState(
+    NavSeeker3DComponent& seeker, const Math::Vector3& currentPosition) noexcept {
+    seeker.desiredVelocity = Math::Vector3{};
     seeker.nextPathPosition = currentPosition;
-    seeker.pathStatus = NavigationAgentPathStatusUVE::Idle;
+    seeker.pathStatus = NavigationAgentPathStatus::Idle;
     seeker.pathChanged = false;
     seeker.targetReached = false;
 }
 
-bool NavSeeker3DUVE::TrySetTargetPositionUVE(
-    NavSeeker3DComponentUVE& seeker, const Math::Vector3UVE& targetPosition) noexcept {
-    if (!IsFinite3DObjectVectorUVE(targetPosition)) {
+bool NavSeeker3D::TrySetTargetPosition(
+    NavSeeker3DComponent& seeker, const Math::Vector3& targetPosition) noexcept {
+    if (!IsFinite3DObjectVector(targetPosition)) {
         return false;
     }
     seeker.targetPosition = targetPosition;

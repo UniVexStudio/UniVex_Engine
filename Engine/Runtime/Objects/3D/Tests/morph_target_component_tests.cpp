@@ -13,39 +13,39 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-[[nodiscard]] Asset::MeshAssetUVE MakeFaceMeshUVE() {
-    Asset::MeshAssetUVE mesh;
+[[nodiscard]] Asset::MeshAsset MakeFaceMesh() {
+    Asset::MeshAsset mesh;
     mesh.vertices = {
-        Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F, 0.0F},
-        Asset::MeshVertexUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.0F, 0.0F},
-        Asset::MeshVertexUVE{Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 0.0F, 1.0F},
+        Asset::MeshVertex{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 0.0F, 0.0F},
+        Asset::MeshVertex{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 1.0F, 0.0F},
+        Asset::MeshVertex{Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{0.0F, 1.0F, 0.0F}, 0.0F, 1.0F},
     };
     mesh.indices = {0U, 1U, 2U};
-    mesh.localBounds = Math::AabbUVE{Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 0.0F}};
+    mesh.localBounds = Math::Aabb{Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 0.0F}};
 
-    Asset::MeshMorphTargetUVE jaw;
+    Asset::MeshMorphTarget jaw;
     jaw.name = "jawOpen";
-    jaw.deltas.push_back(Asset::MeshMorphTargetDeltaUVE{
-        2U, Math::Vector3UVE{0.0F, -0.5F, 0.0F}, Math::Vector3UVE{}, Math::Vector3UVE{}});
+    jaw.deltas.push_back(Asset::MeshMorphTargetDelta{
+        2U, Math::Vector3{0.0F, -0.5F, 0.0F}, Math::Vector3{}, Math::Vector3{}});
 
-    Asset::MeshMorphTargetUVE smile;
+    Asset::MeshMorphTarget smile;
     smile.name = "mouthSmile";
-    smile.deltas.push_back(Asset::MeshMorphTargetDeltaUVE{
-        0U, Math::Vector3UVE{-0.2F, 0.0F, 0.0F}, Math::Vector3UVE{}, Math::Vector3UVE{}});
+    smile.deltas.push_back(Asset::MeshMorphTargetDelta{
+        0U, Math::Vector3{-0.2F, 0.0F, 0.0F}, Math::Vector3{}, Math::Vector3{}});
 
     mesh.morphTargets = {std::move(jaw), std::move(smile)};
     return mesh;
 }
 
-TEST(MorphTargetComponentUVETest, DefaultComponentIsValidAndNoOp) {
-    const MorphTargetComponentUVE component{};
+TEST(MorphTargetComponentTest, DefaultComponentIsValidAndNoOp) {
+    const MorphTargetComponent component{};
     EXPECT_TRUE(component.enabled);
     EXPECT_TRUE(component.weights.empty());
-    EXPECT_TRUE(IsMorphTargetComponentValidUVE(component));
+    EXPECT_TRUE(IsMorphTargetComponentValid(component));
 
-    const Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
-    std::vector<Asset::MeshVertexUVE> morphed;
-    ASSERT_TRUE(EvaluateMorphTargetsUVE(component, mesh, mesh.vertices, morphed));
+    const Asset::MeshAsset mesh = MakeFaceMesh();
+    std::vector<Asset::MeshVertex> morphed;
+    ASSERT_TRUE(EvaluateMorphTargets(component, mesh, mesh.vertices, morphed));
     ASSERT_EQ(morphed.size(), mesh.vertices.size());
     // No entries means no contribution, so every vertex is exactly where it was.
     for (std::size_t index = 0U; index < morphed.size(); ++index) {
@@ -53,109 +53,109 @@ TEST(MorphTargetComponentUVETest, DefaultComponentIsValidAndNoOp) {
     }
 }
 
-TEST(MorphTargetComponentUVETest, ValidatorRejectsEmptyDuplicateAndNonFiniteNames) {
-    MorphTargetComponentUVE emptyName;
-    emptyName.weights.push_back(MorphTargetWeightUVE{"", 0.5F});
-    EXPECT_FALSE(IsMorphTargetComponentValidUVE(emptyName));
+TEST(MorphTargetComponentTest, ValidatorRejectsEmptyDuplicateAndNonFiniteNames) {
+    MorphTargetComponent emptyName;
+    emptyName.weights.push_back(MorphTargetWeight{"", 0.5F});
+    EXPECT_FALSE(IsMorphTargetComponentValid(emptyName));
 
-    MorphTargetComponentUVE duplicate;
-    duplicate.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.5F});
-    duplicate.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.25F});
-    EXPECT_FALSE(IsMorphTargetComponentValidUVE(duplicate));
+    MorphTargetComponent duplicate;
+    duplicate.weights.push_back(MorphTargetWeight{"jawOpen", 0.5F});
+    duplicate.weights.push_back(MorphTargetWeight{"jawOpen", 0.25F});
+    EXPECT_FALSE(IsMorphTargetComponentValid(duplicate));
 
-    MorphTargetComponentUVE nonFinite;
+    MorphTargetComponent nonFinite;
     nonFinite.weights.push_back(
-        MorphTargetWeightUVE{"jawOpen", std::numeric_limits<float>::quiet_NaN()});
-    EXPECT_FALSE(IsMorphTargetComponentValidUVE(nonFinite));
+        MorphTargetWeight{"jawOpen", std::numeric_limits<float>::quiet_NaN()});
+    EXPECT_FALSE(IsMorphTargetComponentValid(nonFinite));
 
-    MorphTargetComponentUVE tooMany;
-    tooMany.weights.resize(kMaximumMorphTargetWeightsUVE + 1U);
+    MorphTargetComponent tooMany;
+    tooMany.weights.resize(kMaximumMorphTargetWeights + 1U);
     for (std::size_t index = 0U; index < tooMany.weights.size(); ++index) {
         tooMany.weights[index].target = "shape" + std::to_string(index);
     }
-    EXPECT_FALSE(IsMorphTargetComponentValidUVE(tooMany));
+    EXPECT_FALSE(IsMorphTargetComponentValid(tooMany));
 }
 
-TEST(MorphTargetComponentUVETest, ResolverMapsNamesToIndicesInAnyOrder) {
-    const Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
-    MorphTargetComponentUVE component;
+TEST(MorphTargetComponentTest, ResolverMapsNamesToIndicesInAnyOrder) {
+    const Asset::MeshAsset mesh = MakeFaceMesh();
+    MorphTargetComponent component;
     // "mouthSmile" is target 1 and "jawOpen" is target 0: the resolver must honour the names, not
     // the order the rows were authored in.
-    component.weights.push_back(MorphTargetWeightUVE{"mouthSmile", 0.75F});
-    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.25F});
+    component.weights.push_back(MorphTargetWeight{"mouthSmile", 0.75F});
+    component.weights.push_back(MorphTargetWeight{"jawOpen", 0.25F});
 
     std::vector<float> weights;
-    ASSERT_TRUE(TryResolveMorphTargetWeightsUVE(component, mesh.morphTargets, {}, weights));
+    ASSERT_TRUE(TryResolveMorphTargetWeights(component, mesh.morphTargets, {}, weights));
     ASSERT_EQ(weights.size(), 2U);
     EXPECT_FLOAT_EQ(weights[0], 0.25F);
     EXPECT_FLOAT_EQ(weights[1], 0.75F);
 }
 
-TEST(MorphTargetComponentUVETest, ResolverFailsHardOnANameTheMeshDoesNotHave) {
-    const Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
-    MorphTargetComponentUVE component;
-    component.weights.push_back(MorphTargetWeightUVE{"jawopne", 0.5F}); // transposed
+TEST(MorphTargetComponentTest, ResolverFailsHardOnANameTheMeshDoesNotHave) {
+    const Asset::MeshAsset mesh = MakeFaceMesh();
+    MorphTargetComponent component;
+    component.weights.push_back(MorphTargetWeight{"jawopne", 0.5F}); // transposed
 
     std::vector<float> untouched(1U, 42.0F);
-    EXPECT_FALSE(TryResolveMorphTargetWeightsUVE(component, mesh.morphTargets, {}, untouched));
+    EXPECT_FALSE(TryResolveMorphTargetWeights(component, mesh.morphTargets, {}, untouched));
     ASSERT_EQ(untouched.size(), 1U);
     EXPECT_FLOAT_EQ(untouched[0], 42.0F);
 }
 
-TEST(MorphTargetComponentUVETest, ResolverStartsFromMeshDefaultsAndOverridesOnlyNamedShapes) {
-    Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
+TEST(MorphTargetComponentTest, ResolverStartsFromMeshDefaultsAndOverridesOnlyNamedShapes) {
+    Asset::MeshAsset mesh = MakeFaceMesh();
     mesh.defaultMorphWeights = {0.1F, 0.9F};
-    MorphTargetComponentUVE component;
-    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 0.6F});
+    MorphTargetComponent component;
+    component.weights.push_back(MorphTargetWeight{"jawOpen", 0.6F});
 
     std::vector<float> weights;
-    ASSERT_TRUE(TryResolveMorphTargetWeightsUVE(component, mesh.morphTargets, mesh.defaultMorphWeights, weights));
+    ASSERT_TRUE(TryResolveMorphTargetWeights(component, mesh.morphTargets, mesh.defaultMorphWeights, weights));
     ASSERT_EQ(weights.size(), 2U);
     EXPECT_FLOAT_EQ(weights[0], 0.6F); // overridden by the component
     EXPECT_FLOAT_EQ(weights[1], 0.9F); // untouched, so the mesh's own default stands
 }
 
-TEST(MorphTargetComponentUVETest, EvaluateAppliesWeightsToTheBindPose) {
-    const Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
-    MorphTargetComponentUVE component;
-    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 1.0F});
+TEST(MorphTargetComponentTest, EvaluateAppliesWeightsToTheBindPose) {
+    const Asset::MeshAsset mesh = MakeFaceMesh();
+    MorphTargetComponent component;
+    component.weights.push_back(MorphTargetWeight{"jawOpen", 1.0F});
 
-    std::vector<Asset::MeshVertexUVE> morphed;
-    ASSERT_TRUE(EvaluateMorphTargetsUVE(component, mesh, mesh.vertices, morphed));
-    EXPECT_EQ(morphed[2].position, (Math::Vector3UVE{0.0F, 0.5F, 0.0F}));
+    std::vector<Asset::MeshVertex> morphed;
+    ASSERT_TRUE(EvaluateMorphTargets(component, mesh, mesh.vertices, morphed));
+    EXPECT_EQ(morphed[2].position, (Math::Vector3{0.0F, 0.5F, 0.0F}));
     EXPECT_EQ(morphed[0].position, mesh.vertices[0].position);
 }
 
-TEST(MorphTargetComponentUVETest, DisabledComponentFallsBackToMeshDefaultsAndIgnoresStaleNames) {
-    Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
+TEST(MorphTargetComponentTest, DisabledComponentFallsBackToMeshDefaultsAndIgnoresStaleNames) {
+    Asset::MeshAsset mesh = MakeFaceMesh();
     mesh.defaultMorphWeights = {0.5F, 0.0F};
-    MorphTargetComponentUVE component;
+    MorphTargetComponent component;
     component.enabled = false;
     // A stale name is deliberately present: a paused face must not fail against a mesh it merely
     // happens to be out of date with.
-    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 1.0F});
-    component.weights.push_back(MorphTargetWeightUVE{"removedShape", 1.0F});
+    component.weights.push_back(MorphTargetWeight{"jawOpen", 1.0F});
+    component.weights.push_back(MorphTargetWeight{"removedShape", 1.0F});
 
-    std::vector<Asset::MeshVertexUVE> morphed;
-    ASSERT_TRUE(EvaluateMorphTargetsUVE(component, mesh, mesh.vertices, morphed));
+    std::vector<Asset::MeshVertex> morphed;
+    ASSERT_TRUE(EvaluateMorphTargets(component, mesh, mesh.vertices, morphed));
     // The mesh's default 0.5 - not the component's 1.0.
-    EXPECT_EQ(morphed[2].position, (Math::Vector3UVE{0.0F, 0.75F, 0.0F}));
+    EXPECT_EQ(morphed[2].position, (Math::Vector3{0.0F, 0.75F, 0.0F}));
 }
 
-TEST(MorphTargetComponentUVETest, EvaluateOnAMeshWithoutShapesIsAPassThrough) {
-    Asset::MeshAssetUVE mesh = MakeFaceMeshUVE();
+TEST(MorphTargetComponentTest, EvaluateOnAMeshWithoutShapesIsAPassThrough) {
+    Asset::MeshAsset mesh = MakeFaceMesh();
     mesh.morphTargets.clear();
     mesh.defaultMorphWeights.clear();
-    MorphTargetComponentUVE component;
-    component.weights.push_back(MorphTargetWeightUVE{"jawOpen", 1.0F});
+    MorphTargetComponent component;
+    component.weights.push_back(MorphTargetWeight{"jawOpen", 1.0F});
 
-    std::vector<Asset::MeshVertexUVE> morphed;
+    std::vector<Asset::MeshVertex> morphed;
     // The component names a shape this mesh does not have, which is a real error - the mesh is not
     // silently morphed, and the caller hears about it.
-    EXPECT_FALSE(EvaluateMorphTargetsUVE(component, mesh, mesh.vertices, morphed));
+    EXPECT_FALSE(EvaluateMorphTargets(component, mesh, mesh.vertices, morphed));
 
-    MorphTargetComponentUVE emptyComponent;
-    ASSERT_TRUE(EvaluateMorphTargetsUVE(emptyComponent, mesh, mesh.vertices, morphed));
+    MorphTargetComponent emptyComponent;
+    ASSERT_TRUE(EvaluateMorphTargets(emptyComponent, mesh, mesh.vertices, morphed));
     EXPECT_EQ(morphed.size(), mesh.vertices.size());
 }
 

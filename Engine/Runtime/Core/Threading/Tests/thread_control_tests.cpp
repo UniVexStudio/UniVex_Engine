@@ -11,136 +11,136 @@
 #include "job_counter.h"
 namespace {
 using namespace UVE::Threading;
-struct WorkerUVE {
+struct Worker {
     std::promise<void> finish;
     std::thread thread{[f = finish.get_future()] { f.wait(); }};
-    ~WorkerUVE() {
+    ~Worker() {
         finish.set_value();
         thread.join();
     }
 };
-TEST(ThreadControlUVETest, NonJoinableAndJoinedThreadsAreRejectedBeforeNativeAccess) {
+TEST(ThreadControlTest, NonJoinableAndJoinedThreadsAreRejectedBeforeNativeAccess) {
     std::thread invalid;
     std::vector<std::uint32_t> cpus{42U};
-    auto p = ThreadPriorityUVE::Background;
-    EXPECT_EQ(GetThreadAffinityUVE(invalid, cpus).code, ThreadControlCodeUVE::InvalidThread);
-    EXPECT_EQ(SetThreadAffinityUVE(invalid, cpus).code, ThreadControlCodeUVE::InvalidThread);
-    EXPECT_EQ(GetThreadPriorityUVE(invalid, p).code, ThreadControlCodeUVE::InvalidThread);
-    EXPECT_EQ(SetThreadPriorityUVE(invalid, p).code, ThreadControlCodeUVE::InvalidThread);
+    auto p = ThreadPriority::Background;
+    EXPECT_EQ(GetThreadAffinity(invalid, cpus).code, ThreadControlCode::InvalidThread);
+    EXPECT_EQ(SetThreadAffinity(invalid, cpus).code, ThreadControlCode::InvalidThread);
+    EXPECT_EQ(GetThreadPriority(invalid, p).code, ThreadControlCode::InvalidThread);
+    EXPECT_EQ(SetThreadPriority(invalid, p).code, ThreadControlCode::InvalidThread);
     invalid = std::thread([] {});
     invalid.join();
-    EXPECT_EQ(GetThreadPriorityUVE(invalid, p).code, ThreadControlCodeUVE::InvalidThread);
+    EXPECT_EQ(GetThreadPriority(invalid, p).code, ThreadControlCode::InvalidThread);
     EXPECT_EQ(cpus, (std::vector<std::uint32_t>{42U}));
-    EXPECT_EQ(p, ThreadPriorityUVE::Background);
+    EXPECT_EQ(p, ThreadPriority::Background);
 }
-TEST(ThreadControlUVETest, InvalidArgumentsCannotChangeCurrentSettings) {
-    EXPECT_EQ(SetCurrentThreadAffinityUVE({}).code, ThreadControlCodeUVE::InvalidArgument);
-    EXPECT_EQ(SetCurrentThreadPriorityUVE(static_cast<ThreadPriorityUVE>(255)).code,
-              ThreadControlCodeUVE::InvalidArgument);
-    WorkerUVE worker;
-    EXPECT_EQ(SetThreadAffinityUVE(worker.thread, {}).code, ThreadControlCodeUVE::InvalidArgument);
-    EXPECT_EQ(SetThreadPriorityUVE(worker.thread, static_cast<ThreadPriorityUVE>(255)).code,
-              ThreadControlCodeUVE::InvalidArgument);
+TEST(ThreadControlTest, InvalidArgumentsCannotChangeCurrentSettings) {
+    EXPECT_EQ(SetCurrentThreadAffinity({}).code, ThreadControlCode::InvalidArgument);
+    EXPECT_EQ(SetCurrentThreadPriority(static_cast<ThreadPriority>(255)).code,
+              ThreadControlCode::InvalidArgument);
+    Worker worker;
+    EXPECT_EQ(SetThreadAffinity(worker.thread, {}).code, ThreadControlCode::InvalidArgument);
+    EXPECT_EQ(SetThreadPriority(worker.thread, static_cast<ThreadPriority>(255)).code,
+              ThreadControlCode::InvalidArgument);
 }
-TEST(ThreadControlUVETest, ActualAllowedAffinityCanBeNarrowedAndRestoredOnAWorker) {
-    WorkerUVE worker;
-    const auto cap = GetThreadControlCapabilitiesUVE();
+TEST(ThreadControlTest, ActualAllowedAffinityCanBeNarrowedAndRestoredOnAWorker) {
+    Worker worker;
+    const auto cap = GetThreadControlCapabilities();
     std::vector<std::uint32_t> original{42U};
-    const auto result = GetThreadAffinityUVE(worker.thread, original);
+    const auto result = GetThreadAffinity(worker.thread, original);
     if (!cap.affinity || !cap.threadObject) {
-        EXPECT_EQ(result.code, ThreadControlCodeUVE::Unsupported);
+        EXPECT_EQ(result.code, ThreadControlCode::Unsupported);
         EXPECT_EQ(original, (std::vector<std::uint32_t>{42U}));
-        EXPECT_EQ(SetThreadAffinityUVE(worker.thread, original).code, ThreadControlCodeUVE::Unsupported);
+        EXPECT_EQ(SetThreadAffinity(worker.thread, original).code, ThreadControlCode::Unsupported);
         return;
     }
-    ASSERT_TRUE(result.IsAppliedUVE());
+    ASSERT_TRUE(result.IsApplied());
     ASSERT_FALSE(original.empty());
     const std::array<std::uint32_t, 1> selected{original.front()};
-    ASSERT_TRUE(SetThreadAffinityUVE(worker.thread, selected).IsAppliedUVE());
+    ASSERT_TRUE(SetThreadAffinity(worker.thread, selected).IsApplied());
     std::vector<std::uint32_t> observed;
-    ASSERT_TRUE(GetThreadAffinityUVE(worker.thread, observed).IsAppliedUVE());
+    ASSERT_TRUE(GetThreadAffinity(worker.thread, observed).IsApplied());
     EXPECT_EQ(observed, (std::vector<std::uint32_t>{original.front()}));
     const std::array<std::uint32_t, 2> repeated{original.front(), original.front()};
     const std::array<std::uint32_t, 1> invalid{std::numeric_limits<std::uint32_t>::max()};
-    EXPECT_EQ(SetThreadAffinityUVE(worker.thread, repeated).code, ThreadControlCodeUVE::InvalidArgument);
-    EXPECT_EQ(SetThreadAffinityUVE(worker.thread, invalid).code, ThreadControlCodeUVE::InvalidArgument);
-    ASSERT_TRUE(GetThreadAffinityUVE(worker.thread, observed).IsAppliedUVE());
+    EXPECT_EQ(SetThreadAffinity(worker.thread, repeated).code, ThreadControlCode::InvalidArgument);
+    EXPECT_EQ(SetThreadAffinity(worker.thread, invalid).code, ThreadControlCode::InvalidArgument);
+    ASSERT_TRUE(GetThreadAffinity(worker.thread, observed).IsApplied());
     EXPECT_EQ(observed, (std::vector<std::uint32_t>{original.front()}));
-    EXPECT_TRUE(SetThreadAffinityUVE(worker.thread, original).IsAppliedUVE());
+    EXPECT_TRUE(SetThreadAffinity(worker.thread, original).IsApplied());
 }
-TEST(ThreadControlUVETest, BackgroundAndNormalPrioritiesRoundTripOrExplicitlyReportUnsupported) {
-    WorkerUVE worker;
-    const auto cap = GetThreadControlCapabilitiesUVE();
-    auto out = ThreadPriorityUVE::Realtime;
+TEST(ThreadControlTest, BackgroundAndNormalPrioritiesRoundTripOrExplicitlyReportUnsupported) {
+    Worker worker;
+    const auto cap = GetThreadControlCapabilities();
+    auto out = ThreadPriority::Realtime;
     if (!cap.priority || !cap.threadObject) {
-        EXPECT_EQ(SetThreadPriorityUVE(worker.thread, ThreadPriorityUVE::Normal).code,
-                  ThreadControlCodeUVE::Unsupported);
-        EXPECT_EQ(GetThreadPriorityUVE(worker.thread, out).code, ThreadControlCodeUVE::Unsupported);
-        EXPECT_EQ(out, ThreadPriorityUVE::Realtime);
+        EXPECT_EQ(SetThreadPriority(worker.thread, ThreadPriority::Normal).code,
+                  ThreadControlCode::Unsupported);
+        EXPECT_EQ(GetThreadPriority(worker.thread, out).code, ThreadControlCode::Unsupported);
+        EXPECT_EQ(out, ThreadPriority::Realtime);
         return;
     }
-    ASSERT_TRUE(SetThreadPriorityUVE(worker.thread, ThreadPriorityUVE::Background).IsAppliedUVE());
-    ASSERT_TRUE(GetThreadPriorityUVE(worker.thread, out).IsAppliedUVE());
-    EXPECT_EQ(out, ThreadPriorityUVE::Background);
-    ASSERT_TRUE(SetThreadPriorityUVE(worker.thread, ThreadPriorityUVE::Normal).IsAppliedUVE());
-    ASSERT_TRUE(GetThreadPriorityUVE(worker.thread, out).IsAppliedUVE());
-    EXPECT_EQ(out, ThreadPriorityUVE::Normal);
+    ASSERT_TRUE(SetThreadPriority(worker.thread, ThreadPriority::Background).IsApplied());
+    ASSERT_TRUE(GetThreadPriority(worker.thread, out).IsApplied());
+    EXPECT_EQ(out, ThreadPriority::Background);
+    ASSERT_TRUE(SetThreadPriority(worker.thread, ThreadPriority::Normal).IsApplied());
+    ASSERT_TRUE(GetThreadPriority(worker.thread, out).IsApplied());
+    EXPECT_EQ(out, ThreadPriority::Normal);
 }
-TEST(ThreadControlUVETest, RealtimeNeverSilentlyDowngradesOrChangesTheProcessClass) {
-    WorkerUVE worker;
-    const auto cap = GetThreadControlCapabilitiesUVE();
-    const auto result = SetThreadPriorityUVE(worker.thread, ThreadPriorityUVE::Realtime);
+TEST(ThreadControlTest, RealtimeNeverSilentlyDowngradesOrChangesTheProcessClass) {
+    Worker worker;
+    const auto cap = GetThreadControlCapabilities();
+    const auto result = SetThreadPriority(worker.thread, ThreadPriority::Realtime);
     if (!cap.realtime || !cap.threadObject) {
-        EXPECT_EQ(result.code, ThreadControlCodeUVE::Unsupported);
+        EXPECT_EQ(result.code, ThreadControlCode::Unsupported);
         return;
     }
-    if (result.IsAppliedUVE()) {
-        auto out = ThreadPriorityUVE::Normal;
-        EXPECT_TRUE(GetThreadPriorityUVE(worker.thread, out).IsAppliedUVE());
-        EXPECT_EQ(out, ThreadPriorityUVE::Realtime);
-        EXPECT_TRUE(SetThreadPriorityUVE(worker.thread, ThreadPriorityUVE::Normal).IsAppliedUVE());
+    if (result.IsApplied()) {
+        auto out = ThreadPriority::Normal;
+        EXPECT_TRUE(GetThreadPriority(worker.thread, out).IsApplied());
+        EXPECT_EQ(out, ThreadPriority::Realtime);
+        EXPECT_TRUE(SetThreadPriority(worker.thread, ThreadPriority::Normal).IsApplied());
     } else {
-        EXPECT_EQ(result.code, ThreadControlCodeUVE::PermissionDenied);
+        EXPECT_EQ(result.code, ThreadControlCode::PermissionDenied);
         EXPECT_NE(result.nativeError, 0U);
     }
 }
-TEST(ThreadControlUVETest, CurrentThreadOperationsRunOnPoolWorkerWithoutRenamingOrAffectingCaller) {
-    ThreadPoolUVE pool{1U};
-    JobCounterUVE counter;
-    pool.SubmitUVE(
+TEST(ThreadControlTest, CurrentThreadOperationsRunOnPoolWorkerWithoutRenamingOrAffectingCaller) {
+    ThreadPool pool{1U};
+    JobCounter counter;
+    pool.Submit(
         [] {
-            const auto cap = GetThreadControlCapabilitiesUVE();
+            const auto cap = GetThreadControlCapabilities();
             std::vector<std::uint32_t> cpus{42U};
             if (cap.affinity) {
-                ASSERT_TRUE(GetCurrentThreadAffinityUVE(cpus).IsAppliedUVE());
+                ASSERT_TRUE(GetCurrentThreadAffinity(cpus).IsApplied());
                 ASSERT_FALSE(cpus.empty());
                 const std::array<std::uint32_t, 1> selected{cpus.front()};
-                EXPECT_TRUE(SetCurrentThreadAffinityUVE(selected).IsAppliedUVE());
-                EXPECT_TRUE(SetCurrentThreadAffinityUVE(cpus).IsAppliedUVE());
+                EXPECT_TRUE(SetCurrentThreadAffinity(selected).IsApplied());
+                EXPECT_TRUE(SetCurrentThreadAffinity(cpus).IsApplied());
             } else {
-                EXPECT_EQ(GetCurrentThreadAffinityUVE(cpus).code, ThreadControlCodeUVE::Unsupported);
+                EXPECT_EQ(GetCurrentThreadAffinity(cpus).code, ThreadControlCode::Unsupported);
                 EXPECT_EQ(cpus, (std::vector<std::uint32_t>{42U}));
             }
-            auto priority = ThreadPriorityUVE::Background;
+            auto priority = ThreadPriority::Background;
             if (cap.priority) {
-                EXPECT_TRUE(SetCurrentThreadPriorityUVE(ThreadPriorityUVE::Normal).IsAppliedUVE());
-                EXPECT_TRUE(GetCurrentThreadPriorityUVE(priority).IsAppliedUVE());
-                EXPECT_EQ(priority, ThreadPriorityUVE::Normal);
+                EXPECT_TRUE(SetCurrentThreadPriority(ThreadPriority::Normal).IsApplied());
+                EXPECT_TRUE(GetCurrentThreadPriority(priority).IsApplied());
+                EXPECT_EQ(priority, ThreadPriority::Normal);
             } else {
-                EXPECT_EQ(GetCurrentThreadPriorityUVE(priority).code, ThreadControlCodeUVE::Unsupported);
-                EXPECT_EQ(priority, ThreadPriorityUVE::Background);
+                EXPECT_EQ(GetCurrentThreadPriority(priority).code, ThreadControlCode::Unsupported);
+                EXPECT_EQ(priority, ThreadPriority::Background);
             }
             std::string name;
 #if defined(__linux__) || defined(__APPLE__)
-            EXPECT_TRUE(TryGetCurrentThreadNameUVE(name));
+            EXPECT_TRUE(TryGetCurrentThreadName(name));
             EXPECT_EQ(name, "UVEWorker0");
 #else
-            if (TryGetCurrentThreadNameUVE(name)) {
+            if (TryGetCurrentThreadName(name)) {
                 EXPECT_EQ(name, "UVEWorker0");
             }
 #endif
         },
         counter);
-    counter.WaitUVE();
+    counter.Wait();
 }
 } // namespace

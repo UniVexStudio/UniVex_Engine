@@ -16,22 +16,22 @@ namespace UVE::Online {
 namespace {
 
 /// The most redirects a request follows (release downloads redirect once, to storage).
-inline constexpr int kMaximumRedirectsUVE = 5;
-inline constexpr std::chrono::milliseconds kConnectTimeoutUVE{15000};
-inline constexpr jsize kReadChunkBytesUVE = 1 << 16;
-inline constexpr std::string_view kHttpsSchemeUVE = "https";
-inline constexpr std::string_view kAuthorizationHeaderUVE = "Authorization";
-inline constexpr std::string_view kLocationHeaderUVE = "Location";
+inline constexpr int kMaximumRedirects = 5;
+inline constexpr std::chrono::milliseconds kConnectTimeout{15000};
+inline constexpr jsize kReadChunkBytes = 1 << 16;
+inline constexpr std::string_view kHttpsScheme = "https";
+inline constexpr std::string_view kAuthorizationHeader = "Authorization";
+inline constexpr std::string_view kLocationHeader = "Location";
 /// InputStream.read's value at the end of the stream.
-inline constexpr jint kEndOfStreamUVE = -1;
+inline constexpr jint kEndOfStream = -1;
 
-std::atomic<JavaVM*> g_javaVmUVE{nullptr};
+std::atomic<JavaVM*> g_javaVm{nullptr};
 
 /// The calling thread's JNI environment, attaching the thread for as long as this object lives.
-class JniThreadUVE final {
+class JniThread final {
 public:
-    JniThreadUVE() {
-        JavaVM* const vm = g_javaVmUVE.load();
+    JniThread() {
+        JavaVM* const vm = g_javaVm.load();
         if (vm == nullptr) {
             return;
         }
@@ -42,14 +42,14 @@ public:
             }
         }
     }
-    JniThreadUVE(const JniThreadUVE&) = delete;
-    JniThreadUVE& operator=(const JniThreadUVE&) = delete;
-    ~JniThreadUVE() {
+    JniThread(const JniThread&) = delete;
+    JniThread& operator=(const JniThread&) = delete;
+    ~JniThread() {
         if (m_attached) {
-            g_javaVmUVE.load()->DetachCurrentThread();
+            g_javaVm.load()->DetachCurrentThread();
         }
     }
-    [[nodiscard]] JNIEnv* EnvUVE() const noexcept { return m_env; }
+    [[nodiscard]] JNIEnv* Env() const noexcept { return m_env; }
 
 private:
     JNIEnv* m_env = nullptr;
@@ -57,12 +57,12 @@ private:
 };
 
 /// Local references made in a scope, released when it ends.
-class LocalFrameUVE final {
+class LocalFrame final {
 public:
-    explicit LocalFrameUVE(JNIEnv* env, const jint capacity) : m_env(env) { m_pushed = env->PushLocalFrame(capacity) == 0; }
-    LocalFrameUVE(const LocalFrameUVE&) = delete;
-    LocalFrameUVE& operator=(const LocalFrameUVE&) = delete;
-    ~LocalFrameUVE() {
+    explicit LocalFrame(JNIEnv* env, const jint capacity) : m_env(env) { m_pushed = env->PushLocalFrame(capacity) == 0; }
+    LocalFrame(const LocalFrame&) = delete;
+    LocalFrame& operator=(const LocalFrame&) = delete;
+    ~LocalFrame() {
         if (m_pushed) {
             m_env->PopLocalFrame(nullptr);
         }
@@ -72,9 +72,9 @@ private:
     JNIEnv* m_env;
     bool m_pushed = false;
 };
-inline constexpr jint kLocalReferencesPerRequestUVE = 64;
+inline constexpr jint kLocalReferencesPerRequest = 64;
 
-[[nodiscard]] std::string ToStringUVE(JNIEnv* env, jstring text) {
+[[nodiscard]] std::string ToString(JNIEnv* env, jstring text) {
     if (text == nullptr) {
         return {};
     }
@@ -85,7 +85,7 @@ inline constexpr jint kLocalReferencesPerRequestUVE = 64;
 }
 
 /// Clears a pending Java exception and returns its description, or empty when there was none.
-[[nodiscard]] std::string TakeExceptionUVE(JNIEnv* env) {
+[[nodiscard]] std::string TakeException(JNIEnv* env) {
     jthrowable thrown = env->ExceptionOccurred();
     if (thrown == nullptr) {
         return {};
@@ -93,36 +93,36 @@ inline constexpr jint kLocalReferencesPerRequestUVE = 64;
     env->ExceptionClear();
     jclass throwable = env->FindClass("java/lang/Throwable");
     jmethodID describe = env->GetMethodID(throwable, "toString", "()Ljava/lang/String;");
-    std::string message = ToStringUVE(env, static_cast<jstring>(env->CallObjectMethod(thrown, describe)));
+    std::string message = ToString(env, static_cast<jstring>(env->CallObjectMethod(thrown, describe)));
     env->ExceptionClear();
     return message.empty() ? std::string("The request failed.") : message;
 }
 
 /// Receives response bytes; returns false to stop the transfer.
-using BodySinkUVE = std::function<bool(const char* data, std::size_t size)>;
+using BodySink = std::function<bool(const char* data, std::size_t size)>;
 
-class AndroidHttpClientUVE final : public IHttpClientUVE {
+class AndroidHttpClient final : public IHttpClient {
 public:
-    HttpResponseUVE GetUVE(const HttpRequestUVE& request) override {
+    HttpResponse Get(const HttpRequest& request) override {
         std::string body;
-        HttpResponseUVE response = PerformUVE(request, [&body](const char* data, const std::size_t size) {
+        HttpResponse response = Perform(request, [&body](const char* data, const std::size_t size) {
             body.append(data, size);
             return true;
         }, nullptr);
-        if (response.IsSuccessUVE()) {
+        if (response.IsSuccess()) {
             response.body = std::move(body);
         }
         return response;
     }
 
-    HttpResponseUVE DownloadUVE(const HttpRequestUVE& request, const std::filesystem::path& file,
-                                const HttpProgressUVE& progress) override {
+    HttpResponse Download(const HttpRequest& request, const std::filesystem::path& file,
+                                const HttpProgress& progress) override {
         std::ofstream output(file, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
             return {false, 0, {}, "Unable to write " + file.string()};
         }
         bool writeFailed = false;
-        HttpResponseUVE response = PerformUVE(request, [&output, &writeFailed](const char* data, const std::size_t size) {
+        HttpResponse response = Perform(request, [&output, &writeFailed](const char* data, const std::size_t size) {
             output.write(data, static_cast<std::streamsize>(size));
             writeFailed = !output;
             return !writeFailed;
@@ -138,21 +138,21 @@ public:
 private:
     /// Runs the request, following redirects by hand so credentials never travel to another host.
     /// A success body goes to `sink`; an error body is returned in the response.
-    [[nodiscard]] static HttpResponseUVE PerformUVE(const HttpRequestUVE& request, const BodySinkUVE& sink,
-                                                    const HttpProgressUVE* progress) {
-        HttpResponseUVE response;
-        const JniThreadUVE thread;
-        JNIEnv* const env = thread.EnvUVE();
+    [[nodiscard]] static HttpResponse Perform(const HttpRequest& request, const BodySink& sink,
+                                                    const HttpProgress* progress) {
+        HttpResponse response;
+        const JniThread thread;
+        JNIEnv* const env = thread.Env();
         if (env == nullptr) {
             response.error = "HTTPS is not available: the app did not provide its Java VM.";
             return response;
         }
-        const LocalFrameUVE frame(env, kLocalReferencesPerRequestUVE);
+        const LocalFrame frame(env, kLocalReferencesPerRequest);
         jclass urlClass = env->FindClass("java/net/URL");
         jclass connectionClass = env->FindClass("java/net/HttpURLConnection");
         jclass streamClass = env->FindClass("java/io/InputStream");
         if (urlClass == nullptr || connectionClass == nullptr || streamClass == nullptr) {
-            response.error = TakeExceptionUVE(env);
+            response.error = TakeException(env);
             return response;
         }
         jmethodID urlFromString = env->GetMethodID(urlClass, "<init>", "(Ljava/lang/String;)V");
@@ -174,24 +174,24 @@ private:
         jmethodID read = env->GetMethodID(streamClass, "read", "([B)I");
         jmethodID close = env->GetMethodID(streamClass, "close", "()V");
         if (env->ExceptionCheck()) {
-            response.error = TakeExceptionUVE(env);
+            response.error = TakeException(env);
             return response;
         }
 
         const auto stallMs = static_cast<jint>(std::chrono::duration_cast<std::chrono::milliseconds>(request.stallTimeout).count());
         std::string currentUrl = request.url;
         std::string originalHost;
-        for (int redirect = 0; redirect <= kMaximumRedirectsUVE; ++redirect) {
+        for (int redirect = 0; redirect <= kMaximumRedirects; ++redirect) {
             // Each redirect hop gets its own local reference frame so ART's 64-ref table cannot overflow.
-            const LocalFrameUVE hopFrame(env, kLocalReferencesPerRequestUVE);
+            const LocalFrame hopFrame(env, kLocalReferencesPerRequest);
             jobject url = env->NewObject(urlClass, urlFromString, env->NewStringUTF(currentUrl.c_str()));
             if (env->ExceptionCheck() || url == nullptr) {
-                response.error = TakeExceptionUVE(env);
+                response.error = TakeException(env);
                 return response;
             }
-            const std::string scheme = ToStringUVE(env, static_cast<jstring>(env->CallObjectMethod(url, urlProtocol)));
-            const std::string host = ToStringUVE(env, static_cast<jstring>(env->CallObjectMethod(url, urlHost)));
-            if (scheme != kHttpsSchemeUVE) {
+            const std::string scheme = ToString(env, static_cast<jstring>(env->CallObjectMethod(url, urlProtocol)));
+            const std::string host = ToString(env, static_cast<jstring>(env->CallObjectMethod(url, urlHost)));
+            if (scheme != kHttpsScheme) {
                 response.error = "Only https addresses are allowed.";
                 return response;
             }
@@ -200,7 +200,7 @@ private:
             }
             jobject connection = env->CallObjectMethod(url, openConnection);
             if (env->ExceptionCheck()) {
-                response.error = TakeExceptionUVE(env);
+                response.error = TakeException(env);
                 return response;
             }
             // Every call can throw; JNI must not be used again while an exception is pending.
@@ -208,7 +208,7 @@ private:
                 if (!env->ExceptionCheck()) {
                     return false;
                 }
-                response.error = TakeExceptionUVE(env);
+                response.error = TakeException(env);
                 env->CallVoidMethod(connection, disconnect);
                 env->ExceptionClear();
                 return true;
@@ -217,7 +217,7 @@ private:
             if (failed()) {
                 return response;
             }
-            env->CallVoidMethod(connection, setConnectTimeout, static_cast<jint>(kConnectTimeoutUVE.count()));
+            env->CallVoidMethod(connection, setConnectTimeout, static_cast<jint>(kConnectTimeout.count()));
             if (failed()) {
                 return response;
             }
@@ -225,8 +225,8 @@ private:
             if (failed()) {
                 return response;
             }
-            for (const HttpHeaderUVE& header : request.headers) {
-                if (host != originalHost && header.name == kAuthorizationHeaderUVE) {
+            for (const HttpHeader& header : request.headers) {
+                if (host != originalHost && header.name == kAuthorizationHeader) {
                     continue;
                 }
                 env->CallVoidMethod(connection, setProperty, env->NewStringUTF(header.name.c_str()),
@@ -237,14 +237,14 @@ private:
             }
             const jint status = env->CallIntMethod(connection, responseCode);
             if (env->ExceptionCheck()) {
-                response.error = TakeExceptionUVE(env);
+                response.error = TakeException(env);
                 env->CallVoidMethod(connection, disconnect);
                 return response;
             }
-            if (IsHttpRedirectionStatusUVE(status)) {
-                const std::string location = ToStringUVE(
+            if (IsHttpRedirectionStatus(status)) {
+                const std::string location = ToString(
                     env, static_cast<jstring>(env->CallObjectMethod(connection, headerField,
-                                                                    env->NewStringUTF(kLocationHeaderUVE.data()))));
+                                                                    env->NewStringUTF(kLocationHeader.data()))));
                 env->CallVoidMethod(connection, disconnect);
                 if (location.empty()) {
                     response.error = "A redirect had no location.";
@@ -252,35 +252,35 @@ private:
                 }
                 jobject resolved = env->NewObject(urlClass, urlRelative, url, env->NewStringUTF(location.c_str()));
                 if (env->ExceptionCheck() || resolved == nullptr) {
-                    response.error = TakeExceptionUVE(env);
+                    response.error = TakeException(env);
                     return response;
                 }
-                currentUrl = ToStringUVE(env, static_cast<jstring>(env->CallObjectMethod(resolved, urlToString)));
+                currentUrl = ToString(env, static_cast<jstring>(env->CallObjectMethod(resolved, urlToString)));
                 continue;
             }
 
             response.reached = true;
             response.status = status;
-            const bool success = IsHttpSuccessStatusUVE(status);
+            const bool success = IsHttpSuccessStatus(status);
             jobject stream = env->CallObjectMethod(connection, success ? inputStream : errorStream);
             if (env->ExceptionCheck()) {
                 // An error response may have no body at all.
-                static_cast<void>(TakeExceptionUVE(env));
+                static_cast<void>(TakeException(env));
                 stream = nullptr;
             }
             const jlong total = env->CallLongMethod(connection, contentLength);
             std::uint64_t received = 0U;
             if (stream != nullptr) {
-                jbyteArray buffer = env->NewByteArray(kReadChunkBytesUVE);
-                std::vector<char> chunk(static_cast<std::size_t>(kReadChunkBytesUVE));
+                jbyteArray buffer = env->NewByteArray(kReadChunkBytes);
+                std::vector<char> chunk(static_cast<std::size_t>(kReadChunkBytes));
                 for (;;) {
                     const jint count = env->CallIntMethod(stream, read, buffer);
                     if (env->ExceptionCheck()) {
                         response.reached = false;
-                        response.error = TakeExceptionUVE(env);
+                        response.error = TakeException(env);
                         break;
                     }
-                    if (count == kEndOfStreamUVE) {
+                    if (count == kEndOfStream) {
                         break;
                     }
                     env->GetByteArrayRegion(buffer, 0, count, reinterpret_cast<jbyte*>(chunk.data()));
@@ -300,7 +300,7 @@ private:
                     }
                 }
                 env->CallVoidMethod(stream, close);
-                static_cast<void>(TakeExceptionUVE(env));
+                static_cast<void>(TakeException(env));
             }
             env->CallVoidMethod(connection, disconnect);
             return response;
@@ -312,12 +312,12 @@ private:
 
 } // namespace
 
-void SetAndroidJavaVmUVE(void* const javaVm) {
-    g_javaVmUVE.store(static_cast<JavaVM*>(javaVm));
+void SetAndroidJavaVm(void* const javaVm) {
+    g_javaVm.store(static_cast<JavaVM*>(javaVm));
 }
 
-std::unique_ptr<IHttpClientUVE> CreatePlatformHttpClientUVE() {
-    return std::make_unique<AndroidHttpClientUVE>();
+std::unique_ptr<IHttpClient> CreatePlatformHttpClient() {
+    return std::make_unique<AndroidHttpClient>();
 }
 
 } // namespace UVE::Online

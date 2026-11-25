@@ -11,198 +11,198 @@
 
 namespace UVE::Core {
 // Define operations after the recursive dictionary entry is complete (required by libc++).
-VariantUVE::VariantUVE() noexcept = default;
-VariantUVE::~VariantUVE() = default;
-VariantUVE::VariantUVE(const VariantUVE&) = default;
-VariantUVE& VariantUVE::operator=(const VariantUVE&) = default;
-VariantUVE::VariantUVE(VariantUVE&&) noexcept = default;
-VariantUVE& VariantUVE::operator=(VariantUVE&&) noexcept = default;
-VariantUVE::VariantUVE(const VariantTypeUVE type, StorageUVE storage)
+Variant::Variant() noexcept = default;
+Variant::~Variant() = default;
+Variant::Variant(const Variant&) = default;
+Variant& Variant::operator=(const Variant&) = default;
+Variant::Variant(Variant&&) noexcept = default;
+Variant& Variant::operator=(Variant&&) noexcept = default;
+Variant::Variant(const VariantType type, Storage storage)
     : m_type(type), m_storage(std::move(storage)) {}
 namespace {
 
-struct VariantTypeInfoUVE final {
-    VariantTypeUVE type;
+struct VariantTypeInfo final {
+    VariantType type;
     std::string_view name;
     std::string_view category;
 };
 
 // One row per type, in enumerator order. The static_assert below is what keeps this table and the
 // enumeration from drifting apart when a type is added.
-constexpr std::array<VariantTypeInfoUVE, kVariantTypeCountUVE> kVariantTypeInfoUVE{{
-    {VariantTypeUVE::Bool, "bool", "Basic"},
-    {VariantTypeUVE::Int, "int", "Basic"},
-    {VariantTypeUVE::Float, "float", "Basic"},
-    {VariantTypeUVE::String, "String", "Basic"},
-    {VariantTypeUVE::InternedString, "InternedString", "Basic"},
-    {VariantTypeUVE::ObjectPath, "ObjectPath", "Basic"},
-    {VariantTypeUVE::Vector2, "Vector2", "Math"},
-    {VariantTypeUVE::Vector3, "Vector3", "Math"},
-    {VariantTypeUVE::Vector4, "Vector4", "Math"},
-    {VariantTypeUVE::Quaternion, "Quaternion", "Math"},
-    {VariantTypeUVE::Color, "Color", "Color"},
-    {VariantTypeUVE::Resource, "Resource", "Reference"},
-    {VariantTypeUVE::Object, "Object", "Reference"},
-    {VariantTypeUVE::Array, "Array", "Collection"},
-    {VariantTypeUVE::Dictionary, "Dictionary", "Collection"},
-    {VariantTypeUVE::ByteArray, "ByteArray", "Typed Array"},
-    {VariantTypeUVE::Int32Array, "Int32Array", "Typed Array"},
-    {VariantTypeUVE::Int64Array, "Int64Array", "Typed Array"},
-    {VariantTypeUVE::Float32Array, "Float32Array", "Typed Array"},
-    {VariantTypeUVE::Float64Array, "Float64Array", "Typed Array"},
-    {VariantTypeUVE::StringArray, "StringArray", "Typed Array"},
-    {VariantTypeUVE::Vector2Array, "Vector2Array", "Typed Array"},
-    {VariantTypeUVE::Vector3Array, "Vector3Array", "Typed Array"},
-    {VariantTypeUVE::ColorArray, "ColorArray", "Typed Array"},
+constexpr std::array<VariantTypeInfo, kVariantTypeCount> kVariantTypeInfo{{
+    {VariantType::Bool, "bool", "Basic"},
+    {VariantType::Int, "int", "Basic"},
+    {VariantType::Float, "float", "Basic"},
+    {VariantType::String, "String", "Basic"},
+    {VariantType::InternedString, "InternedString", "Basic"},
+    {VariantType::ObjectPath, "ObjectPath", "Basic"},
+    {VariantType::Vector2, "Vector2", "Math"},
+    {VariantType::Vector3, "Vector3", "Math"},
+    {VariantType::Vector4, "Vector4", "Math"},
+    {VariantType::Quaternion, "Quaternion", "Math"},
+    {VariantType::Color, "Color", "Color"},
+    {VariantType::Resource, "Resource", "Reference"},
+    {VariantType::Object, "Object", "Reference"},
+    {VariantType::Array, "Array", "Collection"},
+    {VariantType::Dictionary, "Dictionary", "Collection"},
+    {VariantType::ByteArray, "ByteArray", "Typed Array"},
+    {VariantType::Int32Array, "Int32Array", "Typed Array"},
+    {VariantType::Int64Array, "Int64Array", "Typed Array"},
+    {VariantType::Float32Array, "Float32Array", "Typed Array"},
+    {VariantType::Float64Array, "Float64Array", "Typed Array"},
+    {VariantType::StringArray, "StringArray", "Typed Array"},
+    {VariantType::Vector2Array, "Vector2Array", "Typed Array"},
+    {VariantType::Vector3Array, "Vector3Array", "Typed Array"},
+    {VariantType::ColorArray, "ColorArray", "Typed Array"},
 }};
 
-[[nodiscard]] constexpr bool IsTableInEnumeratorOrderUVE() noexcept {
-    for (std::size_t index = 0; index < kVariantTypeInfoUVE.size(); ++index) {
-        if (static_cast<std::size_t>(kVariantTypeInfoUVE[index].type) != index) {
+[[nodiscard]] constexpr bool IsTableInEnumeratorOrder() noexcept {
+    for (std::size_t index = 0; index < kVariantTypeInfo.size(); ++index) {
+        if (static_cast<std::size_t>(kVariantTypeInfo[index].type) != index) {
             return false;
         }
     }
     return true;
 }
-static_assert(IsTableInEnumeratorOrderUVE(), "kVariantTypeInfoUVE must list every type in enumerator order.");
+static_assert(IsTableInEnumeratorOrder(), "kVariantTypeInfo must list every type in enumerator order.");
 
-[[nodiscard]] bool IsTextTypeUVE(const VariantTypeUVE type) noexcept {
-    return type == VariantTypeUVE::String || type == VariantTypeUVE::InternedString ||
-           type == VariantTypeUVE::ObjectPath || type == VariantTypeUVE::Object;
+[[nodiscard]] bool IsTextType(const VariantType type) noexcept {
+    return type == VariantType::String || type == VariantType::InternedString ||
+           type == VariantType::ObjectPath || type == VariantType::Object;
 }
 
-[[nodiscard]] bool IsNumericTypeUVE(const VariantTypeUVE type) noexcept {
-    return type == VariantTypeUVE::Bool || type == VariantTypeUVE::Int || type == VariantTypeUVE::Float;
+[[nodiscard]] bool IsNumericType(const VariantType type) noexcept {
+    return type == VariantType::Bool || type == VariantType::Int || type == VariantType::Float;
 }
 
 /// A value's number, whatever numeric type it is.
-[[nodiscard]] double AsNumberUVE(const VariantUVE& value) noexcept {
-    if (const bool* const flag = value.TryGetUVE<bool>(); flag != nullptr) {
+[[nodiscard]] double AsNumber(const Variant& value) noexcept {
+    if (const bool* const flag = value.TryGet<bool>(); flag != nullptr) {
         return *flag ? 1.0 : 0.0;
     }
-    if (const std::int64_t* const integer = value.TryGetUVE<std::int64_t>(); integer != nullptr) {
+    if (const std::int64_t* const integer = value.TryGet<std::int64_t>(); integer != nullptr) {
         return static_cast<double>(*integer);
     }
-    if (const double* const real = value.TryGetUVE<double>(); real != nullptr) {
+    if (const double* const real = value.TryGet<double>(); real != nullptr) {
         return *real;
     }
     return 0.0;
 }
 
-[[nodiscard]] std::string NumberToTextUVE(const VariantUVE& value) {
-    if (const bool* const flag = value.TryGetUVE<bool>(); flag != nullptr) {
+[[nodiscard]] std::string NumberToText(const Variant& value) {
+    if (const bool* const flag = value.TryGet<bool>(); flag != nullptr) {
         return *flag ? "true" : "false";
     }
-    if (const std::int64_t* const integer = value.TryGetUVE<std::int64_t>(); integer != nullptr) {
+    if (const std::int64_t* const integer = value.TryGet<std::int64_t>(); integer != nullptr) {
         return std::to_string(*integer);
     }
     // Shortest text that parses back to the same double, so a Float -> String -> Float round trip
     // is exact rather than drifting in the last digits the way a fixed precision would.
     std::array<char, 64> buffer{};
-    const double real = AsNumberUVE(value);
+    const double real = AsNumber(value);
     const std::to_chars_result result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), real);
     return result.ec == std::errc{} ? std::string(buffer.data(), result.ptr) : std::string{};
 }
 
 /// Converts between numeric types. Lossless exactly when the target can represent the number.
-[[nodiscard]] VariantConversionUVE ConvertNumberUVE(const VariantUVE& value, const VariantTypeUVE target) {
-    const double number = AsNumberUVE(value);
+[[nodiscard]] VariantConversion ConvertNumber(const Variant& value, const VariantType target) {
+    const double number = AsNumber(value);
     switch (target) {
-        case VariantTypeUVE::Bool:
-            return {VariantUVE::MakeBoolUVE(number != 0.0), number == 0.0 || number == 1.0};
-        case VariantTypeUVE::Int: {
+        case VariantType::Bool:
+            return {Variant::MakeBool(number != 0.0), number == 0.0 || number == 1.0};
+        case VariantType::Int: {
             if (!std::isfinite(number) || number < static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
                 number >= static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
-                return {VariantUVE::MakeIntUVE(0), false};
+                return {Variant::MakeInt(0), false};
             }
             const auto truncated = static_cast<std::int64_t>(number);
-            return {VariantUVE::MakeIntUVE(truncated), static_cast<double>(truncated) == number};
+            return {Variant::MakeInt(truncated), static_cast<double>(truncated) == number};
         }
-        case VariantTypeUVE::Float: {
-            const std::int64_t* const integer = value.TryGetUVE<std::int64_t>();
+        case VariantType::Float: {
+            const std::int64_t* const integer = value.TryGet<std::int64_t>();
             // A 64-bit integer beyond 2^53 has no exact double; say so rather than round silently.
             const bool exact = integer == nullptr || static_cast<std::int64_t>(static_cast<double>(*integer)) == *integer;
-            return {VariantUVE::MakeFloatUVE(number), exact};
+            return {Variant::MakeFloat(number), exact};
         }
         default:
-            return {VariantUVE::MakeDefaultUVE(target), false};
+            return {Variant::MakeDefault(target), false};
     }
 }
 
 /// Parses text as a number of the target type. Nothing when the text is not a number at all.
-[[nodiscard]] std::optional<VariantConversionUVE> ParseNumberUVE(const std::string& text, const VariantTypeUVE target) {
-    if (target == VariantTypeUVE::Bool) {
+[[nodiscard]] std::optional<VariantConversion> ParseNumber(const std::string& text, const VariantType target) {
+    if (target == VariantType::Bool) {
         if (text == "true" || text == "1") {
-            return VariantConversionUVE{VariantUVE::MakeBoolUVE(true), true};
+            return VariantConversion{Variant::MakeBool(true), true};
         }
         if (text == "false" || text == "0") {
-            return VariantConversionUVE{VariantUVE::MakeBoolUVE(false), true};
+            return VariantConversion{Variant::MakeBool(false), true};
         }
         return std::nullopt;
     }
     const char* const begin = text.data();
     const char* const end = text.data() + text.size();
-    if (target == VariantTypeUVE::Int) {
+    if (target == VariantType::Int) {
         std::int64_t parsed = 0;
         const std::from_chars_result result = std::from_chars(begin, end, parsed);
         if (result.ec != std::errc{} || result.ptr != end) {
             return std::nullopt;
         }
-        return VariantConversionUVE{VariantUVE::MakeIntUVE(parsed), true};
+        return VariantConversion{Variant::MakeInt(parsed), true};
     }
     double parsed = 0.0;
     const std::from_chars_result result = std::from_chars(begin, end, parsed);
     if (result.ec != std::errc{} || result.ptr != end) {
         return std::nullopt;
     }
-    return VariantConversionUVE{VariantUVE::MakeFloatUVE(parsed), true};
+    return VariantConversion{Variant::MakeFloat(parsed), true};
 }
 
 /// The components of a vector-like value, padded with `fill`, and how many were really there.
-struct ComponentsUVE final {
+struct Components final {
     std::array<float, 4> values{};
     std::size_t count = 0U;
 };
 
-[[nodiscard]] std::optional<ComponentsUVE> ComponentsOfUVE(const VariantUVE& value) noexcept {
-    if (const auto* const v2 = value.TryGetUVE<Math::Vector2UVE>(); v2 != nullptr) {
-        return ComponentsUVE{{v2->x, v2->y, 0.0F, 0.0F}, 2U};
+[[nodiscard]] std::optional<Components> ComponentsOf(const Variant& value) noexcept {
+    if (const auto* const v2 = value.TryGet<Math::Vector2>(); v2 != nullptr) {
+        return Components{{v2->x, v2->y, 0.0F, 0.0F}, 2U};
     }
-    if (const auto* const v3 = value.TryGetUVE<Math::Vector3UVE>(); v3 != nullptr) {
-        return ComponentsUVE{{v3->x, v3->y, v3->z, 0.0F}, 3U};
+    if (const auto* const v3 = value.TryGet<Math::Vector3>(); v3 != nullptr) {
+        return Components{{v3->x, v3->y, v3->z, 0.0F}, 3U};
     }
-    if (const auto* const v4 = value.TryGetUVE<VariantVector4UVE>(); v4 != nullptr) {
-        return ComponentsUVE{{v4->x, v4->y, v4->z, v4->w}, 4U};
+    if (const auto* const v4 = value.TryGet<VariantVector4>(); v4 != nullptr) {
+        return Components{{v4->x, v4->y, v4->z, v4->w}, 4U};
     }
-    if (const auto* const q = value.TryGetUVE<Math::QuaternionUVE>(); q != nullptr) {
-        return ComponentsUVE{{q->x, q->y, q->z, q->w}, 4U};
+    if (const auto* const q = value.TryGet<Math::Quaternion>(); q != nullptr) {
+        return Components{{q->x, q->y, q->z, q->w}, 4U};
     }
-    if (const auto* const c = value.TryGetUVE<VariantColorUVE>(); c != nullptr) {
-        return ComponentsUVE{{c->r, c->g, c->b, c->a}, 4U};
+    if (const auto* const c = value.TryGet<VariantColor>(); c != nullptr) {
+        return Components{{c->r, c->g, c->b, c->a}, 4U};
     }
     return std::nullopt;
 }
 
-[[nodiscard]] std::optional<VariantConversionUVE> ConvertComponentsUVE(const ComponentsUVE& source,
-                                                                       const VariantTypeUVE target) {
-    VariantUVE result = VariantUVE::MakeDefaultUVE(target);
+[[nodiscard]] std::optional<VariantConversion> ConvertComponents(const Components& source,
+                                                                       const VariantType target) {
+    Variant result = Variant::MakeDefault(target);
     std::size_t targetCount = 0U;
     const auto& c = source.values;
-    if (auto* const v2 = result.TryGetMutableUVE<Math::Vector2UVE>(); v2 != nullptr) {
+    if (auto* const v2 = result.TryGetMutable<Math::Vector2>(); v2 != nullptr) {
         *v2 = {c[0], c[1]};
         targetCount = 2U;
-    } else if (auto* const v3 = result.TryGetMutableUVE<Math::Vector3UVE>(); v3 != nullptr) {
+    } else if (auto* const v3 = result.TryGetMutable<Math::Vector3>(); v3 != nullptr) {
         *v3 = {c[0], c[1], c[2]};
         targetCount = 3U;
-    } else if (auto* const v4 = result.TryGetMutableUVE<VariantVector4UVE>(); v4 != nullptr) {
+    } else if (auto* const v4 = result.TryGetMutable<VariantVector4>(); v4 != nullptr) {
         *v4 = {c[0], c[1], c[2], c[3]};
         targetCount = 4U;
-    } else if (auto* const q = result.TryGetMutableUVE<Math::QuaternionUVE>(); q != nullptr) {
+    } else if (auto* const q = result.TryGetMutable<Math::Quaternion>(); q != nullptr) {
         // A quaternion widened from fewer than four components has no meaningful w; identity's 1 is
         // the only value that leaves it a rotation rather than a scaled mess.
         *q = {c[0], c[1], c[2], source.count >= 4U ? c[3] : 1.0F};
         targetCount = 4U;
-    } else if (auto* const colour = result.TryGetMutableUVE<VariantColorUVE>(); colour != nullptr) {
+    } else if (auto* const colour = result.TryGetMutable<VariantColor>(); colour != nullptr) {
         // Likewise alpha: a colour made from a vector is opaque unless the vector said otherwise.
         *colour = {c[0], c[1], c[2], source.count >= 4U ? c[3] : 1.0F};
         targetCount = 4U;
@@ -214,64 +214,64 @@ struct ComponentsUVE final {
     for (std::size_t index = targetCount; index < source.count; ++index) {
         lossless = lossless && c[index] == 0.0F;
     }
-    return VariantConversionUVE{std::move(result), lossless};
+    return VariantConversion{std::move(result), lossless};
 }
 
-/// Every element of an array-like value as its own VariantUVE, in order.
-[[nodiscard]] std::optional<std::vector<VariantUVE>> ElementsOfUVE(const VariantUVE& value) {
-    std::vector<VariantUVE> elements;
+/// Every element of an array-like value as its own Variant, in order.
+[[nodiscard]] std::optional<std::vector<Variant>> ElementsOf(const Variant& value) {
+    std::vector<Variant> elements;
     const auto append = [&elements](const auto& list, const auto& make) {
         elements.reserve(list.size());
         for (const auto& element : list) {
             elements.push_back(make(element));
         }
     };
-    switch (value.GetTypeUVE()) {
-        case VariantTypeUVE::Array:
-            return *value.TryGetUVE<std::vector<VariantUVE>>();
-        case VariantTypeUVE::ByteArray:
-            append(*value.TryGetUVE<std::vector<std::uint8_t>>(),
-                   [](const std::uint8_t byte) { return VariantUVE::MakeIntUVE(byte); });
+    switch (value.GetType()) {
+        case VariantType::Array:
+            return *value.TryGet<std::vector<Variant>>();
+        case VariantType::ByteArray:
+            append(*value.TryGet<std::vector<std::uint8_t>>(),
+                   [](const std::uint8_t byte) { return Variant::MakeInt(byte); });
             return elements;
-        case VariantTypeUVE::Int32Array:
-            append(*value.TryGetUVE<std::vector<std::int32_t>>(),
-                   [](const std::int32_t integer) { return VariantUVE::MakeIntUVE(integer); });
+        case VariantType::Int32Array:
+            append(*value.TryGet<std::vector<std::int32_t>>(),
+                   [](const std::int32_t integer) { return Variant::MakeInt(integer); });
             return elements;
-        case VariantTypeUVE::Int64Array:
-            append(*value.TryGetUVE<std::vector<std::int64_t>>(),
-                   [](const std::int64_t integer) { return VariantUVE::MakeIntUVE(integer); });
+        case VariantType::Int64Array:
+            append(*value.TryGet<std::vector<std::int64_t>>(),
+                   [](const std::int64_t integer) { return Variant::MakeInt(integer); });
             return elements;
-        case VariantTypeUVE::Float32Array:
-            append(*value.TryGetUVE<std::vector<float>>(),
-                   [](const float real) { return VariantUVE::MakeFloatUVE(static_cast<double>(real)); });
+        case VariantType::Float32Array:
+            append(*value.TryGet<std::vector<float>>(),
+                   [](const float real) { return Variant::MakeFloat(static_cast<double>(real)); });
             return elements;
-        case VariantTypeUVE::Float64Array:
-            append(*value.TryGetUVE<std::vector<double>>(),
-                   [](const double real) { return VariantUVE::MakeFloatUVE(real); });
+        case VariantType::Float64Array:
+            append(*value.TryGet<std::vector<double>>(),
+                   [](const double real) { return Variant::MakeFloat(real); });
             return elements;
-        case VariantTypeUVE::StringArray:
-            append(*value.TryGetUVE<std::vector<std::string>>(), [](const std::string& text) {
-                return VariantUVE::MakeTextUVE(VariantTypeUVE::String, text);
+        case VariantType::StringArray:
+            append(*value.TryGet<std::vector<std::string>>(), [](const std::string& text) {
+                return Variant::MakeText(VariantType::String, text);
             });
             return elements;
-        case VariantTypeUVE::Vector2Array:
-            append(*value.TryGetUVE<std::vector<Math::Vector2UVE>>(), [](const Math::Vector2UVE& vector) {
-                VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Vector2);
-                *element.TryGetMutableUVE<Math::Vector2UVE>() = vector;
+        case VariantType::Vector2Array:
+            append(*value.TryGet<std::vector<Math::Vector2>>(), [](const Math::Vector2& vector) {
+                Variant element = Variant::MakeDefault(VariantType::Vector2);
+                *element.TryGetMutable<Math::Vector2>() = vector;
                 return element;
             });
             return elements;
-        case VariantTypeUVE::Vector3Array:
-            append(*value.TryGetUVE<std::vector<Math::Vector3UVE>>(), [](const Math::Vector3UVE& vector) {
-                VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Vector3);
-                *element.TryGetMutableUVE<Math::Vector3UVE>() = vector;
+        case VariantType::Vector3Array:
+            append(*value.TryGet<std::vector<Math::Vector3>>(), [](const Math::Vector3& vector) {
+                Variant element = Variant::MakeDefault(VariantType::Vector3);
+                *element.TryGetMutable<Math::Vector3>() = vector;
                 return element;
             });
             return elements;
-        case VariantTypeUVE::ColorArray:
-            append(*value.TryGetUVE<std::vector<VariantColorUVE>>(), [](const VariantColorUVE& colour) {
-                VariantUVE element = VariantUVE::MakeDefaultUVE(VariantTypeUVE::Color);
-                *element.TryGetMutableUVE<VariantColorUVE>() = colour;
+        case VariantType::ColorArray:
+            append(*value.TryGet<std::vector<VariantColor>>(), [](const VariantColor& colour) {
+                Variant element = Variant::MakeDefault(VariantType::Color);
+                *element.TryGetMutable<VariantColor>() = colour;
                 return element;
             });
             return elements;
@@ -281,23 +281,23 @@ struct ComponentsUVE final {
 }
 
 /// The element type a packed array holds, or nothing for a type that is not a packed array.
-[[nodiscard]] std::optional<VariantTypeUVE> PackedElementTypeUVE(const VariantTypeUVE type) noexcept {
+[[nodiscard]] std::optional<VariantType> PackedElementType(const VariantType type) noexcept {
     switch (type) {
-        case VariantTypeUVE::ByteArray:
-        case VariantTypeUVE::Int32Array:
-        case VariantTypeUVE::Int64Array:
-            return VariantTypeUVE::Int;
-        case VariantTypeUVE::Float32Array:
-        case VariantTypeUVE::Float64Array:
-            return VariantTypeUVE::Float;
-        case VariantTypeUVE::StringArray:
-            return VariantTypeUVE::String;
-        case VariantTypeUVE::Vector2Array:
-            return VariantTypeUVE::Vector2;
-        case VariantTypeUVE::Vector3Array:
-            return VariantTypeUVE::Vector3;
-        case VariantTypeUVE::ColorArray:
-            return VariantTypeUVE::Color;
+        case VariantType::ByteArray:
+        case VariantType::Int32Array:
+        case VariantType::Int64Array:
+            return VariantType::Int;
+        case VariantType::Float32Array:
+        case VariantType::Float64Array:
+            return VariantType::Float;
+        case VariantType::StringArray:
+            return VariantType::String;
+        case VariantType::Vector2Array:
+            return VariantType::Vector2;
+        case VariantType::Vector3Array:
+            return VariantType::Vector3;
+        case VariantType::ColorArray:
+            return VariantType::Color;
         default:
             return std::nullopt;
     }
@@ -305,78 +305,78 @@ struct ComponentsUVE final {
 
 /// Builds an array-like value of `target` from elements, converting each. Nothing when an element
 /// has no conversion at all; lossy when any element converted lossily or would not fit.
-[[nodiscard]] std::optional<VariantConversionUVE> BuildFromElementsUVE(const std::vector<VariantUVE>& elements,
-                                                                       const VariantTypeUVE target) {
-    VariantUVE result = VariantUVE::MakeDefaultUVE(target);
-    if (target == VariantTypeUVE::Array) {
-        *result.TryGetMutableUVE<std::vector<VariantUVE>>() = elements;
-        return VariantConversionUVE{std::move(result), true};
+[[nodiscard]] std::optional<VariantConversion> BuildFromElements(const std::vector<Variant>& elements,
+                                                                       const VariantType target) {
+    Variant result = Variant::MakeDefault(target);
+    if (target == VariantType::Array) {
+        *result.TryGetMutable<std::vector<Variant>>() = elements;
+        return VariantConversion{std::move(result), true};
     }
-    const std::optional<VariantTypeUVE> elementType = PackedElementTypeUVE(target);
+    const std::optional<VariantType> elementType = PackedElementType(target);
     if (!elementType.has_value()) {
         return std::nullopt;
     }
     bool lossless = true;
-    for (const VariantUVE& element : elements) {
-        const std::optional<VariantConversionUVE> converted = TryConvertVariantUVE(element, *elementType);
+    for (const Variant& element : elements) {
+        const std::optional<VariantConversion> converted = TryConvertVariant(element, *elementType);
         if (!converted.has_value()) {
             return std::nullopt;
         }
         lossless = lossless && converted->lossless;
-        const VariantUVE& item = converted->value;
+        const Variant& item = converted->value;
         switch (target) {
-            case VariantTypeUVE::ByteArray: {
-                const std::int64_t integer = *item.TryGetUVE<std::int64_t>();
+            case VariantType::ByteArray: {
+                const std::int64_t integer = *item.TryGet<std::int64_t>();
                 lossless = lossless && integer >= 0 && integer <= 255;
-                result.TryGetMutableUVE<std::vector<std::uint8_t>>()->push_back(
+                result.TryGetMutable<std::vector<std::uint8_t>>()->push_back(
                     static_cast<std::uint8_t>(integer < 0 ? 0 : (integer > 255 ? 255 : integer)));
                 break;
             }
-            case VariantTypeUVE::Int32Array: {
-                const std::int64_t integer = *item.TryGetUVE<std::int64_t>();
+            case VariantType::Int32Array: {
+                const std::int64_t integer = *item.TryGet<std::int64_t>();
                 const bool fits = integer >= std::numeric_limits<std::int32_t>::min() &&
                                   integer <= std::numeric_limits<std::int32_t>::max();
                 lossless = lossless && fits;
-                result.TryGetMutableUVE<std::vector<std::int32_t>>()->push_back(
+                result.TryGetMutable<std::vector<std::int32_t>>()->push_back(
                     fits ? static_cast<std::int32_t>(integer) : 0);
                 break;
             }
-            case VariantTypeUVE::Int64Array:
-                result.TryGetMutableUVE<std::vector<std::int64_t>>()->push_back(*item.TryGetUVE<std::int64_t>());
+            case VariantType::Int64Array:
+                result.TryGetMutable<std::vector<std::int64_t>>()->push_back(*item.TryGet<std::int64_t>());
                 break;
-            case VariantTypeUVE::Float32Array: {
-                const double real = *item.TryGetUVE<double>();
+            case VariantType::Float32Array: {
+                const double real = *item.TryGet<double>();
                 const auto narrowed = static_cast<float>(real);
                 lossless = lossless && static_cast<double>(narrowed) == real;
-                result.TryGetMutableUVE<std::vector<float>>()->push_back(narrowed);
+                result.TryGetMutable<std::vector<float>>()->push_back(narrowed);
                 break;
             }
-            case VariantTypeUVE::Float64Array:
-                result.TryGetMutableUVE<std::vector<double>>()->push_back(*item.TryGetUVE<double>());
+            case VariantType::Float64Array:
+                result.TryGetMutable<std::vector<double>>()->push_back(*item.TryGet<double>());
                 break;
-            case VariantTypeUVE::StringArray:
-                result.TryGetMutableUVE<std::vector<std::string>>()->push_back(*item.TryGetUVE<std::string>());
+            case VariantType::StringArray:
+                result.TryGetMutable<std::vector<std::string>>()->push_back(*item.TryGet<std::string>());
                 break;
-            case VariantTypeUVE::Vector2Array:
-                result.TryGetMutableUVE<std::vector<Math::Vector2UVE>>()->push_back(
-                    *item.TryGetUVE<Math::Vector2UVE>());
+            case VariantType::Vector2Array:
+                result.TryGetMutable<std::vector<Math::Vector2>>()->push_back(
+                    *item.TryGet<Math::Vector2>());
                 break;
-            case VariantTypeUVE::Vector3Array:
-                result.TryGetMutableUVE<std::vector<Math::Vector3UVE>>()->push_back(
-                    *item.TryGetUVE<Math::Vector3UVE>());
+            case VariantType::Vector3Array:
+                result.TryGetMutable<std::vector<Math::Vector3>>()->push_back(
+                    *item.TryGet<Math::Vector3>());
                 break;
-            case VariantTypeUVE::ColorArray:
-                result.TryGetMutableUVE<std::vector<VariantColorUVE>>()->push_back(*item.TryGetUVE<VariantColorUVE>());
+            case VariantType::ColorArray:
+                result.TryGetMutable<std::vector<VariantColor>>()->push_back(*item.TryGet<VariantColor>());
                 break;
             default:
                 return std::nullopt;
         }
     }
-    return VariantConversionUVE{std::move(result), lossless};
+    return VariantConversion{std::move(result), lossless};
 }
 
-[[nodiscard]] bool IsWithinBoundsUVE(const VariantUVE& value, const std::size_t depth) noexcept {
-    if (depth > kMaximumVariantDepthUVE) {
+[[nodiscard]] bool IsWithinBounds(const Variant& value, const std::size_t depth) noexcept {
+    if (depth > kMaximumVariantDepth) {
         return false;
     }
     return std::visit(
@@ -384,150 +384,150 @@ struct ComponentsUVE final {
             using StoredT = std::decay_t<decltype(stored)>;
             if constexpr (std::is_same_v<StoredT, double>) {
                 return std::isfinite(stored);
-            } else if constexpr (std::is_same_v<StoredT, Math::Vector2UVE>) {
+            } else if constexpr (std::is_same_v<StoredT, Math::Vector2>) {
                 return std::isfinite(stored.x) && std::isfinite(stored.y);
-            } else if constexpr (std::is_same_v<StoredT, Math::Vector3UVE>) {
+            } else if constexpr (std::is_same_v<StoredT, Math::Vector3>) {
                 return std::isfinite(stored.x) && std::isfinite(stored.y) && std::isfinite(stored.z);
-            } else if constexpr (std::is_same_v<StoredT, VariantVector4UVE> ||
-                                 std::is_same_v<StoredT, Math::QuaternionUVE>) {
+            } else if constexpr (std::is_same_v<StoredT, VariantVector4> ||
+                                 std::is_same_v<StoredT, Math::Quaternion>) {
                 return std::isfinite(stored.x) && std::isfinite(stored.y) && std::isfinite(stored.z) &&
                        std::isfinite(stored.w);
-            } else if constexpr (std::is_same_v<StoredT, VariantColorUVE>) {
+            } else if constexpr (std::is_same_v<StoredT, VariantColor>) {
                 return std::isfinite(stored.r) && std::isfinite(stored.g) && std::isfinite(stored.b) &&
                        std::isfinite(stored.a);
             } else if constexpr (std::is_same_v<StoredT, std::vector<float>> ||
                                  std::is_same_v<StoredT, std::vector<double>>) {
-                return stored.size() <= kMaximumVariantElementsUVE &&
+                return stored.size() <= kMaximumVariantElements &&
                        std::all_of(stored.cbegin(), stored.cend(), [](const auto real) { return std::isfinite(real); });
             } else if constexpr (std::is_same_v<StoredT, std::string>) {
-                return stored.size() <= kMaximumVariantTextBytesUVE;
-            } else if constexpr (std::is_same_v<StoredT, std::vector<VariantUVE>>) {
-                if (stored.size() > kMaximumVariantElementsUVE) {
+                return stored.size() <= kMaximumVariantTextBytes;
+            } else if constexpr (std::is_same_v<StoredT, std::vector<Variant>>) {
+                if (stored.size() > kMaximumVariantElements) {
                     return false;
                 }
-                for (const VariantUVE& element : stored) {
-                    if (!IsWithinBoundsUVE(element, depth + 1U)) {
+                for (const Variant& element : stored) {
+                    if (!IsWithinBounds(element, depth + 1U)) {
                         return false;
                     }
                 }
                 return true;
-            } else if constexpr (std::is_same_v<StoredT, std::vector<VariantDictionaryEntryUVE>>) {
-                if (stored.size() > kMaximumVariantElementsUVE) {
+            } else if constexpr (std::is_same_v<StoredT, std::vector<VariantDictionaryEntry>>) {
+                if (stored.size() > kMaximumVariantElements) {
                     return false;
                 }
-                for (const VariantDictionaryEntryUVE& entry : stored) {
-                    if (entry.key.size() > kMaximumVariantTextBytesUVE || !IsWithinBoundsUVE(entry.value, depth + 1U)) {
+                for (const VariantDictionaryEntry& entry : stored) {
+                    if (entry.key.size() > kMaximumVariantTextBytes || !IsWithinBounds(entry.value, depth + 1U)) {
                         return false;
                     }
                 }
                 return true;
             } else if constexpr (std::is_same_v<StoredT, std::vector<std::string>>) {
-                if (stored.size() > kMaximumVariantElementsUVE) {
+                if (stored.size() > kMaximumVariantElements) {
                     return false;
                 }
                 for (const std::string& text : stored) {
-                    if (text.size() > kMaximumVariantTextBytesUVE) {
+                    if (text.size() > kMaximumVariantTextBytes) {
                         return false;
                     }
                 }
                 return true;
             } else if constexpr (requires { stored.size(); }) {
-                return stored.size() <= kMaximumVariantElementsUVE;
+                return stored.size() <= kMaximumVariantElements;
             } else {
                 return true;
             }
         },
-        value.GetStorageUVE());
+        value.GetStorage());
 }
 
 } // namespace
 
-VariantUVE VariantUVE::MakeDefaultUVE(const VariantTypeUVE type) {
+Variant Variant::MakeDefault(const VariantType type) {
     switch (type) {
-        case VariantTypeUVE::Bool: return VariantUVE{type, false};
-        case VariantTypeUVE::Int: return VariantUVE{type, std::int64_t{0}};
-        case VariantTypeUVE::Float: return VariantUVE{type, 0.0};
-        case VariantTypeUVE::String:
-        case VariantTypeUVE::InternedString:
-        case VariantTypeUVE::ObjectPath:
-        case VariantTypeUVE::Object: return VariantUVE{type, std::string{}};
-        case VariantTypeUVE::Vector2: return VariantUVE{type, Math::Vector2UVE{}};
-        case VariantTypeUVE::Vector3: return VariantUVE{type, Math::Vector3UVE{}};
-        case VariantTypeUVE::Vector4: return VariantUVE{type, VariantVector4UVE{}};
-        case VariantTypeUVE::Quaternion: return VariantUVE{type, Math::QuaternionUVE{}};
-        case VariantTypeUVE::Color: return VariantUVE{type, VariantColorUVE{}};
-        case VariantTypeUVE::Resource: return VariantUVE{type, std::uint64_t{0}};
-        case VariantTypeUVE::Array: return VariantUVE{type, std::vector<VariantUVE>{}};
-        case VariantTypeUVE::Dictionary: return VariantUVE{type, std::vector<VariantDictionaryEntryUVE>{}};
-        case VariantTypeUVE::ByteArray: return VariantUVE{type, std::vector<std::uint8_t>{}};
-        case VariantTypeUVE::Int32Array: return VariantUVE{type, std::vector<std::int32_t>{}};
-        case VariantTypeUVE::Int64Array: return VariantUVE{type, std::vector<std::int64_t>{}};
-        case VariantTypeUVE::Float32Array: return VariantUVE{type, std::vector<float>{}};
-        case VariantTypeUVE::Float64Array: return VariantUVE{type, std::vector<double>{}};
-        case VariantTypeUVE::StringArray: return VariantUVE{type, std::vector<std::string>{}};
-        case VariantTypeUVE::Vector2Array: return VariantUVE{type, std::vector<Math::Vector2UVE>{}};
-        case VariantTypeUVE::Vector3Array: return VariantUVE{type, std::vector<Math::Vector3UVE>{}};
-        case VariantTypeUVE::ColorArray: return VariantUVE{type, std::vector<VariantColorUVE>{}};
+        case VariantType::Bool: return Variant{type, false};
+        case VariantType::Int: return Variant{type, std::int64_t{0}};
+        case VariantType::Float: return Variant{type, 0.0};
+        case VariantType::String:
+        case VariantType::InternedString:
+        case VariantType::ObjectPath:
+        case VariantType::Object: return Variant{type, std::string{}};
+        case VariantType::Vector2: return Variant{type, Math::Vector2{}};
+        case VariantType::Vector3: return Variant{type, Math::Vector3{}};
+        case VariantType::Vector4: return Variant{type, VariantVector4{}};
+        case VariantType::Quaternion: return Variant{type, Math::Quaternion{}};
+        case VariantType::Color: return Variant{type, VariantColor{}};
+        case VariantType::Resource: return Variant{type, std::uint64_t{0}};
+        case VariantType::Array: return Variant{type, std::vector<Variant>{}};
+        case VariantType::Dictionary: return Variant{type, std::vector<VariantDictionaryEntry>{}};
+        case VariantType::ByteArray: return Variant{type, std::vector<std::uint8_t>{}};
+        case VariantType::Int32Array: return Variant{type, std::vector<std::int32_t>{}};
+        case VariantType::Int64Array: return Variant{type, std::vector<std::int64_t>{}};
+        case VariantType::Float32Array: return Variant{type, std::vector<float>{}};
+        case VariantType::Float64Array: return Variant{type, std::vector<double>{}};
+        case VariantType::StringArray: return Variant{type, std::vector<std::string>{}};
+        case VariantType::Vector2Array: return Variant{type, std::vector<Math::Vector2>{}};
+        case VariantType::Vector3Array: return Variant{type, std::vector<Math::Vector3>{}};
+        case VariantType::ColorArray: return Variant{type, std::vector<VariantColor>{}};
     }
-    return VariantUVE{};
+    return Variant{};
 }
 
-VariantUVE VariantUVE::MakeBoolUVE(const bool value) {
-    return VariantUVE{VariantTypeUVE::Bool, value};
+Variant Variant::MakeBool(const bool value) {
+    return Variant{VariantType::Bool, value};
 }
 
-VariantUVE VariantUVE::MakeIntUVE(const std::int64_t value) {
-    return VariantUVE{VariantTypeUVE::Int, value};
+Variant Variant::MakeInt(const std::int64_t value) {
+    return Variant{VariantType::Int, value};
 }
 
-VariantUVE VariantUVE::MakeFloatUVE(const double value) {
-    return VariantUVE{VariantTypeUVE::Float, value};
+Variant Variant::MakeFloat(const double value) {
+    return Variant{VariantType::Float, value};
 }
 
-VariantUVE VariantUVE::MakeTextUVE(const VariantTypeUVE type, std::string value) {
-    if (!IsTextTypeUVE(type)) {
-        return MakeDefaultUVE(type);
+Variant Variant::MakeText(const VariantType type, std::string value) {
+    if (!IsTextType(type)) {
+        return MakeDefault(type);
     }
-    return VariantUVE{type, std::move(value)};
+    return Variant{type, std::move(value)};
 }
 
-bool VariantUVE::operator==(const VariantUVE& other) const {
+bool Variant::operator==(const Variant& other) const {
     return m_type == other.m_type && m_storage == other.m_storage;
 }
 
-std::string_view GetVariantTypeNameUVE(const VariantTypeUVE type) noexcept {
+std::string_view GetVariantTypeName(const VariantType type) noexcept {
     const auto index = static_cast<std::size_t>(type);
-    return index < kVariantTypeInfoUVE.size() ? kVariantTypeInfoUVE[index].name : std::string_view{};
+    return index < kVariantTypeInfo.size() ? kVariantTypeInfo[index].name : std::string_view{};
 }
 
-std::optional<VariantTypeUVE> TryParseVariantTypeNameUVE(const std::string_view name) noexcept {
-    // A saved document names a variant's type (see GetVariantTypeNameUVE), so every name this
+std::optional<VariantType> TryParseVariantTypeName(const std::string_view name) noexcept {
+    // A saved document names a variant's type (see GetVariantTypeName), so every name this
     // vocabulary has retired stays readable. Writing always uses the current name; this table is
     // read-only history, and it only ever grows.
-    constexpr std::array<std::pair<std::string_view, VariantTypeUVE>, 12U> kRetiredNames{{
+    constexpr std::array<std::pair<std::string_view, VariantType>, 12U> kRetiredNames{{
         // The object pass: the word "Node" left the engine's own types.
-        {"NodePath", VariantTypeUVE::ObjectPath},
-        {"Node", VariantTypeUVE::Object},
+        {"NodePath", VariantType::ObjectPath},
+        {"Node", VariantType::Object},
         // The variant pass: "Packed*Array" is another engine's family verbatim, all nine of it,
         // and "StringName" is its name for an interned string. The element type carries the
         // meaning on its own - ByteArray next to Array says what it holds without a prefix.
-        {"PackedByteArray", VariantTypeUVE::ByteArray},
-        {"PackedInt32Array", VariantTypeUVE::Int32Array},
-        {"PackedInt64Array", VariantTypeUVE::Int64Array},
-        {"PackedFloat32Array", VariantTypeUVE::Float32Array},
-        {"PackedFloat64Array", VariantTypeUVE::Float64Array},
-        {"PackedStringArray", VariantTypeUVE::StringArray},
-        {"PackedVector2Array", VariantTypeUVE::Vector2Array},
-        {"PackedVector3Array", VariantTypeUVE::Vector3Array},
-        {"PackedColorArray", VariantTypeUVE::ColorArray},
-        {"StringName", VariantTypeUVE::InternedString},
+        {"PackedByteArray", VariantType::ByteArray},
+        {"PackedInt32Array", VariantType::Int32Array},
+        {"PackedInt64Array", VariantType::Int64Array},
+        {"PackedFloat32Array", VariantType::Float32Array},
+        {"PackedFloat64Array", VariantType::Float64Array},
+        {"PackedStringArray", VariantType::StringArray},
+        {"PackedVector2Array", VariantType::Vector2Array},
+        {"PackedVector3Array", VariantType::Vector3Array},
+        {"PackedColorArray", VariantType::ColorArray},
+        {"StringName", VariantType::InternedString},
     }};
     for (const auto& [retired, type] : kRetiredNames) {
         if (retired == name) {
             return type;
         }
     }
-    for (const VariantTypeInfoUVE& info : kVariantTypeInfoUVE) {
+    for (const VariantTypeInfo& info : kVariantTypeInfo) {
         if (info.name == name) {
             return info.type;
         }
@@ -535,55 +535,55 @@ std::optional<VariantTypeUVE> TryParseVariantTypeNameUVE(const std::string_view 
     return std::nullopt;
 }
 
-std::string_view GetVariantTypeCategoryUVE(const VariantTypeUVE type) noexcept {
+std::string_view GetVariantTypeCategory(const VariantType type) noexcept {
     const auto index = static_cast<std::size_t>(type);
-    return index < kVariantTypeInfoUVE.size() ? kVariantTypeInfoUVE[index].category : std::string_view{};
+    return index < kVariantTypeInfo.size() ? kVariantTypeInfo[index].category : std::string_view{};
 }
 
-const std::array<VariantTypeUVE, kVariantTypeCountUVE>& GetAllVariantTypesUVE() noexcept {
-    static const std::array<VariantTypeUVE, kVariantTypeCountUVE> types = [] {
-        std::array<VariantTypeUVE, kVariantTypeCountUVE> all{};
-        for (std::size_t index = 0; index < kVariantTypeInfoUVE.size(); ++index) {
-            all[index] = kVariantTypeInfoUVE[index].type;
+const std::array<VariantType, kVariantTypeCount>& GetAllVariantTypes() noexcept {
+    static const std::array<VariantType, kVariantTypeCount> types = [] {
+        std::array<VariantType, kVariantTypeCount> all{};
+        for (std::size_t index = 0; index < kVariantTypeInfo.size(); ++index) {
+            all[index] = kVariantTypeInfo[index].type;
         }
         return all;
     }();
     return types;
 }
 
-std::optional<VariantConversionUVE> TryConvertVariantUVE(const VariantUVE& value, const VariantTypeUVE target) {
-    const VariantTypeUVE source = value.GetTypeUVE();
+std::optional<VariantConversion> TryConvertVariant(const Variant& value, const VariantType target) {
+    const VariantType source = value.GetType();
     if (source == target) {
-        return VariantConversionUVE{value, true};
+        return VariantConversion{value, true};
     }
-    if (IsNumericTypeUVE(source) && IsNumericTypeUVE(target)) {
-        return ConvertNumberUVE(value, target);
+    if (IsNumericType(source) && IsNumericType(target)) {
+        return ConvertNumber(value, target);
     }
-    if (IsNumericTypeUVE(source) && IsTextTypeUVE(target)) {
-        return VariantConversionUVE{VariantUVE::MakeTextUVE(target, NumberToTextUVE(value)), true};
+    if (IsNumericType(source) && IsTextType(target)) {
+        return VariantConversion{Variant::MakeText(target, NumberToText(value)), true};
     }
-    if (IsTextTypeUVE(source)) {
-        const std::string& text = *value.TryGetUVE<std::string>();
-        if (IsTextTypeUVE(target)) {
-            return VariantConversionUVE{VariantUVE::MakeTextUVE(target, text), true};
+    if (IsTextType(source)) {
+        const std::string& text = *value.TryGet<std::string>();
+        if (IsTextType(target)) {
+            return VariantConversion{Variant::MakeText(target, text), true};
         }
-        if (IsNumericTypeUVE(target)) {
-            return ParseNumberUVE(text, target);
+        if (IsNumericType(target)) {
+            return ParseNumber(text, target);
         }
         return std::nullopt;
     }
-    if (const std::optional<ComponentsUVE> components = ComponentsOfUVE(value); components.has_value()) {
-        return ConvertComponentsUVE(*components, target);
+    if (const std::optional<Components> components = ComponentsOf(value); components.has_value()) {
+        return ConvertComponents(*components, target);
     }
-    if (const std::optional<std::vector<VariantUVE>> elements = ElementsOfUVE(value); elements.has_value()) {
-        return BuildFromElementsUVE(*elements, target);
+    if (const std::optional<std::vector<Variant>> elements = ElementsOf(value); elements.has_value()) {
+        return BuildFromElements(*elements, target);
     }
     // Resource, Object references and Dictionaries have no meaningful reading as anything else.
     return std::nullopt;
 }
 
-bool IsVariantWithinBoundsUVE(const VariantUVE& value) noexcept {
-    return IsWithinBoundsUVE(value, 0U);
+bool IsVariantWithinBounds(const Variant& value) noexcept {
+    return IsWithinBounds(value, 0U);
 }
 
 } // namespace UVE::Core

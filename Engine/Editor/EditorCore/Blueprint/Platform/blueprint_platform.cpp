@@ -7,48 +7,48 @@
 
 namespace UVE::Blueprint::Platform {
 
-BlueprintPlatformKindUVE GetCurrentBlueprintPlatformKindUVE() noexcept {
+BlueprintPlatformKind GetCurrentBlueprintPlatformKind() noexcept {
 #if defined(__ANDROID__)
-    return BlueprintPlatformKindUVE::Android;
+    return BlueprintPlatformKind::Android;
 #elif defined(_WIN32)
-    return BlueprintPlatformKindUVE::Windows;
+    return BlueprintPlatformKind::Windows;
 #elif defined(__linux__)
-    return BlueprintPlatformKindUVE::Linux;
+    return BlueprintPlatformKind::Linux;
 #else
-    return BlueprintPlatformKindUVE::Unknown;
+    return BlueprintPlatformKind::Unknown;
 #endif
 }
 
-std::string_view BlueprintPlatformNameUVE(const BlueprintPlatformKindUVE kind) noexcept {
+std::string_view BlueprintPlatformName(const BlueprintPlatformKind kind) noexcept {
     switch (kind) {
-        case BlueprintPlatformKindUVE::Linux: return "Linux";
-        case BlueprintPlatformKindUVE::Windows: return "Windows";
-        case BlueprintPlatformKindUVE::Android: return "Android";
-        case BlueprintPlatformKindUVE::Unknown: return "Unknown";
+        case BlueprintPlatformKind::Linux: return "Linux";
+        case BlueprintPlatformKind::Windows: return "Windows";
+        case BlueprintPlatformKind::Android: return "Android";
+        case BlueprintPlatformKind::Unknown: return "Unknown";
     }
     return "Unknown";
 }
 
-BlueprintPlatformCapabilitiesUVE GetBlueprintPlatformCapabilitiesForUVE(const BlueprintPlatformKindUVE kind) noexcept {
+BlueprintPlatformCapabilities GetBlueprintPlatformCapabilitiesFor(const BlueprintPlatformKind kind) noexcept {
     switch (kind) {
-        case BlueprintPlatformKindUVE::Linux:
+        case BlueprintPlatformKind::Linux:
             return {kind, "Linux", ".so", '/', true, true, true, true, 512U, 2'000'000U};
-        case BlueprintPlatformKindUVE::Windows:
+        case BlueprintPlatformKind::Windows:
             return {kind, "Windows", ".dll", '\\', true, true, true, true, 512U, 2'000'000U};
-        case BlueprintPlatformKindUVE::Android:
+        case BlueprintPlatformKind::Android:
             // Android runtime executes cooked Blueprint scripts without desktop editor hot-reload or dynamic plugins.
             return {kind, "Android", ".so", '/', true, false, false, false, 256U, 500'000U};
-        case BlueprintPlatformKindUVE::Unknown:
+        case BlueprintPlatformKind::Unknown:
         default:
-            return {BlueprintPlatformKindUVE::Unknown, "Unknown", "", '/', false, false, true, false, 256U, 1'000'000U};
+            return {BlueprintPlatformKind::Unknown, "Unknown", "", '/', false, false, true, false, 256U, 1'000'000U};
     }
 }
 
-BlueprintPlatformCapabilitiesUVE GetCurrentBlueprintPlatformCapabilitiesUVE() noexcept {
-    return GetBlueprintPlatformCapabilitiesForUVE(GetCurrentBlueprintPlatformKindUVE());
+BlueprintPlatformCapabilities GetCurrentBlueprintPlatformCapabilities() noexcept {
+    return GetBlueprintPlatformCapabilitiesFor(GetCurrentBlueprintPlatformKind());
 }
 
-std::optional<std::string> NormalizeBlueprintAssetPathUVE(const std::string_view rawPath) {
+std::optional<std::string> NormalizeBlueprintAssetPath(const std::string_view rawPath) {
     if (rawPath.empty()) {
         return std::nullopt;
     }
@@ -93,14 +93,14 @@ std::optional<std::string> NormalizeBlueprintAssetPathUVE(const std::string_view
     return out;
 }
 
-std::filesystem::path GetBlueprintCacheDirectoryUVE(const std::filesystem::path& projectRoot,
-                                                    const BlueprintPlatformKindUVE platform) {
+std::filesystem::path GetBlueprintCacheDirectory(const std::filesystem::path& projectRoot,
+                                                    const BlueprintPlatformKind platform) {
     std::string platDir = "common";
     switch (platform) {
-        case BlueprintPlatformKindUVE::Linux: platDir = "linux"; break;
-        case BlueprintPlatformKindUVE::Windows: platDir = "windows"; break;
-        case BlueprintPlatformKindUVE::Android: platDir = "android"; break;
-        case BlueprintPlatformKindUVE::Unknown: platDir = "common"; break;
+        case BlueprintPlatformKind::Linux: platDir = "linux"; break;
+        case BlueprintPlatformKind::Windows: platDir = "windows"; break;
+        case BlueprintPlatformKind::Android: platDir = "android"; break;
+        case BlueprintPlatformKind::Unknown: platDir = "common"; break;
     }
     return projectRoot / ".uvcache" / "blueprint" / platDir;
 }

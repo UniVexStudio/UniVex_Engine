@@ -42,37 +42,37 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr int kWindowWidthUVE = 1320;
-constexpr int kWindowHeightUVE = 800;
+constexpr int kWindowWidth = 1320;
+constexpr int kWindowHeight = 800;
 
-[[nodiscard]] prism::Slot CentreUVE() {
+[[nodiscard]] prism::Slot Centre() {
     return prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
 }
 
-[[nodiscard]] std::string LowerUVE(std::string text) {
+[[nodiscard]] std::string Lower(std::string text) {
     std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
-[[nodiscard]] prism::Color StatusColourUVE(const Retarget::JointStatusUVE status) {
-    const std::array<float, 3> c = GetRetargetStatusColourUVE(status);
+[[nodiscard]] prism::Color StatusColour(const Retarget::JointStatus status) {
+    const std::array<float, 3> c = GetRetargetStatusColour(status);
     return prism::Color(static_cast<std::uint8_t>(std::lround(c[0] * 255.0F)), static_cast<std::uint8_t>(std::lround(c[1] * 255.0F)),
                         static_cast<std::uint8_t>(std::lround(c[2] * 255.0F)));
 }
 
-[[nodiscard]] const char* AnimationStateLabelUVE(const Retarget::RetargetAnimationStateUVE state) {
+[[nodiscard]] const char* AnimationStateLabel(const Retarget::RetargetAnimationState state) {
     switch (state) {
-        case Retarget::RetargetAnimationStateUVE::Ready: return "Ready";
-        case Retarget::RetargetAnimationStateUVE::AlreadyConformed: return "Already conformed";
-        case Retarget::RetargetAnimationStateUVE::NoSkeleton: return "No skeleton";
-        case Retarget::RetargetAnimationStateUVE::NoBones: return "Moves no bones";
-        case Retarget::RetargetAnimationStateUVE::Unreadable: return "Cannot read";
+        case Retarget::RetargetAnimationState::Ready: return "Ready";
+        case Retarget::RetargetAnimationState::AlreadyConformed: return "Already conformed";
+        case Retarget::RetargetAnimationState::NoSkeleton: return "No skeleton";
+        case Retarget::RetargetAnimationState::NoBones: return "Moves no bones";
+        case Retarget::RetargetAnimationState::Unreadable: return "Cannot read";
     }
     return "";
 }
 
 /// A status dot and the text beside it, in a table cell.
-void PaintDotCellUVE(prism::Canvas& c, const prism::Rect r, const prism::Color dot, const std::string& text, const bool dim) {
+void PaintDotCell(prism::Canvas& c, const prism::Rect r, const prism::Color dot, const std::string& text, const bool dim) {
     const prism::Theme& t = prism::theme();
     c.fillCircle(prism::Vec2{r.x + 9.0F, r.y + r.h * 0.5F}, 4.0F, dot);
     c.textIn(*t.ui, prism::Rect{r.x + 20.0F, r.y, r.w - 22.0F, r.h}, text, dim ? t.textDim : t.text, prism::HAlign::Left, true);
@@ -80,23 +80,23 @@ void PaintDotCellUVE(prism::Canvas& c, const prism::Rect r, const prism::Color d
 
 } // namespace
 
-EditorRetargetWindowUVE::EditorRetargetWindowUVE(EditorUVE& editor, EditorHostUVE& host) : m_editor(editor), m_host(host) {}
+EditorRetargetWindow::EditorRetargetWindow(Editor& editor, EditorHost& host) : m_editor(editor), m_host(host) {}
 
-EditorRetargetWindowUVE::~EditorRetargetWindowUVE() {
-    if (m_window != 0 && m_host.IsReadyUVE()) {
-        m_host.CloseWindowUVE(m_window);
+EditorRetargetWindow::~EditorRetargetWindow() {
+    if (m_window != 0 && m_host.IsReady()) {
+        m_host.CloseWindow(m_window);
     }
 }
 
 // ------------------------------------------------------------------------------------- lifetime
 
-void EditorRetargetWindowUVE::SyncUVE() {
-    if (!m_host.IsReadyUVE()) {
+void EditorRetargetWindow::Sync() {
+    if (!m_host.IsReady()) {
         return;
     }
     const bool open = m_editor.m_retargetWindow.has_value();
     if (m_window != 0 && !open) {
-        m_host.CloseWindowUVE(m_window);
+        m_host.CloseWindow(m_window);
         m_window = 0;
         m_shownPlan = static_cast<std::size_t>(-1);
         m_viewport.reset();
@@ -114,32 +114,32 @@ void EditorRetargetWindowUVE::SyncUVE() {
     }
     if (m_window == 0) {
         m_shownPlan = static_cast<std::size_t>(-1);
-        m_window = m_host.OpenWindowUVE(BuildUVE(), "Retarget", kWindowWidthUVE, kWindowHeightUVE);
+        m_window = m_host.OpenWindow(Build(), "Retarget", kWindowWidth, kWindowHeight);
         if (m_window == 0) {
-            m_editor.CloseRetargetWindowUVE();
+            m_editor.CloseRetargetWindow();
             return;
         }
-        m_host.FocusWindowUVE(m_window);
+        m_host.FocusWindow(m_window);
     }
-    RetargetWindowStateUVE& window = *m_editor.m_retargetWindow;
+    RetargetWindowState& window = *m_editor.m_retargetWindow;
     if (window.focusPending) {
         window.focusPending = false;
-        m_host.FocusWindowUVE(m_window);
+        m_host.FocusWindow(m_window);
     }
-    if (m_host.WindowCloseRequestedUVE(m_window)) {
-        m_host.ClearCloseRequestUVE(m_window);
-        m_editor.CloseRetargetWindowUVE();
+    if (m_host.WindowCloseRequested(m_window)) {
+        m_host.ClearCloseRequest(m_window);
+        m_editor.CloseRetargetWindow();
         return;
     }
-    m_editor.TickRetargetWindowUVE();
-    m_host.AppUVE().runInWindow(m_window, [this] { RefreshUVE(); });
+    m_editor.TickRetargetWindow();
+    m_host.App().runInWindow(m_window, [this] { Refresh(); });
 }
 
 // --------------------------------------------------------------------------------------- layout
 
-prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorRetargetWindow::Build() {
     auto window = prism::vbox();
-    window->add(BuildTitleBarUVE());
+    window->add(BuildTitleBar());
 
     // Left: the animations, and the character's bones the humanoid has no place for.
     m_animations = prism::make<prism::TableView>();
@@ -149,12 +149,12 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
         if (!m_editor.m_retargetWindow.has_value()) {
             return {};
         }
-        const std::vector<RetargetAnimationRowUVE>& rows = m_editor.m_retargetWindow->plan.animations;
+        const std::vector<RetargetAnimationRow>& rows = m_editor.m_retargetWindow->plan.animations;
         if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
             return {};
         }
-        const RetargetAnimationRowUVE& r = rows[static_cast<std::size_t>(row)];
-        return col == 0 ? Asset::AssetDisplayNameUVE(r.file) : std::string(AnimationStateLabelUVE(r.state));
+        const RetargetAnimationRow& r = rows[static_cast<std::size_t>(row)];
+        return col == 0 ? Asset::AssetDisplayName(r.file) : std::string(AnimationStateLabel(r.state));
     };
     m_animations->paintCell = [this](prism::Canvas& c, const int row, const int col, const prism::Rect r, bool) {
         if (!m_editor.m_retargetWindow.has_value() || col != 0) {
@@ -162,12 +162,12 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
             c.textIn(*prism::theme().ui, prism::Rect{r.x + 6.0F, r.y, r.w - 8.0F, r.h}, text, prism::theme().textDim, prism::HAlign::Left, true);
             return;
         }
-        const std::vector<RetargetAnimationRowUVE>& rows = m_editor.m_retargetWindow->plan.animations;
+        const std::vector<RetargetAnimationRow>& rows = m_editor.m_retargetWindow->plan.animations;
         if (row < 0 || static_cast<std::size_t>(row) >= rows.size()) {
             return;
         }
-        const bool ready = rows[static_cast<std::size_t>(row)].state == Retarget::RetargetAnimationStateUVE::Ready;
-        PaintDotCellUVE(c, r, StatusColourUVE(ready ? Retarget::JointStatusUVE::Good : Retarget::JointStatusUVE::Missing),
+        const bool ready = rows[static_cast<std::size_t>(row)].state == Retarget::RetargetAnimationState::Ready;
+        PaintDotCell(c, r, StatusColour(ready ? Retarget::JointStatus::Good : Retarget::JointStatus::Missing),
                         m_animations->cellText(row, col), false);
     };
     m_kept = prism::make<prism::TableView>();
@@ -192,29 +192,29 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     sourceModeBox->setContent(m_sourceMode);
     auto sourceHeader = prism::hbox(8.0F);
     sourceHeader->setPadding(prism::Margin(8.0F, 5.0F, 6.0F, 5.0F));
-    sourceHeader->add(sourceTitle, CentreUVE());
+    sourceHeader->add(sourceTitle, Centre());
     sourceHeader->add(m_sourceCaption, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    sourceHeader->add(sourceModeBox, CentreUVE());
+    sourceHeader->add(sourceModeBox, Centre());
     auto sourceHeaderBar = prism::make<prism::Border>();
     sourceHeaderBar->setBackground(prism::ThemeColor(&prism::Theme::header));
     sourceHeaderBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
     sourceHeaderBar->setChild(sourceHeader);
-    m_source = prism::make<RetargetSkeletonDiagramUVE>();
+    m_source = prism::make<RetargetSkeletonDiagram>();
     m_source->onPicked = [this](const int joint) {
         int reference = joint;
         if (m_shownSourceMode == 1) {
             reference = joint >= 0 && static_cast<std::size_t>(joint) < m_sourceReference.size() ? m_sourceReference[static_cast<std::size_t>(joint)] : -1;
         }
-        PickReferenceBoneUVE(reference, false);
+        PickReferenceBone(reference, false);
     };
     auto sourceBox = prism::vbox();
     sourceBox->add(sourceHeaderBar);
     sourceBox->add(m_source, prism::Slot{1.0F});
 
     auto left = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    left->add(PanelUVE(sourceBox), prism::Splitter::Pane{470.0F, 220.0F, 1e9F, true});
-    left->add(PanelUVE(m_animations), prism::Splitter::Pane{120.0F, 60.0F, 1e9F, false});
-    left->add(PanelUVE(m_kept), prism::Splitter::Pane{130.0F, 60.0F, 1e9F, false});
+    left->add(Panel(sourceBox), prism::Splitter::Pane{470.0F, 220.0F, 1e9F, true});
+    left->add(Panel(m_animations), prism::Splitter::Pane{120.0F, 60.0F, 1e9F, false});
+    left->add(Panel(m_kept), prism::Splitter::Pane{130.0F, 60.0F, 1e9F, false});
 
     // Centre: the character alone, in the preview's own world (the level is not touched).
     m_viewport = prism::make<prism::EngineView>();
@@ -227,7 +227,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     auto filterRow = prism::hbox(6.0F);
     filterRow->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
     filterRow->add(m_filter, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    filterRow->add(m_problemsOnly, CentreUVE());
+    filterRow->add(m_problemsOnly, Centre());
     m_bones = prism::make<prism::TableView>();
     m_bones->addColumn(prism::TableColumn{"humanoid", "Humanoid bone", 170.0F});
     m_bones->addColumn(prism::TableColumn{"character", "Character bone", 170.0F});
@@ -236,13 +236,13 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
         if (!m_editor.m_retargetWindow.has_value() || row < 0 || static_cast<std::size_t>(row) >= m_boneRows.size()) {
             return {};
         }
-        const RetargetPlanUVE& plan = m_editor.m_retargetWindow->plan;
+        const RetargetPlan& plan = m_editor.m_retargetWindow->plan;
         const std::size_t index = m_boneRows[static_cast<std::size_t>(row)];
         if (index >= plan.joints.size()) {
             return {};
         }
-        const RetargetJointRowUVE& joint = plan.joints[index];
-        const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+        const RetargetJointRow& joint = plan.joints[index];
+        const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
         if (col == 0) {
             // One column, all names lined up (no hierarchy indent).
             return reference.skeleton.bones[static_cast<std::size_t>(joint.referenceBone)].name;
@@ -268,9 +268,9 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
         if (!m_editor.m_retargetWindow.has_value() || row < 0 || static_cast<std::size_t>(row) >= m_boneRows.size()) {
             return;
         }
-        const RetargetJointRowUVE& joint = m_editor.m_retargetWindow->plan.joints[m_boneRows[static_cast<std::size_t>(row)]];
+        const RetargetJointRow& joint = m_editor.m_retargetWindow->plan.joints[m_boneRows[static_cast<std::size_t>(row)]];
         if (col == 0) {
-            PaintDotCellUVE(c, r, StatusColourUVE(joint.status), text, joint.optional && joint.characterName.empty());
+            PaintDotCell(c, r, StatusColour(joint.status), text, joint.optional && joint.characterName.empty());
             return;
         }
         const prism::Theme& t = prism::theme();
@@ -282,9 +282,9 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
             return;
         }
         const std::size_t row = static_cast<std::size_t>(rows.front());
-        const RetargetPlanUVE& plan = m_editor.m_retargetWindow->plan;
+        const RetargetPlan& plan = m_editor.m_retargetWindow->plan;
         if (row < m_boneRows.size() && m_boneRows[row] < plan.joints.size()) {
-            PickReferenceBoneUVE(plan.joints[m_boneRows[row]].referenceBone, true);
+            PickReferenceBone(plan.joints[m_boneRows[row]].referenceBone, true);
         }
     };
     auto right = prism::vbox();
@@ -294,7 +294,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(left, prism::Splitter::Pane{330.0F, 220.0F, 700.0F, false});
     columns->add(m_viewport, prism::Splitter::Pane{640.0F, 300.0F, 1e9F, true});
-    columns->add(PanelUVE(right), prism::Splitter::Pane{420.0F, 260.0F, 900.0F, false});
+    columns->add(Panel(right), prism::Splitter::Pane{420.0F, 260.0F, 900.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
     // Footer: what happened, or how far Generate is.
@@ -304,7 +304,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     auto progressBox = prism::make<prism::SizeBox>();
     progressBox->setWidthOverride(220.0F);
     progressBox->setContent(m_progress);
-    footer->add(progressBox, CentreUVE());
+    footer->add(progressBox, Centre());
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
     footer->add(m_status, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
@@ -321,27 +321,27 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     return frame;
 }
 
-prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
-    m_tab = prism::make<DocumentTabUVE>();
+prism::Ref<prism::Widget> EditorRetargetWindow::BuildTitleBar() {
+    m_tab = prism::make<DocumentTab>();
     m_tab->setFallbackIcon(prism::Icon::Skeleton);
     m_tab->setName("Retarget");
 
-    EditorHeaderDescUVE desc;
+    EditorHeaderDesc desc;
     desc.documentTab = m_tab;
-    desc.toolbarRow = BuildToolbarUVE();
-    desc.onClose = [this] { m_editor.CloseRetargetWindowUVE(); };
+    desc.toolbarRow = BuildToolbar();
+    desc.onClose = [this] { m_editor.CloseRetargetWindow(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
-        prism::MenuItem generate = prism::MenuItem::Item("Generate Retarget", [this] { static_cast<void>(m_editor.StartRetargetUVE()); }, "",
+        prism::MenuItem generate = prism::MenuItem::Item("Generate Retarget", [this] { static_cast<void>(m_editor.StartRetarget()); }, "",
                                                          prism::Icon::Play);
-        generate.enabled = m_editor.m_retargetWindow.has_value() && m_editor.m_retargetWindow->plan.CanGenerateUVE();
+        generate.enabled = m_editor.m_retargetWindow.has_value() && m_editor.m_retargetWindow->plan.CanGenerate();
         items.push_back(std::move(generate));
-        prism::MenuItem undo = prism::MenuItem::Item("Undo Last", [this] { static_cast<void>(m_editor.UndoLastRetargetUVE()); }, "",
+        prism::MenuItem undo = prism::MenuItem::Item("Undo Last", [this] { static_cast<void>(m_editor.UndoLastRetarget()); }, "",
                                                      prism::Icon::Undo);
         undo.enabled = m_editor.m_retargetWindow.has_value() && !m_editor.m_retargetWindow->lastBackup.empty();
         items.push_back(std::move(undo));
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("Close", [this] { m_editor.CloseRetargetWindowUVE(); }, "", prism::Icon::Close));
+        items.push_back(prism::MenuItem::Item("Close", [this] { m_editor.CloseRetargetWindow(); }, "", prism::Icon::Close));
         return items;
     }});
     desc.menus.push_back({"View", [this] {
@@ -361,21 +361,21 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
             prism::MenuItem::Item("Missing core bones (root, IK, sockets ...) are made; correctives are optional.", {}).disabled(),
             prism::MenuItem::Item("The Rig Brain finds bones whose names say nothing; every bone takes the engine's name.", {}).disabled()};
     }});
-    return BuildEditorHeaderUVE(std::move(desc));
+    return BuildEditorHeader(std::move(desc));
 }
 
-prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildToolbarUVE() {
+prism::Ref<prism::Widget> EditorRetargetWindow::BuildToolbar() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
     auto label = prism::make<prism::Label>("Character");
-    row->add(label, CentreUVE());
+    row->add(label, Centre());
     m_character = prism::make<prism::ComboBox>(std::vector<std::string>{"Animation skeleton only (no mesh)"}, 0);
     m_character->setTooltip("The character the animations are for: its bones take the engine's names, its rest pose is kept");
     m_character->onChange = [this](const int index) {
         if (!m_editor.m_retargetWindow.has_value() || m_editor.m_retargetWindow->job.valid()) {
             return;
         }
-        RetargetWindowStateUVE& window = *m_editor.m_retargetWindow;
+        RetargetWindowState& window = *m_editor.m_retargetWindow;
         const std::filesystem::path target =
             index <= 0 || static_cast<std::size_t>(index) > m_candidates.size() ? std::filesystem::path{} : m_candidates[static_cast<std::size_t>(index) - 1U];
         if (target != window.target) {
@@ -386,19 +386,19 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildToolbarUVE() {
     auto characterBox = prism::make<prism::SizeBox>();
     characterBox->setWidthOverride(320.0F);
     characterBox->setContent(m_character);
-    row->add(characterBox, CentreUVE());
-    row->add(HSeparatorUVE(), CentreUVE());
+    row->add(characterBox, Centre());
+    row->add(HSeparator(), Centre());
     m_legend = prism::make<prism::Label>("", prism::FontRole::Small);
     m_legend->setColor(prism::ThemeColor(&prism::Theme::textDim));
     row->add(m_legend, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     m_generate = prism::make<prism::Button>("Generate Retarget", prism::Icon::Play, prism::ButtonStyle::Primary);
     m_generate->setTooltip("Conform the character and the animations in place (the originals are saved first; Undo Last puts them back)");
-    m_generate->onClick = [this] { static_cast<void>(m_editor.StartRetargetUVE()); };
-    row->add(m_generate, CentreUVE());
+    m_generate->onClick = [this] { static_cast<void>(m_editor.StartRetarget()); };
+    row->add(m_generate, Centre());
     m_undo = prism::make<prism::Button>("Undo Last", prism::Icon::Undo, prism::ButtonStyle::Toolbar);
     m_undo->setTooltip("Put the last run's originals back");
-    m_undo->onClick = [this] { static_cast<void>(m_editor.UndoLastRetargetUVE()); };
-    row->add(m_undo, CentreUVE());
+    m_undo->onClick = [this] { static_cast<void>(m_editor.UndoLastRetarget()); };
+    row->add(m_undo, Centre());
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
     bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
@@ -408,23 +408,23 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildToolbarUVE() {
 
 // --------------------------------------------------------------------------------------- refresh
 
-void EditorRetargetWindowUVE::RebuildRowsUVE() {
+void EditorRetargetWindow::RebuildRows() {
     m_boneRows.clear();
     if (!m_editor.m_retargetWindow.has_value()) {
         return;
     }
-    const RetargetPlanUVE& plan = m_editor.m_retargetWindow->plan;
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    const std::string filter = m_filter ? LowerUVE(m_filter->text()) : std::string{};
+    const RetargetPlan& plan = m_editor.m_retargetWindow->plan;
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    const std::string filter = m_filter ? Lower(m_filter->text()) : std::string{};
     const bool problemsOnly = m_problemsOnly && m_problemsOnly->checked();
     for (std::size_t index = 0U; index < plan.joints.size(); ++index) {
-        const RetargetJointRowUVE& joint = plan.joints[index];
-        const bool problem = joint.status == Retarget::JointStatusUVE::Warning || joint.status == Retarget::JointStatusUVE::Broken;
+        const RetargetJointRow& joint = plan.joints[index];
+        const bool problem = joint.status == Retarget::JointStatus::Warning || joint.status == Retarget::JointStatus::Broken;
         if (problemsOnly && !problem) {
             continue;
         }
-        if (!filter.empty() && LowerUVE(reference.skeleton.bones[static_cast<std::size_t>(joint.referenceBone)].name).find(filter) == std::string::npos &&
-            LowerUVE(joint.characterName).find(filter) == std::string::npos) {
+        if (!filter.empty() && Lower(reference.skeleton.bones[static_cast<std::size_t>(joint.referenceBone)].name).find(filter) == std::string::npos &&
+            Lower(joint.characterName).find(filter) == std::string::npos) {
             continue;
         }
         m_boneRows.push_back(index);
@@ -434,19 +434,19 @@ void EditorRetargetWindowUVE::RebuildRowsUVE() {
     }
 }
 
-void EditorRetargetWindowUVE::RefreshUVE() {
+void EditorRetargetWindow::Refresh() {
     if (!m_editor.m_retargetWindow.has_value()) {
         return;
     }
-    RetargetWindowStateUVE& window = *m_editor.m_retargetWindow;
-    const RetargetPlanUVE& plan = window.plan;
+    RetargetWindowState& window = *m_editor.m_retargetWindow;
+    const RetargetPlan& plan = window.plan;
     const bool running = window.job.valid();
     const bool importing = !window.pendingFolderImports.empty();
     const bool scanning = window.planJob.valid();
     const bool busy = running || importing || scanning;
 
     // The character picker follows the project's rigged characters.
-    const std::vector<std::filesystem::path> candidates = m_editor.RetargetCandidatesUVE();
+    const std::vector<std::filesystem::path> candidates = m_editor.RetargetCandidates();
     if (candidates != m_candidates && m_character) {
         m_candidates = candidates;
         std::vector<std::string> items{"Animation skeleton only (no mesh)"};
@@ -474,20 +474,20 @@ void EditorRetargetWindowUVE::RefreshUVE() {
         m_shownPlan = window.planSerial;
         m_shownFilter = m_filter ? m_filter->text() : std::string{};
         m_shownProblemsOnly = m_problemsOnly && m_problemsOnly->checked();
-        RebuildRowsUVE();
+        RebuildRows();
         if (m_animations) {
             m_animations->setRowCount(static_cast<int>(plan.animations.size()));
         }
         if (m_kept) {
             m_kept->setRowCount(static_cast<int>(plan.keptBones.size()));
         }
-        RebuildSourceUVE(true);
+        RebuildSource(true);
         if (m_legend) {
             char text[256];
             if (plan.modelReadable) {
                 std::snprintf(text, sizeof(text), "%zu good    %zu check    %zu broken    %zu missing (%zu made, the rest optional)%s",
-                              plan.CountUVE(Retarget::JointStatusUVE::Good), plan.CountUVE(Retarget::JointStatusUVE::Warning),
-                              plan.CountUVE(Retarget::JointStatusUVE::Broken), plan.CountUVE(Retarget::JointStatusUVE::Missing),
+                              plan.Count(Retarget::JointStatus::Good), plan.Count(Retarget::JointStatus::Warning),
+                              plan.Count(Retarget::JointStatus::Broken), plan.Count(Retarget::JointStatus::Missing),
                               plan.missingCore, plan.usedBrain ? "    Rig Brain on" : "    Rig Brain learning...");
             } else {
                 std::snprintf(text, sizeof(text), "%s",
@@ -497,20 +497,20 @@ void EditorRetargetWindowUVE::RefreshUVE() {
         }
     }
     if (m_sourceMode && m_sourceMode->selected() != m_shownSourceMode) {
-        RebuildSourceUVE(true);
+        RebuildSource(true);
     }
     if (m_generate) {
-        m_generate->setEnabled(!busy && plan.CanGenerateUVE() && m_editor.IsAuthoringCommandAllowedUVE());
-        const bool animOnlyOrDone = plan.modelReadable && (plan.model.empty() || plan.CharacterDoneUVE());
+        m_generate->setEnabled(!busy && plan.CanGenerate() && m_editor.IsAuthoringCommandAllowed());
+        const bool animOnlyOrDone = plan.modelReadable && (plan.model.empty() || plan.CharacterDone());
         const std::string label = animOnlyOrDone
-                                      ? (plan.ReadyAnimationsUVE() > 0U ? "Retarget Animations" : "Already Retargeted")
+                                      ? (plan.ReadyAnimations() > 0U ? "Retarget Animations" : "Already Retargeted")
                                       : plan.renameOnly ? "Generate (Rename Only)" : "Generate Retarget";
         if (m_generate->text() != label) {
             m_generate->setText(label);
         }
         m_generate->setTooltip(plan.model.empty()
                                    ? "Conforms the listed animations in place to the engine's humanoid skeleton"
-                               : plan.CharacterDoneUVE() ? "This character is retargeted already: Undo Last, or import it again, to retarget it anew"
+                               : plan.CharacterDone() ? "This character is retargeted already: Undo Last, or import it again, to retarget it anew"
                                : plan.renameOnly       ? "The character has every bone, helper and IK target: its bones only take the engine's names"
                                                        : "Adds the bones the character lacks, then names every bone as the engine's");
     }
@@ -554,16 +554,16 @@ void EditorRetargetWindowUVE::RefreshUVE() {
                 char line[192];
                 if (plan.model.empty()) {
                     std::snprintf(line, sizeof(line), "%zu of %zu animations will be conformed.",
-                                  plan.ReadyAnimationsUVE(), plan.animations.size());
-                } else if (plan.CharacterDoneUVE()) {
+                                  plan.ReadyAnimations(), plan.animations.size());
+                } else if (plan.CharacterDone()) {
                     std::snprintf(line, sizeof(line), "The character is retargeted already (Undo Last or import it again to redo it); %zu of %zu animations will be conformed.",
-                                  plan.ReadyAnimationsUVE(), plan.animations.size());
+                                  plan.ReadyAnimations(), plan.animations.size());
                 } else if (plan.renameOnly) {
                     std::snprintf(line, sizeof(line), "Rename only: every bone, helper and IK target is there, no bone is added; %zu of %zu animations will be conformed.",
-                                  plan.ReadyAnimationsUVE(), plan.animations.size());
+                                  plan.ReadyAnimations(), plan.animations.size());
                 } else {
                     std::snprintf(line, sizeof(line), "%zu bones will be added; %zu of %zu animations will be conformed; the mesh keeps its rest pose.",
-                                  plan.bonesToAdd, plan.ReadyAnimationsUVE(), plan.animations.size());
+                                  plan.bonesToAdd, plan.ReadyAnimations(), plan.animations.size());
                 }
                 text = line;
             }
@@ -575,20 +575,20 @@ void EditorRetargetWindowUVE::RefreshUVE() {
 
 // ----------------------------------------------------------------------------------------- source
 
-void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
+void EditorRetargetWindow::RebuildSource(const bool refit) {
     if (!m_source || !m_editor.m_retargetWindow.has_value()) {
         return;
     }
-    const RetargetWindowStateUVE& window = *m_editor.m_retargetWindow;
-    const RetargetPlanUVE& plan = window.plan;
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+    const RetargetWindowState& window = *m_editor.m_retargetWindow;
+    const RetargetPlan& plan = window.plan;
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
     m_shownSourceMode = m_sourceMode ? m_sourceMode->selected() : 0;
     m_sourceReference.clear();
     const auto detailOf = [&plan](const std::size_t ref) -> std::string {
         if (ref >= plan.joints.size()) {
             return {};
         }
-        const RetargetJointRowUVE& joint = plan.joints[ref];
+        const RetargetJointRow& joint = plan.joints[ref];
         if (joint.characterName.empty()) {
             return joint.optional   ? "optional - the character has none"
                    : joint.willMake ? "the character has none - Generate makes it"
@@ -600,21 +600,21 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
             std::snprintf(sure, sizeof(sure), "  (Rig Brain, %d%% sure)", static_cast<int>(std::lround(joint.confidence * 100.0F)));
             text += sure;
         }
-        if (!joint.reason.empty() && joint.status != Retarget::JointStatusUVE::Good) {
+        if (!joint.reason.empty() && joint.status != Retarget::JointStatus::Good) {
             text += " - " + joint.reason;
         }
         return text;
     };
     const auto colourOf = [&plan](const std::size_t ref) {
-        return GetRetargetStatusColourUVE(ref < plan.joints.size() ? plan.joints[ref].status : Retarget::JointStatusUVE::Missing);
+        return GetRetargetStatusColour(ref < plan.joints.size() ? plan.joints[ref].status : Retarget::JointStatus::Missing);
     };
-    std::vector<RetargetSkeletonDiagramUVE::JointUVE> joints;
+    std::vector<RetargetSkeletonDiagram::Joint> joints;
     std::string caption;
     if (m_shownSourceMode == 0) {
         // The humanoid in its rest pose (the A-pose), as the engine knows it.
-        const std::vector<Retarget::WorldTransformUVE> world = Retarget::ComputeWorldTransformsUVE(reference.skeleton);
+        const std::vector<Retarget::WorldTransform> world = Retarget::ComputeWorldTransforms(reference.skeleton);
         for (std::size_t bone = 0U; bone < reference.skeleton.bones.size() && bone < world.size(); ++bone) {
-            RetargetSkeletonDiagramUVE::JointUVE joint;
+            RetargetSkeletonDiagram::Joint joint;
             joint.name = reference.skeleton.bones[bone].name;
             joint.parent = reference.skeleton.bones[bone].parent;
             joint.x = world[bone].position.x;
@@ -624,9 +624,9 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
             joint.faint = !answered;
             joint.hidden = bone < reference.info.size() && reference.info[bone].optional && !answered;
             if (bone < reference.info.size()) {
-                const Retarget::HumanoidBoneKindUVE kind = reference.info[bone].kind;
-                joint.helper = kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
-                               kind == Retarget::HumanoidBoneKindUVE::Socket;
+                const Retarget::HumanoidBoneKind kind = reference.info[bone].kind;
+                joint.helper = kind == Retarget::HumanoidBoneKind::Root || kind == Retarget::HumanoidBoneKind::IK ||
+                               kind == Retarget::HumanoidBoneKind::Socket;
             }
             joint.detail = detailOf(bone);
             joints.push_back(std::move(joint));
@@ -643,15 +643,15 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
         for (std::size_t ref = 0U; ref < reference.skeleton.bones.size(); ++ref) {
             referenceOf.emplace(reference.skeleton.bones[ref].name, ref);
         }
-        for (const RetargetAnimationRowUVE& animRow : plan.animations) {
+        for (const RetargetAnimationRow& animRow : plan.animations) {
             const std::filesystem::path& file = animRow.file;
-            Asset::AnimationClipAssetUVE clip;
-            if (!Asset::LoadAnimationClipAssetUVE(file, clip) || clip.rest.empty()) {
+            Asset::AnimationClipAsset clip;
+            if (!Asset::LoadAnimationClipAsset(file, clip) || clip.rest.empty()) {
                 continue;
             }
-            Retarget::RetargetSkeletonUVE rig;
-            for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
-                Retarget::RetargetBoneUVE bone;
+            Retarget::RetargetSkeleton rig;
+            for (const Asset::AnimationAssetRestBone& rest : clip.rest) {
+                Retarget::RetargetBone bone;
                 bone.name = rest.bone;
                 bone.parent = rest.parent;
                 bone.position = rest.position;
@@ -659,13 +659,13 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
                 bone.scale = rest.scale.x;
                 rig.bones.push_back(std::move(bone));
             }
-            const std::vector<Retarget::WorldTransformUVE> world = Retarget::ComputeWorldTransformsUVE(rig);
+            const std::vector<Retarget::WorldTransform> world = Retarget::ComputeWorldTransforms(rig);
             // A rig made standing on Z is drawn standing up all the same.
             float spanY = 0.0F;
             float spanZ = 0.0F;
             {
                 float lowY = 1e30F, highY = -1e30F, lowZ = 1e30F, highZ = -1e30F;
-                for (const Retarget::WorldTransformUVE& w : world) {
+                for (const Retarget::WorldTransform& w : world) {
                     lowY = std::min(lowY, w.position.y);
                     highY = std::max(highY, w.position.y);
                     lowZ = std::min(lowZ, w.position.z);
@@ -676,7 +676,7 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
             }
             const bool zUp = spanZ > spanY * 1.2F;
             for (std::size_t bone = 0U; bone < rig.bones.size() && bone < world.size(); ++bone) {
-                RetargetSkeletonDiagramUVE::JointUVE joint;
+                RetargetSkeletonDiagram::Joint joint;
                 joint.name = rig.bones[bone].name;
                 joint.parent = rig.bones[bone].parent;
                 joint.x = world[bone].position.x;
@@ -685,9 +685,9 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
                 const int ref = found == referenceOf.end() ? -1 : static_cast<int>(found->second);
                 m_sourceReference.push_back(ref);
                 if (ref >= 0) {
-                    const Retarget::HumanoidBoneKindUVE kind = reference.info[static_cast<std::size_t>(ref)].kind;
-                    joint.helper = kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
-                                   kind == Retarget::HumanoidBoneKindUVE::Socket;
+                    const Retarget::HumanoidBoneKind kind = reference.info[static_cast<std::size_t>(ref)].kind;
+                    joint.helper = kind == Retarget::HumanoidBoneKind::Root || kind == Retarget::HumanoidBoneKind::IK ||
+                                   kind == Retarget::HumanoidBoneKind::Socket;
                     joint.colour = colourOf(static_cast<std::size_t>(ref));
                     joint.detail = "humanoid: " + reference.skeleton.bones[static_cast<std::size_t>(ref)].name;
                 } else {
@@ -696,32 +696,32 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
                 }
                 joints.push_back(std::move(joint));
             }
-            caption = Asset::AssetDisplayNameUVE(file) + " - " + std::to_string(rig.bones.size()) + " bones";
+            caption = Asset::AssetDisplayName(file) + " - " + std::to_string(rig.bones.size()) + " bones";
             break;
         }
     }
-    m_source->SetEmptyTextUVE(m_shownSourceMode == 0 ? "No humanoid reference." : "No animation with its rest pose to draw.");
-    m_source->SetJointsUVE(std::move(joints), refit);
+    m_source->SetEmptyText(m_shownSourceMode == 0 ? "No humanoid reference." : "No animation with its rest pose to draw.");
+    m_source->SetJoints(std::move(joints), refit);
     if (m_sourceCaption) {
         m_sourceCaption->setText(caption);
     }
     std::vector<std::pair<std::array<float, 3>, std::string>> legend;
-    const std::array<std::pair<Retarget::JointStatusUVE, const char*>, 4> keys{
-        std::pair{Retarget::JointStatusUVE::Good, "good"}, std::pair{Retarget::JointStatusUVE::Warning, "check"},
-        std::pair{Retarget::JointStatusUVE::Broken, "broken"}, std::pair{Retarget::JointStatusUVE::Missing, "missing"}};
+    const std::array<std::pair<Retarget::JointStatus, const char*>, 4> keys{
+        std::pair{Retarget::JointStatus::Good, "good"}, std::pair{Retarget::JointStatus::Warning, "check"},
+        std::pair{Retarget::JointStatus::Broken, "broken"}, std::pair{Retarget::JointStatus::Missing, "missing"}};
     for (const auto& [status, label] : keys) {
-        legend.emplace_back(GetRetargetStatusColourUVE(status), std::to_string(plan.CountUVE(status)) + " " + label);
+        legend.emplace_back(GetRetargetStatusColour(status), std::to_string(plan.Count(status)) + " " + label);
     }
-    m_source->SetLegendUVE(std::move(legend));
+    m_source->SetLegend(std::move(legend));
     // Keep the pick across a rebuild.
-    PickReferenceBoneUVE(m_pickedReference, true);
+    PickReferenceBone(m_pickedReference, true);
 }
 
-void EditorRetargetWindowUVE::PickReferenceBoneUVE(const int reference, const bool fromList) {
+void EditorRetargetWindow::PickReferenceBone(const int reference, const bool fromList) {
     if (!m_editor.m_retargetWindow.has_value()) {
         return;
     }
-    const RetargetPlanUVE& plan = m_editor.m_retargetWindow->plan;
+    const RetargetPlan& plan = m_editor.m_retargetWindow->plan;
     m_pickedReference = reference;
     if (m_source) {
         int joint = -1;
@@ -735,7 +735,7 @@ void EditorRetargetWindowUVE::PickReferenceBoneUVE(const int reference, const bo
         } else {
             joint = reference;
         }
-        m_source->SetSelectedUVE(joint);
+        m_source->SetSelected(joint);
     }
     if (!fromList && m_bones) {
         for (std::size_t row = 0U; row < m_boneRows.size(); ++row) {
@@ -756,24 +756,24 @@ void EditorRetargetWindowUVE::PickReferenceBoneUVE(const int reference, const bo
 
 // ---------------------------------------------------------------------------------------- render
 
-void EditorRetargetWindowUVE::RenderUVE() {
+void EditorRetargetWindow::Render() {
     if (m_window == 0 || !m_editor.m_retargetWindow.has_value()) {
         return;
     }
-    std::vector<EditorHostUVE::ViewImageUVE> views;
+    std::vector<EditorHost::ViewImage> views;
     if (m_viewport && m_viewport->visible()) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
-            const EditorViewportInputUVE input = m_host.CaptureViewInputUVE(m_window, rect);
+            const EditorViewportInput input = m_host.CaptureViewInput(m_window, rect);
             const float dpiScale = std::max(1.0F, input.dpiScale);
-            Math::Vector2UVE used{0.0F, 0.0F};
-            const std::uint64_t texture = m_editor.RenderRetargetPreviewUVE(
-                Math::Vector2UVE{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
+            Math::Vector2 used{0.0F, 0.0F};
+            const std::uint64_t texture = m_editor.RenderRetargetPreview(
+                Math::Vector2{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
                 used, input);
-            m_host.ApplyViewCursorUVE(m_window, input);
+            m_host.ApplyViewCursor(m_window, input);
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
                 const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
-                EditorHostUVE::ViewImageUVE view{};
+                EditorHost::ViewImage view{};
                 view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
@@ -784,7 +784,7 @@ void EditorRetargetWindowUVE::RenderUVE() {
             }
         }
     }
-    m_host.RenderWindowUVE(m_window, views);
+    m_host.RenderWindow(m_window, views);
 }
 
 } // namespace UVE::Editor

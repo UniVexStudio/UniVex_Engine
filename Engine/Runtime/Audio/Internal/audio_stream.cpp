@@ -24,12 +24,12 @@ namespace {
 
 /// Payload header of a `.uvaudio` asset: `uint32` schema version, `uint16` channels, `uint32`
 /// sampleRate, `uint64` sampleCount, all little-endian, immediately followed by the samples.
-constexpr std::size_t kAudioPayloadHeaderBytesUVE =
+constexpr std::size_t kAudioPayloadHeaderBytes =
     sizeof(std::uint32_t) + sizeof(std::uint16_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
 
 /// Little-endian `float` from four raw bytes. Built from bytes rather than memcpy'd so the reader is
 /// correct on any host, not only on the little-endian targets the engine ships for today.
-[[nodiscard]] float DecodeFloatLeUVE(const std::byte* const bytes) noexcept {
+[[nodiscard]] float DecodeFloatLe(const std::byte* const bytes) noexcept {
     const auto byte = [bytes](const std::size_t index) {
         return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index]));
     };
@@ -39,13 +39,13 @@ constexpr std::size_t kAudioPayloadHeaderBytesUVE =
 
 } // namespace
 
-void AudioStreamRingBufferUVE::ConfigureUVE(const std::size_t capacityFrames, const std::uint32_t channels) noexcept {
+void AudioStreamRingBuffer::Configure(const std::size_t capacityFrames, const std::uint32_t channels) noexcept {
     m_capacity = 0U;
     m_channels = 0U;
     m_read = 0U;
     m_count = 0U;
-    if (capacityFrames == 0U || capacityFrames > kMaximumAudioStreamRingFramesUVE || channels == 0U ||
-        channels > kMaximumAudioStreamChannelsUVE) {
+    if (capacityFrames == 0U || capacityFrames > kMaximumAudioStreamRingFrames || channels == 0U ||
+        channels > kMaximumAudioStreamChannels) {
         m_samples.clear();
         m_samples.shrink_to_fit();
         return;
@@ -55,12 +55,12 @@ void AudioStreamRingBufferUVE::ConfigureUVE(const std::size_t capacityFrames, co
     m_samples.assign(capacityFrames * static_cast<std::size_t>(channels), 0.0F);
 }
 
-std::size_t AudioStreamRingBufferUVE::WriteUVE(const float* const interleavedFrames,
+std::size_t AudioStreamRingBuffer::Write(const float* const interleavedFrames,
                                                const std::size_t frameCount) noexcept {
-    if (!IsConfiguredUVE() || interleavedFrames == nullptr || frameCount == 0U) {
+    if (!IsConfigured() || interleavedFrames == nullptr || frameCount == 0U) {
         return 0U;
     }
-    const std::size_t frames = std::min(frameCount, GetFreeFramesUVE());
+    const std::size_t frames = std::min(frameCount, GetFreeFrames());
     if (frames == 0U) {
         return 0U;
     }
@@ -76,8 +76,8 @@ std::size_t AudioStreamRingBufferUVE::WriteUVE(const float* const interleavedFra
     return frames;
 }
 
-std::size_t AudioStreamRingBufferUVE::ReadUVE(float* const outInterleavedFrames, const std::size_t frameCount) noexcept {
-    if (!IsConfiguredUVE() || outInterleavedFrames == nullptr || frameCount == 0U) {
+std::size_t AudioStreamRingBuffer::Read(float* const outInterleavedFrames, const std::size_t frameCount) noexcept {
+    if (!IsConfigured() || outInterleavedFrames == nullptr || frameCount == 0U) {
         return 0U;
     }
     const std::size_t frames = std::min(frameCount, m_count);
@@ -91,12 +91,12 @@ std::size_t AudioStreamRingBufferUVE::ReadUVE(float* const outInterleavedFrames,
         std::memcpy(outInterleavedFrames + firstRun * channels, m_samples.data(),
                     (frames - firstRun) * channels * sizeof(float));
     }
-    ConsumeUVE(frames);
+    Consume(frames);
     return frames;
 }
 
-bool AudioStreamRingBufferUVE::PeekFrameUVE(const std::size_t offset, float* const outFrame) const noexcept {
-    if (!IsConfiguredUVE() || outFrame == nullptr || offset >= m_count) {
+bool AudioStreamRingBuffer::PeekFrame(const std::size_t offset, float* const outFrame) const noexcept {
+    if (!IsConfigured() || outFrame == nullptr || offset >= m_count) {
         return false;
     }
     const std::size_t channels = static_cast<std::size_t>(m_channels);
@@ -105,8 +105,8 @@ bool AudioStreamRingBufferUVE::PeekFrameUVE(const std::size_t offset, float* con
     return true;
 }
 
-void AudioStreamRingBufferUVE::ConsumeUVE(const std::size_t frameCount) noexcept {
-    if (!IsConfiguredUVE() || frameCount == 0U) {
+void AudioStreamRingBuffer::Consume(const std::size_t frameCount) noexcept {
+    if (!IsConfigured() || frameCount == 0U) {
         return;
     }
     const std::size_t frames = std::min(frameCount, m_count);
@@ -114,15 +114,15 @@ void AudioStreamRingBufferUVE::ConsumeUVE(const std::size_t frameCount) noexcept
     m_count -= frames;
 }
 
-void AudioStreamRingBufferUVE::ClearUVE() noexcept {
+void AudioStreamRingBuffer::Clear() noexcept {
     m_read = 0U;
     m_count = 0U;
 }
 
-struct AudioFileStreamSourceUVE::ImplUVE {
+struct AudioFileStreamSource::Impl {
     std::filesystem::path path;
     std::ifstream file;
-    AudioStreamFormatUVE format{};
+    AudioStreamFormat format{};
     std::size_t frameCount = 0U;
     std::size_t nextFrame = 0U;
     /// First payload byte of the first sample; every read seeks from here, so the file is never
@@ -132,36 +132,36 @@ struct AudioFileStreamSourceUVE::ImplUVE {
     bool open = false;
 };
 
-AudioFileStreamSourceUVE::AudioFileStreamSourceUVE(std::filesystem::path path)
-    : m_impl(std::make_unique<ImplUVE>()) {
+AudioFileStreamSource::AudioFileStreamSource(std::filesystem::path path)
+    : m_impl(std::make_unique<Impl>()) {
     m_impl->path = std::move(path);
 }
 
-AudioFileStreamSourceUVE::~AudioFileStreamSourceUVE() = default;
+AudioFileStreamSource::~AudioFileStreamSource() = default;
 
-bool AudioFileStreamSourceUVE::OpenUVE() {
-    CloseUVE();
-    ImplUVE& impl = *m_impl;
+bool AudioFileStreamSource::Open() {
+    Close();
+    Impl& impl = *m_impl;
     impl.file.open(impl.path, std::ios::binary);
     if (!impl.file.is_open()) {
-        UVE_ERROR("AudioFileStreamSourceUVE: failed to open \"{}\" for streaming", impl.path.string());
+        UVE_ERROR("AudioFileStreamSource: failed to open \"{}\" for streaming", impl.path.string());
         return false;
     }
 
-    std::vector<std::byte> header(Asset::kUveFileEnvelopeHeaderBytesUVE + kAudioPayloadHeaderBytesUVE);
+    std::vector<std::byte> header(Asset::kUveFileEnvelopeHeaderBytes + kAudioPayloadHeaderBytes);
     impl.file.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
     if (static_cast<std::size_t>(impl.file.gcount()) != header.size()) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" is too short to hold an audio header", impl.path.string());
-        CloseUVE();
+        UVE_ERROR("AudioFileStreamSource: \"{}\" is too short to hold an audio header", impl.path.string());
+        Close();
         return false;
     }
 
-    // The four magic bytes are checked here rather than by ReadUint32LeFromBufferUVE, which would
+    // The four magic bytes are checked here rather than by ReadUint32LeFromBuffer, which would
     // happily read them as the version field and shift every field after it by four bytes.
     constexpr std::array<char, 4> kMagic{'U', 'V', 'E', '\0'};
     if (std::memcmp(header.data(), kMagic.data(), kMagic.size()) != 0) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" is not a .uve file", impl.path.string());
-        CloseUVE();
+        UVE_ERROR("AudioFileStreamSource: \"{}\" is not a .uve file", impl.path.string());
+        Close();
         return false;
     }
 
@@ -170,38 +170,38 @@ bool AudioFileStreamSourceUVE::OpenUVE() {
     std::uint32_t assetType = 0U;
     std::uint32_t compressionMethod = 0U;
     std::uint64_t payloadLength = 0U;
-    if (!Utilities::ReadUint32LeFromBufferUVE(header, offset, envelopeVersion) ||
-        !Utilities::ReadUint32LeFromBufferUVE(header, offset, assetType) ||
-        !Utilities::ReadUint32LeFromBufferUVE(header, offset, compressionMethod) ||
-        !Utilities::ReadUint64LeFromBufferUVE(header, offset, payloadLength) ||
-        envelopeVersion != 1U || static_cast<std::uint32_t>(Asset::AssetKindUVE::Audio) != assetType ||
+    if (!Utilities::ReadUint32LeFromBuffer(header, offset, envelopeVersion) ||
+        !Utilities::ReadUint32LeFromBuffer(header, offset, assetType) ||
+        !Utilities::ReadUint32LeFromBuffer(header, offset, compressionMethod) ||
+        !Utilities::ReadUint64LeFromBuffer(header, offset, payloadLength) ||
+        envelopeVersion != 1U || static_cast<std::uint32_t>(Asset::AssetKind::Audio) != assetType ||
         compressionMethod != 0U) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" is not an uncompressed audio asset", impl.path.string());
-        CloseUVE();
+        UVE_ERROR("AudioFileStreamSource: \"{}\" is not an uncompressed audio asset", impl.path.string());
+        Close();
         return false;
     }
     std::uint32_t version = 0U;
     std::uint16_t channels = 0U;
     std::uint32_t sampleRate = 0U;
     std::uint64_t sampleCount = 0U;
-    if (!Utilities::ReadUint32LeFromBufferUVE(header, offset, version) ||
-        !Utilities::ReadUint16LeFromBufferUVE(header, offset, channels) ||
-        !Utilities::ReadUint32LeFromBufferUVE(header, offset, sampleRate) ||
-        !Utilities::ReadUint64LeFromBufferUVE(header, offset, sampleCount) ||
-        version != Asset::kAudioAssetPayloadVersionUVE || sampleCount == 0U) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" has an unsupported or empty audio payload", impl.path.string());
-        CloseUVE();
+    if (!Utilities::ReadUint32LeFromBuffer(header, offset, version) ||
+        !Utilities::ReadUint16LeFromBuffer(header, offset, channels) ||
+        !Utilities::ReadUint32LeFromBuffer(header, offset, sampleRate) ||
+        !Utilities::ReadUint64LeFromBuffer(header, offset, sampleCount) ||
+        version != Asset::kAudioAssetPayloadVersion || sampleCount == 0U) {
+        UVE_ERROR("AudioFileStreamSource: \"{}\" has an unsupported or empty audio payload", impl.path.string());
+        Close();
         return false;
     }
 
-    const AudioStreamFormatUVE format{sampleRate, static_cast<std::uint32_t>(channels)};
-    const std::uint64_t expectedPayload = static_cast<std::uint64_t>(kAudioPayloadHeaderBytesUVE) +
+    const AudioStreamFormat format{sampleRate, static_cast<std::uint32_t>(channels)};
+    const std::uint64_t expectedPayload = static_cast<std::uint64_t>(kAudioPayloadHeaderBytes) +
                                           sampleCount * sizeof(float);
-    if (!IsAudioStreamSourceFormatValidUVE(format) || sampleCount % format.channels != 0U ||
+    if (!IsAudioStreamSourceFormatValid(format) || sampleCount % format.channels != 0U ||
         sampleCount > std::numeric_limits<std::size_t>::max() || payloadLength != expectedPayload) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" declares an unusable format or a truncated body",
+        UVE_ERROR("AudioFileStreamSource: \"{}\" declares an unusable format or a truncated body",
                   impl.path.string());
-        CloseUVE();
+        Close();
         return false;
     }
 
@@ -211,9 +211,9 @@ bool AudioFileStreamSourceUVE::OpenUVE() {
     const std::uintmax_t fileSize = std::filesystem::file_size(impl.path, sizeError);
     const std::uint64_t declaredSize = static_cast<std::uint64_t>(offset) + sampleCount * sizeof(float);
     if (sizeError || static_cast<std::uint64_t>(fileSize) != declaredSize) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" declares {} bytes but the file does not hold them",
+        UVE_ERROR("AudioFileStreamSource: \"{}\" declares {} bytes but the file does not hold them",
                   impl.path.string(), declaredSize);
-        CloseUVE();
+        Close();
         return false;
     }
 
@@ -225,8 +225,8 @@ bool AudioFileStreamSourceUVE::OpenUVE() {
     return true;
 }
 
-void AudioFileStreamSourceUVE::CloseUVE() noexcept {
-    ImplUVE& impl = *m_impl;
+void AudioFileStreamSource::Close() noexcept {
+    Impl& impl = *m_impl;
     if (impl.file.is_open()) {
         impl.file.close();
     }
@@ -234,25 +234,25 @@ void AudioFileStreamSourceUVE::CloseUVE() noexcept {
     impl.frameCount = 0U;
     impl.nextFrame = 0U;
     impl.dataOffset = 0;
-    impl.format = AudioStreamFormatUVE{};
+    impl.format = AudioStreamFormat{};
 }
 
-bool AudioFileStreamSourceUVE::IsOpenUVE() const noexcept {
+bool AudioFileStreamSource::IsOpen() const noexcept {
     return m_impl->open;
 }
 
-AudioStreamFormatUVE AudioFileStreamSourceUVE::GetFormatUVE() const noexcept {
+AudioStreamFormat AudioFileStreamSource::GetFormat() const noexcept {
     return m_impl->format;
 }
 
-std::size_t AudioFileStreamSourceUVE::GetFrameCountUVE() const noexcept {
+std::size_t AudioFileStreamSource::GetFrameCount() const noexcept {
     return m_impl->frameCount;
 }
 
-std::size_t AudioFileStreamSourceUVE::ReadFramesUVE(const std::size_t requestedFrames,
+std::size_t AudioFileStreamSource::ReadFrames(const std::size_t requestedFrames,
                                                      std::vector<float>& outFrames) {
     outFrames.clear();
-    ImplUVE& impl = *m_impl;
+    Impl& impl = *m_impl;
     if (!impl.open || requestedFrames == 0U || impl.nextFrame >= impl.frameCount) {
         return 0U;
     }
@@ -267,24 +267,24 @@ std::size_t AudioFileStreamSourceUVE::ReadFramesUVE(const std::size_t requestedF
     impl.file.clear();
     impl.file.seekg(sampleOffset, std::ios::beg);
     if (!impl.file) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" could not seek to frame {}", impl.path.string(),
+        UVE_ERROR("AudioFileStreamSource: \"{}\" could not seek to frame {}", impl.path.string(),
                   impl.nextFrame);
         return 0U;
     }
     impl.file.read(reinterpret_cast<char*>(impl.scratch.data()),
                    static_cast<std::streamsize>(impl.scratch.size()));
     if (static_cast<std::size_t>(impl.file.gcount()) != impl.scratch.size()) {
-        UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" ended inside a sample window at frame {}", impl.path.string(),
+        UVE_ERROR("AudioFileStreamSource: \"{}\" ended inside a sample window at frame {}", impl.path.string(),
                   impl.nextFrame);
         return 0U;
     }
 
     outFrames.resize(samples);
     for (std::size_t index = 0U; index < samples; ++index) {
-        const float sample = DecodeFloatLeUVE(impl.scratch.data() + index * sizeof(float));
+        const float sample = DecodeFloatLe(impl.scratch.data() + index * sizeof(float));
         if (!std::isfinite(sample) || sample < -1.0F || sample > 1.0F) {
             // A corrupt payload must not reach the mixer; the caller sees end of stream.
-            UVE_ERROR("AudioFileStreamSourceUVE: \"{}\" holds a non-finite or out-of-range sample", impl.path.string());
+            UVE_ERROR("AudioFileStreamSource: \"{}\" holds a non-finite or out-of-range sample", impl.path.string());
             outFrames.clear();
             return 0U;
         }
@@ -294,7 +294,7 @@ std::size_t AudioFileStreamSourceUVE::ReadFramesUVE(const std::size_t requestedF
     return frames;
 }
 
-bool AudioFileStreamSourceUVE::SeekToFrameUVE(const std::size_t frame) {
+bool AudioFileStreamSource::SeekToFrame(const std::size_t frame) {
     if (!m_impl->open || frame > m_impl->frameCount) {
         return false;
     }

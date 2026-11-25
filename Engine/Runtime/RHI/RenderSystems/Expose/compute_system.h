@@ -13,41 +13,41 @@
 
 namespace UVE::Render {
 
-/// ComputeSystemUVE is the concrete, engine-standard implementation of IComputeSystemUVE. Takes
-/// its IRenderDeviceUVE& by dependency injection (same shape as RenderSystemUVE) - it never
+/// ComputeSystem is the concrete, engine-standard implementation of IComputeSystem. Takes
+/// its IRenderDevice& by dependency injection (same shape as RenderSystem) - it never
 /// constructs or owns a render device itself, so tests and future backend swaps pass in whichever
-/// IRenderDeviceUVE& they need. It DOES own every program it created: the destructor destroys all
+/// IRenderDevice& they need. It DOES own every program it created: the destructor destroys all
 /// still-live programs through the device, which means the device must outlive the system - the
 /// same ordering rule every injected-dependency system in this engine already follows.
-class ComputeSystemUVE final : public IComputeSystemUVE {
+class ComputeSystem final : public IComputeSystem {
 public:
-    explicit ComputeSystemUVE(IRenderDeviceUVE& renderDevice) noexcept;
-    ~ComputeSystemUVE() override;
+    explicit ComputeSystem(IRenderDevice& renderDevice) noexcept;
+    ~ComputeSystem() override;
 
-    ComputeSystemUVE(const ComputeSystemUVE&) = delete;
-    ComputeSystemUVE& operator=(const ComputeSystemUVE&) = delete;
+    ComputeSystem(const ComputeSystem&) = delete;
+    ComputeSystem& operator=(const ComputeSystem&) = delete;
 
-    [[nodiscard]] PipelineHandleUVE CreateProgramUVE(const ComputeProgramDescUVE& desc,
+    [[nodiscard]] PipelineHandle CreateProgram(const ComputeProgramDesc& desc,
                                                      std::string* outInfoLog = nullptr) override;
-    void DestroyProgramUVE(PipelineHandleUVE program) override;
-    [[nodiscard]] bool IsProgramLiveUVE(PipelineHandleUVE program) const noexcept override;
-    [[nodiscard]] bool EnqueueDispatchUVE(const ComputeDispatchDescUVE& desc) override;
-    std::size_t ExecuteQueuedDispatchesUVE(ICommandBufferUVE& commands) override;
-    [[nodiscard]] std::size_t GetQueuedDispatchCountUVE() const noexcept override;
-    void ClearQueueUVE() override;
-    [[nodiscard]] const ComputeSystemDiagnosticsUVE& GetDiagnosticsUVE() const noexcept override;
+    void DestroyProgram(PipelineHandle program) override;
+    [[nodiscard]] bool IsProgramLive(PipelineHandle program) const noexcept override;
+    [[nodiscard]] bool EnqueueDispatch(const ComputeDispatchDesc& desc) override;
+    std::size_t ExecuteQueuedDispatches(ICommandBuffer& commands) override;
+    [[nodiscard]] std::size_t GetQueuedDispatchCount() const noexcept override;
+    void ClearQueue() override;
+    [[nodiscard]] const ComputeSystemDiagnostics& GetDiagnostics() const noexcept override;
 
 private:
     /// What the system remembers about a program it owns. The RHI keeps the GPU-side object; this
     /// record exists so warnings and diagnostics can name the kernel instead of a bare handle.
-    struct ProgramRecordUVE {
+    struct ProgramRecord {
         std::string debugName;
     };
 
-    IRenderDeviceUVE& m_device;
-    std::unordered_map<PipelineHandleUVE, ProgramRecordUVE> m_programs;
-    std::vector<ComputeDispatchDescUVE> m_queue;
-    ComputeSystemDiagnosticsUVE m_diagnostics;
+    IRenderDevice& m_device;
+    std::unordered_map<PipelineHandle, ProgramRecord> m_programs;
+    std::vector<ComputeDispatchDesc> m_queue;
+    ComputeSystemDiagnostics m_diagnostics;
 };
 
 } // namespace UVE::Render

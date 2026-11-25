@@ -1,13 +1,13 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 //
-// VkFunctionsUVE — the Vulkan analogue of uve/rhi_opengl/gl_functions_uve.h: a deliberately
+// VkFunctions — the Vulkan analogue of uve/rhi_opengl/gl_functions_uve.h: a deliberately
 // minimal, hand-rolled function-pointer loader holding exactly the entry points the M1
 // bootstrap device needs (see vulkan_render_device_uve.h for the milestone contract). No
 // volk, no Vulkan-Hpp, no libvulkan link dependency: the Vulkan loader shared library
 // (libvulkan.so.1 / the platform equivalent) is opened with dlopen() and the symbol
 // vkGetInstanceProcAddr resolved from it — the one entry point guaranteed to be exported —
 // and every other pointer is walked out of Vulkan's own dispatch chain. Why dlopen rather
-// than a plain link, matching GlFunctionsUVE's resolution philosophy: the loader is a
+// than a plain link, matching GlFunctions's resolution philosophy: the loader is a
 // *deployment* dependency, not all hosts have it, and the engine's answer to "no loader" is
 // the documented fallback to the next backend — never a process that fails to start because
 // a linked shared object is absent.
@@ -25,10 +25,10 @@
 namespace UVE::Render {
 
 /// Table of the Vulkan entry points the M1 bootstrap device uses, resolved lazily by
-/// LoadGlobalUVE()/LoadInstanceUVE()/LoadDeviceUVE() (every member must be non-null before
+/// LoadGlobal()/LoadInstance()/LoadDevice() (every member must be non-null before
 /// its level returns true — a partial table is never returned silently). Not copyable in
 /// spirit but trivially copyable in fact; the device owns exactly one instance.
-struct VkFunctionsUVE {
+struct VkFunctions {
     // Global level (no VkInstance needed; resolvable from vkGetInstanceProcAddr directly).
     PFN_vkCreateInstance vkCreateInstance = nullptr;
     PFN_vkEnumerateInstanceVersion vkEnumerateInstanceVersion = nullptr; // optional (1.0 hosts)
@@ -76,13 +76,13 @@ struct VkFunctionsUVE {
     PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = nullptr;
     PFN_vkCmdBlitImage vkCmdBlitImage = nullptr; // Tier 2.6 texture blit + mip chain (core 1.0)
     // Device-level timestamp queries (core 1.0): a transient reset+write submission makes the
-    // result readable, which is what WriteTimestampUVE/GetQueryResultUVE promise.
+    // result readable, which is what WriteTimestamp/GetQueryResult promise.
     PFN_vkCreateQueryPool vkCreateQueryPool = nullptr;
     PFN_vkDestroyQueryPool vkDestroyQueryPool = nullptr;
     PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
     PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
     PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
-    // Recorded occlusion brackets (core 1.0): Foundation WP3 replays BeginQueryUVE/EndQueryUVE
+    // Recorded occlusion brackets (core 1.0): Foundation WP3 replays BeginQuery/EndQuery
     // command-buffer ops around the caller's own draws.
     PFN_vkCmdBeginQuery vkCmdBeginQuery = nullptr;
     PFN_vkCmdEndQuery vkCmdEndQuery = nullptr;
@@ -152,7 +152,7 @@ struct VkFunctionsUVE {
 
     // M3 "device-local staging" addition: buffer→buffer copy for the one-shot staging
     // uploads that feed DEVICE_LOCAL vertex/index buffers (create-time initial data and
-    // every UpdateBufferUVE re-stage).
+    // every UpdateBuffer re-stage).
     PFN_vkCmdCopyBuffer vkCmdCopyBuffer = nullptr;
 
     // M2d "offscreen RT" additions: core-1.3 dynamic rendering. The instance/device gate is
@@ -168,24 +168,24 @@ struct VkFunctionsUVE {
     /// library Vulkan registers atexit hooks against is the classic crash recipe; this is the
     /// same policy GLFW documents for its own glfwWindowHint'd Vulkan path).
     /// Returns false — logging why — when no loader library had the entry point.
-    [[nodiscard]] bool LoadGlobalUVE();
+    [[nodiscard]] bool LoadGlobal();
 
     /// Resolves the instance-level entry points for `instance`. Must be called after the
-    /// instance exists; LoadGlobalUVE() must have succeeded first.
-    [[nodiscard]] bool LoadInstanceUVE(VkInstance instance);
+    /// instance exists; LoadGlobal() must have succeeded first.
+    [[nodiscard]] bool LoadInstance(VkInstance instance);
 
-    /// Resolves the device-level entry points for `device`. LoadInstanceUVE() must have
+    /// Resolves the device-level entry points for `device`. LoadInstance() must have
     /// succeeded first (this uses its vkGetDeviceProcAddr).
-    [[nodiscard]] bool LoadDeviceUVE(VkDevice device);
+    [[nodiscard]] bool LoadDevice(VkDevice device);
 
-    /// True after LoadGlobalUVE() succeeded — the device gates further work on this so a
+    /// True after LoadGlobal() succeeded — the device gates further work on this so a
     /// mid-cascade failure cannot leave partially-resolved entry points in use.
-    [[nodiscard]] bool AreGlobalsLoadedUVE() const noexcept { return m_getInstanceProcAddr != nullptr; }
+    [[nodiscard]] bool AreGlobalsLoaded() const noexcept { return m_getInstanceProcAddr != nullptr; }
 
     /// One-off instance-extension proc resolution *from this instance* (the canonical answer
-    /// for entry points LoadInstanceUVE does not track — e.g. WSI creators like the VK_EXT_
-    /// headless_surface one). Null when unsupported or before LoadGlobalUVE() succeeded.
-    [[nodiscard]] void* ResolveVkProcUVE(VkInstance instance, const char* name) const noexcept {
+    /// for entry points LoadInstance does not track — e.g. WSI creators like the VK_EXT_
+    /// headless_surface one). Null when unsupported or before LoadGlobal() succeeded.
+    [[nodiscard]] void* ResolveVkProc(VkInstance instance, const char* name) const noexcept {
         if (m_getInstanceProcAddr == nullptr) {
             return nullptr;
         }

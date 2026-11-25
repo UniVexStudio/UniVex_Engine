@@ -14,37 +14,37 @@
 namespace UVE::Asset {
 
 /// Strips an optional leading '.' and lowercases ASCII characters ("UVMaterial" / ".UVMaterial" -> "uvmaterial").
-[[nodiscard]] std::string NormalizeAssetExtensionUVE(std::string_view extension);
+[[nodiscard]] std::string NormalizeAssetExtension(std::string_view extension);
 
 /// Extracts and normalizes `path.extension()` without touching the filesystem.
-[[nodiscard]] std::string NormalizeAssetPathExtensionUVE(const std::filesystem::path& path);
+[[nodiscard]] std::string NormalizeAssetPathExtension(const std::filesystem::path& path);
 
 /// Single authoritative mapping from a file extension (with or without leading '.', case-insensitive)
-/// to its expected `.uve*` envelope `AssetKindUVE`. Returns `std::nullopt` for non-envelope files
+/// to its expected `.uve*` envelope `AssetKind`. Returns `std::nullopt` for non-envelope files
 /// (such as raw authoring sources or plain text/shader scripts).
-[[nodiscard]] std::optional<AssetKindUVE> ExpectedAssetKindForExtensionUVE(std::string_view extension);
+[[nodiscard]] std::optional<AssetKind> ExpectedAssetKindForExtension(std::string_view extension);
 
 /// Convenience overload inspecting `path.extension()`.
-[[nodiscard]] std::optional<AssetKindUVE> ExpectedAssetKindForPathUVE(const std::filesystem::path& path);
+[[nodiscard]] std::optional<AssetKind> ExpectedAssetKindForPath(const std::filesystem::path& path);
 
 /// True when `extension` (with or without leading '.', case-insensitive) names a native `.uve*`
 /// envelope asset that ships in cooked project content (excludes `.uvsave` and `.uvbundle`).
-[[nodiscard]] bool IsCookableNativeEnvelopeExtensionUVE(std::string_view extension);
+[[nodiscard]] bool IsCookableNativeEnvelopeExtension(std::string_view extension);
 
 /// True when `extension` names a text/script/shader source file that ships in cooked project content
 /// (`.uvs`, `.glsl`, `.vert`, `.frag`, `.comp`, `.glslinc`).
-[[nodiscard]] bool IsCookableRuntimeTextExtensionUVE(std::string_view extension);
+[[nodiscard]] bool IsCookableRuntimeTextExtension(std::string_view extension);
 
 /// True when `extension` names any cooked runtime content asset (native envelope or runtime text/shader).
-[[nodiscard]] bool IsCookableRuntimeExtensionUVE(std::string_view extension);
+[[nodiscard]] bool IsCookableRuntimeExtension(std::string_view extension);
 
 /// Returns all normalized native envelope extensions that use generic deterministic envelope copy/re-import.
-[[nodiscard]] std::span<const std::string_view> GetBuiltInEnvelopeExtensionsUVE() noexcept;
+[[nodiscard]] std::span<const std::string_view> GetBuiltInEnvelopeExtensions() noexcept;
 
-/// Classifies an extension (with or without leading '.', case-insensitive) into `AssetImportSourceKindUVE`.
-[[nodiscard]] AssetImportSourceKindUVE ClassifyImportSourceKindForExtensionUVE(std::string_view extension) noexcept;
+/// Classifies an extension (with or without leading '.', case-insensitive) into `AssetImportSourceKind`.
+[[nodiscard]] AssetImportSourceKind ClassifyImportSourceKindForExtension(std::string_view extension) noexcept;
 
-/// Canonical camelCase protocol label for an `AssetImportSourceKindUVE` (used by EditorBridge and diagnostics).
-[[nodiscard]] std::string_view AssetImportSourceKindLabelUVE(AssetImportSourceKindUVE kind) noexcept;
+/// Canonical camelCase protocol label for an `AssetImportSourceKind` (used by EditorBridge and diagnostics).
+[[nodiscard]] std::string_view AssetImportSourceKindLabel(AssetImportSourceKind kind) noexcept;
 
 } // namespace UVE::Asset

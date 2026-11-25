@@ -11,26 +11,26 @@
 namespace UVE::Blueprint {
 
 /// 1-based line and column of a token in the source text.
-struct SourceLocationUVE final {
+struct SourceLocation final {
     std::uint32_t line = 0U;
     std::uint32_t column = 0U;
 
-    bool operator==(const SourceLocationUVE&) const = default;
+    bool operator==(const SourceLocation&) const = default;
 };
 
-struct DiagnosticUVE final {
-    SourceLocationUVE at;
+struct Diagnostic final {
+    SourceLocation at;
     std::string message;
 };
 
 /// A written type: `float`, `list[int]`, `map[str, Object3D]`.
-struct TypeRefUVE final {
+struct TypeRef final {
     std::string name;
-    std::vector<TypeRefUVE> arguments;
-    SourceLocationUVE at;
+    std::vector<TypeRef> arguments;
+    SourceLocation at;
 };
 
-enum class ExprKindUVE : std::uint8_t {
+enum class ExprKind : std::uint8_t {
     Number,
     String,
     Bool,
@@ -54,21 +54,21 @@ enum class ExprKindUVE : std::uint8_t {
 /// - Unary/Binary: `text` is the operator (`-`, `not`, `+`, `and`, `..`, ...), `operands` in order.
 /// - Call: `operands[0]` is the callee, the rest are arguments. Index: `operands[0][operands[1]]`.
 /// - List/Tuple: `operands` are the items. Map: `operands` alternate key, value, key, value...
-struct ExprUVE final {
-    ExprKindUVE kind = ExprKindUVE::None;
-    SourceLocationUVE at;
+struct Expr final {
+    ExprKind kind = ExprKind::None;
+    SourceLocation at;
     std::string text;
     double number = 0.0;
     bool isInteger = false;
     bool boolean = false;
     std::string unit;
     std::vector<std::string> segments;
-    std::vector<std::unique_ptr<ExprUVE>> operands;
+    std::vector<std::unique_ptr<Expr>> operands;
 };
 
-using ExprPtrUVE = std::unique_ptr<ExprUVE>;
+using ExprPtr = std::unique_ptr<Expr>;
 
-enum class StmtKindUVE : std::uint8_t {
+enum class StmtKind : std::uint8_t {
     Let,
     Assign,
     Expr,
@@ -82,13 +82,13 @@ enum class StmtKindUVE : std::uint8_t {
     Wait,
 };
 
-struct StmtUVE;
-using StmtPtrUVE = std::unique_ptr<StmtUVE>;
-using BlockUVE = std::vector<StmtPtrUVE>;
+struct Stmt;
+using StmtPtr = std::unique_ptr<Stmt>;
+using Block = std::vector<StmtPtr>;
 
-struct ConditionalBlockUVE final {
-    ExprPtrUVE condition;
-    BlockUVE body;
+struct ConditionalBlock final {
+    ExprPtr condition;
+    Block body;
 };
 
 /// One statement. By `kind`:
@@ -97,69 +97,69 @@ struct ConditionalBlockUVE final {
 /// - If: `branches` (the `if` and every `elif`, in order) and `elseBody`.
 /// - While: `branches[0]`. For: `name` in `value`, `body`.
 /// - Return: `value` (may be null). Wait: `value`.
-struct StmtUVE final {
-    StmtKindUVE kind = StmtKindUVE::Pass;
-    SourceLocationUVE at;
+struct Stmt final {
+    StmtKind kind = StmtKind::Pass;
+    SourceLocation at;
     std::string name;
     std::vector<std::string> names;
-    std::optional<TypeRefUVE> type;
+    std::optional<TypeRef> type;
     std::string op;
-    ExprPtrUVE target;
-    ExprPtrUVE value;
-    std::vector<ConditionalBlockUVE> branches;
-    BlockUVE body;
-    BlockUVE elseBody;
+    ExprPtr target;
+    ExprPtr value;
+    std::vector<ConditionalBlock> branches;
+    Block body;
+    Block elseBody;
 };
 
-struct ParamUVE final {
+struct Param final {
     std::string name;
-    std::optional<TypeRefUVE> type;
-    SourceLocationUVE at;
+    std::optional<TypeRef> type;
+    SourceLocation at;
 };
 
-enum class FieldKindUVE : std::uint8_t {
+enum class FieldKind : std::uint8_t {
     Export,
     Var,
     Const,
 };
 
-struct FieldUVE final {
-    FieldKindUVE kind = FieldKindUVE::Var;
+struct Field final {
+    FieldKind kind = FieldKind::Var;
     std::string name;
-    std::optional<TypeRefUVE> type;
-    ExprPtrUVE initializer;
-    SourceLocationUVE at;
+    std::optional<TypeRef> type;
+    ExprPtr initializer;
+    SourceLocation at;
 };
 
 /// `on <event>(params):` - runs when the object raises `event`.
-struct HandlerUVE final {
+struct Handler final {
     std::string event;
-    std::vector<ParamUVE> params;
-    BlockUVE body;
-    SourceLocationUVE at;
+    std::vector<Param> params;
+    Block body;
+    SourceLocation at;
 };
 
-struct FunctionUVE final {
+struct Function final {
     std::string name;
-    std::vector<ParamUVE> params;
-    std::optional<TypeRefUVE> returnType;
-    BlockUVE body;
-    SourceLocationUVE at;
+    std::vector<Param> params;
+    std::optional<TypeRef> returnType;
+    Block body;
+    SourceLocation at;
 };
 
 /// `entity Player : Character3D`
-struct HeaderUVE final {
+struct Header final {
     std::string name;
     std::string baseKind;
-    SourceLocationUVE at;
+    SourceLocation at;
 };
 
 /// A whole `.uvs` file, in source order within each list.
-struct FileUVE final {
-    std::optional<HeaderUVE> header;
-    std::vector<FieldUVE> fields;
-    std::vector<HandlerUVE> handlers;
-    std::vector<FunctionUVE> functions;
+struct File final {
+    std::optional<Header> header;
+    std::vector<Field> fields;
+    std::vector<Handler> handlers;
+    std::vector<Function> functions;
 };
 
 } // namespace UVE::Blueprint

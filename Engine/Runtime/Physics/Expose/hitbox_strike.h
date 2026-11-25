@@ -14,13 +14,13 @@
 namespace UVE::Physics {
 
 /// Upper bound on the strike pairs one sync report may carry, mirroring
-/// kMaximumAreaOverlapResultsUVE's role for the area-overlap query. The report is complete below
+/// kMaximumAreaOverlapResults's role for the area-overlap query. The report is complete below
 /// this bound; at or above it the caller is told (see `strikesTruncated`) and the lifecycle tracker
 /// refuses to infer exits from an incomplete snapshot.
 ///
 /// A hitbox's own `strikes` array is a much smaller bound (16) and is the *component's* storage;
 /// this one bounds the whole scan, which is what a scene-wide consumer sees.
-inline constexpr std::size_t kMaximumHitbox3DStrikeResultsUVE = 4096U;
+inline constexpr std::size_t kMaximumHitbox3DStrikeResults = 4096U;
 
 /// One resolved strike as the scan saw it this tick: which hitbox found which hurtbox, how deeply,
 /// along which axis, and on which damage channel.
@@ -28,22 +28,22 @@ inline constexpr std::size_t kMaximumHitbox3DStrikeResultsUVE = 4096U;
 /// This is the pairing's evidence, not a consequence - the engine resolves the pairing and reports
 /// it; what a strike *means* (damage, knockback, i-frames) is gameplay, and it decides it from the
 /// typed events this record travels in.
-struct Hitbox3DStrikePairUVE final {
-    Scene::EntityUVE hitbox = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE hurtbox = Scene::kInvalidEntityUVE;
+struct Hitbox3DStrikePair final {
+    Scene::Entity hitbox = Scene::kInvalidEntity;
+    Scene::Entity hurtbox = Scene::kInvalidEntity;
     /// Exact oriented-box minimum-translation depth, in world units.
     float penetrationDepth = 0.0F;
     /// The minimum-translation direction, world space, hitbox toward hurtbox, unit length when the
     /// penetration was finite.
-    Math::Vector3UVE axis{};
+    Math::Vector3 axis{};
     /// Both boxes' channel; a strike requires them to be equal, so one copy names the pairing.
     std::string damageChannel;
 
-    [[nodiscard]] bool operator==(const Hitbox3DStrikePairUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const Hitbox3DStrikePair&) const noexcept = default;
 };
 
 /// What one hitbox-vs-hurtbox scan saw, plus the counts that make it auditable.
-struct Hitbox3DSyncReportUVE final {
+struct Hitbox3DSyncReport final {
     /// How many hurtboxes the first pass accepted as candidates (enabled, valid, posed).
     std::size_t hurtboxCount = 0U;
     /// How many hitboxes the second pass visited.
@@ -54,9 +54,9 @@ struct Hitbox3DSyncReportUVE final {
     bool strikesTruncated = false;
     /// Every resolved pairing this tick, in scan order (hitboxes in ECS order, hurtboxes in
     /// candidate order).
-    std::vector<Hitbox3DStrikePairUVE> strikes;
+    std::vector<Hitbox3DStrikePair> strikes;
 
-    [[nodiscard]] bool IsTruncatedUVE() const noexcept { return strikesTruncated; }
+    [[nodiscard]] bool IsTruncated() const noexcept { return strikesTruncated; }
 };
 
 /// Runs the whole per-tick hitbox/hurtbox scan and writes each hitbox's runtime strike list.
@@ -69,13 +69,13 @@ struct Hitbox3DSyncReportUVE final {
 ///
 /// Pass 2 refreshes every hitbox's strike state. A pairing requires all of:
 ///
-///   * Hitbox3DUVE::AcceptsTargetUVE and Hurtbox3DUVE::AcceptsAttackerUVE;
+///   * Hitbox3D::AcceptsTarget and Hurtbox3D::AcceptsAttacker;
 ///   * a real oriented-box overlap (exact 15-axis test; touching boundaries are not strikes).
 /// Each node then commits its own list (unique, deepest first, cap 16, once-per-activation).
 ///
 /// This is a seam rather than more code in the engine-core tick for the same reason
-/// Physics::SyncInteractionAreasUVE() is: the tick owns WHEN this runs, not what the rules are, and
-/// the rules are exactly what needed to be testable without standing up an EngineCoreUVE.
-[[nodiscard]] Hitbox3DSyncReportUVE SyncHitboxes3DUVE(Scene::IEntityManagerUVE& entityManager);
+/// Physics::SyncInteractionAreas() is: the tick owns WHEN this runs, not what the rules are, and
+/// the rules are exactly what needed to be testable without standing up an EngineCore.
+[[nodiscard]] Hitbox3DSyncReport SyncHitboxes3D(Scene::IEntityManager& entityManager);
 
 } // namespace UVE::Physics

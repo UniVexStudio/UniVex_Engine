@@ -11,27 +11,27 @@
 namespace UVE::Blueprint::Debug {
 namespace {
 
-[[nodiscard]] std::uint64_t NowMicrosUVE() noexcept {
+[[nodiscard]] std::uint64_t NowMicros() noexcept {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(now).count());
 }
 
-[[nodiscard]] std::string_view TraceKindNameUVE(const BlueprintTraceEventKindUVE kind) noexcept {
+[[nodiscard]] std::string_view TraceKindName(const BlueprintTraceEventKind kind) noexcept {
     switch (kind) {
-        case BlueprintTraceEventKindUVE::Paused: return "Paused";
-        case BlueprintTraceEventKindUVE::StepInto: return "StepInto";
-        case BlueprintTraceEventKindUVE::StepOver: return "StepOver";
-        case BlueprintTraceEventKindUVE::Continued: return "Continued";
-        case BlueprintTraceEventKindUVE::Completed: return "Completed";
-        case BlueprintTraceEventKindUVE::Waiting: return "Waiting";
-        case BlueprintTraceEventKindUVE::Failed: return "Failed";
+        case BlueprintTraceEventKind::Paused: return "Paused";
+        case BlueprintTraceEventKind::StepInto: return "StepInto";
+        case BlueprintTraceEventKind::StepOver: return "StepOver";
+        case BlueprintTraceEventKind::Continued: return "Continued";
+        case BlueprintTraceEventKind::Completed: return "Completed";
+        case BlueprintTraceEventKind::Waiting: return "Waiting";
+        case BlueprintTraceEventKind::Failed: return "Failed";
     }
     return "Paused";
 }
 
-[[nodiscard]] BlueprintWatchEntryUVE EvaluateWatchUVE(const std::string& expression,
-                                                      const ScriptDebugSnapshotUVE& snapshot) {
-    BlueprintWatchEntryUVE entry;
+[[nodiscard]] BlueprintWatchEntry EvaluateWatch(const std::string& expression,
+                                                      const ScriptDebugSnapshot& snapshot) {
+    BlueprintWatchEntry entry;
     entry.expression = expression;
 
     // 1. Named field lookup (e.g. "count" or "self.count")
@@ -43,7 +43,7 @@ namespace {
         if (field.first == key) {
             entry.resolved = true;
             entry.value = field.second;
-            entry.formattedValue = FormatValueUVE(field.second);
+            entry.formattedValue = FormatValue(field.second);
             return entry;
         }
     }
@@ -61,7 +61,7 @@ namespace {
         if (ec == std::errc{} && ptr == slotText.data() + slotText.size() && idx < snapshot.locals.size()) {
             entry.resolved = true;
             entry.value = snapshot.locals[idx];
-            entry.formattedValue = FormatValueUVE(snapshot.locals[idx]);
+            entry.formattedValue = FormatValue(snapshot.locals[idx]);
             return entry;
         }
     }
@@ -74,16 +74,16 @@ namespace {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// BlueprintBreakpointManagerUVE
+// BlueprintBreakpointManager
 // ---------------------------------------------------------------------------
 
-std::uint32_t BlueprintBreakpointManagerUVE::AddLineBreakpointUVE(const std::uint32_t sourceLine,
+std::uint32_t BlueprintBreakpointManager::AddLineBreakpoint(const std::uint32_t sourceLine,
                                                                   const std::uint32_t nodeId,
                                                                   std::string condition) {
     if (sourceLine == 0U) {
         return 0U;
     }
-    for (BlueprintBreakpointUVE& existing : m_breakpoints) {
+    for (BlueprintBreakpoint& existing : m_breakpoints) {
         if (existing.sourceLine == sourceLine) {
             existing.enabled = true;
             if (nodeId != 0U) {
@@ -96,26 +96,26 @@ std::uint32_t BlueprintBreakpointManagerUVE::AddLineBreakpointUVE(const std::uin
         }
     }
     const std::uint32_t id = m_nextId++;
-    m_breakpoints.push_back(BlueprintBreakpointUVE{id, sourceLine, nodeId, true, 0U, std::move(condition)});
+    m_breakpoints.push_back(BlueprintBreakpoint{id, sourceLine, nodeId, true, 0U, std::move(condition)});
     return id;
 }
 
-std::optional<std::uint32_t> BlueprintBreakpointManagerUVE::AddNodeBreakpointUVE(
-    const std::uint32_t nodeId, const Asset::BlueprintTranslationUVE& translation, std::string condition) {
+std::optional<std::uint32_t> BlueprintBreakpointManager::AddNodeBreakpoint(
+    const std::uint32_t nodeId, const Asset::BlueprintTranslation& translation, std::string condition) {
     if (nodeId == 0U) {
         return std::nullopt;
     }
     for (std::size_t i = 0U; i < translation.lineNodes.size(); ++i) {
         if (translation.lineNodes[i] == nodeId) {
-            return AddLineBreakpointUVE(static_cast<std::uint32_t>(i + 1U), nodeId, std::move(condition));
+            return AddLineBreakpoint(static_cast<std::uint32_t>(i + 1U), nodeId, std::move(condition));
         }
     }
     return std::nullopt;
 }
 
-bool BlueprintBreakpointManagerUVE::RemoveBreakpointUVE(const std::uint32_t breakpointId) {
+bool BlueprintBreakpointManager::RemoveBreakpoint(const std::uint32_t breakpointId) {
     const auto it = std::find_if(m_breakpoints.begin(), m_breakpoints.end(),
-                                 [breakpointId](const BlueprintBreakpointUVE& bp) { return bp.id == breakpointId; });
+                                 [breakpointId](const BlueprintBreakpoint& bp) { return bp.id == breakpointId; });
     if (it == m_breakpoints.end()) {
         return false;
     }
@@ -123,8 +123,8 @@ bool BlueprintBreakpointManagerUVE::RemoveBreakpointUVE(const std::uint32_t brea
     return true;
 }
 
-bool BlueprintBreakpointManagerUVE::SetBreakpointEnabledUVE(const std::uint32_t breakpointId, const bool enabled) {
-    for (BlueprintBreakpointUVE& bp : m_breakpoints) {
+bool BlueprintBreakpointManager::SetBreakpointEnabled(const std::uint32_t breakpointId, const bool enabled) {
+    for (BlueprintBreakpoint& bp : m_breakpoints) {
         if (bp.id == breakpointId) {
             bp.enabled = enabled;
             return true;
@@ -133,7 +133,7 @@ bool BlueprintBreakpointManagerUVE::SetBreakpointEnabledUVE(const std::uint32_t 
     return false;
 }
 
-bool BlueprintBreakpointManagerUVE::ToggleLineBreakpointUVE(const std::uint32_t sourceLine,
+bool BlueprintBreakpointManager::ToggleLineBreakpoint(const std::uint32_t sourceLine,
                                                             const std::uint32_t nodeId) {
     for (auto it = m_breakpoints.begin(); it != m_breakpoints.end(); ++it) {
         if (it->sourceLine == sourceLine) {
@@ -141,22 +141,22 @@ bool BlueprintBreakpointManagerUVE::ToggleLineBreakpointUVE(const std::uint32_t 
             return false;
         }
     }
-    return AddLineBreakpointUVE(sourceLine, nodeId) != 0U;
+    return AddLineBreakpoint(sourceLine, nodeId) != 0U;
 }
 
-void BlueprintBreakpointManagerUVE::RecordHitAtLineUVE(const std::uint32_t sourceLine) noexcept {
-    for (BlueprintBreakpointUVE& bp : m_breakpoints) {
+void BlueprintBreakpointManager::RecordHitAtLine(const std::uint32_t sourceLine) noexcept {
+    for (BlueprintBreakpoint& bp : m_breakpoints) {
         if (bp.enabled && bp.sourceLine == sourceLine) {
             ++bp.hitCount;
         }
     }
 }
 
-void BlueprintBreakpointManagerUVE::ClearUVE() noexcept { m_breakpoints.clear(); }
+void BlueprintBreakpointManager::Clear() noexcept { m_breakpoints.clear(); }
 
-std::vector<std::uint32_t> BlueprintBreakpointManagerUVE::ActiveSourceLinesUVE() const {
+std::vector<std::uint32_t> BlueprintBreakpointManager::ActiveSourceLines() const {
     std::vector<std::uint32_t> lines;
-    for (const BlueprintBreakpointUVE& bp : m_breakpoints) {
+    for (const BlueprintBreakpoint& bp : m_breakpoints) {
         if (bp.enabled && bp.sourceLine > 0U) {
             lines.push_back(bp.sourceLine);
         }
@@ -164,9 +164,9 @@ std::vector<std::uint32_t> BlueprintBreakpointManagerUVE::ActiveSourceLinesUVE()
     return lines;
 }
 
-const BlueprintBreakpointUVE* BlueprintBreakpointManagerUVE::FindByLineUVE(
+const BlueprintBreakpoint* BlueprintBreakpointManager::FindByLine(
     const std::uint32_t sourceLine) const noexcept {
-    for (const BlueprintBreakpointUVE& bp : m_breakpoints) {
+    for (const BlueprintBreakpoint& bp : m_breakpoints) {
         if (bp.sourceLine == sourceLine) {
             return &bp;
         }
@@ -175,26 +175,26 @@ const BlueprintBreakpointUVE* BlueprintBreakpointManagerUVE::FindByLineUVE(
 }
 
 // ---------------------------------------------------------------------------
-// BlueprintExecutionTraceUVE
+// BlueprintExecutionTrace
 // ---------------------------------------------------------------------------
 
-BlueprintExecutionTraceUVE::BlueprintExecutionTraceUVE(const std::size_t maxEntries) noexcept
+BlueprintExecutionTrace::BlueprintExecutionTrace(const std::size_t maxEntries) noexcept
     : m_maxEntries(maxEntries == 0U ? 1U : maxEntries) {}
 
-void BlueprintExecutionTraceUVE::RecordUVE(const BlueprintTraceEventKindUVE kind, const std::uint32_t sourceLine,
+void BlueprintExecutionTrace::Record(const BlueprintTraceEventKind kind, const std::uint32_t sourceLine,
                                            const std::uint32_t nodeId, std::string functionName, std::string detail) {
     if (m_entries.size() >= m_maxEntries) {
         m_entries.erase(m_entries.begin());
     }
-    m_entries.push_back(BlueprintTraceEntryUVE{m_nextSequence++, NowMicrosUVE(), kind, sourceLine, nodeId,
+    m_entries.push_back(BlueprintTraceEntry{m_nextSequence++, NowMicros(), kind, sourceLine, nodeId,
                                                std::move(functionName), std::move(detail)});
 }
 
-void BlueprintExecutionTraceUVE::ClearUVE() noexcept { m_entries.clear(); }
+void BlueprintExecutionTrace::Clear() noexcept { m_entries.clear(); }
 
-std::vector<BlueprintTraceEntryUVE> BlueprintExecutionTraceUVE::FilterByNodeUVE(const std::uint32_t nodeId) const {
-    std::vector<BlueprintTraceEntryUVE> out;
-    for (const BlueprintTraceEntryUVE& e : m_entries) {
+std::vector<BlueprintTraceEntry> BlueprintExecutionTrace::FilterByNode(const std::uint32_t nodeId) const {
+    std::vector<BlueprintTraceEntry> out;
+    for (const BlueprintTraceEntry& e : m_entries) {
         if (e.nodeId == nodeId) {
             out.push_back(e);
         }
@@ -202,10 +202,10 @@ std::vector<BlueprintTraceEntryUVE> BlueprintExecutionTraceUVE::FilterByNodeUVE(
     return out;
 }
 
-std::string BlueprintExecutionTraceUVE::FormatSummaryUVE() const {
+std::string BlueprintExecutionTrace::FormatSummary() const {
     std::ostringstream oss;
-    for (const BlueprintTraceEntryUVE& e : m_entries) {
-        oss << "#" << e.sequence << " [" << TraceKindNameUVE(e.kind) << "] " << e.functionName << " line="
+    for (const BlueprintTraceEntry& e : m_entries) {
+        oss << "#" << e.sequence << " [" << TraceKindName(e.kind) << "] " << e.functionName << " line="
             << e.sourceLine << " node=" << e.nodeId;
         if (!e.detail.empty()) {
             oss << " (" << e.detail << ")";
@@ -216,40 +216,40 @@ std::string BlueprintExecutionTraceUVE::FormatSummaryUVE() const {
 }
 
 // ---------------------------------------------------------------------------
-// BlueprintDebugSessionUVE
+// BlueprintDebugSession
 // ---------------------------------------------------------------------------
 
-bool BlueprintDebugSessionUVE::AttachUVE(ScriptInstanceUVE& instance,
-                                         const Asset::BlueprintTranslationUVE* const translation) {
-    if (!instance.EnableDebuggerUVE()) {
-        m_diagnostics.push_back(BlueprintDebugDiagnosticUVE{
+bool BlueprintDebugSession::Attach(ScriptInstance& instance,
+                                         const Asset::BlueprintTranslation* const translation) {
+    if (!instance.EnableDebugger()) {
+        m_diagnostics.push_back(BlueprintDebugDiagnostic{
             0U, 0U, "Could not enable debugger (instance may be running linked native code)."});
         return false;
     }
     m_instance = &instance;
     m_translation = translation;
     m_callStack.clear();
-    return SyncBreakpointsUVE();
+    return SyncBreakpoints();
 }
 
-void BlueprintDebugSessionUVE::DetachUVE() noexcept {
+void BlueprintDebugSession::Detach() noexcept {
     if (m_instance != nullptr) {
-        m_instance->DisableDebuggerUVE();
+        m_instance->DisableDebugger();
         m_instance = nullptr;
     }
     m_translation = nullptr;
     m_callStack.clear();
 }
 
-bool BlueprintDebugSessionUVE::SyncBreakpointsUVE() {
+bool BlueprintDebugSession::SyncBreakpoints() {
     if (m_instance == nullptr) {
         return false;
     }
-    const std::vector<std::uint32_t> lines = m_breakpoints.ActiveSourceLinesUVE();
-    return m_instance->SetDebuggerBreakpointsUVE(lines);
+    const std::vector<std::uint32_t> lines = m_breakpoints.ActiveSourceLines();
+    return m_instance->SetDebuggerBreakpoints(lines);
 }
 
-void BlueprintDebugSessionUVE::AddWatchUVE(std::string expression) {
+void BlueprintDebugSession::AddWatch(std::string expression) {
     if (expression.empty()) {
         return;
     }
@@ -258,7 +258,7 @@ void BlueprintDebugSessionUVE::AddWatchUVE(std::string expression) {
     }
 }
 
-bool BlueprintDebugSessionUVE::RemoveWatchUVE(const std::string_view expression) {
+bool BlueprintDebugSession::RemoveWatch(const std::string_view expression) {
     const auto it = std::find(m_watchExpressions.begin(), m_watchExpressions.end(), expression);
     if (it == m_watchExpressions.end()) {
         return false;
@@ -267,13 +267,13 @@ bool BlueprintDebugSessionUVE::RemoveWatchUVE(const std::string_view expression)
     return true;
 }
 
-std::uint32_t BlueprintDebugSessionUVE::NodeForLineUVE(const std::uint32_t line) const noexcept {
-    return m_translation != nullptr ? m_translation->NodeAtLineUVE(line) : 0U;
+std::uint32_t BlueprintDebugSession::NodeForLine(const std::uint32_t line) const noexcept {
+    return m_translation != nullptr ? m_translation->NodeAtLine(line) : 0U;
 }
 
-void BlueprintDebugSessionUVE::RefreshCallStackFromSnapshotUVE(const ScriptDebugSnapshotUVE& snapshot) {
-    const std::uint32_t nodeId = NodeForLineUVE(snapshot.line);
-    const BlueprintCallFrameUVE currentFrame{snapshot.callDepth, snapshot.functionName, snapshot.line, nodeId,
+void BlueprintDebugSession::RefreshCallStackFromSnapshot(const ScriptDebugSnapshot& snapshot) {
+    const std::uint32_t nodeId = NodeForLine(snapshot.line);
+    const BlueprintCallFrame currentFrame{snapshot.callDepth, snapshot.functionName, snapshot.line, nodeId,
                                              snapshot.instructionIndex};
     if (snapshot.callDepth == 0U) {
         m_callStack.clear();
@@ -292,20 +292,20 @@ void BlueprintDebugSessionUVE::RefreshCallStackFromSnapshotUVE(const ScriptDebug
     }
 }
 
-std::optional<BlueprintLiveValuesSnapshotUVE> BlueprintDebugSessionUVE::CaptureLiveValuesUVE() {
+std::optional<BlueprintLiveValuesSnapshot> BlueprintDebugSession::CaptureLiveValues() {
     if (m_instance == nullptr) {
         return std::nullopt;
     }
-    const std::optional<ScriptDebugSnapshotUVE> raw = m_instance->GetDebugSnapshotUVE();
+    const std::optional<ScriptDebugSnapshot> raw = m_instance->GetDebugSnapshot();
     if (!raw.has_value()) {
         return std::nullopt;
     }
 
-    const std::uint32_t nodeId = NodeForLineUVE(raw->line);
-    m_breakpoints.RecordHitAtLineUVE(raw->line);
-    RefreshCallStackFromSnapshotUVE(*raw);
+    const std::uint32_t nodeId = NodeForLine(raw->line);
+    m_breakpoints.RecordHitAtLine(raw->line);
+    RefreshCallStackFromSnapshot(*raw);
 
-    BlueprintLiveValuesSnapshotUVE out;
+    BlueprintLiveValuesSnapshot out;
     out.sourceLine = raw->line;
     out.nodeId = nodeId;
     out.functionName = raw->functionName;
@@ -315,75 +315,75 @@ std::optional<BlueprintLiveValuesSnapshotUVE> BlueprintDebugSessionUVE::CaptureL
     out.locals.reserve(raw->locals.size());
     for (std::size_t i = 0U; i < raw->locals.size(); ++i) {
         out.locals.push_back(
-            BlueprintLiveValueEntryUVE{"local[" + std::to_string(i) + "]", FormatValueUVE(raw->locals[i]), false});
+            BlueprintLiveValueEntry{"local[" + std::to_string(i) + "]", FormatValue(raw->locals[i]), false});
     }
 
     out.fields.reserve(raw->fields.size());
     for (const auto& field : raw->fields) {
-        out.fields.push_back(BlueprintLiveValueEntryUVE{field.first, FormatValueUVE(field.second), true});
+        out.fields.push_back(BlueprintLiveValueEntry{field.first, FormatValue(field.second), true});
     }
 
     out.watches.reserve(m_watchExpressions.size());
     for (const std::string& expr : m_watchExpressions) {
-        out.watches.push_back(EvaluateWatchUVE(expr, *raw));
+        out.watches.push_back(EvaluateWatch(expr, *raw));
     }
 
     return out;
 }
 
-std::vector<BlueprintCallFrameUVE> BlueprintDebugSessionUVE::GetCallStackUVE() const { return m_callStack; }
+std::vector<BlueprintCallFrame> BlueprintDebugSession::GetCallStack() const { return m_callStack; }
 
-void BlueprintDebugSessionUVE::RecordResumeResultUVE(const BlueprintTraceEventKindUVE actionKind,
-                                                     const ScriptDebugResumeResultUVE& result) {
+void BlueprintDebugSession::RecordResumeResult(const BlueprintTraceEventKind actionKind,
+                                                     const ScriptDebugResumeResult& result) {
     if (m_instance == nullptr) {
         return;
     }
-    if (result.state == ScriptDebugStateUVE::Paused) {
-        if (const auto snap = m_instance->GetDebugSnapshotUVE(); snap.has_value()) {
-            const std::uint32_t nodeId = NodeForLineUVE(snap->line);
-            RefreshCallStackFromSnapshotUVE(*snap);
-            m_trace.RecordUVE(actionKind, snap->line, nodeId, snap->functionName, "paused");
+    if (result.state == ScriptDebugState::Paused) {
+        if (const auto snap = m_instance->GetDebugSnapshot(); snap.has_value()) {
+            const std::uint32_t nodeId = NodeForLine(snap->line);
+            RefreshCallStackFromSnapshot(*snap);
+            m_trace.Record(actionKind, snap->line, nodeId, snap->functionName, "paused");
         }
-    } else if (result.state == ScriptDebugStateUVE::Completed) {
-        m_trace.RecordUVE(BlueprintTraceEventKindUVE::Completed, 0U, 0U,
+    } else if (result.state == ScriptDebugState::Completed) {
+        m_trace.Record(BlueprintTraceEventKind::Completed, 0U, 0U,
                           m_callStack.empty() ? std::string{} : m_callStack.front().functionName,
-                          result.value.has_value() ? FormatValueUVE(*result.value) : std::string{});
+                          result.value.has_value() ? FormatValue(*result.value) : std::string{});
         m_callStack.clear();
-    } else if (result.state == ScriptDebugStateUVE::Waiting) {
-        m_trace.RecordUVE(BlueprintTraceEventKindUVE::Waiting, 0U, 0U,
+    } else if (result.state == ScriptDebugState::Waiting) {
+        m_trace.Record(BlueprintTraceEventKind::Waiting, 0U, 0U,
                           m_callStack.empty() ? std::string{} : m_callStack.back().functionName, "yield");
-    } else if (result.state == ScriptDebugStateUVE::Failed) {
-        const std::string err = m_instance->GetLastErrorUVE();
-        m_diagnostics.push_back(BlueprintDebugDiagnosticUVE{0U, 0U, err});
-        m_trace.RecordUVE(BlueprintTraceEventKindUVE::Failed, 0U, 0U, {}, err);
+    } else if (result.state == ScriptDebugState::Failed) {
+        const std::string err = m_instance->GetLastError();
+        m_diagnostics.push_back(BlueprintDebugDiagnostic{0U, 0U, err});
+        m_trace.Record(BlueprintTraceEventKind::Failed, 0U, 0U, {}, err);
         m_callStack.clear();
     }
 }
 
-ScriptDebugResumeResultUVE BlueprintDebugSessionUVE::ContinueUVE() {
+ScriptDebugResumeResult BlueprintDebugSession::Continue() {
     if (m_instance == nullptr) {
         return {};
     }
-    const ScriptDebugResumeResultUVE result = m_instance->ContinueDebugUVE();
-    RecordResumeResultUVE(BlueprintTraceEventKindUVE::Continued, result);
+    const ScriptDebugResumeResult result = m_instance->ContinueDebug();
+    RecordResumeResult(BlueprintTraceEventKind::Continued, result);
     return result;
 }
 
-ScriptDebugResumeResultUVE BlueprintDebugSessionUVE::StepIntoUVE() {
+ScriptDebugResumeResult BlueprintDebugSession::StepInto() {
     if (m_instance == nullptr) {
         return {};
     }
-    const ScriptDebugResumeResultUVE result = m_instance->StepIntoDebugUVE();
-    RecordResumeResultUVE(BlueprintTraceEventKindUVE::StepInto, result);
+    const ScriptDebugResumeResult result = m_instance->StepIntoDebug();
+    RecordResumeResult(BlueprintTraceEventKind::StepInto, result);
     return result;
 }
 
-ScriptDebugResumeResultUVE BlueprintDebugSessionUVE::StepOverUVE() {
+ScriptDebugResumeResult BlueprintDebugSession::StepOver() {
     if (m_instance == nullptr) {
         return {};
     }
-    const ScriptDebugResumeResultUVE result = m_instance->StepOverDebugUVE();
-    RecordResumeResultUVE(BlueprintTraceEventKindUVE::StepOver, result);
+    const ScriptDebugResumeResult result = m_instance->StepOverDebug();
+    RecordResumeResult(BlueprintTraceEventKind::StepOver, result);
     return result;
 }
 

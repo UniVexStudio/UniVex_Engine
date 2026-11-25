@@ -25,8 +25,8 @@ class TreeView;
 
 namespace UVE::Editor {
 
-class EditorUVE;
-class EditorHostUVE;
+class Editor;
+class EditorHost;
 
 /// A settings window drawn with PRISM in a window of its own: the Editor Preferences, or the
 /// project's Project Settings. Every visible setting of a registry, drawn from its descriptor, so a
@@ -40,13 +40,13 @@ class EditorHostUVE;
 ///   [ note                                          [Save]  [Close]  ]
 ///
 /// Changes apply as they are made (`set`); `save` (Project Settings) writes the file.
-class EditorSettingsWindowUVE final {
+class EditorSettingsWindow final {
 public:
-    struct SourceUVE final {
+    struct Source final {
         std::string title;
-        const Config::SettingsRegistryUVE* registry = nullptr;
-        std::function<std::optional<Config::SettingValueUVE>(std::string_view id)> get;
-        std::function<bool(std::string_view id, const Config::SettingValueUVE& value)> set;
+        const Config::SettingsRegistry* registry = nullptr;
+        std::function<std::optional<Config::SettingValue>(std::string_view id)> get;
+        std::function<bool(std::string_view id, const Config::SettingValue& value)> set;
         /// Under the rows: where the changes go.
         std::function<std::string()> note;
         /// A Save button when set (and enabled while `dirty`).
@@ -55,37 +55,37 @@ public:
     };
 
     /// `visible` is the editor's flag for this window (opened by its command, cleared on close).
-    EditorSettingsWindowUVE(EditorUVE& editor, EditorHostUVE& host, bool& visible, std::function<SourceUVE()> source,
+    EditorSettingsWindow(Editor& editor, EditorHost& host, bool& visible, std::function<Source()> source,
                             bool* focusPending = nullptr);
-    ~EditorSettingsWindowUVE();
-    EditorSettingsWindowUVE(const EditorSettingsWindowUVE&) = delete;
-    EditorSettingsWindowUVE& operator=(const EditorSettingsWindowUVE&) = delete;
+    ~EditorSettingsWindow();
+    EditorSettingsWindow(const EditorSettingsWindow&) = delete;
+    EditorSettingsWindow& operator=(const EditorSettingsWindow&) = delete;
 
     /// Opens, draws and closes the window with the editor's flag. Main context current, between frames.
-    void FrameUVE();
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
+    void Frame();
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
-    void RebuildTreeUVE();
-    void RebuildRowsUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> EditorForUVE(const Config::SettingDescriptorUVE& descriptor,
-                                                         const Config::SettingValueUVE& value);
-    void SetUVE(const std::string& id, const Config::SettingValueUVE& value);
-    void CloseUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
+    void RebuildTree();
+    void RebuildRows();
+    [[nodiscard]] prism::Ref<prism::Widget> EditorFor(const Config::SettingDescriptor& descriptor,
+                                                         const Config::SettingValue& value);
+    void Set(const std::string& id, const Config::SettingValue& value);
+    void Close();
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
+    Editor& m_editor;
+    EditorHost& m_host;
     bool& m_visible;
     bool* m_focusPending = nullptr;
-    std::function<SourceUVE()> m_sourceOf;
-    SourceUVE m_source;
+    std::function<Source()> m_sourceOf;
+    Source m_source;
     int m_window = 0;
     bool m_closePending = false;
     bool m_rowsDirty = false;
     std::string m_category;
     std::vector<std::string> m_categoryPaths;   ///< tree node id - 1 -> category path
-    std::unordered_map<std::string, Config::SettingValueUVE> m_restartBaseline;
+    std::unordered_map<std::string, Config::SettingValue> m_restartBaseline;
     std::shared_ptr<prism::TextInput> m_search;
     std::shared_ptr<prism::CheckBox> m_modifiedOnly;
     std::shared_ptr<prism::CheckBox> m_advanced;

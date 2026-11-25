@@ -20,31 +20,31 @@ namespace UVE::Physics {
 /// Server fixed-tick numbering, app-provided (the same ticks the server simulates on). The
 /// client names its view with the newest server tick it has - its prediction layer's last
 /// acked tick - and the server rewinds to it. u64 like prediction ticks: never wraps.
-using LagTickUVE = std::uint64_t;
+using LagTick = std::uint64_t;
 
 /// Snapshots kept: about a second at 60 Hz, the standard lag-compensation window. Older
 /// targets clamp to the oldest survivor and say so.
-inline constexpr std::size_t kLagHistoryMaximumTicksUVE = 64U;
+inline constexpr std::size_t kLagHistoryMaximumTicks = 64U;
 
 /// One entity's rewindable pose: position, orientation, and world scale. Rewound
 /// half-extents are the authored size times the absolute rewound scale, so a mid-window
 /// rescale resolves against the size the shooter saw; zero or non-finite products are
 /// unhittable (fail closed). The live scan ignores world scale, so lag resolves agree with
 /// it wherever scale is 1 - and with the render everywhere.
-struct LagPoseUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+struct LagPose final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
 };
 
 /// What a rewound overlap resolve found: pairs in the live report's own shape, so the engine
 /// merges them into the live report BEFORE the lifecycle tracker diffs it. Merging (never a
 /// second tracker update) is what keeps compensated hits from exiting every live strike -
 /// and what makes a replayed shot idempotent, since the pair is already in the baseline.
-struct LagShotReportUVE final {
-    std::vector<Hitbox3DStrikePairUVE> pairs;
+struct LagShotReport final {
+    std::vector<Hitbox3DStrikePair> pairs;
     /// The snapshot tick actually resolved against (the target, unless clamped).
-    LagTickUVE resolvedTick = 0U;
+    LagTick resolvedTick = 0U;
     /// The target predated the oldest snapshot (or postdated the newest): resolved against
     /// the nearest survivor instead.
     bool clamped = false;
@@ -55,28 +55,28 @@ struct LagShotReportUVE final {
     /// Snapshot entities carrying a currently-vulnerable hurtbox: the candidate set.
     std::size_t candidatesConsidered = 0U;
 
-    [[nodiscard]] bool operator==(const LagShotReportUVE&) const = default;
+    [[nodiscard]] bool operator==(const LagShotReport&) const = default;
 };
 
 /// What a rewound ray resolve found: the nearest vulnerable hurtbox along the ray, if any.
 /// A ray hit is not a hitbox strike (no hitbox is involved): gameplay applies damage itself
-/// (ApplyHitboxStrikeToHealthUVE takes an entity plus an amount) and owns the consequences,
+/// (ApplyHitboxStrikeToHealth takes an entity plus an amount) and owns the consequences,
 /// exactly like the live strike path leaves meaning to gameplay.
-struct LagRayReportUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct LagRayReport final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     /// Metres along the (normalized) ray. Zero on a miss.
     float distance = 0.0F;
     /// The hit point in world space. Zero on a miss.
-    Math::Vector3UVE point{};
-    LagTickUVE resolvedTick = 0U;
+    Math::Vector3 point{};
+    LagTick resolvedTick = 0U;
     bool clamped = false;
-    /// Poses were blended between the resolved tick and the next - see LagShotReportUVE.
+    /// Poses were blended between the resolved tick and the next - see LagShotReport.
     bool interpolated = false;
 
-    [[nodiscard]] bool operator==(const LagRayReportUVE&) const = default;
+    [[nodiscard]] bool operator==(const LagRayReport&) const = default;
 };
 
-struct LagCompensatorStatsUVE final {
+struct LagCompensatorStats final {
     std::uint64_t snapshotsRecorded = 0U;
     std::uint64_t snapshotsEvicted = 0U;
     /// Records refused for a non-increasing tick (history only moves forward).
@@ -89,7 +89,7 @@ struct LagCompensatorStatsUVE final {
     /// Overlap pairs found across all shot resolves.
     std::uint64_t pairsFound = 0U;
 
-    [[nodiscard]] bool operator==(const LagCompensatorStatsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const LagCompensatorStats&) const noexcept = default;
 };
 
 /// Server-side rewind for hit registration. Records per-tick poses of every combatant (any
@@ -114,84 +114,84 @@ struct LagCompensatorStatsUVE final {
 /// clamped floors all fall back to the floor snapshot and say so (`interpolated` stays
 /// false). The client's fire offset within its view tick rides the shot protocol;
 /// callers feed hand-known fractions until it lands.
-class HitboxLagCompensatorUVE final {
+class HitboxLagCompensator final {
 public:
-    HitboxLagCompensatorUVE() = default;
+    HitboxLagCompensator() = default;
 
     /// Snapshots every combatant's current pose under `tick`. Ticks must increase: a repeat
     /// or rewind is refused (false) and counted, recording nothing.
-    [[nodiscard]] bool RecordUVE(LagTickUVE tick, Scene::IEntityManagerUVE& entityManager);
+    [[nodiscard]] bool Record(LagTick tick, Scene::IEntityManager& entityManager);
 
     /// The shooter's hitbox (current state, rewound pose) against every vulnerable hurtbox
     /// (current state, rewound pose) at `targetTick`. Empty pairs when the shooter has no
     /// armed hitbox, when it was never recorded, or when nothing overlapped - fail closed,
     /// like the live scan.
-    [[nodiscard]] LagShotReportUVE ResolveShotUVE(Scene::EntityUVE shooter, LagTickUVE targetTick,
-                                                 Scene::IEntityManagerUVE& entityManager);
+    [[nodiscard]] LagShotReport ResolveShot(Scene::Entity shooter, LagTick targetTick,
+                                                 Scene::IEntityManager& entityManager);
 
     /// `ray` (its direction is normalized) against the same rewound candidate set, nearest
     /// hit wins. The shooter's hitbox lends its combat identity (layers, mask, channel) for
     /// the same symmetric acceptance the live scan runs; without one the ray resolves empty.
     /// A zero or non-finite direction, or a non-positive range, resolves empty.
-    [[nodiscard]] LagRayReportUVE ResolveRayUVE(Scene::EntityUVE shooter, const Math::RayUVE& ray,
-                                               float maxDistance, LagTickUVE targetTick,
-                                               Scene::IEntityManagerUVE& entityManager);
+    [[nodiscard]] LagRayReport ResolveRay(Scene::Entity shooter, const Math::Ray& ray,
+                                               float maxDistance, LagTick targetTick,
+                                               Scene::IEntityManager& entityManager);
 
     /// Fractional-tick shot resolve: poses at `tick` blended toward `tick + 1` by
     /// `tickFraction` (positions lerp, rotations slerp). The fraction must be finite and in
     /// [0, 1) - anything else resolves empty, fail closed. Blending needs the floor tick
     /// itself on record plus the very next tick; gaps, the newest tick, clamped floors, and
-    /// fraction 0 all resolve the floor snapshot exactly like ResolveShotUVE, with
+    /// fraction 0 all resolve the floor snapshot exactly like ResolveShot, with
     /// `interpolated` false. `resolvedTick` names the floor; only `interpolated` says the
     /// ceiling joined in.
-    [[nodiscard]] LagShotReportUVE ResolveShotAtUVE(Scene::EntityUVE shooter, LagTickUVE tick,
+    [[nodiscard]] LagShotReport ResolveShotAt(Scene::Entity shooter, LagTick tick,
                                                    float tickFraction,
-                                                   Scene::IEntityManagerUVE& entityManager);
+                                                   Scene::IEntityManager& entityManager);
 
-    /// Fractional-tick ray resolve: the same bracket rules as ResolveShotAtUVE, the same
-    /// nearest-hit answer as ResolveRayUVE. Range and direction validation runs before the
+    /// Fractional-tick ray resolve: the same bracket rules as ResolveShotAt, the same
+    /// nearest-hit answer as ResolveRay. Range and direction validation runs before the
     /// fraction is even looked at - a degenerate ray is empty whatever time it names.
-    [[nodiscard]] LagRayReportUVE ResolveRayAtUVE(Scene::EntityUVE shooter, const Math::RayUVE& ray,
-                                                 float maxDistance, LagTickUVE tick,
+    [[nodiscard]] LagRayReport ResolveRayAt(Scene::Entity shooter, const Math::Ray& ray,
+                                                 float maxDistance, LagTick tick,
                                                  float tickFraction,
-                                                 Scene::IEntityManagerUVE& entityManager);
+                                                 Scene::IEntityManager& entityManager);
 
-    [[nodiscard]] LagCompensatorStatsUVE StatsUVE() const noexcept { return m_stats; }
-    [[nodiscard]] std::size_t HistorySizeUVE() const noexcept { return m_history.size(); }
+    [[nodiscard]] LagCompensatorStats Stats() const noexcept { return m_stats; }
+    [[nodiscard]] std::size_t HistorySize() const noexcept { return m_history.size(); }
 
 private:
     /// One tick's poses in record order (the entity manager's iteration order, deterministic
     /// per frame like the live scan's candidate order).
-    using SnapshotUVE = std::vector<std::pair<Scene::EntityUVE, LagPoseUVE>>;
+    using Snapshot = std::vector<std::pair<Scene::Entity, LagPose>>;
 
-    [[nodiscard]] const SnapshotUVE* FindSnapshotUVE(LagTickUVE targetTick, LagTickUVE& resolvedTick,
+    [[nodiscard]] const Snapshot* FindSnapshot(LagTick targetTick, LagTick& resolvedTick,
                                                      bool& clamped) const;
 
     /// The bracket behind a fractional resolve: the floor snapshot plus, when the floor is
     /// the tick itself and the very next tick is on record, the blended poses in `scratch`.
     /// Anything else (empty history, fraction 0, clamped floor, missing ceiling) answers
     /// the floor with `interpolated` false.
-    [[nodiscard]] const SnapshotUVE* ResolveBracketUVE(LagTickUVE tick, float fraction,
-                                                       LagTickUVE& resolvedTick, bool& clamped,
+    [[nodiscard]] const Snapshot* ResolveBracket(LagTick tick, float fraction,
+                                                       LagTick& resolvedTick, bool& clamped,
                                                        bool& interpolated,
-                                                       SnapshotUVE& scratch) const;
+                                                       Snapshot& scratch) const;
 
     /// The narrow-phase loops behind both resolve spellings: the guards, the acceptance
     /// gates, and the pairing, against an already-chosen snapshot. A resolve against an
     /// unmoved world answers exactly what the live sync answered, blended or not.
-    [[nodiscard]] LagShotReportUVE ResolveShotFromUVE(Scene::EntityUVE shooter,
-                                                     const SnapshotUVE* snapshot,
-                                                     LagTickUVE resolvedTick, bool clamped,
-                                                     Scene::IEntityManagerUVE& entityManager);
-    [[nodiscard]] LagRayReportUVE ResolveRayFromUVE(Scene::EntityUVE shooter, const Math::RayUVE& ray,
-                                                   float maxDistance, const SnapshotUVE* snapshot,
-                                                   LagTickUVE resolvedTick, bool clamped,
-                                                   Scene::IEntityManagerUVE& entityManager);
+    [[nodiscard]] LagShotReport ResolveShotFrom(Scene::Entity shooter,
+                                                     const Snapshot* snapshot,
+                                                     LagTick resolvedTick, bool clamped,
+                                                     Scene::IEntityManager& entityManager);
+    [[nodiscard]] LagRayReport ResolveRayFrom(Scene::Entity shooter, const Math::Ray& ray,
+                                                   float maxDistance, const Snapshot* snapshot,
+                                                   LagTick resolvedTick, bool clamped,
+                                                   Scene::IEntityManager& entityManager);
 
-    std::map<LagTickUVE, SnapshotUVE> m_history;
-    LagTickUVE m_lastRecorded = 0U;
+    std::map<LagTick, Snapshot> m_history;
+    LagTick m_lastRecorded = 0U;
     bool m_hasHistory = false;
-    LagCompensatorStatsUVE m_stats;
+    LagCompensatorStats m_stats;
 };
 
 } // namespace UVE::Physics

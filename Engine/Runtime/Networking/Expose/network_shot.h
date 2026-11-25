@@ -5,7 +5,7 @@
 // Scope: the client-to-server shot protocol - the fire-fraction transport the lag
 // compensator's fractional resolves were waiting for. The client fires its view tick plus
 // its fire offset within that tick; the server polls intents off its session and resolves
-// each through ResolveLagShotAtUVE/ResolveRayAtUVE. Fire-and-forget over a multiplexed
+// each through ResolveLagShotAt/ResolveRayAt. Fire-and-forget over a multiplexed
 // channel (or a dedicated legacy session): no acks, no retries - a lost shot is a miss,
 // like a lost input is a misprediction.
 //
@@ -28,75 +28,75 @@
 namespace UVE::Network {
 
 /// Frame tag heading every shot intent (prediction's 0x01/0x02 convention, same idea).
-inline constexpr std::uint8_t kShotIntentVersionUVE = 0x01U;
+inline constexpr std::uint8_t kShotIntentVersion = 0x01U;
 /// Tag + pawn + seq + view tick + fraction: the only accepted frame size, both ways.
-inline constexpr std::size_t kShotIntentBytesUVE = 18U;
+inline constexpr std::size_t kShotIntentBytes = 18U;
 
-struct ShotIntentUVE final {
-    PredictionPawnUVE pawn = kDefaultPredictionPawnUVE;
+struct ShotIntent final {
+    PredictionPawn pawn = kDefaultPredictionPawn;
     std::uint32_t seq = 0U;
-    PredictionTickUVE viewTick = kInvalidPredictionTickUVE;
+    PredictionTick viewTick = kInvalidPredictionTick;
     float fraction = 0.0F;
 
-    [[nodiscard]] bool operator==(const ShotIntentUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ShotIntent&) const noexcept = default;
 };
 
 /// Encodes one intent to its 18 wire bytes. No validation - the sender validates before
 /// calling, and hand-encoded frames are the decoder test's business.
-[[nodiscard]] std::vector<std::uint8_t> EncodeShotIntentUVE(const ShotIntentUVE& intent);
+[[nodiscard]] std::vector<std::uint8_t> EncodeShotIntent(const ShotIntent& intent);
 
 /// Strict decode: empty unless the size, version, and fraction ([0, 1), finite) all check
 /// out. A zero view tick decodes fine - the shot wiring owns that guard, not the codec.
-[[nodiscard]] std::optional<ShotIntentUVE> DecodeShotIntentUVE(
+[[nodiscard]] std::optional<ShotIntent> DecodeShotIntent(
     const std::vector<std::uint8_t>& bytes);
 
-/// Fires intents through a shared session: `channel` rides SendChannelDataUVE, empty rides
-/// legacy SendDataUVE (a session dedicated to shots). Owns nothing; the session must
+/// Fires intents through a shared session: `channel` rides SendChannelData, empty rides
+/// legacy SendData (a session dedicated to shots). Owns nothing; the session must
 /// outlive the sender.
-class ShotSenderUVE final {
+class ShotSender final {
 public:
-    explicit ShotSenderUVE(NetworkSessionUVE& session,
-                           std::optional<NetworkChannelIdUVE> channel = std::nullopt) noexcept;
+    explicit ShotSender(NetworkSession& session,
+                           std::optional<NetworkChannelId> channel = std::nullopt) noexcept;
 
     /// Fires one intent, sequencing it past the last. Refuses (false, nothing sent, no seq
     /// burned) when the fraction is non-finite or outside [0, 1); a session refusal burns
     /// the seq - the shot never flew, so no gap can confuse the receiver.
-    [[nodiscard]] bool FireUVE(PredictionPawnUVE pawn, PredictionTickUVE viewTick,
+    [[nodiscard]] bool Fire(PredictionPawn pawn, PredictionTick viewTick,
                                float fraction);
 
 private:
-    NetworkSessionUVE* m_session;
-    std::optional<NetworkChannelIdUVE> m_channel;
+    NetworkSession* m_session;
+    std::optional<NetworkChannelId> m_channel;
     std::uint32_t m_nextSeq = 1U;
 };
 
-struct ShotReceiverStatsUVE final {
+struct ShotReceiverStats final {
     std::uint64_t received = 0U;
     /// Malformed frames plus stale replays (seq at or below the shooter's last seen).
     std::uint64_t dropped = 0U;
 
-    [[nodiscard]] bool operator==(const ShotReceiverStatsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ShotReceiverStats&) const noexcept = default;
 };
 
 /// Polls intents off a shared session (`channel` mirrors the sender: set reads the
 /// channel queue, empty the legacy one). Dedupes per shooter, drops malformed frames, and
 /// counts both - every polled intent is well-formed and new.
-class ShotReceiverUVE final {
+class ShotReceiver final {
 public:
-    explicit ShotReceiverUVE(NetworkSessionUVE& session,
-                             std::optional<NetworkChannelIdUVE> channel = std::nullopt);
+    explicit ShotReceiver(NetworkSession& session,
+                             std::optional<NetworkChannelId> channel = std::nullopt);
 
     /// Drains the queue, oldest first. Never blocks, never pumps the session - the app's
     /// own Update rhythm decides when polled intents arrive.
-    [[nodiscard]] std::vector<ShotIntentUVE> PollUVE();
+    [[nodiscard]] std::vector<ShotIntent> Poll();
 
-    [[nodiscard]] ShotReceiverStatsUVE StatsUVE() const noexcept { return m_stats; }
+    [[nodiscard]] ShotReceiverStats Stats() const noexcept { return m_stats; }
 
 private:
-    NetworkSessionUVE* m_session;
-    std::optional<NetworkChannelIdUVE> m_channel;
-    std::map<PredictionPawnUVE, std::uint32_t> m_lastSeen;
-    ShotReceiverStatsUVE m_stats;
+    NetworkSession* m_session;
+    std::optional<NetworkChannelId> m_channel;
+    std::map<PredictionPawn, std::uint32_t> m_lastSeen;
+    ShotReceiverStats m_stats;
 };
 
 } // namespace UVE::Network

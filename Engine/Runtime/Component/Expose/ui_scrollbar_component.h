@@ -10,10 +10,10 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUIScrollbarSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUIScrollbarSizePixelsUVE = 8192.0F;
+inline constexpr float kMinimumUIScrollbarSizePixels = 1.0F;
+inline constexpr float kMaximumUIScrollbarSizePixels = 8192.0F;
 
-inline constexpr float kDefaultUIScrollbarMinThumbHeightUVE = 16.0F;
+inline constexpr float kDefaultUIScrollbarMinThumbHeight = 16.0F;
 
 /// A vertical scrollbar bound to the scroll container on the SAME entity: `rect` is the track
 /// (authored absolute, usually a strip on the box's right edge), the thumb's height is the
@@ -33,11 +33,11 @@ inline constexpr float kDefaultUIScrollbarMinThumbHeightUVE = 16.0F;
 /// invalid, the scrollbar is skipped entirely - no quads, state reset. Draws two solid quads
 /// (track, thumb) on layer 2, above scroll content.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UIScrollbarComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{12.0F, 200.0F}};
-    Math::Vector3UVE trackColor{0.10F, 0.10F, 0.12F};
-    Math::Vector3UVE thumbColor{0.45F, 0.45F, 0.50F};
-    float minThumbHeight = kDefaultUIScrollbarMinThumbHeightUVE;
+struct UIScrollbarComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{12.0F, 200.0F}};
+    Math::Vector3 trackColor{0.10F, 0.10F, 0.12F};
+    Math::Vector3 thumbColor{0.45F, 0.45F, 0.50F};
+    float minThumbHeight = kDefaultUIScrollbarMinThumbHeight;
     /// Runtime state, never persisted: true while the mouse cursor is over this scrollbar's track rect.
     bool isHovered = false;
     /// Runtime state, never persisted: true from the press that grabbed the thumb until release.
@@ -47,24 +47,24 @@ struct UIScrollbarComponentUVE final {
     bool wasChangedThisFrame = false;
 };
 
-[[nodiscard]] bool IsUIScrollbarComponentValidUVE(const UIScrollbarComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUIScrollbarComponentValid(const UIScrollbarComponent& component) noexcept;
 
 /// Computes the vertical thumb height inside `component.rect.size.y` for `viewportHeight / contentHeight`.
-[[nodiscard]] float ResolveUIScrollbarThumbHeightUVE(const UIScrollbarComponentUVE& component,
+[[nodiscard]] float ResolveUIScrollbarThumbHeight(const UIScrollbarComponent& component,
                                                      float viewportHeight,
                                                      float contentHeight) noexcept;
 
 /// Computes the vertical thumb rectangle for `scrollOffsetY` given `viewportHeight` and `contentHeight`.
-[[nodiscard]] Math::RectUVE ResolveUIScrollbarThumbRectUVE(
-    const UIScrollbarComponentUVE& component, float scrollOffsetY, float viewportHeight,
+[[nodiscard]] Math::Rect ResolveUIScrollbarThumbRect(
+    const UIScrollbarComponent& component, float scrollOffsetY, float viewportHeight,
     float contentHeight) noexcept;
 
 /// Maps a vertical pointer Y coordinate inside `component.rect` to a scroll offset in `[0, maxScrollY]`.
-[[nodiscard]] float ResolveUIScrollbarOffsetFromPointerYUVE(
-    const UIScrollbarComponentUVE& component, float pointerYPixels, float viewportHeight,
+[[nodiscard]] float ResolveUIScrollbarOffsetFromPointerY(
+    const UIScrollbarComponent& component, float pointerYPixels, float viewportHeight,
     float contentHeight) noexcept;
 
 /// Resets runtime flags (`isHovered = false`, `isDragging = false`, `wasChangedThisFrame = false`).
-void ResetUIScrollbarRuntimeStateUVE(UIScrollbarComponentUVE& component) noexcept;
+void ResetUIScrollbarRuntimeState(UIScrollbarComponent& component) noexcept;
 
 } // namespace UVE::Scene

@@ -15,11 +15,11 @@ namespace UVE::Threading {
 
 namespace {
 
-thread_local const ThreadPoolUVE* t_currentThreadPool = nullptr;
+thread_local const ThreadPool* t_currentThreadPool = nullptr;
 
 } // namespace
 
-ThreadPoolUVE::ThreadPoolUVE(std::size_t workerCount) {
+ThreadPool::ThreadPool(std::size_t workerCount) {
     std::size_t resolvedWorkerCount = workerCount;
     if (resolvedWorkerCount == 0) {
         const unsigned int detected = std::thread::hardware_concurrency();
@@ -29,11 +29,11 @@ ThreadPoolUVE::ThreadPoolUVE(std::size_t workerCount) {
     m_queues.resize(resolvedWorkerCount);
     m_workers.reserve(resolvedWorkerCount);
     for (std::size_t workerIndex = 0; workerIndex < resolvedWorkerCount; ++workerIndex) {
-        m_workers.emplace_back([this, workerIndex] { WorkerLoopUVE(workerIndex); });
+        m_workers.emplace_back([this, workerIndex] { WorkerLoop(workerIndex); });
     }
 }
 
-ThreadPoolUVE::~ThreadPoolUVE() {
+ThreadPool::~ThreadPool() {
     {
         const std::lock_guard<std::mutex> lock(m_mutex);
         m_stopRequested = true;
@@ -44,16 +44,16 @@ ThreadPoolUVE::~ThreadPoolUVE() {
     }
 }
 
-void ThreadPoolUVE::SubmitUVE(JobUVE job) {
-    SubmitInternalUVE(QueuedJobUVE{std::move(job), nullptr});
+void ThreadPool::Submit(Job job) {
+    SubmitInternal(QueuedJob{std::move(job), nullptr});
 }
 
-void ThreadPoolUVE::SubmitUVE(JobUVE job, JobCounterUVE& counter) {
-    counter.IncrementUVE();
-    SubmitInternalUVE(QueuedJobUVE{std::move(job), &counter});
+void ThreadPool::Submit(Job job, JobCounter& counter) {
+    counter.Increment();
+    SubmitInternal(QueuedJob{std::move(job), &counter});
 }
 
-void ThreadPoolUVE::SubmitInternalUVE(QueuedJobUVE job) {
+void ThreadPool::SubmitInternal(QueuedJob job) {
     const std::size_t workerCount = m_workers.size();
     UVE_ASSERT(workerCount > 0);
     const std::size_t targetQueue =
@@ -67,19 +67,19 @@ void ThreadPoolUVE::SubmitInternalUVE(QueuedJobUVE job) {
     m_condVar.notify_one();
 }
 
-void ThreadPoolUVE::WorkerLoopUVE(std::size_t workerIndex) {
+void ThreadPool::WorkerLoop(std::size_t workerIndex) {
     t_currentThreadPool = this;
     // Named from inside (the portable subset — macOS offers no cross-thread naming), so every
     // platform's profiler shows UVEWorkerN instead of an anonymous stack.
-    static_cast<void>(SetCurrentThreadNameUVE("UVEWorker" + std::to_string(workerIndex)));
+    static_cast<void>(SetCurrentThreadName("UVEWorker" + std::to_string(workerIndex)));
 
     while (true) {
-        QueuedJobUVE job;
+        QueuedJob job;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            m_condVar.wait(lock, [this] { return m_stopRequested || HasAnyWorkLockedUVE(); });
+            m_condVar.wait(lock, [this] { return m_stopRequested || HasAnyWorkLocked(); });
 
-            if (!HasAnyWorkLockedUVE()) {
+            if (!HasAnyWorkLocked()) {
                 return; // stop requested and genuinely nothing left anywhere
             }
 
@@ -87,54 +87,54 @@ void ThreadPoolUVE::WorkerLoopUVE(std::size_t workerIndex) {
                 job = std::move(m_queues[workerIndex].back());
                 m_queues[workerIndex].pop_back();
             } else {
-                const std::size_t victimIndex = FindStealVictimLockedUVE(workerIndex);
+                const std::size_t victimIndex = FindStealVictimLocked(workerIndex);
                 job = std::move(m_queues[victimIndex].front());
                 m_queues[victimIndex].pop_front();
                 m_stolenJobCount.fetch_add(1, std::memory_order_relaxed);
             }
         }
-        RunJobUVE(job);
+        RunJob(job);
     }
 }
 
-void ThreadPoolUVE::RunJobUVE(QueuedJobUVE& job) {
+void ThreadPool::RunJob(QueuedJob& job) {
     m_activeWorkerCount.fetch_add(1, std::memory_order_relaxed);
 
-    // A job throwing must never escape RunJobUVE(): letting it unwind through WorkerLoopUVE()
+    // A job throwing must never escape RunJob(): letting it unwind through WorkerLoop()
     // would terminate this worker thread, permanently shrinking the pool. Catch, log, move on.
     try {
         job.function();
     } catch (const std::exception& exception) {
-        UVE_ERROR("ThreadPoolUVE: job threw an exception: {}", exception.what());
+        UVE_ERROR("ThreadPool: job threw an exception: {}", exception.what());
     } catch (...) {
-        UVE_ERROR("ThreadPoolUVE: job threw an unknown, non-std::exception value");
+        UVE_ERROR("ThreadPool: job threw an unknown, non-std::exception value");
     }
 
     // Release everything the job captured BEFORE reporting completion. A job that captured
     // shared ownership - a shared_ptr whose deleter calls back into some system, say - would
-    // otherwise keep that reference alive past the point where WaitUVE() has already returned
+    // otherwise keep that reference alive past the point where Wait() has already returned
     // and the waiter has torn its world down. The last reference would then drop here, on this
     // worker, and the deleter would run against a destroyed object.
     //
-    // That is not hypothetical: ShaderManagerUVE hands out shared_ptr<ShaderSourceUVE> whose
-    // deleter holds IRenderDeviceUVE*, and its destructor drains with WaitUVE(). With the
+    // That is not hypothetical: ShaderManager hands out shared_ptr<ShaderSource> whose
+    // deleter holds IRenderDevice*, and its destructor drains with Wait(). With the
     // release happening after the decrement, roughly one parallel test run in five aborted in
     // __cxa_pure_virtual - a virtual call on a render device that had already been destroyed.
     //
-    // Clearing it here makes WaitUVE() mean what every caller already assumes: once it returns,
+    // Clearing it here makes Wait() mean what every caller already assumes: once it returns,
     // no worker still holds anything belonging to those jobs.
     job.function = nullptr;
 
     m_activeWorkerCount.fetch_sub(1, std::memory_order_relaxed);
 
     if (job.counter != nullptr) {
-        job.counter->DecrementAndNotifyUVE();
+        job.counter->DecrementAndNotify();
     }
     m_pendingJobCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
-bool ThreadPoolUVE::HasAnyWorkLockedUVE() const noexcept {
-    for (const std::deque<QueuedJobUVE>& queue : m_queues) {
+bool ThreadPool::HasAnyWorkLocked() const noexcept {
+    for (const std::deque<QueuedJob>& queue : m_queues) {
         if (!queue.empty()) {
             return true;
         }
@@ -142,7 +142,7 @@ bool ThreadPoolUVE::HasAnyWorkLockedUVE() const noexcept {
     return false;
 }
 
-std::size_t ThreadPoolUVE::FindStealVictimLockedUVE(std::size_t workerIndex) const noexcept {
+std::size_t ThreadPool::FindStealVictimLocked(std::size_t workerIndex) const noexcept {
     const std::size_t queueCount = m_queues.size();
     for (std::size_t offset = 1; offset < queueCount; ++offset) {
         const std::size_t candidateIndex = (workerIndex + offset) % queueCount;
@@ -150,27 +150,27 @@ std::size_t ThreadPoolUVE::FindStealVictimLockedUVE(std::size_t workerIndex) con
             return candidateIndex;
         }
     }
-    UVE_ASSERT(false && "FindStealVictimLockedUVE called with no stealable work available");
+    UVE_ASSERT(false && "FindStealVictimLocked called with no stealable work available");
     return workerIndex;
 }
 
-std::size_t ThreadPoolUVE::GetWorkerCountUVE() const noexcept {
+std::size_t ThreadPool::GetWorkerCount() const noexcept {
     return m_workers.size();
 }
 
-std::size_t ThreadPoolUVE::GetPendingJobCountUVE() const noexcept {
+std::size_t ThreadPool::GetPendingJobCount() const noexcept {
     return m_pendingJobCount.load(std::memory_order_relaxed);
 }
 
-std::size_t ThreadPoolUVE::GetActiveWorkerCountUVE() const noexcept {
+std::size_t ThreadPool::GetActiveWorkerCount() const noexcept {
     return m_activeWorkerCount.load(std::memory_order_relaxed);
 }
 
-std::uint64_t ThreadPoolUVE::GetStolenJobCountUVE() const noexcept {
+std::uint64_t ThreadPool::GetStolenJobCount() const noexcept {
     return m_stolenJobCount.load(std::memory_order_relaxed);
 }
 
-bool ThreadPoolUVE::IsWorkerThreadUVE() const noexcept {
+bool ThreadPool::IsWorkerThread() const noexcept {
     return t_currentThreadPool == this;
 }
 

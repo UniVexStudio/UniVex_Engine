@@ -16,15 +16,15 @@ namespace UVE::Editor {
 /// and fades out smoothly once ready. After startup, background asset work (batch file copies,
 /// model conversions, animation extraction) appears as a non-blocking bottom-right card with a
 /// clickable Cancel button while the rest of the editor stays 100% interactive.
-class EditorLoadingScreenUVE final : public prism::Widget {
+class EditorLoadingScreen final : public prism::Widget {
 public:
     /// Called every frame with the editor's loading state.
-    void SyncUVE(const EditorUVE::EditorLoadingStateUVE& state, const std::string& project);
+    void Sync(const Editor::EditorLoadingState& state, const std::string& project);
     /// Sets the engine version string shown on the startup intro (e.g. "v0.1.1.0").
-    void SetVersionUVE(std::string version) { m_version = std::move(version); }
+    void SetVersion(std::string version) { m_version = std::move(version); }
     /// The level view's own loading, drawn over the view (`view`): the render warming up and the
     /// assets it is still loading, after the editor has appeared.
-    void SyncRenderUVE(bool shown, prism::Rect view, std::string text, std::string detail, float progress);
+    void SyncRender(bool shown, prism::Rect view, std::string text, std::string detail, float progress);
     std::function<void()> onDismiss;
     std::function<void()> onCancel;
 
@@ -38,11 +38,11 @@ public:
     prism::Cursor cursor() const override;
 
 private:
-    void PaintMarkUVE(prism::Canvas& c, prism::Rect mark, float alpha) const;
-    [[nodiscard]] prism::Rect CornerPanelRectUVE(prism::Rect bounds) const;
-    [[nodiscard]] prism::Rect CancelButtonRectUVE(prism::Rect panel) const;
+    void PaintMark(prism::Canvas& c, prism::Rect mark, float alpha) const;
+    [[nodiscard]] prism::Rect CornerPanelRect(prism::Rect bounds) const;
+    [[nodiscard]] prism::Rect CancelButtonRect(prism::Rect panel) const;
 
-    EditorUVE::EditorLoadingStateUVE m_state;
+    Editor::EditorLoadingState m_state;
     std::string m_project;
     std::string m_version;
     bool m_renderShown = false;

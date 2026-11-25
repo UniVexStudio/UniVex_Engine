@@ -7,43 +7,43 @@
 
 namespace UVE::Scene {
 
-bool IsCanvasObjectDefinitionValidUVE(const CanvasObjectDefinitionUVE& value) noexcept {
-    return IsCanvasComponentValidUVE(value.canvas);
+bool IsCanvasObjectDefinitionValid(const CanvasObjectDefinition& value) noexcept {
+    return IsCanvasComponentValid(value.canvas);
 }
 
-void ApplyCanvasObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                    const CanvasObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<CanvasComponentUVE>(entity, value.canvas);
+void ApplyCanvasObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                    const CanvasObjectDefinition& value) {
+    entityManager.AddComponent<CanvasComponent>(entity, value.canvas);
 }
 
-bool CanvasUVE::IsCanvasVisibleUVE(const CanvasComponentUVE& canvas) noexcept {
-    return IsCanvasComponentValidUVE(canvas) && ResolveInheritedCanvasVisibilityUVE(&canvas, true);
+bool Canvas::IsCanvasVisible(const CanvasComponent& canvas) noexcept {
+    return IsCanvasComponentValid(canvas) && ResolveInheritedCanvasVisibility(&canvas, true);
 }
 
-bool CanvasUVE::IsEntityCanvasVisibleUVE(
-    const IEntityManagerUVE& entityManager, const EntityUVE entity) noexcept {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<CanvasComponentUVE>(entity)) {
+bool Canvas::IsEntityCanvasVisible(
+    const IEntityManager& entityManager, const Entity entity) noexcept {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<CanvasComponent>(entity)) {
         return false;
     }
-    const CanvasComponentUVE& canvas = entityManager.GetComponentUVE<CanvasComponentUVE>(entity);
-    if (!IsCanvasVisibleUVE(canvas)) {
+    const CanvasComponent& canvas = entityManager.GetComponent<CanvasComponent>(entity);
+    if (!IsCanvasVisible(canvas)) {
         return false;
     }
-    const VisibilityComponentUVE* const visibility =
-        entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)
-            ? &entityManager.GetComponentUVE<VisibilityComponentUVE>(entity)
+    const VisibilityComponent* const visibility =
+        entityManager.HasComponent<VisibilityComponent>(entity)
+            ? &entityManager.GetComponent<VisibilityComponent>(entity)
             : nullptr;
-    return IsEffectivelyVisibleUVE(visibility);
+    return IsEffectivelyVisible(visibility);
 }
 
-std::int32_t CanvasUVE::EffectiveSortOrderUVE(const CanvasComponentUVE& canvas) noexcept {
-    return IsCanvasComponentValidUVE(canvas) ? ResolveEffectiveCanvasSortOrderUVE(&canvas, 0) : 0;
+std::int32_t Canvas::EffectiveSortOrder(const CanvasComponent& canvas) noexcept {
+    return IsCanvasComponentValid(canvas) ? ResolveEffectiveCanvasSortOrder(&canvas, 0) : 0;
 }
 
-bool CanvasUVE::RendersBeforeUVE(
-    const CanvasComponentUVE& lhs, const CanvasComponentUVE& rhs) noexcept {
-    return EffectiveSortOrderUVE(lhs) < EffectiveSortOrderUVE(rhs);
+bool Canvas::RendersBefore(
+    const CanvasComponent& lhs, const CanvasComponent& rhs) noexcept {
+    return EffectiveSortOrder(lhs) < EffectiveSortOrder(rhs);
 }
 
 } // namespace UVE::Scene

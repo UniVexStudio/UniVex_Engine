@@ -7,25 +7,25 @@ namespace UVE::Render {
 /// this does not allocate a competing swapchain or make default-framebuffer handles ownable.
 /// Device/window must outlive the view. Owner-thread only. Success means a present request was
 /// accepted, not that scan-out completed. Minimized/non-drawable surfaces return NotReady.
-class RenderSurfaceUVE final {
+class RenderSurface final {
   public:
-    explicit RenderSurfaceUVE(IRenderDeviceUVE &device) noexcept : m_device(device) {}
-    [[nodiscard]] RenderOperationResultUVE DescribeUVE(RenderSurfaceInfoUVE &output) const {
-        return m_device.GetSurfaceInfoUVE(output);
+    explicit RenderSurface(IRenderDevice &device) noexcept : m_device(device) {}
+    [[nodiscard]] RenderOperationResult Describe(RenderSurfaceInfo &output) const {
+        return m_device.GetSurfaceInfo(output);
     }
-    [[nodiscard]] RenderOperationResultUVE PresentUVE() {
-        RenderSurfaceInfoUVE info;
-        const auto result = DescribeUVE(info);
-        if (result != RenderOperationResultUVE::Success)
+    [[nodiscard]] RenderOperationResult Present() {
+        RenderSurfaceInfo info;
+        const auto result = Describe(info);
+        if (result != RenderOperationResult::Success)
             return result;
         if (!info.drawable)
-            return RenderOperationResultUVE::NotReady;
-        m_device.PresentUVE();
-        return m_device.IsUsableUVE() ? RenderOperationResultUVE::Success
-                                      : RenderOperationResultUVE::DeviceUnavailable;
+            return RenderOperationResult::NotReady;
+        m_device.Present();
+        return m_device.IsUsable() ? RenderOperationResult::Success
+                                      : RenderOperationResult::DeviceUnavailable;
     }
 
   private:
-    IRenderDeviceUVE &m_device;
+    IRenderDevice &m_device;
 };
 } // namespace UVE::Render

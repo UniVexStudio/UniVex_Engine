@@ -10,13 +10,13 @@
 namespace UVE::Render::Shader {
 
 /// One structured diagnostic recovered from a GL compile/link info log by
-/// Detail::ParseGlInfoLogUVE() (engine/render/shader/src/shader_diagnostics_parser_uve.cpp,
+/// Detail::ParseGlInfoLog() (engine/render/shader/src/shader_diagnostics_parser_uve.cpp,
 /// module-private). `filePath` and `lineNumber` refer to the originally authored source file the
 /// #include-expansion's `#line` directives re-based the driver's own line numbers back to — see
-/// Detail::ExpandIncludesUVE()'s doc comment. A diagnostic line the parser couldn't match against
+/// Detail::ExpandIncludes()'s doc comment. A diagnostic line the parser couldn't match against
 /// any known format still produces one of these (with `lineNumber == 0` and the raw text in
 /// `message`) rather than being dropped.
-struct ShaderCompileErrorUVE {
+struct ShaderCompileError {
     std::string filePath;
     std::uint32_t lineNumber = 0;
     std::uint32_t columnNumber = 0;
@@ -25,10 +25,10 @@ struct ShaderCompileErrorUVE {
     bool isWarning = false;
 };
 
-/// The full result of one ShaderSourceUVE/ShaderProgramUVE compile or link attempt.
-struct ShaderCompileDiagnosticsUVE {
+/// The full result of one ShaderSource/ShaderProgram compile or link attempt.
+struct ShaderCompileDiagnostics {
     bool success = false;
-    std::vector<ShaderCompileErrorUVE> diagnostics;
+    std::vector<ShaderCompileError> diagnostics;
     std::string rawInfoLog;
 };
 

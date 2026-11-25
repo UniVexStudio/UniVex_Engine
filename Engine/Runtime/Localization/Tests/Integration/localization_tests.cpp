@@ -7,150 +7,150 @@
 namespace UVE::Localization::Tests {
 namespace {
 
-[[nodiscard]] StringTableUVE MakeTableUVE(const LocaleUVE& locale,
+[[nodiscard]] StringTable MakeTable(const Locale& locale,
                                           const std::vector<std::pair<std::string, std::string>>& entries) {
-    StringTableUVE table{locale};
+    StringTable table{locale};
     for (const auto& [key, value] : entries) {
-        EXPECT_TRUE(table.SetTranslationUVE(key, value));
+        EXPECT_TRUE(table.SetTranslation(key, value));
     }
     return table;
 }
 
-TEST(LocaleUVETest, TryParseLocaleUVE_AcceptsBothSeparatorsAndNormalizesCase) {
+TEST(LocaleTest, TryParseLocale_AcceptsBothSeparatorsAndNormalizesCase) {
     // "en-US" and "en_US" are the same locale written by two conventions in circulation. Treating
     // them as different would create a table nothing ever falls back to.
-    const std::optional<LocaleUVE> hyphen = TryParseLocaleUVE("EN-us");
-    const std::optional<LocaleUVE> underscore = TryParseLocaleUVE("en_US");
+    const std::optional<Locale> hyphen = TryParseLocale("EN-us");
+    const std::optional<Locale> underscore = TryParseLocale("en_US");
     ASSERT_TRUE(hyphen.has_value());
     ASSERT_TRUE(underscore.has_value());
     EXPECT_EQ(*hyphen, *underscore);
     EXPECT_EQ(hyphen->language, "en");
     EXPECT_EQ(hyphen->region, "US");
-    EXPECT_EQ(hyphen->ToTagUVE(), "en-US");
+    EXPECT_EQ(hyphen->ToTag(), "en-US");
 
-    const std::optional<LocaleUVE> languageOnly = TryParseLocaleUVE("fil");
+    const std::optional<Locale> languageOnly = TryParseLocale("fil");
     ASSERT_TRUE(languageOnly.has_value());
     EXPECT_TRUE(languageOnly->region.empty());
-    EXPECT_EQ(languageOnly->ToTagUVE(), "fil");
+    EXPECT_EQ(languageOnly->ToTag(), "fil");
 
-    const std::optional<LocaleUVE> numericRegion = TryParseLocaleUVE("es-419");
+    const std::optional<Locale> numericRegion = TryParseLocale("es-419");
     ASSERT_TRUE(numericRegion.has_value());
     EXPECT_EQ(numericRegion->language, "es");
     EXPECT_EQ(numericRegion->region, "419");
-    EXPECT_EQ(numericRegion->ToTagUVE(), "es-419");
+    EXPECT_EQ(numericRegion->ToTag(), "es-419");
 
-    const std::optional<LocaleUVE> scriptAndRegion = TryParseLocaleUVE("zh_Hans-cn");
+    const std::optional<Locale> scriptAndRegion = TryParseLocale("zh_Hans-cn");
     ASSERT_TRUE(scriptAndRegion.has_value());
     EXPECT_EQ(scriptAndRegion->language, "zh");
     EXPECT_EQ(scriptAndRegion->region, "HANS-CN");
-    EXPECT_EQ(scriptAndRegion->ToTagUVE(), "zh-HANS-CN");
+    EXPECT_EQ(scriptAndRegion->ToTag(), "zh-HANS-CN");
 }
 
-TEST(LocaleUVETest, TryParseLocaleUVE_RejectsWhatIsNotALocale) {
-    EXPECT_FALSE(TryParseLocaleUVE("").has_value());
-    EXPECT_FALSE(TryParseLocaleUVE("-US").has_value());
-    EXPECT_FALSE(TryParseLocaleUVE("en-").has_value());
-    EXPECT_FALSE(TryParseLocaleUVE("en-U5").has_value());
-    EXPECT_FALSE(TryParseLocaleUVE("123").has_value());
-    EXPECT_FALSE(TryParseLocaleUVE(std::string(64U, 'x')).has_value());
+TEST(LocaleTest, TryParseLocale_RejectsWhatIsNotALocale) {
+    EXPECT_FALSE(TryParseLocale("").has_value());
+    EXPECT_FALSE(TryParseLocale("-US").has_value());
+    EXPECT_FALSE(TryParseLocale("en-").has_value());
+    EXPECT_FALSE(TryParseLocale("en-U5").has_value());
+    EXPECT_FALSE(TryParseLocale("123").has_value());
+    EXPECT_FALSE(TryParseLocale(std::string(64U, 'x')).has_value());
 }
 
-TEST(StringTableUVETest, SetTranslationUVE_ReplacesInPlaceAndRefusesWhatCannotBeLookedUp) {
-    StringTableUVE table{LocaleUVE{"en", ""}};
-    EXPECT_TRUE(table.SetTranslationUVE("menu.play", "Play"));
-    EXPECT_EQ(table.GetTranslationCountUVE(), 1U);
+TEST(StringTableTest, SetTranslation_ReplacesInPlaceAndRefusesWhatCannotBeLookedUp) {
+    StringTable table{Locale{"en", ""}};
+    EXPECT_TRUE(table.SetTranslation("menu.play", "Play"));
+    EXPECT_EQ(table.GetTranslationCount(), 1U);
 
     // Replacing does not grow the table; a key means one translation.
-    EXPECT_TRUE(table.SetTranslationUVE("menu.play", "Start"));
-    EXPECT_EQ(table.GetTranslationCountUVE(), 1U);
-    ASSERT_NE(table.FindTranslationUVE("menu.play"), nullptr);
-    EXPECT_EQ(*table.FindTranslationUVE("menu.play"), "Start");
+    EXPECT_TRUE(table.SetTranslation("menu.play", "Start"));
+    EXPECT_EQ(table.GetTranslationCount(), 1U);
+    ASSERT_NE(table.FindTranslation("menu.play"), nullptr);
+    EXPECT_EQ(*table.FindTranslation("menu.play"), "Start");
 
-    EXPECT_FALSE(table.SetTranslationUVE("", "Nothing"));
-    EXPECT_FALSE(table.SetTranslationUVE(std::string(kMaximumTranslationKeyBytesUVE + 1U, 'k'), "x"));
-    EXPECT_FALSE(table.SetTranslationUVE("key", std::string(kMaximumTranslationValueBytesUVE + 1U, 'v')));
-    EXPECT_EQ(table.GetTranslationCountUVE(), 1U);
+    EXPECT_FALSE(table.SetTranslation("", "Nothing"));
+    EXPECT_FALSE(table.SetTranslation(std::string(kMaximumTranslationKeyBytes + 1U, 'k'), "x"));
+    EXPECT_FALSE(table.SetTranslation("key", std::string(kMaximumTranslationValueBytes + 1U, 'v')));
+    EXPECT_EQ(table.GetTranslationCount(), 1U);
 }
 
-TEST(LocalizationServiceUVETest, TranslateUVE_WalksTheFallbackChainMostSpecificFirst) {
-    LocalizationServiceUVE service;
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", ""},
+TEST(LocalizationServiceTest, Translate_WalksTheFallbackChainMostSpecificFirst) {
+    LocalizationService service;
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", ""},
                                                        {{"menu.play", "Play"}, {"ui.color", "Color"}})));
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", "GB"}, {{"ui.color", "Colour"}})));
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"fil", ""}, {{"menu.play", "Maglaro"}})));
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", "GB"}, {{"ui.color", "Colour"}})));
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"fil", ""}, {{"menu.play", "Maglaro"}})));
 
-    service.SetActiveLocaleUVE(LocaleUVE{"en", "GB"});
+    service.SetActiveLocale(Locale{"en", "GB"});
     // The region table holds only what actually differs from its language, so falling through to
     // the language table is the normal path rather than an error path.
-    EXPECT_EQ(service.TranslateUVE("ui.color"), "Colour");
-    EXPECT_EQ(service.TranslateUVE("menu.play"), "Play");
+    EXPECT_EQ(service.Translate("ui.color"), "Colour");
+    EXPECT_EQ(service.Translate("menu.play"), "Play");
 
-    service.SetActiveLocaleUVE(LocaleUVE{"fil", ""});
-    EXPECT_EQ(service.TranslateUVE("menu.play"), "Maglaro");
+    service.SetActiveLocale(Locale{"fil", ""});
+    EXPECT_EQ(service.Translate("menu.play"), "Maglaro");
     // Nothing in Filipino for this key, so the fallback locale answers rather than the label
     // coming out blank.
-    EXPECT_EQ(service.TranslateUVE("ui.color"), "Color");
+    EXPECT_EQ(service.Translate("ui.color"), "Color");
 }
 
-TEST(LocalizationServiceUVETest, TranslateUVE_ReturnsTheKeyRatherThanAnEmptyLabel) {
-    LocalizationServiceUVE service;
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", ""}, {{"menu.play", "Play"}})));
+TEST(LocalizationServiceTest, Translate_ReturnsTheKeyRatherThanAnEmptyLabel) {
+    LocalizationService service;
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", ""}, {{"menu.play", "Play"}})));
 
     // A blank label reads as a broken build; a visible key reads as a missing translation, which is
     // what it is, and says exactly what needs adding.
-    EXPECT_EQ(service.TranslateUVE("menu.quit"), "menu.quit");
-    EXPECT_FALSE(service.HasTranslationUVE("menu.quit"));
-    EXPECT_TRUE(service.HasTranslationUVE("menu.play"));
+    EXPECT_EQ(service.Translate("menu.quit"), "menu.quit");
+    EXPECT_FALSE(service.HasTranslation("menu.quit"));
+    EXPECT_TRUE(service.HasTranslation("menu.play"));
 }
 
-TEST(LocalizationServiceUVETest, SelectingALocaleWithNoTableIsNotAnError) {
-    LocalizationServiceUVE service;
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", ""}, {{"menu.play", "Play"}})));
+TEST(LocalizationServiceTest, SelectingALocaleWithNoTableIsNotAnError) {
+    LocalizationService service;
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", ""}, {{"menu.play", "Play"}})));
 
     // Exactly the state a build is in while a translation is still being written: the locale is
     // selectable, and everything falls back until entries start arriving.
-    service.SetActiveLocaleUVE(LocaleUVE{"ja", "JP"});
-    EXPECT_EQ(service.TranslateUVE("menu.play"), "Play");
-    EXPECT_EQ(service.GetActiveLocaleUVE().ToTagUVE(), "ja-JP");
+    service.SetActiveLocale(Locale{"ja", "JP"});
+    EXPECT_EQ(service.Translate("menu.play"), "Play");
+    EXPECT_EQ(service.GetActiveLocale().ToTag(), "ja-JP");
 }
 
-TEST(LocalizationServiceUVETest, AddStringTableUVE_ReplacesOneLocalesTableAndRefusesALocalelessOne) {
-    LocalizationServiceUVE service;
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", ""}, {{"menu.play", "Play"}})));
-    EXPECT_TRUE(service.AddStringTableUVE(MakeTableUVE(LocaleUVE{"en", ""}, {{"menu.play", "Start"}})));
-    EXPECT_EQ(service.GetStringTableCountUVE(), 1U);
-    EXPECT_EQ(service.TranslateUVE("menu.play"), "Start");
+TEST(LocalizationServiceTest, AddStringTable_ReplacesOneLocalesTableAndRefusesALocalelessOne) {
+    LocalizationService service;
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", ""}, {{"menu.play", "Play"}})));
+    EXPECT_TRUE(service.AddStringTable(MakeTable(Locale{"en", ""}, {{"menu.play", "Start"}})));
+    EXPECT_EQ(service.GetStringTableCount(), 1U);
+    EXPECT_EQ(service.Translate("menu.play"), "Start");
 
     // A table with no language could never be selected or fallen back to, so installing one would
     // only ever hide a mistake.
-    EXPECT_FALSE(service.AddStringTableUVE(StringTableUVE{LocaleUVE{"", "US"}}));
-    EXPECT_EQ(service.GetStringTableCountUVE(), 1U);
+    EXPECT_FALSE(service.AddStringTable(StringTable{Locale{"", "US"}}));
+    EXPECT_EQ(service.GetStringTableCount(), 1U);
 }
 
-TEST(StringTableJsonUVETest, TryParseStringTableJsonUVE_ReadsAFlatObjectOfStrings) {
-    const std::optional<StringTableUVE> table = TryParseStringTableJsonUVE(
-        LocaleUVE{"fil", ""}, R"({"Play": "Maglaro", "menu.quit": "Umalis", "note": ""})");
+TEST(StringTableJsonTest, TryParseStringTableJson_ReadsAFlatObjectOfStrings) {
+    const std::optional<StringTable> table = TryParseStringTableJson(
+        Locale{"fil", ""}, R"({"Play": "Maglaro", "menu.quit": "Umalis", "note": ""})");
     ASSERT_TRUE(table.has_value());
-    EXPECT_EQ(table->GetLocaleUVE().language, "fil");
-    EXPECT_EQ(table->GetTranslationCountUVE(), 3U);
-    ASSERT_NE(table->FindTranslationUVE("menu.quit"), nullptr);
-    EXPECT_EQ(*table->FindTranslationUVE("menu.quit"), "Umalis");
+    EXPECT_EQ(table->GetLocale().language, "fil");
+    EXPECT_EQ(table->GetTranslationCount(), 3U);
+    ASSERT_NE(table->FindTranslation("menu.quit"), nullptr);
+    EXPECT_EQ(*table->FindTranslation("menu.quit"), "Umalis");
     // An empty value is a legitimate translation (a string deliberately blanked in one language).
-    ASSERT_NE(table->FindTranslationUVE("note"), nullptr);
-    EXPECT_TRUE(table->FindTranslationUVE("note")->empty());
+    ASSERT_NE(table->FindTranslation("note"), nullptr);
+    EXPECT_TRUE(table->FindTranslation("note")->empty());
 }
 
-TEST(StringTableJsonUVETest, TryParseStringTableJsonUVE_RejectsTheWholeFileRatherThanShippingHoles) {
-    const LocaleUVE locale{"fil", ""};
-    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, "{not json").has_value());
-    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"(["Play", "Maglaro"])").has_value());
+TEST(StringTableJsonTest, TryParseStringTableJson_RejectsTheWholeFileRatherThanShippingHoles) {
+    const Locale locale{"fil", ""};
+    EXPECT_FALSE(TryParseStringTableJson(locale, "{not json").has_value());
+    EXPECT_FALSE(TryParseStringTableJson(locale, R"(["Play", "Maglaro"])").has_value());
     // One bad entry sinks the file: a table that dropped it silently would ship with a hole in it
     // and nothing to say where.
-    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"({"Play": "Maglaro", "count": 3})").has_value());
-    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, R"({"": "empty key"})").has_value());
-    const std::string oversizedValue = R"({"key": ")" + std::string(kMaximumTranslationValueBytesUVE + 1U, 'v') +
+    EXPECT_FALSE(TryParseStringTableJson(locale, R"({"Play": "Maglaro", "count": 3})").has_value());
+    EXPECT_FALSE(TryParseStringTableJson(locale, R"({"": "empty key"})").has_value());
+    const std::string oversizedValue = R"({"key": ")" + std::string(kMaximumTranslationValueBytes + 1U, 'v') +
                                        R"("})";
-    EXPECT_FALSE(TryParseStringTableJsonUVE(locale, oversizedValue).has_value());
+    EXPECT_FALSE(TryParseStringTableJson(locale, oversizedValue).has_value());
 }
 
 } // namespace

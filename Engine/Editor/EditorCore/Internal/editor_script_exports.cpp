@@ -29,64 +29,64 @@ namespace UVE::Editor {
 namespace {
 
 /// The Script component's exported-values property; edits go through it to be one undo entry.
-struct ScriptExportsPropertyUVE final {
-    const Core::TypeMetadataEntryUVE* entry = nullptr;
-    const Core::TypeMetadataPropertyUVE* property = nullptr;
+struct ScriptExportsProperty final {
+    const Core::TypeMetadataEntry* entry = nullptr;
+    const Core::TypeMetadataProperty* property = nullptr;
 };
 
-[[nodiscard]] ScriptExportsPropertyUVE FindScriptExportsPropertyUVE() {
-    const Core::TypeMetadataEntryUVE* const entry =
-        Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::ScriptComponentUVE)));
+[[nodiscard]] ScriptExportsProperty FindScriptExportsProperty() {
+    const Core::TypeMetadataEntry* const entry =
+        Scene::FindSceneComponentMetadata(std::type_index(typeid(Scene::ScriptComponent)));
     if (entry == nullptr) {
         return {};
     }
     const auto property = std::find_if(entry->properties.cbegin(), entry->properties.cend(),
-                                       [](const Core::TypeMetadataPropertyUVE& candidate) {
+                                       [](const Core::TypeMetadataProperty& candidate) {
                                            return candidate.name == "exportValues";
                                        });
-    return property == entry->properties.cend() ? ScriptExportsPropertyUVE{}
-                                                : ScriptExportsPropertyUVE{entry, &*property};
+    return property == entry->properties.cend() ? ScriptExportsProperty{}
+                                                : ScriptExportsProperty{entry, &*property};
 }
 
 } // namespace
 
-std::vector<EditorUVE::ScriptExportRowUVE> EditorUVE::GetSelectedScriptExportsUVE() {
-    if (m_services == nullptr || !HasSingleDocumentSelectionUVE()) {
+std::vector<Editor::ScriptExportRow> Editor::GetSelectedScriptExports() {
+    if (m_services == nullptr || !HasSingleDocumentSelection()) {
         return {};
     }
-    const Scene::EntityUVE entity = m_selectedEntity;
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+    const Scene::Entity entity = m_selectedEntity;
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
         return {};
     }
-    const Scene::ScriptComponentUVE& script = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
+    const Scene::ScriptComponent& script = entityManager.GetComponent<Scene::ScriptComponent>(entity);
     if (!script.scriptAssetPath.ends_with(".uvs")) {
         return {};
     }
-    const std::optional<std::string> source = ReadProjectTextFileUVE(script.scriptAssetPath);
+    const std::optional<std::string> source = ReadProjectTextFile(script.scriptAssetPath);
     if (!source.has_value()) {
         return {};
     }
-    Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
-    const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(*source, host);
-    if (!compiled.IsSuccessUVE()) {
+    Core::BlueprintObjectHost host(entityManager, nullptr, entity);
+    const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(*source, host);
+    if (!compiled.IsSuccess()) {
         return {};
     }
     // The defaults are whatever the field initializers produce, so a throwaway instance runs them.
-    const Blueprint::ScriptInstanceUVE defaults(compiled.program, host);
-    std::vector<ScriptExportRowUVE> rows;
-    for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
-        if (field.kind != Blueprint::FieldKindUVE::Export) {
+    const Blueprint::ScriptInstance defaults(compiled.program, host);
+    std::vector<ScriptExportRow> rows;
+    for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
+        if (field.kind != Blueprint::FieldKind::Export) {
             continue;
         }
-        ScriptExportRowUVE row;
+        ScriptExportRow row;
         row.name = field.name;
         row.type = field.type;
-        const std::optional<Blueprint::ValueUVE> initial = defaults.GetFieldUVE(field.name);
-        row.defaultText = initial.has_value() ? Blueprint::FormatValueUVE(*initial) : std::string{};
+        const std::optional<Blueprint::Value> initial = defaults.GetField(field.name);
+        row.defaultText = initial.has_value() ? Blueprint::FormatValue(*initial) : std::string{};
         row.valueText = row.defaultText;
         if (const auto stored = script.exportValues.find(field.name);
-            stored != script.exportValues.end() && Blueprint::ParseValueTextUVE(stored->second, field.type).has_value()) {
+            stored != script.exportValues.end() && Blueprint::ParseValueText(stored->second, field.type).has_value()) {
             row.valueText = stored->second;
             row.overridden = true;
         }
@@ -95,33 +95,33 @@ std::vector<EditorUVE::ScriptExportRowUVE> EditorUVE::GetSelectedScriptExportsUV
     return rows;
 }
 
-bool EditorUVE::SetSelectedScriptExportUVE(const std::string& name, std::optional<std::string> text) {
-    if (!IsAuthoringCommandAllowedUVE()) {
+bool Editor::SetSelectedScriptExport(const std::string& name, std::optional<std::string> text) {
+    if (!IsAuthoringCommandAllowed()) {
         return false;
     }
-    const std::vector<ScriptExportRowUVE> rows = GetSelectedScriptExportsUVE();
+    const std::vector<ScriptExportRow> rows = GetSelectedScriptExports();
     const auto row = std::find_if(rows.cbegin(), rows.cend(),
-                                  [&name](const ScriptExportRowUVE& candidate) { return candidate.name == name; });
+                                  [&name](const ScriptExportRow& candidate) { return candidate.name == name; });
     if (row == rows.cend()) {
         return false;
     }
-    const ScriptExportsPropertyUVE target = FindScriptExportsPropertyUVE();
+    const ScriptExportsProperty target = FindScriptExportsProperty();
     if (target.entry == nullptr) {
         return false;
     }
     std::map<std::string, std::string> values =
-        m_services->GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity).exportValues;
+        m_services->GetEntityManager().GetComponent<Scene::ScriptComponent>(m_selectedEntity).exportValues;
     if (text.has_value()) {
-        const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(*text, row->type);
+        const std::optional<Blueprint::Value> value = Blueprint::ParseValueText(*text, row->type);
         if (!value.has_value()) {
             return false;
         }
         // Stored in the canonical form, so "1" for a float reads back as "1.0".
-        values.insert_or_assign(name, Blueprint::FormatValueUVE(*value));
+        values.insert_or_assign(name, Blueprint::FormatValue(*value));
     } else {
         values.erase(name);
     }
-    return SetSelectedComponentPropertyUVE(*target.entry, *target.property, &values);
+    return SetSelectedComponentProperty(*target.entry, *target.property, &values);
 }
 
 } // namespace UVE::Editor

@@ -14,46 +14,46 @@
 
 namespace UVE::Core {
 
-/// Controls whether EngineCoreUVE consumes normal fixed simulation time, holds it, or consumes one
+/// Controls whether EngineCore consumes normal fixed simulation time, holds it, or consumes one
 /// explicitly requested fixed step. Core owns the execution decision; editor clients only request it.
-enum class SimulationExecutionModeUVE {
+enum class SimulationExecutionMode {
     Running,
     Paused,
 };
 
 /// A narrow Core-owned control seam for transient editor simulation sessions. It deliberately does
 /// not expose physics, timers, checkpoints, or renderer implementation details to editor code.
-class ISimulationControlUVE {
+class ISimulationControl {
 public:
-    virtual ~ISimulationControlUVE() = default;
+    virtual ~ISimulationControl() = default;
 
     /// Sets fixed simulation execution. Paused mode retains frame maintenance and rendering while
     /// consuming no normal fixed physics steps.
-    [[nodiscard]] virtual bool SetSimulationExecutionModeUVE(SimulationExecutionModeUVE mode) noexcept = 0;
-    [[nodiscard]] virtual SimulationExecutionModeUVE GetSimulationExecutionModeUVE() const noexcept = 0;
+    [[nodiscard]] virtual bool SetSimulationExecutionMode(SimulationExecutionMode mode) noexcept = 0;
+    [[nodiscard]] virtual SimulationExecutionMode GetSimulationExecutionMode() const noexcept = 0;
 
     /// Queues exactly one fixed simulation step for the next engine update. Valid only while paused
     /// and while no prior request is pending.
-    [[nodiscard]] virtual bool RequestSingleSimulationStepUVE() noexcept = 0;
+    [[nodiscard]] virtual bool RequestSingleSimulationStep() noexcept = 0;
 
     /// Marks an editor-owned transient simulation session. Core suppresses checkpoint/save-game
     /// advancement while this flag is active, independently from fixed execution mode.
-    [[nodiscard]] virtual bool SetTransientSimulationSessionActiveUVE(bool active) noexcept = 0;
-    [[nodiscard]] virtual bool IsTransientSimulationSessionActiveUVE() const noexcept = 0;
+    [[nodiscard]] virtual bool SetTransientSimulationSessionActive(bool active) noexcept = 0;
+    [[nodiscard]] virtual bool IsTransientSimulationSessionActive() const noexcept = 0;
 
     /// Updates the optional Editor Play scene-name title suffix. Empty clears the suffix and
     /// exits editor-play title mode. Hosts that do not own a native window may ignore this hint.
-    [[nodiscard]] virtual bool SetEditorPlaySceneNameUVE(std::string_view sceneName) noexcept {
+    [[nodiscard]] virtual bool SetEditorPlaySceneName(std::string_view sceneName) noexcept {
         static_cast<void>(sceneName);
         return false;
     }
 
     /// Sets or queries the simulation speed multiplier (1.0 = normal speed, >1.0 = fast-forward).
-    [[nodiscard]] virtual bool SetSimulationSpeedScaleUVE(float speedScale) noexcept {
+    [[nodiscard]] virtual bool SetSimulationSpeedScale(float speedScale) noexcept {
         static_cast<void>(speedScale);
         return false;
     }
-    [[nodiscard]] virtual float GetSimulationSpeedScaleUVE() const noexcept {
+    [[nodiscard]] virtual float GetSimulationSpeedScale() const noexcept {
         return 1.0F;
     }
 };

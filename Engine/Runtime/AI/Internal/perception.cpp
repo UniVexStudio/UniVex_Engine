@@ -10,7 +10,7 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] float DistanceBetweenUVE(const Math::Vector3UVE& from, const Math::Vector3UVE& to) noexcept {
+[[nodiscard]] float DistanceBetween(const Math::Vector3& from, const Math::Vector3& to) noexcept {
     const float dx = to.x - from.x;
     const float dy = to.y - from.y;
     const float dz = to.z - from.z;
@@ -19,20 +19,20 @@ namespace {
 
 } // namespace
 
-bool IsPerceptionComponentValidUVE(const PerceptionComponentUVE& sensor) noexcept {
-    return !sensor.watchedTag.empty() && sensor.watchedTag.size() <= kMaximumWatchedTagBytesUVE &&
+bool IsPerceptionComponentValid(const PerceptionComponent& sensor) noexcept {
+    return !sensor.watchedTag.empty() && sensor.watchedTag.size() <= kMaximumWatchedTagBytes &&
            std::isfinite(sensor.sightRangeMetres) && sensor.sightRangeMetres > 0.0F &&
            std::isfinite(sensor.sightFieldOfViewDegrees) && sensor.sightFieldOfViewDegrees >= 0.0F &&
-           sensor.sightFieldOfViewDegrees <= kPerceptionOmnidirectionalDegreesUVE &&
+           sensor.sightFieldOfViewDegrees <= kPerceptionOmnidirectionalDegrees &&
            std::isfinite(sensor.hearingRadiusMetres) && sensor.hearingRadiusMetres >= 0.0F;
 }
 
-bool IsNoiseEmitterComponentValidUVE(const NoiseEmitterComponentUVE& emitter) noexcept {
+bool IsNoiseEmitterComponentValid(const NoiseEmitterComponent& emitter) noexcept {
     return std::isfinite(emitter.loudness) && emitter.loudness >= 0.0F && emitter.loudness <= 1.0F &&
            std::isfinite(emitter.decayPerSecond) && emitter.decayPerSecond >= 0.0F;
 }
 
-void DecayNoiseEmitterUVE(NoiseEmitterComponentUVE& emitter, const float deltaSeconds) noexcept {
+void DecayNoiseEmitter(NoiseEmitterComponent& emitter, const float deltaSeconds) noexcept {
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0F || !std::isfinite(emitter.decayPerSecond) ||
         emitter.decayPerSecond <= 0.0F) {
         return;
@@ -40,23 +40,23 @@ void DecayNoiseEmitterUVE(NoiseEmitterComponentUVE& emitter, const float deltaSe
     emitter.loudness = std::max(0.0F, emitter.loudness - emitter.decayPerSecond * deltaSeconds);
 }
 
-SightResultUVE SenseSightUVE(const Math::Vector3UVE& sensorPosition, const Math::Vector3UVE& sensorForward,
-                             const PerceptionComponentUVE& sensor,
-                             const std::span<const SightTargetUVE> candidates,
-                             const SightOcclusionQueryUVE& occlusion) {
-    SightResultUVE result;
+SightResult SenseSight(const Math::Vector3& sensorPosition, const Math::Vector3& sensorForward,
+                             const PerceptionComponent& sensor,
+                             const std::span<const SightTarget> candidates,
+                             const SightOcclusionQuery& occlusion) {
+    SightResult result;
     if (!std::isfinite(sensor.sightRangeMetres) || sensor.sightRangeMetres <= 0.0F) {
         return result;
     }
-    const float forwardLength = DistanceBetweenUVE(Math::Vector3UVE{}, sensorForward);
+    const float forwardLength = DistanceBetween(Math::Vector3{}, sensorForward);
     const bool knowsWhereItFaces = forwardLength > 1e-6F;
     const float cosineHalfAngle =
-        sensor.sightFieldOfViewDegrees >= kPerceptionOmnidirectionalDegreesUVE - 1e-4F
+        sensor.sightFieldOfViewDegrees >= kPerceptionOmnidirectionalDegrees - 1e-4F
             ? -2.0F
-            : std::cos(Math::DegToRadUVE(sensor.sightFieldOfViewDegrees * 0.5F));
-    std::vector<std::pair<float, SightTargetUVE>> inView;
-    for (const SightTargetUVE& candidate : candidates) {
-        const float distance = DistanceBetweenUVE(sensorPosition, candidate.position);
+            : std::cos(Math::DegToRad(sensor.sightFieldOfViewDegrees * 0.5F));
+    std::vector<std::pair<float, SightTarget>> inView;
+    for (const SightTarget& candidate : candidates) {
+        const float distance = DistanceBetween(sensorPosition, candidate.position);
         if (distance > sensor.sightRangeMetres) {
             continue;
         }
@@ -94,18 +94,18 @@ SightResultUVE SenseSightUVE(const Math::Vector3UVE& sensorPosition, const Math:
     return result;
 }
 
-HearingResultUVE SenseHearingUVE(const Math::Vector3UVE& sensorPosition, const float hearingRadiusMetres,
-                                 const std::span<const HeardNoiseUVE> noises) noexcept {
-    HearingResultUVE result;
+HearingResult SenseHearing(const Math::Vector3& sensorPosition, const float hearingRadiusMetres,
+                                 const std::span<const HeardNoise> noises) noexcept {
+    HearingResult result;
     if (!std::isfinite(hearingRadiusMetres) || hearingRadiusMetres <= 0.0F) {
         return result;
     }
-    for (const HeardNoiseUVE& noise : noises) {
+    for (const HeardNoise& noise : noises) {
         if (!std::isfinite(noise.loudness) || noise.loudness <= 0.0F) {
             continue;
         }
         const float reach = hearingRadiusMetres * noise.loudness;
-        const float distance = DistanceBetweenUVE(sensorPosition, noise.position);
+        const float distance = DistanceBetween(sensorPosition, noise.position);
         if (distance > reach) {
             continue;
         }
@@ -118,18 +118,18 @@ HearingResultUVE SenseHearingUVE(const Math::Vector3UVE& sensorPosition, const f
     return result;
 }
 
-void WritePerceptionResultsUVE(BlackboardComponentUVE& board, const std::string_view watchedTag,
-                               const SightResultUVE& sight, const HearingResultUVE& hearing) {
+void WritePerceptionResults(BlackboardComponent& board, const std::string_view watchedTag,
+                               const SightResult& sight, const HearingResult& hearing) {
     const std::string sightPrefix = std::string("sight.") + std::string(watchedTag) + ".";
     static_cast<void>(
-        SetBlackboardValueUVE(board, sightPrefix + "visible", sight.visible ? 1.0F : 0.0F));
+        SetBlackboardValue(board, sightPrefix + "visible", sight.visible ? 1.0F : 0.0F));
     if (sight.visible) {
-        static_cast<void>(SetBlackboardValueUVE(board, sightPrefix + "distance01", sight.distance01));
-        static_cast<void>(SetBlackboardVectorUVE(board, sightPrefix + "position", sight.position));
+        static_cast<void>(SetBlackboardValue(board, sightPrefix + "distance01", sight.distance01));
+        static_cast<void>(SetBlackboardVector(board, sightPrefix + "position", sight.position));
     }
-    static_cast<void>(SetBlackboardValueUVE(board, "hearing.loudest", hearing.loudness));
+    static_cast<void>(SetBlackboardValue(board, "hearing.loudest", hearing.loudness));
     if (hearing.loudness > 0.0F) {
-        static_cast<void>(SetBlackboardVectorUVE(board, "hearing.position", hearing.position));
+        static_cast<void>(SetBlackboardVector(board, "hearing.position", hearing.position));
     }
 }
 

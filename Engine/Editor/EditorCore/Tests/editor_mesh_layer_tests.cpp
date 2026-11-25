@@ -31,155 +31,155 @@ namespace {
 
 using namespace UVE;
 
-class SceneLightUVETest : public ::testing::Test {
+class SceneLightTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
 
-    [[nodiscard]] Scene::EntityUVE AddSunUVE() {
-        const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
-        Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun,
-                                                          Scene::DirectionalLight3DObjectDefinitionUVE{});
-        sceneGraph.UpdateUVE(entityManager);
+    [[nodiscard]] Scene::Entity AddSun() {
+        const Scene::Entity sun = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, sun, Scene::TransformComponent{});
+        Scene::ApplyDirectionalLight3DObjectDefinition(entityManager, sun,
+                                                          Scene::DirectionalLight3DObjectDefinition{});
+        sceneGraph.Update(entityManager);
         return sun;
     }
 
     /// The viewport's own light: an internal entity carrying a plain LightComponent, exactly the
-    /// shape EditorMeshLayerUVE::CreateHeadlightEntityUVE() builds.
-    [[nodiscard]] Scene::EntityUVE AddHeadlightUVE(const float intensity) {
-        const Scene::EntityUVE headlight = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, headlight, Scene::TransformComponentUVE{});
-        Scene::LightComponentUVE light{};
-        light.type = Scene::LightTypeUVE::Directional;
+    /// shape EditorMeshLayer::CreateHeadlightEntity() builds.
+    [[nodiscard]] Scene::Entity AddHeadlight(const float intensity) {
+        const Scene::Entity headlight = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, headlight, Scene::TransformComponent{});
+        Scene::LightComponent light{};
+        light.type = Scene::LightType::Directional;
         light.intensity = intensity;
-        entityManager.AddComponentUVE<Scene::LightComponentUVE>(headlight, light);
-        entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(
-            headlight, Scene::EditorInternalEntityComponentUVE{});
-        sceneGraph.UpdateUVE(entityManager);
+        entityManager.AddComponent<Scene::LightComponent>(headlight, light);
+        entityManager.AddComponent<Scene::EditorInternalEntityComponent>(
+            headlight, Scene::EditorInternalEntityComponent{});
+        sceneGraph.Update(entityManager);
         return headlight;
     }
 
-    [[nodiscard]] bool LightsItselfUVE() {
-        return univex::integration::HasContributingSceneLightUVE(entityManager);
+    [[nodiscard]] bool LightsItself() {
+        return univex::integration::HasContributingSceneLight(entityManager);
     }
 
-    [[nodiscard]] Scene::LightEmitterComponentUVE& EmitterUVE(const Scene::EntityUVE sun) {
-        return entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sun);
+    [[nodiscard]] Scene::LightEmitterComponent& Emitter(const Scene::Entity sun) {
+        return entityManager.GetComponent<Scene::LightEmitterComponent>(sun);
     }
 };
 
-TEST_F(SceneLightUVETest, AnEmptySceneHasNoLightOfItsOwn) {
-    EXPECT_FALSE(LightsItselfUVE());
+TEST_F(SceneLightTest, AnEmptySceneHasNoLightOfItsOwn) {
+    EXPECT_FALSE(LightsItself());
 }
 
-TEST_F(SceneLightUVETest, AFreshSunLightsTheScene) {
-    static_cast<void>(AddSunUVE());
-    EXPECT_TRUE(LightsItselfUVE());
+TEST_F(SceneLightTest, AFreshSunLightsTheScene) {
+    static_cast<void>(AddSun());
+    EXPECT_TRUE(LightsItself());
 }
 
-TEST_F(SceneLightUVETest, APlainDirectionalLight3DLightsTheScene) {
-    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, light, Scene::TransformComponentUVE{});
-    Scene::ApplyLight3DObjectDefinitionUVE(entityManager, light, Scene::Light3DObjectDefinitionUVE{});
-    sceneGraph.UpdateUVE(entityManager);
-    EXPECT_TRUE(LightsItselfUVE()) << "the Light3D the \"+\" menu makes is a light like any other";
+TEST_F(SceneLightTest, APlainDirectionalLight3DLightsTheScene) {
+    const Scene::Entity light = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, light, Scene::TransformComponent{});
+    Scene::ApplyLight3DObjectDefinition(entityManager, light, Scene::Light3DObjectDefinition{});
+    sceneGraph.Update(entityManager);
+    EXPECT_TRUE(LightsItself()) << "the Light3D the \"+\" menu makes is a light like any other";
 }
 
 // The four ways a light can be in the document and still light nothing. Each used to switch the
 // viewport's own light off, which is the black mesh this rule exists to prevent.
-TEST_F(SceneLightUVETest, ASunTheRendererDropsDoesNotCount) {
-    const Scene::EntityUVE sun = AddSunUVE();
-    EmitterUVE(sun).cullMask = 0U;
-    EXPECT_FALSE(LightsItselfUVE()) << "no render layers lit: the light system drops it";
+TEST_F(SceneLightTest, ASunTheRendererDropsDoesNotCount) {
+    const Scene::Entity sun = AddSun();
+    Emitter(sun).cullMask = 0U;
+    EXPECT_FALSE(LightsItself()) << "no render layers lit: the light system drops it";
 }
 
-TEST_F(SceneLightUVETest, ASunWithNoColourDoesNotCount) {
-    const Scene::EntityUVE sun = AddSunUVE();
-    EmitterUVE(sun).color = Math::ColorUVE{0.0F, 0.0F, 0.0F};
-    EXPECT_FALSE(LightsItselfUVE()) << "black light adds nothing, whatever its energy says";
+TEST_F(SceneLightTest, ASunWithNoColourDoesNotCount) {
+    const Scene::Entity sun = AddSun();
+    Emitter(sun).color = Math::Color{0.0F, 0.0F, 0.0F};
+    EXPECT_FALSE(LightsItself()) << "black light adds nothing, whatever its energy says";
 }
 
-TEST_F(SceneLightUVETest, ASunWithNoEnergyDoesNotCount) {
-    const Scene::EntityUVE sun = AddSunUVE();
-    EmitterUVE(sun).energy = 0.0F;
-    EXPECT_FALSE(LightsItselfUVE());
+TEST_F(SceneLightTest, ASunWithNoEnergyDoesNotCount) {
+    const Scene::Entity sun = AddSun();
+    Emitter(sun).energy = 0.0F;
+    EXPECT_FALSE(LightsItself());
 }
 
-TEST_F(SceneLightUVETest, AStaleInvalidSunDoesNotCount) {
-    const Scene::EntityUVE sun = AddSunUVE();
-    auto& directional = entityManager.GetComponentUVE<Scene::DirectionalLight3DComponentUVE>(sun);
+TEST_F(SceneLightTest, AStaleInvalidSunDoesNotCount) {
+    const Scene::Entity sun = AddSun();
+    auto& directional = entityManager.GetComponent<Scene::DirectionalLight3DComponent>(sun);
     directional.discLimbDarkening = 4.0F; // out of range: the light system refuses the whole light
-    EXPECT_FALSE(LightsItselfUVE());
+    EXPECT_FALSE(LightsItself());
 }
 
-TEST_F(SceneLightUVETest, TheViewportsOwnLightIsNotTheScenes) {
-    static_cast<void>(AddHeadlightUVE(1.25F));
-    EXPECT_FALSE(LightsItselfUVE()) << "the fallback must not mistake itself for authored lighting";
+TEST_F(SceneLightTest, TheViewportsOwnLightIsNotTheScenes) {
+    static_cast<void>(AddHeadlight(1.25F));
+    EXPECT_FALSE(LightsItself()) << "the fallback must not mistake itself for authored lighting";
 }
 
 // The preview sun stands down for an authored sun. It must stand down for one that lights, or the
 // scene loses both suns at once and goes black.
-TEST_F(SceneLightUVETest, ThePreviewSunOnlyYieldsToASunThatLights) {
+TEST_F(SceneLightTest, ThePreviewSunOnlyYieldsToASunThatLights) {
     const auto authoredSun = [this] {
-        return univex::integration::HasContributingDirectionalLightUVE(entityManager);
+        return univex::integration::HasContributingDirectionalLight(entityManager);
     };
     EXPECT_FALSE(authoredSun());
-    const Scene::EntityUVE sun = AddSunUVE();
+    const Scene::Entity sun = AddSun();
     EXPECT_TRUE(authoredSun());
 
-    EmitterUVE(sun).cullMask = 0U;
+    Emitter(sun).cullMask = 0U;
     EXPECT_FALSE(authoredSun()) << "a sun the renderer drops must not take the preview sun with it";
-    EmitterUVE(sun).cullMask = 0xFFFFFFFFU;
+    Emitter(sun).cullMask = 0xFFFFFFFFU;
 
-    EmitterUVE(sun).color = Math::ColorUVE{0.0F, 0.0F, 0.0F};
+    Emitter(sun).color = Math::Color{0.0F, 0.0F, 0.0F};
     EXPECT_FALSE(authoredSun());
 
-    EmitterUVE(sun).color = Math::ColorUVE{1.0F, 1.0F, 1.0F};
+    Emitter(sun).color = Math::Color{1.0F, 1.0F, 1.0F};
     EXPECT_TRUE(authoredSun());
 }
 
-TEST_F(SceneLightUVETest, APlainLight3DIsNotASun) {
-    const Scene::EntityUVE light = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, light, Scene::TransformComponentUVE{});
-    Scene::ApplyLight3DObjectDefinitionUVE(entityManager, light, Scene::Light3DObjectDefinitionUVE{});
-    sceneGraph.UpdateUVE(entityManager);
-    EXPECT_TRUE(LightsItselfUVE());
-    EXPECT_FALSE(univex::integration::HasContributingDirectionalLightUVE(entityManager))
+TEST_F(SceneLightTest, APlainLight3DIsNotASun) {
+    const Scene::Entity light = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, light, Scene::TransformComponent{});
+    Scene::ApplyLight3DObjectDefinition(entityManager, light, Scene::Light3DObjectDefinition{});
+    sceneGraph.Update(entityManager);
+    EXPECT_TRUE(LightsItself());
+    EXPECT_FALSE(univex::integration::HasContributingDirectionalLight(entityManager))
         << "it lights, but it carries no sun: no disc, no cascades, nothing to stand down for";
 }
 
-TEST_F(SceneLightUVETest, AFixedSceneStopsCountingTheMomentItCanLight) {
+TEST_F(SceneLightTest, AFixedSceneStopsCountingTheMomentItCanLight) {
     // The transition the panel lives on: authored light appears -> its own goes off; the authored
     // one is made incapable -> its own comes back rather than leaving the panel dark.
-    const Scene::EntityUVE sun = AddSunUVE();
-    EXPECT_TRUE(LightsItselfUVE());
-    EmitterUVE(sun).energy = 0.0F;
-    EXPECT_FALSE(LightsItselfUVE());
-    EmitterUVE(sun).energy = 2.0F;
-    EXPECT_TRUE(LightsItselfUVE());
+    const Scene::Entity sun = AddSun();
+    EXPECT_TRUE(LightsItself());
+    Emitter(sun).energy = 0.0F;
+    EXPECT_FALSE(LightsItself());
+    Emitter(sun).energy = 2.0F;
+    EXPECT_TRUE(LightsItself());
 }
 
-TEST_F(SceneLightUVETest, TurningOffOrHidingAuthoredSunKeepsAuthoredNodePresentWithoutContributingLight) {
-    EXPECT_FALSE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
-    const Scene::EntityUVE sun = AddSunUVE();
-    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
-    EXPECT_TRUE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
+TEST_F(SceneLightTest, TurningOffOrHidingAuthoredSunKeepsAuthoredNodePresentWithoutContributingLight) {
+    EXPECT_FALSE(univex::integration::HasAuthoredDirectionalLightNode(entityManager));
+    const Scene::Entity sun = AddSun();
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNode(entityManager));
+    EXPECT_TRUE(univex::integration::HasContributingDirectionalLight(entityManager));
 
-    EmitterUVE(sun).energy = 0.0F;
-    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager))
+    Emitter(sun).energy = 0.0F;
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNode(entityManager))
         << "the authored DirectionalLight3D node still exists, so the preview sun must not take over";
-    EXPECT_FALSE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
+    EXPECT_FALSE(univex::integration::HasContributingDirectionalLight(entityManager));
 
-    EmitterUVE(sun).energy = 1.0F;
-    auto& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(sun);
+    Emitter(sun).energy = 1.0F;
+    auto& visibility = entityManager.GetComponent<Scene::VisibilityComponent>(sun);
     visibility.visible = false;
-    sceneGraph.UpdateUVE(entityManager);
-    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
-    EXPECT_FALSE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
-    EXPECT_FALSE(LightsItselfUVE());
+    sceneGraph.Update(entityManager);
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNode(entityManager));
+    EXPECT_FALSE(univex::integration::HasContributingDirectionalLight(entityManager));
+    EXPECT_FALSE(LightsItself());
 }
 
 } // namespace

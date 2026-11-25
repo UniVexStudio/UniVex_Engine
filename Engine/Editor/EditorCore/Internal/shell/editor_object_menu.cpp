@@ -22,28 +22,28 @@
 
 namespace UVE::Editor {
 
-void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE entity, prism::TreeNode* const node,
-                                       const prism::Vec2 at, const HooksUVE& hooks) {
-    if (!editor.IsDocumentEntityUVE(entity)) {
+void EditorObjectMenu::Show(Editor& editor, const Scene::Entity entity, prism::TreeNode* const node,
+                                       const prism::Vec2 at, const Hooks& hooks) {
+    if (!editor.IsDocumentEntity(entity)) {
         return;
     }
-    Scene::IEntityManagerUVE& em = editor.m_services->GetEntityManagerUVE();
-    const std::string name = editor.GetEntityDisplayLabelUVE(entity);
-    const std::string blocked = editor.ObjectActionBlockReasonUVE(entity);
-    const bool authoring = editor.IsAuthoringCommandAllowedUVE();
-    const bool sealed = editor.IsSealedHierarchyRowUVE(entity);
-    const bool structural = editor.IsStructuralRootUVE(entity);
+    Scene::IEntityManager& em = editor.m_services->GetEntityManager();
+    const std::string name = editor.GetEntityDisplayLabel(entity);
+    const std::string blocked = editor.ObjectActionBlockReason(entity);
+    const bool authoring = editor.IsAuthoringCommandAllowed();
+    const bool sealed = editor.IsSealedHierarchyRow(entity);
+    const bool structural = editor.IsStructuralRoot(entity);
     prism::TreeView* const tree = hooks.tree;
 
     // A command of the editor's, with its shortcut and its own enabled rule.
     const auto command = [&editor](const char* id) {
-        EditorCommandUVE* const found = editor.FindEditorCommandUVE(id);
+        EditorCommand* const found = editor.FindEditorCommand(id);
         if (found == nullptr) {
             return prism::MenuItem::Item(id, {}).disabled();
         }
         prism::MenuItem item = prism::MenuItem::Item(
-            found->label, [&editor, commandId = std::string(id)] { static_cast<void>(editor.RunEditorCommandUVE(commandId)); },
-            DisplayEditorShortcutUVE(found->shortcuts[0]));
+            found->label, [&editor, commandId = std::string(id)] { static_cast<void>(editor.RunEditorCommand(commandId)); },
+            DisplayEditorShortcut(found->shortcuts[0]));
         item.enabled = !found->isEnabled || found->isEnabled();
         return item;
     };
@@ -78,25 +78,25 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
     items.push_back(when(command("edit.cut"), blocked.empty()));
     items.push_back(when(command("edit.copy"), blocked.empty()));
     items.push_back(command("edit.paste"));
-    items.push_back(when(prism::MenuItem::Item("Paste as Child", [&editor] { static_cast<void>(editor.PasteObjectUVE(true)); }),
-                         editor.CanPasteObjectUVE() && !sealed));
+    items.push_back(when(prism::MenuItem::Item("Paste as Child", [&editor] { static_cast<void>(editor.PasteObject(true)); }),
+                         editor.CanPasteObject() && !sealed));
     items.push_back(when(command("edit.duplicate"), blocked.empty()));
     items.push_back(when(command("edit.delete"), blocked.empty()));
     items.push_back(prism::MenuItem::Sep());
 
     // Looking at it.
     items.push_back(when(prism::MenuItem::Item("Focus in Viewport", [&editor, entity] {
-                             static_cast<void>(editor.RequestViewportFocusUVE(entity));
+                             static_cast<void>(editor.RequestViewportFocus(entity));
                          }, "F"),
-                         editor.CanFocusEntityInViewportUVE(entity)));
-    const bool hideable = em.HasComponentUVE<Scene::VisibilityComponentUVE>(entity);
-    const bool visible = hideable && em.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visible;
+                         editor.CanFocusEntityInViewport(entity)));
+    const bool hideable = em.HasComponent<Scene::VisibilityComponent>(entity);
+    const bool visible = hideable && em.GetComponent<Scene::VisibilityComponent>(entity).visible;
     items.push_back(when(prism::MenuItem::Item(hideable && !visible ? "Show" : "Hide", [&editor, entity, visible] {
-                             static_cast<void>(editor.SetEntityVisibleUVE(entity, !visible));
+                             static_cast<void>(editor.SetEntityVisible(entity, !visible));
                          }),
                          authoring && hideable));
-    const bool locked = editor.IsEntityLockedUVE(entity);
-    items.push_back(when(prism::MenuItem::Item(locked ? "Unlock" : "Lock", [&editor, entity] { editor.ToggleEntityLockUVE(entity); }),
+    const bool locked = editor.IsEntityLocked(entity);
+    items.push_back(when(prism::MenuItem::Item(locked ? "Unlock" : "Lock", [&editor, entity] { editor.ToggleEntityLock(entity); }),
                          authoring && !structural));
     items.push_back(prism::MenuItem::Sep());
 
@@ -119,14 +119,14 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
     items.push_back(when(prism::MenuItem::Item("Expand Branch", [setBranch, node] { setBranch(node, true); }), hasKids));
     items.push_back(when(prism::MenuItem::Item("Collapse Branch", [setBranch, node] { setBranch(node, false); }), hasKids));
     const auto selectInside = [&editor, entity](const bool deep) {
-        std::vector<Scene::EntityUVE> found;
-        std::vector<Scene::EntityUVE> pending{entity};
-        Scene::IEntityManagerUVE& manager = editor.m_services->GetEntityManagerUVE();
+        std::vector<Scene::Entity> found;
+        std::vector<Scene::Entity> pending{entity};
+        Scene::IEntityManager& manager = editor.m_services->GetEntityManager();
         while (!pending.empty()) {
-            const Scene::EntityUVE current = pending.back();
+            const Scene::Entity current = pending.back();
             pending.pop_back();
-            for (const Scene::EntityUVE child : editor.m_services->GetSceneGraphUVE().GetChildrenUVE(manager, current)) {
-                if (!editor.IsDocumentEntityUVE(child)) {
+            for (const Scene::Entity child : editor.m_services->GetSceneGraph().GetChildren(manager, current)) {
+                if (!editor.IsDocumentEntity(child)) {
                     continue;
                 }
                 found.push_back(child);
@@ -138,10 +138,10 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
         if (found.empty()) {
             return;
         }
-        editor.SelectEntityUVE(found.front());
+        editor.SelectEntity(found.front());
         for (std::size_t i = 1U; i < found.size(); ++i) {
-            if (!editor.IsEntitySelectedUVE(found[i])) {
-                editor.ToggleEntitySelectionUVE(found[i]);
+            if (!editor.IsEntitySelected(found[i])) {
+                editor.ToggleEntitySelection(found[i]);
             }
         }
     };
@@ -163,29 +163,29 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
 
     // A placed entity opens in the Entity Editor; anything else can become one.
     std::filesystem::path source;
-    if (em.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entity)) {
-        const Asset::AssetGuidUVE guid = em.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity).sourcePrefabGuid;
-        if (guid != Asset::kInvalidAssetGuidUVE) {
-            source = editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
+    if (em.HasComponent<Scene::PrefabInstanceComponent>(entity)) {
+        const Asset::AssetGuid guid = em.GetComponent<Scene::PrefabInstanceComponent>(entity).sourcePrefabGuid;
+        if (guid != Asset::kInvalidAssetGuid) {
+            source = editor.m_services->GetAssetDatabase().Resolve(guid);
         }
     }
     items.push_back(prism::MenuItem::Sep());
     if (sealed) {
         items.push_back(when(prism::MenuItem::Item("Open Entity", [&editor, source] {
-                                 if (!editor.OpenEntityEditorUVE(source) && editor.m_contentStatusMessage.empty()) {
+                                 if (!editor.OpenEntityEditor(source) && editor.m_contentStatusMessage.empty()) {
                                      editor.m_contentStatusMessage = "Could not open " + source.filename().string() + ".";
                                  }
                              }),
                              !source.empty()));
         items.push_back(when(prism::MenuItem::Item("Show in Asset Table", [&editor, source] {
-                                 const Asset::ProjectFileSnapshotUVE now = editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                                 const Asset::ProjectFileSnapshot now = editor.m_services->GetProjectFileIndex().GetSnapshot();
                                  std::error_code error;
                                  const std::filesystem::path relative = std::filesystem::relative(source, now.contentRoot, error);
-                                 for (const Asset::ProjectFileEntryUVE& file : now.entries) {
+                                 for (const Asset::ProjectFileEntry& file : now.entries) {
                                      if (!error && file.relativePath == relative) {
                                          editor.m_assetTableDirectory = file.relativePath.parent_path();
                                          editor.m_assetTableShelf.clear();
-                                         editor.m_contentSelection.ClearUVE();
+                                         editor.m_contentSelection.Clear();
                                          editor.m_selectedProjectFile = file;
                                          break;
                                      }
@@ -195,14 +195,14 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
     } else {
         items.push_back(when(prism::MenuItem::Item("Save as Entity", [&editor, name] {
                                  // Into the Asset Table's folder, under the object's own name.
-                                 const Asset::ProjectFileSnapshotUVE now = editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                                 const Asset::ProjectFileSnapshot now = editor.m_services->GetProjectFileIndex().GetSnapshot();
                                  const std::filesystem::path folder = now.contentRoot / editor.m_assetTableDirectory;
                                  std::error_code error;
                                  std::filesystem::create_directories(folder, error);
                                  const std::filesystem::path path =
-                                     EditorUVE::MakeUniqueContentPathUVE(folder, name.empty() ? "Entity" : name, ".uventity");
-                                 if (editor.SaveSelectedPrefabUVE(path)) {
-                                     editor.RefreshProjectFileIndexUVE();
+                                     Editor::MakeUniqueContentPath(folder, name.empty() ? "Entity" : name, ".uventity");
+                                 if (editor.SaveSelectedPrefab(path)) {
+                                     editor.RefreshProjectFileIndex();
                                      editor.m_contentStatusMessage = "Saved " + path.filename().string() + ".";
                                  } else {
                                      editor.m_contentStatusMessage = "Could not save " + name + " as an entity.";

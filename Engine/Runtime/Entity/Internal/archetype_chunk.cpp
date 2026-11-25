@@ -10,54 +10,54 @@
 namespace UVE::Scene::Detail {
 
 namespace {
-[[nodiscard]] void* OffsetUVE(void* buffer, std::size_t elementSize, std::size_t row) {
+[[nodiscard]] void* Offset(void* buffer, std::size_t elementSize, std::size_t row) {
     return static_cast<std::byte*>(buffer) + (elementSize * row);
 }
 } // namespace
 
-ArchetypeChunkUVE::ArchetypeChunkUVE(Memory::IAllocatorUVE& allocator, const std::vector<std::type_index>& componentTypes,
-                    const std::unordered_map<std::type_index, ComponentTypeInfoUVE>& typeInfos)
+ArchetypeChunk::ArchetypeChunk(Memory::IAllocator& allocator, const std::vector<std::type_index>& componentTypes,
+                    const std::unordered_map<std::type_index, ComponentTypeInfo>& typeInfos)
     : m_allocator(allocator) {
-    m_entitiesInChunk.resize(kChunkCapacityUVE, kInvalidEntityUVE);
+    m_entitiesInChunk.resize(kChunkCapacity, kInvalidEntity);
     for (const std::type_index& type : componentTypes) {
-        const ComponentTypeInfoUVE& info = typeInfos.at(type);
+        const ComponentTypeInfo& info = typeInfos.at(type);
         void* const buffer =
-            m_allocator.AllocateUVE(info.size * kChunkCapacityUVE, info.alignment, __FILE__, __LINE__);
-        m_columns.emplace(type, ColumnUVE{info, buffer});
+            m_allocator.Allocate(info.size * kChunkCapacity, info.alignment, __FILE__, __LINE__);
+        m_columns.emplace(type, Column{info, buffer});
     }
 }
 
-ArchetypeChunkUVE::~ArchetypeChunkUVE() {
+ArchetypeChunk::~ArchetypeChunk() {
     for (std::size_t row = 0; row < m_count; ++row) {
-        DestroyAllColumnsUVE(row);
+        DestroyAllColumns(row);
     }
     for (auto& [type, column] : m_columns) {
-        m_allocator.DeallocateUVE(column.buffer);
+        m_allocator.Deallocate(column.buffer);
     }
 }
 
-bool ArchetypeChunkUVE::IsFullUVE() const noexcept {
-    return m_count >= kChunkCapacityUVE;
+bool ArchetypeChunk::IsFull() const noexcept {
+    return m_count >= kChunkCapacity;
 }
 
-std::size_t ArchetypeChunkUVE::GetCountUVE() const noexcept {
+std::size_t ArchetypeChunk::GetCount() const noexcept {
     return m_count;
 }
 
-bool ArchetypeChunkUVE::HasColumnUVE(std::type_index componentType) const {
+bool ArchetypeChunk::HasColumn(std::type_index componentType) const {
     return m_columns.find(componentType) != m_columns.end();
 }
 
-const ArchetypeChunkUVE::ColumnUVE& ArchetypeChunkUVE::GetColumnUVE(std::type_index componentType) const {
+const ArchetypeChunk::Column& ArchetypeChunk::GetColumn(std::type_index componentType) const {
     UVE_ASSERT(m_columns.find(componentType) != m_columns.end());
     return m_columns.at(componentType); // throws std::out_of_range in Release if this chunk lacks componentType
 }
 
-std::size_t ArchetypeChunkUVE::ReserveRowUVE(EntityUVE entity) {
-    UVE_ASSERT(!IsFullUVE());
-    if (IsFullUVE()) {
-        UVE_ERROR("ArchetypeChunkUVE: ReserveRowUVE called on a full chunk (capacity {})", kChunkCapacityUVE);
-        return kInvalidRowUVE; // callers (ArchetypeUVE::ReserveEntityUVE) already check IsFullUVE()
+std::size_t ArchetypeChunk::ReserveRow(Entity entity) {
+    UVE_ASSERT(!IsFull());
+    if (IsFull()) {
+        UVE_ERROR("ArchetypeChunk: ReserveRow called on a full chunk (capacity {})", kChunkCapacity);
+        return kInvalidRow; // callers (Archetype::ReserveEntity) already check IsFull()
                                 // before calling this, so this is a defense-in-depth backstop
     }
     const std::size_t row = m_count;
@@ -66,70 +66,70 @@ std::size_t ArchetypeChunkUVE::ReserveRowUVE(EntityUVE entity) {
     return row;
 }
 
-void ArchetypeChunkUVE::ConstructDefaultUVE(std::type_index componentType, std::size_t row) {
-    const ColumnUVE& column = GetColumnUVE(componentType);
-    column.typeInfo.constructDefault(OffsetUVE(column.buffer, column.typeInfo.size, row));
+void ArchetypeChunk::ConstructDefault(std::type_index componentType, std::size_t row) {
+    const Column& column = GetColumn(componentType);
+    column.typeInfo.constructDefault(Offset(column.buffer, column.typeInfo.size, row));
 }
 
-void ArchetypeChunkUVE::DestroyComponentUVE(std::type_index componentType, std::size_t row) {
-    const ColumnUVE& column = GetColumnUVE(componentType);
-    column.typeInfo.destroy(OffsetUVE(column.buffer, column.typeInfo.size, row));
+void ArchetypeChunk::DestroyComponent(std::type_index componentType, std::size_t row) {
+    const Column& column = GetColumn(componentType);
+    column.typeInfo.destroy(Offset(column.buffer, column.typeInfo.size, row));
 }
 
-void ArchetypeChunkUVE::DestroyAllColumnsUVE(std::size_t row) {
+void ArchetypeChunk::DestroyAllColumns(std::size_t row) {
     for (auto& [type, column] : m_columns) {
-        column.typeInfo.destroy(OffsetUVE(column.buffer, column.typeInfo.size, row));
+        column.typeInfo.destroy(Offset(column.buffer, column.typeInfo.size, row));
     }
 }
 
-EntityUVE ArchetypeChunkUVE::VacateRowUVE(std::size_t row) {
+Entity ArchetypeChunk::VacateRow(std::size_t row) {
     UVE_ASSERT(row < m_count);
     if (row >= m_count) {
-        UVE_ERROR("ArchetypeChunkUVE: VacateRowUVE received an out-of-range row ({} >= {})", row, m_count);
-        return kInvalidEntityUVE;
+        UVE_ERROR("ArchetypeChunk: VacateRow received an out-of-range row ({} >= {})", row, m_count);
+        return kInvalidEntity;
     }
     const std::size_t lastRow = m_count - 1;
 
-    EntityUVE movedEntity = kInvalidEntityUVE;
+    Entity movedEntity = kInvalidEntity;
     if (row != lastRow) {
         for (auto& [type, column] : m_columns) {
-            void* const destination = OffsetUVE(column.buffer, column.typeInfo.size, row);
-            void* const source = OffsetUVE(column.buffer, column.typeInfo.size, lastRow);
+            void* const destination = Offset(column.buffer, column.typeInfo.size, row);
+            void* const source = Offset(column.buffer, column.typeInfo.size, lastRow);
             column.typeInfo.moveConstructAndDestroySource(destination, source);
         }
         movedEntity = m_entitiesInChunk[lastRow];
         m_entitiesInChunk[row] = movedEntity;
     }
-    m_entitiesInChunk[lastRow] = kInvalidEntityUVE;
+    m_entitiesInChunk[lastRow] = kInvalidEntity;
     --m_count;
     return movedEntity;
 }
 
-void* ArchetypeChunkUVE::GetComponentPointerUVE(std::type_index componentType, std::size_t row) const {
+void* ArchetypeChunk::GetComponentPointer(std::type_index componentType, std::size_t row) const {
     // Defined in terms of the column view, so the hoisted and per-row paths cannot disagree about
     // where a row lives.
-    return GetColumnViewUVE(componentType).AtUVE(row);
+    return GetColumnView(componentType).At(row);
 }
 
-ArchetypeChunkUVE::ColumnViewUVE ArchetypeChunkUVE::GetColumnViewUVE(std::type_index componentType) const {
-    const ColumnUVE& column = GetColumnUVE(componentType);
-    return ColumnViewUVE{column.buffer, column.typeInfo.size};
+ArchetypeChunk::ColumnView ArchetypeChunk::GetColumnView(std::type_index componentType) const {
+    const Column& column = GetColumn(componentType);
+    return ColumnView{column.buffer, column.typeInfo.size};
 }
 
-EntityUVE ArchetypeChunkUVE::GetEntityAtRowUVE(std::size_t row) const {
+Entity ArchetypeChunk::GetEntityAtRow(std::size_t row) const {
     UVE_ASSERT(row < m_count);
     if (row >= m_count) {
-        UVE_ERROR("ArchetypeChunkUVE: GetEntityAtRowUVE received an out-of-range row ({} >= {})", row, m_count);
-        return kInvalidEntityUVE;
+        UVE_ERROR("ArchetypeChunk: GetEntityAtRow received an out-of-range row ({} >= {})", row, m_count);
+        return kInvalidEntity;
     }
     return m_entitiesInChunk[row];
 }
 
-void ArchetypeChunkUVE::MoveComponentIntoUVE(std::type_index componentType, std::size_t sourceRow, ArchetypeChunkUVE& destination,
+void ArchetypeChunk::MoveComponentInto(std::type_index componentType, std::size_t sourceRow, ArchetypeChunk& destination,
                                      std::size_t destinationRow) const {
-    void* const sourceSlot = GetComponentPointerUVE(componentType, sourceRow);
-    void* const destinationSlot = destination.GetComponentPointerUVE(componentType, destinationRow);
-    const ColumnUVE& column = GetColumnUVE(componentType);
+    void* const sourceSlot = GetComponentPointer(componentType, sourceRow);
+    void* const destinationSlot = destination.GetComponentPointer(componentType, destinationRow);
+    const Column& column = GetColumn(componentType);
     column.typeInfo.moveConstructAndDestroySource(destinationSlot, sourceSlot);
 }
 

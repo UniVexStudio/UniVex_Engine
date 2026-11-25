@@ -27,25 +27,25 @@
 namespace UVE::Pack {
 namespace {
 
-[[nodiscard]] ProjectLaunchResultUVE MakeLaunchResultUVE(const ProjectLaunchCodeUVE code, std::string message) {
+[[nodiscard]] ProjectLaunchResult MakeLaunchResult(const ProjectLaunchCode code, std::string message) {
     return {code, std::move(message)};
 }
 
-[[nodiscard]] ProjectRuntimeSetupResultUVE MakeSetupResultUVE(const ProjectRuntimeSetupCodeUVE code,
+[[nodiscard]] ProjectRuntimeSetupResult MakeSetupResult(const ProjectRuntimeSetupCode code,
                                                               std::string message) {
     return {code, std::move(message), std::nullopt};
 }
 
-[[nodiscard]] std::optional<Scene::EntityUVE> FindPlayCameraEntityUVE(Scene::IEntityManagerUVE& entityManager) {
-    return Scene::FindCurrentCameraEntityUVE(entityManager);
+[[nodiscard]] std::optional<Scene::Entity> FindPlayCameraEntity(Scene::IEntityManager& entityManager) {
+    return Scene::FindCurrentCameraEntity(entityManager);
 }
 
-[[nodiscard]] bool ReadBoundedFileUVE(const std::filesystem::path& path, std::vector<std::byte>& bytes,
+[[nodiscard]] bool ReadBoundedFile(const std::filesystem::path& path, std::vector<std::byte>& bytes,
                                       std::string& errorMessage) {
-    constexpr std::uintmax_t kMaximumIconFileBytesUVE = 64ULL * 1024ULL * 1024ULL;
+    constexpr std::uintmax_t kMaximumIconFileBytes = 64ULL * 1024ULL * 1024ULL;
     std::error_code error;
     const std::uintmax_t fileSize = std::filesystem::file_size(path, error);
-    if (error || fileSize == 0U || fileSize > kMaximumIconFileBytesUVE ||
+    if (error || fileSize == 0U || fileSize > kMaximumIconFileBytes ||
         fileSize > static_cast<std::uintmax_t>(bytes.max_size())) {
         errorMessage = "The configured PNG icon is missing, empty, or exceeds its file-size bound: " + path.string();
         return false;
@@ -66,7 +66,7 @@ namespace {
     return true;
 }
 
-[[nodiscard]] bool ResolveContainedPathUVE(const std::filesystem::path& root,
+[[nodiscard]] bool ResolveContainedPath(const std::filesystem::path& root,
                                            const std::filesystem::path& candidate,
                                            std::filesystem::path& resolvedPath) {
     std::error_code error;
@@ -85,71 +85,71 @@ namespace {
     return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
 }
 
-[[nodiscard]] bool ResolveContainedRegularFileUVE(const std::filesystem::path& root,
+[[nodiscard]] bool ResolveContainedRegularFile(const std::filesystem::path& root,
                                                   const std::filesystem::path& candidate,
                                                   std::filesystem::path& resolvedPath) {
     std::error_code error;
-    return ResolveContainedPathUVE(root, candidate, resolvedPath) &&
+    return ResolveContainedPath(root, candidate, resolvedPath) &&
            std::filesystem::is_regular_file(resolvedPath, error) && !error;
 }
 
-[[nodiscard]] bool ResolveContainedDirectoryUVE(const std::filesystem::path& root,
+[[nodiscard]] bool ResolveContainedDirectory(const std::filesystem::path& root,
                                                 const std::filesystem::path& candidate,
                                                 std::filesystem::path& resolvedPath) {
     std::error_code error;
-    return ResolveContainedPathUVE(root, candidate, resolvedPath) &&
+    return ResolveContainedPath(root, candidate, resolvedPath) &&
            std::filesystem::is_directory(resolvedPath, error) && !error;
 }
 
-[[nodiscard]] std::string LowercaseExtensionUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string LowercaseExtension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return extension;
 }
 
-[[nodiscard]] bool LoadCurrentTargetWindowIconsUVE(const Platform::EditorProjectPackageUVE& package,
+[[nodiscard]] bool LoadCurrentTargetWindowIcons(const Platform::EditorProjectPackage& package,
                                                    const std::filesystem::path& contentRoot,
-                                                   std::vector<Core::EngineApplicationIconImageUVE>& outIcons,
+                                                   std::vector<Core::EngineApplicationIconImage>& outIcons,
                                                    std::string& errorMessage) {
     const auto targetIt = package.applicationSettings.iconPathsByTarget.find(
-        std::string{Platform::GetApplicationTargetUVE()});
+        std::string{Platform::GetApplicationTarget()});
     if (targetIt == package.applicationSettings.iconPathsByTarget.end()) {
         return true;
     }
 
-    constexpr std::uint64_t kMaximumDecodedIconBytesUVE = 64ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kMaximumDecodedIconBytes = 64ULL * 1024ULL * 1024ULL;
     for (const auto& [pixelSize, relativePath] : targetIt->second) {
         // ICO/ICNS are retained for native packaging; the cross-platform GLFW window backend
         // accepts decoded RGBA pixels, so only PNGs are applied directly to the live window.
-        if (LowercaseExtensionUVE(relativePath) != ".png") {
+        if (LowercaseExtension(relativePath) != ".png") {
             continue;
         }
         const std::filesystem::path requestedIconPath = contentRoot / relativePath;
         std::filesystem::path iconPath;
-        if (!ResolveContainedRegularFileUVE(contentRoot, requestedIconPath, iconPath)) {
+        if (!ResolveContainedRegularFile(contentRoot, requestedIconPath, iconPath)) {
             errorMessage = "The configured PNG icon must be a regular file under the project content root: " +
                            requestedIconPath.string();
             return false;
         }
         std::vector<std::byte> fileBytes;
-        if (!ReadBoundedFileUVE(iconPath, fileBytes, errorMessage)) {
+        if (!ReadBoundedFile(iconPath, fileBytes, errorMessage)) {
             return false;
         }
-        const std::optional<Asset::PngMetadataUVE> metadata = Asset::ParsePngMetadataUVE(fileBytes);
+        const std::optional<Asset::PngMetadata> metadata = Asset::ParsePngMetadata(fileBytes);
         if (!metadata.has_value() || metadata->width != pixelSize || metadata->height != pixelSize ||
-            !Asset::ValidatePngRgba8PixelBudgetUVE(*metadata, kMaximumDecodedIconBytesUVE)) {
+            !Asset::ValidatePngRgba8PixelBudget(*metadata, kMaximumDecodedIconBytes)) {
             errorMessage = "A configured PNG icon must be a valid square image matching its declared pixel size: " +
                            iconPath.string();
             return false;
         }
-        Asset::PngRgba8ImageUVE decoded;
-        if (!Asset::DecodePngRgba8ImageUVE(fileBytes, decoded) || decoded.width != pixelSize ||
+        Asset::PngRgba8Image decoded;
+        if (!Asset::DecodePngRgba8Image(fileBytes, decoded) || decoded.width != pixelSize ||
             decoded.height != pixelSize) {
             errorMessage = "Unable to decode a configured PNG icon: " + iconPath.string();
             return false;
         }
-        Core::EngineApplicationIconImageUVE icon;
+        Core::EngineApplicationIconImage icon;
         icon.width = decoded.width;
         icon.height = decoded.height;
         icon.rgba8.reserve(decoded.pixels.size());
@@ -162,32 +162,32 @@ namespace {
 }
 
 /// What a `.uvproject` resolves to on disk, shared by the editor and runtime bootstraps.
-struct ProjectLayoutUVE final {
+struct ProjectLayout final {
     std::filesystem::path projectFile;
     std::filesystem::path projectRoot;
     std::filesystem::path contentRoot;
 };
 
-enum class ProjectLayoutErrorUVE : std::uint8_t {
+enum class ProjectLayoutError : std::uint8_t {
     None = 0,
     ManifestInvalid,
     PathUnresolvable,
     ContentRootInvalid,
 };
 
-struct ProjectLayoutResultUVE final {
-    ProjectLayoutErrorUVE error = ProjectLayoutErrorUVE::ManifestInvalid;
+struct ProjectLayoutResult final {
+    ProjectLayoutError error = ProjectLayoutError::ManifestInvalid;
     std::string message;
     /// Present whenever the manifest itself loaded, so callers can apply their own manifest checks
     /// before reporting a layout failure.
-    std::optional<Platform::EditorProjectPackageUVE> package;
-    std::optional<ProjectLayoutUVE> layout;
+    std::optional<Platform::EditorProjectPackage> package;
+    std::optional<ProjectLayout> layout;
 };
 
-[[nodiscard]] ProjectLayoutResultUVE ResolveProjectLayoutUVE(const std::filesystem::path& projectFile) {
-    ProjectLayoutResultUVE result;
-    Platform::EditorProjectPackageLoadResultUVE loaded = Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
-    if (!loaded.IsAcceptedUVE()) {
+[[nodiscard]] ProjectLayoutResult ResolveProjectLayout(const std::filesystem::path& projectFile) {
+    ProjectLayoutResult result;
+    Platform::EditorProjectPackageLoadResult loaded = Platform::EditorProjectPackageCodec::Load(projectFile);
+    if (!loaded.IsAccepted()) {
         result.message = "Unable to load the .uvproject project file: " + loaded.result.message;
         return result;
     }
@@ -196,146 +196,146 @@ struct ProjectLayoutResultUVE final {
     std::error_code error;
     std::filesystem::path absoluteProjectFile = std::filesystem::absolute(projectFile, error);
     if (error) {
-        result.error = ProjectLayoutErrorUVE::PathUnresolvable;
+        result.error = ProjectLayoutError::PathUnresolvable;
         result.message = "Unable to resolve the project file path: " + error.message();
         return result;
     }
     absoluteProjectFile = absoluteProjectFile.lexically_normal();
     std::filesystem::path projectRoot = absoluteProjectFile.parent_path();
     std::filesystem::path contentRoot;
-    if (!ResolveContainedDirectoryUVE(projectRoot, projectRoot / result.package->contentRoot, contentRoot)) {
-        result.error = ProjectLayoutErrorUVE::ContentRootInvalid;
+    if (!ResolveContainedDirectory(projectRoot, projectRoot / result.package->contentRoot, contentRoot)) {
+        result.error = ProjectLayoutError::ContentRootInvalid;
         result.message = "The project content root must be a directory under the project root: " +
                          (projectRoot / result.package->contentRoot).string();
         return result;
     }
-    result.error = ProjectLayoutErrorUVE::None;
-    result.layout = ProjectLayoutUVE{std::move(absoluteProjectFile), std::move(projectRoot), std::move(contentRoot)};
+    result.error = ProjectLayoutError::None;
+    result.layout = ProjectLayout{std::move(absoluteProjectFile), std::move(projectRoot), std::move(contentRoot)};
     return result;
 }
 
 /// Points the configuration at the project's own authored data. The input map keeps the file name
 /// the engine uses by default, placed in the project root.
-void ApplyProjectAuthoringPathsUVE(Core::EngineConfigUVE& config, const Platform::EditorProjectPackageUVE& package,
-                                   const ProjectLayoutUVE& layout) {
-    static const Core::EngineConfigUVE kDefaultConfigUVE{};
-    config.projectContentRootUVE = layout.contentRoot;
-    config.projectRootDirectoryUVE = layout.projectRoot;
+void ApplyProjectAuthoringPaths(Core::EngineConfig& config, const Platform::EditorProjectPackage& package,
+                                   const ProjectLayout& layout) {
+    static const Core::EngineConfig kDefaultConfig{};
+    config.projectContentRoot = layout.contentRoot;
+    config.projectRootDirectory = layout.projectRoot;
     config.projectSettingsFilePath = layout.projectRoot / package.settingsPath;
-    config.inputMapFilePath = layout.projectRoot / kDefaultConfigUVE.inputMapFilePath.filename();
+    config.inputMapFilePath = layout.projectRoot / kDefaultConfig.inputMapFilePath.filename();
     config.assetDatabaseFilePath = layout.projectRoot / package.assetDatabasePath;
-    config.projectDisplayNameUVE = package.displayName;
-    config.requestedRendererProfileUVE = package.rendererProfile;
+    config.projectDisplayName = package.displayName;
+    config.requestedRendererProfile = package.rendererProfile;
 }
 
-[[nodiscard]] Platform::EditorProjectVersionUVE ToProjectVersionUVE(const Core::VersionUVE& version) noexcept {
+[[nodiscard]] Platform::EditorProjectVersion ToProjectVersion(const Core::Version& version) noexcept {
     return {version.major, version.minor, version.patch, version.build};
 }
 
-[[nodiscard]] ProjectLaunchResultUVE LoadAndActivateSceneUVE(Core::EngineCoreUVE& engine,
-                                                              const Platform::EditorProjectPackageUVE& package,
+[[nodiscard]] ProjectLaunchResult LoadAndActivateScene(Core::EngineCore& engine,
+                                                              const Platform::EditorProjectPackage& package,
                                                               const std::filesystem::path& projectRoot) {
     if (package.startupScenePath.empty()) {
-        return MakeLaunchResultUVE(ProjectLaunchCodeUVE::NoStartupSceneConfigured,
-                                   "The project has no startup scene configured (EditorProjectPackageUVE::"
+        return MakeLaunchResult(ProjectLaunchCode::NoStartupSceneConfigured,
+                                   "The project has no startup scene configured (EditorProjectPackage::"
                                    "startupScenePath is empty) - nothing to load.");
     }
 
     std::filesystem::path contentRoot;
-    if (!ResolveContainedDirectoryUVE(projectRoot, projectRoot / package.contentRoot, contentRoot)) {
-        return MakeLaunchResultUVE(ProjectLaunchCodeUVE::SceneLoadFailed,
+    if (!ResolveContainedDirectory(projectRoot, projectRoot / package.contentRoot, contentRoot)) {
+        return MakeLaunchResult(ProjectLaunchCode::SceneLoadFailed,
                                    "The project content root must be a directory under the project root: " +
                                        (projectRoot / package.contentRoot).string());
     }
     const std::filesystem::path requestedScenePath = contentRoot / package.startupScenePath;
     std::filesystem::path scenePath;
-    if (!ResolveContainedRegularFileUVE(contentRoot, requestedScenePath, scenePath)) {
-        return MakeLaunchResultUVE(ProjectLaunchCodeUVE::SceneLoadFailed,
+    if (!ResolveContainedRegularFile(contentRoot, requestedScenePath, scenePath)) {
+        return MakeLaunchResult(ProjectLaunchCode::SceneLoadFailed,
                                    "The startup scene must be a regular file under the project content root: " +
                                        requestedScenePath.string());
     }
 
-    Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    Scene::SceneSerializerUVE serializer;
-    const std::vector<Scene::EntityUVE> loadedEntities = serializer.LoadUVE(entityManager, scenePath);
+    Core::EngineServices& services = engine.GetServices();
+    Scene::IEntityManager& entityManager = services.GetEntityManager();
+    Scene::SceneSerializer serializer;
+    const std::vector<Scene::Entity> loadedEntities = serializer.Load(entityManager, scenePath);
     if (loadedEntities.empty()) {
-        return MakeLaunchResultUVE(ProjectLaunchCodeUVE::SceneLoadFailed,
+        return MakeLaunchResult(ProjectLaunchCode::SceneLoadFailed,
                                    "Failed to load the startup scene: " + scenePath.string());
     }
 
     // Newly-loaded entities only have their authored local transforms until the scene graph
     // computes world transforms from them - the camera lookup below (and the very first render)
-    // both need a real WorldTransformComponentUVE to already be present.
-    services.GetSceneGraphUVE().UpdateUVE(entityManager);
+    // both need a real WorldTransformComponent to already be present.
+    services.GetSceneGraph().Update(entityManager);
 
-    const std::optional<Scene::EntityUVE> cameraEntity = FindPlayCameraEntityUVE(entityManager);
+    const std::optional<Scene::Entity> cameraEntity = FindPlayCameraEntity(entityManager);
     if (cameraEntity.has_value()) {
-        engine.SetActiveCameraUVE(*cameraEntity);
+        engine.SetActiveCamera(*cameraEntity);
     }
 
-    return MakeLaunchResultUVE(ProjectLaunchCodeUVE::Loaded, "Loaded startup scene: " + scenePath.string());
+    return MakeLaunchResult(ProjectLaunchCode::Loaded, "Loaded startup scene: " + scenePath.string());
 }
 
 } // namespace
 
-ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::path& projectFile,
-                                                       Core::EngineConfigUVE& config,
+ProjectRuntimeSetupResult PrepareProjectRuntime(const std::filesystem::path& projectFile,
+                                                       Core::EngineConfig& config,
                                                        const std::filesystem::path& nativeUserDataRoot) {
-    ProjectLayoutResultUVE resolved = ResolveProjectLayoutUVE(projectFile);
+    ProjectLayoutResult resolved = ResolveProjectLayout(projectFile);
     if (!resolved.package.has_value()) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile, std::move(resolved.message));
+        return MakeSetupResult(ProjectRuntimeSetupCode::InvalidProjectFile, std::move(resolved.message));
     }
-    const Platform::EditorProjectPackageUVE& package = *resolved.package;
+    const Platform::EditorProjectPackage& package = *resolved.package;
     if (package.startupScenePath.empty()) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::NoStartupSceneConfigured,
+        return MakeSetupResult(ProjectRuntimeSetupCode::NoStartupSceneConfigured,
                                   "The project has no startup scene configured.");
     }
     if (!resolved.layout.has_value()) {
-        const ProjectRuntimeSetupCodeUVE code = resolved.error == ProjectLayoutErrorUVE::ContentRootInvalid
-                                                    ? ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid
-                                                    : ProjectRuntimeSetupCodeUVE::InvalidProjectFile;
-        return MakeSetupResultUVE(code, std::move(resolved.message));
+        const ProjectRuntimeSetupCode code = resolved.error == ProjectLayoutError::ContentRootInvalid
+                                                    ? ProjectRuntimeSetupCode::ApplicationResourceInvalid
+                                                    : ProjectRuntimeSetupCode::InvalidProjectFile;
+        return MakeSetupResult(code, std::move(resolved.message));
     }
-    ProjectLayoutUVE& layout = *resolved.layout;
+    ProjectLayout& layout = *resolved.layout;
     const std::filesystem::path& projectRoot = layout.projectRoot;
     const std::filesystem::path& contentRoot = layout.contentRoot;
     std::error_code error;
 
-    Core::EngineConfigUVE candidateConfig = config;
-    candidateConfig.windowIconsUVE.clear();
+    Core::EngineConfig candidateConfig = config;
+    candidateConfig.windowIcons.clear();
     std::string resourceError;
-    if (!LoadCurrentTargetWindowIconsUVE(package, contentRoot, candidateConfig.windowIconsUVE, resourceError)) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid,
+    if (!LoadCurrentTargetWindowIcons(package, contentRoot, candidateConfig.windowIcons, resourceError)) {
+        return MakeSetupResult(ProjectRuntimeSetupCode::ApplicationResourceInvalid,
                                   std::move(resourceError));
     }
     if (!package.applicationSettings.splashImagePath.empty()) {
         const std::filesystem::path requestedSplashImage = contentRoot / package.applicationSettings.splashImagePath;
         std::filesystem::path splashImage;
-        if (!ResolveContainedRegularFileUVE(contentRoot, requestedSplashImage, splashImage)) {
-            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid,
+        if (!ResolveContainedRegularFile(contentRoot, requestedSplashImage, splashImage)) {
+            return MakeSetupResult(ProjectRuntimeSetupCode::ApplicationResourceInvalid,
                                       "The configured splash image must be a regular file under the project content root: " +
                                           requestedSplashImage.string());
         }
-        candidateConfig.bootSplashImagePathUVE = splashImage;
+        candidateConfig.bootSplashImagePath = splashImage;
     } else {
-        candidateConfig.bootSplashImagePathUVE.clear();
+        candidateConfig.bootSplashImagePath.clear();
     }
 
-    Platform::ApplicationUserDataDirectoryResultUVE dataDirectory;
+    Platform::ApplicationUserDataDirectoryResult dataDirectory;
     if (!nativeUserDataRoot.empty()) {
         // Native mobile hosts own their sandbox path; it must survive cooked-content replacement.
         if (!nativeUserDataRoot.is_absolute())
-            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,"Native user-data root must be absolute");
+            return MakeSetupResult(ProjectRuntimeSetupCode::UserDataDirectoryUnavailable,"Native user-data root must be absolute");
         std::filesystem::create_directories(nativeUserDataRoot,error);
         dataDirectory = {!error,nativeUserDataRoot,error.message()};
-    } else dataDirectory = Platform::ResolveApplicationUserDataDirectoryUVE(package, projectRoot);
+    } else dataDirectory = Platform::ResolveApplicationUserDataDirectory(package, projectRoot);
     if (!dataDirectory.success) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,
+        return MakeSetupResult(ProjectRuntimeSetupCode::UserDataDirectoryUnavailable,
                                   dataDirectory.message);
     }
 
-    const std::string target{Platform::GetApplicationTargetUVE()};
+    const std::string target{Platform::GetApplicationTarget()};
     const auto identifierIt = package.applicationSettings.applicationIdentifiersByTarget.find(target);
     const std::string applicationIdentifier =
         identifierIt != package.applicationSettings.applicationIdentifiersByTarget.end()
@@ -344,85 +344,85 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     const std::string& productName =
         package.productMetadata.name.empty() ? package.displayName : package.productMetadata.name;
 
-    candidateConfig.applicationIdentifierUVE = applicationIdentifier;
-    candidateConfig.userDataDirectoryPathUVE = dataDirectory.directory;
-    candidateConfig.enforceSingleInstanceUVE = package.applicationSettings.enforceSingleInstance;
-    candidateConfig.quitOnLastWindowClosedUVE = package.applicationSettings.quitOnLastWindowClosed;
-    candidateConfig.crashHandlerEnabledUVE = package.applicationSettings.crashHandlerEnabled;
-    candidateConfig.crashDumpDirectoryUVE = dataDirectory.directory / package.applicationSettings.crashDumpDirectory;
-    candidateConfig.symbolUploadEndpointUVE = package.applicationSettings.symbolUploadEndpoint;
-    candidateConfig.backgroundColorUVE = package.applicationSettings.splashBackgroundColor;
-    candidateConfig.splashFadeSecondsUVE = package.applicationSettings.splashFadeSeconds;
-    candidateConfig.splashMinimumDisplaySecondsUVE = package.applicationSettings.splashMinimumDisplaySeconds;
-    candidateConfig.splashSkippableUVE = package.applicationSettings.splashSkippable;
-    candidateConfig.skipSplashInEditorPlayModeUVE = package.applicationSettings.skipSplashInEditorPlayMode;
+    candidateConfig.applicationIdentifier = applicationIdentifier;
+    candidateConfig.userDataDirectoryPath = dataDirectory.directory;
+    candidateConfig.enforceSingleInstance = package.applicationSettings.enforceSingleInstance;
+    candidateConfig.quitOnLastWindowClosed = package.applicationSettings.quitOnLastWindowClosed;
+    candidateConfig.crashHandlerEnabled = package.applicationSettings.crashHandlerEnabled;
+    candidateConfig.crashDumpDirectory = dataDirectory.directory / package.applicationSettings.crashDumpDirectory;
+    candidateConfig.symbolUploadEndpoint = package.applicationSettings.symbolUploadEndpoint;
+    candidateConfig.backgroundColor = package.applicationSettings.splashBackgroundColor;
+    candidateConfig.splashFadeSeconds = package.applicationSettings.splashFadeSeconds;
+    candidateConfig.splashMinimumDisplaySeconds = package.applicationSettings.splashMinimumDisplaySeconds;
+    candidateConfig.splashSkippable = package.applicationSettings.splashSkippable;
+    candidateConfig.skipSplashInEditorPlayMode = package.applicationSettings.skipSplashInEditorPlayMode;
     candidateConfig.windowTitle = productName;
-    const Platform::EditorProjectApplicationSettingsUVE& windowSettings = package.applicationSettings;
+    const Platform::EditorProjectApplicationSettings& windowSettings = package.applicationSettings;
     candidateConfig.windowWidth = windowSettings.windowWidth;
     candidateConfig.windowHeight = windowSettings.windowHeight;
-    candidateConfig.windowModeUVE = windowSettings.windowMode;
-    candidateConfig.windowResizableUVE = windowSettings.windowResizable;
-    candidateConfig.windowBorderlessUVE = windowSettings.windowBorderless;
-    candidateConfig.windowAlwaysOnTopUVE = windowSettings.windowAlwaysOnTop;
-    candidateConfig.windowTransparentUVE = windowSettings.windowTransparent;
-    candidateConfig.windowMinimumWidthUVE = windowSettings.minimumWindowWidth;
-    candidateConfig.windowMinimumHeightUVE = windowSettings.minimumWindowHeight;
-    candidateConfig.windowMaximumWidthUVE = windowSettings.maximumWindowWidth;
-    candidateConfig.windowMaximumHeightUVE = windowSettings.maximumWindowHeight;
-    candidateConfig.windowPositionSpecifiedUVE = windowSettings.initialWindowPositionSpecified;
-    candidateConfig.windowPositionXUVE = windowSettings.initialWindowPositionX;
-    candidateConfig.windowPositionYUVE = windowSettings.initialWindowPositionY;
-    candidateConfig.windowMonitorNameUVE = windowSettings.initialMonitorName;
-    candidateConfig.highDpiAwareUVE = windowSettings.highDpiAware;
-    candidateConfig.perMonitorScalingUVE = windowSettings.perMonitorScaling;
-    candidateConfig.contentScaleOverrideUVE = windowSettings.contentScaleOverride;
-    candidateConfig.stretchModeUVE = windowSettings.stretchMode;
-    candidateConfig.aspectPolicyUVE = windowSettings.aspectPolicy;
-    candidateConfig.integerOnlyScalingUVE = windowSettings.integerOnlyScaling;
-    candidateConfig.orientationUVE = windowSettings.orientation;
-    candidateConfig.allowedOrientationsUVE = windowSettings.allowedOrientations;
-    candidateConfig.vsyncModeUVE = windowSettings.vsyncMode;
-    candidateConfig.vsyncModeExplicitUVE = true;
-    candidateConfig.vsyncEnabledUVE = windowSettings.vsyncMode != Platform::VSyncModeUVE::Off;
-    candidateConfig.focusedFrameRateCapUVE = windowSettings.focusedFrameRateCap;
-    candidateConfig.unfocusedFrameRateCapUVE = windowSettings.unfocusedFrameRateCap;
-    candidateConfig.allowDisplaySleepUVE = windowSettings.allowDisplaySleep;
-    candidateConfig.cursorImagePathUVE.clear();
-    candidateConfig.cursorRgba8UVE.clear();
-    candidateConfig.cursorImageWidthUVE = 0U;
-    candidateConfig.cursorImageHeightUVE = 0U;
-    candidateConfig.cursorHotspotXUVE = windowSettings.cursorHotspotX;
-    candidateConfig.cursorHotspotYUVE = windowSettings.cursorHotspotY;
-    candidateConfig.cursorVisibleUVE = windowSettings.cursorVisible;
-    candidateConfig.cursorConfinedToWindowUVE = windowSettings.cursorConfinedToWindow;
+    candidateConfig.windowMode = windowSettings.windowMode;
+    candidateConfig.windowResizable = windowSettings.windowResizable;
+    candidateConfig.windowBorderless = windowSettings.windowBorderless;
+    candidateConfig.windowAlwaysOnTop = windowSettings.windowAlwaysOnTop;
+    candidateConfig.windowTransparent = windowSettings.windowTransparent;
+    candidateConfig.windowMinimumWidth = windowSettings.minimumWindowWidth;
+    candidateConfig.windowMinimumHeight = windowSettings.minimumWindowHeight;
+    candidateConfig.windowMaximumWidth = windowSettings.maximumWindowWidth;
+    candidateConfig.windowMaximumHeight = windowSettings.maximumWindowHeight;
+    candidateConfig.windowPositionSpecified = windowSettings.initialWindowPositionSpecified;
+    candidateConfig.windowPositionX = windowSettings.initialWindowPositionX;
+    candidateConfig.windowPositionY = windowSettings.initialWindowPositionY;
+    candidateConfig.windowMonitorName = windowSettings.initialMonitorName;
+    candidateConfig.highDpiAware = windowSettings.highDpiAware;
+    candidateConfig.perMonitorScaling = windowSettings.perMonitorScaling;
+    candidateConfig.contentScaleOverride = windowSettings.contentScaleOverride;
+    candidateConfig.stretchMode = windowSettings.stretchMode;
+    candidateConfig.aspectPolicy = windowSettings.aspectPolicy;
+    candidateConfig.integerOnlyScaling = windowSettings.integerOnlyScaling;
+    candidateConfig.orientation = windowSettings.orientation;
+    candidateConfig.allowedOrientations = windowSettings.allowedOrientations;
+    candidateConfig.vsyncMode = windowSettings.vsyncMode;
+    candidateConfig.vsyncModeExplicit = true;
+    candidateConfig.vsyncEnabled = windowSettings.vsyncMode != Platform::VSyncMode::Off;
+    candidateConfig.focusedFrameRateCap = windowSettings.focusedFrameRateCap;
+    candidateConfig.unfocusedFrameRateCap = windowSettings.unfocusedFrameRateCap;
+    candidateConfig.allowDisplaySleep = windowSettings.allowDisplaySleep;
+    candidateConfig.cursorImagePath.clear();
+    candidateConfig.cursorRgba8.clear();
+    candidateConfig.cursorImageWidth = 0U;
+    candidateConfig.cursorImageHeight = 0U;
+    candidateConfig.cursorHotspotX = windowSettings.cursorHotspotX;
+    candidateConfig.cursorHotspotY = windowSettings.cursorHotspotY;
+    candidateConfig.cursorVisible = windowSettings.cursorVisible;
+    candidateConfig.cursorConfinedToWindow = windowSettings.cursorConfinedToWindow;
     if (!windowSettings.cursorImagePath.empty()) {
         const std::filesystem::path requestedCursor = contentRoot / windowSettings.cursorImagePath;
         std::filesystem::path resolvedCursor;
-        if (!ResolveContainedRegularFileUVE(contentRoot, requestedCursor, resolvedCursor)) {
-            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid,
+        if (!ResolveContainedRegularFile(contentRoot, requestedCursor, resolvedCursor)) {
+            return MakeSetupResult(ProjectRuntimeSetupCode::ApplicationResourceInvalid,
                                       "The configured cursor image must be a regular PNG file under the project "
                                       "content root: " + requestedCursor.string());
         }
-        candidateConfig.cursorImagePathUVE = std::move(resolvedCursor);
+        candidateConfig.cursorImagePath = std::move(resolvedCursor);
     }
-    candidateConfig.windowTitleFormatUVE = windowSettings.windowTitleFormat;
-    candidateConfig.appendSceneNameInEditorPlayModeUVE = windowSettings.appendSceneNameInEditorPlayMode;
+    candidateConfig.windowTitleFormat = windowSettings.windowTitleFormat;
+    candidateConfig.appendSceneNameInEditorPlayMode = windowSettings.appendSceneNameInEditorPlayMode;
     candidateConfig.settingsFilePath = dataDirectory.directory / ".uvsettings";
     candidateConfig.platformSettingsFilePath.clear();
-    ApplyProjectAuthoringPathsUVE(candidateConfig, package, layout);
+    ApplyProjectAuthoringPaths(candidateConfig, package, layout);
     if (std::filesystem::exists(projectRoot/"cooked.json")) {
         try {
             std::ifstream input(projectRoot/"cooked.json");
             nlohmann::json metadata; input >> metadata;
             if (metadata.at("schema") != 1) throw std::runtime_error("Unsupported cooked schema");
-            candidateConfig.cookedAssetPathsUVE = true;
-            candidateConfig.assetResidentBudgetBytesUVE = metadata.at("assetBudgetBytes").get<std::size_t>();
-            if (candidateConfig.assetResidentBudgetBytesUVE == 0) throw std::runtime_error("Cooked budget must be finite");
+            candidateConfig.cookedAssetPaths = true;
+            candidateConfig.assetResidentBudgetBytes = metadata.at("assetBudgetBytes").get<std::size_t>();
+            if (candidateConfig.assetResidentBudgetBytes == 0) throw std::runtime_error("Cooked budget must be finite");
         } catch (const std::exception& exception) {
-            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile, exception.what());
+            return MakeSetupResult(ProjectRuntimeSetupCode::InvalidProjectFile, exception.what());
         }
     }
-    candidateConfig.derivedArtifactCacheRootUVE = dataDirectory.directory / "DerivedData" / "Import";
+    candidateConfig.derivedArtifactCacheRoot = dataDirectory.directory / "DerivedData" / "Import";
     candidateConfig.saveDirectoryPath = dataDirectory.directory / "saves";
     candidateConfig.shaderCachePath = dataDirectory.directory / "shader_cache";
     candidateConfig.logFilePath = dataDirectory.directory / "logs" / "uve_engine.log";
@@ -430,50 +430,50 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     error.clear();
     std::filesystem::create_directories(candidateConfig.logFilePath.parent_path(), error);
     if (error) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,
+        return MakeSetupResult(ProjectRuntimeSetupCode::UserDataDirectoryUnavailable,
                                   "Unable to create the application log directory: " + error.message());
     }
-    if (candidateConfig.crashHandlerEnabledUVE) {
+    if (candidateConfig.crashHandlerEnabled) {
         error.clear();
-        std::filesystem::create_directories(candidateConfig.crashDumpDirectoryUVE, error);
+        std::filesystem::create_directories(candidateConfig.crashDumpDirectory, error);
         if (error) {
-            return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::UserDataDirectoryUnavailable,
+            return MakeSetupResult(ProjectRuntimeSetupCode::UserDataDirectoryUnavailable,
                                       "Unable to create the crash dump directory: " + error.message());
         }
     }
 
     config = std::move(candidateConfig);
-    ProjectRuntimeSetupUVE setup;
+    ProjectRuntimeSetup setup;
     setup.package = package;
     setup.projectFile = std::move(layout.projectFile);
     setup.projectRoot = projectRoot;
     setup.contentRoot = contentRoot;
     setup.userDataDirectory = dataDirectory.directory;
     setup.applicationIdentifier = applicationIdentifier;
-    return {ProjectRuntimeSetupCodeUVE::Ready, "Project runtime configuration is ready.", std::move(setup)};
+    return {ProjectRuntimeSetupCode::Ready, "Project runtime configuration is ready.", std::move(setup)};
 }
 
-ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path& projectFile,
-                                                     const Core::VersionUVE& engineVersion,
-                                                     Core::EngineConfigUVE& config,
-                                                     const ProjectCompatibilityPolicyUVE& policy) {
-    const auto fail = [](const ProjectEditorSetupCodeUVE code, std::string message) {
-        return ProjectEditorSetupResultUVE{code, std::move(message), std::nullopt};
+ProjectEditorSetupResult PrepareProjectEditor(const std::filesystem::path& projectFile,
+                                                     const Core::Version& engineVersion,
+                                                     Core::EngineConfig& config,
+                                                     const ProjectCompatibilityPolicy& policy) {
+    const auto fail = [](const ProjectEditorSetupCode code, std::string message) {
+        return ProjectEditorSetupResult{code, std::move(message), std::nullopt};
     };
-    ProjectLayoutResultUVE resolved = ResolveProjectLayoutUVE(projectFile);
+    ProjectLayoutResult resolved = ResolveProjectLayout(projectFile);
     if (!resolved.layout.has_value()) {
-        const ProjectEditorSetupCodeUVE code = resolved.error == ProjectLayoutErrorUVE::ContentRootInvalid
-                                                   ? ProjectEditorSetupCodeUVE::ContentRootInvalid
-                                                   : ProjectEditorSetupCodeUVE::InvalidProjectFile;
+        const ProjectEditorSetupCode code = resolved.error == ProjectLayoutError::ContentRootInvalid
+                                                   ? ProjectEditorSetupCode::ContentRootInvalid
+                                                   : ProjectEditorSetupCode::InvalidProjectFile;
         return fail(code, std::move(resolved.message));
     }
-    Platform::EditorProjectPackageUVE& package = *resolved.package;
-    ProjectLayoutUVE& layout = *resolved.layout;
+    Platform::EditorProjectPackage& package = *resolved.package;
+    ProjectLayout& layout = *resolved.layout;
 
-    ProjectCompatibilityUVE compatibility =
-        EvaluateProjectCompatibilityUVE(package.engineVersion, engineVersion, policy);
-    if (!compatibility.CanOpenUVE()) {
-        return fail(ProjectEditorSetupCodeUVE::EngineTooOld, std::move(compatibility.message));
+    ProjectCompatibility compatibility =
+        EvaluateProjectCompatibility(package.engineVersion, engineVersion, policy);
+    if (!compatibility.CanOpen()) {
+        return fail(ProjectEditorSetupCode::EngineTooOld, std::move(compatibility.message));
     }
 
     // The scene may not have been saved yet, so containment is checked on the normalized path
@@ -483,71 +483,71 @@ ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path&
         startupScene = (layout.contentRoot / package.startupScenePath).lexically_normal();
         const std::filesystem::path relative = startupScene.lexically_relative(layout.contentRoot);
         if (package.startupScenePath.is_absolute() || relative.empty() || *relative.begin() == "..") {
-            return fail(ProjectEditorSetupCodeUVE::StartupSceneInvalid,
+            return fail(ProjectEditorSetupCode::StartupSceneInvalid,
                         "The startup scene must be under the project content root: " +
                             package.startupScenePath.string());
         }
     }
 
-    static const Core::EngineConfigUVE kDefaultConfigUVE{};
-    Core::EngineConfigUVE candidateConfig = config;
-    ApplyProjectAuthoringPathsUVE(candidateConfig, package, layout);
-    candidateConfig.derivedArtifactCacheRootUVE = layout.projectRoot / kDefaultConfigUVE.derivedArtifactCacheRootUVE;
+    static const Core::EngineConfig kDefaultConfig{};
+    Core::EngineConfig candidateConfig = config;
+    ApplyProjectAuthoringPaths(candidateConfig, package, layout);
+    candidateConfig.derivedArtifactCacheRoot = layout.projectRoot / kDefaultConfig.derivedArtifactCacheRoot;
     candidateConfig.logFilePath =
-        layout.projectRoot / kProjectEditorLogDirectoryNameUVE / config.logFilePath.filename();
+        layout.projectRoot / kProjectEditorLogDirectoryName / config.logFilePath.filename();
 
     std::error_code error;
     std::filesystem::create_directories(candidateConfig.logFilePath.parent_path(), error);
     if (error) {
-        return fail(ProjectEditorSetupCodeUVE::DirectoryUnavailable,
+        return fail(ProjectEditorSetupCode::DirectoryUnavailable,
                     "Unable to create the project log directory: " + error.message());
     }
 
     config = std::move(candidateConfig);
-    ProjectEditorSetupUVE setup;
+    ProjectEditorSetup setup;
     setup.package = std::move(package);
     setup.projectFile = std::move(layout.projectFile);
     setup.projectRoot = std::move(layout.projectRoot);
     setup.contentRoot = std::move(layout.contentRoot);
     setup.startupScene = std::move(startupScene);
     setup.compatibility = std::move(compatibility);
-    return {ProjectEditorSetupCodeUVE::Ready, "Project editor configuration is ready.", std::move(setup)};
+    return {ProjectEditorSetupCode::Ready, "Project editor configuration is ready.", std::move(setup)};
 }
 
-Platform::EditorProjectPackageResultUVE RecordProjectEngineVersionUVE(const std::filesystem::path& projectFile,
-                                                                     const Core::VersionUVE& engineVersion) {
-    Platform::EditorProjectPackageLoadResultUVE loaded = Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
-    if (!loaded.IsAcceptedUVE()) {
+Platform::EditorProjectPackageResult RecordProjectEngineVersion(const std::filesystem::path& projectFile,
+                                                                     const Core::Version& engineVersion) {
+    Platform::EditorProjectPackageLoadResult loaded = Platform::EditorProjectPackageCodec::Load(projectFile);
+    if (!loaded.IsAccepted()) {
         return loaded.result;
     }
-    const Platform::EditorProjectVersionUVE recorded = ToProjectVersionUVE(engineVersion);
+    const Platform::EditorProjectVersion recorded = ToProjectVersion(engineVersion);
     if (loaded.package->engineVersion == recorded) {
-        return {Platform::EditorProjectPackageCodeUVE::Applied, "The project already records this engine version."};
+        return {Platform::EditorProjectPackageCode::Applied, "The project already records this engine version."};
     }
     const std::uint64_t expectedRevision = loaded.package->revision;
-    Platform::EditorProjectPackageUVE replacement = std::move(*loaded.package);
+    Platform::EditorProjectPackage replacement = std::move(*loaded.package);
     replacement.engineVersion = recorded;
     replacement.revision = expectedRevision + 1U;
-    return Platform::EditorProjectPackageCodecUVE::ApplyUpdateUVE(projectFile, expectedRevision, replacement);
+    return Platform::EditorProjectPackageCodec::ApplyUpdate(projectFile, expectedRevision, replacement);
 }
 
-ProjectLaunchResultUVE LoadAndActivateProjectSceneUVE(Core::EngineCoreUVE& engine,
+ProjectLaunchResult LoadAndActivateProjectScene(Core::EngineCore& engine,
                                                        const std::filesystem::path& projectFile) {
-    const Platform::EditorProjectPackageLoadResultUVE loaded =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
-    if (!loaded.IsAcceptedUVE()) {
-        return MakeLaunchResultUVE(ProjectLaunchCodeUVE::InvalidProjectFile,
+    const Platform::EditorProjectPackageLoadResult loaded =
+        Platform::EditorProjectPackageCodec::Load(projectFile);
+    if (!loaded.IsAccepted()) {
+        return MakeLaunchResult(ProjectLaunchCode::InvalidProjectFile,
                                    "Unable to load the .uvproject project file: " + loaded.result.message);
     }
     const std::filesystem::path projectRoot = projectFile.parent_path().empty()
                                                   ? std::filesystem::current_path()
                                                   : projectFile.parent_path();
-    return LoadAndActivateSceneUVE(engine, *loaded.package, projectRoot);
+    return LoadAndActivateScene(engine, *loaded.package, projectRoot);
 }
 
-ProjectLaunchResultUVE LoadAndActivateProjectSceneUVE(Core::EngineCoreUVE& engine,
-                                                       const ProjectRuntimeSetupUVE& setup) {
-    return LoadAndActivateSceneUVE(engine, setup.package, setup.projectRoot);
+ProjectLaunchResult LoadAndActivateProjectScene(Core::EngineCore& engine,
+                                                       const ProjectRuntimeSetup& setup) {
+    return LoadAndActivateScene(engine, setup.package, setup.projectRoot);
 }
 
 } // namespace UVE::Pack

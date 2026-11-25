@@ -56,7 +56,7 @@ release page.
 | cmake, ninja, meson, bison 3.8.2, flex 2.6.4, pkgconf | PyPI wheels (`bison-bin`, `flex-bin`, ...) | Debian would supply these; the wheels are prebuilt manylinux binaries. |
 | GNU m4 1.4.18 | `tar-mirror/gnu-m4` (release-tarball git import) | bison and flex exec `m4` at runtime; ftp.gnu.org is unreachable. Two one-line glibc patches. |
 | Mesa 25.0.7 - `libOSMesa.so.8`, softpipe, OpenGL 3.3 Core | `sailfishos-mirror/mesa` tag tarball | Headless GL with no X11/DRM/LLVM. 25.0 is the **last** Mesa with OSMesa (25.1 removed it). `libGL.so` is a symlink to it: OSMesa exports the whole desktop-GL ABI, so `find_package(OpenGL)` and the linker are happy. |
-| GLFW 3.4, Null platform only | `glfw/glfw` tag tarball | One-line patch so `GLFW_ANY_PLATFORM` auto-selects Null (upstream refuses); contexts are then created through OSMesa, so `WindowManagerUVE`'s plain `glfwInit()` + `glfwCreateWindow()` work unchanged. |
+| GLFW 3.4, Null platform only | `glfw/glfw` tag tarball | One-line patch so `GLFW_ANY_PLATFORM` auto-selects Null (upstream refuses); contexts are then created through OSMesa, so `WindowManager`'s plain `glfwInit()` + `glfwCreateWindow()` work unchanged. |
 | GLEW 2.2 in `GLEW_OSMESA` mode | `Perlmint/glew-cmake` (pre-generated `glew.c`) | The editor viewport's `glewInit()` resolves through `OSMesaGetProcAddress`. |
 | SwiftShader Vulkan 1.3 CPU ICD + loader | `@sparticuz/chromium` npm tarball (`bin/swiftshader.tar.br`) | The only prebuilt Linux Vulkan implementation on a reachable host; it is Chromium's bundled copy. `VK_ICD_FILENAMES` points at it. |
 
@@ -69,7 +69,7 @@ and sources it from `~/.bashrc`. The env file carries more than PATH:
   `~/toolchain` look like one without touching the CMake files.
 - `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` - the SwiftShader ICD manifest.
 - `MESA_GL_VERSION_OVERRIDE=4.6` + `MESA_GLSL_VERSION_OVERRIDE=460` - softpipe tops out at a
-  real GL 3.3 Core because it has no tessellation, and `WindowDescUVE` defaults to a 4.6 Core
+  real GL 3.3 Core because it has no tessellation, and `WindowDesc` defaults to a 4.6 Core
   context request. The override only changes the advertised version string: anything the
   engine needs from 3.3 (compute, SSBO, image load/store, indirect draws) is really there,
   while tessellation, `shader_draw_parameters`, `texture_barrier`, BC compression and MSAA
@@ -78,7 +78,7 @@ and sources it from `~/.bashrc`. The env file carries more than PATH:
 
 Afterwards configure with the legacy `FindOpenGL` mode (there is no GLVND `libOpenGL`/`libGLX`
 here, only the OSMesa-backed `libGL.so`); `UVE_HAS_DESKTOP_GL` turns on and every GL-gated
-target - `uve_rhi_opengl`, the GLFW `WindowManagerUVE`, `univex_viewport_gl`, the editor -
+target - `uve_rhi_opengl`, the GLFW `WindowManager`, `univex_viewport_gl`, the editor -
 compiles and runs headless:
 
 ```sh

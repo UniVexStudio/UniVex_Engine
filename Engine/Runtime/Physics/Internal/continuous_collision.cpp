@@ -11,28 +11,28 @@ namespace UVE::Physics {
 
 namespace {
 
-constexpr float kEpsilonUVE = 1.0e-6F;
+constexpr float kEpsilon = 1.0e-6F;
 /// Below this the sweep is treated as stationary and no ray/slab solution is attempted: a zero
 /// displacement has no direction, and dividing by its length would produce an infinite impact time.
-constexpr float kMinimumSweepLengthUVE = 1.0e-9F;
+constexpr float kMinimumSweepLength = 1.0e-9F;
 
-[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
+[[nodiscard]] bool IsFiniteVector(const Math::Vector3& value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-[[nodiscard]] Math::Vector3UVE NormalizeOrUVE(const Math::Vector3UVE& value,
-                                              const Math::Vector3UVE& fallback) noexcept {
+[[nodiscard]] Math::Vector3 NormalizeOr(const Math::Vector3& value,
+                                              const Math::Vector3& fallback) noexcept {
     const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
-    if (!(lengthSquared > kEpsilonUVE) || !std::isfinite(lengthSquared)) {
+    if (!(lengthSquared > kEpsilon) || !std::isfinite(lengthSquared)) {
         return fallback;
     }
     const float inverseLength = 1.0F / std::sqrt(lengthSquared);
-    return Math::Vector3UVE{value.x * inverseLength, value.y * inverseLength, value.z * inverseLength};
+    return Math::Vector3{value.x * inverseLength, value.y * inverseLength, value.z * inverseLength};
 }
 
 /// Unit axis for an index, and its sign.
-[[nodiscard]] Math::Vector3UVE AxisNormalUVE(const int axis, const float sign) noexcept {
-    Math::Vector3UVE normal{};
+[[nodiscard]] Math::Vector3 AxisNormal(const int axis, const float sign) noexcept {
+    Math::Vector3 normal{};
     if (axis == 0) {
         normal.x = sign;
     } else if (axis == 1) {
@@ -45,8 +45,8 @@ constexpr float kMinimumSweepLengthUVE = 1.0e-9F;
 
 /// The axis along which a point inside `box` is closest to leaving it, with the outward sign.
 /// Used for the "already overlapping at t == 0" case, where a slab test has no entry face to report.
-[[nodiscard]] Math::Vector3UVE LeastPenetrationAxisNormalUVE(const Math::Vector3UVE& point,
-                                                             const Math::AabbUVE& box) noexcept {
+[[nodiscard]] Math::Vector3 LeastPenetrationAxisNormal(const Math::Vector3& point,
+                                                             const Math::Aabb& box) noexcept {
     const float distances[3] = {point.x - box.min.x, point.y - box.min.y, point.z - box.min.z};
     const float exits[3] = {box.max.x - point.x, box.max.y - point.y, box.max.z - point.z};
     int bestAxis = 0;
@@ -61,21 +61,21 @@ constexpr float kMinimumSweepLengthUVE = 1.0e-9F;
             bestSign = towardsMin ? -1.0F : 1.0F;
         }
     }
-    return AxisNormalUVE(bestAxis, bestSign);
+    return AxisNormal(bestAxis, bestSign);
 }
 
 } // namespace
 
-std::optional<SweptContactUVE> SweepSphereAgainstSphereUVE(const SweptSphereUVE& mover,
-                                                           const Math::Vector3UVE& targetCenter,
+std::optional<SweptContact> SweepSphereAgainstSphere(const SweptSphere& mover,
+                                                           const Math::Vector3& targetCenter,
                                                            const float targetRadius) noexcept {
-    if (!IsFiniteVectorUVE(mover.center) || !IsFiniteVectorUVE(mover.displacement) ||
-        !IsFiniteVectorUVE(targetCenter) || !std::isfinite(mover.radius) ||
+    if (!IsFiniteVector(mover.center) || !IsFiniteVector(mover.displacement) ||
+        !IsFiniteVector(targetCenter) || !std::isfinite(mover.radius) ||
         !std::isfinite(targetRadius) || mover.radius < 0.0F || targetRadius < 0.0F) {
         return std::nullopt;
     }
     const float combinedRadius = mover.radius + targetRadius;
-    const Math::Vector3UVE offset{mover.center.x - targetCenter.x, mover.center.y - targetCenter.y,
+    const Math::Vector3 offset{mover.center.x - targetCenter.x, mover.center.y - targetCenter.y,
                                   mover.center.z - targetCenter.z};
 
     // Starting overlapped: report an immediate contact and let the discrete resolver separate the
@@ -83,14 +83,14 @@ std::optional<SweptContactUVE> SweepSphereAgainstSphereUVE(const SweptSphereUVE&
     const float startDistanceSquared =
         offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
     if (startDistanceSquared <= combinedRadius * combinedRadius) {
-        const Math::Vector3UVE away = NormalizeOrUVE(offset, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-        return SweptContactUVE{0.0F, away, mover.center};
+        const Math::Vector3 away = NormalizeOr(offset, Math::Vector3{0.0F, 1.0F, 0.0F});
+        return SweptContact{0.0F, away, mover.center};
     }
 
     const float a = mover.displacement.x * mover.displacement.x +
                     mover.displacement.y * mover.displacement.y +
                     mover.displacement.z * mover.displacement.z;
-    if (!(a > kMinimumSweepLengthUVE)) {
+    if (!(a > kMinimumSweepLength)) {
         return std::nullopt;
     }
     const float b = 2.0F * (offset.x * mover.displacement.x + offset.y * mover.displacement.y +
@@ -106,19 +106,19 @@ std::optional<SweptContactUVE> SweepSphereAgainstSphereUVE(const SweptSphereUVE&
     if (!(timeOfImpact >= 0.0F) || !(timeOfImpact <= 1.0F)) {
         return std::nullopt;
     }
-    const Math::Vector3UVE position{mover.center.x + mover.displacement.x * timeOfImpact,
+    const Math::Vector3 position{mover.center.x + mover.displacement.x * timeOfImpact,
                                     mover.center.y + mover.displacement.y * timeOfImpact,
                                     mover.center.z + mover.displacement.z * timeOfImpact};
-    const Math::Vector3UVE normal = NormalizeOrUVE(
-        Math::Vector3UVE{position.x - targetCenter.x, position.y - targetCenter.y,
+    const Math::Vector3 normal = NormalizeOr(
+        Math::Vector3{position.x - targetCenter.x, position.y - targetCenter.y,
                          position.z - targetCenter.z},
-        Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-    return SweptContactUVE{timeOfImpact, normal, position};
+        Math::Vector3{0.0F, 1.0F, 0.0F});
+    return SweptContact{timeOfImpact, normal, position};
 }
 
-std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(const SweptSphereUVE& mover,
-                                                         const Math::AabbUVE& target) noexcept {
-    if (!IsFiniteVectorUVE(mover.center) || !IsFiniteVectorUVE(mover.displacement) ||
+std::optional<SweptContact> SweepSphereAgainstAabb(const SweptSphere& mover,
+                                                         const Math::Aabb& target) noexcept {
+    if (!IsFiniteVector(mover.center) || !IsFiniteVector(mover.displacement) ||
         !std::isfinite(mover.radius) || mover.radius < 0.0F) {
         return std::nullopt;
     }
@@ -127,9 +127,9 @@ std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(const SweptSphereUVE& m
         return std::nullopt;
     }
     // Minkowski sum: inflate the box by the mover's radius so the sphere becomes a point.
-    const Math::Vector3UVE expandedMin{target.min.x - mover.radius, target.min.y - mover.radius,
+    const Math::Vector3 expandedMin{target.min.x - mover.radius, target.min.y - mover.radius,
                                        target.min.z - mover.radius};
-    const Math::Vector3UVE expandedMax{target.max.x + mover.radius, target.max.y + mover.radius,
+    const Math::Vector3 expandedMax{target.max.x + mover.radius, target.max.y + mover.radius,
                                        target.max.z + mover.radius};
 
     const float center[3] = {mover.center.x, mover.center.y, mover.center.z};
@@ -141,7 +141,7 @@ std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(const SweptSphereUVE& m
     // time would be <= 0). Report the shallowest direction out instead.
     if (center[0] >= low[0] && center[0] <= high[0] && center[1] >= low[1] && center[1] <= high[1] &&
         center[2] >= low[2] && center[2] <= high[2]) {
-        return SweptContactUVE{0.0F, LeastPenetrationAxisNormalUVE(mover.center, target),
+        return SweptContact{0.0F, LeastPenetrationAxisNormal(mover.center, target),
                                mover.center};
     }
 
@@ -150,7 +150,7 @@ std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(const SweptSphereUVE& m
     int entryAxis = 0;
     float entrySign = -1.0F;
     for (int axis = 0; axis < 3; ++axis) {
-        if (std::abs(delta[axis]) <= kEpsilonUVE) {
+        if (std::abs(delta[axis]) <= kEpsilon) {
             // Parallel to this slab: outside it the sweep can never enter the box.
             if (center[axis] < low[axis] || center[axis] > high[axis]) {
                 return std::nullopt;
@@ -179,17 +179,17 @@ std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(const SweptSphereUVE& m
         return std::nullopt;
     }
     const float timeOfImpact = std::max(entryTime, 0.0F);
-    const Math::Vector3UVE position{mover.center.x + mover.displacement.x * timeOfImpact,
+    const Math::Vector3 position{mover.center.x + mover.displacement.x * timeOfImpact,
                                     mover.center.y + mover.displacement.y * timeOfImpact,
                                     mover.center.z + mover.displacement.z * timeOfImpact};
-    return SweptContactUVE{timeOfImpact, AxisNormalUVE(entryAxis, entrySign), position};
+    return SweptContact{timeOfImpact, AxisNormal(entryAxis, entrySign), position};
 }
 
-std::optional<SweptContactUVE> SweepSphereAgainstAabbsUVE(
-    const SweptSphereUVE& mover, const std::span<const Math::AabbUVE> targets) noexcept {
-    std::optional<SweptContactUVE> earliest;
+std::optional<SweptContact> SweepSphereAgainstAabbs(
+    const SweptSphere& mover, const std::span<const Math::Aabb> targets) noexcept {
+    std::optional<SweptContact> earliest;
     for (std::size_t index = 0; index < targets.size(); ++index) {
-        const std::optional<SweptContactUVE> contact = SweepSphereAgainstAabbUVE(mover, targets[index]);
+        const std::optional<SweptContact> contact = SweepSphereAgainstAabb(mover, targets[index]);
         if (!contact.has_value()) {
             continue;
         }
@@ -202,20 +202,20 @@ std::optional<SweptContactUVE> SweepSphereAgainstAabbsUVE(
     return earliest;
 }
 
-ContinuousMotionResultUVE ResolveContinuousMotionUVE(
-    const SweptSphereUVE& mover, const std::span<const Math::AabbUVE> targets,
-    const ContinuousCollisionSettingsUVE& settings) noexcept {
-    ContinuousMotionResultUVE result{mover.displacement, std::nullopt};
-    if (!settings.enabled || !IsFiniteVectorUVE(mover.displacement)) {
+ContinuousMotionResult ResolveContinuousMotion(
+    const SweptSphere& mover, const std::span<const Math::Aabb> targets,
+    const ContinuousCollisionSettings& settings) noexcept {
+    ContinuousMotionResult result{mover.displacement, std::nullopt};
+    if (!settings.enabled || !IsFiniteVector(mover.displacement)) {
         return result;
     }
     const float travel = std::sqrt(mover.displacement.x * mover.displacement.x +
                                    mover.displacement.y * mover.displacement.y +
                                    mover.displacement.z * mover.displacement.z);
-    if (!(travel > std::max(settings.motionThreshold, kMinimumSweepLengthUVE))) {
+    if (!(travel > std::max(settings.motionThreshold, kMinimumSweepLength))) {
         return result;
     }
-    const std::optional<SweptContactUVE> contact = SweepSphereAgainstAabbsUVE(mover, targets);
+    const std::optional<SweptContact> contact = SweepSphereAgainstAabbs(mover, targets);
     if (!contact.has_value()) {
         return result;
     }
@@ -233,12 +233,12 @@ ContinuousMotionResultUVE ResolveContinuousMotionUVE(
     // leaving it to travel backwards.
     const float offsetFraction = std::max(settings.contactOffset, 0.0F) / travel;
     const float clampedTime = std::max(0.0F, contact->timeOfImpact - offsetFraction);
-    SweptContactUVE resolved = *contact;
+    SweptContact resolved = *contact;
     resolved.timeOfImpact = clampedTime;
-    resolved.position = Math::Vector3UVE{mover.center.x + mover.displacement.x * clampedTime,
+    resolved.position = Math::Vector3{mover.center.x + mover.displacement.x * clampedTime,
                                          mover.center.y + mover.displacement.y * clampedTime,
                                          mover.center.z + mover.displacement.z * clampedTime};
-    result.displacement = Math::Vector3UVE{mover.displacement.x * clampedTime,
+    result.displacement = Math::Vector3{mover.displacement.x * clampedTime,
                                            mover.displacement.y * clampedTime,
                                            mover.displacement.z * clampedTime};
     result.contact = resolved;

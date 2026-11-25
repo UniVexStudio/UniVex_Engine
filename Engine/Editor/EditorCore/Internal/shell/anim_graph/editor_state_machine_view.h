@@ -11,7 +11,7 @@
 
 namespace UVE::Editor {
 
-class EditorAnimGraphPanelUVE;
+class EditorAnimGraphPanel;
 
 /// A State Machine node opened from the Animation Graph: its states as boxes (what each plays, the
 /// one running lit), Entry and Any, and the transitions as arrows - two lanes when two states lead to
@@ -22,9 +22,9 @@ class EditorAnimGraphPanelUVE;
 /// Entry: where the machine starts); double-click empty space adds a state, a state opens what it
 /// plays; right-click for the menu; Delete removes what is picked; the wheel zooms, a drag on empty
 /// space pans, F frames, Esc goes back to the tree.
-class StateMachineViewUVE final : public prism::Widget {
+class StateMachineView final : public prism::Widget {
 public:
-    explicit StateMachineViewUVE(EditorAnimGraphPanelUVE& panel) : m_panel(panel) {}
+    explicit StateMachineView(EditorAnimGraphPanel& panel) : m_panel(panel) {}
 
     prism::Vec2 measure(prism::Vec2 avail) override { return m_desired = constrain(avail); }
     void paint(prism::Canvas& c) override;
@@ -38,44 +38,44 @@ public:
     bool focusable() const override { return true; }
 
     /// Starts a transition from `slot` that follows the mouse until a state is clicked.
-    void BeginTransitionUVE(int slot);
+    void BeginTransition(int slot);
     /// Asks for a state's new name in place.
-    void RenameStateUVE(std::size_t slot);
+    void RenameState(std::size_t slot);
 
     /// Fits every box in view.
-    void FrameUVE();
+    void Frame();
 
 private:
-    void CancelDragUVE();
-    static constexpr int kEntryUVE = -1;
-    static constexpr int kAnyUVE = -2;
-    static constexpr int kNoneUVE = -3;
-    enum class DragUVE : std::uint8_t { None, Pan, Move, Link };
+    void CancelDrag();
+    static constexpr int kEntry = -1;
+    static constexpr int kAny = -2;
+    static constexpr int kNone = -3;
+    enum class Drag : std::uint8_t { None, Pan, Move, Link };
 
-    [[nodiscard]] const Scene::AnimationGraphNodeUVE* MachineUVE() const;
-    [[nodiscard]] std::size_t MachineIndexUVE() const;
-    [[nodiscard]] prism::Vec2 ToScreenUVE(Math::Vector2UVE world) const;
-    [[nodiscard]] Math::Vector2UVE ToWorldUVE(prism::Vec2 screen) const;
-    /// A box in world units: a state slot, kEntryUVE or kAnyUVE; with the live drag applied.
-    [[nodiscard]] prism::Rect BoxUVE(const Scene::AnimationGraphNodeUVE& machine, int box) const;
-    [[nodiscard]] prism::Rect ScreenBoxUVE(const Scene::AnimationGraphNodeUVE& machine, int box) const;
-    [[nodiscard]] int BoxAtUVE(const Scene::AnimationGraphNodeUVE& machine, prism::Vec2 screen) const;
-    [[nodiscard]] int TransitionAtUVE(const Scene::AnimationGraphNodeUVE& machine, prism::Vec2 screen) const;
+    [[nodiscard]] const Scene::AnimationGraphNode* Machine() const;
+    [[nodiscard]] std::size_t MachineIndex() const;
+    [[nodiscard]] prism::Vec2 ToScreen(Math::Vector2 world) const;
+    [[nodiscard]] Math::Vector2 ToWorld(prism::Vec2 screen) const;
+    /// A box in world units: a state slot, kEntry or kAny; with the live drag applied.
+    [[nodiscard]] prism::Rect Box(const Scene::AnimationGraphNode& machine, int box) const;
+    [[nodiscard]] prism::Rect ScreenBox(const Scene::AnimationGraphNode& machine, int box) const;
+    [[nodiscard]] int BoxAt(const Scene::AnimationGraphNode& machine, prism::Vec2 screen) const;
+    [[nodiscard]] int TransitionAt(const Scene::AnimationGraphNode& machine, prism::Vec2 screen) const;
     /// The screen segment a transition is drawn on (ends on the box edges, laned when paired).
-    [[nodiscard]] bool TransitionSegmentUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t index, prism::Vec2& from,
+    [[nodiscard]] bool TransitionSegment(const Scene::AnimationGraphNode& machine, std::size_t index, prism::Vec2& from,
                                             prism::Vec2& to) const;
-    [[nodiscard]] std::string StateNameUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot) const;
-    [[nodiscard]] std::string StateDetailUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot) const;
-    void ShowMenuUVE(prism::Vec2 at, int box, int transition);
+    [[nodiscard]] std::string StateName(const Scene::AnimationGraphNode& machine, std::size_t slot) const;
+    [[nodiscard]] std::string StateDetail(const Scene::AnimationGraphNode& machine, std::size_t slot) const;
+    void ShowMenu(prism::Vec2 at, int box, int transition);
     /// Near a state's border (where a drag makes a transition) rather than inside it.
-    [[nodiscard]] bool OnEdgeUVE(const Scene::AnimationGraphNodeUVE& machine, int box, prism::Vec2 screen) const;
-    void AddStateUVE(Math::Vector2UVE world, Asset::AssetGuidUVE clip);
-    void DeletePickedUVE();
-    void OpenStateUVE(std::size_t slot);
+    [[nodiscard]] bool OnEdge(const Scene::AnimationGraphNode& machine, int box, prism::Vec2 screen) const;
+    void AddState(Math::Vector2 world, Asset::AssetGuid clip);
+    void DeletePicked();
+    void OpenState(std::size_t slot);
 
-    EditorAnimGraphPanelUVE& m_panel;
-    DragUVE m_drag = DragUVE::None;
-    int m_dragBox = kNoneUVE;
+    EditorAnimGraphPanel& m_panel;
+    Drag m_drag = Drag::None;
+    int m_dragBox = kNone;
     prism::Vec2 m_dragFrom{};
     prism::Vec2 m_mouse{};
     int m_hoverBox = -3;

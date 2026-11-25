@@ -6,75 +6,75 @@
 
 namespace UVE::Scene {
 
-bool IsMarker3DObjectComponentValidUVE(const Marker3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.markerName, false) && IsFinite3DObjectVectorUVE(value.localPosition) &&
-           IsFinite3DObjectQuaternionUVE(value.localRotation);
+bool IsMarker3DObjectComponentValid(const Marker3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.markerName, false) && IsFinite3DObjectVector(value.localPosition) &&
+           IsFinite3DObjectQuaternion(value.localRotation);
 }
 
-bool IsMarker3DObjectDefinitionValidUVE(const Marker3DObjectDefinitionUVE& value) noexcept {
-    return IsMarker3DObjectComponentValidUVE(value.marker);
+bool IsMarker3DObjectDefinitionValid(const Marker3DObjectDefinition& value) noexcept {
+    return IsMarker3DObjectComponentValid(value.marker);
 }
 
-void ApplyMarker3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                      const Marker3DObjectDefinitionUVE& value) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyMarker3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                      const Marker3DObjectDefinition& value) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              Marker3DObjectDefinitionUVE::defaultName);
-    if (entityManager.HasComponentUVE<Marker3DComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<Marker3DComponentUVE>(entity) = value.marker;
+    EnsureObject3DBaseline(entityManager, entity,
+                              Marker3DObjectDefinition::defaultName);
+    if (entityManager.HasComponent<Marker3DComponent>(entity)) {
+        entityManager.GetComponent<Marker3DComponent>(entity) = value.marker;
     } else {
-        entityManager.AddComponentUVE<Marker3DComponentUVE>(entity, value.marker);
+        entityManager.AddComponent<Marker3DComponent>(entity, value.marker);
     }
 }
 
-std::optional<Marker3DPoseUVE> ComposeMarker3DPoseUVE(
-    const Math::Vector3UVE objectPosition, const Math::QuaternionUVE objectRotation,
-    const Math::Vector3UVE localPosition, const Math::QuaternionUVE localRotation) noexcept {
-    const std::optional<Math::Vector3UVE> worldPoint =
-        Compose3DObjectWorldPointUVE(objectPosition, objectRotation, localPosition);
-    const std::optional<Math::QuaternionUVE> worldRotation =
-        Compose3DObjectWorldRotationUVE(objectRotation, localRotation);
+std::optional<Marker3DPose> ComposeMarker3DPose(
+    const Math::Vector3 objectPosition, const Math::Quaternion objectRotation,
+    const Math::Vector3 localPosition, const Math::Quaternion localRotation) noexcept {
+    const std::optional<Math::Vector3> worldPoint =
+        Compose3DObjectWorldPoint(objectPosition, objectRotation, localPosition);
+    const std::optional<Math::Quaternion> worldRotation =
+        Compose3DObjectWorldRotation(objectRotation, localRotation);
     if (!worldPoint.has_value() || !worldRotation.has_value()) {
         return std::nullopt;
     }
-    return Marker3DPoseUVE{*worldPoint, *worldRotation};
+    return Marker3DPose{*worldPoint, *worldRotation};
 }
 
-bool Marker3DUVE::IsQueryableUVE(const Marker3DComponentUVE& marker) noexcept {
-    return marker.enabled && IsMarker3DObjectComponentValidUVE(marker);
+bool Marker3D::IsQueryable(const Marker3DComponent& marker) noexcept {
+    return marker.enabled && IsMarker3DObjectComponentValid(marker);
 }
 
-bool Marker3DUVE::MatchesNameFilterUVE(
-    const Marker3DComponentUVE& marker, const std::string_view filterName) noexcept {
+bool Marker3D::MatchesNameFilter(
+    const Marker3DComponent& marker, const std::string_view filterName) noexcept {
     return filterName.empty() || marker.markerName == filterName;
 }
 
-std::optional<Marker3DPoseUVE> Marker3DUVE::ResolveWorldPoseUVE(
-    const Marker3DComponentUVE& marker, const Math::Vector3UVE& objectPosition,
-    const Math::QuaternionUVE& objectRotation) noexcept {
-    if (!IsQueryableUVE(marker)) {
+std::optional<Marker3DPose> Marker3D::ResolveWorldPose(
+    const Marker3DComponent& marker, const Math::Vector3& objectPosition,
+    const Math::Quaternion& objectRotation) noexcept {
+    if (!IsQueryable(marker)) {
         return std::nullopt;
     }
-    return ComposeMarker3DPoseUVE(objectPosition, objectRotation, marker.localPosition,
+    return ComposeMarker3DPose(objectPosition, objectRotation, marker.localPosition,
                                   marker.localRotation);
 }
 
-Math::Vector3UVE Marker3DUVE::ForwardDirectionUVE(const Marker3DPoseUVE& pose) noexcept {
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(pose.rotation, normalized)) {
-        return kLocalForwardAxisUVE;
+Math::Vector3 Marker3D::ForwardDirection(const Marker3DPose& pose) noexcept {
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(pose.rotation, normalized)) {
+        return kLocalForwardAxis;
     }
-    return Math::RotateVectorUVE(normalized, kLocalForwardAxisUVE);
+    return Math::RotateVector(normalized, kLocalForwardAxis);
 }
 
-Math::Vector3UVE Marker3DUVE::UpDirectionUVE(const Marker3DPoseUVE& pose) noexcept {
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(pose.rotation, normalized)) {
-        return kLocalUpAxisUVE;
+Math::Vector3 Marker3D::UpDirection(const Marker3DPose& pose) noexcept {
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(pose.rotation, normalized)) {
+        return kLocalUpAxis;
     }
-    return Math::RotateVectorUVE(normalized, kLocalUpAxisUVE);
+    return Math::RotateVector(normalized, kLocalUpAxis);
 }
 
 } // namespace UVE::Scene

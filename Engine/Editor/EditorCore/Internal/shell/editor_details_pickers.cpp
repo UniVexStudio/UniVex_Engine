@@ -33,24 +33,24 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] std::string LowerUVE(std::string text) {
+[[nodiscard]] std::string Lower(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
-[[nodiscard]] bool HasExtensionUVE(const std::vector<std::string>& kinds, const std::filesystem::path& path) {
-    const std::string extension = LowerUVE(path.extension().string());
-    return std::any_of(kinds.begin(), kinds.end(), [&](const std::string& kind) { return LowerUVE(kind) == extension; });
+[[nodiscard]] bool HasExtension(const std::vector<std::string>& kinds, const std::filesystem::path& path) {
+    const std::string extension = Lower(path.extension().string());
+    return std::any_of(kinds.begin(), kinds.end(), [&](const std::string& kind) { return Lower(kind) == extension; });
 }
 
-const std::vector<std::string> kImageSourcesUVE{".png", ".jpg", ".jpeg", ".bmp", ".tga"};
-const std::vector<std::string> kModelSourcesUVE{".glb", ".gltf", ".fbx", ".obj"};
+const std::vector<std::string> kImageSources{".png", ".jpg", ".jpeg", ".bmp", ".tga"};
+const std::vector<std::string> kModelSources{".glb", ".gltf", ".fbx", ".obj"};
 
 } // namespace
 
-EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::vector<std::string>& extensions) {
-    PickerSpecUVE spec;
+EditorDetails::PickerSpec EditorDetails::PickerSpecFor(const std::vector<std::string>& extensions) {
+    PickerSpec spec;
     const auto has = [&](const char* kind) {
         return std::find(extensions.begin(), extensions.end(), std::string(kind)) != extensions.end();
     };
@@ -89,42 +89,42 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
     return spec;
 }
 
-Asset::AssetGuidUVE EditorDetailsUVE::PublishPickedUVE(const std::filesystem::path& absolute) {
+Asset::AssetGuid EditorDetails::PublishPicked(const std::filesystem::path& absolute) {
     // What a slot holds is always the asset the runtime reads: a model source becomes a .uvmodel,
     // an image a .uvtex, anything else is registered as it is.
-    if (HasExtensionUVE(kModelSourcesUVE, absolute) || LowerUVE(absolute.extension().string()) == ".uvmodel") {
-        return m_editor.PublishModelSourceUVE(absolute);
+    if (HasExtension(kModelSources, absolute) || Lower(absolute.extension().string()) == ".uvmodel") {
+        return m_editor.PublishModelSource(absolute);
     }
-    if (HasExtensionUVE(kImageSourcesUVE, absolute)) {
-        return m_editor.PublishTextureSourceUVE(absolute);
+    if (HasExtension(kImageSources, absolute)) {
+        return m_editor.PublishTextureSource(absolute);
     }
-    const Asset::AssetGuidUVE guid = m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
-    m_editor.RefreshProjectFileIndexUVE();
+    const Asset::AssetGuid guid = m_editor.m_services->GetAssetDatabase().Register(absolute);
+    m_editor.RefreshProjectFileIndex();
     return guid;
 }
 
-std::filesystem::path EditorDetailsUVE::PathOfGuidUVE(const Asset::AssetGuidUVE guid) const {
-    if (guid == Asset::AssetGuidUVE{}) {
+std::filesystem::path EditorDetails::PathOfGuid(const Asset::AssetGuid guid) const {
+    if (guid == Asset::AssetGuid{}) {
         return {};
     }
-    return m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
+    return m_editor.m_services->GetAssetDatabase().Resolve(guid);
 }
 
-void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE actions, const prism::Rect anchor) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+void EditorDetails::ShowPicker(const PickerSpec& spec, PickerActions actions, const prism::Rect anchor) {
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     // The pick lands on the object the menu was opened for, even if the selection moved meanwhile
     // (the file window stays open while the author looks around).
-    const Scene::EntityUVE target = m_editor.GetSelectedEntityUVE();
+    const Scene::Entity target = m_editor.GetSelectedEntity();
     const auto onTarget = [this, target](std::function<void()> run) {
         return [this, target, run = std::move(run)] {
-            if (target != Scene::kInvalidEntityUVE && m_editor.GetSelectedEntityUVE() != target &&
-                m_editor.IsDocumentEntityUVE(target)) {
-                m_editor.SelectEntityUVE(target);
+            if (target != Scene::kInvalidEntity && m_editor.GetSelectedEntity() != target &&
+                m_editor.IsDocumentEntity(target)) {
+                m_editor.SelectEntity(target);
             }
             run();
         };
     };
-    auto shared = std::make_shared<PickerActionsUVE>(std::move(actions));
+    auto shared = std::make_shared<PickerActions>(std::move(actions));
 
     std::vector<prism::MenuItem> items;
     items.push_back(prism::MenuItem::Item("Empty", onTarget([shared] {
@@ -137,32 +137,32 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
     }
     if (spec.newMaterial) {
         // A new material in the Asset Table's folder, of the kind asked for, assigned at once.
-        struct KindUVE final { const char* label; const char* stem; Asset::MaterialKindUVE kind; };
-        static constexpr KindUVE kKinds[] = {
-            {"New Standard Material", "M_Standard", Asset::MaterialKindUVE::Standard},
-            {"New ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm},
-            {"New Shader Material", "M_Shader", Asset::MaterialKindUVE::Shader},
+        struct Kind final { const char* label; const char* stem; Asset::MaterialKind kind; };
+        static constexpr Kind kKinds[] = {
+            {"New Standard Material", "M_Standard", Asset::MaterialKind::Standard},
+            {"New ORM Material", "M_ORM", Asset::MaterialKind::Orm},
+            {"New Shader Material", "M_Shader", Asset::MaterialKind::Shader},
         };
-        for (const KindUVE& kind : kKinds) {
+        for (const Kind& kind : kKinds) {
             items.push_back(prism::MenuItem::Item(kind.label, onTarget([this, shared, kind] {
-                const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const Asset::ProjectFileSnapshot now = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
                 const std::filesystem::path folder = now.contentRoot / m_editor.m_assetTableDirectory;
                 std::error_code error;
                 std::filesystem::create_directories(folder, error);
-                const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, kind.stem, ".uvmaterial");
-                Asset::MaterialAssetUVE material{};
+                const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, kind.stem, ".uvmaterial");
+                Asset::MaterialAsset material{};
                 material.kind = kind.kind;
-                if (kind.kind == Asset::MaterialKindUVE::Orm) {
+                if (kind.kind == Asset::MaterialKind::Orm) {
                     material.metallic = 1.0F;
                     material.occlusionStrength = 1.0F;
-                } else if (kind.kind == Asset::MaterialKindUVE::Shader) {
+                } else if (kind.kind == Asset::MaterialKind::Shader) {
                     material.useCustomShaderCode = true;
                 }
-                if (!Asset::SaveMaterialAssetUVE(material, path)) {
+                if (!Asset::SaveMaterialAsset(material, path)) {
                     m_editor.m_contentStatusMessage = "Could not create a material here.";
                     return;
                 }
-                m_editor.RefreshProjectFileIndexUVE();
+                m_editor.RefreshProjectFileIndex();
                 if (shared->file) {
                     shared->file(path);
                 }
@@ -173,31 +173,31 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
     // The project's files of this kind. A source image already published beside itself is listed once,
     // as its .uvtex.
     std::set<std::string> published;
-    for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
-        if (HasExtensionUVE({".uvtex"}, file.relativePath)) {
+    for (const Asset::ProjectFileEntry& file : snapshot.entries) {
+        if (HasExtension({".uvtex"}, file.relativePath)) {
             published.insert((file.relativePath.parent_path() / file.relativePath.stem()).generic_string());
         }
     }
     std::vector<prism::MenuItem> project;
-    for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
-        if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || !HasExtensionUVE(spec.listed, file.relativePath)) {
+    for (const Asset::ProjectFileEntry& file : snapshot.entries) {
+        if (file.kind == Asset::ProjectFileEntryKind::Directory || !HasExtension(spec.listed, file.relativePath)) {
             continue;
         }
-        if (!HasExtensionUVE({".uvtex"}, file.relativePath) && HasExtensionUVE({".png", ".jpg", ".jpeg", ".bmp", ".tga"}, file.relativePath) &&
+        if (!HasExtension({".uvtex"}, file.relativePath) && HasExtension({".png", ".jpg", ".jpeg", ".bmp", ".tga"}, file.relativePath) &&
             published.contains((file.relativePath.parent_path() / file.relativePath.stem()).generic_string())) {
             continue;
         }
-        const bool modelSource = EditorUVE::IsModelSourcePathUVE(file.relativePath);
+        const bool modelSource = Editor::IsModelSourcePath(file.relativePath);
         if (modelSource && spec.title == "Mesh") {
             // An animation-only file has no mesh to show.
-            if (const EditorModelSourceInfoUVE* info = m_editor.FindModelSourceInfoUVE(file.relativePath); info != nullptr && info->animationOnly) {
+            if (const EditorModelSourceInfo* info = m_editor.FindModelSourceInfo(file.relativePath); info != nullptr && info->animationOnly) {
                 continue;
             }
         }
         const std::filesystem::path absolute = snapshot.contentRoot / file.relativePath;
         const bool isCurrent = !shared->current.empty() &&
                                (shared->current == absolute ||
-                                (modelSource && shared->current == m_editor.GetImportedModelPathUVE(file.relativePath)));
+                                (modelSource && shared->current == m_editor.GetImportedModelPath(file.relativePath)));
         prism::MenuItem item = prism::MenuItem::Check(file.relativePath.generic_string(), isCurrent, onTarget([shared, absolute] {
             if (shared->file) {
                 shared->file(absolute);
@@ -207,7 +207,7 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
     }
     items.push_back(prism::MenuItem::Sep());
     if (project.empty()) {
-        items.push_back(prism::MenuItem::Item("No " + LowerUVE(spec.title) + " in this project yet", {}).disabled());
+        items.push_back(prism::MenuItem::Item("No " + Lower(spec.title) + " in this project yet", {}).disabled());
     } else if (project.size() <= 14U) {
         for (prism::MenuItem& item : project) {
             items.push_back(std::move(item));
@@ -218,15 +218,15 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
 
     if (spec.shapes && shared->shape) {
         items.push_back(prism::MenuItem::Sep());
-        struct ShapeUVE final { const char* label; Scene::PrimitiveMeshKindUVE kind; };
-        static constexpr ShapeUVE kShapes[] = {
-            {"Box", Scene::PrimitiveMeshKindUVE::Cube},
-            {"Sphere", Scene::PrimitiveMeshKindUVE::UVSphere},
-            {"Capsule", Scene::PrimitiveMeshKindUVE::Capsule},
-            {"Cylinder", Scene::PrimitiveMeshKindUVE::Cylinder},
-            {"Plane", Scene::PrimitiveMeshKindUVE::Plane},
+        struct Shape final { const char* label; Scene::PrimitiveMeshKind kind; };
+        static constexpr Shape kShapes[] = {
+            {"Box", Scene::PrimitiveMeshKind::Cube},
+            {"Sphere", Scene::PrimitiveMeshKind::UVSphere},
+            {"Capsule", Scene::PrimitiveMeshKind::Capsule},
+            {"Cylinder", Scene::PrimitiveMeshKind::Cylinder},
+            {"Plane", Scene::PrimitiveMeshKind::Plane},
         };
-        for (const ShapeUVE& shape : kShapes) {
+        for (const Shape& shape : kShapes) {
             const bool isCurrent = shared->currentShape.has_value() && *shared->currentShape == shape.kind;
             prism::MenuItem item = prism::MenuItem::Check(std::string(shape.label) + " (shape)", isCurrent,
                                                           onTarget([shared, kind = shape.kind] { shared->shape(kind); }));
@@ -237,8 +237,8 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
     items.push_back(prism::MenuItem::Sep());
     const std::filesystem::path start = !shared->current.empty() ? shared->current.parent_path() : snapshot.contentRoot;
     items.push_back(prism::MenuItem::Item("Load...", [this, spec, shared, start, onTarget] {
-        FilePickerRequestUVE request;
-        request.mode = FilePickerModeUVE::Open;
+        FilePickerRequest request;
+        request.mode = FilePickerMode::Open;
         request.title = "Load " + spec.title;
         request.extensions = spec.loadable;
         request.startDirectory = start;
@@ -249,11 +249,11 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
                 }
             })();
         };
-        m_editor.OpenFilePickerUVE(std::move(request));
+        m_editor.OpenFilePicker(std::move(request));
     }));
     items.push_back(prism::MenuItem::Item("Import...", [this, spec, shared, onTarget] {
-        FilePickerRequestUVE request;
-        request.mode = FilePickerModeUVE::Open;
+        FilePickerRequest request;
+        request.mode = FilePickerMode::Open;
         request.title = "Import " + spec.title;
         request.extensions = spec.loadable;
         request.quickImport = true;
@@ -271,17 +271,17 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
                 }
             })();
         };
-        m_editor.OpenFilePickerUVE(std::move(request));
+        m_editor.OpenFilePicker(std::move(request));
     }));
     prism::MenuItem show = prism::MenuItem::Item("Show in Asset Table", [this, shared] {
-        const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const Asset::ProjectFileSnapshot now = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(shared->current, now.contentRoot, error);
-        for (const Asset::ProjectFileEntryUVE& file : now.entries) {
+        for (const Asset::ProjectFileEntry& file : now.entries) {
             if (!error && file.relativePath == relative) {
                 m_editor.m_assetTableDirectory = file.relativePath.parent_path();
                 m_editor.m_assetTableShelf.clear();
-                m_editor.m_contentSelection.ClearUVE();
+                m_editor.m_contentSelection.Clear();
                 m_editor.m_selectedProjectFile = file;
                 break;
             }

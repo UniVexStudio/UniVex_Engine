@@ -1,7 +1,7 @@
 # PBR & Rendering Showcase Sample
 
 Demonstrates UniVex Engine's physically-based rendering stack:
-- **Forward+ Clustered Lighting** (`LightClusterGridUVE`, up to 256 dynamic lights)
+- **Forward+ Clustered Lighting** (`LightClusterGrid`, up to 256 dynamic lights)
 - **Temporal Anti-Aliasing (TAA)** + **WBOIT** transparency
 - **HDR Reflection Probes** with 2-probe blending & L2 Spherical Harmonics
 - **Hybrid Global Illumination** (baked UV2 lightmap + L2 SH probe grid)

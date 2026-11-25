@@ -16,7 +16,7 @@ namespace {
 
 // ---------------------------------------------------------------- lexer
 
-enum class TokenKindUVE : std::uint8_t {
+enum class TokenKind : std::uint8_t {
     Name,
     Number,
     String,
@@ -27,26 +27,26 @@ enum class TokenKindUVE : std::uint8_t {
     End,
 };
 
-struct TokenUVE final {
-    TokenKindUVE kind = TokenKindUVE::End;
+struct Token final {
+    TokenKind kind = TokenKind::End;
     std::string text;
-    SourceLocationUVE at;
+    SourceLocation at;
     bool isInteger = false;
 };
 
-constexpr std::array<std::string_view, 7> kUnitsUVE{"s", "ms", "m", "cm", "km", "deg", "rad"};
+constexpr std::array<std::string_view, 7> kUnits{"s", "ms", "m", "cm", "km", "deg", "rad"};
 
 // Two-character symbols first, so "<=" is not read as "<" then "=".
-constexpr std::array<std::string_view, 10> kTwoCharSymbolsUVE{"==", "!=", "<=", ">=", "+=", "-=",
+constexpr std::array<std::string_view, 10> kTwoCharSymbols{"==", "!=", "<=", ">=", "+=", "-=",
                                                               "*=", "/=", "->", ".."};
-constexpr std::string_view kOneCharSymbolsUVE = "()[]{}:,.+-*/%<>=";
+constexpr std::string_view kOneCharSymbols = "()[]{}:,.+-*/%<>=";
 
-class LexerUVE final {
+class Lexer final {
 public:
-    LexerUVE(const std::string_view source, std::vector<DiagnosticUVE>& diagnostics)
+    Lexer(const std::string_view source, std::vector<Diagnostic>& diagnostics)
         : m_source(source), m_diagnostics(diagnostics) {}
 
-    std::vector<TokenUVE> Run() {
+    std::vector<Token> Run() {
         std::vector<std::size_t> indents{0U};
         bool lineStart = true;
         while (m_pos < m_source.size()) {
@@ -64,11 +64,11 @@ public:
                 lineStart = false;
                 if (width > indents.back()) {
                     indents.push_back(width);
-                    Emit(TokenKindUVE::Indent, "");
+                    Emit(TokenKind::Indent, "");
                 } else {
                     while (width < indents.back()) {
                         indents.pop_back();
-                        Emit(TokenKindUVE::Dedent, "");
+                        Emit(TokenKind::Dedent, "");
                     }
                     if (width != indents.back()) {
                         Error("this line's indentation does not match any block above it");
@@ -83,14 +83,14 @@ public:
                     Advance();
                 }
             } else if (c == '\n') {
-                if (m_depth > 0 && NextLineStartsADeclarationUVE()) {
+                if (m_depth > 0 && NextLineStartsADeclaration()) {
                     // An unclosed bracket would otherwise swallow the rest of the file. A line that
                     // starts a new statement means it was never closed: report it and move on.
                     m_diagnostics.push_back({m_openBracket, "this bracket is never closed"});
                     m_depth = 0;
                 }
                 if (m_depth == 0) {
-                    Emit(TokenKindUVE::Newline, "");
+                    Emit(TokenKind::Newline, "");
                     lineStart = true;
                 }
                 Advance();
@@ -104,15 +104,15 @@ public:
                 LexSymbol();
             }
         }
-        if (!m_tokens.empty() && m_tokens.back().kind != TokenKindUVE::Newline &&
-            m_tokens.back().kind != TokenKindUVE::Dedent) {
-            Emit(TokenKindUVE::Newline, "");
+        if (!m_tokens.empty() && m_tokens.back().kind != TokenKind::Newline &&
+            m_tokens.back().kind != TokenKind::Dedent) {
+            Emit(TokenKind::Newline, "");
         }
         while (indents.size() > 1U) {
             indents.pop_back();
-            Emit(TokenKindUVE::Dedent, "");
+            Emit(TokenKind::Dedent, "");
         }
-        Emit(TokenKindUVE::End, "");
+        Emit(TokenKind::End, "");
         return std::move(m_tokens);
     }
 
@@ -140,24 +140,24 @@ private:
         }
     }
 
-    void Emit(const TokenKindUVE kind, std::string text, const SourceLocationUVE at = {}, const bool isInteger = false) {
-        TokenUVE token{kind, std::move(text), at.line == 0U ? SourceLocationUVE{m_line, m_column} : at, isInteger};
+    void Emit(const TokenKind kind, std::string text, const SourceLocation at = {}, const bool isInteger = false) {
+        Token token{kind, std::move(text), at.line == 0U ? SourceLocation{m_line, m_column} : at, isInteger};
         m_tokens.push_back(std::move(token));
     }
 
     void Error(std::string message) { m_diagnostics.push_back({{m_line, m_column}, std::move(message)}); }
 
     void LexName() {
-        const SourceLocationUVE at{m_line, m_column};
+        const SourceLocation at{m_line, m_column};
         const std::size_t start = m_pos;
         while (std::isalnum(static_cast<unsigned char>(Peek())) != 0 || Peek() == '_') {
             Advance();
         }
-        Emit(TokenKindUVE::Name, std::string{m_source.substr(start, m_pos - start)}, at);
+        Emit(TokenKind::Name, std::string{m_source.substr(start, m_pos - start)}, at);
     }
 
     void LexNumber() {
-        const SourceLocationUVE at{m_line, m_column};
+        const SourceLocation at{m_line, m_column};
         const std::size_t start = m_pos;
         bool isInteger = true;
         while (std::isdigit(static_cast<unsigned char>(Peek())) != 0 || Peek() == '_') {
@@ -177,11 +177,11 @@ private:
                 text += digit;
             }
         }
-        Emit(TokenKindUVE::Number, std::move(text), at, isInteger);
+        Emit(TokenKind::Number, std::move(text), at, isInteger);
     }
 
     void LexString() {
-        const SourceLocationUVE at{m_line, m_column};
+        const SourceLocation at{m_line, m_column};
         Advance();
         std::string text;
         while (m_pos < m_source.size() && Peek() != '"' && Peek() != '\n') {
@@ -200,21 +200,21 @@ private:
         } else {
             Advance();
         }
-        Emit(TokenKindUVE::String, std::move(text), at);
+        Emit(TokenKind::String, std::move(text), at);
     }
 
     void LexSymbol() {
-        const SourceLocationUVE at{m_line, m_column};
-        for (const std::string_view symbol : kTwoCharSymbolsUVE) {
+        const SourceLocation at{m_line, m_column};
+        for (const std::string_view symbol : kTwoCharSymbols) {
             if (Peek() == symbol[0] && Peek(1U) == symbol[1]) {
                 Advance();
                 Advance();
-                Emit(TokenKindUVE::Symbol, std::string{symbol}, at);
+                Emit(TokenKind::Symbol, std::string{symbol}, at);
                 return;
             }
         }
         const char c = Peek();
-        if (kOneCharSymbolsUVE.find(c) == std::string_view::npos) {
+        if (kOneCharSymbols.find(c) == std::string_view::npos) {
             Error(std::string{"'"} + c + "' is not part of UVScript");
             Advance();
             return;
@@ -228,12 +228,12 @@ private:
             --m_depth;
         }
         Advance();
-        Emit(TokenKindUVE::Symbol, std::string(1U, c), at);
+        Emit(TokenKind::Symbol, std::string(1U, c), at);
     }
 
     /// True when the line after the current '\n' begins with a word that starts a statement or a
     /// declaration - never the continuation of an expression.
-    [[nodiscard]] bool NextLineStartsADeclarationUVE() const noexcept {
+    [[nodiscard]] bool NextLineStartsADeclaration() const noexcept {
         std::size_t i = m_pos + 1U;
         while (i < m_source.size() && (m_source[i] == ' ' || m_source[i] == '\t')) {
             ++i;
@@ -255,9 +255,9 @@ private:
     }
 
     std::string_view m_source;
-    std::vector<DiagnosticUVE>& m_diagnostics;
-    SourceLocationUVE m_openBracket;
-    std::vector<TokenUVE> m_tokens;
+    std::vector<Diagnostic>& m_diagnostics;
+    SourceLocation m_openBracket;
+    std::vector<Token> m_tokens;
     std::size_t m_pos = 0U;
     std::uint32_t m_line = 1U;
     std::uint32_t m_column = 1U;
@@ -267,33 +267,33 @@ private:
 // ---------------------------------------------------------------- parser
 
 /// Thrown to abandon the current line; caught where parsing can resume.
-struct SyntaxErrorUVE final {};
+struct SyntaxError final {};
 
-constexpr std::size_t kMaximumBlueprintParseDepthUVE = 128U;
+constexpr std::size_t kMaximumBlueprintParseDepth = 128U;
 
-class ParserUVE final {
+class Parser final {
 public:
-    ParserUVE(std::vector<TokenUVE> tokens, std::vector<DiagnosticUVE>& diagnostics)
+    Parser(std::vector<Token> tokens, std::vector<Diagnostic>& diagnostics)
         : m_tokens(std::move(tokens)), m_diagnostics(diagnostics) {}
 
-    FileUVE Run() {
-        FileUVE file;
+    File Run() {
+        File file;
         SkipNewlines();
         if (IsName("entity")) {
             try {
                 file.header = ParseHeader();
-            } catch (const SyntaxErrorUVE&) {
+            } catch (const SyntaxError&) {
                 Recover();
             }
         }
-        while (!Is(TokenKindUVE::End)) {
+        while (!Is(TokenKind::End)) {
             SkipNewlines();
-            if (Is(TokenKindUVE::End)) {
+            if (Is(TokenKind::End)) {
                 break;
             }
             try {
                 ParseMember(file);
-            } catch (const SyntaxErrorUVE&) {
+            } catch (const SyntaxError&) {
                 Recover();
             }
         }
@@ -303,17 +303,17 @@ public:
 private:
     // ---- token helpers
 
-    [[nodiscard]] const TokenUVE& Current() const noexcept { return m_tokens[m_index]; }
-    [[nodiscard]] bool Is(const TokenKindUVE kind) const noexcept { return Current().kind == kind; }
+    [[nodiscard]] const Token& Current() const noexcept { return m_tokens[m_index]; }
+    [[nodiscard]] bool Is(const TokenKind kind) const noexcept { return Current().kind == kind; }
     [[nodiscard]] bool IsName(const std::string_view text) const noexcept {
-        return Is(TokenKindUVE::Name) && Current().text == text;
+        return Is(TokenKind::Name) && Current().text == text;
     }
     [[nodiscard]] bool IsSymbol(const std::string_view text) const noexcept {
-        return Is(TokenKindUVE::Symbol) && Current().text == text;
+        return Is(TokenKind::Symbol) && Current().text == text;
     }
 
-    const TokenUVE& Take() noexcept {
-        const TokenUVE& token = m_tokens[m_index];
+    const Token& Take() noexcept {
+        const Token& token = m_tokens[m_index];
         if (m_index + 1U < m_tokens.size()) {
             ++m_index;
         }
@@ -321,7 +321,7 @@ private:
     }
 
     bool Accept(const std::string_view symbolOrWord) {
-        if ((Is(TokenKindUVE::Symbol) || Is(TokenKindUVE::Name)) && Current().text == symbolOrWord) {
+        if ((Is(TokenKind::Symbol) || Is(TokenKind::Name)) && Current().text == symbolOrWord) {
             Take();
             return true;
         }
@@ -330,17 +330,17 @@ private:
 
     [[noreturn]] void Fail(const std::string& message) {
         m_diagnostics.push_back({Current().at, message});
-        throw SyntaxErrorUVE{};
+        throw SyntaxError{};
     }
 
     [[nodiscard]] std::string Describe() const {
         switch (Current().kind) {
-            case TokenKindUVE::Newline: return "the end of the line";
-            case TokenKindUVE::Indent: return "an indented line";
-            case TokenKindUVE::Dedent: return "the end of the block";
-            case TokenKindUVE::End: return "the end of the file";
-            case TokenKindUVE::String: return "a string";
-            case TokenKindUVE::Number: return "the number " + Current().text;
+            case TokenKind::Newline: return "the end of the line";
+            case TokenKind::Indent: return "an indented line";
+            case TokenKind::Dedent: return "the end of the block";
+            case TokenKind::End: return "the end of the file";
+            case TokenKind::String: return "a string";
+            case TokenKind::Number: return "the number " + Current().text;
             default: return "'" + Current().text + "'";
         }
     }
@@ -352,45 +352,45 @@ private:
     }
 
     std::string ExpectName(const std::string_view what) {
-        if (!Is(TokenKindUVE::Name) || IsKeyword(Current().text)) {
+        if (!Is(TokenKind::Name) || IsKeyword(Current().text)) {
             Fail("expected " + std::string{what} + " but found " + Describe());
         }
         return Take().text;
     }
 
     void ExpectNewline() {
-        if (!Is(TokenKindUVE::Newline) && !Is(TokenKindUVE::End) && !Is(TokenKindUVE::Dedent)) {
+        if (!Is(TokenKind::Newline) && !Is(TokenKind::End) && !Is(TokenKind::Dedent)) {
             Fail("expected the end of the line but found " + Describe());
         }
-        if (Is(TokenKindUVE::Newline)) {
+        if (Is(TokenKind::Newline)) {
             Take();
         }
     }
 
     void SkipNewlines() noexcept {
-        while (Is(TokenKindUVE::Newline)) {
+        while (Is(TokenKind::Newline)) {
             Take();
         }
     }
 
     /// Drops the rest of the broken line, and any block that hangs off it.
     void Recover() noexcept {
-        while (!Is(TokenKindUVE::Newline) && !Is(TokenKindUVE::End) && !Is(TokenKindUVE::Dedent)) {
+        while (!Is(TokenKind::Newline) && !Is(TokenKind::End) && !Is(TokenKind::Dedent)) {
             Take();
         }
-        if (Is(TokenKindUVE::Newline)) {
+        if (Is(TokenKind::Newline)) {
             Take();
         }
-        if (Is(TokenKindUVE::Indent)) {
+        if (Is(TokenKind::Indent)) {
             int depth = 0;
             do {
-                if (Is(TokenKindUVE::Indent)) {
+                if (Is(TokenKind::Indent)) {
                     ++depth;
-                } else if (Is(TokenKindUVE::Dedent)) {
+                } else if (Is(TokenKind::Dedent)) {
                     --depth;
                 }
                 Take();
-            } while (depth > 0 && !Is(TokenKindUVE::End));
+            } while (depth > 0 && !Is(TokenKind::End));
         }
     }
 
@@ -409,8 +409,8 @@ private:
 
     // ---- declarations
 
-    HeaderUVE ParseHeader() {
-        HeaderUVE header;
+    Header ParseHeader() {
+        Header header;
         header.at = Take().at;
         header.name = ExpectName("the entity's name after 'entity'");
         Expect(":", "':' and the object kind it drives, as in 'entity Player : Character3D'");
@@ -419,19 +419,19 @@ private:
         return header;
     }
 
-    void ParseMember(FileUVE& file) {
+    void ParseMember(File& file) {
         if (IsName("export") || IsName("var") || IsName("const")) {
-            FieldUVE field;
+            Field field;
             field.at = Current().at;
             const std::string word = Take().text;
-            field.kind = word == "export" ? FieldKindUVE::Export : word == "var" ? FieldKindUVE::Var : FieldKindUVE::Const;
+            field.kind = word == "export" ? FieldKind::Export : word == "var" ? FieldKind::Var : FieldKind::Const;
             field.name = ExpectName("a field name");
             if (Accept(":")) {
                 field.type = ParseType();
             }
             if (Accept("=")) {
                 field.initializer = ParseExpr();
-            } else if (field.kind == FieldKindUVE::Const) {
+            } else if (field.kind == FieldKind::Const) {
                 Fail("a const needs a value: 'const " + field.name + " = ...'");
             }
             if (!field.type.has_value() && !field.initializer) {
@@ -440,7 +440,7 @@ private:
             ExpectNewline();
             file.fields.push_back(std::move(field));
         } else if (IsName("on")) {
-            HandlerUVE handler;
+            Handler handler;
             handler.at = Take().at;
             handler.event = ExpectName("an event name, as in 'on ready:'");
             if (Accept("(")) {
@@ -450,7 +450,7 @@ private:
             handler.body = ParseBlock();
             file.handlers.push_back(std::move(handler));
         } else if (IsName("fn")) {
-            FunctionUVE function;
+            Function function;
             function.at = Take().at;
             function.name = ExpectName("a function name");
             Expect("(", "'(' after the function name");
@@ -470,13 +470,13 @@ private:
     }
 
     /// Reads parameters up to and including the ')'.
-    std::vector<ParamUVE> ParseParams() {
-        std::vector<ParamUVE> params;
+    std::vector<Param> ParseParams() {
+        std::vector<Param> params;
         if (Accept(")")) {
             return params;
         }
         do {
-            ParamUVE param;
+            Param param;
             param.at = Current().at;
             param.name = ExpectName("a parameter name");
             if (Accept(":")) {
@@ -488,8 +488,8 @@ private:
         return params;
     }
 
-    TypeRefUVE ParseType() {
-        TypeRefUVE type;
+    TypeRef ParseType() {
+        TypeRef type;
         type.at = Current().at;
         type.name = ExpectName("a type such as int, float or Object3D");
         if (Accept("[")) {
@@ -503,42 +503,42 @@ private:
 
     // ---- statements
 
-    BlockUVE ParseBlock() {
-        if (m_recursionDepth >= kMaximumBlueprintParseDepthUVE) {
+    Block ParseBlock() {
+        if (m_recursionDepth >= kMaximumBlueprintParseDepth) {
             Fail("block is nested too deeply (maximum depth is 128)");
         }
-        struct DepthScopeUVE final {
+        struct DepthScope final {
             std::size_t& depth;
-            explicit DepthScopeUVE(std::size_t& d) noexcept : depth(d) { ++depth; }
-            ~DepthScopeUVE() noexcept { --depth; }
+            explicit DepthScope(std::size_t& d) noexcept : depth(d) { ++depth; }
+            ~DepthScope() noexcept { --depth; }
         } scope{m_recursionDepth};
-        if (!Is(TokenKindUVE::Newline)) {
+        if (!Is(TokenKind::Newline)) {
             Fail("start the block on a new, indented line");
         }
         Take();
-        if (!Is(TokenKindUVE::Indent)) {
+        if (!Is(TokenKind::Indent)) {
             Fail("expected an indented block here - write 'pass' for an empty one");
         }
         Take();
-        BlockUVE block;
-        while (!Is(TokenKindUVE::Dedent) && !Is(TokenKindUVE::End)) {
+        Block block;
+        while (!Is(TokenKind::Dedent) && !Is(TokenKind::End)) {
             try {
                 block.push_back(ParseStatement());
-            } catch (const SyntaxErrorUVE&) {
+            } catch (const SyntaxError&) {
                 Recover();
             }
         }
-        if (Is(TokenKindUVE::Dedent)) {
+        if (Is(TokenKind::Dedent)) {
             Take();
         }
         return block;
     }
 
-    StmtPtrUVE ParseStatement() {
-        auto stmt = std::make_unique<StmtUVE>();
+    StmtPtr ParseStatement() {
+        auto stmt = std::make_unique<Stmt>();
         stmt->at = Current().at;
         if (Accept("let")) {
-            stmt->kind = StmtKindUVE::Let;
+            stmt->kind = StmtKind::Let;
             // `let (a, b) = pair()` unpacks a tuple; the names take their types from it, so no
             // annotation is allowed there.
             if (Accept("(")) {
@@ -556,7 +556,7 @@ private:
             stmt->value = ParseExpr();
             ExpectNewline();
         } else if (Accept("if")) {
-            stmt->kind = StmtKindUVE::If;
+            stmt->kind = StmtKind::If;
             stmt->branches.push_back(ParseConditional("if"));
             while (IsName("elif")) {
                 Take();
@@ -567,49 +567,49 @@ private:
                 stmt->elseBody = ParseBlock();
             }
         } else if (Accept("while")) {
-            stmt->kind = StmtKindUVE::While;
+            stmt->kind = StmtKind::While;
             stmt->branches.push_back(ParseConditional("while"));
         } else if (Accept("for")) {
-            stmt->kind = StmtKindUVE::For;
+            stmt->kind = StmtKind::For;
             stmt->name = ExpectName("a loop variable after 'for'");
             Expect("in", "'in' after the loop variable");
             stmt->value = ParseExpr();
             Expect(":", "':' after the loop");
             stmt->body = ParseBlock();
         } else if (Accept("return")) {
-            stmt->kind = StmtKindUVE::Return;
-            if (!Is(TokenKindUVE::Newline) && !Is(TokenKindUVE::Dedent) && !Is(TokenKindUVE::End)) {
+            stmt->kind = StmtKind::Return;
+            if (!Is(TokenKind::Newline) && !Is(TokenKind::Dedent) && !Is(TokenKind::End)) {
                 stmt->value = ParseExpr();
             }
             ExpectNewline();
         } else if (Accept("break")) {
-            stmt->kind = StmtKindUVE::Break;
+            stmt->kind = StmtKind::Break;
             ExpectNewline();
         } else if (Accept("continue")) {
-            stmt->kind = StmtKindUVE::Continue;
+            stmt->kind = StmtKind::Continue;
             ExpectNewline();
         } else if (Accept("pass")) {
-            stmt->kind = StmtKindUVE::Pass;
+            stmt->kind = StmtKind::Pass;
             ExpectNewline();
         } else if (Accept("wait")) {
-            stmt->kind = StmtKindUVE::Wait;
+            stmt->kind = StmtKind::Wait;
             stmt->value = ParseExpr();
             ExpectNewline();
         } else {
-            ExprPtrUVE expr = ParseExpr();
-            if (Is(TokenKindUVE::Symbol) && (Current().text == "=" || Current().text == "+=" ||
+            ExprPtr expr = ParseExpr();
+            if (Is(TokenKind::Symbol) && (Current().text == "=" || Current().text == "+=" ||
                                              Current().text == "-=" || Current().text == "*=" ||
                                              Current().text == "/=")) {
-                if (expr->kind != ExprKindUVE::Name && expr->kind != ExprKindUVE::Member &&
-                    expr->kind != ExprKindUVE::Index) {
+                if (expr->kind != ExprKind::Name && expr->kind != ExprKind::Member &&
+                    expr->kind != ExprKind::Index) {
                     Fail("only a name, a field or an element can be assigned to");
                 }
-                stmt->kind = StmtKindUVE::Assign;
+                stmt->kind = StmtKind::Assign;
                 stmt->op = Take().text;
                 stmt->target = std::move(expr);
                 stmt->value = ParseExpr();
             } else {
-                stmt->kind = StmtKindUVE::Expr;
+                stmt->kind = StmtKind::Expr;
                 stmt->value = std::move(expr);
             }
             ExpectNewline();
@@ -617,8 +617,8 @@ private:
         return stmt;
     }
 
-    ConditionalBlockUVE ParseConditional(const std::string_view keyword) {
-        ConditionalBlockUVE branch;
+    ConditionalBlock ParseConditional(const std::string_view keyword) {
+        ConditionalBlock branch;
         branch.condition = ParseExpr();
         Expect(":", "':' after the " + std::string{keyword} + " condition");
         branch.body = ParseBlock();
@@ -627,9 +627,9 @@ private:
 
     // ---- expressions, lowest precedence first
 
-    ExprPtrUVE MakeBinary(std::string op, ExprPtrUVE left, ExprPtrUVE right, const SourceLocationUVE at) {
-        auto expr = std::make_unique<ExprUVE>();
-        expr->kind = ExprKindUVE::Binary;
+    ExprPtr MakeBinary(std::string op, ExprPtr left, ExprPtr right, const SourceLocation at) {
+        auto expr = std::make_unique<Expr>();
+        expr->kind = ExprKind::Binary;
         expr->at = at;
         expr->text = std::move(op);
         expr->operands.push_back(std::move(left));
@@ -637,40 +637,40 @@ private:
         return expr;
     }
 
-    ExprPtrUVE ParseExpr() {
-        if (m_recursionDepth >= kMaximumBlueprintParseDepthUVE) {
+    ExprPtr ParseExpr() {
+        if (m_recursionDepth >= kMaximumBlueprintParseDepth) {
             Fail("expression is nested too deeply (maximum depth is 128)");
         }
-        struct DepthScopeUVE final {
+        struct DepthScope final {
             std::size_t& depth;
-            explicit DepthScopeUVE(std::size_t& d) noexcept : depth(d) { ++depth; }
-            ~DepthScopeUVE() noexcept { --depth; }
+            explicit DepthScope(std::size_t& d) noexcept : depth(d) { ++depth; }
+            ~DepthScope() noexcept { --depth; }
         } scope{m_recursionDepth};
         return ParseOr();
     }
 
-    ExprPtrUVE ParseOr() {
-        ExprPtrUVE left = ParseAnd();
+    ExprPtr ParseOr() {
+        ExprPtr left = ParseAnd();
         while (IsName("or")) {
-            const SourceLocationUVE at = Take().at;
+            const SourceLocation at = Take().at;
             left = MakeBinary("or", std::move(left), ParseAnd(), at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseAnd() {
-        ExprPtrUVE left = ParseNot();
+    ExprPtr ParseAnd() {
+        ExprPtr left = ParseNot();
         while (IsName("and")) {
-            const SourceLocationUVE at = Take().at;
+            const SourceLocation at = Take().at;
             left = MakeBinary("and", std::move(left), ParseNot(), at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseNot() {
+    ExprPtr ParseNot() {
         if (IsName("not")) {
-            auto expr = std::make_unique<ExprUVE>();
-            expr->kind = ExprKindUVE::Unary;
+            auto expr = std::make_unique<Expr>();
+            expr->kind = ExprKind::Unary;
             expr->at = Take().at;
             expr->text = "not";
             expr->operands.push_back(ParseNot());
@@ -679,47 +679,47 @@ private:
         return ParseCompare();
     }
 
-    ExprPtrUVE ParseCompare() {
-        ExprPtrUVE left = ParseRange();
+    ExprPtr ParseCompare() {
+        ExprPtr left = ParseRange();
         while (IsSymbol("==") || IsSymbol("!=") || IsSymbol("<") || IsSymbol("<=") || IsSymbol(">") ||
                IsSymbol(">=")) {
-            const TokenUVE& op = Take();
+            const Token& op = Take();
             left = MakeBinary(op.text, std::move(left), ParseRange(), op.at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseRange() {
-        ExprPtrUVE left = ParseSum();
+    ExprPtr ParseRange() {
+        ExprPtr left = ParseSum();
         if (IsSymbol("..")) {
-            const SourceLocationUVE at = Take().at;
+            const SourceLocation at = Take().at;
             left = MakeBinary("..", std::move(left), ParseSum(), at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseSum() {
-        ExprPtrUVE left = ParseProduct();
+    ExprPtr ParseSum() {
+        ExprPtr left = ParseProduct();
         while (IsSymbol("+") || IsSymbol("-")) {
-            const TokenUVE& op = Take();
+            const Token& op = Take();
             left = MakeBinary(op.text, std::move(left), ParseProduct(), op.at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseProduct() {
-        ExprPtrUVE left = ParseUnary();
+    ExprPtr ParseProduct() {
+        ExprPtr left = ParseUnary();
         while (IsSymbol("*") || IsSymbol("/") || IsSymbol("%")) {
-            const TokenUVE& op = Take();
+            const Token& op = Take();
             left = MakeBinary(op.text, std::move(left), ParseUnary(), op.at);
         }
         return left;
     }
 
-    ExprPtrUVE ParseUnary() {
+    ExprPtr ParseUnary() {
         if (IsSymbol("-")) {
-            auto expr = std::make_unique<ExprUVE>();
-            expr->kind = ExprKindUVE::Unary;
+            auto expr = std::make_unique<Expr>();
+            expr->kind = ExprKind::Unary;
             expr->at = Take().at;
             expr->text = "-";
             expr->operands.push_back(ParseUnary());
@@ -728,19 +728,19 @@ private:
         return ParsePostfix();
     }
 
-    ExprPtrUVE ParsePostfix() {
-        ExprPtrUVE expr = ParsePrimary();
+    ExprPtr ParsePostfix() {
+        ExprPtr expr = ParsePrimary();
         while (true) {
             if (IsSymbol(".")) {
-                auto member = std::make_unique<ExprUVE>();
-                member->kind = ExprKindUVE::Member;
+                auto member = std::make_unique<Expr>();
+                member->kind = ExprKind::Member;
                 member->at = Take().at;
                 member->text = ExpectName("a field or method name after '.'");
                 member->operands.push_back(std::move(expr));
                 expr = std::move(member);
             } else if (IsSymbol("(")) {
-                auto call = std::make_unique<ExprUVE>();
-                call->kind = ExprKindUVE::Call;
+                auto call = std::make_unique<Expr>();
+                call->kind = ExprKind::Call;
                 call->at = Take().at;
                 call->operands.push_back(std::move(expr));
                 if (!Accept(")")) {
@@ -751,8 +751,8 @@ private:
                 }
                 expr = std::move(call);
             } else if (IsSymbol("[")) {
-                auto index = std::make_unique<ExprUVE>();
-                index->kind = ExprKindUVE::Index;
+                auto index = std::make_unique<Expr>();
+                index->kind = ExprKind::Index;
                 index->at = Take().at;
                 index->operands.push_back(std::move(expr));
                 index->operands.push_back(ParseExpr());
@@ -764,12 +764,12 @@ private:
         }
     }
 
-    ExprPtrUVE ParsePrimary() {
-        auto expr = std::make_unique<ExprUVE>();
+    ExprPtr ParsePrimary() {
+        auto expr = std::make_unique<Expr>();
         expr->at = Current().at;
-        if (Is(TokenKindUVE::Number)) {
-            const TokenUVE& token = Take();
-            expr->kind = ExprKindUVE::Number;
+        if (Is(TokenKind::Number)) {
+            const Token& token = Take();
+            expr->kind = ExprKind::Number;
             expr->isInteger = token.isInteger;
             const auto [end, error] =
                 std::from_chars(token.text.data(), token.text.data() + token.text.size(), expr->number);
@@ -777,38 +777,38 @@ private:
                 m_diagnostics.push_back({token.at, "'" + token.text + "' is not a number UVScript can hold"});
             }
             // A unit right after a number on the same line: "2 s", "90 deg".
-            if (Is(TokenKindUVE::Name) && IsUVScriptUnitUVE(Current().text)) {
+            if (Is(TokenKind::Name) && IsUVScriptUnit(Current().text)) {
                 expr->unit = Take().text;
                 expr->isInteger = false;
             }
             return expr;
         }
-        if (Is(TokenKindUVE::String)) {
+        if (Is(TokenKind::String)) {
             ParseInterpolation(*expr, Take());
             return expr;
         }
         if (IsName("true") || IsName("false")) {
-            expr->kind = ExprKindUVE::Bool;
+            expr->kind = ExprKind::Bool;
             expr->boolean = Take().text == "true";
             return expr;
         }
         if (Accept("none")) {
-            expr->kind = ExprKindUVE::None;
+            expr->kind = ExprKind::None;
             return expr;
         }
         if (Accept("(")) {
             // `(x)` is still a parenthesized value; `(x, y)` and `()` are tuples. A lone pair of
             // brackets with one value and no comma stays grouped, so old scripts parse as before.
             if (Accept(")")) {
-                expr->kind = ExprKindUVE::Tuple;
+                expr->kind = ExprKind::Tuple;
                 return expr;
             }
-            ExprPtrUVE inner = ParseExpr();
+            ExprPtr inner = ParseExpr();
             if (!IsSymbol(",")) {
                 Expect(")", "')'");
                 return inner;
             }
-            expr->kind = ExprKindUVE::Tuple;
+            expr->kind = ExprKind::Tuple;
             expr->operands.push_back(std::move(inner));
             do {
                 Take();
@@ -821,7 +821,7 @@ private:
             return expr;
         }
         if (Accept("[")) {
-            expr->kind = ExprKindUVE::List;
+            expr->kind = ExprKind::List;
             if (!Accept("]")) {
                 do {
                     expr->operands.push_back(ParseExpr());
@@ -831,7 +831,7 @@ private:
             return expr;
         }
         if (Accept("{")) {
-            expr->kind = ExprKindUVE::Map;
+            expr->kind = ExprKind::Map;
             if (!Accept("}")) {
                 do {
                     expr->operands.push_back(ParseExpr());
@@ -842,8 +842,8 @@ private:
             }
             return expr;
         }
-        if (Is(TokenKindUVE::Name) && !IsKeyword(Current().text)) {
-            expr->kind = ExprKindUVE::Name;
+        if (Is(TokenKind::Name) && !IsKeyword(Current().text)) {
+            expr->kind = ExprKind::Name;
             expr->text = Take().text;
             return expr;
         }
@@ -851,8 +851,8 @@ private:
     }
 
     /// Splits "hp: {health} / {max_health}" into literal segments and parsed expressions.
-    void ParseInterpolation(ExprUVE& expr, const TokenUVE& token) {
-        expr.kind = ExprKindUVE::String;
+    void ParseInterpolation(Expr& expr, const Token& token) {
+        expr.kind = ExprKind::String;
         std::string segment;
         const std::string& text = token.text;
         for (std::size_t i = 0U; i < text.size(); ++i) {
@@ -869,14 +869,14 @@ private:
                     segment += text.substr(i);
                     break;
                 }
-                std::vector<DiagnosticUVE> inner;
-                std::vector<TokenUVE> tokens = LexerUVE(std::string_view{text}.substr(i + 1U, close - i - 1U), inner).Run();
-                ParserUVE part(std::move(tokens), inner);
-                ExprPtrUVE value;
+                std::vector<Diagnostic> inner;
+                std::vector<Token> tokens = Lexer(std::string_view{text}.substr(i + 1U, close - i - 1U), inner).Run();
+                Parser part(std::move(tokens), inner);
+                ExprPtr value;
                 try {
                     part.SkipNewlines();
                     value = part.ParseExpr();
-                } catch (const SyntaxErrorUVE&) {
+                } catch (const SyntaxError&) {
                 }
                 if (!inner.empty() || !value) {
                     m_diagnostics.push_back({token.at, "the part '{" + text.substr(i + 1U, close - i - 1U) +
@@ -894,16 +894,16 @@ private:
         expr.segments.push_back(std::move(segment));
     }
 
-    std::vector<TokenUVE> m_tokens;
-    std::vector<DiagnosticUVE>& m_diagnostics;
+    std::vector<Token> m_tokens;
+    std::vector<Diagnostic>& m_diagnostics;
     std::size_t m_index = 0U;
     std::size_t m_recursionDepth = 0U;
 };
 
 } // namespace
 
-bool IsUVScriptUnitUVE(const std::string_view word) noexcept {
-    for (const std::string_view unit : kUnitsUVE) {
+bool IsUVScriptUnit(const std::string_view word) noexcept {
+    for (const std::string_view unit : kUnits) {
         if (unit == word) {
             return true;
         }
@@ -911,11 +911,11 @@ bool IsUVScriptUnitUVE(const std::string_view word) noexcept {
     return false;
 }
 
-ParseResultUVE ParseUVScriptUVE(const std::string_view source) {
-    ParseResultUVE result;
-    std::vector<TokenUVE> tokens = LexerUVE(source, result.diagnostics).Run();
-    result.file = ParserUVE(std::move(tokens), result.diagnostics).Run();
-    std::ranges::stable_sort(result.diagnostics, [](const DiagnosticUVE& a, const DiagnosticUVE& b) {
+ParseResult ParseUVScript(const std::string_view source) {
+    ParseResult result;
+    std::vector<Token> tokens = Lexer(source, result.diagnostics).Run();
+    result.file = Parser(std::move(tokens), result.diagnostics).Run();
+    std::ranges::stable_sort(result.diagnostics, [](const Diagnostic& a, const Diagnostic& b) {
         return a.at.line != b.at.line ? a.at.line < b.at.line : a.at.column < b.at.column;
     });
     return result;

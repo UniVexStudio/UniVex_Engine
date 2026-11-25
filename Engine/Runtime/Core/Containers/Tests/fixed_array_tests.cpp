@@ -8,108 +8,108 @@
 
 namespace {
 
-using UVE::Containers::FixedArrayUVE;
+using UVE::Containers::FixedArray;
 
 // Construction/destruction counter: proves the manual union-slot lifetime neither leaks nor
 // double-destroys. Counters are reset per test; aggregate accounting (constructed == destroyed
 // after the container dies) is the leak check.
-struct LifetimeProbeUVE {
+struct LifetimeProbe {
     static inline int constructed = 0;
     static inline int destroyed = 0;
 
-    static void ResetUVE() {
+    static void Reset() {
         constructed = 0;
         destroyed = 0;
     }
 
     int value = 0;
 
-    explicit LifetimeProbeUVE(int valueIn = 0) : value(valueIn) { ++constructed; }
-    LifetimeProbeUVE(const LifetimeProbeUVE& other) : value(other.value) { ++constructed; }
-    LifetimeProbeUVE(LifetimeProbeUVE&& other) noexcept : value(other.value) { ++constructed; }
-    LifetimeProbeUVE& operator=(const LifetimeProbeUVE& other) = default;
-    LifetimeProbeUVE& operator=(LifetimeProbeUVE&& other) noexcept = default;
-    ~LifetimeProbeUVE() { ++destroyed; }
+    explicit LifetimeProbe(int valueIn = 0) : value(valueIn) { ++constructed; }
+    LifetimeProbe(const LifetimeProbe& other) : value(other.value) { ++constructed; }
+    LifetimeProbe(LifetimeProbe&& other) noexcept : value(other.value) { ++constructed; }
+    LifetimeProbe& operator=(const LifetimeProbe& other) = default;
+    LifetimeProbe& operator=(LifetimeProbe&& other) noexcept = default;
+    ~LifetimeProbe() { ++destroyed; }
 };
 
-TEST(FixedArrayUVETest, DefaultConstructed_IsEmptyWithZeroSize) {
-    const FixedArrayUVE<int, 4> array;
-    EXPECT_EQ(array.SizeUVE(), 0U);
-    EXPECT_EQ(array.CapacityUVE(), 4U);
-    EXPECT_TRUE(array.EmptyUVE());
-    EXPECT_FALSE(array.FullUVE());
+TEST(FixedArrayTest, DefaultConstructed_IsEmptyWithZeroSize) {
+    const FixedArray<int, 4> array;
+    EXPECT_EQ(array.Size(), 0U);
+    EXPECT_EQ(array.Capacity(), 4U);
+    EXPECT_TRUE(array.Empty());
+    EXPECT_FALSE(array.Full());
 }
 
-TEST(FixedArrayUVETest, PushBack_GrowsSizeAndPreservesValues) {
-    FixedArrayUVE<int, 4> array;
-    array.PushBackUVE(10);
-    array.PushBackUVE(20);
-    array.PushBackUVE(30);
+TEST(FixedArrayTest, PushBack_GrowsSizeAndPreservesValues) {
+    FixedArray<int, 4> array;
+    array.PushBack(10);
+    array.PushBack(20);
+    array.PushBack(30);
 
-    EXPECT_EQ(array.SizeUVE(), 3U);
-    EXPECT_FALSE(array.EmptyUVE());
-    EXPECT_FALSE(array.FullUVE());
+    EXPECT_EQ(array.Size(), 3U);
+    EXPECT_FALSE(array.Empty());
+    EXPECT_FALSE(array.Full());
     EXPECT_EQ(array[0], 10);
     EXPECT_EQ(array[1], 20);
     EXPECT_EQ(array[2], 30);
-    EXPECT_EQ(array.FrontUVE(), 10);
-    EXPECT_EQ(array.BackUVE(), 30);
+    EXPECT_EQ(array.Front(), 10);
+    EXPECT_EQ(array.Back(), 30);
 }
 
-TEST(FixedArrayUVETest, PushBack_RValueOverloadAcceptsTemporaries) {
-    FixedArrayUVE<std::string, 2> array;
-    array.PushBackUVE(std::string("hello"));
+TEST(FixedArrayTest, PushBack_RValueOverloadAcceptsTemporaries) {
+    FixedArray<std::string, 2> array;
+    array.PushBack(std::string("hello"));
 
-    EXPECT_EQ(array.SizeUVE(), 1U);
+    EXPECT_EQ(array.Size(), 1U);
     EXPECT_EQ(array[0], "hello");
-    EXPECT_EQ(array.FrontUVE(), array.BackUVE());
+    EXPECT_EQ(array.Front(), array.Back());
 }
 
-TEST(FixedArrayUVETest, PushBack_FillsToCapacityExactly) {
-    FixedArrayUVE<int, 3> array;
-    array.PushBackUVE(1);
-    array.PushBackUVE(2);
-    array.PushBackUVE(3);
+TEST(FixedArrayTest, PushBack_FillsToCapacityExactly) {
+    FixedArray<int, 3> array;
+    array.PushBack(1);
+    array.PushBack(2);
+    array.PushBack(3);
 
-    EXPECT_EQ(array.SizeUVE(), 3U);
-    EXPECT_TRUE(array.FullUVE());
+    EXPECT_EQ(array.Size(), 3U);
+    EXPECT_TRUE(array.Full());
     // NOTE: pushing a 4th element asserts (UVE_ASSERT) by design — the overflow contract is
-    // "check FullUVE() first", and FrameTaskGraphUVE's CapacityExceeded path is the covered
+    // "check Full() first", and FrameTaskGraph's CapacityExceeded path is the covered
     // integration test of that contract. No death test here: UVE_DEBUG_BREAK is a trap, not a
     // portable exit.
 }
 
-TEST(FixedArrayUVETest, PopBack_RemovesLastElement) {
-    FixedArrayUVE<int, 4> array;
-    array.PushBackUVE(1);
-    array.PushBackUVE(2);
-    array.PopBackUVE();
+TEST(FixedArrayTest, PopBack_RemovesLastElement) {
+    FixedArray<int, 4> array;
+    array.PushBack(1);
+    array.PushBack(2);
+    array.PopBack();
 
-    EXPECT_EQ(array.SizeUVE(), 1U);
-    EXPECT_EQ(array.BackUVE(), 1);
+    EXPECT_EQ(array.Size(), 1U);
+    EXPECT_EQ(array.Back(), 1);
 }
 
-TEST(FixedArrayUVETest, Clear_EmptiesAndStaysReusable) {
-    FixedArrayUVE<int, 4> array;
-    array.PushBackUVE(1);
-    array.PushBackUVE(2);
-    array.ClearUVE();
+TEST(FixedArrayTest, Clear_EmptiesAndStaysReusable) {
+    FixedArray<int, 4> array;
+    array.PushBack(1);
+    array.PushBack(2);
+    array.Clear();
 
-    EXPECT_TRUE(array.EmptyUVE());
-    EXPECT_EQ(array.SizeUVE(), 0U);
+    EXPECT_TRUE(array.Empty());
+    EXPECT_EQ(array.Size(), 0U);
 
-    array.PushBackUVE(3);
-    EXPECT_EQ(array.SizeUVE(), 1U);
+    array.PushBack(3);
+    EXPECT_EQ(array.Size(), 1U);
     EXPECT_EQ(array[0], 3);
 }
 
-TEST(FixedArrayUVETest, CopyConstruct_CopiesElementsIndependently) {
-    FixedArrayUVE<int, 4> original;
-    original.PushBackUVE(7);
-    original.PushBackUVE(8);
+TEST(FixedArrayTest, CopyConstruct_CopiesElementsIndependently) {
+    FixedArray<int, 4> original;
+    original.PushBack(7);
+    original.PushBack(8);
 
-    const FixedArrayUVE<int, 4> copy(original);
-    EXPECT_EQ(copy.SizeUVE(), 2U);
+    const FixedArray<int, 4> copy(original);
+    EXPECT_EQ(copy.Size(), 2U);
     EXPECT_EQ(copy[0], 7);
     EXPECT_EQ(copy[1], 8);
 
@@ -117,53 +117,53 @@ TEST(FixedArrayUVETest, CopyConstruct_CopiesElementsIndependently) {
     EXPECT_EQ(copy[0], 7);
 }
 
-TEST(FixedArrayUVETest, CopyAssign_ReplacesContentsAndToleratesSelfAssign) {
-    FixedArrayUVE<int, 4> source;
-    source.PushBackUVE(5);
-    FixedArrayUVE<int, 4> destination;
-    destination.PushBackUVE(1);
-    destination.PushBackUVE(2);
-    destination.PushBackUVE(3);
+TEST(FixedArrayTest, CopyAssign_ReplacesContentsAndToleratesSelfAssign) {
+    FixedArray<int, 4> source;
+    source.PushBack(5);
+    FixedArray<int, 4> destination;
+    destination.PushBack(1);
+    destination.PushBack(2);
+    destination.PushBack(3);
 
     destination = source;
-    EXPECT_EQ(destination.SizeUVE(), 1U);
+    EXPECT_EQ(destination.Size(), 1U);
     EXPECT_EQ(destination[0], 5);
 
     destination = destination;
-    EXPECT_EQ(destination.SizeUVE(), 1U);
+    EXPECT_EQ(destination.Size(), 1U);
     EXPECT_EQ(destination[0], 5);
 }
 
-TEST(FixedArrayUVETest, MoveConstruct_TransfersElementsAndEmptiesSource) {
-    FixedArrayUVE<std::string, 4> source;
-    source.PushBackUVE("a");
-    source.PushBackUVE("b");
+TEST(FixedArrayTest, MoveConstruct_TransfersElementsAndEmptiesSource) {
+    FixedArray<std::string, 4> source;
+    source.PushBack("a");
+    source.PushBack("b");
 
-    const FixedArrayUVE<std::string, 4> moved(std::move(source));
-    EXPECT_EQ(moved.SizeUVE(), 2U);
+    const FixedArray<std::string, 4> moved(std::move(source));
+    EXPECT_EQ(moved.Size(), 2U);
     EXPECT_EQ(moved[0], "a");
     EXPECT_EQ(moved[1], "b");
-    EXPECT_TRUE(source.EmptyUVE());
+    EXPECT_TRUE(source.Empty());
 }
 
-TEST(FixedArrayUVETest, MoveAssign_TransfersElementsAndEmptiesSource) {
-    FixedArrayUVE<int, 4> source;
-    source.PushBackUVE(11);
-    FixedArrayUVE<int, 4> destination;
-    destination.PushBackUVE(1);
-    destination.PushBackUVE(2);
+TEST(FixedArrayTest, MoveAssign_TransfersElementsAndEmptiesSource) {
+    FixedArray<int, 4> source;
+    source.PushBack(11);
+    FixedArray<int, 4> destination;
+    destination.PushBack(1);
+    destination.PushBack(2);
 
     destination = std::move(source);
-    EXPECT_EQ(destination.SizeUVE(), 1U);
+    EXPECT_EQ(destination.Size(), 1U);
     EXPECT_EQ(destination[0], 11);
-    EXPECT_TRUE(source.EmptyUVE());
+    EXPECT_TRUE(source.Empty());
 }
 
-TEST(FixedArrayUVETest, RangeFor_IteratesLiveElementsOnly) {
-    FixedArrayUVE<int, 8> array;
-    array.PushBackUVE(1);
-    array.PushBackUVE(2);
-    array.PushBackUVE(3);
+TEST(FixedArrayTest, RangeFor_IteratesLiveElementsOnly) {
+    FixedArray<int, 8> array;
+    array.PushBack(1);
+    array.PushBack(2);
+    array.PushBack(3);
 
     int sum = 0;
     for (const int value : array) {
@@ -172,31 +172,31 @@ TEST(FixedArrayUVETest, RangeFor_IteratesLiveElementsOnly) {
     EXPECT_EQ(sum, 6);
 }
 
-TEST(FixedArrayUVETest, AsSpan_ReflectsLiveRangeAndWritesThrough) {
-    FixedArrayUVE<int, 8> array;
-    array.PushBackUVE(4);
-    array.PushBackUVE(5);
+TEST(FixedArrayTest, AsSpan_ReflectsLiveRangeAndWritesThrough) {
+    FixedArray<int, 8> array;
+    array.PushBack(4);
+    array.PushBack(5);
 
-    const std::span<const int> view = array.AsSpanUVE();
+    const std::span<const int> view = array.AsSpan();
     EXPECT_EQ(view.size(), 2U);
     EXPECT_EQ(view[0], 4);
 
-    array.AsSpanUVE()[1] = 50;
+    array.AsSpan()[1] = 50;
     EXPECT_EQ(array[1], 50);
 }
 
-TEST(FixedArrayUVETest, ElementLifetime_NoLeaksNoDoubleDestroys) {
-    LifetimeProbeUVE::ResetUVE();
+TEST(FixedArrayTest, ElementLifetime_NoLeaksNoDoubleDestroys) {
+    LifetimeProbe::Reset();
     {
-        FixedArrayUVE<LifetimeProbeUVE, 4> array;
-        array.PushBackUVE(LifetimeProbeUVE(1));
-        array.PushBackUVE(LifetimeProbeUVE(2));
-        array.PopBackUVE();
+        FixedArray<LifetimeProbe, 4> array;
+        array.PushBack(LifetimeProbe(1));
+        array.PushBack(LifetimeProbe(2));
+        array.PopBack();
         // 2 temporaries + 2 container moves constructed; 2 temporaries + 1 pop destroyed.
-        EXPECT_EQ(LifetimeProbeUVE::constructed, 4);
-        EXPECT_EQ(LifetimeProbeUVE::destroyed, 3);
+        EXPECT_EQ(LifetimeProbe::constructed, 4);
+        EXPECT_EQ(LifetimeProbe::destroyed, 3);
     }
-    EXPECT_EQ(LifetimeProbeUVE::constructed, LifetimeProbeUVE::destroyed);
+    EXPECT_EQ(LifetimeProbe::constructed, LifetimeProbe::destroyed);
 }
 
 }  // namespace

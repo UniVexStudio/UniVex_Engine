@@ -10,25 +10,25 @@
 
 namespace UVE::Input {
 
-class MobileInputSystemUVE final : public IMobileInputSystemUVE {
+class MobileInputSystem final : public IMobileInputSystem {
 public:
-    void SetTouchStateUVE(std::size_t touchSlot, bool active, std::uint64_t identifier,
-                          Math::Vector2UVE position, float pressure) override;
-    void SetGyroscopeRotationRateUVE(Math::Vector3UVE rotationRate) override;
-    void UpdateUVE() override;
+    void SetTouchState(std::size_t touchSlot, bool active, std::uint64_t identifier,
+                          Math::Vector2 position, float pressure) override;
+    void SetGyroscopeRotationRate(Math::Vector3 rotationRate) override;
+    void Update() override;
 
-    [[nodiscard]] MobileInputSnapshotUVE GetSnapshotUVE() const override;
-    [[nodiscard]] MobileInputSnapshotUVE GetPreviousSnapshotUVE() const override;
+    [[nodiscard]] MobileInputSnapshot GetSnapshot() const override;
+    [[nodiscard]] MobileInputSnapshot GetPreviousSnapshot() const override;
 
 private:
-    [[nodiscard]] static Math::Vector2UVE SanitizePositionUVE(Math::Vector2UVE position) noexcept;
-    [[nodiscard]] static Math::Vector3UVE SanitizeRotationRateUVE(Math::Vector3UVE rotationRate) noexcept;
-    [[nodiscard]] static float SanitizePressureUVE(float pressure) noexcept;
+    [[nodiscard]] static Math::Vector2 SanitizePosition(Math::Vector2 position) noexcept;
+    [[nodiscard]] static Math::Vector3 SanitizeRotationRate(Math::Vector3 rotationRate) noexcept;
+    [[nodiscard]] static float SanitizePressure(float pressure) noexcept;
 
     mutable std::mutex m_liveStateMutex;
-    MobileInputSnapshotUVE m_liveState{};
-    MobileInputSnapshotUVE m_currentState{};
-    MobileInputSnapshotUVE m_previousState{};
+    MobileInputSnapshot m_liveState{};
+    MobileInputSnapshot m_currentState{};
+    MobileInputSnapshot m_previousState{};
 };
 
 } // namespace UVE::Input

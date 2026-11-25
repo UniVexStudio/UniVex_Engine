@@ -9,35 +9,35 @@
 
 namespace UVE::Scene {
 
-bool IsBoneAttachment3DObjectComponentValidUVE(const BoneAttachment3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.boneName) && IsFinite3DObjectVectorUVE(value.localPosition) &&
-           IsFinite3DObjectQuaternionUVE(value.localRotation) && IsFinite3DObjectVectorUVE(value.localScale) &&
+bool IsBoneAttachment3DObjectComponentValid(const BoneAttachment3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.boneName) && IsFinite3DObjectVector(value.localPosition) &&
+           IsFinite3DObjectQuaternion(value.localRotation) && IsFinite3DObjectVector(value.localScale) &&
            value.localScale.x > 0.0F && value.localScale.y > 0.0F && value.localScale.z > 0.0F;
 }
 
-ObjectWorldFrameUVE ComposeBoneAttachmentWorldFrameUVE(const ObjectWorldFrameUVE& boneFrame,
-                                                             const Math::Vector3UVE& localPosition,
-                                                             const Math::QuaternionUVE& localRotation,
-                                                             const Math::Vector3UVE& localScale) noexcept {
-    const Math::TrsUVE composed = Math::ComposeUVE(
-        Math::TrsUVE{boneFrame.position, boneFrame.rotation, boneFrame.scale},
-        Math::TrsUVE{localPosition, localRotation, localScale});
-    ObjectWorldFrameUVE frame{};
+ObjectWorldFrame ComposeBoneAttachmentWorldFrame(const ObjectWorldFrame& boneFrame,
+                                                             const Math::Vector3& localPosition,
+                                                             const Math::Quaternion& localRotation,
+                                                             const Math::Vector3& localScale) noexcept {
+    const Math::Trs composed = Math::Compose(
+        Math::Trs{boneFrame.position, boneFrame.rotation, boneFrame.scale},
+        Math::Trs{localPosition, localRotation, localScale});
+    ObjectWorldFrame frame{};
     frame.position = composed.translation;
     frame.rotation = composed.rotation;
     frame.scale = composed.scale;
     return frame;
 }
 
-bool TryMakeBoneAttachmentLocalTransformUVE(const ObjectWorldFrameUVE& attachmentWorld,
-                                           const ObjectWorldFrameUVE& parentWorld,
-                                           Math::Vector3UVE& outLocalPosition,
-                                           Math::QuaternionUVE& outLocalRotation,
-                                           Math::Vector3UVE& outLocalScale) noexcept {
-    if (!IsFinite3DObjectVectorUVE(attachmentWorld.position) || !IsFinite3DObjectVectorUVE(attachmentWorld.scale) ||
-        !IsFinite3DObjectQuaternionUVE(attachmentWorld.rotation) ||
-        !IsFinite3DObjectVectorUVE(parentWorld.position) || !IsFinite3DObjectVectorUVE(parentWorld.scale) ||
-        !IsFinite3DObjectQuaternionUVE(parentWorld.rotation)) {
+bool TryMakeBoneAttachmentLocalTransform(const ObjectWorldFrame& attachmentWorld,
+                                           const ObjectWorldFrame& parentWorld,
+                                           Math::Vector3& outLocalPosition,
+                                           Math::Quaternion& outLocalRotation,
+                                           Math::Vector3& outLocalScale) noexcept {
+    if (!IsFinite3DObjectVector(attachmentWorld.position) || !IsFinite3DObjectVector(attachmentWorld.scale) ||
+        !IsFinite3DObjectQuaternion(attachmentWorld.rotation) ||
+        !IsFinite3DObjectVector(parentWorld.position) || !IsFinite3DObjectVector(parentWorld.scale) ||
+        !IsFinite3DObjectQuaternion(parentWorld.rotation)) {
         return false;
     }
 
@@ -45,31 +45,31 @@ bool TryMakeBoneAttachmentLocalTransformUVE(const ObjectWorldFrameUVE& attachmen
     // transform reaches a point off that plane, and dividing by it would hand the renderer an
     // infinity. Refusing keeps the previous transform, which is what the engine does with every
     // other unusable world transform.
-    constexpr float kMinimumParentScaleUVE = 1.0e-6F;
-    if (std::abs(parentWorld.scale.x) < kMinimumParentScaleUVE ||
-        std::abs(parentWorld.scale.y) < kMinimumParentScaleUVE ||
-        std::abs(parentWorld.scale.z) < kMinimumParentScaleUVE) {
+    constexpr float kMinimumParentScale = 1.0e-6F;
+    if (std::abs(parentWorld.scale.x) < kMinimumParentScale ||
+        std::abs(parentWorld.scale.y) < kMinimumParentScale ||
+        std::abs(parentWorld.scale.z) < kMinimumParentScale) {
         return false;
     }
 
-    Math::QuaternionUVE inverseParentRotation{};
-    if (!Math::TryInverseUVE(parentWorld.rotation, inverseParentRotation)) {
+    Math::Quaternion inverseParentRotation{};
+    if (!Math::TryInverse(parentWorld.rotation, inverseParentRotation)) {
         return false;
     }
 
-    const Math::TrsUVE parentTrs{parentWorld.position, parentWorld.rotation, parentWorld.scale};
-    Math::Vector3UVE localPosition{};
-    if (!Math::TryInverseTransformPointUVE(parentTrs, attachmentWorld.position, localPosition)) {
+    const Math::Trs parentTrs{parentWorld.position, parentWorld.rotation, parentWorld.scale};
+    Math::Vector3 localPosition{};
+    if (!Math::TryInverseTransformPoint(parentTrs, attachmentWorld.position, localPosition)) {
         return false;
     }
-    Math::QuaternionUVE localRotation{};
-    if (!Math::TryNormalizeUVE(Math::MultiplyUVE(inverseParentRotation, attachmentWorld.rotation), localRotation)) {
+    Math::Quaternion localRotation{};
+    if (!Math::TryNormalize(Math::Multiply(inverseParentRotation, attachmentWorld.rotation), localRotation)) {
         return false;
     }
-    const Math::Vector3UVE localScale{attachmentWorld.scale.x / parentWorld.scale.x,
+    const Math::Vector3 localScale{attachmentWorld.scale.x / parentWorld.scale.x,
                                       attachmentWorld.scale.y / parentWorld.scale.y,
                                       attachmentWorld.scale.z / parentWorld.scale.z};
-    if (!IsFinite3DObjectVectorUVE(localPosition) || !IsFinite3DObjectVectorUVE(localScale)) {
+    if (!IsFinite3DObjectVector(localPosition) || !IsFinite3DObjectVector(localScale)) {
         return false;
     }
 

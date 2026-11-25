@@ -15,48 +15,48 @@
 
 namespace UVE::Editor {
 
-EditorIconsUVE::ImageUVE EditorIconsUVE::ObjectUVE(const Scene::Objects::SceneObjectKindUVE kind, const int size) {
-    if (kind == Scene::Objects::SceneObjectKindUVE::Folder) {
-        return GetUVE(static_cast<int>(EditorIconGroupUVE::ContentType), "folder", size, true);
+EditorIcons::Image EditorIcons::Object(const Scene::Objects::SceneObjectKind kind, const int size) {
+    if (kind == Scene::Objects::SceneObjectKind::Folder) {
+        return Get(static_cast<int>(EditorIconGroup::ContentType), "folder", size, true);
     }
-    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+    const Scene::Objects::SceneObjectDescriptor* const descriptor = Scene::Objects::FindSceneObjectDescriptor(kind);
     if (descriptor == nullptr) {
         return {};
     }
-    if (ImageUVE image = GetUVE(static_cast<int>(EditorIconGroupUVE::Object), descriptor->typeId, size, false)) {
+    if (Image image = Get(static_cast<int>(EditorIconGroup::Object), descriptor->typeId, size, false)) {
         return image;
     }
     // Kinds with no picture of their own get their own glyph.
     switch (kind) {
-        case Scene::Objects::SceneObjectKindUVE::MontageSequencer: return GlyphUVE(prism::Icon::MontageSequencer, size);
+        case Scene::Objects::SceneObjectKind::MontageSequencer: return Glyph(prism::Icon::MontageSequencer, size);
         default: return {};
     }
 }
 
-EditorIconsUVE::ImageUVE EditorIconsUVE::ContentTypeUVE(const std::string_view typeLabel, const int size, const prism::Icon fallback) {
+EditorIcons::Image EditorIcons::ContentType(const std::string_view typeLabel, const int size, const prism::Icon fallback) {
     // Viewport3D is the label of a scene asset; its icon source keeps the identifier spelling.
     const std::string_view name = typeLabel == "Viewport3D" ? std::string_view{"viewport_3d"} : typeLabel;
     std::string lower(name);
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const bool folder = lower == "folder" || lower == "folder_open";
-    ImageUVE image = GetUVE(static_cast<int>(EditorIconGroupUVE::ContentType), name, size, folder);
+    Image image = Get(static_cast<int>(EditorIconGroup::ContentType), name, size, folder);
     if (!image && fallback != prism::Icon::None) {
-        image = GlyphUVE(fallback, size);
+        image = Glyph(fallback, size);
     }
     if (!image) {
-        image = GetUVE(static_cast<int>(EditorIconGroupUVE::ContentType), "file", size, false);
+        image = Get(static_cast<int>(EditorIconGroup::ContentType), "file", size, false);
     }
     return image;
 }
 
-EditorIconsUVE::ImageUVE EditorIconsUVE::GlyphUVE(const prism::Icon icon, const int size) {
+EditorIcons::Image EditorIcons::Glyph(const prism::Icon icon, const int size) {
     if (icon == prism::Icon::None || size <= 0) {
         return {};
     }
     const std::string key = "glyph/" + std::to_string(static_cast<int>(icon)) + "/" + std::to_string(size);
     if (const auto it = m_cache.find(key); it != m_cache.end()) {
-        return it->second.empty() ? ImageUVE{} : ImageUVE{it->second.data(), size};
+        return it->second.empty() ? Image{} : Image{it->second.data(), size};
     }
     // White on black, then the brightness becomes the alpha of a light grey glyph.
     prism::Canvas canvas;
@@ -72,29 +72,29 @@ EditorIconsUVE::ImageUVE EditorIconsUVE::GlyphUVE(const prism::Icon icon, const 
         const std::uint32_t a = std::max({(pixel >> 16U) & 0xFFU, (pixel >> 8U) & 0xFFU, pixel & 0xFFU});
         out[i] = (a << 24U) | 0x00D8DCE4U;
     }
-    return ImageUVE{out.data(), size};
+    return Image{out.data(), size};
 }
 
-EditorIconsUVE::ImageUVE EditorIconsUVE::GetUVE(const int group, const std::string_view name, const int size,
+EditorIcons::Image EditorIcons::Get(const int group, const std::string_view name, const int size,
                                                           const bool folderTint) {
     const std::string key = std::to_string(group) + "/" + std::string(name) + "/" + std::to_string(size);
     if (const auto it = m_cache.find(key); it != m_cache.end()) {
-        return it->second.empty() ? ImageUVE{} : ImageUVE{it->second.data(), size};
+        return it->second.empty() ? Image{} : Image{it->second.data(), size};
     }
     std::vector<std::uint32_t>& out = m_cache[key];
-    const EditorIconSourceUVE* const source = FindEditorIconSourceUVE(static_cast<EditorIconGroupUVE>(group), name);
+    const EditorIconSource* const source = FindEditorIconSource(static_cast<EditorIconGroup>(group), name);
     if (source == nullptr) {
         return {};
     }
-    std::vector<EditorIconLevelUVE> levels;
+    std::vector<EditorIconLevel> levels;
     try {
-        levels = DecodeEditorIconUVE(source->png);
+        levels = DecodeEditorIcon(source->png);
     } catch (...) {
         return {};
     }
     // The mip level whose size matches (the chain halves down to 1x1); else the nearest larger one.
-    const EditorIconLevelUVE* level = nullptr;
-    for (const EditorIconLevelUVE& candidate : levels) {
+    const EditorIconLevel* level = nullptr;
+    for (const EditorIconLevel& candidate : levels) {
         if (candidate.size >= size && (level == nullptr || candidate.size < level->size)) {
             level = &candidate;
         }
@@ -105,9 +105,9 @@ EditorIconsUVE::ImageUVE EditorIconsUVE::GetUVE(const int group, const std::stri
     // Nearest-sample to the requested size when the chain has no exact level.
     const int src = level->size;
     out.resize(static_cast<std::size_t>(size) * static_cast<std::size_t>(size));
-    const std::uint32_t tr = (kFolderTintUVE >> 16) & 0xFFU;
-    const std::uint32_t tg = (kFolderTintUVE >> 8) & 0xFFU;
-    const std::uint32_t tb = kFolderTintUVE & 0xFFU;
+    const std::uint32_t tr = (kFolderTint >> 16) & 0xFFU;
+    const std::uint32_t tg = (kFolderTint >> 8) & 0xFFU;
+    const std::uint32_t tb = kFolderTint & 0xFFU;
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
             const std::size_t si = (static_cast<std::size_t>(y * src / size) * static_cast<std::size_t>(src) +
@@ -128,7 +128,7 @@ EditorIconsUVE::ImageUVE EditorIconsUVE::GetUVE(const int group, const std::stri
                 (a << 24U) | (r << 16U) | (g << 8U) | b;
         }
     }
-    return ImageUVE{out.data(), size};
+    return Image{out.data(), size};
 }
 
 } // namespace UVE::Editor

@@ -13,7 +13,7 @@
 
 namespace UVE::Blueprint {
 
-enum class OpUVE : std::uint8_t {
+enum class Op : std::uint8_t {
     PushConst,    // a = constant index
     Pop,
     LoadLocal,    // a = slot
@@ -58,14 +58,14 @@ enum class OpUVE : std::uint8_t {
     Unpack,       // a = count: pops a tuple, pushes its items in order (first pushed first)
 };
 
-struct InstructionUVE final {
-    OpUVE op = OpUVE::Pop;
+struct Instruction final {
+    Op op = Op::Pop;
     std::int32_t a = 0;
     std::int32_t b = 0;
     std::uint32_t line = 0U;
 };
 
-enum class BuiltinUVE : std::uint8_t {
+enum class Builtin : std::uint8_t {
     Print,
     Sqrt,
     Abs,
@@ -88,32 +88,32 @@ enum class BuiltinUVE : std::uint8_t {
     Remove,
 };
 
-struct ChunkUVE final {
+struct Chunk final {
     std::string name;
     std::uint32_t paramCount = 0U;
     std::uint32_t localCount = 0U;
     /// The type of each local slot (parameters first); slots are never shared within a chunk.
-    std::vector<TypeUVE> localTypes;
-    std::vector<InstructionUVE> code;
-    TypeUVE result;
+    std::vector<Type> localTypes;
+    std::vector<Instruction> code;
+    Type result;
 };
 
-struct ProgramUVE final {
-    std::vector<ValueUVE> constants;
-    std::vector<FieldInfoUVE> fields;
+struct Program final {
+    std::vector<Value> constants;
+    std::vector<FieldInfo> fields;
     /// Runs every field initializer; the instance calls it once.
-    ChunkUVE init;
-    std::vector<ChunkUVE> functions;
+    Chunk init;
+    std::vector<Chunk> functions;
     /// Index into `functions` of each handler, by event name.
     std::vector<std::pair<std::string, std::uint32_t>> handlers;
     /// For each LoadProp/StoreProp/CallHost name constant: the property's type or the function's
     /// result type, as the host described it.
-    std::vector<std::pair<std::uint32_t, TypeUVE>> hostTypes;
+    std::vector<std::pair<std::uint32_t, Type>> hostTypes;
     /// A hash of everything above: two programs with the same fingerprint run the same code, which
     /// is how generated native code finds the program it was generated from.
     std::uint64_t fingerprint = 0U;
 };
 
-[[nodiscard]] std::uint64_t ComputeProgramFingerprintUVE(const ProgramUVE& program);
+[[nodiscard]] std::uint64_t ComputeProgramFingerprint(const Program& program);
 
 } // namespace UVE::Blueprint

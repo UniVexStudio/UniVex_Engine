@@ -8,9 +8,9 @@
 namespace UVE::Window::Tests {
 namespace {
 
-TEST(PresentationLayoutUVETest, KeepAspectLetterboxesAndCentersTheReferenceViewport) {
-    const PresentationLayoutUVE layout = ComputePresentationLayoutUVE(
-        1024U, 768U, 1280U, 720U, Platform::AspectPolicyUVE::Keep, false);
+TEST(PresentationLayoutTest, KeepAspectLetterboxesAndCentersTheReferenceViewport) {
+    const PresentationLayout layout = ComputePresentationLayout(
+        1024U, 768U, 1280U, 720U, Platform::AspectPolicy::Keep, false);
 
     EXPECT_EQ(layout.x, 0U);
     EXPECT_EQ(layout.y, 96U);
@@ -22,9 +22,9 @@ TEST(PresentationLayoutUVETest, KeepAspectLetterboxesAndCentersTheReferenceViewp
     EXPECT_DOUBLE_EQ(layout.scaleY, 0.8);
 }
 
-TEST(PresentationLayoutUVETest, IntegerScalingUsesWholeNumberMagnification) {
-    const PresentationLayoutUVE layout = ComputePresentationLayoutUVE(
-        2560U, 1440U, 1280U, 720U, Platform::AspectPolicyUVE::Keep, true);
+TEST(PresentationLayoutTest, IntegerScalingUsesWholeNumberMagnification) {
+    const PresentationLayout layout = ComputePresentationLayout(
+        2560U, 1440U, 1280U, 720U, Platform::AspectPolicy::Keep, true);
 
     EXPECT_TRUE(layout.integerScaleAvailable);
     EXPECT_EQ(layout.width, 2560U);
@@ -33,18 +33,18 @@ TEST(PresentationLayoutUVETest, IntegerScalingUsesWholeNumberMagnification) {
     EXPECT_DOUBLE_EQ(layout.scaleY, 2.0);
 }
 
-TEST(PresentationLayoutUVETest, IntegerScalingReportsWhenOutputIsSmallerThanReference) {
-    const PresentationLayoutUVE layout = ComputePresentationLayoutUVE(
-        640U, 360U, 1280U, 720U, Platform::AspectPolicyUVE::Keep, true);
+TEST(PresentationLayoutTest, IntegerScalingReportsWhenOutputIsSmallerThanReference) {
+    const PresentationLayout layout = ComputePresentationLayout(
+        640U, 360U, 1280U, 720U, Platform::AspectPolicy::Keep, true);
 
     EXPECT_FALSE(layout.integerScaleAvailable);
     EXPECT_EQ(layout.width, 640U);
     EXPECT_EQ(layout.height, 360U);
 }
 
-TEST(PresentationLayoutUVETest, IntegerFallbackPreservesAspectWhenFractionalFitIsRequired) {
-    const PresentationLayoutUVE layout = ComputePresentationLayoutUVE(
-        640U, 480U, 1280U, 720U, Platform::AspectPolicyUVE::Keep, true);
+TEST(PresentationLayoutTest, IntegerFallbackPreservesAspectWhenFractionalFitIsRequired) {
+    const PresentationLayout layout = ComputePresentationLayout(
+        640U, 480U, 1280U, 720U, Platform::AspectPolicy::Keep, true);
 
     EXPECT_FALSE(layout.integerScaleAvailable);
     EXPECT_EQ(layout.x, 0U);
@@ -55,9 +55,9 @@ TEST(PresentationLayoutUVETest, IntegerFallbackPreservesAspectWhenFractionalFitI
     EXPECT_DOUBLE_EQ(layout.scaleY, 0.5);
 }
 
-TEST(PresentationLayoutUVETest, ExpandAddsLogicalSpaceWithoutChangingPhysicalAspect) {
-    const PresentationLayoutUVE layout = ComputePresentationLayoutUVE(
-        1920U, 1080U, 1280U, 1024U, Platform::AspectPolicyUVE::Expand, false);
+TEST(PresentationLayoutTest, ExpandAddsLogicalSpaceWithoutChangingPhysicalAspect) {
+    const PresentationLayout layout = ComputePresentationLayout(
+        1920U, 1080U, 1280U, 1024U, Platform::AspectPolicy::Expand, false);
 
     EXPECT_EQ(layout.width, 1920U);
     EXPECT_EQ(layout.height, 1080U);
@@ -66,30 +66,30 @@ TEST(PresentationLayoutUVETest, ExpandAddsLogicalSpaceWithoutChangingPhysicalAsp
     EXPECT_NEAR(layout.scaleX, layout.scaleY, 1e-9);
 }
 
-TEST(PresentationLayoutUVETest, KeepWidthAndKeepHeightExpandLogicalSpaceAlongOneAxis) {
-    const PresentationLayoutUVE keepWidth = ComputePresentationLayoutUVE(
-        1920U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::KeepWidth, false);
-    const PresentationLayoutUVE keepHeight = ComputePresentationLayoutUVE(
-        1920U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::KeepHeight, false);
+TEST(PresentationLayoutTest, KeepWidthAndKeepHeightExpandLogicalSpaceAlongOneAxis) {
+    const PresentationLayout keepWidth = ComputePresentationLayout(
+        1920U, 1080U, 1280U, 720U, Platform::AspectPolicy::KeepWidth, false);
+    const PresentationLayout keepHeight = ComputePresentationLayout(
+        1920U, 1080U, 1280U, 720U, Platform::AspectPolicy::KeepHeight, false);
 
     EXPECT_DOUBLE_EQ(keepWidth.logicalWidth, 1280.0);
     EXPECT_DOUBLE_EQ(keepWidth.logicalHeight, 720.0);
     EXPECT_DOUBLE_EQ(keepHeight.logicalWidth, 1280.0);
     EXPECT_DOUBLE_EQ(keepHeight.logicalHeight, 720.0);
 
-    const PresentationLayoutUVE widerKeepWidth = ComputePresentationLayoutUVE(
-        2560U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::KeepWidth, false);
-    const PresentationLayoutUVE widerKeepHeight = ComputePresentationLayoutUVE(
-        2560U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::KeepHeight, false);
+    const PresentationLayout widerKeepWidth = ComputePresentationLayout(
+        2560U, 1080U, 1280U, 720U, Platform::AspectPolicy::KeepWidth, false);
+    const PresentationLayout widerKeepHeight = ComputePresentationLayout(
+        2560U, 1080U, 1280U, 720U, Platform::AspectPolicy::KeepHeight, false);
     EXPECT_DOUBLE_EQ(widerKeepWidth.logicalWidth, 1280.0);
     EXPECT_LT(widerKeepWidth.logicalHeight, 720.0);
     EXPECT_GT(widerKeepHeight.logicalWidth, 1280.0);
     EXPECT_DOUBLE_EQ(widerKeepHeight.logicalHeight, 720.0);
 }
 
-TEST(PresentationLayoutUVETest, IntegerOnlyScalingAppliesToIgnoreAndKeepWidthPolicies) {
-    const PresentationLayoutUVE ignored = ComputePresentationLayoutUVE(
-        2560U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::Ignore, true);
+TEST(PresentationLayoutTest, IntegerOnlyScalingAppliesToIgnoreAndKeepWidthPolicies) {
+    const PresentationLayout ignored = ComputePresentationLayout(
+        2560U, 1080U, 1280U, 720U, Platform::AspectPolicy::Ignore, true);
     EXPECT_TRUE(ignored.integerScaleAvailable);
     EXPECT_EQ(ignored.width, 2560U);
     EXPECT_EQ(ignored.height, 720U);
@@ -98,8 +98,8 @@ TEST(PresentationLayoutUVETest, IntegerOnlyScalingAppliesToIgnoreAndKeepWidthPol
     EXPECT_DOUBLE_EQ(ignored.scaleX, 2.0);
     EXPECT_DOUBLE_EQ(ignored.scaleY, 1.0);
 
-    const PresentationLayoutUVE keepWidth = ComputePresentationLayoutUVE(
-        1920U, 1080U, 1280U, 720U, Platform::AspectPolicyUVE::KeepWidth, true);
+    const PresentationLayout keepWidth = ComputePresentationLayout(
+        1920U, 1080U, 1280U, 720U, Platform::AspectPolicy::KeepWidth, true);
     EXPECT_TRUE(keepWidth.integerScaleAvailable);
     EXPECT_EQ(keepWidth.width, 1280U);
     EXPECT_EQ(keepWidth.height, 720U);
@@ -109,35 +109,35 @@ TEST(PresentationLayoutUVETest, IntegerOnlyScalingAppliesToIgnoreAndKeepWidthPol
     EXPECT_DOUBLE_EQ(keepWidth.scaleY, 1.0);
 }
 
-TEST(WindowTitleFormatUVETest, ReplacesProductProjectAndSceneTokens) {
-    EXPECT_EQ(FormatWindowTitleUVE("{projectName} / {productName} / {sceneName}", "Product",
+TEST(WindowTitleFormatTest, ReplacesProductProjectAndSceneTokens) {
+    EXPECT_EQ(FormatWindowTitle("{projectName} / {productName} / {sceneName}", "Product",
                                   "Project", "MainHall", true, true),
               "Project / Product / MainHall");
 }
 
-TEST(WindowTitleFormatUVETest, AppendsSceneOnlyDuringEnabledEditorPlayMode) {
-    EXPECT_EQ(FormatWindowTitleUVE("{productName}", "Product", "Project", "MainHall", true, true),
+TEST(WindowTitleFormatTest, AppendsSceneOnlyDuringEnabledEditorPlayMode) {
+    EXPECT_EQ(FormatWindowTitle("{productName}", "Product", "Project", "MainHall", true, true),
               "Product - MainHall");
-    EXPECT_EQ(FormatWindowTitleUVE("{productName}", "Product", "Project", "MainHall", false, true),
+    EXPECT_EQ(FormatWindowTitle("{productName}", "Product", "Project", "MainHall", false, true),
               "Product");
-    EXPECT_EQ(FormatWindowTitleUVE("{productName}", "Product", "Project", "MainHall", true, false),
+    EXPECT_EQ(FormatWindowTitle("{productName}", "Product", "Project", "MainHall", true, false),
               "Product");
-    EXPECT_EQ(FormatWindowTitleUVE("{productName} ({sceneName})", "Product", "Project", "MainHall", true, true),
+    EXPECT_EQ(FormatWindowTitle("{productName} ({sceneName})", "Product", "Project", "MainHall", true, true),
               "Product (MainHall)");
-    EXPECT_EQ(FormatWindowTitleUVE("{projectName} - {sceneName}", "Product", "Project", "MainHall", false, true),
+    EXPECT_EQ(FormatWindowTitle("{projectName} - {sceneName}", "Product", "Project", "MainHall", false, true),
               "Project");
-    EXPECT_EQ(FormatWindowTitleUVE("{projectName} ({sceneName})", "Product", "Project", "", false, true),
+    EXPECT_EQ(FormatWindowTitle("{projectName} ({sceneName})", "Product", "Project", "", false, true),
               "Project");
 }
 
-TEST(WindowTitleFormatUVETest, UnknownTokensArePreservedAndUtf8TruncationIsBounded) {
-    EXPECT_EQ(FormatWindowTitleUVE("{unknown}", "Product", "Project", "", false, false), "{unknown}");
+TEST(WindowTitleFormatTest, UnknownTokensArePreservedAndUtf8TruncationIsBounded) {
+    EXPECT_EQ(FormatWindowTitle("{unknown}", "Product", "Project", "", false, false), "{unknown}");
     std::string longUtf8;
-    while (longUtf8.size() <= kMaximumWindowTitleBytesUVE) {
+    while (longUtf8.size() <= kMaximumWindowTitleBytes) {
         longUtf8 += "\xE2\x82\xAC";
     }
-    const std::string result = FormatWindowTitleUVE(longUtf8, "Product", "Project", "", false, false);
-    EXPECT_LE(result.size(), kMaximumWindowTitleBytesUVE);
+    const std::string result = FormatWindowTitle(longUtf8, "Product", "Project", "", false, false);
+    EXPECT_LE(result.size(), kMaximumWindowTitleBytes);
     EXPECT_EQ(result.size() % 3U, 0U);
 }
 

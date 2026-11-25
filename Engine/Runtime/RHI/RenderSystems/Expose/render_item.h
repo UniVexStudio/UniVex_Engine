@@ -12,20 +12,20 @@
 
 namespace UVE::Render {
 
-/// One culled, visible draw item extracted by MeshRendererUVE::ExtractRenderQueueUVE (Part 7.2,
-/// Increment 13). Holds live AssetHandleUVE<T> references (not raw AssetGuidUVE values) so the
-/// underlying MeshAssetUVE/MaterialAssetUVE stay loaded for as long as the RenderQueueUVE holding
-/// this item is held by the caller — otherwise AssetManagerUVE::CollectGarbageUVE() (called once
-/// per frame from EngineCoreUVE::Update(), before Render()) could unload an asset between
+/// One culled, visible draw item extracted by MeshRenderer::ExtractRenderQueue (Part 7.2,
+/// Increment 13). Holds live AssetHandle<T> references (not raw AssetGuid values) so the
+/// underlying MeshAsset/MaterialAsset stay loaded for as long as the RenderQueue holding
+/// this item is held by the caller — otherwise AssetManager::CollectGarbage() (called once
+/// per frame from EngineCore::Update(), before Render()) could unload an asset between
 /// extraction and consumption purely because its last other reference dropped, forcing a
 /// needless reload next frame. Genuine cross-frame GPU-resource caching is Increment 14's
-/// GpuResourceCacheUVE, not this struct's job.
-/// Thread-safety: value type; safe to copy/move (AssetHandleUVE<T> is itself safe to copy/move
+/// GpuResourceCache, not this struct's job.
+/// Thread-safety: value type; safe to copy/move (AssetHandle<T> is itself safe to copy/move
 /// from any thread), but not to share for concurrent mutation.
-struct RenderItemUVE {
-    Math::Matrix4x4UVE worldMatrix;
-    Asset::AssetHandleUVE<Asset::MeshAssetUVE> meshHandle;
-    Asset::AssetHandleUVE<Asset::MaterialAssetUVE> materialHandle;
+struct RenderItem {
+    Math::Matrix4x4 worldMatrix;
+    Asset::AssetHandle<Asset::MeshAsset> meshHandle;
+    Asset::AssetHandle<Asset::MaterialAsset> materialHandle;
     float sortDepth = 0.0F;
     /// RenderInstance layers this item is on; 1 when the entity has no RenderInstance.
     std::uint32_t renderLayers = 1U;

@@ -8,21 +8,21 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] Math::Vector3UVE MultiplyComponentsUVE(
-    const Math::Vector3UVE& lhs, const Math::Vector3UVE& rhs) noexcept {
-    return Math::Vector3UVE{lhs.x * rhs.x, lhs.y * rhs.y, lhs.z * rhs.z};
+[[nodiscard]] Math::Vector3 MultiplyComponents(
+    const Math::Vector3& lhs, const Math::Vector3& rhs) noexcept {
+    return Math::Vector3{lhs.x * rhs.x, lhs.y * rhs.y, lhs.z * rhs.z};
 }
 
 } // namespace
 
-std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
-    const float mass, const Math::Vector3UVE halfExtents) noexcept {
-    if (!std::isfinite(mass) || mass < 0.0F || !Math::IsFiniteUVE(halfExtents) ||
+std::optional<Math::Vector3> ComputeBoxInverseInertia(
+    const float mass, const Math::Vector3 halfExtents) noexcept {
+    if (!std::isfinite(mass) || mass < 0.0F || !Math::IsFinite(halfExtents) ||
         halfExtents.x <= 0.0F || halfExtents.y <= 0.0F || halfExtents.z <= 0.0F) {
         return std::nullopt;
     }
     if (mass == 0.0F) {
-        return Math::Vector3UVE{};
+        return Math::Vector3{};
     }
 
     const double doubleMass = static_cast<double>(mass);
@@ -40,7 +40,7 @@ std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
     const double inverseInertiaX = 1.0 / inertiaX;
     const double inverseInertiaY = 1.0 / inertiaY;
     const double inverseInertiaZ = 1.0 / inertiaZ;
-    const Math::Vector3UVE result{
+    const Math::Vector3 result{
         static_cast<float>(inverseInertiaX),
         static_cast<float>(inverseInertiaY),
         static_cast<float>(inverseInertiaZ),
@@ -48,53 +48,53 @@ std::optional<Math::Vector3UVE> ComputeBoxInverseInertiaUVE(
     if (!std::isfinite(inertiaX) || !std::isfinite(inertiaY) || !std::isfinite(inertiaZ) ||
         inertiaX <= 0.0 || inertiaY <= 0.0 || inertiaZ <= 0.0 ||
         !std::isfinite(inverseInertiaX) || !std::isfinite(inverseInertiaY) ||
-        !std::isfinite(inverseInertiaZ) || !Math::IsFiniteUVE(result) ||
+        !std::isfinite(inverseInertiaZ) || !Math::IsFinite(result) ||
         result.x <= 0.0F || result.y <= 0.0F || result.z <= 0.0F) {
         return std::nullopt;
     }
     return result;
 }
 
-std::optional<Math::Vector3UVE> IntegrateAngularVelocityUVE(
-    const Math::Vector3UVE angularVelocity, const Math::Vector3UVE torque,
-    const Math::Vector3UVE inverseInertia, const float deltaTimeSeconds) noexcept {
-    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(torque) ||
-        !Math::IsFiniteUVE(inverseInertia) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F ||
+std::optional<Math::Vector3> IntegrateAngularVelocity(
+    const Math::Vector3 angularVelocity, const Math::Vector3 torque,
+    const Math::Vector3 inverseInertia, const float deltaTimeSeconds) noexcept {
+    if (!Math::IsFinite(angularVelocity) || !Math::IsFinite(torque) ||
+        !Math::IsFinite(inverseInertia) || !std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0F ||
         inverseInertia.x < 0.0F || inverseInertia.y < 0.0F || inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
-    const Math::Vector3UVE angularAcceleration = MultiplyComponentsUVE(torque, inverseInertia);
-    const Math::Vector3UVE result = angularVelocity + angularAcceleration * deltaTimeSeconds;
-    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    const Math::Vector3 angularAcceleration = MultiplyComponents(torque, inverseInertia);
+    const Math::Vector3 result = angularVelocity + angularAcceleration * deltaTimeSeconds;
+    return Math::IsFinite(result) ? std::optional<Math::Vector3>{result} : std::nullopt;
 }
 
-std::optional<Math::Vector3UVE> ApplyAngularImpulseUVE(
-    const Math::Vector3UVE angularVelocity, const Math::Vector3UVE angularImpulse,
-    const Math::Vector3UVE inverseInertia) noexcept {
-    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(angularImpulse) ||
-        !Math::IsFiniteUVE(inverseInertia) || inverseInertia.x < 0.0F || inverseInertia.y < 0.0F ||
+std::optional<Math::Vector3> ApplyAngularImpulse(
+    const Math::Vector3 angularVelocity, const Math::Vector3 angularImpulse,
+    const Math::Vector3 inverseInertia) noexcept {
+    if (!Math::IsFinite(angularVelocity) || !Math::IsFinite(angularImpulse) ||
+        !Math::IsFinite(inverseInertia) || inverseInertia.x < 0.0F || inverseInertia.y < 0.0F ||
         inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
-    const Math::Vector3UVE result = angularVelocity + MultiplyComponentsUVE(angularImpulse, inverseInertia);
-    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    const Math::Vector3 result = angularVelocity + MultiplyComponents(angularImpulse, inverseInertia);
+    return Math::IsFinite(result) ? std::optional<Math::Vector3>{result} : std::nullopt;
 }
 
-std::optional<Math::Vector3UVE> EvaluateGyroscopicTorqueUVE(
-    const Math::Vector3UVE angularVelocity, const Math::Vector3UVE inverseInertia) noexcept {
-    if (!Math::IsFiniteUVE(angularVelocity) || !Math::IsFiniteUVE(inverseInertia) ||
+std::optional<Math::Vector3> EvaluateGyroscopicTorque(
+    const Math::Vector3 angularVelocity, const Math::Vector3 inverseInertia) noexcept {
+    if (!Math::IsFinite(angularVelocity) || !Math::IsFinite(inverseInertia) ||
         inverseInertia.x < 0.0F || inverseInertia.y < 0.0F || inverseInertia.z < 0.0F) {
         return std::nullopt;
     }
-    const Math::Vector3UVE angularMomentum{
+    const Math::Vector3 angularMomentum{
         inverseInertia.x > 0.0F ? angularVelocity.x / inverseInertia.x : 0.0F,
         inverseInertia.y > 0.0F ? angularVelocity.y / inverseInertia.y : 0.0F,
         inverseInertia.z > 0.0F ? angularVelocity.z / inverseInertia.z : 0.0F};
-    const Math::Vector3UVE result{
+    const Math::Vector3 result{
         angularVelocity.y * angularMomentum.z - angularVelocity.z * angularMomentum.y,
         angularVelocity.z * angularMomentum.x - angularVelocity.x * angularMomentum.z,
         angularVelocity.x * angularMomentum.y - angularVelocity.y * angularMomentum.x};
-    return Math::IsFiniteUVE(result) ? std::optional<Math::Vector3UVE>{result} : std::nullopt;
+    return Math::IsFinite(result) ? std::optional<Math::Vector3>{result} : std::nullopt;
 }
 
 } // namespace UVE::Physics

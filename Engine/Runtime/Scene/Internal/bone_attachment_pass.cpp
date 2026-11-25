@@ -25,35 +25,35 @@ namespace {
 
 /// The process mode the scene graph resolved for `entity` on its last update, or the hierarchy
 /// default for an entity it has not seen yet. Asking the graph rather than the entity's own
-/// ProcessComponentUVE is what lets an entity without one inherit its ancestors' answer.
-[[nodiscard]] TickModeUVE ResolvedTickModeUVE(const ISceneGraphUVE& sceneGraph, const EntityUVE entity) {
-    const std::optional<ResolvedObjectModesUVE> modes = sceneGraph.TryGetResolvedObjectModesUVE(entity);
-    return modes.has_value() ? modes->process : TickModeUVE::Running;
+/// ProcessComponent is what lets an entity without one inherit its ancestors' answer.
+[[nodiscard]] TickMode ResolvedTickMode(const ISceneGraph& sceneGraph, const Entity entity) {
+    const std::optional<ResolvedObjectModes> modes = sceneGraph.TryGetResolvedObjectModes(entity);
+    return modes.has_value() ? modes->process : TickMode::Running;
 }
 
 /// How many parents a chain may have before it is treated as malformed. The walks below are bounded
 /// by this rather than trusting the hierarchy to be acyclic: a corrupted parent link must terminate
 /// the pass, not hang the frame.
-inline constexpr int kMaximumHierarchyDepthUVE = 1024;
+inline constexpr int kMaximumHierarchyDepth = 1024;
 
 } // namespace
 
-BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                                           const ISceneGraphUVE& sceneGraph) {
-    BoneAttachmentPassReportUVE report{};
+BoneAttachmentPassReport SyncBoneAttachment3DObjects(IEntityManager& entityManager,
+                                                           const ISceneGraph& sceneGraph) {
+    BoneAttachmentPassReport report{};
 
     // Collected and ordered rather than iterated in place: two attachments can hang off one object,
     // and an author orders them the same way they order every other scene system - physicsPriority -
     // instead of archetype storage order deciding it. Ties keep that storage order (stable_sort).
-    std::vector<std::pair<std::int32_t, EntityUVE>> ordered;
-    entityManager.ForEachUVE<BoneAttachment3DComponentUVE>(
-        [&ordered, &sceneGraph, &entityManager](const EntityUVE entity, BoneAttachment3DComponentUVE&) {
-            if (!IsTickingUVE(ResolvedTickModeUVE(sceneGraph, entity), /*simulationPaused=*/false)) {
+    std::vector<std::pair<std::int32_t, Entity>> ordered;
+    entityManager.ForEach<BoneAttachment3DComponent>(
+        [&ordered, &sceneGraph, &entityManager](const Entity entity, BoneAttachment3DComponent&) {
+            if (!IsTicking(ResolvedTickMode(sceneGraph, entity), /*simulationPaused=*/false)) {
                 return;
             }
             const std::int32_t priority =
-                entityManager.HasComponentUVE<ProcessComponentUVE>(entity)
-                    ? entityManager.GetComponentUVE<ProcessComponentUVE>(entity).physicsPriority
+                entityManager.HasComponent<ProcessComponent>(entity)
+                    ? entityManager.GetComponent<ProcessComponent>(entity).physicsPriority
                     : 0;
             ordered.emplace_back(priority, entity);
         });
@@ -64,18 +64,18 @@ BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& en
                      [](const auto& left, const auto& right) { return left.first < right.first; });
 
     // The world frame of an entity as the scene graph will compose it, from the local transforms: see
-    // ComposeSceneObjectWorldFrameUVE(), which the IK pass composes by as well.
-    const auto worldFrameOf = [&entityManager](EntityUVE entity) {
-        return ComposeSceneObjectWorldFrameUVE(entityManager, entity);
+    // ComposeSceneObjectWorldFrame(), which the IK pass composes by as well.
+    const auto worldFrameOf = [&entityManager](Entity entity) {
+        return ComposeSceneObjectWorldFrame(entityManager, entity);
     };
-    const auto depthOf = [&entityManager](EntityUVE entity) {
+    const auto depthOf = [&entityManager](Entity entity) {
         int depth = 0;
-        for (; depth < kMaximumHierarchyDepthUVE && entity != kInvalidEntityUVE && entityManager.IsAliveUVE(entity);
+        for (; depth < kMaximumHierarchyDepth && entity != kInvalidEntity && entityManager.IsAlive(entity);
              ++depth) {
-            if (!entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)) {
+            if (!entityManager.HasComponent<HierarchyComponent>(entity)) {
                 break;
             }
-            entity = entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent;
+            entity = entityManager.GetComponent<HierarchyComponent>(entity).parent;
         }
         return depth;
     };
@@ -90,22 +90,22 @@ BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& en
 
     for (const auto& [priority, entity] : ordered) {
         static_cast<void>(priority);
-        BoneAttachment3DComponentUVE& attachment =
-            entityManager.GetComponentUVE<BoneAttachment3DComponentUVE>(entity);
+        BoneAttachment3DComponent& attachment =
+            entityManager.GetComponent<BoneAttachment3DComponent>(entity);
         ++report.considered;
         // Last frame's answer does not carry over: an attachment is on its bone this pass or it is
         // not, and `bound`/`resolvedBoneIndex` exist so an author can see which one it is.
-        attachment.resolvedBoneIndex = kInvalidSkeletonBoneIndexUVE;
+        attachment.resolvedBoneIndex = kInvalidSkeletonBoneIndex;
         attachment.bound = false;
-        if (!IsBoneAttachment3DObjectComponentResolvableUVE(attachment) ||
-            !entityManager.IsAliveUVE(attachment.skeleton) ||
-            !entityManager.HasComponentUVE<Skeleton3DComponentUVE>(attachment.skeleton) ||
-            !entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+        if (!IsBoneAttachment3DObjectComponentResolvable(attachment) ||
+            !entityManager.IsAlive(attachment.skeleton) ||
+            !entityManager.HasComponent<Skeleton3DComponent>(attachment.skeleton) ||
+            !entityManager.HasComponent<TransformComponent>(entity)) {
             ++report.unbound;
             continue;
         }
-        const Skeleton3DComponentUVE& skeleton =
-            entityManager.GetComponentUVE<Skeleton3DComponentUVE>(attachment.skeleton);
+        const Skeleton3DComponent& skeleton =
+            entityManager.GetComponent<Skeleton3DComponent>(attachment.skeleton);
         // A skeleton that is switched off is not posing anything, so nothing rides it.
         if (!skeleton.enabled) {
             ++report.unbound;
@@ -114,44 +114,44 @@ BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& en
         // Index wins over name when it names a real bone - that is the pair's documented rule, and it
         // is what makes a renamed bone in a re-export observably lose a name-based attachment instead
         // of silently binding to whichever bone took the name.
-        std::uint32_t boneIndex = kInvalidSkeletonBoneIndexUVE;
-        if (attachment.boneIndex != kInvalidSkeletonBoneIndexUVE && attachment.boneIndex < skeleton.bones.size()) {
+        std::uint32_t boneIndex = kInvalidSkeletonBoneIndex;
+        if (attachment.boneIndex != kInvalidSkeletonBoneIndex && attachment.boneIndex < skeleton.bones.size()) {
             boneIndex = attachment.boneIndex;
-        } else if (!TryFindSkeletonBoneIndexUVE(skeleton, attachment.boneName, boneIndex)) {
+        } else if (!TryFindSkeletonBoneIndex(skeleton, attachment.boneName, boneIndex)) {
             ++report.unbound;
             continue;
         }
 
-        const ObjectWorldFrameUVE skeletonWorld = worldFrameOf(attachment.skeleton);
-        ObjectWorldFrameUVE boneWorld{};
-        if (!TryResolveSkeletonBoneWorldFrameUVE(skeleton, boneIndex, skeletonWorld, boneWorld)) {
+        const ObjectWorldFrame skeletonWorld = worldFrameOf(attachment.skeleton);
+        ObjectWorldFrame boneWorld{};
+        if (!TryResolveSkeletonBoneWorldFrame(skeleton, boneIndex, skeletonWorld, boneWorld)) {
             ++report.unbound;
             continue;
         }
-        const ObjectWorldFrameUVE attachmentWorld =
-            ComposeBoneAttachmentWorldFrameUVE(boneWorld, attachment.localPosition, attachment.localRotation,
+        const ObjectWorldFrame attachmentWorld =
+            ComposeBoneAttachmentWorldFrame(boneWorld, attachment.localPosition, attachment.localRotation,
                                                attachment.localScale);
 
-        TransformComponentUVE& local = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
-        const EntityUVE parent = entityManager.HasComponentUVE<HierarchyComponentUVE>(entity)
-                                     ? entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent
-                                     : kInvalidEntityUVE;
+        TransformComponent& local = entityManager.GetComponent<TransformComponent>(entity);
+        const Entity parent = entityManager.HasComponent<HierarchyComponent>(entity)
+                                     ? entityManager.GetComponent<HierarchyComponent>(entity).parent
+                                     : kInvalidEntity;
         // A top-level attachment ignores its parent's transform - its local values ARE its world
         // values - so it is written in world units deliberately, exactly as propagation reads them.
         const bool composesFromParent =
-            parent != kInvalidEntityUVE && !local.topLevel &&
-            entityManager.HasComponentUVE<TransformComponentUVE>(parent);
-        Math::Vector3UVE localPosition = attachmentWorld.position;
-        Math::QuaternionUVE localRotation = attachmentWorld.rotation;
-        Math::Vector3UVE localScale = attachmentWorld.scale;
+            parent != kInvalidEntity && !local.topLevel &&
+            entityManager.HasComponent<TransformComponent>(parent);
+        Math::Vector3 localPosition = attachmentWorld.position;
+        Math::Quaternion localRotation = attachmentWorld.rotation;
+        Math::Vector3 localScale = attachmentWorld.scale;
         if (composesFromParent &&
-            !TryMakeBoneAttachmentLocalTransformUVE(attachmentWorld, worldFrameOf(parent), localPosition,
+            !TryMakeBoneAttachmentLocalTransform(attachmentWorld, worldFrameOf(parent), localPosition,
                                                     localRotation, localScale)) {
             ++report.unbound;
             continue;
         }
-        Math::QuaternionUVE normalized{};
-        if (!Math::TryNormalizeUVE(localRotation, normalized)) {
+        Math::Quaternion normalized{};
+        if (!Math::TryNormalize(localRotation, normalized)) {
             ++report.unbound;
             continue;
         }
@@ -161,13 +161,13 @@ BoneAttachmentPassReportUVE SyncBoneAttachment3DObjectsUVE(IEntityManagerUVE& en
         // The stored angles described the rotation the object had before this write. Refreshing them
         // the way the animation write path does keeps an Inspector in Euler mode showing the pose the
         // bone is in instead of snapping the attachment back on the next edit.
-        Math::Vector3UVE euler{};
-        if (Math::TryToEulerOrderedUVE(normalized, local.eulerOrder, euler)) {
+        Math::Vector3 euler{};
+        if (Math::TryToEulerOrdered(normalized, local.eulerOrder, euler)) {
             local.localEulerRadians = euler;
         }
         local.localScale = localScale;
-        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).dirty = true;
+        if (entityManager.HasComponent<WorldTransformComponent>(entity)) {
+            entityManager.GetComponent<WorldTransformComponent>(entity).dirty = true;
         }
         attachment.resolvedBoneIndex = boneIndex;
         attachment.bound = true;

@@ -10,7 +10,7 @@
 
 namespace UVE::Scene::Objects {
 
-enum class SceneObjectKindUVE : std::uint8_t {
+enum class SceneObjectKind : std::uint8_t {
     // The transform-only base object. Formerly spelled `Empty`; value 0 is unchanged so anything
     // that stored the raw enumerator still decodes.
     Object3D = 0,
@@ -82,8 +82,8 @@ enum class SceneObjectKindUVE : std::uint8_t {
     Ragdoll3D,
 };
 
-struct SceneObjectDescriptorUVE final {
-    SceneObjectKindUVE kind = SceneObjectKindUVE::Object3D;
+struct SceneObjectDescriptor final {
+    SceneObjectKind kind = SceneObjectKind::Object3D;
     std::string_view typeId;
     std::string_view displayName;
     std::string_view category;
@@ -92,24 +92,24 @@ struct SceneObjectDescriptorUVE final {
     bool libraryCreatable = false;
 };
 
-inline constexpr std::size_t kMaximumSceneObjectDescriptorsUVE = 256U;
+inline constexpr std::size_t kMaximumSceneObjectDescriptors = 256U;
 
 /// Where an object kind belongs. The world holds the level itself - meshes, lights, cameras,
 /// environment, volumes - and is what the Scene panel's "+" offers first. An Entity object is part of
 /// something that lives in the world: a character's body, its animation, its hitboxes. Those are
 /// built inside an Entity asset and brought into the level whole.
-enum class SceneObjectPlacementUVE : std::uint8_t {
+enum class SceneObjectPlacement : std::uint8_t {
     World = 0,
     Entity,
 };
 
-[[nodiscard]] SceneObjectPlacementUVE GetSceneObjectPlacementUVE(SceneObjectKindUVE kind) noexcept;
+[[nodiscard]] SceneObjectPlacement GetSceneObjectPlacement(SceneObjectKind kind) noexcept;
 
-[[nodiscard]] std::span<const SceneObjectDescriptorUVE> GetSceneObjectDescriptorsUVE() noexcept;
-[[nodiscard]] const SceneObjectDescriptorUVE* FindSceneObjectDescriptorUVE(
-    SceneObjectKindUVE kind) noexcept;
-[[nodiscard]] const SceneObjectDescriptorUVE* FindSceneObjectDescriptorUVE(
+[[nodiscard]] std::span<const SceneObjectDescriptor> GetSceneObjectDescriptors() noexcept;
+[[nodiscard]] const SceneObjectDescriptor* FindSceneObjectDescriptor(
+    SceneObjectKind kind) noexcept;
+[[nodiscard]] const SceneObjectDescriptor* FindSceneObjectDescriptor(
     std::string_view typeId) noexcept;
-[[nodiscard]] std::string_view GetSceneObjectTypeIdUVE(SceneObjectKindUVE kind) noexcept;
+[[nodiscard]] std::string_view GetSceneObjectTypeId(SceneObjectKind kind) noexcept;
 
 } // namespace UVE::Scene::Objects

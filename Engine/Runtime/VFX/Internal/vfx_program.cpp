@@ -20,38 +20,38 @@
 namespace UVE::VFX {
 namespace {
 
-using Asset::ParticleColorInputUVE;
-using Asset::ParticleFloatInputUVE;
-using Asset::ParticleModuleDescriptorUVE;
-using Asset::ParticleModuleTypeUVE;
-using Asset::ParticleModuleUVE;
-using Asset::ParticleSimTargetUVE;
-using Asset::ParticleStageUVE;
-using Asset::ParticleSystemAssetUVE;
-using Asset::ParticleUserParameterTypeUVE;
-using Asset::ParticleUserParameterUVE;
-using Asset::ParticleValueKindUVE;
-using Asset::ParticleVectorInputUVE;
+using Asset::ParticleColorInput;
+using Asset::ParticleFloatInput;
+using Asset::ParticleModuleDescriptor;
+using Asset::ParticleModuleType;
+using Asset::ParticleModule;
+using Asset::ParticleSimTarget;
+using Asset::ParticleStage;
+using Asset::ParticleSystemAsset;
+using Asset::ParticleUserParameterType;
+using Asset::ParticleUserParameter;
+using Asset::ParticleValueKind;
+using Asset::ParticleVectorInput;
 
-constexpr std::size_t kMaximumShapeModulesWarningLimitUVE = 1U;
+constexpr std::size_t kMaximumShapeModulesWarningLimit = 1U;
 
-void PushErrorUVE(std::vector<ParticleCompileMessageUVE>& messages, const std::uint32_t moduleId, std::string text) {
-    messages.push_back(ParticleCompileMessageUVE{
-        ParticleCompileMessageUVE::Severity::Error,
+void PushError(std::vector<ParticleCompileMessage>& messages, const std::uint32_t moduleId, std::string text) {
+    messages.push_back(ParticleCompileMessage{
+        ParticleCompileMessage::Severity::Error,
         moduleId,
         std::move(text),
     });
 }
 
-void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std::uint32_t moduleId, std::string text) {
-    messages.push_back(ParticleCompileMessageUVE{
-        ParticleCompileMessageUVE::Severity::Warning,
+void PushWarning(std::vector<ParticleCompileMessage>& messages, const std::uint32_t moduleId, std::string text) {
+    messages.push_back(ParticleCompileMessage{
+        ParticleCompileMessage::Severity::Warning,
         moduleId,
         std::move(text),
     });
 }
 
-[[nodiscard]] std::string LowercaseExtensionUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string LowercaseExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](const unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -59,7 +59,7 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     return ext;
 }
 
-[[nodiscard]] bool DoesAssetExistUVE(const std::string_view assetPath, const VfxCompileContextUVE& context) {
+[[nodiscard]] bool DoesAssetExist(const std::string_view assetPath, const VfxCompileContext& context) {
     if (assetPath.empty()) {
         return false;
     }
@@ -86,36 +86,36 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
            checkCandidate(std::filesystem::path("assets") / rel);
 }
 
-[[nodiscard]] bool IsShapeModuleUVE(const ParticleModuleTypeUVE type) noexcept {
+[[nodiscard]] bool IsShapeModule(const ParticleModuleType type) noexcept {
     switch (type) {
-        case ParticleModuleTypeUVE::ShapePoint:
-        case ParticleModuleTypeUVE::ShapeSphere:
-        case ParticleModuleTypeUVE::ShapeBox:
-        case ParticleModuleTypeUVE::ShapeCone:
-        case ParticleModuleTypeUVE::ShapeCylinder:
-        case ParticleModuleTypeUVE::ShapeTorus:
-        case ParticleModuleTypeUVE::ShapeMeshSurface:
+        case ParticleModuleType::ShapePoint:
+        case ParticleModuleType::ShapeSphere:
+        case ParticleModuleType::ShapeBox:
+        case ParticleModuleType::ShapeCone:
+        case ParticleModuleType::ShapeCylinder:
+        case ParticleModuleType::ShapeTorus:
+        case ParticleModuleType::ShapeMeshSurface:
             return true;
         default:
             return false;
     }
 }
 
-[[nodiscard]] bool IsRendererModuleUVE(const ParticleModuleTypeUVE type) noexcept {
+[[nodiscard]] bool IsRendererModule(const ParticleModuleType type) noexcept {
     switch (type) {
-        case ParticleModuleTypeUVE::SpriteRenderer:
-        case ParticleModuleTypeUVE::RibbonRenderer:
-        case ParticleModuleTypeUVE::MeshRenderer:
-        case ParticleModuleTypeUVE::LightRenderer:
+        case ParticleModuleType::SpriteRenderer:
+        case ParticleModuleType::RibbonRenderer:
+        case ParticleModuleType::MeshRenderer:
+        case ParticleModuleType::LightRenderer:
             return true;
         default:
             return false;
     }
 }
 
-[[nodiscard]] bool ValidateMathGraphCyclesUVE(const std::vector<Asset::ParticleMathNodeUVE>& mathNodes,
+[[nodiscard]] bool ValidateMathGraphCycles(const std::vector<Asset::ParticleMathNode>& mathNodes,
                                               const std::unordered_map<std::uint32_t, std::size_t>& idToIndex,
-                                              std::vector<ParticleCompileMessageUVE>& messages) {
+                                              std::vector<ParticleCompileMessage>& messages) {
     // 0 = unvisited, 1 = visiting, 2 = done
     std::vector<std::uint8_t> state(mathNodes.size(), 0U);
     bool hasCycle = false;
@@ -125,13 +125,13 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
         for (const std::uint32_t inputId : mathNodes[nodeIdx].inputs) {
             const auto it = idToIndex.find(inputId);
             if (it == idToIndex.end()) {
-                PushErrorUVE(messages, mathNodes[nodeIdx].id, "Math node references a missing input node.");
+                PushError(messages, mathNodes[nodeIdx].id, "Math node references a missing input node.");
                 continue;
             }
             const std::size_t depIdx = it->second;
             if (state[depIdx] == 1U) {
                 hasCycle = true;
-                PushErrorUVE(messages, mathNodes[nodeIdx].id, "Cycle detected in Math node graph.");
+                PushError(messages, mathNodes[nodeIdx].id, "Cycle detected in Math node graph.");
             } else if (state[depIdx] == 0U) {
                 self(self, depIdx);
             }
@@ -147,8 +147,8 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     return !hasCycle;
 }
 
-[[nodiscard]] ParticleFloatInputUVE ResolveFloatInputUVE(const ParticleModuleUVE& mod,
-                                                         const ParticleModuleDescriptorUVE& desc,
+[[nodiscard]] ParticleFloatInput ResolveFloatInput(const ParticleModule& mod,
+                                                         const ParticleModuleDescriptor& desc,
                                                          const std::string& name) {
     const auto it = mod.floats.find(name);
     if (it != mod.floats.end()) {
@@ -158,11 +158,11 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     if (defIt != desc.defaultFloats.end()) {
         return defIt->second;
     }
-    return ParticleFloatInputUVE{};
+    return ParticleFloatInput{};
 }
 
-[[nodiscard]] ParticleVectorInputUVE ResolveVectorInputUVE(const ParticleModuleUVE& mod,
-                                                           const ParticleModuleDescriptorUVE& desc,
+[[nodiscard]] ParticleVectorInput ResolveVectorInput(const ParticleModule& mod,
+                                                           const ParticleModuleDescriptor& desc,
                                                            const std::string& name) {
     const auto it = mod.vectors.find(name);
     if (it != mod.vectors.end()) {
@@ -172,11 +172,11 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     if (defIt != desc.defaultVectors.end()) {
         return defIt->second;
     }
-    return ParticleVectorInputUVE{};
+    return ParticleVectorInput{};
 }
 
-[[nodiscard]] ParticleColorInputUVE ResolveColorInputUVE(const ParticleModuleUVE& mod,
-                                                         const ParticleModuleDescriptorUVE& desc,
+[[nodiscard]] ParticleColorInput ResolveColorInput(const ParticleModule& mod,
+                                                         const ParticleModuleDescriptor& desc,
                                                          const std::string& name) {
     const auto it = mod.colors.find(name);
     if (it != mod.colors.end()) {
@@ -186,11 +186,11 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     if (defIt != desc.defaultColors.end()) {
         return defIt->second;
     }
-    return ParticleColorInputUVE{};
+    return ParticleColorInput{};
 }
 
-[[nodiscard]] std::int32_t ResolveIntInputUVE(const ParticleModuleUVE& mod,
-                                              const ParticleModuleDescriptorUVE& desc,
+[[nodiscard]] std::int32_t ResolveIntInput(const ParticleModule& mod,
+                                              const ParticleModuleDescriptor& desc,
                                               const std::string& name) {
     const auto it = mod.ints.find(name);
     if (it != mod.ints.end()) {
@@ -203,8 +203,8 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     return 0;
 }
 
-[[nodiscard]] std::string ResolveStringInputUVE(const ParticleModuleUVE& mod,
-                                              const ParticleModuleDescriptorUVE& desc,
+[[nodiscard]] std::string ResolveStringInput(const ParticleModule& mod,
+                                              const ParticleModuleDescriptor& desc,
                                               const std::string& name) {
     const auto it = mod.strings.find(name);
     if (it != mod.strings.end()) {
@@ -217,22 +217,22 @@ void PushWarningUVE(std::vector<ParticleCompileMessageUVE>& messages, const std:
     return {};
 }
 
-struct CompileTablesUVE final {
-    const std::unordered_map<std::string_view, std::pair<std::uint32_t, ParticleUserParameterTypeUVE>>& paramMap;
+struct CompileTables final {
+    const std::unordered_map<std::string_view, std::pair<std::uint32_t, ParticleUserParameterType>>& paramMap;
     const std::unordered_map<std::uint32_t, std::size_t>& mathIdMap;
-    std::vector<VfxCurveTableUVE>& curveTables;
-    std::vector<VfxGradientTableUVE>& gradientTables;
-    std::vector<ParticleCompileMessageUVE>& messages;
+    std::vector<VfxCurveTable>& curveTables;
+    std::vector<VfxGradientTable>& gradientTables;
+    std::vector<ParticleCompileMessage>& messages;
     bool hasError = false;
 
     void Fail(const std::uint32_t moduleId, std::string text) {
         hasError = true;
-        PushErrorUVE(messages, moduleId, std::move(text));
+        PushError(messages, moduleId, std::move(text));
     }
 
-    [[nodiscard]] VfxCompiledFloatInputUVE CompileFloat(const std::uint32_t moduleId,
-                                                        const ParticleFloatInputUVE& input) {
-        VfxCompiledFloatInputUVE out;
+    [[nodiscard]] VfxCompiledFloatInput CompileFloat(const std::uint32_t moduleId,
+                                                        const ParticleFloatInput& input) {
+        VfxCompiledFloatInput out;
         out.kind = input.kind;
         out.constant = input.constant;
         out.min = input.min;
@@ -246,20 +246,20 @@ struct CompileTablesUVE final {
             return out;
         }
         switch (input.kind) {
-            case ParticleValueKindUVE::Constant:
+            case ParticleValueKind::Constant:
                 break;
-            case ParticleValueKindUVE::RandomRange:
+            case ParticleValueKind::RandomRange:
                 if (input.min > input.max) {
                     Fail(moduleId, "Random range input requires minimum <= maximum.");
                 }
                 break;
-            case ParticleValueKindUVE::Curve: {
-                if (input.curve.keys.size() > Asset::kMaximumCurveKeysUVE) {
+            case ParticleValueKind::Curve: {
+                if (input.curve.keys.size() > Asset::kMaximumCurveKeys) {
                     Fail(moduleId, "Curve exceeds the maximum supported key count.");
                     break;
                 }
                 float prevT = -1.0F;
-                for (const Asset::ParticleCurveKeyUVE& key : input.curve.keys) {
+                for (const Asset::ParticleCurveKey& key : input.curve.keys) {
                     if (!std::isfinite(key.time) || !std::isfinite(key.value) ||
                         !std::isfinite(key.inTangent) || !std::isfinite(key.outTangent) ||
                         key.time < 0.0F || key.time > 1.0F || key.time < prevT) {
@@ -269,80 +269,80 @@ struct CompileTablesUVE final {
                     prevT = key.time;
                 }
                 out.curveTableIndex = static_cast<std::uint32_t>(curveTables.size());
-                curveTables.push_back(BakeVfxCurveTableUVE(input.curve, input.scale));
+                curveTables.push_back(BakeVfxCurveTable(input.curve, input.scale));
                 break;
             }
-            case ParticleValueKindUVE::UserParameter: {
+            case ParticleValueKind::UserParameter: {
                 const auto it = paramMap.find(input.parameter);
                 if (it == paramMap.end()) {
                     Fail(moduleId, "Referenced float user parameter \"" + input.parameter + "\" does not exist.");
-                } else if (it->second.second != ParticleUserParameterTypeUVE::Float) {
+                } else if (it->second.second != ParticleUserParameterType::Float) {
                     Fail(moduleId, "User parameter \"" + input.parameter + "\" is not of type Float.");
                 } else {
                     out.parameterIndex = it->second.first;
                 }
                 break;
             }
-            case ParticleValueKindUVE::Wire:
+            case ParticleValueKind::Wire:
                 if (!mathIdMap.contains(input.wireNode)) {
                     Fail(moduleId, "Wire input names a missing Math node.");
                 }
                 break;
-            case ParticleValueKindUVE::Gradient:
+            case ParticleValueKind::Gradient:
                 Fail(moduleId, "Float input cannot evaluate a color gradient.");
                 break;
         }
         return out;
     }
 
-    [[nodiscard]] VfxCompiledVectorInputUVE CompileVector(const std::uint32_t moduleId,
-                                                          const ParticleVectorInputUVE& input) {
-        VfxCompiledVectorInputUVE out;
+    [[nodiscard]] VfxCompiledVectorInput CompileVector(const std::uint32_t moduleId,
+                                                          const ParticleVectorInput& input) {
+        VfxCompiledVectorInput out;
         out.kind = input.kind;
         out.constant = input.constant;
         out.min = input.min;
         out.max = input.max;
         out.wireNode = input.wireNode;
 
-        if (!Math::IsFiniteUVE(input.constant) || !Math::IsFiniteUVE(input.min) || !Math::IsFiniteUVE(input.max)) {
+        if (!Math::IsFinite(input.constant) || !Math::IsFinite(input.min) || !Math::IsFinite(input.max)) {
             Fail(moduleId, "Vector input contains non-finite components.");
             return out;
         }
         switch (input.kind) {
-            case ParticleValueKindUVE::Constant:
+            case ParticleValueKind::Constant:
                 break;
-            case ParticleValueKindUVE::RandomRange:
+            case ParticleValueKind::RandomRange:
                 if (input.min.x > input.max.x || input.min.y > input.max.y || input.min.z > input.max.z) {
                     Fail(moduleId, "Vector random range requires minimum <= maximum on each axis.");
                 }
                 break;
-            case ParticleValueKindUVE::UserParameter: {
+            case ParticleValueKind::UserParameter: {
                 const auto it = paramMap.find(input.parameter);
                 if (it == paramMap.end()) {
                     Fail(moduleId, "Referenced vector user parameter \"" + input.parameter + "\" does not exist.");
-                } else if (it->second.second != ParticleUserParameterTypeUVE::Vector) {
+                } else if (it->second.second != ParticleUserParameterType::Vector) {
                     Fail(moduleId, "User parameter \"" + input.parameter + "\" is not of type Vector.");
                 } else {
                     out.parameterIndex = it->second.first;
                 }
                 break;
             }
-            case ParticleValueKindUVE::Wire:
+            case ParticleValueKind::Wire:
                 if (!mathIdMap.contains(input.wireNode)) {
                     Fail(moduleId, "Wire input names a missing Math node.");
                 }
                 break;
-            case ParticleValueKindUVE::Curve:
-            case ParticleValueKindUVE::Gradient:
+            case ParticleValueKind::Curve:
+            case ParticleValueKind::Gradient:
                 Fail(moduleId, "Vector input kind is not supported.");
                 break;
         }
         return out;
     }
 
-    [[nodiscard]] VfxCompiledColorInputUVE CompileColor(const std::uint32_t moduleId,
-                                                        const ParticleColorInputUVE& input) {
-        VfxCompiledColorInputUVE out;
+    [[nodiscard]] VfxCompiledColorInput CompileColor(const std::uint32_t moduleId,
+                                                        const ParticleColorInput& input) {
+        VfxCompiledColorInput out;
         out.kind = input.kind;
         out.constant = input.constant;
         out.alpha = input.alpha;
@@ -357,16 +357,16 @@ struct CompileTablesUVE final {
             return out;
         }
         switch (input.kind) {
-            case ParticleValueKindUVE::Constant:
-            case ParticleValueKindUVE::RandomRange:
+            case ParticleValueKind::Constant:
+            case ParticleValueKind::RandomRange:
                 break;
-            case ParticleValueKindUVE::Gradient: {
-                if (input.gradient.stops.size() > Asset::kMaximumGradientStopsUVE) {
+            case ParticleValueKind::Gradient: {
+                if (input.gradient.stops.size() > Asset::kMaximumGradientStops) {
                     Fail(moduleId, "Gradient exceeds maximum stop count.");
                     break;
                 }
                 float prevT = -1.0F;
-                for (const Asset::ParticleGradientStopUVE& stop : input.gradient.stops) {
+                for (const Asset::ParticleGradientStop& stop : input.gradient.stops) {
                     if (!std::isfinite(stop.time) || !std::isfinite(stop.color.r) ||
                         !std::isfinite(stop.color.g) || !std::isfinite(stop.color.b) ||
                         !std::isfinite(stop.alpha) || stop.time < 0.0F || stop.time > 1.0F || stop.time < prevT) {
@@ -376,22 +376,22 @@ struct CompileTablesUVE final {
                     prevT = stop.time;
                 }
                 out.gradientTableIndex = static_cast<std::uint32_t>(gradientTables.size());
-                gradientTables.push_back(BakeVfxGradientTableUVE(input.gradient));
+                gradientTables.push_back(BakeVfxGradientTable(input.gradient));
                 break;
             }
-            case ParticleValueKindUVE::UserParameter: {
+            case ParticleValueKind::UserParameter: {
                 const auto it = paramMap.find(input.parameter);
                 if (it == paramMap.end()) {
                     Fail(moduleId, "Referenced color user parameter \"" + input.parameter + "\" does not exist.");
-                } else if (it->second.second != ParticleUserParameterTypeUVE::Color) {
+                } else if (it->second.second != ParticleUserParameterType::Color) {
                     Fail(moduleId, "User parameter \"" + input.parameter + "\" is not of type Color.");
                 } else {
                     out.parameterIndex = it->second.first;
                 }
                 break;
             }
-            case ParticleValueKindUVE::Curve:
-            case ParticleValueKindUVE::Wire:
+            case ParticleValueKind::Curve:
+            case ParticleValueKind::Wire:
                 Fail(moduleId, "Color input kind is not supported.");
                 break;
         }
@@ -399,17 +399,17 @@ struct CompileTablesUVE final {
     }
 };
 
-[[nodiscard]] bool ValidateModuleKeysAndStageUVE(const ParticleModuleUVE& mod,
-                                                 const ParticleStageUVE expectedStage,
-                                                 std::vector<ParticleCompileMessageUVE>& messages,
-                                                 const ParticleModuleDescriptorUVE*& outDesc) {
-    outDesc = Asset::FindParticleModuleDescriptorUVE(mod.type);
+[[nodiscard]] bool ValidateModuleKeysAndStage(const ParticleModule& mod,
+                                                 const ParticleStage expectedStage,
+                                                 std::vector<ParticleCompileMessage>& messages,
+                                                 const ParticleModuleDescriptor*& outDesc) {
+    outDesc = Asset::FindParticleModuleDescriptor(mod.type);
     if (outDesc == nullptr) {
-        PushErrorUVE(messages, mod.id, "Unknown particle module type.");
+        PushError(messages, mod.id, "Unknown particle module type.");
         return false;
     }
     if (outDesc->stage != expectedStage) {
-        PushErrorUVE(messages, mod.id,
+        PushError(messages, mod.id,
                      std::string("Module \"") + std::string(outDesc->canonicalName) +
                          "\" is placed in the wrong pipeline stage.");
         return false;
@@ -418,43 +418,43 @@ struct CompileTablesUVE final {
     for (const auto& [name, val] : mod.floats) {
         static_cast<void>(val);
         if (!outDesc->defaultFloats.contains(name)) {
-            PushErrorUVE(messages, mod.id, "Unknown float input \"" + name + "\".");
+            PushError(messages, mod.id, "Unknown float input \"" + name + "\".");
             ok = false;
         }
     }
     for (const auto& [name, val] : mod.vectors) {
         static_cast<void>(val);
         if (!outDesc->defaultVectors.contains(name)) {
-            PushErrorUVE(messages, mod.id, "Unknown vector input \"" + name + "\".");
+            PushError(messages, mod.id, "Unknown vector input \"" + name + "\".");
             ok = false;
         }
     }
     for (const auto& [name, val] : mod.colors) {
         static_cast<void>(val);
         if (!outDesc->defaultColors.contains(name)) {
-            PushErrorUVE(messages, mod.id, "Unknown color input \"" + name + "\".");
+            PushError(messages, mod.id, "Unknown color input \"" + name + "\".");
             ok = false;
         }
     }
     for (const auto& [name, val] : mod.ints) {
         static_cast<void>(val);
         if (!outDesc->defaultInts.contains(name)) {
-            PushErrorUVE(messages, mod.id, "Unknown integer input \"" + name + "\".");
+            PushError(messages, mod.id, "Unknown integer input \"" + name + "\".");
             ok = false;
         }
     }
     for (const auto& [name, val] : mod.strings) {
         static_cast<void>(val);
         if (!outDesc->defaultStrings.contains(name)) {
-            PushErrorUVE(messages, mod.id, "Unknown string input \"" + name + "\".");
+            PushError(messages, mod.id, "Unknown string input \"" + name + "\".");
             ok = false;
         }
     }
     return ok;
 }
 
-[[nodiscard]] bool HasNonZeroFloatPossibilityUVE(const ParticleFloatInputUVE& input) noexcept {
-    if (input.kind == ParticleValueKindUVE::Constant) {
+[[nodiscard]] bool HasNonZeroFloatPossibility(const ParticleFloatInput& input) noexcept {
+    if (input.kind == ParticleValueKind::Constant) {
         return input.constant != 0.0F;
     }
     return true;
@@ -462,52 +462,52 @@ struct CompileTablesUVE final {
 
 } // namespace
 
-bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
+bool CompileParticleEmitter(const Asset::ParticleSystemAsset& system,
                                const std::size_t emitterIndex,
-                               ParticleProgramUVE& outProgram,
-                               std::vector<ParticleCompileMessageUVE>& messages) {
-    return CompileParticleEmitterUVE(system, emitterIndex, VfxCompileContextUVE{}, outProgram, messages);
+                               ParticleProgram& outProgram,
+                               std::vector<ParticleCompileMessage>& messages) {
+    return CompileParticleEmitter(system, emitterIndex, VfxCompileContext{}, outProgram, messages);
 }
 
-bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
+bool CompileParticleEmitter(const Asset::ParticleSystemAsset& system,
                                const std::size_t emitterIndex,
-                               const VfxCompileContextUVE& context,
-                               ParticleProgramUVE& outProgram,
-                               std::vector<ParticleCompileMessageUVE>& messages) {
+                               const VfxCompileContext& context,
+                               ParticleProgram& outProgram,
+                               std::vector<ParticleCompileMessage>& messages) {
     messages.clear();
 
     if (emitterIndex >= system.emitters.size()) {
-        PushErrorUVE(messages, 0U, "Emitter index is out of range.");
+        PushError(messages, 0U, "Emitter index is out of range.");
         return false;
     }
 
-    const Asset::ParticleEmitterAssetUVE& emitter = system.emitters[emitterIndex];
+    const Asset::ParticleEmitterAsset& emitter = system.emitters[emitterIndex];
     bool hasError = false;
 
     if (!std::isfinite(system.duration) || system.duration <= 0.0F) {
-        PushErrorUVE(messages, 0U, "System duration must be finite and greater than zero.");
+        PushError(messages, 0U, "System duration must be finite and greater than zero.");
         hasError = true;
     }
     if (!std::isfinite(system.warmUpSeconds) || system.warmUpSeconds < 0.0F) {
-        PushErrorUVE(messages, 0U, "System warm-up duration must be non-negative.");
+        PushError(messages, 0U, "System warm-up duration must be non-negative.");
         hasError = true;
     }
-    if (emitter.maxParticles == 0U || emitter.maxParticles > Asset::kMaximumParticlesPerEmitterUVE) {
-        PushErrorUVE(messages, 0U, "Emitter maxParticles must be between 1 and 1,000,000.");
+    if (emitter.maxParticles == 0U || emitter.maxParticles > Asset::kMaximumParticlesPerEmitter) {
+        PushError(messages, 0U, "Emitter maxParticles must be between 1 and 1,000,000.");
         hasError = true;
     }
 
-    if (emitter.target != ParticleSimTargetUVE::Gpu && emitter.maxParticles > 100'000U) {
-        PushWarningUVE(messages, 0U, "Emitter maxParticles exceeds 100,000 on CPU target.");
+    if (emitter.target != ParticleSimTarget::Gpu && emitter.maxParticles > 100'000U) {
+        PushWarning(messages, 0U, "Emitter maxParticles exceeds 100,000 on CPU target.");
     }
 
     // Build user-parameter lookup map.
-    std::unordered_map<std::string_view, std::pair<std::uint32_t, ParticleUserParameterTypeUVE>> paramMap;
+    std::unordered_map<std::string_view, std::pair<std::uint32_t, ParticleUserParameterType>> paramMap;
     paramMap.reserve(system.parameters.size());
     for (std::uint32_t idx = 0U; idx < static_cast<std::uint32_t>(system.parameters.size()); ++idx) {
-        const ParticleUserParameterUVE& param = system.parameters[idx];
+        const ParticleUserParameter& param = system.parameters[idx];
         if (!paramMap.emplace(param.name, std::make_pair(idx, param.type)).second) {
-            PushErrorUVE(messages, 0U, "Duplicate user parameter name \"" + param.name + "\".");
+            PushError(messages, 0U, "Duplicate user parameter name \"" + param.name + "\".");
             hasError = true;
         }
     }
@@ -518,11 +518,11 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     for (std::size_t idx = 0U; idx < emitter.mathNodes.size(); ++idx) {
         const auto& math = emitter.mathNodes[idx];
         if (math.id == 0U || !mathIdMap.emplace(math.id, idx).second) {
-            PushErrorUVE(messages, math.id, "Math nodes must have unique non-zero IDs.");
+            PushError(messages, math.id, "Math nodes must have unique non-zero IDs.");
             hasError = true;
         }
     }
-    if (!emitter.mathNodes.empty() && !ValidateMathGraphCyclesUVE(emitter.mathNodes, mathIdMap, messages)) {
+    if (!emitter.mathNodes.empty() && !ValidateMathGraphCycles(emitter.mathNodes, mathIdMap, messages)) {
         hasError = true;
     }
 
@@ -533,7 +533,7 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
         emitterNameMap.emplace(system.emitters[idx].name, idx);
     }
 
-    ParticleProgramUVE candidate;
+    ParticleProgram candidate;
     candidate.emitterName = emitter.name;
     candidate.enabled = emitter.enabled;
     candidate.space = emitter.space;
@@ -542,10 +542,10 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     candidate.seed = emitter.seed;
 
     // Base identity & aging attributes are required by every live emitter.
-    VfxAttributeMaskUVE mask = ToMaskUVE(VfxAttributeBitUVE::Id) | ToMaskUVE(VfxAttributeBitUVE::Seed) |
-                               ToMaskUVE(VfxAttributeBitUVE::Age) | ToMaskUVE(VfxAttributeBitUVE::Lifetime);
+    VfxAttributeMask mask = ToMask(VfxAttributeBit::Id) | ToMask(VfxAttributeBit::Seed) |
+                               ToMask(VfxAttributeBit::Age) | ToMask(VfxAttributeBit::Lifetime);
 
-    CompileTablesUVE tables{
+    CompileTables tables{
         .paramMap = paramMap,
         .mathIdMap = mathIdMap,
         .curveTables = candidate.curveTables,
@@ -554,30 +554,30 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     };
 
     // ---- Stage 1: Emitter Update ----
-    for (const ParticleModuleUVE& mod : emitter.emitterUpdate) {
-        const ParticleModuleDescriptorUVE* desc = nullptr;
-        if (!ValidateModuleKeysAndStageUVE(mod, ParticleStageUVE::EmitterUpdate, messages, desc)) {
+    for (const ParticleModule& mod : emitter.emitterUpdate) {
+        const ParticleModuleDescriptor* desc = nullptr;
+        if (!ValidateModuleKeysAndStage(mod, ParticleStage::EmitterUpdate, messages, desc)) {
             hasError = true;
             continue;
         }
         if (!mod.enabled) {
             continue;
         }
-        VfxEmitterUpdateOpUVE op;
+        VfxEmitterUpdateOp op;
         op.type = mod.type;
         op.moduleId = mod.id;
         switch (mod.type) {
-            case ParticleModuleTypeUVE::SpawnRate:
-                op.rate = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Rate"));
+            case ParticleModuleType::SpawnRate:
+                op.rate = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Rate"));
                 break;
-            case ParticleModuleTypeUVE::SpawnBurst:
-                op.time = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Time"));
-                op.interval = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Interval"));
-                op.count = ResolveIntInputUVE(mod, *desc, "Count");
-                op.cycles = ResolveIntInputUVE(mod, *desc, "Cycles");
+            case ParticleModuleType::SpawnBurst:
+                op.time = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Time"));
+                op.interval = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Interval"));
+                op.count = ResolveIntInput(mod, *desc, "Count");
+                op.cycles = ResolveIntInput(mod, *desc, "Cycles");
                 break;
-            case ParticleModuleTypeUVE::SpawnPerDistance:
-                op.perUnit = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "PerUnit"));
+            case ParticleModuleType::SpawnPerDistance:
+                op.perUnit = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "PerUnit"));
                 break;
             default:
                 break;
@@ -589,16 +589,16 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     std::size_t lastEnabledShapeModuleIndex = std::numeric_limits<std::size_t>::max();
     std::size_t enabledShapeCount = 0U;
     for (std::size_t idx = 0U; idx < emitter.particleSpawn.size(); ++idx) {
-        if (emitter.particleSpawn[idx].enabled && IsShapeModuleUVE(emitter.particleSpawn[idx].type)) {
+        if (emitter.particleSpawn[idx].enabled && IsShapeModule(emitter.particleSpawn[idx].type)) {
             lastEnabledShapeModuleIndex = idx;
             ++enabledShapeCount;
         }
     }
-    if (enabledShapeCount > kMaximumShapeModulesWarningLimitUVE) {
+    if (enabledShapeCount > kMaximumShapeModulesWarningLimit) {
         for (std::size_t idx = 0U; idx < emitter.particleSpawn.size(); ++idx) {
-            const ParticleModuleUVE& mod = emitter.particleSpawn[idx];
-            if (mod.enabled && IsShapeModuleUVE(mod.type) && idx != lastEnabledShapeModuleIndex) {
-                PushWarningUVE(messages, mod.id,
+            const ParticleModule& mod = emitter.particleSpawn[idx];
+            if (mod.enabled && IsShapeModule(mod.type) && idx != lastEnabledShapeModuleIndex) {
+                PushWarning(messages, mod.id,
                                "Multiple shapes enabled in Particle Spawn; only the last shape is used.");
             }
         }
@@ -613,21 +613,21 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     bool needsPrevPosition = false;
 
     for (std::size_t idx = 0U; idx < emitter.particleSpawn.size(); ++idx) {
-        const ParticleModuleUVE& mod = emitter.particleSpawn[idx];
-        const ParticleModuleDescriptorUVE* desc = nullptr;
-        if (!ValidateModuleKeysAndStageUVE(mod, ParticleStageUVE::ParticleSpawn, messages, desc)) {
+        const ParticleModule& mod = emitter.particleSpawn[idx];
+        const ParticleModuleDescriptor* desc = nullptr;
+        if (!ValidateModuleKeysAndStage(mod, ParticleStage::ParticleSpawn, messages, desc)) {
             hasError = true;
             continue;
         }
 
         // Validate mesh reference even if disabled or shadowed.
-        if (mod.type == ParticleModuleTypeUVE::ShapeMeshSurface) {
-            const std::string meshPath = ResolveStringInputUVE(mod, *desc, "Mesh");
+        if (mod.type == ParticleModuleType::ShapeMeshSurface) {
+            const std::string meshPath = ResolveStringInput(mod, *desc, "Mesh");
             if (meshPath.empty()) {
                 tables.Fail(mod.id, "Shape: Mesh Surface requires a mesh asset path.");
-            } else if (LowercaseExtensionUVE(meshPath) != ".uvmodel") {
+            } else if (LowercaseExtension(meshPath) != ".uvmodel") {
                 tables.Fail(mod.id, "Shape: Mesh Surface mesh must be a .uvmodel asset.");
-            } else if (!DoesAssetExistUVE(meshPath, context)) {
+            } else if (!DoesAssetExist(meshPath, context)) {
                 tables.Fail(mod.id, "Shape: Mesh Surface mesh asset file is missing: " + meshPath);
             }
         }
@@ -635,91 +635,91 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
         if (!mod.enabled) {
             continue;
         }
-        if (IsShapeModuleUVE(mod.type) && idx != lastEnabledShapeModuleIndex) {
+        if (IsShapeModule(mod.type) && idx != lastEnabledShapeModuleIndex) {
             continue;
         }
 
-        VfxParticleSpawnOpUVE op;
+        VfxParticleSpawnOp op;
         op.type = mod.type;
         op.moduleId = mod.id;
 
         switch (mod.type) {
-            case ParticleModuleTypeUVE::ShapePoint:
-            case ParticleModuleTypeUVE::ShapeSphere:
-            case ParticleModuleTypeUVE::ShapeBox:
-            case ParticleModuleTypeUVE::ShapeCone:
-            case ParticleModuleTypeUVE::ShapeCylinder:
-            case ParticleModuleTypeUVE::ShapeTorus:
-            case ParticleModuleTypeUVE::ShapeMeshSurface: {
+            case ParticleModuleType::ShapePoint:
+            case ParticleModuleType::ShapeSphere:
+            case ParticleModuleType::ShapeBox:
+            case ParticleModuleType::ShapeCone:
+            case ParticleModuleType::ShapeCylinder:
+            case ParticleModuleType::ShapeTorus:
+            case ParticleModuleType::ShapeMeshSurface: {
                 needsPosition = true;
-                const ParticleFloatInputUVE ns = ResolveFloatInputUVE(mod, *desc, "NormalSpeed");
+                const ParticleFloatInput ns = ResolveFloatInput(mod, *desc, "NormalSpeed");
                 op.normalSpeed = tables.CompileFloat(mod.id, ns);
-                op.surface = ResolveIntInputUVE(mod, *desc, "Surface");
-                if (HasNonZeroFloatPossibilityUVE(ns)) {
+                op.surface = ResolveIntInput(mod, *desc, "Surface");
+                if (HasNonZeroFloatPossibility(ns)) {
                     needsVelocity = true;
                 }
-                if (mod.type == ParticleModuleTypeUVE::ShapeSphere) {
-                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                    op.hemisphere = ResolveIntInputUVE(mod, *desc, "Hemisphere");
-                } else if (mod.type == ParticleModuleTypeUVE::ShapeBox) {
-                    op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Size"));
-                } else if (mod.type == ParticleModuleTypeUVE::ShapeCone) {
-                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Angle"));
-                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Length"));
-                    op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                } else if (mod.type == ParticleModuleTypeUVE::ShapeCylinder) {
-                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Height"));
-                } else if (mod.type == ParticleModuleTypeUVE::ShapeTorus) {
-                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MajorRadius"));
-                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MinorRadius"));
-                } else if (mod.type == ParticleModuleTypeUVE::ShapeMeshSurface) {
-                    op.assetPath = ResolveStringInputUVE(mod, *desc, "Mesh");
+                if (mod.type == ParticleModuleType::ShapeSphere) {
+                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                    op.hemisphere = ResolveIntInput(mod, *desc, "Hemisphere");
+                } else if (mod.type == ParticleModuleType::ShapeBox) {
+                    op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Size"));
+                } else if (mod.type == ParticleModuleType::ShapeCone) {
+                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Angle"));
+                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Length"));
+                    op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                } else if (mod.type == ParticleModuleType::ShapeCylinder) {
+                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Height"));
+                } else if (mod.type == ParticleModuleType::ShapeTorus) {
+                    op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MajorRadius"));
+                    op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MinorRadius"));
+                } else if (mod.type == ParticleModuleType::ShapeMeshSurface) {
+                    op.assetPath = ResolveStringInput(mod, *desc, "Mesh");
                 }
                 break;
             }
-            case ParticleModuleTypeUVE::InitialVelocity:
+            case ParticleModuleType::InitialVelocity:
                 needsVelocity = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Velocity"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Velocity"));
                 break;
-            case ParticleModuleTypeUVE::VelocityInCone:
+            case ParticleModuleType::VelocityInCone:
                 needsVelocity = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Axis"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Angle"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Speed"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Axis"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Angle"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Speed"));
                 break;
-            case ParticleModuleTypeUVE::InitialLifetime:
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Lifetime"));
+            case ParticleModuleType::InitialLifetime:
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Lifetime"));
                 break;
-            case ParticleModuleTypeUVE::InitialColor:
+            case ParticleModuleType::InitialColor:
                 hasInitialColor = true;
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Color);
-                op.colorA = tables.CompileColor(mod.id, ResolveColorInputUVE(mod, *desc, "Color"));
+                mask |= ToMask(VfxAttributeBit::Color);
+                op.colorA = tables.CompileColor(mod.id, ResolveColorInput(mod, *desc, "Color"));
                 break;
-            case ParticleModuleTypeUVE::InitialSize:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Size);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Size"));
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Size"));
+            case ParticleModuleType::InitialSize:
+                mask |= ToMask(VfxAttributeBit::Size);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Size"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Size"));
                 break;
-            case ParticleModuleTypeUVE::InitialRotation:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Rotation);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Rotation"));
+            case ParticleModuleType::InitialRotation:
+                mask |= ToMask(VfxAttributeBit::Rotation);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Rotation"));
                 break;
-            case ParticleModuleTypeUVE::InitialSpin:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Rotation) | ToMaskUVE(VfxAttributeBitUVE::Spin);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Spin"));
+            case ParticleModuleType::InitialSpin:
+                mask |= ToMask(VfxAttributeBit::Rotation) | ToMask(VfxAttributeBit::Spin);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Spin"));
                 break;
-            case ParticleModuleTypeUVE::InitialSpriteFrame:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Frame);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Frame"));
+            case ParticleModuleType::InitialSpriteFrame:
+                mask |= ToMask(VfxAttributeBit::Frame);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Frame"));
                 break;
-            case ParticleModuleTypeUVE::InitialMass:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Mass);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Mass"));
+            case ParticleModuleType::InitialMass:
+                mask |= ToMask(VfxAttributeBit::Mass);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Mass"));
                 break;
-            case ParticleModuleTypeUVE::InheritOwnerVelocity:
+            case ParticleModuleType::InheritOwnerVelocity:
                 needsVelocity = true;
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Scale"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Scale"));
                 break;
             default:
                 break;
@@ -728,9 +728,9 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     }
 
     // ---- Stage 3: Particle Update ----
-    for (const ParticleModuleUVE& mod : emitter.particleUpdate) {
-        const ParticleModuleDescriptorUVE* desc = nullptr;
-        if (!ValidateModuleKeysAndStageUVE(mod, ParticleStageUVE::ParticleUpdate, messages, desc)) {
+    for (const ParticleModule& mod : emitter.particleUpdate) {
+        const ParticleModuleDescriptor* desc = nullptr;
+        if (!ValidateModuleKeysAndStage(mod, ParticleStage::ParticleUpdate, messages, desc)) {
             hasError = true;
             continue;
         }
@@ -738,153 +738,153 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
             continue;
         }
 
-        VfxParticleUpdateOpUVE op;
+        VfxParticleUpdateOp op;
         op.type = mod.type;
         op.moduleId = mod.id;
 
         switch (mod.type) {
-            case ParticleModuleTypeUVE::Gravity:
+            case ParticleModuleType::Gravity:
                 needsVelocity = true;
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Acceleration"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Acceleration"));
                 break;
-            case ParticleModuleTypeUVE::Drag:
+            case ParticleModuleType::Drag:
                 needsVelocity = true;
                 needsPosition = true;
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Coefficient"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Coefficient"));
                 break;
-            case ParticleModuleTypeUVE::AddVelocity:
+            case ParticleModuleType::AddVelocity:
                 needsVelocity = true;
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Velocity"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Velocity"));
                 break;
-            case ParticleModuleTypeUVE::CurlNoise:
+            case ParticleModuleType::CurlNoise:
                 needsVelocity = true;
                 needsPosition = true;
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Strength"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Frequency"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Speed"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Strength"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Frequency"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Speed"));
                 break;
-            case ParticleModuleTypeUVE::Vortex:
+            case ParticleModuleType::Vortex:
                 needsVelocity = true;
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Axis"));
-                op.vecB = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Center"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Strength"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "PullIn"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Axis"));
+                op.vecB = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Center"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Strength"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "PullIn"));
                 break;
-            case ParticleModuleTypeUVE::PointAttractor:
+            case ParticleModuleType::PointAttractor:
                 needsVelocity = true;
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Position"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Strength"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "KillRadius"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Position"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Strength"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "KillRadius"));
                 break;
-            case ParticleModuleTypeUVE::Wind:
+            case ParticleModuleType::Wind:
                 needsVelocity = true;
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Velocity"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Turbulence"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Velocity"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Turbulence"));
                 break;
-            case ParticleModuleTypeUVE::LimitSpeed:
+            case ParticleModuleType::LimitSpeed:
                 needsVelocity = true;
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MaxSpeed"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Damping"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MaxSpeed"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Damping"));
                 break;
-            case ParticleModuleTypeUVE::Orbit:
+            case ParticleModuleType::Orbit:
                 needsPosition = true;
                 hasOrbit = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Axis"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Speed"));
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Axis"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Speed"));
                 break;
-            case ParticleModuleTypeUVE::ColorOverLife:
+            case ParticleModuleType::ColorOverLife:
                 hasColorOverLife = true;
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Color) | ToMaskUVE(VfxAttributeBitUVE::SpawnColor);
-                op.colorA = tables.CompileColor(mod.id, ResolveColorInputUVE(mod, *desc, "Color"));
+                mask |= ToMask(VfxAttributeBit::Color) | ToMask(VfxAttributeBit::SpawnColor);
+                op.colorA = tables.CompileColor(mod.id, ResolveColorInput(mod, *desc, "Color"));
                 break;
-            case ParticleModuleTypeUVE::SizeOverLife:
+            case ParticleModuleType::SizeOverLife:
                 hasSizeOverLifeOrBySpeed = true;
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Size) | ToMaskUVE(VfxAttributeBitUVE::SpawnSize);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Scale"));
+                mask |= ToMask(VfxAttributeBit::Size) | ToMask(VfxAttributeBit::SpawnSize);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Scale"));
                 break;
-            case ParticleModuleTypeUVE::RotationRate:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Rotation) | ToMaskUVE(VfxAttributeBitUVE::Spin);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Rate"));
+            case ParticleModuleType::RotationRate:
+                mask |= ToMask(VfxAttributeBit::Rotation) | ToMask(VfxAttributeBit::Spin);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Rate"));
                 break;
-            case ParticleModuleTypeUVE::SizeBySpeed:
+            case ParticleModuleType::SizeBySpeed:
                 needsVelocity = true;
                 hasSizeOverLifeOrBySpeed = true;
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Size) | ToMaskUVE(VfxAttributeBitUVE::SpawnSize);
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MinSpeed"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MaxSpeed"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MinScale"));
-                op.floatD = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "MaxScale"));
+                mask |= ToMask(VfxAttributeBit::Size) | ToMask(VfxAttributeBit::SpawnSize);
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MinSpeed"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MaxSpeed"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MinScale"));
+                op.floatD = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "MaxScale"));
                 break;
-            case ParticleModuleTypeUVE::SpriteFlipbook:
-                mask |= ToMaskUVE(VfxAttributeBitUVE::Frame);
-                op.intA = std::max(1, ResolveIntInputUVE(mod, *desc, "Rows"));
-                op.intB = std::max(1, ResolveIntInputUVE(mod, *desc, "Columns"));
-                op.intC = ResolveIntInputUVE(mod, *desc, "Mode");
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Fps"));
+            case ParticleModuleType::SpriteFlipbook:
+                mask |= ToMask(VfxAttributeBit::Frame);
+                op.intA = std::max(1, ResolveIntInput(mod, *desc, "Rows"));
+                op.intB = std::max(1, ResolveIntInput(mod, *desc, "Columns"));
+                op.intC = ResolveIntInput(mod, *desc, "Mode");
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Fps"));
                 break;
-            case ParticleModuleTypeUVE::CollisionPlane:
+            case ParticleModuleType::CollisionPlane:
                 needsPosition = true;
                 needsVelocity = true;
                 needsPrevPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Point"));
-                op.vecB = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Normal"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Bounce"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Friction"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "LifeLoss"));
-                op.intA = ResolveIntInputUVE(mod, *desc, "KillOnHit");
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Point"));
+                op.vecB = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Normal"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Bounce"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Friction"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "LifeLoss"));
+                op.intA = ResolveIntInput(mod, *desc, "KillOnHit");
                 break;
-            case ParticleModuleTypeUVE::CollisionDepth:
+            case ParticleModuleType::CollisionDepth:
                 needsPosition = true;
                 needsVelocity = true;
-                if (emitter.target != ParticleSimTargetUVE::Gpu) {
-                    PushWarningUVE(messages, mod.id,
+                if (emitter.target != ParticleSimTarget::Gpu) {
+                    PushWarning(messages, mod.id,
                                    "Collision: Depth only runs on the GPU path and is skipped on CPU.");
                 }
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Point"));
-                op.vecB = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Normal"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Bounce"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Friction"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "LifeLoss"));
-                op.intA = ResolveIntInputUVE(mod, *desc, "KillOnHit");
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Point"));
+                op.vecB = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Normal"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Bounce"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Friction"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "LifeLoss"));
+                op.intA = ResolveIntInput(mod, *desc, "KillOnHit");
                 break;
-            case ParticleModuleTypeUVE::CollisionPhysics:
+            case ParticleModuleType::CollisionPhysics:
                 needsPosition = true;
                 needsVelocity = true;
                 needsPrevPosition = true;
                 if (emitter.maxParticles > 2000U) {
-                    PushWarningUVE(messages, mod.id,
+                    PushWarning(messages, mod.id,
                                    "Collision: Physics is ignored when live particles exceed 2,000.");
                 }
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Point"));
-                op.vecB = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Normal"));
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Bounce"));
-                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Friction"));
-                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "LifeLoss"));
-                op.intA = ResolveIntInputUVE(mod, *desc, "KillOnHit");
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Point"));
+                op.vecB = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Normal"));
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Bounce"));
+                op.floatB = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Friction"));
+                op.floatC = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "LifeLoss"));
+                op.intA = ResolveIntInput(mod, *desc, "KillOnHit");
                 break;
-            case ParticleModuleTypeUVE::KillByAge:
+            case ParticleModuleType::KillByAge:
                 break;
-            case ParticleModuleTypeUVE::KillByBounds:
+            case ParticleModuleType::KillByBounds:
                 needsPosition = true;
-                op.vecA = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Min"));
-                op.vecB = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Max"));
-                op.intA = ResolveIntInputUVE(mod, *desc, "Inside");
+                op.vecA = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Min"));
+                op.vecB = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Max"));
+                op.intA = ResolveIntInput(mod, *desc, "Inside");
                 break;
-            case ParticleModuleTypeUVE::KillByCondition:
-                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Condition"));
+            case ParticleModuleType::KillByCondition:
+                op.floatA = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Condition"));
                 break;
-            case ParticleModuleTypeUVE::EventOnDeath:
-            case ParticleModuleTypeUVE::EventOnCollision: {
+            case ParticleModuleType::EventOnDeath:
+            case ParticleModuleType::EventOnCollision: {
                 needsPosition = true;
                 needsVelocity = true;
-                const std::string targetName = ResolveStringInputUVE(mod, *desc, "TargetEmitter");
+                const std::string targetName = ResolveStringInput(mod, *desc, "TargetEmitter");
                 const auto it = emitterNameMap.find(targetName);
                 if (targetName.empty() || it == emitterNameMap.end()) {
                     tables.Fail(mod.id, "Event target emitter \"" + targetName + "\" does not exist.");
@@ -893,7 +893,7 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
                 } else {
                     op.targetEmitterIndex = it->second;
                 }
-                op.intA = ResolveIntInputUVE(mod, *desc, "Count");
+                op.intA = ResolveIntInput(mod, *desc, "Count");
                 break;
             }
             default:
@@ -904,106 +904,106 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
 
     // ---- Stage 4: Render ----
     std::size_t enabledRendererCount = 0U;
-    for (const ParticleModuleUVE& mod : emitter.render) {
-        const ParticleModuleDescriptorUVE* desc = nullptr;
-        if (!ValidateModuleKeysAndStageUVE(mod, ParticleStageUVE::Render, messages, desc)) {
+    for (const ParticleModule& mod : emitter.render) {
+        const ParticleModuleDescriptor* desc = nullptr;
+        if (!ValidateModuleKeysAndStage(mod, ParticleStage::Render, messages, desc)) {
             hasError = true;
             continue;
         }
 
         // Validate texture/mesh/material references cleanly on every render module.
-        if (mod.type == ParticleModuleTypeUVE::SpriteRenderer ||
-            mod.type == ParticleModuleTypeUVE::RibbonRenderer) {
-            const std::string tex = ResolveStringInputUVE(mod, *desc, "Texture");
+        if (mod.type == ParticleModuleType::SpriteRenderer ||
+            mod.type == ParticleModuleType::RibbonRenderer) {
+            const std::string tex = ResolveStringInput(mod, *desc, "Texture");
             if (!tex.empty()) {
-                if (LowercaseExtensionUVE(tex) != ".uvtex") {
+                if (LowercaseExtension(tex) != ".uvtex") {
                     tables.Fail(mod.id, "Renderer texture must be a .uvtex asset: " + tex);
-                } else if (!DoesAssetExistUVE(tex, context)) {
+                } else if (!DoesAssetExist(tex, context)) {
                     tables.Fail(mod.id, "Renderer texture file is missing: " + tex);
                 }
             }
-            const std::string mat = ResolveStringInputUVE(mod, *desc, "Material");
+            const std::string mat = ResolveStringInput(mod, *desc, "Material");
             if (!mat.empty()) {
-                const std::string ext = LowercaseExtensionUVE(mat);
+                const std::string ext = LowercaseExtension(mat);
                 if (ext != ".uvmat" && ext != ".uvmaterial") {
                     tables.Fail(mod.id, "Renderer material must be a .uvmat or .uvmaterial asset: " + mat);
-                } else if (!DoesAssetExistUVE(mat, context)) {
+                } else if (!DoesAssetExist(mat, context)) {
                     tables.Fail(mod.id, "Renderer material file is missing: " + mat);
                 }
             }
-        } else if (mod.type == ParticleModuleTypeUVE::MeshRenderer) {
-            const std::string mesh = ResolveStringInputUVE(mod, *desc, "Mesh");
+        } else if (mod.type == ParticleModuleType::MeshRenderer) {
+            const std::string mesh = ResolveStringInput(mod, *desc, "Mesh");
             if (mesh.empty()) {
                 tables.Fail(mod.id, "Mesh Renderer requires a mesh asset path.");
-            } else if (LowercaseExtensionUVE(mesh) != ".uvmodel") {
+            } else if (LowercaseExtension(mesh) != ".uvmodel") {
                 tables.Fail(mod.id, "Mesh Renderer mesh must be a .uvmodel asset.");
-            } else if (!DoesAssetExistUVE(mesh, context)) {
+            } else if (!DoesAssetExist(mesh, context)) {
                 tables.Fail(mod.id, "Mesh Renderer mesh file is missing: " + mesh);
             }
-            const std::string mat = ResolveStringInputUVE(mod, *desc, "Material");
+            const std::string mat = ResolveStringInput(mod, *desc, "Material");
             if (!mat.empty()) {
-                const std::string ext = LowercaseExtensionUVE(mat);
+                const std::string ext = LowercaseExtension(mat);
                 if (ext != ".uvmat" && ext != ".uvmaterial") {
                     tables.Fail(mod.id, "Mesh Renderer material must be a .uvmat or .uvmaterial asset: " + mat);
-                } else if (!DoesAssetExistUVE(mat, context)) {
+                } else if (!DoesAssetExist(mat, context)) {
                     tables.Fail(mod.id, "Mesh Renderer material file is missing: " + mat);
                 }
             }
         }
 
-        if (!mod.enabled || !IsRendererModuleUVE(mod.type)) {
+        if (!mod.enabled || !IsRendererModule(mod.type)) {
             continue;
         }
         ++enabledRendererCount;
         needsPosition = true;
 
-        VfxRendererDescUVE rd;
+        VfxRendererDesc rd;
         rd.type = mod.type;
         rd.moduleId = mod.id;
         switch (mod.type) {
-            case ParticleModuleTypeUVE::SpriteRenderer:
-                rd.facing = ResolveIntInputUVE(mod, *desc, "Facing");
-                rd.blend = ResolveIntInputUVE(mod, *desc, "Blend");
-                rd.rows = std::max(1, ResolveIntInputUVE(mod, *desc, "Rows"));
-                rd.cols = std::max(1, ResolveIntInputUVE(mod, *desc, "Columns"));
-                rd.frameBlend = ResolveIntInputUVE(mod, *desc, "FrameBlend");
-                rd.stretchScale = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "StretchScale"));
-                rd.alphaCutoff = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "AlphaCutoff"));
-                rd.softDistance = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "SoftDistance"));
-                rd.cameraFadeNear = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "CameraFadeNear"));
-                rd.cameraFadeFar = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "CameraFadeFar"));
-                rd.emissive = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Emissive"));
-                rd.axis = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Axis"));
-                rd.texturePath = ResolveStringInputUVE(mod, *desc, "Texture");
-                rd.materialPath = ResolveStringInputUVE(mod, *desc, "Material");
+            case ParticleModuleType::SpriteRenderer:
+                rd.facing = ResolveIntInput(mod, *desc, "Facing");
+                rd.blend = ResolveIntInput(mod, *desc, "Blend");
+                rd.rows = std::max(1, ResolveIntInput(mod, *desc, "Rows"));
+                rd.cols = std::max(1, ResolveIntInput(mod, *desc, "Columns"));
+                rd.frameBlend = ResolveIntInput(mod, *desc, "FrameBlend");
+                rd.stretchScale = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "StretchScale"));
+                rd.alphaCutoff = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "AlphaCutoff"));
+                rd.softDistance = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "SoftDistance"));
+                rd.cameraFadeNear = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "CameraFadeNear"));
+                rd.cameraFadeFar = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "CameraFadeFar"));
+                rd.emissive = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Emissive"));
+                rd.axis = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Axis"));
+                rd.texturePath = ResolveStringInput(mod, *desc, "Texture");
+                rd.materialPath = ResolveStringInput(mod, *desc, "Material");
                 if (rd.facing == 2) {
                     needsVelocity = true;
                 }
                 break;
-            case ParticleModuleTypeUVE::RibbonRenderer:
+            case ParticleModuleType::RibbonRenderer:
                 needsPrevPosition = true;
-                rd.perParticle = ResolveIntInputUVE(mod, *desc, "PerParticle");
-                rd.trailLength = std::max(2, ResolveIntInputUVE(mod, *desc, "TrailLength"));
-                rd.ribbonMode = ResolveIntInputUVE(mod, *desc, "Mode");
-                rd.blend = ResolveIntInputUVE(mod, *desc, "Blend");
-                rd.width = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Width"));
-                rd.tileLength = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "TileLength"));
-                rd.emissive = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Emissive"));
-                rd.texturePath = ResolveStringInputUVE(mod, *desc, "Texture");
-                rd.materialPath = ResolveStringInputUVE(mod, *desc, "Material");
+                rd.perParticle = ResolveIntInput(mod, *desc, "PerParticle");
+                rd.trailLength = std::max(2, ResolveIntInput(mod, *desc, "TrailLength"));
+                rd.ribbonMode = ResolveIntInput(mod, *desc, "Mode");
+                rd.blend = ResolveIntInput(mod, *desc, "Blend");
+                rd.width = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Width"));
+                rd.tileLength = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "TileLength"));
+                rd.emissive = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Emissive"));
+                rd.texturePath = ResolveStringInput(mod, *desc, "Texture");
+                rd.materialPath = ResolveStringInput(mod, *desc, "Material");
                 break;
-            case ParticleModuleTypeUVE::MeshRenderer:
-                rd.orient = ResolveIntInputUVE(mod, *desc, "Orient");
-                rd.axis = tables.CompileVector(mod.id, ResolveVectorInputUVE(mod, *desc, "Axis"));
-                rd.meshPath = ResolveStringInputUVE(mod, *desc, "Mesh");
-                rd.materialPath = ResolveStringInputUVE(mod, *desc, "Material");
+            case ParticleModuleType::MeshRenderer:
+                rd.orient = ResolveIntInput(mod, *desc, "Orient");
+                rd.axis = tables.CompileVector(mod.id, ResolveVectorInput(mod, *desc, "Axis"));
+                rd.meshPath = ResolveStringInput(mod, *desc, "Mesh");
+                rd.materialPath = ResolveStringInput(mod, *desc, "Material");
                 if (rd.orient == 1) {
                     needsVelocity = true;
                 }
                 break;
-            case ParticleModuleTypeUVE::LightRenderer:
-                rd.radius = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Radius"));
-                rd.intensity = tables.CompileFloat(mod.id, ResolveFloatInputUVE(mod, *desc, "Intensity"));
+            case ParticleModuleType::LightRenderer:
+                rd.radius = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Radius"));
+                rd.intensity = tables.CompileFloat(mod.id, ResolveFloatInput(mod, *desc, "Intensity"));
                 break;
             default:
                 break;
@@ -1012,30 +1012,30 @@ bool CompileParticleEmitterUVE(const Asset::ParticleSystemAssetUVE& system,
     }
 
     if (enabledRendererCount == 0U) {
-        PushErrorUVE(messages, 0U, "Render stage must contain at least one enabled renderer.");
+        PushError(messages, 0U, "Render stage must contain at least one enabled renderer.");
         hasError = true;
     }
 
     if (needsPosition) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::Position);
+        mask |= ToMask(VfxAttributeBit::Position);
     }
     if (needsVelocity) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::Velocity) | ToMaskUVE(VfxAttributeBitUVE::Position);
+        mask |= ToMask(VfxAttributeBit::Velocity) | ToMask(VfxAttributeBit::Position);
     }
     if (needsPrevPosition) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::PrevPosition);
+        mask |= ToMask(VfxAttributeBit::PrevPosition);
     }
     if (hasColorOverLife && !hasInitialColor) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::Color) | ToMaskUVE(VfxAttributeBitUVE::SpawnColor);
+        mask |= ToMask(VfxAttributeBit::Color) | ToMask(VfxAttributeBit::SpawnColor);
     }
     if (hasColorOverLife) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::SpawnColor);
+        mask |= ToMask(VfxAttributeBit::SpawnColor);
     }
     if (hasSizeOverLifeOrBySpeed) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::Size) | ToMaskUVE(VfxAttributeBitUVE::SpawnSize);
+        mask |= ToMask(VfxAttributeBit::Size) | ToMask(VfxAttributeBit::SpawnSize);
     }
     if (hasOrbit) {
-        mask |= ToMaskUVE(VfxAttributeBitUVE::SpawnOrigin);
+        mask |= ToMask(VfxAttributeBit::SpawnOrigin);
     }
 
     candidate.attributeMask = mask;

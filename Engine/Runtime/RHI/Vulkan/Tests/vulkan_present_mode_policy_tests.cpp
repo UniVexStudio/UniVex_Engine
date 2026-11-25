@@ -7,44 +7,44 @@
 namespace UVE::Render::Vulkan::Tests {
 namespace {
 
-using Platform::VSyncModeUVE;
+using Platform::VSyncMode;
 
-TEST(VulkanPresentModePolicyUVETest, OffPrefersImmediateThenMailboxThenFifo) {
-    const PresentModeAvailabilityUVE allModes{true, true, true};
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Off, allModes),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Immediate, PresentModeFallbackUVE::None}));
+TEST(VulkanPresentModePolicyTest, OffPrefersImmediateThenMailboxThenFifo) {
+    const PresentModeAvailability allModes{true, true, true};
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Off, allModes),
+              (PresentModeResolution{PresentModePolicy::Immediate, PresentModeFallback::None}));
 
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Off, PresentModeAvailabilityUVE{false, false, true}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Mailbox,
-                                        PresentModeFallbackUVE::OffUsesMailbox}));
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Off, PresentModeAvailabilityUVE{}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Fifo,
-                                        PresentModeFallbackUVE::OffUsesFifo}));
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Off, PresentModeAvailability{false, false, true}),
+              (PresentModeResolution{PresentModePolicy::Mailbox,
+                                        PresentModeFallback::OffUsesMailbox}));
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Off, PresentModeAvailability{}),
+              (PresentModeResolution{PresentModePolicy::Fifo,
+                                        PresentModeFallback::OffUsesFifo}));
 }
 
-TEST(VulkanPresentModePolicyUVETest, OnAlwaysUsesMandatoryFifo) {
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::On, PresentModeAvailabilityUVE{true, true, true}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Fifo, PresentModeFallbackUVE::None}));
+TEST(VulkanPresentModePolicyTest, OnAlwaysUsesMandatoryFifo) {
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::On, PresentModeAvailability{true, true, true}),
+              (PresentModeResolution{PresentModePolicy::Fifo, PresentModeFallback::None}));
 }
 
-TEST(VulkanPresentModePolicyUVETest, AdaptiveAndMailboxUseRequestedModeOrFallbackToFifo) {
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Adaptive, PresentModeAvailabilityUVE{false, true, false}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::FifoRelaxed, PresentModeFallbackUVE::None}));
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Adaptive, PresentModeAvailabilityUVE{}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Fifo,
-                                        PresentModeFallbackUVE::AdaptiveUsesFifo}));
+TEST(VulkanPresentModePolicyTest, AdaptiveAndMailboxUseRequestedModeOrFallbackToFifo) {
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Adaptive, PresentModeAvailability{false, true, false}),
+              (PresentModeResolution{PresentModePolicy::FifoRelaxed, PresentModeFallback::None}));
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Adaptive, PresentModeAvailability{}),
+              (PresentModeResolution{PresentModePolicy::Fifo,
+                                        PresentModeFallback::AdaptiveUsesFifo}));
 
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Mailbox, PresentModeAvailabilityUVE{false, false, true}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Mailbox, PresentModeFallbackUVE::None}));
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(VSyncModeUVE::Mailbox, PresentModeAvailabilityUVE{}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Fifo,
-                                        PresentModeFallbackUVE::MailboxUsesFifo}));
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Mailbox, PresentModeAvailability{false, false, true}),
+              (PresentModeResolution{PresentModePolicy::Mailbox, PresentModeFallback::None}));
+    EXPECT_EQ(ResolveVulkanPresentMode(VSyncMode::Mailbox, PresentModeAvailability{}),
+              (PresentModeResolution{PresentModePolicy::Fifo,
+                                        PresentModeFallback::MailboxUsesFifo}));
 }
 
-TEST(VulkanPresentModePolicyUVETest, InvalidRequestFallsBackToFifo) {
-    EXPECT_EQ(ResolveVulkanPresentModeUVE(static_cast<VSyncModeUVE>(255U), PresentModeAvailabilityUVE{}),
-              (PresentModeResolutionUVE{PresentModePolicyUVE::Fifo,
-                                        PresentModeFallbackUVE::InvalidUsesFifo}));
+TEST(VulkanPresentModePolicyTest, InvalidRequestFallsBackToFifo) {
+    EXPECT_EQ(ResolveVulkanPresentMode(static_cast<VSyncMode>(255U), PresentModeAvailability{}),
+              (PresentModeResolution{PresentModePolicy::Fifo,
+                                        PresentModeFallback::InvalidUsesFifo}));
 }
 
 } // namespace

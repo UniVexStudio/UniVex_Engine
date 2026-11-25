@@ -10,8 +10,8 @@
 
 namespace UVE::Retarget {
 
-/// A bone key taken apart: its side and its words (see MakeBoneKeyUVE).
-struct BoneKeyPartsUVE final {
+/// A bone key taken apart: its side and its words (see MakeBoneKey).
+struct BoneKeyParts final {
     char side = 'C';
     std::vector<std::string> words;
 
@@ -35,8 +35,8 @@ struct BoneKeyPartsUVE final {
     }
 };
 
-[[nodiscard]] inline BoneKeyPartsUVE SplitBoneKeyUVE(const std::string_view key) {
-    BoneKeyPartsUVE parts;
+[[nodiscard]] inline BoneKeyParts SplitBoneKey(const std::string_view key) {
+    BoneKeyParts parts;
     const auto bar = key.find('|');
     std::string_view words = key;
     if (bar != std::string_view::npos) {

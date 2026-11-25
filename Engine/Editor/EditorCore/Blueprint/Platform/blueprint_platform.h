@@ -12,7 +12,7 @@
 namespace UVE::Blueprint::Platform {
 
 /// Supported UniVex Blueprint execution and authoring platforms.
-enum class BlueprintPlatformKindUVE : std::uint8_t {
+enum class BlueprintPlatformKind : std::uint8_t {
     Linux = 0,
     Windows,
     Android,
@@ -20,8 +20,8 @@ enum class BlueprintPlatformKindUVE : std::uint8_t {
 };
 
 /// Platform-specific runtime and tooling capabilities for Blueprint execution and plugins.
-struct BlueprintPlatformCapabilitiesUVE final {
-    BlueprintPlatformKindUVE kind = BlueprintPlatformKindUVE::Unknown;
+struct BlueprintPlatformCapabilities final {
+    BlueprintPlatformKind kind = BlueprintPlatformKind::Unknown;
     std::string_view name;
     std::string_view sharedLibraryExtension;
     char preferredPathSeparator = '/';
@@ -33,19 +33,19 @@ struct BlueprintPlatformCapabilitiesUVE final {
     std::uint64_t defaultInstructionBudget = 1'000'000U;
 };
 
-[[nodiscard]] BlueprintPlatformKindUVE GetCurrentBlueprintPlatformKindUVE() noexcept;
-[[nodiscard]] BlueprintPlatformCapabilitiesUVE GetBlueprintPlatformCapabilitiesForUVE(
-    BlueprintPlatformKindUVE kind) noexcept;
-[[nodiscard]] BlueprintPlatformCapabilitiesUVE GetCurrentBlueprintPlatformCapabilitiesUVE() noexcept;
-[[nodiscard]] std::string_view BlueprintPlatformNameUVE(BlueprintPlatformKindUVE kind) noexcept;
+[[nodiscard]] BlueprintPlatformKind GetCurrentBlueprintPlatformKind() noexcept;
+[[nodiscard]] BlueprintPlatformCapabilities GetBlueprintPlatformCapabilitiesFor(
+    BlueprintPlatformKind kind) noexcept;
+[[nodiscard]] BlueprintPlatformCapabilities GetCurrentBlueprintPlatformCapabilities() noexcept;
+[[nodiscard]] std::string_view BlueprintPlatformName(BlueprintPlatformKind kind) noexcept;
 
 /// Normalizes a project-relative Blueprint asset path to POSIX forward slashes, stripping leading "./".
 /// Returns std::nullopt if the path is empty, absolute, or attempts parent-directory traversal ("..").
-[[nodiscard]] std::optional<std::string> NormalizeBlueprintAssetPathUVE(std::string_view rawPath);
+[[nodiscard]] std::optional<std::string> NormalizeBlueprintAssetPath(std::string_view rawPath);
 
 /// Computes the platform-specific Blueprint bytecode/codegen cache directory under `projectRoot`.
-[[nodiscard]] std::filesystem::path GetBlueprintCacheDirectoryUVE(
+[[nodiscard]] std::filesystem::path GetBlueprintCacheDirectory(
     const std::filesystem::path& projectRoot,
-    BlueprintPlatformKindUVE platform = GetCurrentBlueprintPlatformKindUVE());
+    BlueprintPlatformKind platform = GetCurrentBlueprintPlatformKind());
 
 } // namespace UVE::Blueprint::Platform

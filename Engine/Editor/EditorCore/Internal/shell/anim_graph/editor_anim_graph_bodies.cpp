@@ -36,12 +36,12 @@
 namespace UVE::Editor {
 namespace {
 
-using Kind = Scene::AnimationGraphNodeKindUVE;
-using ParamType = Scene::AnimationParameterTypeUVE;
+using Kind = Scene::AnimationGraphNodeKind;
+using ParamType = Scene::AnimationParameterType;
 
-constexpr float kRowUVE = 25.0F;
+constexpr float kRow = 25.0F;
 
-[[nodiscard]] std::size_t BodyRowsUVE(const Kind kind) noexcept {
+[[nodiscard]] std::size_t BodyRows(const Kind kind) noexcept {
     switch (kind) {
         case Kind::Output: return 0U;
         case Kind::Slot: return 2U;
@@ -65,7 +65,7 @@ constexpr float kRowUVE = 25.0F;
 }
 
 /// One labelled row of a node's settings.
-[[nodiscard]] prism::Ref<prism::Widget> RowUVE(const std::string& label, const prism::Ref<prism::Widget>& control) {
+[[nodiscard]] prism::Ref<prism::Widget> Row(const std::string& label, const prism::Ref<prism::Widget>& control) {
     auto row = prism::hbox(4.0F);
     auto text = prism::make<prism::Label>(label, prism::FontRole::Small);
     text->setColor(prism::ThemeColor(&prism::Theme::textDim));
@@ -75,19 +75,19 @@ constexpr float kRowUVE = 25.0F;
     row->add(textBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(control, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     auto sized = prism::make<prism::SizeBox>();
-    sized->setHeightOverride(kRowUVE - 3.0F);
+    sized->setHeightOverride(kRow - 3.0F);
     sized->setContent(row);
     return sized;
 }
 
 } // namespace
 
-float EditorAnimGraphPanelUVE::BodyHeightUVE(const NodeUVE& node) {
-    const std::size_t rows = BodyRowsUVE(node.kind);
-    return rows == 0U ? 0.0F : static_cast<float>(rows) * kRowUVE + 8.0F;
+float EditorAnimGraphPanel::BodyHeight(const Node& node) {
+    const std::size_t rows = BodyRows(node.kind);
+    return rows == 0U ? 0.0F : static_cast<float>(rows) * kRow + 8.0F;
 }
 
-std::string EditorAnimGraphPanelUVE::SummaryUVE(const NodeUVE& node) {
+std::string EditorAnimGraphPanel::Summary(const Node& node) {
     char text[96];
     switch (node.kind) {
         case Kind::Clip:
@@ -131,10 +131,10 @@ std::string EditorAnimGraphPanelUVE::SummaryUVE(const NodeUVE& node) {
     return {};
 }
 
-std::vector<std::string> EditorAnimGraphPanelUVE::ParameterNamesUVE(const std::initializer_list<ParamType> types) const {
+std::vector<std::string> EditorAnimGraphPanel::ParameterNames(const std::initializer_list<ParamType> types) const {
     std::vector<std::string> names;
-    if (const GraphUVE* graph = GraphPtrUVE()) {
-        for (const Scene::AnimationParameterUVE& parameter : graph->parameters) {
+    if (const Graph* graph = GraphPtr()) {
+        for (const Scene::AnimationParameter& parameter : graph->parameters) {
             if (std::find(types.begin(), types.end(), parameter.type) != types.end()) {
                 names.push_back(parameter.name);
             }
@@ -143,43 +143,43 @@ std::vector<std::string> EditorAnimGraphPanelUVE::ParameterNamesUVE(const std::i
     return names;
 }
 
-std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const {
+std::vector<Asset::AssetGuid> EditorAnimGraphPanel::ClipChoices() const {
     // The linked AnimationSequencer's clips first (its clip and its library's), then every other
     // clip in the project, so a new graph can use any animation at once.
-    std::vector<Asset::AssetGuidUVE> clips = m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
+    std::vector<Asset::AssetGuid> clips = m_editor.GetSequencerClips(m_editor.ResolveActiveSequencerForGraph(m_view.tree));
     // The project's clips, listed again only when the project's files change (a project may hold
     // thousands, and this is asked for every clip picker drawn).
-    Asset::IProjectFileIndexUVE& index = m_editor.m_services->GetProjectFileIndexUVE();
+    Asset::IProjectFileIndex& index = m_editor.m_services->GetProjectFileIndex();
     const auto now = std::chrono::steady_clock::now();
     if (!m_projectClipsValid || now - m_projectClipsAt > std::chrono::seconds(2)) {
         m_projectClipsAt = now;
-        const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
-        Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+        const Asset::ProjectFileSnapshot snapshot = index.GetSnapshot();
+        Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
         std::vector<std::filesystem::path> project;
-        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-            if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && entry.relativePath.extension() == ".uvanim") {
+        for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+            if (entry.kind != Asset::ProjectFileEntryKind::Directory && entry.relativePath.extension() == ".uvanim") {
                 project.push_back(snapshot.contentRoot / entry.relativePath);
             }
         }
         std::ranges::sort(project);
         // And the takes kept inside the project's models.
-        for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+        for (const Asset::AssetRecord& record : database.GetRegisteredAssets()) {
             std::filesystem::path model;
             std::string take;
-            if (Asset::SplitEmbeddedClipPathUVE(record.path, model, take)) {
+            if (Asset::SplitEmbeddedClipPath(record.path, model, take)) {
                 project.push_back(record.path);
             }
         }
         m_projectClips.clear();
         for (const std::filesystem::path& path : project) {
-            const Asset::AssetGuidUVE guid = database.RegisterUVE(path);
-            if (guid != Asset::AssetGuidUVE{}) {
+            const Asset::AssetGuid guid = database.Register(path);
+            if (guid != Asset::AssetGuid{}) {
                 m_projectClips.push_back(guid);
             }
         }
         m_projectClipsValid = true;
     }
-    for (const Asset::AssetGuidUVE guid : m_projectClips) {
+    for (const Asset::AssetGuid guid : m_projectClips) {
         if (std::ranges::find(clips, guid) == clips.end()) {
             clips.push_back(guid);
         }
@@ -187,51 +187,51 @@ std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const
     return clips;
 }
 
-std::vector<Scene::EntityUVE> EditorAnimGraphPanelUVE::MontageSequencersUVE() const {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const GraphUVE* graph = GraphPtrUVE();
-    if (graph != nullptr && graph->montageSequencer != Scene::kInvalidEntityUVE && em.IsAliveUVE(graph->montageSequencer) &&
-        em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(graph->montageSequencer)) {
+std::vector<Scene::Entity> EditorAnimGraphPanel::MontageSequencers() const {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    const Graph* graph = GraphPtr();
+    if (graph != nullptr && graph->montageSequencer != Scene::kInvalidEntity && em.IsAlive(graph->montageSequencer) &&
+        em.HasComponent<Scene::MontageSequencerComponent>(graph->montageSequencer)) {
         return {graph->montageSequencer};
     }
-    std::vector<Scene::EntityUVE> players;
-    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(object)) {
+    std::vector<Scene::Entity> players;
+    for (const Scene::Entity object : m_editor.CollectEntityEditorObjects()) {
+        if (em.HasComponent<Scene::MontageSequencerComponent>(object)) {
             players.push_back(object);
         }
     }
     return players;
 }
 
-std::vector<std::string> EditorAnimGraphPanelUVE::MontagesOnSlotUVE(const std::string& slot) const {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+std::vector<std::string> EditorAnimGraphPanel::MontagesOnSlot(const std::string& slot) const {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
     std::vector<std::string> names;
-    const auto consider = [&](const Asset::AssetGuidUVE guid) {
-        if (guid == Asset::AssetGuidUVE{}) {
+    const auto consider = [&](const Asset::AssetGuid guid) {
+        if (guid == Asset::AssetGuid{}) {
             return;
         }
         auto found = m_montageSlots.find(guid.value);
         if (found == m_montageSlots.end()) {
-            Asset::MotionMontageAssetUVE montage;
-            const std::filesystem::path path = database.ResolveUVE(guid);
-            found = m_montageSlots.emplace(guid.value, !path.empty() && Asset::LoadMotionMontageAssetUVE(path, montage) ? montage.slot : std::string{}).first;
+            Asset::MotionMontageAsset montage;
+            const std::filesystem::path path = database.Resolve(guid);
+            found = m_montageSlots.emplace(guid.value, !path.empty() && Asset::LoadMotionMontageAsset(path, montage) ? montage.slot : std::string{}).first;
         }
-        const std::string name = database.ResolveUVE(guid).stem().string();
+        const std::string name = database.Resolve(guid).stem().string();
         if (found->second == slot && std::ranges::find(names, name) == names.end()) {
             names.push_back(name);
         }
     };
-    for (const Scene::EntityUVE player : MontageSequencersUVE()) {
-        const auto& component = em.GetComponentUVE<Scene::MontageSequencerComponentUVE>(player);
+    for (const Scene::Entity player : MontageSequencers()) {
+        const auto& component = em.GetComponent<Scene::MontageSequencerComponent>(player);
         for (std::size_t i = 0U; i < 8U; ++i) {
-            consider(component.MontageAtUVE(i));
+            consider(component.MontageAt(i));
         }
-        if (component.libraryRef != Asset::AssetGuidUVE{}) {
-            Asset::MontageLibraryAssetUVE library;
-            const std::filesystem::path path = database.ResolveUVE(component.libraryRef);
-            if (!path.empty() && Asset::LoadMontageLibraryAssetUVE(path, library)) {
-                for (const Asset::MontageLibraryEntryUVE& entry : library.entries) {
+        if (component.libraryRef != Asset::AssetGuid{}) {
+            Asset::MontageLibraryAsset library;
+            const std::filesystem::path path = database.Resolve(component.libraryRef);
+            if (!path.empty() && Asset::LoadMontageLibraryAsset(path, library)) {
+                for (const Asset::MontageLibraryEntry& entry : library.entries) {
                     consider(entry.montage);
                 }
             }
@@ -240,14 +240,14 @@ std::vector<std::string> EditorAnimGraphPanelUVE::MontagesOnSlotUVE(const std::s
     return names;
 }
 
-prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& node) {
+prism::Ref<prism::Widget> EditorAnimGraphPanel::BuildBody(const Node& node) {
     auto body = prism::vbox(3.0F);
     const std::uint32_t id = node.id;
-    const GraphUVE* graph = GraphPtrUVE();
+    const Graph* graph = GraphPtr();
 
     // "Fixed value" or one of the graph's parameters of these types; picking one drives the setting.
     const auto parameterCombo = [this, id](const std::string& current, const std::initializer_list<ParamType> types, const bool y) {
-        std::vector<std::string> names = ParameterNamesUVE(types);
+        std::vector<std::string> names = ParameterNames(types);
         std::vector<std::string> items{"Fixed value"};
         int selected = 0;
         for (std::size_t i = 0U; i < names.size(); ++i) {
@@ -264,7 +264,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         auto combo = prism::make<prism::ComboBox>(items, selected);
         combo->onChange = [this, id, names, y](const int i) {
             const std::string picked = i <= 0 ? std::string{} : names[static_cast<std::size_t>(i - 1)];
-            EditNodeUVE(id, [&picked, y](NodeUVE& n) { (y ? n.parameterY : n.parameter) = picked; });
+            EditNode(id, [&picked, y](Node& n) { (y ? n.parameterY : n.parameter) = picked; });
         };
         return combo;
     };
@@ -277,7 +277,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
             for (std::size_t i = 0U; i < graph->parameters.size(); ++i) {
                 if (graph->parameters[i].name == parameter) {
                     bound = i;
-                    const Scene::AnimationParameterUVE& p = graph->parameters[i];
+                    const Scene::AnimationParameter& p = graph->parameters[i];
                     if (p.type == ParamType::Vector3) {
                         axis = y ? 1 : 0;
                         value = y ? p.vector.y : p.vector.x;
@@ -294,17 +294,17 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         }
         slider->onChange = [this, id, bound, y, axis](const float v) {
             if (bound.has_value()) {
-                LiveParameterUVE(*bound, v, axis);
+                LiveParameter(*bound, v, axis);
             } else {
-                LiveNodeUVE(id, [v, y](NodeUVE& n) { (y ? n.valueY : n.value) = v; });
+                LiveNode(id, [v, y](Node& n) { (y ? n.valueY : n.value) = v; });
             }
         };
-        slider->onCommit = [this](float) { CommitLiveUVE(); };
+        slider->onCommit = [this](float) { CommitLive(); };
         return slider;
     };
     // A number that is the node's parameter's value when one drives it (Speed, Rate), else the node's own.
     const auto drivenNumber = [this, id, graph](const float own, const std::string& parameter, const float step, const float lo,
-                                                const float hi, const char* suffix, const std::function<void(NodeUVE&, float)>& set) {
+                                                const float hi, const char* suffix, const std::function<void(Node&, float)>& set) {
         std::optional<std::size_t> bound;
         float value = own;
         if (graph != nullptr && !parameter.empty()) {
@@ -325,34 +325,34 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         }
         field->onChange = [this, id, set, bound](const float v) {
             if (bound.has_value()) {
-                LiveParameterUVE(*bound, v);
+                LiveParameter(*bound, v);
             } else {
-                LiveNodeUVE(id, [&set, v](NodeUVE& n) { set(n, v); });
+                LiveNode(id, [&set, v](Node& n) { set(n, v); });
             }
         };
-        field->onCommit = [this](float) { CommitLiveUVE(); };
+        field->onCommit = [this](float) { CommitLive(); };
         return field;
     };
     const auto number = [this, id](const float value, const float step, const float lo, const float hi, const char* suffix,
-                                   const std::function<void(NodeUVE&, float)>& set) {
+                                   const std::function<void(Node&, float)>& set) {
         auto field = prism::make<prism::NumberField>(value, step, 2);
         field->setRange(lo, hi);
         if (suffix != nullptr) {
             field->setSuffix(suffix);
         }
-        field->onChange = [this, id, set](const float v) { LiveNodeUVE(id, [&set, v](NodeUVE& n) { set(n, v); }); };
-        field->onCommit = [this](float) { CommitLiveUVE(); };
+        field->onChange = [this, id, set](const float v) { LiveNode(id, [&set, v](Node& n) { set(n, v); }); };
+        field->onCommit = [this](float) { CommitLive(); };
         return field;
     };
-    const auto check = [this, id](const std::string& label, const bool on, const std::function<void(NodeUVE&, bool)>& set) {
+    const auto check = [this, id](const std::string& label, const bool on, const std::function<void(Node&, bool)>& set) {
         auto box = prism::make<prism::CheckBox>(label, on);
-        box->onChange = [this, id, set](const bool v) { EditNodeUVE(id, [&set, v](NodeUVE& n) { set(n, v); }); };
+        box->onChange = [this, id, set](const bool v) { EditNode(id, [&set, v](Node& n) { set(n, v); }); };
         return box;
     };
     const auto open = [this, id](const std::string& label) {
         auto button = prism::make<prism::Button>(label, prism::Icon::ChevronRight, prism::ButtonStyle::Default);
         button->setTooltip("Open it in its own view (or double-click the node)");
-        button->onClick = [this, id] { OpenFocusUVE(id); };
+        button->onClick = [this, id] { OpenFocus(id); };
         return button;
     };
     const auto pair = [](const prism::Ref<prism::Widget>& a, const prism::Ref<prism::Widget>& b) {
@@ -365,19 +365,19 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
     switch (node.kind) {
         case Kind::Output: break;
         case Kind::Clip: {
-            const std::vector<Asset::AssetGuidUVE> clips = ClipChoicesUVE();
-            std::vector<Asset::AssetGuidUVE> choices{Asset::AssetGuidUVE{}};
+            const std::vector<Asset::AssetGuid> clips = ClipChoices();
+            std::vector<Asset::AssetGuid> choices{Asset::AssetGuid{}};
             std::vector<std::string> names{"None"};
             int selected = 0;
-            if (node.clip != Asset::AssetGuidUVE{} && std::ranges::find(clips, node.clip) == clips.end()) {
+            if (node.clip != Asset::AssetGuid{} && std::ranges::find(clips, node.clip) == clips.end()) {
                 // Picked before, but not one of the sequencer's: shown so, until it is replaced.
                 choices.push_back(node.clip);
-                const std::string& name = m_editor.AnimationClipNameUVE(node.clip);
+                const std::string& name = m_editor.AnimationClipName(node.clip);
                 names.push_back(name.empty() ? std::string{"?"} : name);
             }
-            for (const Asset::AssetGuidUVE guid : clips) {
+            for (const Asset::AssetGuid guid : clips) {
                 choices.push_back(guid);
-                names.push_back(m_editor.AnimationClipNameUVE(guid));
+                names.push_back(m_editor.AnimationClipName(guid));
             }
             for (std::size_t i = 0U; i < choices.size(); ++i) {
                 if (choices[i] == node.clip) {
@@ -387,120 +387,120 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
             auto combo = prism::make<prism::ComboBox>(names, selected);
             combo->onChange = [this, id, choices](const int i) {
                 if (i >= 0 && static_cast<std::size_t>(i) < choices.size()) {
-                    const Asset::AssetGuidUVE clip = choices[static_cast<std::size_t>(i)];
-                    EditNodeUVE(id, [clip](NodeUVE& n) { n.clip = clip; });
+                    const Asset::AssetGuid clip = choices[static_cast<std::size_t>(i)];
+                    EditNode(id, [clip](Node& n) { n.clip = clip; });
                 }
             };
-            body->add(RowUVE("Clip", combo));
-            body->add(RowUVE("Speed", pair(drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; }),
-                                           check("Loop", node.loop, [](NodeUVE& n, const bool v) { n.loop = v; }))));
-            body->add(RowUVE("Start", number(node.startSeconds, 0.01F, 0.0F, 3600.0F, " s", [](NodeUVE& n, const float v) { n.startSeconds = v; })));
+            body->add(Row("Clip", combo));
+            body->add(Row("Speed", pair(drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](Node& n, const float v) { n.speed = v; }),
+                                           check("Loop", node.loop, [](Node& n, const bool v) { n.loop = v; }))));
+            body->add(Row("Start", number(node.startSeconds, 0.01F, 0.0F, 3600.0F, " s", [](Node& n, const float v) { n.startSeconds = v; })));
             break;
         }
         case Kind::Blend2:
         case Kind::Additive:
         case Kind::LayeredBlend: {
-            body->add(RowUVE(node.kind == Kind::Additive ? "Amount" : "Weight", valueSlider(0.0F, 1.0F, node.value, node.parameter, false)));
+            body->add(Row(node.kind == Kind::Additive ? "Amount" : "Weight", valueSlider(0.0F, 1.0F, node.value, node.parameter, false)));
             auto by = parameterCombo(node.parameter, {ParamType::Float}, false);
             if (node.kind == Kind::Blend2) {
-                body->add(RowUVE("By", pair(by, check("Sync", node.sync, [](NodeUVE& n, const bool v) { n.sync = v; }))));
+                body->add(Row("By", pair(by, check("Sync", node.sync, [](Node& n, const bool v) { n.sync = v; }))));
             } else {
-                body->add(RowUVE("By", by));
+                body->add(Row("By", by));
             }
             break;
         }
         case Kind::BlendSpace1D:
-            body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
-            body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
-            body->add(RowUVE("", open("Open Blend Space")));
+            body->add(Row("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
+            body->add(Row("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
+            body->add(Row("", open("Open Blend Space")));
             break;
         case Kind::BlendSpace2D: {
             // One Vector3 parameter (x, y) drives both axes; or a Float for each.
-            const bool vector = graph != nullptr && std::ranges::any_of(graph->parameters, [&node](const Scene::AnimationParameterUVE& p) {
+            const bool vector = graph != nullptr && std::ranges::any_of(graph->parameters, [&node](const Scene::AnimationParameter& p) {
                 return p.name == node.parameter && p.type == ParamType::Vector3;
             });
-            body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
-            body->add(RowUVE("Y", valueSlider(node.areaMin.y, node.areaMax.y, node.valueY, vector ? node.parameter : node.parameterY, true)));
-            body->add(RowUVE(vector ? "By" : "X by", parameterCombo(node.parameter, {ParamType::Vector3, ParamType::Float}, false)));
+            body->add(Row("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
+            body->add(Row("Y", valueSlider(node.areaMin.y, node.areaMax.y, node.valueY, vector ? node.parameter : node.parameterY, true)));
+            body->add(Row(vector ? "By" : "X by", parameterCombo(node.parameter, {ParamType::Vector3, ParamType::Float}, false)));
             if (vector) {
                 auto same = prism::make<prism::Label>("", prism::FontRole::Small);
-                body->add(RowUVE("", same));
+                body->add(Row("", same));
             } else {
-                body->add(RowUVE("Y by", parameterCombo(node.parameterY, {ParamType::Float}, true)));
+                body->add(Row("Y by", parameterCombo(node.parameterY, {ParamType::Float}, true)));
             }
             auto mode = prism::make<prism::ComboBox>(std::vector<std::string>{"Blend", "Nearest", "Nearest, in step"},
                                                      static_cast<int>(node.blendMode));
             mode->onChange = [this, id](const int i) {
-                EditNodeUVE(id, [i](NodeUVE& n) { n.blendMode = static_cast<Scene::AnimationBlendModeUVE>(std::clamp(i, 0, 2)); });
+                EditNode(id, [i](Node& n) { n.blendMode = static_cast<Scene::AnimationBlendMode>(std::clamp(i, 0, 2)); });
             };
-            body->add(RowUVE("Mode", mode));
-            body->add(RowUVE("", open("Open Blend Space")));
+            body->add(Row("Mode", mode));
+            body->add(Row("", open("Open Blend Space")));
             break;
         }
         case Kind::OneShot:
-            body->add(RowUVE("Fire on", parameterCombo(node.parameter, {ParamType::Trigger, ParamType::Bool}, false)));
-            body->add(RowUVE("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s in", [](NodeUVE& n, const float v) { n.fadeSeconds = v; }),
+            body->add(Row("Fire on", parameterCombo(node.parameter, {ParamType::Trigger, ParamType::Bool}, false)));
+            body->add(Row("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s in", [](Node& n, const float v) { n.fadeSeconds = v; }),
                                           number(node.fadeOutSeconds < 0.0F ? node.fadeSeconds : node.fadeOutSeconds, 0.01F, 0.0F, 5.0F, " s out",
-                                                 [](NodeUVE& n, const float v) { n.fadeOutSeconds = v; }))));
-            body->add(RowUVE("Repeat", pair(check("Auto", node.autoRestart, [](NodeUVE& n, const bool v) { n.autoRestart = v; }),
+                                                 [](Node& n, const float v) { n.fadeOutSeconds = v; }))));
+            body->add(Row("Repeat", pair(check("Auto", node.autoRestart, [](Node& n, const bool v) { n.autoRestart = v; }),
                                             number(node.autoRestartDelaySeconds, 0.01F, 0.0F, 60.0F, " s",
-                                                   [](NodeUVE& n, const float v) { n.autoRestartDelaySeconds = v; }))));
+                                                   [](Node& n, const float v) { n.autoRestartDelaySeconds = v; }))));
             break;
         case Kind::TimeScale:
-            body->add(RowUVE("Rate", drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; })));
-            body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
+            body->add(Row("Rate", drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](Node& n, const float v) { n.speed = v; })));
+            body->add(Row("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
             break;
         case Kind::TimeSeek:
-            body->add(RowUVE("On", parameterCombo(node.parameter, {ParamType::Trigger, ParamType::Bool}, false)));
-            body->add(RowUVE("To", number(node.value, 0.01F, 0.0F, 3600.0F, " s", [](NodeUVE& n, const float v) { n.value = v; })));
+            body->add(Row("On", parameterCombo(node.parameter, {ParamType::Trigger, ParamType::Bool}, false)));
+            body->add(Row("To", number(node.value, 0.01F, 0.0F, 3600.0F, " s", [](Node& n, const float v) { n.value = v; })));
             break;
         case Kind::Select: {
             const float last = static_cast<float>(std::max<std::size_t>(1U, node.inputs.size()) - 1U);
             auto option = prism::make<prism::NumberField>(std::round(node.value), 1.0F, 0);
             option->setRange(0.0F, last);
-            option->onChange = [this, id](const float v) { LiveNodeUVE(id, [v](NodeUVE& n) { n.value = std::round(v); }); };
-            option->onCommit = [this](float) { CommitLiveUVE(); };
-            body->add(RowUVE("Option", option));
-            body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
-            body->add(RowUVE("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](NodeUVE& n, const float v) { n.fadeSeconds = v; }),
-                                          check("Restart", node.restart, [](NodeUVE& n, const bool v) { n.restart = v; }))));
+            option->onChange = [this, id](const float v) { LiveNode(id, [v](Node& n) { n.value = std::round(v); }); };
+            option->onCommit = [this](float) { CommitLive(); };
+            body->add(Row("Option", option));
+            body->add(Row("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
+            body->add(Row("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](Node& n, const float v) { n.fadeSeconds = v; }),
+                                          check("Restart", node.restart, [](Node& n, const bool v) { n.restart = v; }))));
             auto more = prism::make<prism::Button>("Option", prism::Icon::Plus, prism::ButtonStyle::Flat);
             more->setTooltip("Add an input");
-            more->onClick = [this, id] { EditUVE([id](GraphUVE& g) { static_cast<void>(AddAnimationGraphInputSlotUVE(g.nodes, id)); }); };
+            more->onClick = [this, id] { Edit([id](Graph& g) { static_cast<void>(AddAnimationGraphInputSlot(g.nodes, id)); }); };
             auto less = prism::make<prism::Button>("Option", prism::Icon::Minus, prism::ButtonStyle::Flat);
             less->setTooltip("Remove the last input");
             const std::size_t slots = node.inputs.size();
             less->setEnabled(slots > 2U);
             less->onClick = [this, id, slots] {
                 if (slots > 0U) {
-                    EditUVE([id, slots](GraphUVE& g) { static_cast<void>(RemoveAnimationGraphInputSlotUVE(g.nodes, id, slots - 1U)); });
+                    Edit([id, slots](Graph& g) { static_cast<void>(RemoveAnimationGraphInputSlot(g.nodes, id, slots - 1U)); });
                 }
             };
             auto buttons = prism::hbox(4.0F);
             buttons->add(more, prism::Slot{1.0F});
             buttons->add(less, prism::Slot{1.0F});
-            body->add(RowUVE("", buttons));
+            body->add(Row("", buttons));
             break;
         }
         case Kind::StateMachine: {
             std::vector<std::string> states;
             for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
-                states.push_back(graph != nullptr ? AnimationStateNameUVE(graph->nodes, node, slot) : AnimationGraphSlotLabelUVE(node.kind, slot));
+                states.push_back(graph != nullptr ? AnimationStateName(graph->nodes, node, slot) : AnimationGraphSlotLabel(node.kind, slot));
             }
             if (states.empty()) {
                 states.push_back("(no states)");
             }
             auto entry = prism::make<prism::ComboBox>(states, static_cast<int>(std::min<std::size_t>(node.entryState, states.size() - 1U)));
-            entry->onChange = [this, id](const int i) { EditNodeUVE(id, [i](NodeUVE& n) { n.entryState = static_cast<std::uint32_t>(std::max(0, i)); }); };
-            body->add(RowUVE("Entry", entry));
-            body->add(RowUVE("", open("Open States")));
+            entry->onChange = [this, id](const int i) { EditNode(id, [i](Node& n) { n.entryState = static_cast<std::uint32_t>(std::max(0, i)); }); };
+            body->add(Row("Entry", entry));
+            body->add(Row("", open("Open States")));
             break;
         }
         case Kind::BlendByBool: {
-            body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Bool, ParamType::Trigger}, false)));
-            body->add(RowUVE("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](NodeUVE& n, const float v) { n.fadeSeconds = v; }),
+            body->add(Row("By", parameterCombo(node.parameter, {ParamType::Bool, ParamType::Trigger}, false)));
+            body->add(Row("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](Node& n, const float v) { n.fadeSeconds = v; }),
                                           number(node.fadeBackSeconds, 0.01F, 0.0F, 5.0F, " s back",
-                                                 [](NodeUVE& n, const float v) { n.fadeBackSeconds = v; }))));
+                                                 [](Node& n, const float v) { n.fadeBackSeconds = v; }))));
             break;
         }
         case Kind::TwoBoneIK:
@@ -508,13 +508,13 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         case Kind::LookAt: {
             // The skeleton's bones, for the pickers.
             std::vector<std::string> boneNames;
-            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-            if (m_view.skeleton != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton)) {
-                for (const Scene::SkeletonBoneUVE& bone : em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton).bones) {
+            const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+            if (m_view.skeleton != Scene::kInvalidEntity && em.HasComponent<Scene::Skeleton3DComponent>(m_view.skeleton)) {
+                for (const Scene::SkeletonBone& bone : em.GetComponent<Scene::Skeleton3DComponent>(m_view.skeleton).bones) {
                     boneNames.push_back(bone.name);
                 }
             }
-            const auto bonePicker = [this, id, boneNames](const std::string& current, const std::function<void(NodeUVE&, const std::string&)>& set) {
+            const auto bonePicker = [this, id, boneNames](const std::string& current, const std::function<void(Node&, const std::string&)>& set) {
                 std::vector<std::string> items{"(none)"};
                 int selected = 0;
                 for (const std::string& name : boneNames) {
@@ -530,12 +530,12 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 auto combo = prism::make<prism::ComboBox>(items, selected);
                 combo->onChange = [this, id, items, set](const int i) {
                     std::string picked = i <= 0 ? std::string{} : items[static_cast<std::size_t>(i)];
-                    EditNodeUVE(id, [&set, &picked](NodeUVE& n) { set(n, picked); });
+                    EditNode(id, [&set, &picked](Node& n) { set(n, picked); });
                 };
                 return combo;
             };
             const auto boneSlot = [](const std::size_t slot) {
-                return [slot](NodeUVE& n, const std::string& name) {
+                return [slot](Node& n, const std::string& name) {
                     if (n.bones.size() <= slot) {
                         n.bones.resize(slot + 1U);
                     }
@@ -544,7 +544,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
             };
             const auto boneAt = [&node](const std::size_t slot) { return slot < node.bones.size() ? node.bones[slot] : std::string{}; };
             // Three numbers on one row: X, Y, Z.
-            const auto triple = [this, id](const Math::Vector3UVE value, const float step, const std::function<Math::Vector3UVE&(NodeUVE&)>& field) {
+            const auto triple = [this, id](const Math::Vector3 value, const float step, const std::function<Math::Vector3&(Node&)>& field) {
                 auto row = prism::hbox(2.0F);
                 static constexpr const char* kAxes[] = {"X", "Y", "Z"};
                 const prism::Color colors[] = {prism::theme().axisX, prism::theme().axisY, prism::theme().axisZ};
@@ -553,12 +553,12 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                     auto number = prism::make<prism::NumberField>(values[axis], step, 2);
                     number->setAxisLabel(kAxes[axis], colors[axis]);
                     number->onChange = [this, id, field, axis](const float v) {
-                        LiveNodeUVE(id, [&field, axis, v](NodeUVE& n) {
-                            Math::Vector3UVE& f = field(n);
+                        LiveNode(id, [&field, axis, v](Node& n) {
+                            Math::Vector3& f = field(n);
                             (axis == 0 ? f.x : axis == 1 ? f.y : f.z) = v;
                         });
                     };
-                    number->onCommit = [this](float) { CommitLiveUVE(); };
+                    number->onCommit = [this](float) { CommitLive(); };
                     row->add(number, prism::Slot{1.0F});
                 }
                 return row;
@@ -568,24 +568,24 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 auto source = prism::make<prism::ComboBox>(std::vector<std::string>{"Fixed point", "Vector3 parameter", "Bone"},
                                                            static_cast<int>(node.targetSource));
                 source->onChange = [this, id](const int i) {
-                    EditNodeUVE(id, [i](NodeUVE& n) { n.targetSource = static_cast<Scene::AnimationGraphTargetSourceUVE>(std::clamp(i, 0, 2)); });
+                    EditNode(id, [i](Node& n) { n.targetSource = static_cast<Scene::AnimationGraphTargetSource>(std::clamp(i, 0, 2)); });
                 };
-                body->add(RowUVE("Target", source));
+                body->add(Row("Target", source));
                 switch (node.targetSource) {
-                    case Scene::AnimationGraphTargetSourceUVE::Parameter:
-                        body->add(RowUVE("Param", parameterCombo(node.parameter, {ParamType::Vector3}, false)));
+                    case Scene::AnimationGraphTargetSource::Parameter:
+                        body->add(Row("Param", parameterCombo(node.parameter, {ParamType::Vector3}, false)));
                         break;
-                    case Scene::AnimationGraphTargetSourceUVE::Bone:
-                        body->add(RowUVE("Bone", bonePicker(node.targetBone, [](NodeUVE& n, const std::string& name) { n.targetBone = name; })));
+                    case Scene::AnimationGraphTargetSource::Bone:
+                        body->add(Row("Bone", bonePicker(node.targetBone, [](Node& n, const std::string& name) { n.targetBone = name; })));
                         break;
-                    case Scene::AnimationGraphTargetSourceUVE::Fixed:
-                        body->add(RowUVE("At", triple(node.target, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.target; })));
+                    case Scene::AnimationGraphTargetSource::Fixed:
+                        body->add(Row("At", triple(node.target, 0.01F, [](Node& n) -> Math::Vector3& { return n.target; })));
                         break;
                 }
             };
             // How much it applies: its own value, or a Float parameter's.
             const auto alphaRow = [&] {
-                std::vector<std::string> names = ParameterNamesUVE({ParamType::Float});
+                std::vector<std::string> names = ParameterNames({ParamType::Float});
                 std::vector<std::string> items{"Fixed"};
                 int selected = 0;
                 for (std::size_t i = 0U; i < names.size(); ++i) {
@@ -598,42 +598,42 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 by->setTooltip("The Float parameter that sets the alpha (Fixed: the slider)");
                 by->onChange = [this, id, names](const int i) {
                     const std::string picked = i <= 0 ? std::string{} : names[static_cast<std::size_t>(i - 1)];
-                    EditNodeUVE(id, [&picked](NodeUVE& n) { n.alphaParameter = picked; });
+                    EditNode(id, [&picked](Node& n) { n.alphaParameter = picked; });
                 };
                 auto byBox = prism::make<prism::SizeBox>();
                 byBox->setWidthOverride(72.0F);
                 byBox->setContent(by);
-                body->add(RowUVE("Alpha", pair(valueSlider(0.0F, 1.0F, node.value, node.alphaParameter, false), byBox)));
+                body->add(Row("Alpha", pair(valueSlider(0.0F, 1.0F, node.value, node.alphaParameter, false), byBox)));
             };
             if (node.kind == Kind::TwoBoneIK) {
-                body->add(RowUVE("Root", bonePicker(boneAt(0U), boneSlot(0U))));
-                body->add(RowUVE("Middle", bonePicker(boneAt(1U), boneSlot(1U))));
-                body->add(RowUVE("Tip", bonePicker(boneAt(2U), boneSlot(2U))));
+                body->add(Row("Root", bonePicker(boneAt(0U), boneSlot(0U))));
+                body->add(Row("Middle", bonePicker(boneAt(1U), boneSlot(1U))));
+                body->add(Row("Tip", bonePicker(boneAt(2U), boneSlot(2U))));
                 targetRows();
                 alphaRow();
             } else if (node.kind == Kind::LookAt) {
-                body->add(RowUVE("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
+                body->add(Row("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
                 targetRows();
-                body->add(RowUVE("Axis", triple(node.pole, 0.1F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.pole; })));
-                body->add(RowUVE("Clamp", number(node.clampDegrees, 1.0F, 0.0F, 180.0F, " deg", [](NodeUVE& n, const float v) { n.clampDegrees = v; })));
+                body->add(Row("Axis", triple(node.pole, 0.1F, [](Node& n) -> Math::Vector3& { return n.pole; })));
+                body->add(Row("Clamp", number(node.clampDegrees, 1.0F, 0.0F, 180.0F, " deg", [](Node& n, const float v) { n.clampDegrees = v; })));
                 alphaRow();
             } else {
-                body->add(RowUVE("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
+                body->add(Row("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
                 auto mode = prism::make<prism::ComboBox>(std::vector<std::string>{"Add to pose", "Replace pose"}, static_cast<int>(node.modifyMode));
                 mode->onChange = [this, id](const int i) {
-                    EditNodeUVE(id, [i](NodeUVE& n) { n.modifyMode = static_cast<Scene::AnimationBoneModifyModeUVE>(std::clamp(i, 0, 1)); });
+                    EditNode(id, [i](Node& n) { n.modifyMode = static_cast<Scene::AnimationBoneModifyMode>(std::clamp(i, 0, 1)); });
                 };
                 auto space = prism::make<prism::ComboBox>(std::vector<std::string>{"Local", "Skeleton"}, static_cast<int>(node.space));
                 space->onChange = [this, id](const int i) {
-                    EditNodeUVE(id, [i](NodeUVE& n) { n.space = static_cast<Scene::AnimationBoneSpaceUVE>(std::clamp(i, 0, 1)); });
+                    EditNode(id, [i](Node& n) { n.space = static_cast<Scene::AnimationBoneSpace>(std::clamp(i, 0, 1)); });
                 };
                 auto modeRow = prism::hbox(4.0F);
                 modeRow->add(mode, prism::Slot{1.0F});
                 modeRow->add(space, prism::Slot{1.0F});
-                body->add(RowUVE("Mode", modeRow));
-                body->add(RowUVE("Move", triple(node.target, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.target; })));
-                body->add(RowUVE("Turn", triple(node.rotationDegrees, 1.0F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.rotationDegrees; })));
-                body->add(RowUVE("Scale", triple(node.boneScale, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.boneScale; })));
+                body->add(Row("Mode", modeRow));
+                body->add(Row("Move", triple(node.target, 0.01F, [](Node& n) -> Math::Vector3& { return n.target; })));
+                body->add(Row("Turn", triple(node.rotationDegrees, 1.0F, [](Node& n) -> Math::Vector3& { return n.rotationDegrees; })));
+                body->add(Row("Scale", triple(node.boneScale, 0.01F, [](Node& n) -> Math::Vector3& { return n.boneScale; })));
                 alphaRow();
             }
             break;
@@ -641,17 +641,17 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         case Kind::Slot: {
             auto name = prism::make<prism::TextInput>(node.parameter, "DefaultSlot");
             name->setTooltip("The motion montage slot laid over the input here (a MontageSequencer plays into it)");
-            name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.parameter = to; }); };
-            body->add(RowUVE("Slot", name));
+            name->onCommit = [this, id](const std::string& to) { EditNode(id, [&to](Node& n) { n.parameter = to; }); };
+            body->add(Row("Slot", name));
             // What the montages on this slot are, from the MontageSequencer(s) the graph takes.
-            const std::vector<std::string> montages = MontagesOnSlotUVE(node.parameter.empty() ? std::string{"DefaultSlot"} : node.parameter);
+            const std::vector<std::string> montages = MontagesOnSlot(node.parameter.empty() ? std::string{"DefaultSlot"} : node.parameter);
             std::string list;
             for (const std::string& montage : montages) {
                 list += (list.empty() ? "" : ", ") + montage;
             }
             auto plays = prism::make<prism::Label>(list, prism::FontRole::Small);
             plays->setTooltip("Motion Montages that play over the input here");
-            body->add(RowUVE("Plays", plays));
+            body->add(Row("Plays", plays));
             break;
         }
     }

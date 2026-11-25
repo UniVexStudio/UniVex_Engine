@@ -35,16 +35,16 @@
 namespace UVE::Render::Tests {
 namespace {
 
-/// A camera looking down -Z from the origin, the same shape Renderer3DUVE builds: 60 degree
+/// A camera looking down -Z from the origin, the same shape Renderer3D builds: 60 degree
 /// vertical field of view, 16:9, near 0.1, far 100.
-[[nodiscard]] Math::FrustumUVE MakeTestFrustumUVE() {
-    const Math::Matrix4x4UVE projection =
-        Math::Matrix4x4UVE::PerspectiveUVE(60.0F * 3.14159265F / 180.0F, 16.0F / 9.0F, 0.1F, 100.0F);
+[[nodiscard]] Math::Frustum MakeTestFrustum() {
+    const Math::Matrix4x4 projection =
+        Math::Matrix4x4::Perspective(60.0F * 3.14159265F / 180.0F, 16.0F / 9.0F, 0.1F, 100.0F);
     // An unrotated camera at the origin already looks down -Z in this matrix convention, which is
     // what the box spread below is built around.
-    const Math::Matrix4x4UVE view = Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(
-        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{});
-    return Math::FrustumUVE::FromViewProjectionUVE(projection * view);
+    const Math::Matrix4x4 view = Math::Matrix4x4::ViewFromPositionAndRotation(
+        Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Quaternion{});
+    return Math::Frustum::FromViewProjection(projection * view);
 }
 
 /// A spread of boxes that straddles the frustum AT EVERY LENGTH, not just in aggregate.
@@ -52,12 +52,12 @@ namespace {
 /// The first version of this fixture swept steadily from outside to inside, which looked fine at
 /// 1000 boxes (711 visible, 289 culled) but was entirely culled for the first 23 - so the small-N
 /// tests below would have passed against a kernel that unconditionally answered "culled". A
-/// probe against the real Math::FrustumUVE found that; the pattern is now periodic instead, with
+/// probe against the real Math::Frustum found that; the pattern is now periodic instead, with
 /// every third box pushed far outside a side plane and the side alternating, so even three boxes
 /// contain both answers. Positions use offsets with no exact binary representation, since round
 /// numbers would agree even through a contracted multiply-add.
-[[nodiscard]] std::vector<Math::AabbUVE> MakeBoxSpreadUVE(const std::size_t count) {
-    std::vector<Math::AabbUVE> boxes;
+[[nodiscard]] std::vector<Math::Aabb> MakeBoxSpread(const std::size_t count) {
+    std::vector<Math::Aabb> boxes;
     boxes.reserve(count);
     for (std::size_t index = 0U; index < count; ++index) {
         const float step = static_cast<float>(index);
@@ -70,20 +70,20 @@ namespace {
                                             : (-1.3F + std::fmod(step * 0.211F, 2.6F));
         const float vertical = pushedOutside ? (index % 2U == 0U ? 90.0F : -90.0F)
                                              : (0.9F - std::fmod(step * 0.173F, 1.8F));
-        boxes.push_back(Math::AabbUVE::FromCenterExtentsUVE(
-            Math::Vector3UVE{lateral, vertical, depth},
-            Math::Vector3UVE{halfSize, halfSize, halfSize}));
+        boxes.push_back(Math::Aabb::FromCenterExtents(
+            Math::Vector3{lateral, vertical, depth},
+            Math::Vector3{halfSize, halfSize, halfSize}));
     }
     return boxes;
 }
 
-/// The CPU authority: the real Math::FrustumUVE::IntersectsUVE, not a reimplementation of it here.
-[[nodiscard]] std::vector<bool> CullOnCpuUVE(const std::vector<Math::AabbUVE>& boxes,
-                                             const Math::FrustumUVE& frustum) {
+/// The CPU authority: the real Math::Frustum::Intersects, not a reimplementation of it here.
+[[nodiscard]] std::vector<bool> CullOnCpu(const std::vector<Math::Aabb>& boxes,
+                                             const Math::Frustum& frustum) {
     std::vector<bool> visible;
     visible.reserve(boxes.size());
-    for (const Math::AabbUVE& box : boxes) {
-        visible.push_back(frustum.IntersectsUVE(box));
+    for (const Math::Aabb& box : boxes) {
+        visible.push_back(frustum.Intersects(box));
     }
     return visible;
 }
@@ -91,7 +91,7 @@ namespace {
 /// Guards the guard: a comparison against a set that is entirely visible - or entirely culled -
 /// would pass against a kernel that returns a constant. Every GL test below asserts this on its
 /// own input before trusting the agreement it just checked.
-void ExpectBothAnswersPresentUVE(const std::vector<bool>& visibility) {
+void ExpectBothAnswersPresent(const std::vector<bool>& visibility) {
     const std::size_t visibleCount =
         static_cast<std::size_t>(std::count(visibility.begin(), visibility.end(), true));
     EXPECT_GT(visibleCount, 0U) << "the fixture must produce visible boxes";
@@ -100,12 +100,12 @@ void ExpectBothAnswersPresentUVE(const std::vector<bool>& visibility) {
 
 /// Reports the first disagreement in full rather than just failing the vector comparison - a bare
 /// "vectors differ" on a thousand boxes is not something anyone can debug.
-void ExpectVisibilityIdenticalUVE(const std::vector<bool>& actual, const std::vector<bool>& expected,
-                                  const std::vector<Math::AabbUVE>& boxes) {
+void ExpectVisibilityIdentical(const std::vector<bool>& actual, const std::vector<bool>& expected,
+                                  const std::vector<Math::Aabb>& boxes) {
     ASSERT_EQ(actual.size(), expected.size());
     for (std::size_t index = 0U; index < expected.size(); ++index) {
         EXPECT_EQ(actual[index], expected[index])
-            << "box " << index << " " << Math::ToStringUVE(boxes[index])
+            << "box " << index << " " << Math::ToString(boxes[index])
             << ": the GPU said " << (actual[index] ? "visible" : "culled") << " and the CPU said "
             << (expected[index] ? "visible" : "culled");
     }
@@ -117,88 +117,88 @@ void ExpectVisibilityIdenticalUVE(const std::vector<bool>& actual, const std::ve
 // contract around them.
 // ---------------------------------------------------------------------------
 
-class FrustumCullComputeUVETest : public ::testing::Test {
+class FrustumCullComputeTest : public ::testing::Test {
 protected:
-    NullRenderDeviceUVE device;
-    ComputeSystemUVE computeSystem{device};
-    FrustumCullComputeUVE cull{device, computeSystem};
+    NullRenderDevice device;
+    ComputeSystem computeSystem{device};
+    FrustumCullCompute cull{device, computeSystem};
 };
 
-TEST_F(FrustumCullComputeUVETest, InitializeUVE_BuildsTheKernelAndIsIdempotent) {
-    EXPECT_FALSE(cull.IsReadyUVE());
-    ASSERT_TRUE(cull.InitializeUVE());
-    EXPECT_TRUE(cull.IsReadyUVE());
+TEST_F(FrustumCullComputeTest, Initialize_BuildsTheKernelAndIsIdempotent) {
+    EXPECT_FALSE(cull.IsReady());
+    ASSERT_TRUE(cull.Initialize());
+    EXPECT_TRUE(cull.IsReady());
 
-    EXPECT_TRUE(cull.InitializeUVE());
-    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().programsCreated, 1U);
+    EXPECT_TRUE(cull.Initialize());
+    EXPECT_EQ(computeSystem.GetDiagnostics().programsCreated, 1U);
 }
 
-TEST_F(FrustumCullComputeUVETest, CullUVE_BeforeInitialize_RefusesAndLeavesTheOutputAlone) {
-    const std::vector<Math::AabbUVE> boxes = MakeBoxSpreadUVE(4U);
+TEST_F(FrustumCullComputeTest, Cull_BeforeInitialize_RefusesAndLeavesTheOutputAlone) {
+    const std::vector<Math::Aabb> boxes = MakeBoxSpread(4U);
     std::vector<bool> visible{true, true};
 
-    EXPECT_FALSE(cull.CullUVE(boxes, MakeTestFrustumUVE(), visible));
+    EXPECT_FALSE(cull.Cull(boxes, MakeTestFrustum(), visible));
 
     EXPECT_EQ(visible, (std::vector<bool>{true, true})) << "a refused cull must not touch the output";
-    EXPECT_EQ(cull.GetDiagnosticsUVE().cullsRejected, 1U);
+    EXPECT_EQ(cull.GetDiagnostics().cullsRejected, 1U);
 }
 
-TEST_F(FrustumCullComputeUVETest, CullUVE_EmptyInput_IsASuccessfulNoOp) {
-    ASSERT_TRUE(cull.InitializeUVE());
+TEST_F(FrustumCullComputeTest, Cull_EmptyInput_IsASuccessfulNoOp) {
+    ASSERT_TRUE(cull.Initialize());
     std::vector<bool> visible{true, false, true};
 
-    EXPECT_TRUE(cull.CullUVE({}, MakeTestFrustumUVE(), visible));
+    EXPECT_TRUE(cull.Cull({}, MakeTestFrustum(), visible));
 
     EXPECT_TRUE(visible.empty());
-    EXPECT_EQ(cull.GetDiagnosticsUVE().cullsSkipped, 1U);
-    EXPECT_EQ(cull.GetDiagnosticsUVE().boxesTested, 0U);
+    EXPECT_EQ(cull.GetDiagnostics().cullsSkipped, 1U);
+    EXPECT_EQ(cull.GetDiagnostics().boxesTested, 0U);
 }
 
-TEST_F(FrustumCullComputeUVETest, CullUVE_RefusesNonFiniteInputRatherThanAnsweringDifferently) {
-    ASSERT_TRUE(cull.InitializeUVE());
+TEST_F(FrustumCullComputeTest, Cull_RefusesNonFiniteInputRatherThanAnsweringDifferently) {
+    ASSERT_TRUE(cull.Initialize());
     std::vector<bool> visible;
 
-    Math::FrustumUVE brokenFrustum = MakeTestFrustumUVE();
+    Math::Frustum brokenFrustum = MakeTestFrustum();
     brokenFrustum.planes[2].distance = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(cull.CullUVE(MakeBoxSpreadUVE(4U), brokenFrustum, visible));
+    EXPECT_FALSE(cull.Cull(MakeBoxSpread(4U), brokenFrustum, visible));
 
-    std::vector<Math::AabbUVE> brokenBoxes = MakeBoxSpreadUVE(4U);
+    std::vector<Math::Aabb> brokenBoxes = MakeBoxSpread(4U);
     brokenBoxes[1].max.y = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(cull.CullUVE(brokenBoxes, MakeTestFrustumUVE(), visible));
+    EXPECT_FALSE(cull.Cull(brokenBoxes, MakeTestFrustum(), visible));
 
-    EXPECT_EQ(cull.GetDiagnosticsUVE().cullsRejected, 2U);
+    EXPECT_EQ(cull.GetDiagnostics().cullsRejected, 2U);
 }
 
-TEST_F(FrustumCullComputeUVETest, CullUVE_OnNullBackend_QueuesRealWorkAndReadsBack) {
+TEST_F(FrustumCullComputeTest, Cull_OnNullBackend_QueuesRealWorkAndReadsBack) {
     // Null executes nothing, but it is a faithful bookkeeper: the dispatch must be recorded, all
     // three storage buffers bound, and the readback succeed. That is the plumbing, not the maths.
-    ASSERT_TRUE(cull.InitializeUVE());
+    ASSERT_TRUE(cull.Initialize());
     std::vector<bool> visible;
 
-    EXPECT_TRUE(cull.CullUVE(MakeBoxSpreadUVE(200U), MakeTestFrustumUVE(), visible));
+    EXPECT_TRUE(cull.Cull(MakeBoxSpread(200U), MakeTestFrustum(), visible));
 
     EXPECT_EQ(visible.size(), 200U);
-    EXPECT_EQ(computeSystem.GetDiagnosticsUVE().dispatchesRecorded, 1U);
-    EXPECT_EQ(computeSystem.GetQueuedDispatchCountUVE(), 0U) << "the queue must not be left dirty";
-    EXPECT_EQ(cull.GetDiagnosticsUVE().boxesTested, 200U);
-    EXPECT_EQ(cull.GetDiagnosticsUVE().readbackFailures, 0U);
-    EXPECT_EQ(cull.GetDiagnosticsUVE().uploadFailures, 0U);
+    EXPECT_EQ(computeSystem.GetDiagnostics().dispatchesRecorded, 1U);
+    EXPECT_EQ(computeSystem.GetQueuedDispatchCount(), 0U) << "the queue must not be left dirty";
+    EXPECT_EQ(cull.GetDiagnostics().boxesTested, 200U);
+    EXPECT_EQ(cull.GetDiagnostics().readbackFailures, 0U);
+    EXPECT_EQ(cull.GetDiagnostics().uploadFailures, 0U);
 }
 
-TEST_F(FrustumCullComputeUVETest, CullUVE_ReusesItsBuffersUntilItMustGrow) {
-    ASSERT_TRUE(cull.InitializeUVE());
-    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+TEST_F(FrustumCullComputeTest, Cull_ReusesItsBuffersUntilItMustGrow) {
+    ASSERT_TRUE(cull.Initialize());
+    const Math::Frustum frustum = MakeTestFrustum();
     std::vector<bool> visible;
 
-    EXPECT_TRUE(cull.CullUVE(MakeBoxSpreadUVE(16U), frustum, visible));
-    EXPECT_EQ(cull.GetDiagnosticsUVE().bufferReallocations, 1U);
+    EXPECT_TRUE(cull.Cull(MakeBoxSpread(16U), frustum, visible));
+    EXPECT_EQ(cull.GetDiagnostics().bufferReallocations, 1U);
 
-    EXPECT_TRUE(cull.CullUVE(MakeBoxSpreadUVE(16U), frustum, visible));
-    EXPECT_TRUE(cull.CullUVE(MakeBoxSpreadUVE(4U), frustum, visible));
-    EXPECT_EQ(cull.GetDiagnosticsUVE().bufferReallocations, 1U);
+    EXPECT_TRUE(cull.Cull(MakeBoxSpread(16U), frustum, visible));
+    EXPECT_TRUE(cull.Cull(MakeBoxSpread(4U), frustum, visible));
+    EXPECT_EQ(cull.GetDiagnostics().bufferReallocations, 1U);
 
-    EXPECT_TRUE(cull.CullUVE(MakeBoxSpreadUVE(512U), frustum, visible));
-    EXPECT_EQ(cull.GetDiagnosticsUVE().bufferReallocations, 2U);
+    EXPECT_TRUE(cull.Cull(MakeBoxSpread(512U), frustum, visible));
+    EXPECT_EQ(cull.GetDiagnostics().bufferReallocations, 2U);
 }
 
 // ---------------------------------------------------------------------------
@@ -206,8 +206,8 @@ TEST_F(FrustumCullComputeUVETest, CullUVE_ReusesItsBuffersUntilItMustGrow) {
 // test's for every box. Skips cleanly without a display, like every GL test.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] Window::WindowDescUVE MakeCullTestWindowDescUVE() {
-    Window::WindowDescUVE desc;
+[[nodiscard]] Window::WindowDesc MakeCullTestWindowDesc() {
+    Window::WindowDesc desc;
     desc.title = "uve_frustum_cull_compute_uve_tests";
     desc.width = 64;
     desc.height = 64;
@@ -217,120 +217,120 @@ TEST_F(FrustumCullComputeUVETest, CullUVE_ReusesItsBuffersUntilItMustGrow) {
     return desc;
 }
 
-class FrustumCullComputeGlUVETest : public ::testing::Test {
+class FrustumCullComputeGlTest : public ::testing::Test {
 protected:
     void SetUp() override {
         windowManager =
-            std::make_unique<Window::WindowManagerUVE>(eventSystem, MakeCullTestWindowDescUVE());
-        if (!windowManager->IsValidUVE()) {
-            GTEST_SKIP() << "No display available for GlRenderDeviceUVE - skipping (run under "
+            std::make_unique<Window::WindowManager>(eventSystem, MakeCullTestWindowDesc());
+        if (!windowManager->IsValid()) {
+            GTEST_SKIP() << "No display available for GlRenderDevice - skipping (run under "
                             "xvfb-run to exercise this test)";
         }
-        renderDevice = std::make_unique<GlRenderDeviceUVE>(*windowManager);
-        if (!renderDevice->IsUsableUVE()) {
-            GTEST_SKIP() << "GlRenderDeviceUVE came up unusable on this display";
+        renderDevice = std::make_unique<GlRenderDevice>(*windowManager);
+        if (!renderDevice->IsUsable()) {
+            GTEST_SKIP() << "GlRenderDevice came up unusable on this display";
         }
-        computeSystem = std::make_unique<ComputeSystemUVE>(*renderDevice);
-        cull = std::make_unique<FrustumCullComputeUVE>(*renderDevice, *computeSystem);
+        computeSystem = std::make_unique<ComputeSystem>(*renderDevice);
+        cull = std::make_unique<FrustumCullCompute>(*renderDevice, *computeSystem);
 
         std::string infoLog;
-        if (!cull->InitializeUVE(&infoLog)) {
+        if (!cull->Initialize(&infoLog)) {
             GTEST_SKIP() << "context lacks compute shaders (GL 4.3+): " << infoLog;
         }
     }
 
-    Events::EventSystemUVE eventSystem;
-    std::unique_ptr<Window::WindowManagerUVE> windowManager;
-    std::unique_ptr<GlRenderDeviceUVE> renderDevice;
-    std::unique_ptr<ComputeSystemUVE> computeSystem;
-    std::unique_ptr<FrustumCullComputeUVE> cull;
+    Events::EventSystem eventSystem;
+    std::unique_ptr<Window::WindowManager> windowManager;
+    std::unique_ptr<GlRenderDevice> renderDevice;
+    std::unique_ptr<ComputeSystem> computeSystem;
+    std::unique_ptr<FrustumCullCompute> cull;
 };
 
-TEST_F(FrustumCullComputeGlUVETest, CullUVE_AgreesWithTheCpuFrustumTestOnEveryBox) {
+TEST_F(FrustumCullComputeGlTest, Cull_AgreesWithTheCpuFrustumTestOnEveryBox) {
     // 1000 boxes is not a multiple of the 64-wide workgroup, so the kernel's tail guard is
     // exercised against buffers sized exactly to the box count.
-    const std::vector<Math::AabbUVE> boxes = MakeBoxSpreadUVE(1000U);
-    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+    const std::vector<Math::Aabb> boxes = MakeBoxSpread(1000U);
+    const Math::Frustum frustum = MakeTestFrustum();
 
     std::vector<bool> onGpu;
-    ASSERT_TRUE(cull->CullUVE(boxes, frustum, onGpu));
+    ASSERT_TRUE(cull->Cull(boxes, frustum, onGpu));
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
 
-    const std::vector<bool> onCpu = CullOnCpuUVE(boxes, frustum);
-    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresentUVE(onCpu));
+    const std::vector<bool> onCpu = CullOnCpu(boxes, frustum);
+    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresent(onCpu));
 
-    ExpectVisibilityIdenticalUVE(onGpu, onCpu, boxes);
+    ExpectVisibilityIdentical(onGpu, onCpu, boxes);
 
     const std::size_t visibleCount =
         static_cast<std::size_t>(std::count(onCpu.begin(), onCpu.end(), true));
-    EXPECT_EQ(cull->GetDiagnosticsUVE().boxesVisible, visibleCount);
-    EXPECT_EQ(cull->GetDiagnosticsUVE().boxesCulled, onCpu.size() - visibleCount);
+    EXPECT_EQ(cull->GetDiagnostics().boxesVisible, visibleCount);
+    EXPECT_EQ(cull->GetDiagnostics().boxesCulled, onCpu.size() - visibleCount);
 }
 
-TEST_F(FrustumCullComputeGlUVETest, CullUVE_AgreesOnBoxesSittingExactlyOnThePlanes) {
+TEST_F(FrustumCullComputeGlTest, Cull_AgreesOnBoxesSittingExactlyOnThePlanes) {
     // The cases that matter most: a box whose surface touches a plane exactly is INSIDE by the
     // CPU's strict `distance + radius < 0` rejection, and one hair further out is not. If the GPU
     // computed that sum with a fused multiply-add it would land on a different float here - and
     // nowhere else would the difference be visible. Each box is placed by pushing its centre to
     // exactly `radius` behind a plane, then nudged one ULP either way.
-    std::vector<Math::AabbUVE> boxes;
-    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
-    const Math::Vector3UVE extents{0.5F, 0.5F, 0.5F};
+    std::vector<Math::Aabb> boxes;
+    const Math::Frustum frustum = MakeTestFrustum();
+    const Math::Vector3 extents{0.5F, 0.5F, 0.5F};
 
-    for (const Math::PlaneUVE& plane : frustum.planes) {
+    for (const Math::Plane& plane : frustum.planes) {
         const float radius = extents.x * std::abs(plane.normal.x) + extents.y * std::abs(plane.normal.y) +
                              extents.z * std::abs(plane.normal.z);
         // A point on the plane, then moved back along the normal by exactly the box's radius: the
         // box is then touching the plane from outside - the exact boundary.
-        const Math::Vector3UVE onPlane{plane.normal.x * -plane.distance, plane.normal.y * -plane.distance,
+        const Math::Vector3 onPlane{plane.normal.x * -plane.distance, plane.normal.y * -plane.distance,
                                        plane.normal.z * -plane.distance};
-        const Math::Vector3UVE center{onPlane.x - plane.normal.x * radius,
+        const Math::Vector3 center{onPlane.x - plane.normal.x * radius,
                                       onPlane.y - plane.normal.y * radius,
                                       onPlane.z - plane.normal.z * radius};
-        boxes.push_back(Math::AabbUVE::FromCenterExtentsUVE(center, extents));
+        boxes.push_back(Math::Aabb::FromCenterExtents(center, extents));
         for (const float nudge : {-2.0F, -1.0F, 1.0F, 2.0F}) {
-            const Math::Vector3UVE nudged{std::nextafter(center.x, center.x + nudge),
+            const Math::Vector3 nudged{std::nextafter(center.x, center.x + nudge),
                                           std::nextafter(center.y, center.y + nudge),
                                           std::nextafter(center.z, center.z + nudge)};
-            boxes.push_back(Math::AabbUVE::FromCenterExtentsUVE(nudged, extents));
+            boxes.push_back(Math::Aabb::FromCenterExtents(nudged, extents));
         }
     }
 
     std::vector<bool> onGpu;
-    ASSERT_TRUE(cull->CullUVE(boxes, frustum, onGpu));
+    ASSERT_TRUE(cull->Cull(boxes, frustum, onGpu));
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
 
-    const std::vector<bool> onCpu = CullOnCpuUVE(boxes, frustum);
+    const std::vector<bool> onCpu = CullOnCpu(boxes, frustum);
     // The nudges must actually land on both sides of the boundary - if every boundary box came
     // back with the same answer, this test would not be probing a boundary at all.
-    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresentUVE(onCpu));
-    ExpectVisibilityIdenticalUVE(onGpu, onCpu, boxes);
+    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresent(onCpu));
+    ExpectVisibilityIdentical(onGpu, onCpu, boxes);
 }
 
-TEST_F(FrustumCullComputeGlUVETest, CullUVE_PartialWorkgroupAndRepeatedCalls_StayInAgreement) {
+TEST_F(FrustumCullComputeGlTest, Cull_PartialWorkgroupAndRepeatedCalls_StayInAgreement) {
     // Three boxes: every invocation but three is a tail invocation. Then a second, larger call
     // through the same buffers, to prove the grow path does not leave stale visibility behind -
     // a reused buffer that kept an old entry would still "agree" on any box it happened to match.
-    const Math::FrustumUVE frustum = MakeTestFrustumUVE();
+    const Math::Frustum frustum = MakeTestFrustum();
 
-    const std::vector<Math::AabbUVE> few = MakeBoxSpreadUVE(3U);
-    const std::vector<bool> fewOnCpu = CullOnCpuUVE(few, frustum);
-    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresentUVE(fewOnCpu))
+    const std::vector<Math::Aabb> few = MakeBoxSpread(3U);
+    const std::vector<bool> fewOnCpu = CullOnCpu(few, frustum);
+    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresent(fewOnCpu))
         << "even three boxes must contain both answers, or this test proves nothing";
 
     std::vector<bool> onGpu;
-    ASSERT_TRUE(cull->CullUVE(few, frustum, onGpu));
-    ExpectVisibilityIdenticalUVE(onGpu, fewOnCpu, few);
+    ASSERT_TRUE(cull->Cull(few, frustum, onGpu));
+    ExpectVisibilityIdentical(onGpu, fewOnCpu, few);
 
-    const std::vector<Math::AabbUVE> many = MakeBoxSpreadUVE(300U);
-    const std::vector<bool> manyOnCpu = CullOnCpuUVE(many, frustum);
-    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresentUVE(manyOnCpu));
-    ASSERT_TRUE(cull->CullUVE(many, frustum, onGpu));
-    ExpectVisibilityIdenticalUVE(onGpu, manyOnCpu, many);
+    const std::vector<Math::Aabb> many = MakeBoxSpread(300U);
+    const std::vector<bool> manyOnCpu = CullOnCpu(many, frustum);
+    ASSERT_NO_FATAL_FAILURE(ExpectBothAnswersPresent(manyOnCpu));
+    ASSERT_TRUE(cull->Cull(many, frustum, onGpu));
+    ExpectVisibilityIdentical(onGpu, manyOnCpu, many);
 
     // And back down again, reusing the grown buffers.
-    ASSERT_TRUE(cull->CullUVE(few, frustum, onGpu));
-    ExpectVisibilityIdenticalUVE(onGpu, fewOnCpu, few);
+    ASSERT_TRUE(cull->Cull(few, frustum, onGpu));
+    ExpectVisibilityIdentical(onGpu, fewOnCpu, few);
     EXPECT_EQ(glGetError(), GL_NO_ERROR);
 }
 

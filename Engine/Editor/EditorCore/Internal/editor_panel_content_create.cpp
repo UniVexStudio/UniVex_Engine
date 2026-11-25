@@ -64,24 +64,24 @@ inline GetOpenFileNameWFn LoadGetOpenFileNameW(HMODULE comdlg) noexcept {
     return reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
 }
 
-enum class WinNativePickOutcomeUVE : std::uint8_t {
+enum class WinNativePickOutcome : std::uint8_t {
     Picked,
     Cancelled,
     Unavailable,
 };
 
 // Standard COM CLSID_FileOpenDialog / IID_IFileOpenDialog defined inline so MinGW/MSVC need no extra -luuid/-lole32 link libs.
-inline constexpr GUID kClsidFileOpenDialogUVE{
+inline constexpr GUID kClsidFileOpenDialog{
     0xDC1C5A9CU, 0xE88AU, 0x4DDEU, {0xA5U, 0xA1U, 0x60U, 0xF8U, 0x2AU, 0x20U, 0xAEU, 0xF7U}};
-inline constexpr GUID kIidIFileOpenDialogUVE{
+inline constexpr GUID kIidIFileOpenDialog{
     0xD57C7288U, 0xD4ADU, 0x4768U, {0xBEU, 0x02U, 0x9DU, 0x96U, 0x95U, 0x32U, 0xD9U, 0x60U}};
 
-[[nodiscard]] WinNativePickOutcomeUVE PickWithWindowsFileOpenDialogUVE(
+[[nodiscard]] WinNativePickOutcome PickWithWindowsFileOpenDialog(
     const bool pickFolders, std::vector<std::filesystem::path>& outPaths) {
     outPaths.clear();
     HMODULE ole32 = LoadLibraryA("ole32.dll");
     if (ole32 == nullptr) {
-        return WinNativePickOutcomeUVE::Unavailable;
+        return WinNativePickOutcome::Unavailable;
     }
     const auto pCoInitializeEx = reinterpret_cast<CoInitializeExFn>(GetProcAddress(ole32, "CoInitializeEx"));
     const auto pCoUninitialize = reinterpret_cast<CoUninitializeFn>(GetProcAddress(ole32, "CoUninitialize"));
@@ -90,25 +90,25 @@ inline constexpr GUID kIidIFileOpenDialogUVE{
     if (pCoInitializeEx == nullptr || pCoUninitialize == nullptr || pCoCreateInstance == nullptr ||
         pCoTaskMemFree == nullptr) {
         FreeLibrary(ole32);
-        return WinNativePickOutcomeUVE::Unavailable;
+        return WinNativePickOutcome::Unavailable;
     }
 
     const HRESULT initHr = pCoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     const bool shouldUninit = SUCCEEDED(initHr);
     if (FAILED(initHr) && initHr != RPC_E_CHANGED_MODE) {
         FreeLibrary(ole32);
-        return WinNativePickOutcomeUVE::Unavailable;
+        return WinNativePickOutcome::Unavailable;
     }
 
     IFileOpenDialog* dialog = nullptr;
-    HRESULT hr = pCoCreateInstance(kClsidFileOpenDialogUVE, nullptr, CLSCTX_INPROC_SERVER, kIidIFileOpenDialogUVE,
+    HRESULT hr = pCoCreateInstance(kClsidFileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, kIidIFileOpenDialog,
                                    reinterpret_cast<void**>(&dialog));
     if (FAILED(hr) || dialog == nullptr) {
         if (shouldUninit) {
             pCoUninitialize();
         }
         FreeLibrary(ole32);
-        return WinNativePickOutcomeUVE::Unavailable;
+        return WinNativePickOutcome::Unavailable;
     }
 
     DWORD options = 0U;
@@ -136,7 +136,7 @@ inline constexpr GUID kIidIFileOpenDialogUVE{
         dialog->SetFileTypeIndex(1U);
     }
 
-    WinNativePickOutcomeUVE outcome = WinNativePickOutcomeUVE::Cancelled;
+    WinNativePickOutcome outcome = WinNativePickOutcome::Cancelled;
     hr = dialog->Show(nullptr);
     if (SUCCEEDED(hr)) {
         IShellItemArray* items = nullptr;
@@ -158,11 +158,11 @@ inline constexpr GUID kIidIFileOpenDialogUVE{
             }
             items->Release();
         }
-        outcome = outPaths.empty() ? WinNativePickOutcomeUVE::Cancelled : WinNativePickOutcomeUVE::Picked;
+        outcome = outPaths.empty() ? WinNativePickOutcome::Cancelled : WinNativePickOutcome::Picked;
     } else if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-        outcome = WinNativePickOutcomeUVE::Cancelled;
+        outcome = WinNativePickOutcome::Cancelled;
     } else {
-        outcome = WinNativePickOutcomeUVE::Unavailable;
+        outcome = WinNativePickOutcome::Unavailable;
     }
 
     dialog->Release();
@@ -177,10 +177,10 @@ inline constexpr GUID kIidIFileOpenDialogUVE{
 #endif
 #endif
 
-constexpr std::size_t kMaximumContentRecentUVE = 5U;
-constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
+constexpr std::size_t kMaximumContentRecent = 5U;
+constexpr std::size_t kMaximumContentNameBytes = 96U;
 
-[[nodiscard]] std::string LowerExtensionUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string LowerExtension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
@@ -189,8 +189,8 @@ constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
 
 /// A file name a person typed: not empty, no separators, no "." or "..", nothing a filesystem
 /// rejects on any platform we ship to.
-[[nodiscard]] bool IsContentNameValidUVE(const std::string_view name) {
-    if (name.empty() || name.size() > kMaximumContentNameBytesUVE || name == "." || name == ".." ||
+[[nodiscard]] bool IsContentNameValid(const std::string_view name) {
+    if (name.empty() || name.size() > kMaximumContentNameBytes || name == "." || name == ".." ||
         name.front() == ' ' || name.back() == ' ' || name.back() == '.') {
         return false;
     }
@@ -206,10 +206,10 @@ namespace {
 
 }
 
-std::optional<std::filesystem::path> EditorUVE::RenameContentFileUVE(const std::filesystem::path& file,
+std::optional<std::filesystem::path> Editor::RenameContentFile(const std::filesystem::path& file,
                                                                      const std::string_view newStem) {
     std::error_code error;
-    if (!IsContentNameValidUVE(newStem) || !std::filesystem::exists(file, error)) {
+    if (!IsContentNameValid(newStem) || !std::filesystem::exists(file, error)) {
         return std::nullopt;
     }
     const bool directory = std::filesystem::is_directory(file, error);
@@ -228,47 +228,47 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentFileUVE(const std::
     return target;
 }
 
-std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std::filesystem::path& file,
+std::optional<std::filesystem::path> Editor::RenameContentAsset(const std::filesystem::path& file,
                                                                       const std::string_view newStem) {
-    const std::optional<std::filesystem::path> target = RenameContentFileUVE(file, newStem);
+    const std::optional<std::filesystem::path> target = RenameContentFile(file, newStem);
     if (!target.has_value() || *target == file) {
         return target;
     }
     // The file keeps its GUID under the new name, so scenes and players that use it still do.
-    Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
-    for (const Asset::AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+    Asset::IAssetDatabase& assetDatabase = m_services->GetAssetDatabase();
+    for (const Asset::AssetRecord& record : assetDatabase.GetRegisteredAssets()) {
         if (record.path == file.lexically_normal()) {
-            static_cast<void>(assetDatabase.RelocateUVE(record.guid, *target));
+            static_cast<void>(assetDatabase.Relocate(record.guid, *target));
         }
     }
-    const std::string ext = LowerExtensionUVE(*target);
+    const std::string ext = LowerExtension(*target);
     const bool isSceneOrEntityOrPrefab = (ext == ".uventity" || ext == ".uvprefab" || ext == ".uvscene");
 
     if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == file) {
         m_entityEditSession->assetPath = *target;
-        const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
-        if (entityRoot != Scene::kInvalidEntityUVE) {
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        const Scene::Entity entityRoot = GetEntityEditorRoot();
+        if (entityRoot != Scene::kInvalidEntity) {
+            Scene::IEntityManager& entityManager = m_services->GetEntityManager();
             const std::string newName = target->stem().string();
-            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(entityRoot)) {
-                entityManager.GetComponentUVE<Scene::NameComponentUVE>(entityRoot).name = newName;
+            if (entityManager.HasComponent<Scene::NameComponent>(entityRoot)) {
+                entityManager.GetComponent<Scene::NameComponent>(entityRoot).name = newName;
             }
-            static_cast<void>(SaveEntityEditorUVE());
+            static_cast<void>(SaveEntityEditor());
         }
     } else if (m_activeScenePath == file) {
         m_activeScenePath = *target;
-        const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-        if (sceneRoot != Scene::kInvalidEntityUVE) {
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        const Scene::Entity sceneRoot = GetDocumentSceneRoot();
+        if (sceneRoot != Scene::kInvalidEntity) {
+            Scene::IEntityManager& entityManager = m_services->GetEntityManager();
             const std::string newName = target->stem().string();
-            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(sceneRoot)) {
-                entityManager.GetComponentUVE<Scene::NameComponentUVE>(sceneRoot).name = newName;
+            if (entityManager.HasComponent<Scene::NameComponent>(sceneRoot)) {
+                entityManager.GetComponent<Scene::NameComponent>(sceneRoot).name = newName;
             }
         }
     }
 
     if (isSceneOrEntityOrPrefab) {
-        if (const auto fileData = Asset::ReadUveFileUVE(*target); fileData.has_value()) {
+        if (const auto fileData = Asset::ReadUveFile(*target); fileData.has_value()) {
             const auto& [header, payload] = *fileData;
             const std::string payloadText(reinterpret_cast<const char*>(payload.data()), payload.size());
             nlohmann::json payloadJson = nlohmann::json::parse(payloadText, nullptr, false);
@@ -277,8 +277,8 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std:
                 const std::string newName = target->stem().string();
                 for (auto& entityObj : payloadJson["entities"]) {
                     bool isRoot = true;
-                    if (entityObj.contains("components") && entityObj["components"].contains("HierarchyComponentUVE")) {
-                        const auto& h = entityObj["components"]["HierarchyComponentUVE"];
+                    if (entityObj.contains("components") && entityObj["components"].contains("HierarchyComponent")) {
+                        const auto& h = entityObj["components"]["HierarchyComponent"];
                         if (h.contains("parentLocalId") && h["parentLocalId"].get<std::int64_t>() >= 0) {
                             isRoot = false;
                         }
@@ -287,31 +287,31 @@ std::optional<std::filesystem::path> EditorUVE::RenameContentAssetUVE(const std:
                         if (!entityObj.contains("components") || !entityObj["components"].is_object()) {
                             entityObj["components"] = nlohmann::json::object();
                         }
-                        if (!entityObj["components"].contains("NameComponentUVE") || !entityObj["components"]["NameComponentUVE"].is_object()) {
-                            entityObj["components"]["NameComponentUVE"] = nlohmann::json::object();
+                        if (!entityObj["components"].contains("NameComponent") || !entityObj["components"]["NameComponent"].is_object()) {
+                            entityObj["components"]["NameComponent"] = nlohmann::json::object();
                         }
-                        entityObj["components"]["NameComponentUVE"]["name"] = newName;
+                        entityObj["components"]["NameComponent"]["name"] = newName;
                         break;
                     }
                 }
                 const std::string dumped = payloadJson.dump(4);
                 std::vector<std::byte> payloadBytes(dumped.size());
                 std::memcpy(payloadBytes.data(), dumped.data(), dumped.size());
-                static_cast<void>(Asset::WriteUveFileUVE(*target, header.assetType, payloadBytes));
+                static_cast<void>(Asset::WriteUveFile(*target, header.assetType, payloadBytes));
             }
         }
     }
     return target;
 }
 
-std::optional<std::filesystem::path> EditorUVE::DuplicateContentFileUVE(const std::filesystem::path& file) {
+std::optional<std::filesystem::path> Editor::DuplicateContentFile(const std::filesystem::path& file) {
     std::error_code error;
     if (!std::filesystem::exists(file, error)) {
         return std::nullopt;
     }
     const bool directory = std::filesystem::is_directory(file, error);
     const std::filesystem::path target =
-        MakeUniqueContentPathUVE(file.parent_path(), (directory ? file.filename() : file.stem()).string(),
+        MakeUniqueContentPath(file.parent_path(), (directory ? file.filename() : file.stem()).string(),
                                  directory ? std::string_view{} : std::string_view{file.extension().string()});
     std::filesystem::copy(file, target, std::filesystem::copy_options::recursive, error);
     if (error) {
@@ -320,29 +320,29 @@ std::optional<std::filesystem::path> EditorUVE::DuplicateContentFileUVE(const st
     return target;
 }
 
-void EditorUVE::PushContentCreateRecentUVE(std::vector<std::string>& recent, const std::string_view id) {
+void Editor::PushContentCreateRecent(std::vector<std::string>& recent, const std::string_view id) {
     std::erase(recent, id);
     recent.insert(recent.begin(), std::string{id});
-    if (recent.size() > kMaximumContentRecentUVE) {
-        recent.resize(kMaximumContentRecentUVE);
+    if (recent.size() > kMaximumContentRecent) {
+        recent.resize(kMaximumContentRecent);
     }
 }
 
-void EditorUVE::BeginContentRenameUVE(const std::filesystem::path& relativePath) {
+void Editor::BeginContentRename(const std::filesystem::path& relativePath) {
     m_contentRenamePath = relativePath;
     std::error_code error;
-    const std::filesystem::path absolute = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativePath;
+    const std::filesystem::path absolute = m_services->GetProjectFileIndex().GetSnapshot().contentRoot / relativePath;
     m_contentRenameText = (std::filesystem::is_directory(absolute, error) ? relativePath.filename() : relativePath.stem())
                               .string();
     m_contentRenameFocus = true;
 }
 
 namespace {
-SystemImportPickerUVE g_systemImportPickerUVE;
-SystemImportFilesPickerUVE g_systemImportFilesPickerUVE;
-SystemImportFolderPickerUVE g_systemImportFolderPickerUVE;
+SystemImportPicker g_systemImportPicker;
+SystemImportFilesPicker g_systemImportFilesPicker;
+SystemImportFolderPicker g_systemImportFolderPicker;
 
-[[nodiscard]] std::filesystem::path DefaultImportStartDirectoryUVE() {
+[[nodiscard]] std::filesystem::path DefaultImportStartDirectory() {
 #if defined(__ANDROID__)
     const char* const storage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
     const std::filesystem::path home = (storage != nullptr && *storage != '\0') ? std::filesystem::path(storage)
@@ -361,7 +361,7 @@ SystemImportFolderPickerUVE g_systemImportFolderPickerUVE;
     return std::filesystem::is_directory(downloads, error) ? downloads : home;
 }
 
-[[nodiscard]] bool IsSameOrSubpathUVE(const std::filesystem::path& parent, const std::filesystem::path& candidate) {
+[[nodiscard]] bool IsSameOrSubpath(const std::filesystem::path& parent, const std::filesystem::path& candidate) {
     std::error_code ec;
     const std::filesystem::path pNorm = std::filesystem::weakly_canonical(parent, ec).lexically_normal();
     if (ec) {
@@ -381,7 +381,7 @@ SystemImportFolderPickerUVE g_systemImportFolderPickerUVE;
     return true;
 }
 
-[[nodiscard]] bool HasHiddenSegmentUVE(const std::filesystem::path& relativePath) {
+[[nodiscard]] bool HasHiddenSegment(const std::filesystem::path& relativePath) {
     for (const std::filesystem::path& part : relativePath) {
         const std::string segment = part.string();
         if (!segment.empty() && segment != "." && segment != ".." && segment.front() == '.') {
@@ -392,30 +392,30 @@ SystemImportFolderPickerUVE g_systemImportFolderPickerUVE;
 }
 } // namespace
 
-void SetSystemImportPickerUVE(SystemImportPickerUVE picker) {
-    g_systemImportPickerUVE = std::move(picker);
+void SetSystemImportPicker(SystemImportPicker picker) {
+    g_systemImportPicker = std::move(picker);
 }
 
-void SetSystemImportFilesPickerUVE(SystemImportFilesPickerUVE picker) {
-    g_systemImportFilesPickerUVE = std::move(picker);
+void SetSystemImportFilesPicker(SystemImportFilesPicker picker) {
+    g_systemImportFilesPicker = std::move(picker);
 }
 
-void SetSystemImportFolderPickerUVE(SystemImportFolderPickerUVE picker) {
-    g_systemImportFolderPickerUVE = std::move(picker);
+void SetSystemImportFolderPicker(SystemImportFolderPicker picker) {
+    g_systemImportFolderPicker = std::move(picker);
 }
 
-bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+bool Editor::PromptImportFiles(const std::filesystem::path& targetDirectory) {
+    const Asset::ProjectFileSnapshot snapshot = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
 
 #if defined(_WIN32)
     {
         std::vector<std::filesystem::path> chosenFiles;
-        const WinNativePickOutcomeUVE outcome = PickWithWindowsFileOpenDialogUVE(false, chosenFiles);
-        if (outcome == WinNativePickOutcomeUVE::Picked) {
-            return ImportExternalFilesUVE(chosenFiles, destDir);
+        const WinNativePickOutcome outcome = PickWithWindowsFileOpenDialog(false, chosenFiles);
+        if (outcome == WinNativePickOutcome::Picked) {
+            return ImportExternalFiles(chosenFiles, destDir);
         }
-        if (outcome == WinNativePickOutcomeUVE::Cancelled) {
+        if (outcome == WinNativePickOutcome::Cancelled) {
             return false;
         }
     }
@@ -458,7 +458,7 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                         ptr += filename.size() + 1U;
                     }
                 }
-                return ImportExternalFilesUVE(chosenFiles, destDir);
+                return ImportExternalFiles(chosenFiles, destDir);
             }
             FreeLibrary(comdlg);
             return false;   // cancelled: no second dialog
@@ -469,83 +469,83 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
 
     // Android: straight into the system file manager with multi-select enabled (reaches Downloads,
     // Drive, USB); chosen files arrive staged in cache and are imported one-by-one into destDir.
-    if (g_systemImportFilesPickerUVE &&
-        g_systemImportFilesPickerUVE([this, destDir](const std::vector<std::filesystem::path>& chosen) {
-            static_cast<void>(ImportExternalFilesUVE(chosen, destDir, true));
+    if (g_systemImportFilesPicker &&
+        g_systemImportFilesPicker([this, destDir](const std::vector<std::filesystem::path>& chosen) {
+            static_cast<void>(ImportExternalFiles(chosen, destDir, true));
         })) {
         return false;
     }
-    if (g_systemImportPickerUVE &&
-        g_systemImportPickerUVE([this, destDir](const std::filesystem::path& chosen) {
-            static_cast<void>(ImportExternalFilesUVE({chosen}, destDir, true));
+    if (g_systemImportPicker &&
+        g_systemImportPicker([this, destDir](const std::filesystem::path& chosen) {
+            static_cast<void>(ImportExternalFiles({chosen}, destDir, true));
         })) {
         return false;
     }
 
     // Fallback: PRISM file dialog with multi-select enabled.
-    FilePickerRequestUVE request;
-    request.mode = FilePickerModeUVE::Open;
+    FilePickerRequest request;
+    request.mode = FilePickerMode::Open;
     request.allowMultiSelect = true;
     request.title = "Import Assets";
     request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvs", ".uvshader", ".glsl"};
     request.onPick = [this, destDir](const std::filesystem::path& chosen) {
-        static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+        static_cast<void>(ImportExternalFiles({chosen}, destDir));
     };
     request.onPickMany = [this, destDir](const std::vector<std::filesystem::path>& chosen) {
-        static_cast<void>(ImportExternalFilesUVE(chosen, destDir));
+        static_cast<void>(ImportExternalFiles(chosen, destDir));
     };
-    request.startDirectory = DefaultImportStartDirectoryUVE();
-    OpenFilePickerUVE(std::move(request));
+    request.startDirectory = DefaultImportStartDirectory();
+    OpenFilePicker(std::move(request));
     return false;
 }
 
-bool EditorUVE::PromptImportFolderUVE(const std::filesystem::path& targetDirectory) {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+bool Editor::PromptImportFolder(const std::filesystem::path& targetDirectory) {
+    const Asset::ProjectFileSnapshot snapshot = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
 
 #if defined(_WIN32)
     {
         std::vector<std::filesystem::path> chosenFolders;
-        const WinNativePickOutcomeUVE outcome = PickWithWindowsFileOpenDialogUVE(true, chosenFolders);
-        if (outcome == WinNativePickOutcomeUVE::Picked) {
-            return ImportExternalFilesUVE(chosenFolders, destDir);
+        const WinNativePickOutcome outcome = PickWithWindowsFileOpenDialog(true, chosenFolders);
+        if (outcome == WinNativePickOutcome::Picked) {
+            return ImportExternalFiles(chosenFolders, destDir);
         }
-        if (outcome == WinNativePickOutcomeUVE::Cancelled) {
+        if (outcome == WinNativePickOutcome::Cancelled) {
             return false;
         }
     }
 #endif
 
     // Android: native SAF folder picker (ACTION_OPEN_DOCUMENT_TREE) preserving subfolder layout.
-    if (g_systemImportFolderPickerUVE &&
-        g_systemImportFolderPickerUVE([this, destDir](const std::vector<std::filesystem::path>& chosen) {
-            static_cast<void>(ImportExternalFilesUVE(chosen, destDir, true));
+    if (g_systemImportFolderPicker &&
+        g_systemImportFolderPicker([this, destDir](const std::vector<std::filesystem::path>& chosen) {
+            static_cast<void>(ImportExternalFiles(chosen, destDir, true));
         })) {
         return false;
     }
 
     // Linux / fallback: PRISM folder picker.
-    FilePickerRequestUVE request;
-    request.mode = FilePickerModeUVE::OpenFolder;
+    FilePickerRequest request;
+    request.mode = FilePickerMode::OpenFolder;
     request.title = "Import Folder";
     request.onPick = [this, destDir](const std::filesystem::path& chosen) {
-        static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+        static_cast<void>(ImportExternalFiles({chosen}, destDir));
     };
     request.onPickMany = [this, destDir](const std::vector<std::filesystem::path>& chosen) {
-        static_cast<void>(ImportExternalFilesUVE(chosen, destDir));
+        static_cast<void>(ImportExternalFiles(chosen, destDir));
     };
-    request.startDirectory = DefaultImportStartDirectoryUVE();
-    OpenFilePickerUVE(std::move(request));
+    request.startDirectory = DefaultImportStartDirectory();
+    OpenFilePicker(std::move(request));
     return false;
 }
 
-bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
+bool Editor::ImportExternalFiles(const std::vector<std::filesystem::path>& sourceFiles,
                                       const std::filesystem::path& targetDirectory,
                                       const bool deleteStagedSources) {
     if (m_services == nullptr || sourceFiles.empty()) {
         return false;
     }
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
     std::error_code ec;
     std::filesystem::create_directories(destDir, ec);
@@ -561,7 +561,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
         }
         if (std::filesystem::is_directory(st)) {
             // Reject self-recursive folder copy (destination inside or equal to source).
-            if (IsSameOrSubpathUVE(rawSrc, destDir)) {
+            if (IsSameOrSubpath(rawSrc, destDir)) {
                 m_contentStatusMessage = "Skipped self-recursive folder import: " + rawSrc.filename().generic_string();
                 continue;
             }
@@ -589,7 +589,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
                     continue;
                 }
                 const std::filesystem::path rel = std::filesystem::relative(it->path(), rawSrc, entryErr);
-                if (entryErr || rel.empty() || HasHiddenSegmentUVE(rel)) {
+                if (entryErr || rel.empty() || HasHiddenSegment(rel)) {
                     continue;
                 }
                 const std::filesystem::path destFile = targetRoot / rel;
@@ -639,7 +639,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
     // so importing 500-1,000+ assets never freezes or crashes low-end desktop/mobile devices.
     if (m_prismUiRequested) {
         const std::size_t count = copyItems.size();
-        EnqueueBackgroundExternalCopiesUVE(std::move(copyItems), std::move(cleanupDirs));
+        EnqueueBackgroundExternalCopies(std::move(copyItems), std::move(cleanupDirs));
         m_contentStatusMessage = "Queued " + std::to_string(count) + " asset(s) for import into " + targetLabel + ".";
         return true;
     }
@@ -656,7 +656,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
         }
         if (!copyErr) {
             ++importedCount;
-            m_services->GetAssetDatabaseUVE().RegisterUVE(destFile);
+            m_services->GetAssetDatabase().Register(destFile);
         }
     }
     for (const std::filesystem::path& dir : cleanupDirs) {
@@ -666,23 +666,23 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
 
     if (importedCount > 0U) {
         m_projectFileSnapshotInitialized = false;
-        RefreshProjectFileIndexUVE(); // queues the new files' model and animation imports
+        RefreshProjectFileIndex(); // queues the new files' model and animation imports
         m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " + targetLabel + ".";
         return true;
     }
     return false;
 }
 
-void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
+void Editor::OpenCreateShaderModal(const std::filesystem::path& targetDirectory,
                                         std::function<void(const std::filesystem::path&)> onCreated) {
-    m_createShaderModal = CreateShaderModalStateUVE{};
+    m_createShaderModal = CreateShaderModalState{};
     m_createShaderModal.isOpen = true;
     m_createShaderModal.openRequested = true;
     m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_assetTableDirectory : targetDirectory;
     m_createShaderModal.shaderTypeIndex = 0;
     m_createShaderModal.onShaderCreated = std::move(onCreated);
 
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path contentRoot = snapshot.contentRoot;
     std::filesystem::path fullDir = m_createShaderModal.targetDirectory;
     if (fullDir.is_relative()) {

@@ -22,52 +22,52 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kJpegImporterNameUVE = "JpegImporterUVE";
-constexpr std::uint64_t kMaximumJpegImporterSourceBytesUVE = 64ULL * 1024ULL * 1024ULL;
-constexpr std::string_view kJpegTemporarySuffixUVE = ".uve_jpeg_tmp";
+constexpr const char* kJpegImporterName = "JpegImporter";
+constexpr std::uint64_t kMaximumJpegImporterSourceBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr std::string_view kJpegTemporarySuffix = ".uve_jpeg_tmp";
 
-[[nodiscard]] bool ImportJpegSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportJpegSource(const std::filesystem::path& sourcePath,
                                        const std::filesystem::path& destinationPath,
-                                       const AssetImportSettingsUVE& settings) {
+                                       const AssetImportSettings& settings) {
     try {
         if (destinationPath.extension() != ".uvtex") {
-            UVE_ERROR("JpegImporterUVE: destination \"{}\" must use the .uvtex extension",
+            UVE_ERROR("JpegImporter: destination \"{}\" must use the .uvtex extension",
                       destinationPath.string());
             return false;
         }
         std::vector<std::byte> sourceBytes;
-        if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kJpegImporterNameUVE, kMaximumJpegImporterSourceBytesUVE,
+        if (!Detail::ReadBoundedSourceBytes(sourcePath, kJpegImporterName, kMaximumJpegImporterSourceBytes,
                                                sourceBytes)) {
             return false;
         }
-        JpegRgba8ImageUVE decoded;
-        if (!DecodeJpegRgba8ImageUVE(sourceBytes, decoded)) {
-            UVE_ERROR("JpegImporterUVE: source \"{}\" failed bounded JPEG RGBA8 decoding", sourcePath.string());
+        JpegRgba8Image decoded;
+        if (!DecodeJpegRgba8Image(sourceBytes, decoded)) {
+            UVE_ERROR("JpegImporter: source \"{}\" failed bounded JPEG RGBA8 decoding", sourcePath.string());
             return false;
         }
         const std::uint64_t expectedPixelBytes = static_cast<std::uint64_t>(decoded.width) *
                                                   static_cast<std::uint64_t>(decoded.height) * 4ULL;
         if (expectedPixelBytes != decoded.pixels.size()) {
-            UVE_ERROR("JpegImporterUVE: decoder published inconsistent RGBA8 pixel bytes for \"{}\"",
+            UVE_ERROR("JpegImporter: decoder published inconsistent RGBA8 pixel bytes for \"{}\"",
                       sourcePath.string());
             return false;
         }
-        TextureAssetUVE texture;
+        TextureAsset texture;
         texture.width = decoded.width;
         texture.height = decoded.height;
-        texture.format = TextureAssetFormatUVE::RGBA8Unorm;
-        const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
+        texture.format = TextureAssetFormat::RGBA8Unorm;
+        const TextureImportSettings importSettings = ResolveTextureImportSettings(settings);
         texture.colorSpace = importSettings.colorSpace;
         texture.usage = importSettings.usage;
         texture.pixels = std::move(decoded.pixels);
-        if (!Detail::PrepareTextureForImportUVE(texture, importSettings)) {
-            UVE_ERROR("JpegImporterUVE: failed to prepare mip chain or compress texture for \"{}\"",
+        if (!Detail::PrepareTextureForImport(texture, importSettings)) {
+            UVE_ERROR("JpegImporter: failed to prepare mip chain or compress texture for \"{}\"",
                       sourcePath.string());
             return false;
         }
-        return Detail::PublishAssetAtomicallyUVE(destinationPath, kJpegImporterNameUVE, kJpegTemporarySuffixUVE,
+        return Detail::PublishAssetAtomically(destinationPath, kJpegImporterName, kJpegTemporarySuffix,
                                                  [&texture](const std::filesystem::path& temporaryPath) {
-                                                     return SaveTextureAssetUVE(texture, temporaryPath);
+                                                     return SaveTextureAsset(texture, temporaryPath);
                                                  });
     } catch (const std::bad_alloc&) {
         return false;
@@ -76,9 +76,9 @@ constexpr std::string_view kJpegTemporarySuffixUVE = ".uve_jpeg_tmp";
 
 } // namespace
 
-void RegisterJpegImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("jpg", &ImportJpegSourceUVE);
-    importer.RegisterImporterUVE("jpeg", &ImportJpegSourceUVE);
+void RegisterJpegImporter(IAssetImporter& importer) {
+    importer.RegisterImporter("jpg", &ImportJpegSource);
+    importer.RegisterImporter("jpeg", &ImportJpegSource);
 }
 
 } // namespace UVE::Asset

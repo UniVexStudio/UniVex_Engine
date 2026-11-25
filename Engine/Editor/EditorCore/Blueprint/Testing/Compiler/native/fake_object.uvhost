@@ -1,4 +1,4 @@
-# The node FakeHostUVE in uvscript_vm_uve_tests.cpp pretends to be. Keep the two in step: a script
+# The node FakeHost in uvscript_vm_tests.cpp pretends to be. Keep the two in step: a script
 # compiled against a different description gets a different fingerprint and runs interpreted.
 property velocity vec3
 property grounded bool readonly

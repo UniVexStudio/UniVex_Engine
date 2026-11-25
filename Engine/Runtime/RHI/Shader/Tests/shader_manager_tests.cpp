@@ -31,14 +31,14 @@ namespace UVE::Render::Shader::Tests {
 namespace {
 
 // Bounded busy-poll (never a fixed sleep), matching this codebase's established
-// WaitForTerminalStateUVE pattern (see tests/asset/asset_manager_uve_tests.cpp). Readiness only
-// advances when UpdateUVE() is called (the background job just does file I/O/preprocessing; the
-// real "compile" and the ready-flag flip both happen inside UpdateUVE(), on the calling thread).
+// WaitForTerminalState pattern (see tests/asset/asset_manager_uve_tests.cpp). Readiness only
+// advances when Update() is called (the background job just does file I/O/preprocessing; the
+// real "compile" and the ready-flag flip both happen inside Update(), on the calling thread).
 template <typename T>
-[[nodiscard]] bool WaitUntilReadyUVE(ShaderManagerUVE& shaderManager, const T& obj, int maxIterations = 200000) {
+[[nodiscard]] bool WaitUntilReady(ShaderManager& shaderManager, const T& obj, int maxIterations = 200000) {
     for (int iteration = 0; iteration < maxIterations; ++iteration) {
-        shaderManager.UpdateUVE(0.0);
-        if (obj.IsReadyUVE()) {
+        shaderManager.Update(0.0);
+        if (obj.IsReady()) {
             return true;
         }
         std::this_thread::yield();
@@ -48,61 +48,61 @@ template <typename T>
 
 /// Runs jobs only when asked, on the calling thread, and holds on to each job it has run until
 /// told to let go: the window a real worker has between a job returning and the job's captures
-/// being destroyed. Counters are released after the captures, as ThreadPoolUVE does.
-class RetainingThreadPoolUVE final : public Threading::IThreadPoolUVE {
+/// being destroyed. Counters are released after the captures, as ThreadPool does.
+class RetainingThreadPool final : public Threading::IThreadPool {
 public:
-    void SubmitUVE(Threading::JobUVE job) override { m_queued.push_back(JobUVE{std::move(job), nullptr}); }
-    void SubmitUVE(Threading::JobUVE job, Threading::JobCounterUVE& counter) override {
-        counter.IncrementUVE();
-        m_queued.push_back(JobUVE{std::move(job), &counter});
+    void Submit(Threading::Job job) override { m_queued.push_back(Job{std::move(job), nullptr}); }
+    void Submit(Threading::Job job, Threading::JobCounter& counter) override {
+        counter.Increment();
+        m_queued.push_back(Job{std::move(job), &counter});
     }
-    [[nodiscard]] std::size_t GetWorkerCountUVE() const noexcept override { return 1U; }
-    [[nodiscard]] std::size_t GetPendingJobCountUVE() const noexcept override {
+    [[nodiscard]] std::size_t GetWorkerCount() const noexcept override { return 1U; }
+    [[nodiscard]] std::size_t GetPendingJobCount() const noexcept override {
         return m_queued.size() + m_finished.size();
     }
-    [[nodiscard]] std::size_t GetActiveWorkerCountUVE() const noexcept override { return 0U; }
-    [[nodiscard]] std::uint64_t GetStolenJobCountUVE() const noexcept override { return 0U; }
-    [[nodiscard]] bool IsWorkerThreadUVE() const noexcept override { return false; }
+    [[nodiscard]] std::size_t GetActiveWorkerCount() const noexcept override { return 0U; }
+    [[nodiscard]] std::uint64_t GetStolenJobCount() const noexcept override { return 0U; }
+    [[nodiscard]] bool IsWorkerThread() const noexcept override { return false; }
 
-    void RunQueuedJobsUVE() {
-        std::vector<JobUVE> jobs;
+    void RunQueuedJobs() {
+        std::vector<Job> jobs;
         jobs.swap(m_queued);
-        for (JobUVE& job : jobs) {
+        for (Job& job : jobs) {
             job.function();
             m_finished.push_back(std::move(job));
         }
     }
 
-    void ReleaseFinishedJobsUVE() {
-        std::vector<JobUVE> finished;
+    void ReleaseFinishedJobs() {
+        std::vector<Job> finished;
         finished.swap(m_finished);
-        for (JobUVE& job : finished) {
+        for (Job& job : finished) {
             job.function = nullptr;
             if (job.counter != nullptr) {
-                job.counter->DecrementAndNotifyUVE();
+                job.counter->DecrementAndNotify();
             }
         }
     }
 
-    ~RetainingThreadPoolUVE() override { ReleaseFinishedJobsUVE(); }
+    ~RetainingThreadPool() override { ReleaseFinishedJobs(); }
 
 private:
-    struct JobUVE {
-        Threading::JobUVE function;
-        Threading::JobCounterUVE* counter = nullptr;
+    struct Job {
+        Threading::Job function;
+        Threading::JobCounter* counter = nullptr;
     };
-    std::vector<JobUVE> m_queued;
-    std::vector<JobUVE> m_finished;
+    std::vector<Job> m_queued;
+    std::vector<Job> m_finished;
 };
 
-class ShaderManagerUVETest : public ::testing::Test {
+class ShaderManagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        assetBundle = std::make_unique<Asset::AssetBundleUVE>();
-        fileSystem = std::make_unique<Asset::FileSystemUVE>(*assetBundle);
-        threadPool = std::make_unique<Threading::ThreadPoolUVE>(1);
-        eventSystem = std::make_unique<Events::EventSystemUVE>();
-        renderDevice = std::make_unique<NullRenderDeviceUVE>();
+        assetBundle = std::make_unique<Asset::AssetBundle>();
+        fileSystem = std::make_unique<Asset::FileSystem>(*assetBundle);
+        threadPool = std::make_unique<Threading::ThreadPool>(1);
+        eventSystem = std::make_unique<Events::EventSystem>();
+        renderDevice = std::make_unique<NullRenderDevice>();
     }
 
     void TearDown() override {
@@ -110,177 +110,177 @@ protected:
         std::filesystem::remove_all(tempCacheDirectory);
     }
 
-    [[nodiscard]] std::unique_ptr<ShaderManagerUVE> MakeManagerUVE(ShaderManagerConfigUVE config = {}) {
-        return std::make_unique<ShaderManagerUVE>(*threadPool, *eventSystem, *renderDevice, *fileSystem, config);
+    [[nodiscard]] std::unique_ptr<ShaderManager> MakeManager(ShaderManagerConfig config = {}) {
+        return std::make_unique<ShaderManager>(*threadPool, *eventSystem, *renderDevice, *fileSystem, config);
     }
 
-    std::unique_ptr<Asset::IAssetBundleUVE> assetBundle;
-    std::unique_ptr<Asset::IFileSystemUVE> fileSystem;
-    std::unique_ptr<Threading::IThreadPoolUVE> threadPool;
-    std::unique_ptr<Events::IEventSystemUVE> eventSystem;
-    std::unique_ptr<IRenderDeviceUVE> renderDevice;
+    std::unique_ptr<Asset::IAssetBundle> assetBundle;
+    std::unique_ptr<Asset::IFileSystem> fileSystem;
+    std::unique_ptr<Threading::IThreadPool> threadPool;
+    std::unique_ptr<Events::IEventSystem> eventSystem;
+    std::unique_ptr<IRenderDevice> renderDevice;
 
     const std::filesystem::path tempDirectory = "uve_shader_manager_tests_shaders";
     const std::filesystem::path tempCacheDirectory = "uve_shader_manager_tests_cache";
 };
 
-TEST_F(ShaderManagerUVETest, CreateSourceUVE_EmbeddedFallback_BecomesReadyAndValid) {
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
+TEST_F(ShaderManagerTest, CreateSource_EmbeddedFallback_BecomesReadyAndValid) {
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager();
 
-    ShaderSourceCompileDescUVE desc;
-    desc.stage = ShaderStageUVE::Vertex;
+    ShaderSourceCompileDesc desc;
+    desc.stage = ShaderStage::Vertex;
     desc.virtualFilePath = "shaders/missing_on_disk.glsl";
     desc.embeddedFallbackSourceCode = "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }\n";
 
-    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *source));
-    EXPECT_TRUE(source->IsValidUVE());
-    EXPECT_NE(source->GetHandleUVE(), kInvalidShaderHandleUVE);
+    const std::shared_ptr<ShaderSource> source = shaderManager->CreateSource(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *source));
+    EXPECT_TRUE(source->IsValid());
+    EXPECT_NE(source->GetHandle(), kInvalidShaderHandle);
 }
 
-TEST_F(ShaderManagerUVETest, SynchronousOnDemandCreationCompletesSourceAndProgramsBeforeReturning) {
-    ShaderManagerConfigUVE config;
-    config.compileSynchronouslyUVE = true;
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE(config);
+TEST_F(ShaderManagerTest, SynchronousOnDemandCreationCompletesSourceAndProgramsBeforeReturning) {
+    ShaderManagerConfig config;
+    config.compileSynchronously = true;
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager(config);
 
-    ShaderSourceCompileDescUVE sourceDesc;
-    sourceDesc.stage = ShaderStageUVE::Vertex;
+    ShaderSourceCompileDesc sourceDesc;
+    sourceDesc.stage = ShaderStage::Vertex;
     sourceDesc.virtualFilePath = "shaders/missing_on_disk.glsl";
     sourceDesc.embeddedFallbackSourceCode = "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }\n";
-    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(sourceDesc);
-    ASSERT_TRUE(source->IsReadyUVE());
-    EXPECT_TRUE(source->IsValidUVE());
-    EXPECT_NE(source->GetHandleUVE(), kInvalidShaderHandleUVE);
-    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
-    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+    const std::shared_ptr<ShaderSource> source = shaderManager->CreateSource(sourceDesc);
+    ASSERT_TRUE(source->IsReady());
+    EXPECT_TRUE(source->IsValid());
+    EXPECT_NE(source->GetHandle(), kInvalidShaderHandle);
+    EXPECT_EQ(shaderManager->GetPendingJobCount(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCount(), 0U);
 
-    ShaderProgramDescUVE programDesc;
+    ShaderProgramDesc programDesc;
     programDesc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
     programDesc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
-    programDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    programDesc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     programDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramUVE(programDesc);
-    ASSERT_TRUE(program->IsReadyUVE());
-    EXPECT_TRUE(program->IsValidUVE());
-    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
-    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+    const std::shared_ptr<ShaderProgram> program = shaderManager->CreateProgram(programDesc);
+    ASSERT_TRUE(program->IsReady());
+    EXPECT_TRUE(program->IsValid());
+    EXPECT_NE(program->GetPipelineHandle(), kInvalidPipelineHandle);
+    EXPECT_EQ(shaderManager->GetPendingJobCount(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCount(), 0U);
 
-    ShaderProgramStagesDescUVE stagesDesc;
+    ShaderProgramStagesDesc stagesDesc;
     stagesDesc.vertexSource.embeddedFallbackSourceCode =
         "#version 330 core\nlayout(location = 0) in vec3 aPosition;\n"
         "void main() { gl_Position = vec4(aPosition, 1.0); }\n";
-    stagesDesc.fragmentSource.stage = ShaderStageUVE::Fragment;
+    stagesDesc.fragmentSource.stage = ShaderStage::Fragment;
     stagesDesc.fragmentSource.embeddedFallbackSourceCode =
         "#version 330 core\nout vec4 FragColor;\nvoid main() { FragColor = vec4(1.0); }\n";
-    stagesDesc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    stagesDesc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     stagesDesc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
-    const std::shared_ptr<ShaderProgramUVE> stagesProgram = shaderManager->CreateProgramFromStagesUVE(stagesDesc);
-    ASSERT_TRUE(stagesProgram->IsReadyUVE());
-    EXPECT_TRUE(stagesProgram->IsValidUVE());
-    EXPECT_NE(stagesProgram->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
-    EXPECT_EQ(threadPool->GetPendingJobCountUVE(), 0U);
+    const std::shared_ptr<ShaderProgram> stagesProgram = shaderManager->CreateProgramFromStages(stagesDesc);
+    ASSERT_TRUE(stagesProgram->IsReady());
+    EXPECT_TRUE(stagesProgram->IsValid());
+    EXPECT_NE(stagesProgram->GetPipelineHandle(), kInvalidPipelineHandle);
+    EXPECT_EQ(shaderManager->GetPendingJobCount(), 0U);
+    EXPECT_EQ(threadPool->GetPendingJobCount(), 0U);
 }
 
-TEST_F(ShaderManagerUVETest, UIOverlayFirstUpdateCannotGuaranteeReadinessBeforeAsyncJobsRun) {
-    RetainingThreadPoolUVE pool;
-    ShaderManagerUVE manager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfigUVE{}};
-    ShaderProgramDescUVE desc;
+TEST_F(ShaderManagerTest, UIOverlayFirstUpdateCannotGuaranteeReadinessBeforeAsyncJobsRun) {
+    RetainingThreadPool pool;
+    ShaderManager manager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfig{}};
+    ShaderProgramDesc desc;
     desc.virtualFilePath = std::string(BuiltIn::kUIOverlayVirtualPath);
     desc.embeddedFallbackSourceCode = std::string(BuiltIn::kUIOverlaySource);
     desc.vertexLayout = {
-        VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float2, 0U},
-        VertexAttributeUVE{"TEXCOORD", VertexAttributeFormatUVE::Float2, 2U * sizeof(float)},
-        VertexAttributeUVE{"COLOR", VertexAttributeFormatUVE::Float4, 4U * sizeof(float)}};
+        VertexAttribute{"POSITION", VertexAttributeFormat::Float2, 0U},
+        VertexAttribute{"TEXCOORD", VertexAttributeFormat::Float2, 2U * sizeof(float)},
+        VertexAttribute{"COLOR", VertexAttributeFormat::Float4, 4U * sizeof(float)}};
     desc.vertexStride = 8U * sizeof(float);
     desc.depthTestEnabled = false;
     desc.depthWriteEnabled = false;
-    desc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
-    const auto program = manager.CreateProgramUVE(desc);
-    manager.UpdateUVE(0.0);
-    EXPECT_FALSE(program->IsReadyUVE());
-    EXPECT_FALSE(program->IsValidUVE());
-    EXPECT_EQ(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    desc.blendMode = PipelineBlendMode::SourceAlphaOver;
+    const auto program = manager.CreateProgram(desc);
+    manager.Update(0.0);
+    EXPECT_FALSE(program->IsReady());
+    EXPECT_FALSE(program->IsValid());
+    EXPECT_EQ(program->GetPipelineHandle(), kInvalidPipelineHandle);
 
     // Release every job before fatal assertions: the manager drains its job counter on teardown.
-    pool.RunQueuedJobsUVE();
-    pool.ReleaseFinishedJobsUVE();
-    manager.UpdateUVE(0.0);
-    ASSERT_TRUE(program->IsReadyUVE());
-    EXPECT_TRUE(program->IsValidUVE());
-    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    pool.RunQueuedJobs();
+    pool.ReleaseFinishedJobs();
+    manager.Update(0.0);
+    ASSERT_TRUE(program->IsReady());
+    EXPECT_TRUE(program->IsValid());
+    EXPECT_NE(program->GetPipelineHandle(), kInvalidPipelineHandle);
 
-    ShaderManagerConfigUVE synchronous;
-    synchronous.compileSynchronouslyUVE = true;
-    ShaderManagerUVE syncManager{pool, *eventSystem, *renderDevice, *fileSystem, synchronous};
-    const auto synchronousProgram = syncManager.CreateProgramUVE(desc);
-    EXPECT_TRUE(synchronousProgram->IsReadyUVE());
-    EXPECT_TRUE(synchronousProgram->IsValidUVE());
-    EXPECT_EQ(pool.GetPendingJobCountUVE(), 0U);
+    ShaderManagerConfig synchronous;
+    synchronous.compileSynchronously = true;
+    ShaderManager syncManager{pool, *eventSystem, *renderDevice, *fileSystem, synchronous};
+    const auto synchronousProgram = syncManager.CreateProgram(desc);
+    EXPECT_TRUE(synchronousProgram->IsReady());
+    EXPECT_TRUE(synchronousProgram->IsValid());
+    EXPECT_EQ(pool.GetPendingJobCount(), 0U);
 }
 
-TEST_F(ShaderManagerUVETest, CreateProgramUVE_BuiltInBasic3D_BecomesReadyAndValid) {
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
+TEST_F(ShaderManagerTest, CreateProgram_BuiltInBasic3D_BecomesReadyAndValid) {
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager();
 
-    ShaderProgramDescUVE desc;
+    ShaderProgramDesc desc;
     desc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
     desc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
-    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
 
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *program));
-    EXPECT_TRUE(program->IsValidUVE());
-    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    const std::shared_ptr<ShaderProgram> program = shaderManager->CreateProgram(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *program));
+    EXPECT_TRUE(program->IsValid());
+    EXPECT_NE(program->GetPipelineHandle(), kInvalidPipelineHandle);
 }
 
-TEST_F(ShaderManagerUVETest, CreateProgramUVE_LinkedStagesAreReleasedByTheManagerNotByTheWorker) {
-    RetainingThreadPoolUVE pool;
-    ShaderManagerUVE shaderManager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfigUVE{}};
-    const auto& device = static_cast<const NullRenderDeviceUVE&>(*renderDevice);
+TEST_F(ShaderManagerTest, CreateProgram_LinkedStagesAreReleasedByTheManagerNotByTheWorker) {
+    RetainingThreadPool pool;
+    ShaderManager shaderManager{pool, *eventSystem, *renderDevice, *fileSystem, ShaderManagerConfig{}};
+    const auto& device = static_cast<const NullRenderDevice&>(*renderDevice);
 
-    ShaderProgramDescUVE desc;
+    ShaderProgramDesc desc;
     desc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
     desc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
-    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
 
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager.CreateProgramUVE(desc);
-    pool.RunQueuedJobsUVE();
-    shaderManager.UpdateUVE(0.0);
-    ASSERT_TRUE(program->IsReadyUVE());
-    ASSERT_TRUE(program->IsValidUVE());
+    const std::shared_ptr<ShaderProgram> program = shaderManager.CreateProgram(desc);
+    pool.RunQueuedJobs();
+    shaderManager.Update(0.0);
+    ASSERT_TRUE(program->IsReady());
+    ASSERT_TRUE(program->IsValid());
 
     // Linking is done and the stages are no longer needed. The worker letting go of the jobs it
     // ran must not destroy anything: GPU objects are released on the thread that drives the
     // manager, at a point that thread chooses.
-    const std::size_t liveAfterLink = device.GetLiveResourceCountUVE();
-    pool.ReleaseFinishedJobsUVE();
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), liveAfterLink);
+    const std::size_t liveAfterLink = device.GetLiveResourceCount();
+    pool.ReleaseFinishedJobs();
+    EXPECT_EQ(device.GetLiveResourceCount(), liveAfterLink);
 }
 
-TEST_F(ShaderManagerUVETest, CreateProgramFromStagesUVE_SeparateEmbeddedStages_BecomesReadyAndValid) {
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
+TEST_F(ShaderManagerTest, CreateProgramFromStages_SeparateEmbeddedStages_BecomesReadyAndValid) {
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager();
 
-    ShaderProgramStagesDescUVE desc;
-    desc.vertexSource.stage = ShaderStageUVE::Vertex;
+    ShaderProgramStagesDesc desc;
+    desc.vertexSource.stage = ShaderStage::Vertex;
     desc.vertexSource.embeddedFallbackSourceCode =
         "#version 330 core\nlayout(location = 0) in vec3 aPosition;\nvoid main() { gl_Position = vec4(aPosition, 1.0); }\n";
-    desc.fragmentSource.stage = ShaderStageUVE::Fragment;
+    desc.fragmentSource.stage = ShaderStage::Fragment;
     desc.fragmentSource.embeddedFallbackSourceCode =
         "#version 330 core\nout vec4 FragColor;\nvoid main() { FragColor = vec4(1.0); }\n";
-    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
-    desc.debugNameUVE = "SeparateEmbeddedStages";
+    desc.debugName = "SeparateEmbeddedStages";
 
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramFromStagesUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *program));
-    EXPECT_TRUE(program->IsValidUVE());
-    EXPECT_NE(program->GetPipelineHandleUVE(), kInvalidPipelineHandleUVE);
+    const std::shared_ptr<ShaderProgram> program = shaderManager->CreateProgramFromStages(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *program));
+    EXPECT_TRUE(program->IsValid());
+    EXPECT_NE(program->GetPipelineHandle(), kInvalidPipelineHandle);
 }
 
-TEST_F(ShaderManagerUVETest, HotReload_SeparateFragmentStage_RebuildsSameProgram) {
+TEST_F(ShaderManagerTest, HotReload_SeparateFragmentStage_RebuildsSameProgram) {
     std::filesystem::remove_all(tempDirectory);
     std::filesystem::create_directories(tempDirectory);
     const std::filesystem::path vertexPath = tempDirectory / "material.vert";
@@ -295,25 +295,25 @@ TEST_F(ShaderManagerUVETest, HotReload_SeparateFragmentStage_RebuildsSameProgram
         fragmentFile << "#version 330 core\nout vec4 FragColor;\n"
                         "void main() { FragColor = vec4(1.0); }\n// marker-v1\n";
     }
-    fileSystem->MountDirectoryUVE("material", tempDirectory, 0);
+    fileSystem->MountDirectory("material", tempDirectory, 0);
 
-    ShaderManagerConfigUVE config;
-    config.hotReloadEnabledUVE = true;
-    config.hotReloadPollIntervalSecondsUVE = 0.0;
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE(config);
+    ShaderManagerConfig config;
+    config.hotReloadEnabled = true;
+    config.hotReloadPollIntervalSeconds = 0.0;
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager(config);
 
-    ShaderProgramStagesDescUVE desc;
+    ShaderProgramStagesDesc desc;
     desc.vertexSource.virtualFilePath = "material/material.vert";
     desc.vertexSource.embeddedFallbackSourceCode = "#version 330 core\nvoid main() {}\n";
     desc.fragmentSource.virtualFilePath = "material/material.frag";
     desc.fragmentSource.embeddedFallbackSourceCode = "#version 330 core\nout vec4 FragColor;\nvoid main() {}\n";
-    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
 
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramFromStagesUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *program));
-    ASSERT_TRUE(program->IsValidUVE());
-    const std::uint64_t initialHash = program->GetContentHashUVE();
+    const std::shared_ptr<ShaderProgram> program = shaderManager->CreateProgramFromStages(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *program));
+    ASSERT_TRUE(program->IsValid());
+    const std::uint64_t initialHash = program->GetContentHash();
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     {
@@ -324,8 +324,8 @@ TEST_F(ShaderManagerUVETest, HotReload_SeparateFragmentStage_RebuildsSameProgram
 
     bool reloaded = false;
     for (int iteration = 0; iteration < 200000 && !reloaded; ++iteration) {
-        shaderManager->UpdateUVE(1.0);
-        reloaded = program->IsValidUVE() && program->GetContentHashUVE() != initialHash;
+        shaderManager->Update(1.0);
+        reloaded = program->IsValid() && program->GetContentHash() != initialHash;
         if (!reloaded) {
             std::this_thread::yield();
         }
@@ -333,7 +333,7 @@ TEST_F(ShaderManagerUVETest, HotReload_SeparateFragmentStage_RebuildsSameProgram
     EXPECT_TRUE(reloaded);
 }
 
-TEST_F(ShaderManagerUVETest, CreateSourceUVE_IncludeDirectiveOnRealDisk_ResolvesThroughVfs) {
+TEST_F(ShaderManagerTest, CreateSource_IncludeDirectiveOnRealDisk_ResolvesThroughVfs) {
     std::filesystem::remove_all(tempDirectory);
     std::filesystem::create_directories(tempDirectory / "inc");
     {
@@ -344,20 +344,20 @@ TEST_F(ShaderManagerUVETest, CreateSourceUVE_IncludeDirectiveOnRealDisk_Resolves
         std::ofstream mainFile(tempDirectory / "main.glsl");
         mainFile << "#include \"shaders/inc/common.glsl\"\nvoid main() {}\n";
     }
-    fileSystem->MountDirectoryUVE("shaders", tempDirectory, 0);
+    fileSystem->MountDirectory("shaders", tempDirectory, 0);
 
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
-    ShaderSourceCompileDescUVE desc;
-    desc.stage = ShaderStageUVE::Vertex;
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager();
+    ShaderSourceCompileDesc desc;
+    desc.stage = ShaderStage::Vertex;
     desc.virtualFilePath = "shaders/main.glsl";
     desc.embeddedFallbackSourceCode = "#version 330 core\nvoid main() {}\n";
 
-    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *source));
-    EXPECT_NE(source->GetResolvedSourceUVE().find("uveTestHelper"), std::string::npos);
+    const std::shared_ptr<ShaderSource> source = shaderManager->CreateSource(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *source));
+    EXPECT_NE(source->GetResolvedSource().find("uveTestHelper"), std::string::npos);
 }
 
-TEST_F(ShaderManagerUVETest, HotReload_FileChangeOnDisk_TriggersRecompileWithNewResolvedSource) {
+TEST_F(ShaderManagerTest, HotReload_FileChangeOnDisk_TriggersRecompileWithNewResolvedSource) {
     std::filesystem::remove_all(tempDirectory);
     std::filesystem::create_directories(tempDirectory);
     const std::filesystem::path shaderFile = tempDirectory / "reloadable.glsl";
@@ -365,22 +365,22 @@ TEST_F(ShaderManagerUVETest, HotReload_FileChangeOnDisk_TriggersRecompileWithNew
         std::ofstream file(shaderFile);
         file << "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }\n// marker-v1\n";
     }
-    fileSystem->MountDirectoryUVE("shaders", tempDirectory, 0);
+    fileSystem->MountDirectory("shaders", tempDirectory, 0);
 
-    ShaderManagerConfigUVE config;
-    config.hotReloadEnabledUVE = true;
-    config.hotReloadPollIntervalSecondsUVE = 0.0;
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE(config);
+    ShaderManagerConfig config;
+    config.hotReloadEnabled = true;
+    config.hotReloadPollIntervalSeconds = 0.0;
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager(config);
 
-    ShaderSourceCompileDescUVE desc;
-    desc.stage = ShaderStageUVE::Vertex;
+    ShaderSourceCompileDesc desc;
+    desc.stage = ShaderStage::Vertex;
     desc.virtualFilePath = "shaders/reloadable.glsl";
     desc.embeddedFallbackSourceCode = "#version 330 core\nvoid main() {}\n";
-    desc.hotReloadEnabledUVE = true;
+    desc.hotReloadEnabled = true;
 
-    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *source));
-    ASSERT_NE(source->GetResolvedSourceUVE().find("marker-v1"), std::string::npos);
+    const std::shared_ptr<ShaderSource> source = shaderManager->CreateSource(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *source));
+    ASSERT_NE(source->GetResolvedSource().find("marker-v1"), std::string::npos);
 
     // Sleep briefly so the modified file's mtime is guaranteed to differ from the original write
     // (some filesystems have coarse mtime resolution) before rewriting it with new content.
@@ -392,8 +392,8 @@ TEST_F(ShaderManagerUVETest, HotReload_FileChangeOnDisk_TriggersRecompileWithNew
 
     bool sawUpdatedMarker = false;
     for (int iteration = 0; iteration < 200000 && !sawUpdatedMarker; ++iteration) {
-        shaderManager->UpdateUVE(1.0);
-        if (source->GetResolvedSourceUVE().contains("marker-v2")) {
+        shaderManager->Update(1.0);
+        if (source->GetResolvedSource().contains("marker-v2")) {
             sawUpdatedMarker = true;
         }
         std::this_thread::yield();
@@ -401,34 +401,34 @@ TEST_F(ShaderManagerUVETest, HotReload_FileChangeOnDisk_TriggersRecompileWithNew
     EXPECT_TRUE(sawUpdatedMarker);
 }
 
-TEST_F(ShaderManagerUVETest, GetPendingJobCountUVE_DropsToZeroOnceCreationSettles) {
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE();
-    ShaderSourceCompileDescUVE desc;
-    desc.stage = ShaderStageUVE::Fragment;
+TEST_F(ShaderManagerTest, GetPendingJobCount_DropsToZeroOnceCreationSettles) {
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager();
+    ShaderSourceCompileDesc desc;
+    desc.stage = ShaderStage::Fragment;
     desc.embeddedFallbackSourceCode = "#version 330 core\nout vec4 c;\nvoid main() { c = vec4(1.0); }\n";
 
-    const std::shared_ptr<ShaderSourceUVE> source = shaderManager->CreateSourceUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *source));
-    EXPECT_EQ(shaderManager->GetPendingJobCountUVE(), 0U);
+    const std::shared_ptr<ShaderSource> source = shaderManager->CreateSource(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *source));
+    EXPECT_EQ(shaderManager->GetPendingJobCount(), 0U);
 }
 
-TEST_F(ShaderManagerUVETest, NullRenderDeviceBackend_NeverReportsBinaryCacheHit) {
-    // NullRenderDeviceUVE::GetPipelineBinaryUVE()/CreatePipelineFromBinaryUVE() are documented
-    // no-op/false stand-ins - ShaderManagerUVE must therefore always take the from-source path
+TEST_F(ShaderManagerTest, NullRenderDeviceBackend_NeverReportsBinaryCacheHit) {
+    // NullRenderDevice::GetPipelineBinary()/CreatePipelineFromBinary() are documented
+    // no-op/false stand-ins - ShaderManager must therefore always take the from-source path
     // against this backend, never claim a cache hit that never happened.
-    ShaderManagerConfigUVE config;
+    ShaderManagerConfig config;
     config.cachePath = tempCacheDirectory;
-    const std::unique_ptr<ShaderManagerUVE> shaderManager = MakeManagerUVE(config);
+    const std::unique_ptr<ShaderManager> shaderManager = MakeManager(config);
 
-    ShaderProgramDescUVE desc;
+    ShaderProgramDesc desc;
     desc.virtualFilePath = std::string(BuiltIn::kBasic3DVirtualPath);
     desc.embeddedFallbackSourceCode = std::string(BuiltIn::kBasic3DSource);
-    desc.vertexLayout = {VertexAttributeUVE{"POSITION", VertexAttributeFormatUVE::Float3, 0}};
+    desc.vertexLayout = {VertexAttribute{"POSITION", VertexAttributeFormat::Float3, 0}};
     desc.vertexStride = 3U * static_cast<std::uint32_t>(sizeof(float));
 
-    const std::shared_ptr<ShaderProgramUVE> program = shaderManager->CreateProgramUVE(desc);
-    ASSERT_TRUE(WaitUntilReadyUVE(*shaderManager, *program));
-    EXPECT_FALSE(shaderManager->GetLastCompileUsedCacheUVE());
+    const std::shared_ptr<ShaderProgram> program = shaderManager->CreateProgram(desc);
+    ASSERT_TRUE(WaitUntilReady(*shaderManager, *program));
+    EXPECT_FALSE(shaderManager->GetLastCompileUsedCache());
 }
 
 // Guards against the built-in .glsl files under Engine/Runtime/RHI/Shader/built_in/ ever
@@ -436,11 +436,11 @@ TEST_F(ShaderManagerUVETest, NullRenderDeviceBackend_NeverReportsBinaryCacheHit)
 // generation note) - both must be used by the engine at different times (real file when
 // reachable, embedded string otherwise) and are expected to be byte-identical. Assumes the
 // process's current working directory is the repository root, matching every other relative
-// default path in this codebase (EngineConfigUVE::shaderSourceRealDirectoryUVE,
+// default path in this codebase (EngineConfig::shaderSourceRealDirectory,
 // assetDatabaseFilePath, logFilePath, ...).
-class BuiltInShaderParityUVETest : public ::testing::TestWithParam<std::pair<std::string_view, std::string_view>> {};
+class BuiltInShaderParityTest : public ::testing::TestWithParam<std::pair<std::string_view, std::string_view>> {};
 
-[[nodiscard]] std::optional<std::string> ReadFileToStringUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::optional<std::string> ReadFileToString(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         return std::nullopt;
@@ -448,11 +448,11 @@ class BuiltInShaderParityUVETest : public ::testing::TestWithParam<std::pair<std
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
-TEST_P(BuiltInShaderParityUVETest, EmbeddedSource_IsByteIdenticalToPhysicalFile) {
+TEST_P(BuiltInShaderParityTest, EmbeddedSource_IsByteIdenticalToPhysicalFile) {
     const auto& [relativePath, embeddedSource] = GetParam();
     const std::filesystem::path fullPath =
-        ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in" / relativePath;
-    const std::optional<std::string> fileContent = ReadFileToStringUVE(fullPath);
+        ::UVE::Tests::RepositoryRoot() / "Engine/Runtime/RHI/Shader/built_in" / relativePath;
+    const std::optional<std::string> fileContent = ReadFileToString(fullPath);
     if (!fileContent.has_value()) {
         GTEST_SKIP() << "Could not read " << fullPath
                      << " - this parity test assumes the process's working directory is the "
@@ -462,7 +462,7 @@ TEST_P(BuiltInShaderParityUVETest, EmbeddedSource_IsByteIdenticalToPhysicalFile)
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllBuiltInShaders, BuiltInShaderParityUVETest,
+    AllBuiltInShaders, BuiltInShaderParityTest,
     ::testing::Values(std::pair<std::string_view, std::string_view>{"basic_3d.glsl", BuiltIn::kBasic3DSource},
                        std::pair<std::string_view, std::string_view>{"basic_3d_textured.glsl",
                                                                       BuiltIn::kBasic3DTexturedSource},
@@ -529,7 +529,7 @@ INSTANTIATE_TEST_SUITE_P(
 // then blamed on the artist.
 // ---------------------------------------------------------------------------
 
-TEST(InstancedLitVariantUVETest, TheFragmentStageIsSharedVerbatimBetweenBothVariants) {
+TEST(InstancedLitVariantTest, TheFragmentStageIsSharedVerbatimBetweenBothVariants) {
     const std::string_view source = BuiltIn::kLitShadowed3DSource;
     const std::size_t fragmentStart = source.find("#ifdef FRAGMENT_SHADER");
     ASSERT_NE(fragmentStart, std::string_view::npos);
@@ -541,7 +541,7 @@ TEST(InstancedLitVariantUVETest, TheFragmentStageIsSharedVerbatimBetweenBothVari
         << "the instancing define must stay confined to the vertex stage";
 }
 
-TEST(InstancedLitVariantUVETest, BothVariantsComputeWorldSpaceThroughTheSameExpressions) {
+TEST(InstancedLitVariantTest, BothVariantsComputeWorldSpaceThroughTheSameExpressions) {
     // Whatever supplies them, `model` and `normalMatrix` must be consumed identically - the
     // position through model, the normal through the inverse-transpose, the tangent through
     // model (which IS the correct convention for a surface-parameterization vector, unlike a
@@ -556,7 +556,7 @@ TEST(InstancedLitVariantUVETest, BothVariantsComputeWorldSpaceThroughTheSameExpr
     EXPECT_NE(source.find("mat4 normalMatrix = uNormalMatrix;"), std::string_view::npos);
 }
 
-TEST(InstancedLitVariantUVETest, TheInstancedPathIndexesByBaseIndexPlusInstanceId) {
+TEST(InstancedLitVariantTest, TheInstancedPathIndexesByBaseIndexPlusInstanceId) {
     // gl_InstanceID restarts at zero for every draw, so a batch that is not the first in the
     // frame would read another batch's transforms without the base offset. This is the assertion
     // that would have caught that.

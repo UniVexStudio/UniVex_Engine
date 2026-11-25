@@ -16,24 +16,24 @@
 
 namespace UVE::Scene {
 
-bool IsVisibilityRegion3DObjectComponentValidUVE(const VisibilityRegion3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.halfExtents) && value.halfExtents.x > 0.0F &&
+bool IsVisibilityRegion3DObjectComponentValid(const VisibilityRegion3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.halfExtents) && value.halfExtents.x > 0.0F &&
            value.halfExtents.y > 0.0F && value.halfExtents.z > 0.0F;
 }
 
-void ApplyVisibilityRegion3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                                const VisibilityRegion3DObjectDefinitionUVE& value) {
-    ApplyObject3DRecipeUVE(entityManager, entity, VisibilityRegion3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) &&
-        !entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<VisibilityRegion3DComponentUVE>(entity, value.region);
+void ApplyVisibilityRegion3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                                const VisibilityRegion3DObjectDefinition& value) {
+    ApplyObject3DRecipe(entityManager, entity, VisibilityRegion3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) &&
+        !entityManager.HasComponent<VisibilityRegion3DComponent>(entity)) {
+        entityManager.AddComponent<VisibilityRegion3DComponent>(entity, value.region);
     }
 }
 
-bool ResolveVisibilityRegion3DContainsPointUVE(const VisibilityRegion3DComponentUVE& config,
-                                               const Math::Vector3UVE& regionWorldPosition,
-                                               const Math::Vector3UVE& pointWorld) noexcept {
-    if (!IsVisibilityRegion3DObjectComponentValidUVE(config)) {
+bool ResolveVisibilityRegion3DContainsPoint(const VisibilityRegion3DComponent& config,
+                                               const Math::Vector3& regionWorldPosition,
+                                               const Math::Vector3& pointWorld) noexcept {
+    if (!IsVisibilityRegion3DObjectComponentValid(config)) {
         return false;
     }
     const float localX = pointWorld.x - regionWorldPosition.x;
@@ -49,66 +49,66 @@ bool ResolveVisibilityRegion3DContainsPointUVE(const VisibilityRegion3DComponent
            std::abs(localZ) <= config.halfExtents.z;
 }
 
-bool ResolveVisibilityRegion3DAnyViewerInsideUVE(
-    const VisibilityRegion3DComponentUVE& config, const Math::Vector3UVE& regionWorldPosition,
-    const std::vector<Math::Vector3UVE>& viewerPositions) noexcept {
-    for (const Math::Vector3UVE& viewer : viewerPositions) {
-        if (ResolveVisibilityRegion3DContainsPointUVE(config, regionWorldPosition, viewer)) {
+bool ResolveVisibilityRegion3DAnyViewerInside(
+    const VisibilityRegion3DComponent& config, const Math::Vector3& regionWorldPosition,
+    const std::vector<Math::Vector3>& viewerPositions) noexcept {
+    for (const Math::Vector3& viewer : viewerPositions) {
+        if (ResolveVisibilityRegion3DContainsPoint(config, regionWorldPosition, viewer)) {
             return true;
         }
     }
     return false;
 }
 
-bool CarriesVisibilityRegion3DDrawableUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    return entityManager.HasComponentUVE<MeshComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<Decal3DComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<ParticleEmitterComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<FogVolume3DComponentUVE>(entity);
+bool CarriesVisibilityRegion3DDrawable(IEntityManager& entityManager, const Entity entity) {
+    return entityManager.HasComponent<MeshComponent>(entity) ||
+           entityManager.HasComponent<PrimitiveMeshComponent>(entity) ||
+           entityManager.HasComponent<Decal3DComponent>(entity) ||
+           entityManager.HasComponent<ParticleEmitterComponent>(entity) ||
+           entityManager.HasComponent<FogVolume3DComponent>(entity);
 }
 
-std::uint32_t ResolveVisibilityRegion3DDrawableLayersUVE(IEntityManagerUVE& entityManager,
-                                                         const EntityUVE entity) {
-    if (entityManager.HasComponentUVE<MeshComponentUVE>(entity)) {
-        return entityManager.GetComponentUVE<MeshComponentUVE>(entity).visibilityLayers;
+std::uint32_t ResolveVisibilityRegion3DDrawableLayers(IEntityManager& entityManager,
+                                                         const Entity entity) {
+    if (entityManager.HasComponent<MeshComponent>(entity)) {
+        return entityManager.GetComponent<MeshComponent>(entity).visibilityLayers;
     }
-    if (CarriesVisibilityRegion3DDrawableUVE(entityManager, entity)) {
-        return kDefaultVisibilityRegionDrawableLayersUVE;
+    if (CarriesVisibilityRegion3DDrawable(entityManager, entity)) {
+        return kDefaultVisibilityRegionDrawableLayers;
     }
     return 0U;
 }
 
-bool IsVisibilityRegion3DDrawHiddenUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity)) {
+bool IsVisibilityRegion3DDrawHidden(IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity)) {
         return false;
     }
-    if (!entityManager.HasComponentUVE<VisibilityRegion3DMembershipComponentUVE>(entity)) {
+    if (!entityManager.HasComponent<VisibilityRegion3DMembershipComponent>(entity)) {
         return false;
     }
-    const VisibilityRegion3DMembershipComponentUVE& membership =
-        entityManager.GetComponentUVE<VisibilityRegion3DMembershipComponentUVE>(entity);
-    const bool ownerAlive = membership.region != kInvalidEntityUVE &&
-                            entityManager.IsAliveUVE(membership.region) &&
-                            entityManager.HasComponentUVE<VisibilityRegion3DComponentUVE>(membership.region);
-    return !ResolveVisibilityRegion3DMembershipLiveUVE(ownerAlive, membership.live);
+    const VisibilityRegion3DMembershipComponent& membership =
+        entityManager.GetComponent<VisibilityRegion3DMembershipComponent>(entity);
+    const bool ownerAlive = membership.region != kInvalidEntity &&
+                            entityManager.IsAlive(membership.region) &&
+                            entityManager.HasComponent<VisibilityRegion3DComponent>(membership.region);
+    return !ResolveVisibilityRegion3DMembershipLive(ownerAlive, membership.live);
 }
 
-void CollectVisibilityRegion3DGizmosUVE(IEntityManagerUVE& entityManager,
-                                        std::vector<VisibilityRegion3DGizmoUVE>& out) {
-    entityManager.ForEachUVE<WorldTransformComponentUVE, VisibilityRegion3DComponentUVE>(
-        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE& world,
-                               const VisibilityRegion3DComponentUVE& config) {
-            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) || world.dirty ||
-                !IsVisibilityRegion3DObjectComponentValidUVE(config)) {
+void CollectVisibilityRegion3DGizmos(IEntityManager& entityManager,
+                                        std::vector<VisibilityRegion3DGizmo>& out) {
+    entityManager.ForEach<WorldTransformComponent, VisibilityRegion3DComponent>(
+        [&entityManager, &out](const Entity entity, const WorldTransformComponent& world,
+                               const VisibilityRegion3DComponent& config) {
+            if (entityManager.HasComponent<EditorInternalEntityComponent>(entity) || world.dirty ||
+                !IsVisibilityRegion3DObjectComponentValid(config)) {
                 return;
             }
-            VisibilityRegion3DGizmoUVE gizmo;
+            VisibilityRegion3DGizmo gizmo;
             gizmo.origin = world.worldPosition;
             gizmo.halfExtents = config.halfExtents;
             gizmo.enabled = config.enabled;
-            gizmo.color = config.enabled ? Math::Vector3UVE{1.0F, 0.72F, 0.28F}
-                                         : Math::Vector3UVE{0.50F, 0.48F, 0.42F};
+            gizmo.color = config.enabled ? Math::Vector3{1.0F, 0.72F, 0.28F}
+                                         : Math::Vector3{0.50F, 0.48F, 0.42F};
             out.push_back(gizmo);
         });
 }

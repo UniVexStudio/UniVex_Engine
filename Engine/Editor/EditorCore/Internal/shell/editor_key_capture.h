@@ -18,10 +18,10 @@ namespace UVE::Editor {
 /// A shortcut slot: shows its shortcut ("Ctrl+S", or "-" when empty); a click starts listening
 /// ("Press keys..."), the next key with its modifiers becomes the shortcut, Escape cancels.
 /// `conflict` draws it in the warning colour (another command has the same shortcut).
-class EditorKeyCaptureUVE final : public prism::Widget {
+class EditorKeyCapture final : public prism::Widget {
 public:
-    explicit EditorKeyCaptureUVE(EditorShortcutUVE shortcut) : m_shortcut(shortcut) {}
-    std::function<void(const EditorShortcutUVE&)> onCaptured;
+    explicit EditorKeyCapture(EditorShortcut shortcut) : m_shortcut(shortcut) {}
+    std::function<void(const EditorShortcut&)> onCaptured;
     void setConflict(const bool conflict) { m_conflict = conflict; invalidate(); }
 
     bool focusable() const override { return true; }
@@ -30,7 +30,7 @@ public:
         const prism::Theme& t = prism::theme();
         c.fillRoundRect(m_rect, 3.0F, m_listening ? t.rowSelected : (m_hot ? t.rowHover : t.field));
         c.strokeRoundRect(m_rect, 3.0F, m_listening ? t.accent : t.border, 1);
-        std::string text = m_listening ? std::string("Press keys...") : DisplayEditorShortcutUVE(m_shortcut);
+        std::string text = m_listening ? std::string("Press keys...") : DisplayEditorShortcut(m_shortcut);
         if (text.empty()) {
             text = "-";
         }
@@ -74,7 +74,7 @@ public:
             invalidate();
             return true;
         }
-        if (const std::optional<EditorShortcutUVE> pressed = ShortcutFromPrismKeyUVE(e.key, e.mods)) {
+        if (const std::optional<EditorShortcut> pressed = ShortcutFromPrismKey(e.key, e.mods)) {
             m_listening = false;
             m_shortcut = *pressed;
             invalidate();
@@ -86,7 +86,7 @@ public:
     }
 
 private:
-    EditorShortcutUVE m_shortcut;
+    EditorShortcut m_shortcut;
     bool m_listening = false;
     bool m_hot = false;
     bool m_conflict = false;

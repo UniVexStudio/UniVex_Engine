@@ -20,37 +20,37 @@
 namespace UVE::Physics {
 namespace {
 
-struct InteractorSnapshotUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE center;
-    Math::Vector3UVE halfExtents;
-    Math::QuaternionUVE rotation{};
+struct InteractorSnapshot final {
+    Scene::Entity entity;
+    Math::Vector3 center;
+    Math::Vector3 halfExtents;
+    Math::Quaternion rotation{};
     std::uint32_t collisionLayer = 1U;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
 };
 
 } // namespace
 
-InteractionAreaScanResultUVE SyncInteractionAreasUVE(Scene::IEntityManagerUVE& entityManager) {
-    InteractionAreaScanResultUVE result;
+InteractionAreaScanResult SyncInteractionAreas(Scene::IEntityManager& entityManager) {
+    InteractionAreaScanResult result;
 
-    std::vector<InteractorSnapshotUVE> interactors;
-    std::vector<Scene::EntityUVE> interactorEntities;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::CharacterControllerComponentUVE,
-                             Scene::ColliderComponentUVE>(
-        [&interactors, &interactorEntities](const Scene::EntityUVE entity,
-                                            const Scene::WorldTransformComponentUVE& worldTransform,
-                                            const Scene::CharacterControllerComponentUVE&,
-                                            const Scene::ColliderComponentUVE& collider) {
-            if (!Scene::Collider3DUVE::IsParticipatingUVE(collider)) {
+    std::vector<InteractorSnapshot> interactors;
+    std::vector<Scene::Entity> interactorEntities;
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::CharacterControllerComponent,
+                             Scene::ColliderComponent>(
+        [&interactors, &interactorEntities](const Scene::Entity entity,
+                                            const Scene::WorldTransformComponent& worldTransform,
+                                            const Scene::CharacterControllerComponent&,
+                                            const Scene::ColliderComponent& collider) {
+            if (!Scene::Collider3D::IsParticipating(collider)) {
                 return;
             }
-            InteractorSnapshotUVE snapshot;
+            InteractorSnapshot snapshot;
             snapshot.entity = entity;
             snapshot.center = worldTransform.worldPosition;
-            snapshot.halfExtents = Scene::GetColliderLocalHalfExtentsUVE(
-                Scene::ScaleColliderUVE(collider, worldTransform.worldScale));
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, snapshot.rotation)) {
+            snapshot.halfExtents = Scene::GetColliderLocalHalfExtents(
+                Scene::ScaleCollider(collider, worldTransform.worldScale));
+            if (!Math::TryNormalize(worldTransform.worldRotation, snapshot.rotation)) {
                 snapshot.rotation = {};
             }
             snapshot.collisionLayer = collider.collisionLayer;
@@ -59,79 +59,79 @@ InteractionAreaScanResultUVE SyncInteractionAreasUVE(Scene::IEntityManagerUVE& e
             interactors.push_back(std::move(snapshot));
         });
     result.interactorCount = interactors.size();
-    Scene::EntityUVE possessed = Scene::kInvalidEntityUVE;
-    for (const InteractorSnapshotUVE& snapshot : interactors) {
-        if (!entityManager.HasComponentUVE<Scene::PlayerComponentUVE>(snapshot.entity)) {
+    Scene::Entity possessed = Scene::kInvalidEntity;
+    for (const InteractorSnapshot& snapshot : interactors) {
+        if (!entityManager.HasComponent<Scene::PlayerComponent>(snapshot.entity)) {
             continue;
         }
-        const Scene::PlayerComponentUVE& player =
-            entityManager.GetComponentUVE<Scene::PlayerComponentUVE>(snapshot.entity);
+        const Scene::PlayerComponent& player =
+            entityManager.GetComponent<Scene::PlayerComponent>(snapshot.entity);
         if (!player.possessOnPlay) {
             continue;
         }
-        if (possessed == Scene::kInvalidEntityUVE ||
+        if (possessed == Scene::kInvalidEntity ||
             snapshot.entity.index < possessed.index ||
             (snapshot.entity.index == possessed.index && snapshot.entity.generation < possessed.generation)) {
             possessed = snapshot.entity;
         }
     }
     result.primaryInteractor =
-        possessed != Scene::kInvalidEntityUVE
+        possessed != Scene::kInvalidEntity
             ? possessed
-            : Scene::InteractionArea3DUVE::ResolvePrimaryInteractorUVE(interactorEntities)
-                  .value_or(Scene::kInvalidEntityUVE);
-    const Scene::EntityUVE primaryEntity = result.primaryInteractor;
+            : Scene::InteractionArea3D::ResolvePrimaryInteractor(interactorEntities)
+                  .value_or(Scene::kInvalidEntity);
+    const Scene::Entity primaryEntity = result.primaryInteractor;
 
-    std::vector<Scene::InteractionFocusCandidateUVE> focusCandidates;
-    entityManager.ForEachUVE<Scene::InteractionArea3DComponentUVE>(
+    std::vector<Scene::InteractionFocusCandidate> focusCandidates;
+    entityManager.ForEach<Scene::InteractionArea3DComponent>(
         [&entityManager, &interactors, primaryEntity, &focusCandidates, &result](
-            const Scene::EntityUVE entity, Scene::InteractionArea3DComponentUVE& area) {
+            const Scene::Entity entity, Scene::InteractionArea3DComponent& area) {
             ++result.areaCount;
-            Scene::InteractionArea3DUVE::ClearInteractorsUVE(area);
-            if (!Scene::InteractionArea3DUVE::IsArmedUVE(area) ||
-                !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+            Scene::InteractionArea3D::ClearInteractors(area);
+            if (!Scene::InteractionArea3D::IsArmed(area) ||
+                !entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
                 return;
             }
             ++result.refreshedAreaCount;
 
-            const Scene::WorldTransformComponentUVE& worldTransform =
-                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            Math::QuaternionUVE areaRotation{};
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, areaRotation)) {
+            const Scene::WorldTransformComponent& worldTransform =
+                entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+            Math::Quaternion areaRotation{};
+            if (!Math::TryNormalize(worldTransform.worldRotation, areaRotation)) {
                 areaRotation = {};
             }
 
-            std::vector<Scene::EntityUVE> overlapping;
-            for (const InteractorSnapshotUVE& interactor : interactors) {
-                if (!Scene::InteractionArea3DUVE::AcceptsInteractorUVE(entity, area, interactor.entity,
+            std::vector<Scene::Entity> overlapping;
+            for (const InteractorSnapshot& interactor : interactors) {
+                if (!Scene::InteractionArea3D::AcceptsInteractor(entity, area, interactor.entity,
                                                                       interactor.collisionLayer,
                                                                       interactor.collisionMask)) {
                     continue;
                 }
-                const std::optional<Math::PenetrationUVE> penetration =
-                    Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                const std::optional<Math::Penetration> penetration =
+                    Detail::ComputeOrientedBoxOrientedBoxPenetration(
                         worldTransform.worldPosition, area.halfExtents, areaRotation, interactor.center,
                         interactor.halfExtents, interactor.rotation);
                 if (!penetration.has_value()) {
                     continue;
                 }
                 if (interactor.entity == primaryEntity) {
-                    focusCandidates.push_back(Scene::InteractionFocusCandidateUVE{
-                        entity, Math::LengthSquaredUVE(worldTransform.worldPosition - interactor.center)});
+                    focusCandidates.push_back(Scene::InteractionFocusCandidate{
+                        entity, Math::LengthSquared(worldTransform.worldPosition - interactor.center)});
                 }
                 overlapping.push_back(interactor.entity);
             }
 
-            Scene::InteractionArea3DUVE::CommitInteractorsUVE(area, overlapping.data(), overlapping.size());
+            Scene::InteractionArea3D::CommitInteractors(area, overlapping.data(), overlapping.size());
             if (area.interactorsTruncated) {
                 ++result.truncatedAreaCount;
             }
         });
 
-    const std::optional<Scene::EntityUVE> focusedArea = Scene::InteractionArea3DUVE::ResolveFocusUVE(focusCandidates);
+    const std::optional<Scene::Entity> focusedArea = Scene::InteractionArea3D::ResolveFocus(focusCandidates);
     if (focusedArea.has_value() &&
-        entityManager.HasComponentUVE<Scene::InteractionArea3DComponentUVE>(*focusedArea)) {
-        entityManager.GetComponentUVE<Scene::InteractionArea3DComponentUVE>(*focusedArea)
+        entityManager.HasComponent<Scene::InteractionArea3DComponent>(*focusedArea)) {
+        entityManager.GetComponent<Scene::InteractionArea3DComponent>(*focusedArea)
             .focusedByPrimaryInteractor = true;
         result.focusedArea = *focusedArea;
     }

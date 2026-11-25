@@ -13,14 +13,14 @@ namespace UVE::Scene {
 
 /// The authored, parent-relative (local) position/rotation/scale of a scene-graph entity —
 /// exactly what a Object3D "requires" per the master spec (Position, Rotation, Scale). Attach via
-/// SceneGraphUVE::AttachTransformUVE() rather than directly, so the paired
-/// WorldTransformComponentUVE/HierarchyComponentUVE are never forgotten. Setting this directly
-/// via IEntityManagerUVE::GetComponentUVE() does NOT mark the entity dirty — use
-/// SceneGraphUVE::SetLocalTransformUVE() to change it so world-transform propagation stays
+/// SceneGraph::AttachTransform() rather than directly, so the paired
+/// WorldTransformComponent/HierarchyComponent are never forgotten. Setting this directly
+/// via IEntityManager::GetComponent() does NOT mark the entity dirty — use
+/// SceneGraph::SetLocalTransform() to change it so world-transform propagation stays
 /// correct.
 /// How a transform's rotation is authored, and therefore which representation is the source of
 /// truth for it.
-enum class RotationEditModeUVE : std::uint8_t {
+enum class RotationEditMode : std::uint8_t {
     /// Euler angles are authored; `localRotation` is derived from them. The default, because it is
     /// what almost everyone types into an Inspector.
     Euler = 0,
@@ -29,10 +29,10 @@ enum class RotationEditModeUVE : std::uint8_t {
     Quaternion,
 };
 
-struct TransformComponentUVE final {
-    Math::Vector3UVE localPosition{};
-    Math::QuaternionUVE localRotation{};
-    Math::Vector3UVE localScale{1.0F, 1.0F, 1.0F};
+struct TransformComponent final {
+    Math::Vector3 localPosition{};
+    Math::Quaternion localRotation{};
+    Math::Vector3 localScale{1.0F, 1.0F, 1.0F};
 
     /// The authored Euler angles, in radians, when `rotationEditMode` is Euler.
     ///
@@ -52,7 +52,7 @@ struct TransformComponentUVE final {
     ///
     /// Ignored entirely when `rotationEditMode` is Quaternion, where the quaternion is the truth
     /// and Euler is only ever a derived view.
-    Math::Vector3UVE localEulerRadians{};
+    Math::Vector3 localEulerRadians{};
 
     /// Which axis order `localEulerRadians` is applied in. XYZ is the default and matches every
     /// rotation authored before this field existed.
@@ -60,11 +60,11 @@ struct TransformComponentUVE final {
     /// Six orders exist because every Euler convention has a pose where a degree of freedom
     /// collapses, but the pose DIFFERS per order - an author whose rig lives at XYZ's singularity
     /// can pick one whose singularity is somewhere they never go.
-    Math::EulerOrderUVE eulerOrder = Math::EulerOrderUVE::XYZ;
+    Math::EulerOrder eulerOrder = Math::EulerOrder::XYZ;
 
     /// Which representation is authoritative. Switching to Quaternion is what a gizmo drag or a
     /// physics write does: it says "the quaternion is now the truth, stop replaying stale angles".
-    RotationEditModeUVE rotationEditMode = RotationEditModeUVE::Euler;
+    RotationEditMode rotationEditMode = RotationEditMode::Euler;
 
     /// Ignore the parent's transform: this entity's local values ARE its world values.
     ///
@@ -94,7 +94,7 @@ struct TransformComponentUVE final {
 /// Returns false, leaving the transform untouched, when the angles or the order are unusable. A
 /// caller that ignores the result keeps the previous rotation, which is the safe outcome: a bad
 /// edit should not be able to teleport an object.
-[[nodiscard]] bool TrySyncRotationFromEulerUVE(TransformComponentUVE& transform) noexcept;
+[[nodiscard]] bool TrySyncRotationFromEuler(TransformComponent& transform) noexcept;
 
 /// The Euler angles to SHOW for this transform.
 ///
@@ -103,12 +103,12 @@ struct TransformComponentUVE final {
 /// honest: there are no authored angles to show, and the caller is looking at a derived view.
 ///
 /// Returns false only when a Quaternion-mode rotation cannot be decomposed at all.
-[[nodiscard]] bool TryGetDisplayEulerUVE(const TransformComponentUVE& transform,
-                                         Math::Vector3UVE& outRadians) noexcept;
+[[nodiscard]] bool TryGetDisplayEuler(const TransformComponent& transform,
+                                         Math::Vector3& outRadians) noexcept;
 
 /// Validates authored local transforms before scene persistence or graph propagation. Position and
 /// scale must be finite; rotation must be finite and already normalized so composition cannot
 /// silently introduce non-rotational scale or non-finite world state.
-[[nodiscard]] bool IsTransformComponentValidUVE(const TransformComponentUVE& transform) noexcept;
+[[nodiscard]] bool IsTransformComponentValid(const TransformComponent& transform) noexcept;
 
 } // namespace UVE::Scene

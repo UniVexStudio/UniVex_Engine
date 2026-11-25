@@ -10,32 +10,32 @@
 
 namespace UVE::App::Viewports {
 
-CameraPreviewViewportUVE::CameraPreviewViewportUVE(Editor::EditorUVE& editor,
-                                                   Core::EngineServicesUVE& services)
+CameraPreviewViewport::CameraPreviewViewport(Editor::Editor& editor,
+                                                   Core::EngineServices& services)
     : m_editor(editor), m_surface(services) {}
 
-std::uint64_t CameraPreviewViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize,
-                                                  Math::Vector2UVE& outUsedSize,
-                                                  const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+std::uint64_t CameraPreviewViewport::Render(const Math::Vector2& availableSize,
+                                                  Math::Vector2& outUsedSize,
+                                                  const Editor::Editor::ViewportOverlayState& overlayState) {
     const int width = std::max(1, static_cast<int>(availableSize.x));
     const int height = std::max(1, static_cast<int>(availableSize.y));
-    if (!m_surface.PrepareFrameUVE(width, height)) {
+    if (!m_surface.PrepareFrame(width, height)) {
         return 0U;
     }
 
-    const Scene::EntityUVE selectedEntity = m_editor.GetSelectedEntityUVE();
-    std::optional<Scene::EntityUVE> lookThroughCamera;
-    if (Scene::IsDocumentCameraEntityUVE(m_surface.EntityManagerUVE(), selectedEntity)) {
+    const Scene::Entity selectedEntity = m_editor.GetSelectedEntity();
+    std::optional<Scene::Entity> lookThroughCamera;
+    if (Scene::IsDocumentCameraEntity(m_surface.EntityManager(), selectedEntity)) {
         lookThroughCamera = selectedEntity;
     }
 
-    m_surface.SetShadingModeUVE(overlayState.shadingMode);
-    m_surface.RenderPassUVE().Settings().viewEnvironment = true;
-    m_surface.RenderPassUVE().Settings().viewGrid = false;
-    m_surface.ApplyPreviewLightingUVE(overlayState, true);
+    m_surface.SetShadingMode(overlayState.shadingMode);
+    m_surface.RenderPass().Settings().viewEnvironment = true;
+    m_surface.RenderPass().Settings().viewGrid = false;
+    m_surface.ApplyPreviewLighting(overlayState, true);
 
-    const univex::integration::EditorMeshLayerResultUVE meshResult =
-        m_surface.RenderSceneMeshLayerUVE(m_fallbackCamera, width, height, lookThroughCamera);
+    const univex::integration::EditorMeshLayerResult meshResult =
+        m_surface.RenderSceneMeshLayer(m_fallbackCamera, width, height, lookThroughCamera);
 
     overlayState.viewCamera.valid = false;
     overlayState.gizmoPivotValid = false;
@@ -47,13 +47,13 @@ std::uint64_t CameraPreviewViewportUVE::RenderUVE(const Math::Vector2UVE& availa
     overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
     overlayState.hostGrid.visible = false;
 
-    outUsedSize = Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+    outUsedSize = Math::Vector2{static_cast<float>(width), static_cast<float>(height)};
 
-    const GLint previousFbo = m_surface.BeginPassUVE(width, height);
-    const bool neutralFallback = !m_surface.HasActiveWorldEnvironmentUVE();
-    m_surface.RenderPassUVE().RenderBackgroundUVE(neutralFallback);
-    m_surface.BlitMeshLayerUVE(meshResult, m_fallbackCamera, width, height);
-    return m_surface.EndPassAndResolveUVE(width, height, previousFbo);
+    const GLint previousFbo = m_surface.BeginPass(width, height);
+    const bool neutralFallback = !m_surface.HasActiveWorldEnvironment();
+    m_surface.RenderPass().RenderBackground(neutralFallback);
+    m_surface.BlitMeshLayer(meshResult, m_fallbackCamera, width, height);
+    return m_surface.EndPassAndResolve(width, height, previousFbo);
 }
 
 } // namespace UVE::App::Viewports

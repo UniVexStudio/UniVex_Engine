@@ -21,161 +21,161 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteFixtureFileUVE(const std::filesystem::path& path, std::string_view contents) {
+void WriteFixtureFile(const std::filesystem::path& path, std::string_view contents) {
     std::ofstream file(path, std::ios::binary);
     ASSERT_TRUE(file.is_open());
     file << contents;
 }
 
-[[nodiscard]] std::string ReadRealFileAsStringUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string ReadRealFileAsString(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-[[nodiscard]] std::string ToStringUVE(const std::vector<std::byte>& bytes) {
+[[nodiscard]] std::string ToString(const std::vector<std::byte>& bytes) {
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
-[[nodiscard]] std::vector<std::byte> ToBytesUVE(std::string_view text) {
+[[nodiscard]] std::vector<std::byte> ToBytes(std::string_view text) {
     const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
     return std::vector<std::byte>(bytes, bytes + text.size());
 }
 
-class FileSystemUVETest : public ::testing::Test {
+class FileSystemTest : public ::testing::Test {
 protected:
-    AssetBundleUVE assetBundle;
-    FileSystemUVE fileSystem{assetBundle};
+    AssetBundle assetBundle;
+    FileSystem fileSystem{assetBundle};
 };
 
-TEST_F(FileSystemUVETest, ReadFileUVE_DirectoryMount_ReturnsRealFileBytes) {
+TEST_F(FileSystemTest, ReadFile_DirectoryMount_ReturnsRealFileBytes) {
     const std::filesystem::path dir = "uve_file_system_tests_basic";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    WriteFixtureFileUVE(dir / "hello.txt", "hello vfs");
+    WriteFixtureFile(dir / "hello.txt", "hello vfs");
 
-    fileSystem.MountDirectoryUVE("", dir, 0);
+    fileSystem.MountDirectory("", dir, 0);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("hello.txt");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFile("hello.txt");
     ASSERT_TRUE(data.has_value());
-    EXPECT_EQ(ToStringUVE(*data), "hello vfs");
+    EXPECT_EQ(ToString(*data), "hello vfs");
 
     std::filesystem::remove_all(dir);
 }
 
-TEST_F(FileSystemUVETest, ReadFileUVE_TwoDirectoryMountsSamePrefix_HigherPriorityWins) {
+TEST_F(FileSystemTest, ReadFile_TwoDirectoryMountsSamePrefix_HigherPriorityWins) {
     const std::filesystem::path lowDir = "uve_file_system_tests_low";
     const std::filesystem::path highDir = "uve_file_system_tests_high";
     std::filesystem::remove_all(lowDir);
     std::filesystem::remove_all(highDir);
     std::filesystem::create_directories(lowDir);
     std::filesystem::create_directories(highDir);
-    WriteFixtureFileUVE(lowDir / "a.txt", "low priority content");
-    WriteFixtureFileUVE(highDir / "a.txt", "high priority content");
+    WriteFixtureFile(lowDir / "a.txt", "low priority content");
+    WriteFixtureFile(highDir / "a.txt", "high priority content");
 
-    fileSystem.MountDirectoryUVE("", lowDir, 0);
-    fileSystem.MountDirectoryUVE("", highDir, 10);
+    fileSystem.MountDirectory("", lowDir, 0);
+    fileSystem.MountDirectory("", highDir, 10);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("a.txt");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFile("a.txt");
     ASSERT_TRUE(data.has_value());
-    EXPECT_EQ(ToStringUVE(*data), "high priority content");
+    EXPECT_EQ(ToString(*data), "high priority content");
 
     std::filesystem::remove_all(lowDir);
     std::filesystem::remove_all(highDir);
 }
 
-TEST_F(FileSystemUVETest, HasFileUVE_PrefixMatchesOnSegmentBoundaryOnly) {
+TEST_F(FileSystemTest, HasFile_PrefixMatchesOnSegmentBoundaryOnly) {
     const std::filesystem::path dir = "uve_file_system_tests_tex";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    WriteFixtureFileUVE(dir / "rock.uvtex", "data");
+    WriteFixtureFile(dir / "rock.uvtex", "data");
 
-    fileSystem.MountDirectoryUVE("tex", dir, 0);
+    fileSystem.MountDirectory("tex", dir, 0);
 
-    EXPECT_FALSE(fileSystem.HasFileUVE("textures/rock.uvtex")); // "tex" must not match "textures/..."
-    EXPECT_TRUE(fileSystem.HasFileUVE("tex/rock.uvtex"));
+    EXPECT_FALSE(fileSystem.HasFile("textures/rock.uvtex")); // "tex" must not match "textures/..."
+    EXPECT_TRUE(fileSystem.HasFile("tex/rock.uvtex"));
 
     std::filesystem::remove_all(dir);
 }
 
-TEST_F(FileSystemUVETest, ReadFileUVE_BundleMount_ReturnsBundledBytes) {
+TEST_F(FileSystemTest, ReadFile_BundleMount_ReturnsBundledBytes) {
     const std::filesystem::path source = "uve_file_system_tests_bundle_source.txt";
-    WriteFixtureFileUVE(source, "bundled content");
+    WriteFixtureFile(source, "bundled content");
     const std::filesystem::path bundlePath = "uve_file_system_tests_basic.uvbundle";
     std::filesystem::remove(bundlePath);
 
-    AssetBundleEntryUVE entry;
-    entry.guid = AssetGuidUVE{4001};
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{4001};
     entry.sourcePath = source;
     entry.virtualName = "meshes/cube.uvmodel";
-    ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
 
-    fileSystem.MountBundleUVE("", bundlePath, 0);
+    fileSystem.MountBundle("", bundlePath, 0);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("meshes/cube.uvmodel");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFile("meshes/cube.uvmodel");
     ASSERT_TRUE(data.has_value());
-    EXPECT_EQ(ToStringUVE(*data), "bundled content");
+    EXPECT_EQ(ToString(*data), "bundled content");
 
     std::filesystem::remove(source);
     std::filesystem::remove(bundlePath);
 }
 
-TEST_F(FileSystemUVETest, ReadFileUVE_DirectoryMountOverridesBundleMount_WhenHigherPriority) {
+TEST_F(FileSystemTest, ReadFile_DirectoryMountOverridesBundleMount_WhenHigherPriority) {
     const std::filesystem::path looseDir = "uve_file_system_tests_override_loose";
     std::filesystem::remove_all(looseDir);
     std::filesystem::create_directories(looseDir);
-    WriteFixtureFileUVE(looseDir / "shared.txt", "loose override");
+    WriteFixtureFile(looseDir / "shared.txt", "loose override");
 
     const std::filesystem::path bundleSource = "uve_file_system_tests_override_bundle_source.txt";
-    WriteFixtureFileUVE(bundleSource, "bundle content");
+    WriteFixtureFile(bundleSource, "bundle content");
     const std::filesystem::path bundlePath = "uve_file_system_tests_override.uvbundle";
     std::filesystem::remove(bundlePath);
-    AssetBundleEntryUVE entry;
-    entry.guid = AssetGuidUVE{5001};
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{5001};
     entry.sourcePath = bundleSource;
     entry.virtualName = "shared.txt";
-    ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
 
-    fileSystem.MountBundleUVE("", bundlePath, 0);
-    fileSystem.MountDirectoryUVE("", looseDir, 10);
+    fileSystem.MountBundle("", bundlePath, 0);
+    fileSystem.MountDirectory("", looseDir, 10);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("shared.txt");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFile("shared.txt");
     ASSERT_TRUE(data.has_value());
-    EXPECT_EQ(ToStringUVE(*data), "loose override");
+    EXPECT_EQ(ToString(*data), "loose override");
 
     std::filesystem::remove_all(looseDir);
     std::filesystem::remove(bundleSource);
     std::filesystem::remove(bundlePath);
 }
 
-TEST_F(FileSystemUVETest, ReadFileUVE_BundleMountOverridesDirectoryMount_WhenHigherPriority) {
+TEST_F(FileSystemTest, ReadFile_BundleMountOverridesDirectoryMount_WhenHigherPriority) {
     const std::filesystem::path looseDir = "uve_file_system_tests_underride_loose";
     std::filesystem::remove_all(looseDir);
     std::filesystem::create_directories(looseDir);
-    WriteFixtureFileUVE(looseDir / "shared.txt", "loose content");
+    WriteFixtureFile(looseDir / "shared.txt", "loose content");
 
     const std::filesystem::path bundleSource = "uve_file_system_tests_underride_bundle_source.txt";
-    WriteFixtureFileUVE(bundleSource, "bundle wins content");
+    WriteFixtureFile(bundleSource, "bundle wins content");
     const std::filesystem::path bundlePath = "uve_file_system_tests_underride.uvbundle";
     std::filesystem::remove(bundlePath);
-    AssetBundleEntryUVE entry;
-    entry.guid = AssetGuidUVE{5002};
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{5002};
     entry.sourcePath = bundleSource;
     entry.virtualName = "shared.txt";
-    ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
 
-    fileSystem.MountDirectoryUVE("", looseDir, 0);
-    fileSystem.MountBundleUVE("", bundlePath, 10);
+    fileSystem.MountDirectory("", looseDir, 0);
+    fileSystem.MountBundle("", bundlePath, 10);
 
-    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFileUVE("shared.txt");
+    const std::optional<std::vector<std::byte>> data = fileSystem.ReadFile("shared.txt");
     ASSERT_TRUE(data.has_value());
-    EXPECT_EQ(ToStringUVE(*data), "bundle wins content");
+    EXPECT_EQ(ToString(*data), "bundle wins content");
 
     std::filesystem::remove_all(looseDir);
     std::filesystem::remove(bundleSource);
     std::filesystem::remove(bundlePath);
 }
 
-TEST_F(FileSystemUVETest, WriteFileUVE_WritesIntoHighestPriorityDirectoryMount) {
+TEST_F(FileSystemTest, WriteFile_WritesIntoHighestPriorityDirectoryMount) {
     const std::filesystem::path lowDir = "uve_file_system_tests_write_low";
     const std::filesystem::path highDir = "uve_file_system_tests_write_high";
     std::filesystem::remove_all(lowDir);
@@ -183,58 +183,58 @@ TEST_F(FileSystemUVETest, WriteFileUVE_WritesIntoHighestPriorityDirectoryMount) 
     std::filesystem::create_directories(lowDir);
     std::filesystem::create_directories(highDir);
 
-    fileSystem.MountDirectoryUVE("", lowDir, 0);
-    fileSystem.MountDirectoryUVE("", highDir, 10);
+    fileSystem.MountDirectory("", lowDir, 0);
+    fileSystem.MountDirectory("", highDir, 10);
 
-    ASSERT_TRUE(fileSystem.WriteFileUVE("out/data.txt", ToBytesUVE("written content")));
+    ASSERT_TRUE(fileSystem.WriteFile("out/data.txt", ToBytes("written content")));
 
     EXPECT_TRUE(std::filesystem::exists(highDir / "out" / "data.txt"));
     EXPECT_FALSE(std::filesystem::exists(lowDir / "out" / "data.txt"));
-    EXPECT_EQ(ReadRealFileAsStringUVE(highDir / "out" / "data.txt"), "written content");
+    EXPECT_EQ(ReadRealFileAsString(highDir / "out" / "data.txt"), "written content");
 
     std::filesystem::remove_all(lowDir);
     std::filesystem::remove_all(highDir);
 }
 
-TEST_F(FileSystemUVETest, WriteFileUVE_TraversalPath_ReturnsFalseWithoutEscapingMount) {
+TEST_F(FileSystemTest, WriteFile_TraversalPath_ReturnsFalseWithoutEscapingMount) {
     const std::filesystem::path directory = "uve_file_system_tests_traversal";
     const std::filesystem::path escapedPath = "uve_file_system_tests_escaped.txt";
     std::filesystem::remove_all(directory);
     std::filesystem::remove(escapedPath);
     std::filesystem::create_directories(directory);
-    fileSystem.MountDirectoryUVE("", directory, 0);
+    fileSystem.MountDirectory("", directory, 0);
 
-    EXPECT_FALSE(fileSystem.WriteFileUVE("../uve_file_system_tests_escaped.txt", ToBytesUVE("blocked")));
-    EXPECT_FALSE(fileSystem.WriteFileUVE("..\\\\uve_file_system_tests_escaped.txt", ToBytesUVE("blocked")));
+    EXPECT_FALSE(fileSystem.WriteFile("../uve_file_system_tests_escaped.txt", ToBytes("blocked")));
+    EXPECT_FALSE(fileSystem.WriteFile("..\\\\uve_file_system_tests_escaped.txt", ToBytes("blocked")));
     EXPECT_FALSE(std::filesystem::exists(escapedPath));
 
     std::filesystem::remove_all(directory);
 }
 
-TEST_F(FileSystemUVETest, WriteFileUVE_OnlyBundleMountMatches_ReturnsFalseAndLogsError) {
+TEST_F(FileSystemTest, WriteFile_OnlyBundleMountMatches_ReturnsFalseAndLogsError) {
     const std::filesystem::path source = "uve_file_system_tests_write_bundle_source.txt";
-    WriteFixtureFileUVE(source, "data");
+    WriteFixtureFile(source, "data");
     const std::filesystem::path bundlePath = "uve_file_system_tests_write.uvbundle";
     std::filesystem::remove(bundlePath);
-    AssetBundleEntryUVE entry;
-    entry.guid = AssetGuidUVE{6001};
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{6001};
     entry.sourcePath = source;
     entry.virtualName = "shared.txt";
-    ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
-    fileSystem.MountBundleUVE("", bundlePath, 0);
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
+    fileSystem.MountBundle("", bundlePath, 0);
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    EXPECT_FALSE(fileSystem.WriteFileUVE("shared.txt", ToBytesUVE("attempted write")));
+    EXPECT_FALSE(fileSystem.WriteFile("shared.txt", ToBytes("attempted write")));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("no writable");
         });
     EXPECT_TRUE(foundError);
@@ -244,65 +244,65 @@ TEST_F(FileSystemUVETest, WriteFileUVE_OnlyBundleMountMatches_ReturnsFalseAndLog
     std::filesystem::remove(bundlePath);
 }
 
-TEST_F(FileSystemUVETest, UnmountUVE_RemovesMount_SubsequentReadFails) {
+TEST_F(FileSystemTest, Unmount_RemovesMount_SubsequentReadFails) {
     const std::filesystem::path dir = "uve_file_system_tests_unmount";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    WriteFixtureFileUVE(dir / "f.txt", "data");
+    WriteFixtureFile(dir / "f.txt", "data");
 
-    const MountHandleUVE handle = fileSystem.MountDirectoryUVE("", dir, 0);
-    ASSERT_TRUE(fileSystem.HasFileUVE("f.txt"));
+    const MountHandle handle = fileSystem.MountDirectory("", dir, 0);
+    ASSERT_TRUE(fileSystem.HasFile("f.txt"));
 
-    fileSystem.UnmountUVE(handle);
-    EXPECT_FALSE(fileSystem.HasFileUVE("f.txt"));
+    fileSystem.Unmount(handle);
+    EXPECT_FALSE(fileSystem.HasFile("f.txt"));
 
     std::filesystem::remove_all(dir);
 }
 
-TEST_F(FileSystemUVETest, ResolveRealPathUVE_DirectoryMount_ReturnsRealPathAndEmptyWhenUnresolved) {
+TEST_F(FileSystemTest, ResolveRealPath_DirectoryMount_ReturnsRealPathAndEmptyWhenUnresolved) {
     const std::filesystem::path dir = "uve_file_system_tests_resolve";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    WriteFixtureFileUVE(dir / "f.txt", "data");
-    fileSystem.MountDirectoryUVE("", dir, 0);
+    WriteFixtureFile(dir / "f.txt", "data");
+    fileSystem.MountDirectory("", dir, 0);
 
-    EXPECT_EQ(fileSystem.ResolveRealPathUVE("f.txt"), dir / "f.txt");
-    EXPECT_TRUE(fileSystem.ResolveRealPathUVE("missing.txt").empty());
+    EXPECT_EQ(fileSystem.ResolveRealPath("f.txt"), dir / "f.txt");
+    EXPECT_TRUE(fileSystem.ResolveRealPath("missing.txt").empty());
 
     std::filesystem::remove_all(dir);
 }
 
-TEST_F(FileSystemUVETest, ResolveRealPathUVE_BundleBackedVirtualPath_ReturnsEmptyPath) {
+TEST_F(FileSystemTest, ResolveRealPath_BundleBackedVirtualPath_ReturnsEmptyPath) {
     const std::filesystem::path source = "uve_file_system_tests_resolve_bundle_source.txt";
-    WriteFixtureFileUVE(source, "data");
+    WriteFixtureFile(source, "data");
     const std::filesystem::path bundlePath = "uve_file_system_tests_resolve.uvbundle";
     std::filesystem::remove(bundlePath);
-    AssetBundleEntryUVE entry;
-    entry.guid = AssetGuidUVE{7001};
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{7001};
     entry.sourcePath = source;
     entry.virtualName = "shared.txt";
-    ASSERT_TRUE(assetBundle.PackUVE({entry}, bundlePath));
-    fileSystem.MountBundleUVE("", bundlePath, 0);
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
+    fileSystem.MountBundle("", bundlePath, 0);
 
-    EXPECT_TRUE(fileSystem.ResolveRealPathUVE("shared.txt").empty());
+    EXPECT_TRUE(fileSystem.ResolveRealPath("shared.txt").empty());
 
     std::filesystem::remove(source);
     std::filesystem::remove(bundlePath);
 }
 
-TEST_F(FileSystemUVETest, ReadFileUVE_NoMountResolves_ReturnsNulloptAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST_F(FileSystemTest, ReadFile_NoMountResolves_ReturnsNulloptAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    EXPECT_FALSE(fileSystem.ReadFileUVE("nonexistent.txt").has_value());
+    EXPECT_FALSE(fileSystem.ReadFile("nonexistent.txt").has_value());
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("no mount resolves");
         });
     EXPECT_TRUE(foundError);

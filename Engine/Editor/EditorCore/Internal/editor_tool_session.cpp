@@ -5,8 +5,8 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] bool AreTransformsEqualUVE(const Scene::TransformComponentUVE& lhs,
-                                         const Scene::TransformComponentUVE& rhs) noexcept {
+[[nodiscard]] bool AreTransformsEqual(const Scene::TransformComponent& lhs,
+                                         const Scene::TransformComponent& rhs) noexcept {
     return lhs.localPosition.x == rhs.localPosition.x && lhs.localPosition.y == rhs.localPosition.y &&
            lhs.localPosition.z == rhs.localPosition.z && lhs.localRotation.x == rhs.localRotation.x &&
            lhs.localRotation.y == rhs.localRotation.y && lhs.localRotation.z == rhs.localRotation.z &&
@@ -16,32 +16,32 @@ namespace {
 
 } // namespace
 
-bool EditorToolSessionUVE::BeginUVE(const Scene::EntityUVE entity, const EditorToolSessionModeUVE mode,
-                                    const Scene::TransformComponentUVE& baselineTransform,
+bool EditorToolSession::Begin(const Scene::Entity entity, const EditorToolSessionMode mode,
+                                    const Scene::TransformComponent& baselineTransform,
                                     const bool baselineDirty) noexcept {
     if (m_snapshot.has_value()) {
         return false;
     }
-    if (entity == Scene::kInvalidEntityUVE) {
-        m_lastOutcome = EditorToolSessionOutcomeUVE::Rejected;
+    if (entity == Scene::kInvalidEntity) {
+        m_lastOutcome = EditorToolSessionOutcome::Rejected;
         return false;
     }
 
-    m_snapshot = EditorToolSessionSnapshotUVE{
+    m_snapshot = EditorToolSessionSnapshot{
         entity,
         mode,
         baselineTransform,
         baselineTransform,
         baselineDirty,
     };
-    m_lastOutcome = EditorToolSessionOutcomeUVE::None;
+    m_lastOutcome = EditorToolSessionOutcome::None;
     return true;
 }
 
-bool EditorToolSessionUVE::RecordPreviewAppliedUVE(
-    const Scene::TransformComponentUVE& appliedTransform) noexcept {
+bool EditorToolSession::RecordPreviewApplied(
+    const Scene::TransformComponent& appliedTransform) noexcept {
     if (!m_snapshot.has_value()) {
-        m_lastOutcome = EditorToolSessionOutcomeUVE::Rejected;
+        m_lastOutcome = EditorToolSessionOutcome::Rejected;
         return false;
     }
 
@@ -49,61 +49,61 @@ bool EditorToolSessionUVE::RecordPreviewAppliedUVE(
     return true;
 }
 
-std::optional<EditorToolSessionSnapshotUVE> EditorToolSessionUVE::CommitUVE(const bool changed) noexcept {
+std::optional<EditorToolSessionSnapshot> EditorToolSession::Commit(const bool changed) noexcept {
     if (!m_snapshot.has_value()) {
-        m_lastOutcome = EditorToolSessionOutcomeUVE::Rejected;
+        m_lastOutcome = EditorToolSessionOutcome::Rejected;
         return std::nullopt;
     }
 
-    const EditorToolSessionSnapshotUVE completedSnapshot = *m_snapshot;
+    const EditorToolSessionSnapshot completedSnapshot = *m_snapshot;
     m_snapshot.reset();
-    m_lastOutcome = changed ? EditorToolSessionOutcomeUVE::Committed
-                            : EditorToolSessionOutcomeUVE::CompletedWithoutChange;
+    m_lastOutcome = changed ? EditorToolSessionOutcome::Committed
+                            : EditorToolSessionOutcome::CompletedWithoutChange;
     return completedSnapshot;
 }
 
-std::optional<EditorToolSessionSnapshotUVE> EditorToolSessionUVE::CancelUVE(
-    const Scene::TransformComponentUVE& currentTransform) noexcept {
+std::optional<EditorToolSessionSnapshot> EditorToolSession::Cancel(
+    const Scene::TransformComponent& currentTransform) noexcept {
     if (!m_snapshot.has_value()) {
         return std::nullopt;
     }
 
-    const EditorToolSessionSnapshotUVE cancelledSnapshot = *m_snapshot;
+    const EditorToolSessionSnapshot cancelledSnapshot = *m_snapshot;
     m_snapshot.reset();
-    if (!AreTransformsEqualUVE(currentTransform, cancelledSnapshot.lastAppliedTransform)) {
-        m_lastOutcome = EditorToolSessionOutcomeUVE::ExternalTransformConflict;
+    if (!AreTransformsEqual(currentTransform, cancelledSnapshot.lastAppliedTransform)) {
+        m_lastOutcome = EditorToolSessionOutcome::ExternalTransformConflict;
         return std::nullopt;
     }
 
-    m_lastOutcome = EditorToolSessionOutcomeUVE::Cancelled;
+    m_lastOutcome = EditorToolSessionOutcome::Cancelled;
     return cancelledSnapshot;
 }
 
-void EditorToolSessionUVE::DiscardUVE() noexcept {
+void EditorToolSession::Discard() noexcept {
     if (!m_snapshot.has_value()) {
         return;
     }
     m_snapshot.reset();
-    m_lastOutcome = EditorToolSessionOutcomeUVE::Cancelled;
+    m_lastOutcome = EditorToolSessionOutcome::Cancelled;
 }
 
-void EditorToolSessionUVE::MarkRestoreFailedUVE() noexcept {
-    m_lastOutcome = EditorToolSessionOutcomeUVE::RestoreFailed;
+void EditorToolSession::MarkRestoreFailed() noexcept {
+    m_lastOutcome = EditorToolSessionOutcome::RestoreFailed;
 }
 
-void EditorToolSessionUVE::MarkRejectedUVE() noexcept {
-    m_lastOutcome = EditorToolSessionOutcomeUVE::Rejected;
+void EditorToolSession::MarkRejected() noexcept {
+    m_lastOutcome = EditorToolSessionOutcome::Rejected;
 }
 
-EditorToolSessionPhaseUVE EditorToolSessionUVE::GetPhaseUVE() const noexcept {
-    return m_snapshot.has_value() ? EditorToolSessionPhaseUVE::Previewing : EditorToolSessionPhaseUVE::Idle;
+EditorToolSessionPhase EditorToolSession::GetPhase() const noexcept {
+    return m_snapshot.has_value() ? EditorToolSessionPhase::Previewing : EditorToolSessionPhase::Idle;
 }
 
-EditorToolSessionOutcomeUVE EditorToolSessionUVE::GetLastOutcomeUVE() const noexcept {
+EditorToolSessionOutcome EditorToolSession::GetLastOutcome() const noexcept {
     return m_lastOutcome;
 }
 
-const std::optional<EditorToolSessionSnapshotUVE>& EditorToolSessionUVE::GetSnapshotUVE() const noexcept {
+const std::optional<EditorToolSessionSnapshot>& EditorToolSession::GetSnapshot() const noexcept {
     return m_snapshot;
 }
 

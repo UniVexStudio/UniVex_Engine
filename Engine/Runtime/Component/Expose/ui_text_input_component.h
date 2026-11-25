@@ -14,9 +14,9 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUITextInputSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUITextInputSizePixelsUVE = 8192.0F;
-inline constexpr std::int32_t kMinimumUITextInputLengthUVE = 1;
+inline constexpr float kMinimumUITextInputSizePixels = 1.0F;
+inline constexpr float kMaximumUITextInputSizePixels = 8192.0F;
+inline constexpr std::int32_t kMinimumUITextInputLength = 1;
 
 /// A single-line text box. Pressing the box focuses it; pressing anywhere else blurs it, so
 /// clicking between two inputs switches focus with no extra state. While focused, letter/digit/
@@ -24,7 +24,7 @@ inline constexpr std::int32_t kMinimumUITextInputLengthUVE = 1;
 /// `!@#$%^&*()`), Backspace deletes before it, Left/Right move it, Enter raises
 /// `wasSubmittedThisFrame` for exactly that tick without blurring, and Escape blurs without
 /// submitting. There is no Delete-forward key, no key repeat, no Tab navigation, and no
-/// punctuation keys yet - the charset is exactly what KeyCodeUVE can express, and punctuation
+/// punctuation keys yet - the charset is exactly what KeyCode can express, and punctuation
 /// beyond shift+digits waits on new key codes from a real backend.
 ///
 /// `text` (capped by `maxLength` while typing) and `placeholder` are authored and persist; the
@@ -34,18 +34,18 @@ inline constexpr std::int32_t kMinimumUITextInputLengthUVE = 1;
 /// the draw batch yet, text wider than the box overflows visibly until clipping lands. Draws on
 /// the button layer (box) and text layer (glyphs, caret). Thread-safety: value type; trivially
 /// safe to copy/move.
-struct UITextInputComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{160.0F, 28.0F}};
+struct UITextInputComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{160.0F, 28.0F}};
     std::string text;
     std::int32_t maxLength = 32;
     std::string placeholder;
     float fontSize = 16.0F;
     float textPadding = 6.0F;
-    Math::Vector3UVE boxColor{0.16F, 0.16F, 0.18F};
-    Math::Vector3UVE focusColor{0.22F, 0.24F, 0.30F};
-    Math::Vector3UVE textColor{0.95F, 0.95F, 0.95F};
-    Math::Vector3UVE caretColor{0.95F, 0.95F, 0.95F};
-    Math::Vector3UVE placeholderColor{0.55F, 0.55F, 0.58F};
+    Math::Vector3 boxColor{0.16F, 0.16F, 0.18F};
+    Math::Vector3 focusColor{0.22F, 0.24F, 0.30F};
+    Math::Vector3 textColor{0.95F, 0.95F, 0.95F};
+    Math::Vector3 caretColor{0.95F, 0.95F, 0.95F};
+    Math::Vector3 placeholderColor{0.55F, 0.55F, 0.58F};
     /// Runtime state, never persisted: true while this box holds keyboard focus.
     bool focused = false;
     /// Runtime state, never persisted: insertion index into `text`, clamped to its size at use.
@@ -58,24 +58,24 @@ struct UITextInputComponentUVE final {
     float scrollOffset = 0.0F;
 };
 
-[[nodiscard]] bool IsUITextInputComponentValidUVE(const UITextInputComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUITextInputComponentValid(const UITextInputComponent& component) noexcept;
 
 /// Clamps `caretIndex` into `[0, static_cast<int32_t>(text.size())]`.
-[[nodiscard]] std::int32_t ClampUITextInputCaretIndexUVE(
-    const UITextInputComponentUVE& component) noexcept;
+[[nodiscard]] std::int32_t ClampUITextInputCaretIndex(
+    const UITextInputComponent& component) noexcept;
 
 /// True when `text` is empty and `placeholder` is non-empty.
-[[nodiscard]] bool ShouldDisplayUITextInputPlaceholderUVE(
-    const UITextInputComponentUVE& component) noexcept;
+[[nodiscard]] bool ShouldDisplayUITextInputPlaceholder(
+    const UITextInputComponent& component) noexcept;
 
 /// Inserts printable ASCII bytes (`0x20..0x7E`) from `typedAscii` at `caretIndex` up to `maxLength`.
-bool InsertUITextInputCharactersUVE(UITextInputComponentUVE& component,
+bool InsertUITextInputCharacters(UITextInputComponent& component,
                                     const std::string& typedAscii);
 
 /// Erases the character immediately before `caretIndex` (Backspace semantics).
-bool ApplyUITextInputBackspaceUVE(UITextInputComponentUVE& component) noexcept;
+bool ApplyUITextInputBackspace(UITextInputComponent& component) noexcept;
 
 /// Resets runtime focus/caret/blink state.
-void ResetUITextInputRuntimeStateUVE(UITextInputComponentUVE& component) noexcept;
+void ResetUITextInputRuntimeState(UITextInputComponent& component) noexcept;
 
 } // namespace UVE::Scene

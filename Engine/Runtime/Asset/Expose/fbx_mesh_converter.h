@@ -17,16 +17,16 @@
 
 namespace UVE::Asset {
 
-inline constexpr std::size_t kMaximumFbxMeshSourceBytesUVE = 256U * 1024U * 1024U;
-inline constexpr std::uint32_t kMaximumFbxMeshVerticesUVE = 1'000'000U;
+inline constexpr std::size_t kMaximumFbxMeshSourceBytes = 256U * 1024U * 1024U;
+inline constexpr std::uint32_t kMaximumFbxMeshVertices = 1'000'000U;
 
 /// Largest single image this reader will hand out of an FBX's own payload. The same 64 MiB ceiling
 /// the PNG importer applies to a file on disk - a texture no importer would accept from disk must
 /// not become acceptable just because it arrived inside a model.
-inline constexpr std::size_t kMaximumFbxEmbeddedTextureBytesUVE = 64U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumFbxEmbeddedTextureBytes = 64U * 1024U * 1024U;
 
 /// What a reader does when a file holds more bones than its caller can take.
-enum class FbxBoneOverflowUVE : std::uint8_t {
+enum class FbxBoneOverflow : std::uint8_t {
     /// Refuse: the caller cannot represent a partial rig, so a partial answer would be a lie.
     Fail = 0,
     /// Keep the first `maximumBones` and report how many were left out. The mesh converter's
@@ -37,16 +37,16 @@ enum class FbxBoneOverflowUVE : std::uint8_t {
 
 /// One run of a converted FBX's index buffer that shares a material, in index-buffer order.
 /// `materialSourceIndex` is the material's position in the file's own material list - the order
-/// ReadFbxMaterialsUVE returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
+/// ReadFbxMaterials returns - not yet a slot in the mesh's `materialGuids`. The importer owns that
 /// remap, because only it knows which materials were publishable.
-struct FbxSurfaceRangeUVE final {
+struct FbxSurfaceRange final {
     std::uint32_t firstIndex = 0U;
     std::uint32_t indexCount = 0U;
-    std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+    std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlot;
 };
 
 /// Converts an FBX file (binary or ASCII, any version the parser reads) into one failure-atomic
-/// static MeshAssetUVE.
+/// static MeshAsset.
 ///
 /// Every mesh instance in the scene is merged, each placed where its object puts it, so a model
 /// authored as several parts imports as the whole it looks like. The result is in the engine's
@@ -61,61 +61,61 @@ struct FbxSurfaceRangeUVE final {
 /// that bends one finger wrong beats a character that does not import.
 ///
 /// A file with a skin keeps it: every bone becomes a joint (the bones, order and names
-/// ReadFbxSkeletonUVE gives, so a skeleton's pose and a clip's tracks line up by name), each
+/// ReadFbxSkeleton gives, so a skeleton's pose and a clip's tracks line up by name), each
 /// joint's inverse bind comes from its cluster, and every vertex keeps its four strongest weights,
 /// normalized. Skinned vertices sit where the skin puts them in bind pose; a part with no skin
 /// rides the nearest bone above it. Materials, textures, cameras, lights and animation are not
-/// converted here (ReadFbxAnimationsUVE reads the takes). Embedded and external files are never
+/// converted here (ReadFbxAnimations reads the takes). Embedded and external files are never
 /// read. Returns false and leaves `outMesh` untouched when the bytes do not parse,
-/// hold no triangles, exceed kMaximumFbxMeshVerticesUVE or produce a non-finite value.
+/// hold no triangles, exceed kMaximumFbxMeshVertices or produce a non-finite value.
 ///
 /// `outSurfaces`, when non-null, receives one range per material the file's faces actually use,
 /// with the triangles reordered so each material is one contiguous run. A file whose faces all use
 /// the same material - or none at all - gets an EMPTY list: that is what having no surface table
 /// already means, and the bytes stay identical to what earlier versions wrote. A file with more
-/// distinct materials than kMaximumMeshSurfacesUVE also gets an empty list.
-[[nodiscard]] bool ConvertFbxMeshUVE(std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                                     std::vector<FbxSurfaceRangeUVE>* outSurfaces = nullptr,
-                                     std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
+/// distinct materials than kMaximumMeshSurfaces also gets an empty list.
+[[nodiscard]] bool ConvertFbxMesh(std::span<const std::byte> source, MeshAsset& outMesh,
+                                     std::vector<FbxSurfaceRange>* outSurfaces = nullptr,
+                                     std::size_t maximumJoints = kMaximumAnimationAssetBones);
 
 /// One mesh node of an FBX, converted on its own: the unit a DCC tool's outliner shows and another engine
 /// imports as one mesh instance (Godot's MeshInstance3D, Unity's SkinnedMeshRenderer). `mesh` carries the
-/// same joint list and bind poses as ConvertFbxMeshUVE's merged mesh, so it binds to the same skeleton by
-/// name; `surfaces` are its material runs, in the form ConvertFbxMeshUVE reports them.
-struct FbxMeshPartUVE final {
+/// same joint list and bind poses as ConvertFbxMesh's merged mesh, so it binds to the same skeleton by
+/// name; `surfaces` are its material runs, in the form ConvertFbxMesh reports them.
+struct FbxMeshPart final {
     std::string name;
-    MeshAssetUVE mesh;
-    std::vector<FbxSurfaceRangeUVE> surfaces;
+    MeshAsset mesh;
+    std::vector<FbxSurfaceRange> surfaces;
     /// The file material the whole part draws with, when `surfaces` is empty because it uses just one;
-    /// kInvalidMeshSurfaceMaterialSlotUVE when it uses none, or several (then `surfaces` names them).
-    std::uint32_t onlyMaterialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+    /// kInvalidMeshSurfaceMaterialSlot when it uses none, or several (then `surfaces` names them).
+    std::uint32_t onlyMaterialSourceIndex = kInvalidMeshSurfaceMaterialSlot;
 };
 
 /// Converts every mesh of the file into a part of its own, in the scene's order, instead of merging them.
 /// False (and `outParts` empty) when the file cannot be read or any part cannot be converted.
-[[nodiscard]] bool ConvertFbxMeshPartsUVE(std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
-                                          std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
+[[nodiscard]] bool ConvertFbxMeshParts(std::span<const std::byte> source, std::vector<FbxMeshPart>& outParts,
+                                          std::size_t maximumJoints = kMaximumAnimationAssetBones);
 
 /// One entry of the file's scene hierarchy that is not part of the skeleton: a mesh object, or a group (an empty such as
 /// `Geo`) that holds mesh objects. This is the hierarchy the DCC tool's outliner shows, which a scene should mirror
 /// instead of inventing its own.
-struct FbxHierarchyEntryUVE final {
+struct FbxHierarchyEntry final {
     std::string name;
     /// Index of the parent in the same list (parents come first), or -1 for a top-level object.
     std::int32_t parent = -1;
-    /// Index of the mesh part (ConvertFbxMeshPartsUVE's order) this object draws, or -1 for a group.
+    /// Index of the mesh part (ConvertFbxMeshParts's order) this object draws, or -1 for a group.
     std::int32_t part = -1;
 };
 
 /// The non-skeleton object hierarchy of the file: every mesh object that has triangles and the groups above it. Bones are
 /// left out (they are the skeleton); a mesh's own transform is also left out, because its vertices already carry it.
 /// False when the file cannot be read; an empty list for a file with no mesh objects.
-[[nodiscard]] bool ReadFbxHierarchyUVE(std::span<const std::byte> source, std::vector<FbxHierarchyEntryUVE>& outHierarchy);
+[[nodiscard]] bool ReadFbxHierarchy(std::span<const std::byte> source, std::vector<FbxHierarchyEntry>& outHierarchy);
 
 /// What an FBX holds, read without its geometry or animation curves - enough to tell a model from
 /// an animation-only file (a skeleton and its curves, the common shape of exported motion) before
 /// anything is imported.
-struct FbxSourceSummaryUVE final {
+struct FbxSourceSummary final {
     std::size_t meshCount = 0U;
     std::size_t boneCount = 0U;
     std::size_t animationCount = 0U;
@@ -125,14 +125,14 @@ struct FbxSourceSummaryUVE final {
     bool hasSkin = false;
 
     /// No mesh to show, but motion to play: the file is an animation, not a model.
-    [[nodiscard]] bool IsAnimationOnlyUVE() const noexcept { return meshCount == 0U && animationCount > 0U; }
+    [[nodiscard]] bool IsAnimationOnly() const noexcept { return meshCount == 0U && animationCount > 0U; }
 };
 
 /// Summarizes the FBX in `source`; empty when the bytes do not parse as FBX.
-[[nodiscard]] std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(std::span<const std::byte> source);
+[[nodiscard]] std::optional<FbxSourceSummary> DescribeFbxSource(std::span<const std::byte> source);
 
 /// Reads an FBX's bones - names, hierarchy and rest pose - into the same joint list a glTF skin
-/// gives (GltfSkeletonUVE is the engine's skeleton-source shape, whatever file it came from).
+/// gives (GltfSkeleton is the engine's skeleton-source shape, whatever file it came from).
 ///
 /// Every bone object counts, skinned or not, so an animation-only file (bones and takes, no mesh)
 /// has a skeleton too. Poses are in the engine's space, metres and +Y up; parents precede their
@@ -141,20 +141,20 @@ struct FbxSourceSummaryUVE final {
 /// when `overflow` is Fail, when the file holds more than `maximumJoints` bones.
 ///
 /// `outDroppedBones`, when non-null, receives how many bones the cap excluded - zero for a rig that
-/// fit. Pass `FbxBoneOverflowUVE::Truncate` to read the same joint set ConvertFbxMeshUVE keeps for a
+/// fit. Pass `FbxBoneOverflow::Truncate` to read the same joint set ConvertFbxMesh keeps for a
 /// wide rig, which is what a skeleton published beside a model has to be: a shared rig holding
 /// bones the mesh dropped would be a rig whose tracks point at nothing.
-[[nodiscard]] std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(
-    std::span<const std::byte> source, std::size_t maximumJoints, FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail,
+[[nodiscard]] std::optional<GltfSkeleton> ReadFbxSkeleton(
+    std::span<const std::byte> source, std::size_t maximumJoints, FbxBoneOverflow overflow = FbxBoneOverflow::Fail,
     std::size_t* outDroppedBones = nullptr);
 
-/// Reads every take (animation stack) as one skeletal clip: a track per bone of ReadFbxSkeletonUVE's
+/// Reads every take (animation stack) as one skeletal clip: a track per bone of ReadFbxSkeleton's
 /// skeleton - same names, same local space (metres, +Y up, relative to the parent bone) - sampled
 /// once a frame at the file's frame rate (30 when it has none), fewer times when a take is longer
-/// than kMaximumAnimationAssetSamplesUVE frames. A bone that never moves keeps a single sample.
+/// than kMaximumAnimationAssetSamples frames. A bone that never moves keeps a single sample.
 /// The clip id is the take's name ("Armature|Run" becomes "Run"), made unique. Takes that are
 /// empty or produce a non-finite pose are skipped; no bones, or bytes that do not parse, give none.
-[[nodiscard]] std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(std::span<const std::byte> source,
+[[nodiscard]] std::vector<AnimationClipAsset> ReadFbxAnimations(std::span<const std::byte> source,
                                                                       std::size_t maximumBones);
 
 /// One FBX material's slot texture, wherever the file keeps it.
@@ -165,12 +165,12 @@ struct FbxSourceSummaryUVE final {
 /// can be a layered / procedural / shader graph with no image behind it at all. This reader opens
 /// nothing and decodes nothing: it reports which of the three it found and hands over the bytes when
 /// there are any, so the import pipeline - which owns the asset database - can publish them.
-struct FbxTextureSourceUVE final {
+struct FbxTextureSource final {
     /// The file the FBX names, as authored. Empty when the map names no file.
     std::string file;
 
     /// The image itself, byte for byte as the file carries it (PNG or JPEG). Empty when the FBX does
-    /// not embed it. Capped at kMaximumFbxEmbeddedTextureBytesUVE; a larger payload is reported and
+    /// not embed it. Capped at kMaximumFbxEmbeddedTextureBytes; a larger payload is reported and
     /// dropped rather than copied into memory, because one broken texture must not decide whether a
     /// character imports.
     std::vector<std::byte> embedded;
@@ -185,15 +185,15 @@ struct FbxTextureSourceUVE final {
 
     /// The image bytes are present, which is the only case the importer can turn into a texture
     /// without touching the filesystem.
-    [[nodiscard]] bool HasImageUVE() const noexcept { return !embedded.empty(); }
+    [[nodiscard]] bool HasImage() const noexcept { return !embedded.empty(); }
 };
 
 /// One FBX material: the engine's PBR material type plus where each of its maps' images live.
 
-struct FbxMaterialUVE final {
+struct FbxMaterial final {
     std::string name;
 
-    /// This material's position in the file's own material list. ReadFbxMaterialsUVE skips a
+    /// This material's position in the file's own material list. ReadFbxMaterials skips a
     /// material it cannot validate, so this is what ties a surface range back to the slot the
     /// material was published in - the position in THIS vector would shift after a skip.
     std::uint32_t sourceIndex = 0U;
@@ -203,41 +203,41 @@ struct FbxMaterialUVE final {
     /// Texture GUID slots stay invalid on purpose: this reader never opens an external file, and
     /// turning bytes or a path into an asset identity belongs to the import pipeline, which owns
     /// the asset database - not to a converter that has to stay a pure function of its input.
-    MaterialAssetUVE material;
+    MaterialAsset material;
 
     /// Where each map's image comes from. Empty when the map is unconnected or disabled.
-    FbxTextureSourceUVE albedo;
-    FbxTextureSourceUVE normal;
-    FbxTextureSourceUVE emissive;
-    FbxTextureSourceUVE ambientOcclusion;
+    FbxTextureSource albedo;
+    FbxTextureSource normal;
+    FbxTextureSource emissive;
+    FbxTextureSource ambientOcclusion;
 
-    /// `albedoClamped` records that a channel had to be clamped into `MaterialAssetUVE`'s validated
+    /// `albedoClamped` records that a channel had to be clamped into `MaterialAsset`'s validated
     /// [0,1] range rather than hiding it.
     bool albedoClamped = false;
 };
 
 /// Reads every material in the file, in file order. `std::nullopt` when the bytes do not parse or
-/// exceed kMaximumFbxMeshSourceBytesUVE; an empty vector means the file has no materials at all.
-[[nodiscard]] std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(std::span<const std::byte> source);
+/// exceed kMaximumFbxMeshSourceBytes; an empty vector means the file has no materials at all.
+[[nodiscard]] std::optional<std::vector<FbxMaterial>> ReadFbxMaterials(std::span<const std::byte> source);
 
 /// Complete single-pass FBX extraction bundle parsed from one `ufbx_load_memory` call,
 /// eliminating redundant `N_meshes + 5` full-file re-parses during import.
-struct FbxSceneImportBundleUVE final {
-    MeshAssetUVE mergedMesh;
-    std::vector<FbxSurfaceRangeUVE> surfaceRanges;
-    std::optional<std::vector<FbxMaterialUVE>> materials;
-    std::optional<GltfSkeletonUVE> skeleton;
+struct FbxSceneImportBundle final {
+    MeshAsset mergedMesh;
+    std::vector<FbxSurfaceRange> surfaceRanges;
+    std::optional<std::vector<FbxMaterial>> materials;
+    std::optional<GltfSkeleton> skeleton;
     std::size_t droppedBones = 0U;
     bool partsKnown = false;
-    std::vector<FbxMeshPartUVE> parts;
+    std::vector<FbxMeshPart> parts;
     bool hierarchyKnown = false;
-    std::vector<FbxHierarchyEntryUVE> hierarchy;
+    std::vector<FbxHierarchyEntry> hierarchy;
 };
 
 /// Parses `source` once with ufbx and extracts merged mesh, materials, skeleton (if skinned),
 /// per-node mesh parts (when the scene holds 2+ valid meshes), and object hierarchy from the shared parsed scene.
-[[nodiscard]] bool ExtractFbxImportBundleUVE(std::span<const std::byte> source,
-                                             FbxSceneImportBundleUVE& outBundle,
-                                             std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
+[[nodiscard]] bool ExtractFbxImportBundle(std::span<const std::byte> source,
+                                             FbxSceneImportBundle& outBundle,
+                                             std::size_t maximumJoints = kMaximumAnimationAssetBones);
 
 } // namespace UVE::Asset

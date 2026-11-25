@@ -9,21 +9,21 @@
 
 namespace UVE::Debug {
 
-std::atomic<LoggerUVE*> LoggerUVE::s_activeInstance{nullptr};
+std::atomic<Logger*> Logger::s_activeInstance{nullptr};
 
-LoggerUVE::LoggerUVE() = default;
+Logger::Logger() = default;
 
-LoggerUVE::~LoggerUVE() {
+Logger::~Logger() {
     Shutdown();
 }
 
-void LoggerUVE::Init(LogLevelUVE minLevel) {
+void Logger::Init(LogLevel minLevel) {
     m_minLevel.store(minLevel, std::memory_order_relaxed);
     s_activeInstance.store(this, std::memory_order_release);
 }
 
-void LoggerUVE::Shutdown() {
-    LoggerUVE* expected = this;
+void Logger::Shutdown() {
+    Logger* expected = this;
     s_activeInstance.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
 
     const std::lock_guard<std::mutex> lock(m_sinkMutex);
@@ -31,20 +31,20 @@ void LoggerUVE::Shutdown() {
     m_sinks.clear();
 }
 
-void LoggerUVE::AddSink(std::unique_ptr<ILogSinkUVE> sink) {
+void Logger::AddSink(std::unique_ptr<ILogSink> sink) {
     const std::lock_guard<std::mutex> lock(m_sinkMutex);
     m_sinks.push_back(std::move(sink));
 }
 
-void LoggerUVE::SetMinLevel(LogLevelUVE level) {
+void Logger::SetMinLevel(LogLevel level) {
     m_minLevel.store(level, std::memory_order_relaxed);
 }
 
-LogLevelUVE LoggerUVE::GetMinLevel() const {
+LogLevel Logger::GetMinLevel() const {
     return m_minLevel.load(std::memory_order_relaxed);
 }
 
-void LoggerUVE::LogFormatted(LogLevelUVE level,
+void Logger::LogFormatted(LogLevel level,
                               std::string_view category,
                               const char* sourceFile,
                               int sourceLine,
@@ -53,7 +53,7 @@ void LoggerUVE::LogFormatted(LogLevelUVE level,
         return;
     }
 
-    LogMessageUVE message;
+    LogMessage message;
     message.level = level;
     message.category = std::string(category);
     message.message = std::move(formattedMessage);
@@ -63,21 +63,21 @@ void LoggerUVE::LogFormatted(LogLevelUVE level,
     message.threadId = std::this_thread::get_id();
 
     const std::lock_guard<std::mutex> lock(m_sinkMutex);
-    for (const std::unique_ptr<ILogSinkUVE>& sink : m_sinks) {
+    for (const std::unique_ptr<ILogSink>& sink : m_sinks) {
         sink->Write(message);
     }
-    if (level == LogLevelUVE::Fatal) {
+    if (level == LogLevel::Fatal) {
         FlushAllSinksLocked();
     }
 }
 
-void LoggerUVE::FlushAllSinksLocked() {
-    for (const std::unique_ptr<ILogSinkUVE>& sink : m_sinks) {
+void Logger::FlushAllSinksLocked() {
+    for (const std::unique_ptr<ILogSink>& sink : m_sinks) {
         sink->Flush();
     }
 }
 
-LoggerUVE* LoggerUVE::GetActiveInstanceUVE() noexcept {
+Logger* Logger::GetActiveInstance() noexcept {
     return s_activeInstance.load(std::memory_order_acquire);
 }
 

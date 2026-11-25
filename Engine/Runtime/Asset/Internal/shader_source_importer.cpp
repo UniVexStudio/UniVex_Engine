@@ -22,10 +22,10 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kShaderSourceImporterNameUVE = "ShaderSourceImporterUVE";
-constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
+constexpr const char* kShaderSourceImporterName = "ShaderSourceImporter";
+constexpr std::string_view kShaderTemporarySuffix = ".uve_shader_tmp";
 
-[[nodiscard]] std::string NormalizeShaderExtensionUVE(std::string extension) {
+[[nodiscard]] std::string NormalizeShaderExtension(std::string extension) {
     if (!extension.empty() && extension.front() == '.') {
         extension.erase(extension.begin());
     }
@@ -35,29 +35,29 @@ constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
     return extension;
 }
 
-[[nodiscard]] bool ReadShaderSourceUVE(const std::filesystem::path& sourcePath, std::string& outSource) {
+[[nodiscard]] bool ReadShaderSource(const std::filesystem::path& sourcePath, std::string& outSource) {
     std::error_code sizeError;
     const std::uintmax_t sourceSize = std::filesystem::file_size(sourcePath, sizeError);
-    if (sizeError || sourceSize > kMaximumShaderSourceBytesUVE ||
+    if (sizeError || sourceSize > kMaximumShaderSourceBytes ||
         sourceSize > std::numeric_limits<std::size_t>::max()) {
-        UVE_ERROR("ShaderSourceImporterUVE: shader source exceeds the {}-byte cap or cannot be sized \"{}\"",
-                  kMaximumShaderSourceBytesUVE, sourcePath.string());
+        UVE_ERROR("ShaderSourceImporter: shader source exceeds the {}-byte cap or cannot be sized \"{}\"",
+                  kMaximumShaderSourceBytes, sourcePath.string());
         return false;
     }
 
     std::ifstream input(sourcePath, std::ios::binary);
     if (!input.is_open()) {
-        UVE_ERROR("ShaderSourceImporterUVE: failed to open shader source \"{}\"", sourcePath.string());
+        UVE_ERROR("ShaderSourceImporter: failed to open shader source \"{}\"", sourcePath.string());
         return false;
     }
     std::string source{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-    if (!input || source.size() > kMaximumShaderSourceBytesUVE) {
-        UVE_ERROR("ShaderSourceImporterUVE: shader source \"{}\" could not be read completely or grew beyond the cap",
+    if (!input || source.size() > kMaximumShaderSourceBytes) {
+        UVE_ERROR("ShaderSourceImporter: shader source \"{}\" could not be read completely or grew beyond the cap",
                   sourcePath.string());
         return false;
     }
     if (source.empty() || source.contains('\0')) {
-        UVE_ERROR("ShaderSourceImporterUVE: shader source \"{}\" is empty or contains a NUL byte",
+        UVE_ERROR("ShaderSourceImporter: shader source \"{}\" is empty or contains a NUL byte",
                   sourcePath.string());
         return false;
     }
@@ -65,62 +65,62 @@ constexpr std::string_view kShaderTemporarySuffixUVE = ".uve_shader_tmp";
     return true;
 }
 
-[[nodiscard]] bool ShaderStageForExtensionUVE(const std::string& extension,
-                                               ShaderStageKindUVE& outStage) noexcept {
+[[nodiscard]] bool ShaderStageForExtension(const std::string& extension,
+                                               ShaderStageKind& outStage) noexcept {
     if (extension == "vert") {
-        outStage = ShaderStageKindUVE::Vertex;
+        outStage = ShaderStageKind::Vertex;
         return true;
     }
     if (extension == "frag") {
-        outStage = ShaderStageKindUVE::Fragment;
+        outStage = ShaderStageKind::Fragment;
         return true;
     }
     if (extension == "comp") {
-        outStage = ShaderStageKindUVE::Compute;
+        outStage = ShaderStageKind::Compute;
         return true;
     }
     return false;
 }
 
-[[nodiscard]] bool ImportShaderSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportShaderSource(const std::filesystem::path& sourcePath,
                                          const std::filesystem::path& destinationPath,
-                                         const AssetImportSettingsUVE& /*settings*/) {
-    if (NormalizeShaderExtensionUVE(destinationPath.extension().string()) != "uvshader") {
-        UVE_ERROR("ShaderSourceImporterUVE: destination \"{}\" must use the .uvshader extension",
+                                         const AssetImportSettings& /*settings*/) {
+    if (NormalizeShaderExtension(destinationPath.extension().string()) != "uvshader") {
+        UVE_ERROR("ShaderSourceImporter: destination \"{}\" must use the .uvshader extension",
                   destinationPath.string());
         return false;
     }
 
-    ShaderStageKindUVE stage = ShaderStageKindUVE::Vertex;
-    const std::string sourceExtension = NormalizeShaderExtensionUVE(sourcePath.extension().string());
-    if (!ShaderStageForExtensionUVE(sourceExtension, stage)) {
-        UVE_ERROR("ShaderSourceImporterUVE: source \"{}\" has no supported shader stage extension",
+    ShaderStageKind stage = ShaderStageKind::Vertex;
+    const std::string sourceExtension = NormalizeShaderExtension(sourcePath.extension().string());
+    if (!ShaderStageForExtension(sourceExtension, stage)) {
+        UVE_ERROR("ShaderSourceImporter: source \"{}\" has no supported shader stage extension",
                   sourcePath.string());
         return false;
     }
 
     std::string sourceCode;
-    if (!ReadShaderSourceUVE(sourcePath, sourceCode)) {
+    if (!ReadShaderSource(sourcePath, sourceCode)) {
         return false;
     }
 
-    ShaderAssetUVE shader;
+    ShaderAsset shader;
     shader.stage = stage;
     shader.sourceCode = std::move(sourceCode);
     shader.entryPointName = "main";
-    return Detail::PublishAssetAtomicallyUVE(destinationPath, kShaderSourceImporterNameUVE,
-                                             kShaderTemporarySuffixUVE,
+    return Detail::PublishAssetAtomically(destinationPath, kShaderSourceImporterName,
+                                             kShaderTemporarySuffix,
                                              [&shader](const std::filesystem::path& temporaryPath) {
-                                                 return SaveShaderAssetUVE(shader, temporaryPath);
+                                                 return SaveShaderAsset(shader, temporaryPath);
                                              });
 }
 
 } // namespace
 
-void RegisterShaderSourceImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("vert", &ImportShaderSourceUVE);
-    importer.RegisterImporterUVE("frag", &ImportShaderSourceUVE);
-    importer.RegisterImporterUVE("comp", &ImportShaderSourceUVE);
+void RegisterShaderSourceImporter(IAssetImporter& importer) {
+    importer.RegisterImporter("vert", &ImportShaderSource);
+    importer.RegisterImporter("frag", &ImportShaderSource);
+    importer.RegisterImporter("comp", &ImportShaderSource);
 }
 
 } // namespace UVE::Asset

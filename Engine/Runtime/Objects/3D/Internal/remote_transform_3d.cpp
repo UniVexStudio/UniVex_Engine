@@ -13,38 +13,38 @@
 
 namespace UVE::Scene {
 
-bool IsRemoteTransform3DComponentValidUVE(
-    const RemoteTransform3DComponentUVE& /*value*/) noexcept {
+bool IsRemoteTransform3DComponentValid(
+    const RemoteTransform3DComponent& /*value*/) noexcept {
     return true;
 }
 
-bool HasRemoteTransform3DActiveChannelUVE(const RemoteTransform3DComponentUVE& value,
-                                          const EntityUVE selfEntity) noexcept {
-    return value.enabled && value.remoteTarget != kInvalidEntityUVE &&
+bool HasRemoteTransform3DActiveChannel(const RemoteTransform3DComponent& value,
+                                          const Entity selfEntity) noexcept {
+    return value.enabled && value.remoteTarget != kInvalidEntity &&
            value.remoteTarget != selfEntity &&
            (value.updatePosition || value.updateRotation || value.updateScale);
 }
 
-bool IsRemoteTransform3DObjectDefinitionValidUVE(
-    const RemoteTransform3DObjectDefinitionUVE& value) noexcept {
-    return IsRemoteTransform3DComponentValidUVE(value.remoteTransform);
+bool IsRemoteTransform3DObjectDefinitionValid(
+    const RemoteTransform3DObjectDefinition& value) noexcept {
+    return IsRemoteTransform3DComponentValid(value.remoteTransform);
 }
 
-void ApplyRemoteTransform3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE entity,
-    const RemoteTransform3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              RemoteTransform3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<RemoteTransform3DComponentUVE>(entity, value.remoteTransform);
+void ApplyRemoteTransform3DObjectDefinition(
+    IEntityManager& entityManager, const Entity entity,
+    const RemoteTransform3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity,
+                              RemoteTransform3DObjectDefinition::defaultName);
+    entityManager.AddComponent<RemoteTransform3DComponent>(entity, value.remoteTransform);
 }
 
-std::size_t UpdateRemoteTransform3DObjectsUVE(IEntityManagerUVE& entityManager) {
-    std::vector<EntityUVE> sources;
-    entityManager.ForEachUVE<RemoteTransform3DComponentUVE>(
-        [&](const EntityUVE entity, const RemoteTransform3DComponentUVE&) {
+std::size_t UpdateRemoteTransform3DObjects(IEntityManager& entityManager) {
+    std::vector<Entity> sources;
+    entityManager.ForEach<RemoteTransform3DComponent>(
+        [&](const Entity entity, const RemoteTransform3DComponent&) {
             sources.push_back(entity);
         });
-    std::sort(sources.begin(), sources.end(), [](const EntityUVE lhs, const EntityUVE rhs) {
+    std::sort(sources.begin(), sources.end(), [](const Entity lhs, const Entity rhs) {
         if (lhs.index != rhs.index) {
             return lhs.index < rhs.index;
         }
@@ -52,40 +52,40 @@ std::size_t UpdateRemoteTransform3DObjectsUVE(IEntityManagerUVE& entityManager) 
     });
 
     std::size_t updatedCount = 0U;
-    for (const EntityUVE source : sources) {
-        if (!entityManager.IsAliveUVE(source) ||
-            entityManager.HasComponentUVE<DisabledComponentUVE>(source) ||
-            !entityManager.HasComponentUVE<RemoteTransform3DComponentUVE>(source)) {
+    for (const Entity source : sources) {
+        if (!entityManager.IsAlive(source) ||
+            entityManager.HasComponent<DisabledComponent>(source) ||
+            !entityManager.HasComponent<RemoteTransform3DComponent>(source)) {
             continue;
         }
-        const RemoteTransform3DComponentUVE& remote =
-            entityManager.GetComponentUVE<RemoteTransform3DComponentUVE>(source);
-        if (!HasRemoteTransform3DActiveChannelUVE(remote, source)) {
+        const RemoteTransform3DComponent& remote =
+            entityManager.GetComponent<RemoteTransform3DComponent>(source);
+        if (!HasRemoteTransform3DActiveChannel(remote, source)) {
             continue;
         }
-        const EntityUVE target = remote.remoteTarget;
-        if (!entityManager.IsAliveUVE(target) ||
-            !entityManager.HasComponentUVE<TransformComponentUVE>(target)) {
+        const Entity target = remote.remoteTarget;
+        if (!entityManager.IsAlive(target) ||
+            !entityManager.HasComponent<TransformComponent>(target)) {
             continue;
         }
 
-        Math::Vector3UVE srcPos{};
-        Math::QuaternionUVE srcRot{};
-        Math::Vector3UVE srcScale{1.0F, 1.0F, 1.0F};
+        Math::Vector3 srcPos{};
+        Math::Quaternion srcRot{};
+        Math::Vector3 srcScale{1.0F, 1.0F, 1.0F};
         if (remote.useGlobalCoordinates &&
-            entityManager.HasComponentUVE<WorldTransformComponentUVE>(source)) {
-            const WorldTransformComponentUVE& world =
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(source);
-            if (!IsWorldTransformComponentValidUVE(world)) {
+            entityManager.HasComponent<WorldTransformComponent>(source)) {
+            const WorldTransformComponent& world =
+                entityManager.GetComponent<WorldTransformComponent>(source);
+            if (!IsWorldTransformComponentValid(world)) {
                 continue;
             }
             srcPos = world.worldPosition;
             srcRot = world.worldRotation;
             srcScale = world.worldScale;
-        } else if (entityManager.HasComponentUVE<TransformComponentUVE>(source)) {
-            const TransformComponentUVE& local =
-                entityManager.GetComponentUVE<TransformComponentUVE>(source);
-            if (!IsTransformComponentValidUVE(local)) {
+        } else if (entityManager.HasComponent<TransformComponent>(source)) {
+            const TransformComponent& local =
+                entityManager.GetComponent<TransformComponent>(source);
+            if (!IsTransformComponentValid(local)) {
                 continue;
             }
             srcPos = local.localPosition;
@@ -95,8 +95,8 @@ std::size_t UpdateRemoteTransform3DObjectsUVE(IEntityManagerUVE& entityManager) 
             continue;
         }
 
-        TransformComponentUVE updatedLocal =
-            entityManager.GetComponentUVE<TransformComponentUVE>(target);
+        TransformComponent updatedLocal =
+            entityManager.GetComponent<TransformComponent>(target);
         if (remote.updatePosition) {
             updatedLocal.localPosition = srcPos;
         }
@@ -106,12 +106,12 @@ std::size_t UpdateRemoteTransform3DObjectsUVE(IEntityManagerUVE& entityManager) 
         if (remote.updateScale) {
             updatedLocal.localScale = srcScale;
         }
-        if (!IsTransformComponentValidUVE(updatedLocal)) {
+        if (!IsTransformComponentValid(updatedLocal)) {
             continue;
         }
-        entityManager.GetComponentUVE<TransformComponentUVE>(target) = updatedLocal;
-        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(target)) {
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(target).dirty = true;
+        entityManager.GetComponent<TransformComponent>(target) = updatedLocal;
+        if (entityManager.HasComponent<WorldTransformComponent>(target)) {
+            entityManager.GetComponent<WorldTransformComponent>(target).dirty = true;
         }
         ++updatedCount;
     }

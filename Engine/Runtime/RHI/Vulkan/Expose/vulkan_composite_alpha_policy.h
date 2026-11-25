@@ -7,67 +7,67 @@
 
 namespace UVE::Render::Vulkan {
 
-enum class CompositeAlphaModeUVE : std::uint8_t {
+enum class CompositeAlphaMode : std::uint8_t {
     Opaque,
     PreMultiplied,
     PostMultiplied,
     Inherit,
 };
 
-enum class CompositeAlphaFallbackUVE : std::uint8_t {
+enum class CompositeAlphaFallback : std::uint8_t {
     None,
     TransparencyUnavailable,
     OpaqueUnavailable,
     NoSupportedMode,
 };
 
-struct CompositeAlphaAvailabilityUVE final {
+struct CompositeAlphaAvailability final {
     bool opaque = false;
     bool preMultiplied = false;
     bool postMultiplied = false;
     bool inherit = false;
 };
 
-struct CompositeAlphaResolutionUVE final {
-    std::optional<CompositeAlphaModeUVE> mode;
-    CompositeAlphaFallbackUVE fallback = CompositeAlphaFallbackUVE::None;
+struct CompositeAlphaResolution final {
+    std::optional<CompositeAlphaMode> mode;
+    CompositeAlphaFallback fallback = CompositeAlphaFallback::None;
 
-    [[nodiscard]] constexpr bool operator==(const CompositeAlphaResolutionUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const CompositeAlphaResolution&) const noexcept = default;
 };
 
 /// Chooses a surface composite-alpha mode, preferring pre/post/inherit for transparent requests
 /// and opaque otherwise. Fallbacks use the deterministic opaque/pre/post/inherit order.
-[[nodiscard]] constexpr CompositeAlphaResolutionUVE ResolveVulkanCompositeAlphaUVE(
-    const bool transparencyRequested, const CompositeAlphaAvailabilityUVE available) noexcept {
+[[nodiscard]] constexpr CompositeAlphaResolution ResolveVulkanCompositeAlpha(
+    const bool transparencyRequested, const CompositeAlphaAvailability available) noexcept {
     if (transparencyRequested) {
         if (available.preMultiplied) {
-            return {CompositeAlphaModeUVE::PreMultiplied, CompositeAlphaFallbackUVE::None};
+            return {CompositeAlphaMode::PreMultiplied, CompositeAlphaFallback::None};
         }
         if (available.postMultiplied) {
-            return {CompositeAlphaModeUVE::PostMultiplied, CompositeAlphaFallbackUVE::None};
+            return {CompositeAlphaMode::PostMultiplied, CompositeAlphaFallback::None};
         }
         if (available.inherit) {
-            return {CompositeAlphaModeUVE::Inherit, CompositeAlphaFallbackUVE::None};
+            return {CompositeAlphaMode::Inherit, CompositeAlphaFallback::None};
         }
         if (available.opaque) {
-            return {CompositeAlphaModeUVE::Opaque, CompositeAlphaFallbackUVE::TransparencyUnavailable};
+            return {CompositeAlphaMode::Opaque, CompositeAlphaFallback::TransparencyUnavailable};
         }
-        return {std::nullopt, CompositeAlphaFallbackUVE::TransparencyUnavailable};
+        return {std::nullopt, CompositeAlphaFallback::TransparencyUnavailable};
     }
 
     if (available.opaque) {
-        return {CompositeAlphaModeUVE::Opaque, CompositeAlphaFallbackUVE::None};
+        return {CompositeAlphaMode::Opaque, CompositeAlphaFallback::None};
     }
     if (available.preMultiplied) {
-        return {CompositeAlphaModeUVE::PreMultiplied, CompositeAlphaFallbackUVE::OpaqueUnavailable};
+        return {CompositeAlphaMode::PreMultiplied, CompositeAlphaFallback::OpaqueUnavailable};
     }
     if (available.postMultiplied) {
-        return {CompositeAlphaModeUVE::PostMultiplied, CompositeAlphaFallbackUVE::OpaqueUnavailable};
+        return {CompositeAlphaMode::PostMultiplied, CompositeAlphaFallback::OpaqueUnavailable};
     }
     if (available.inherit) {
-        return {CompositeAlphaModeUVE::Inherit, CompositeAlphaFallbackUVE::OpaqueUnavailable};
+        return {CompositeAlphaMode::Inherit, CompositeAlphaFallback::OpaqueUnavailable};
     }
-    return {std::nullopt, CompositeAlphaFallbackUVE::NoSupportedMode};
+    return {std::nullopt, CompositeAlphaFallback::NoSupportedMode};
 }
 
 } // namespace UVE::Render::Vulkan

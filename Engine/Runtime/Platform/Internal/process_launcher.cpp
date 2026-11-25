@@ -28,16 +28,16 @@ namespace {
 
 /// The program each platform opens a directory with.
 #if defined(_WIN32)
-inline constexpr std::string_view kFileManagerProgramUVE = "explorer.exe";
+inline constexpr std::string_view kFileManagerProgram = "explorer.exe";
 #elif defined(__APPLE__)
-inline constexpr std::string_view kFileManagerProgramUVE = "open";
+inline constexpr std::string_view kFileManagerProgram = "open";
 #else
-inline constexpr std::string_view kFileManagerProgramUVE = "xdg-open";
+inline constexpr std::string_view kFileManagerProgram = "xdg-open";
 #endif
 
 #if defined(_WIN32)
 /// Quotes one argument for CommandLineToArgvW-style parsing.
-[[nodiscard]] std::wstring QuoteArgumentUVE(const std::wstring& argument) {
+[[nodiscard]] std::wstring QuoteArgument(const std::wstring& argument) {
     if (!argument.empty() && argument.find_first_of(L" \t\n\v\"") == std::wstring::npos) {
         return argument;
     }
@@ -64,15 +64,15 @@ inline constexpr std::string_view kFileManagerProgramUVE = "xdg-open";
 
 } // namespace
 
-ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc) {
+ProcessLaunchResult LaunchDetachedProcess(const ProcessLaunchDesc& desc) {
     if (desc.executable.empty()) {
         return {false, "No program to launch."};
     }
 #if defined(_WIN32)
-    std::wstring commandLine = QuoteArgumentUVE(desc.executable.wstring());
+    std::wstring commandLine = QuoteArgument(desc.executable.wstring());
     for (const std::string& argument : desc.arguments) {
         commandLine += L' ';
-        commandLine += QuoteArgumentUVE(std::filesystem::path(argument).wstring());
+        commandLine += QuoteArgument(std::filesystem::path(argument).wstring());
     }
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -151,7 +151,7 @@ ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc
 #endif
 }
 
-std::filesystem::path CurrentExecutablePathUVE() {
+std::filesystem::path CurrentExecutablePath() {
 #if defined(_WIN32)
     std::wstring buffer(MAX_PATH, L'\0');
     while (true) {
@@ -183,12 +183,12 @@ std::filesystem::path CurrentExecutablePathUVE() {
 #endif
 }
 
-ProcessLaunchResultUVE RevealInFileManagerUVE(const std::filesystem::path& directory) {
+ProcessLaunchResult RevealInFileManager(const std::filesystem::path& directory) {
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error)) {
         return {false, "The folder does not exist: " + directory.string()};
     }
-    return LaunchDetachedProcessUVE({std::filesystem::path(kFileManagerProgramUVE), {directory.string()}, {}});
+    return LaunchDetachedProcess({std::filesystem::path(kFileManagerProgram), {directory.string()}, {}});
 }
 
 } // namespace UVE::Platform

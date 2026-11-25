@@ -22,214 +22,214 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class ReflectionProbe3DImageryUVETest : public ::testing::Test {
+class ReflectionProbe3DImageryTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 
-    EntityUVE PlaceProbeUVE(const ReflectionProbe3DComponentUVE& probe, const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<ReflectionProbe3DComponentUVE>(entity, probe);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlaceProbe(const ReflectionProbe3DComponent& probe, const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<ReflectionProbe3DComponent>(entity, probe);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 };
 
-TEST(CubemapFaceUVETest, AxisDirectionsSelectTheMatchingFace) {
-    CubemapFaceUVE face = CubemapFaceUVE::NegativeZ;
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{2.0F, 0.1F, -0.1F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::PositiveX);
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{-4.0F, 1.0F, 1.0F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::NegativeX);
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{0.2F, 3.0F, -0.2F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::PositiveY);
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{0.0F, -1.0F, 0.0F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::NegativeY);
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{0.1F, -0.1F, 5.0F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::PositiveZ);
-    ASSERT_TRUE(TrySelectCubemapFaceUVE(Math::Vector3UVE{0.0F, 0.0F, -1.0F}, face));
-    EXPECT_EQ(face, CubemapFaceUVE::NegativeZ);
+TEST(CubemapFaceTest, AxisDirectionsSelectTheMatchingFace) {
+    CubemapFace face = CubemapFace::NegativeZ;
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{2.0F, 0.1F, -0.1F}, face));
+    EXPECT_EQ(face, CubemapFace::PositiveX);
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{-4.0F, 1.0F, 1.0F}, face));
+    EXPECT_EQ(face, CubemapFace::NegativeX);
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{0.2F, 3.0F, -0.2F}, face));
+    EXPECT_EQ(face, CubemapFace::PositiveY);
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{0.0F, -1.0F, 0.0F}, face));
+    EXPECT_EQ(face, CubemapFace::NegativeY);
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{0.1F, -0.1F, 5.0F}, face));
+    EXPECT_EQ(face, CubemapFace::PositiveZ);
+    ASSERT_TRUE(TrySelectCubemapFace(Math::Vector3{0.0F, 0.0F, -1.0F}, face));
+    EXPECT_EQ(face, CubemapFace::NegativeZ);
 }
 
-TEST(CubemapFaceUVETest, ZeroAndNonFiniteDirectionsFailClosed) {
-    CubemapFaceUVE face = CubemapFaceUVE::PositiveX;
-    EXPECT_FALSE(TrySelectCubemapFaceUVE(Math::Vector3UVE{}, face));
-    EXPECT_FALSE(TrySelectCubemapFaceUVE(Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, face));
+TEST(CubemapFaceTest, ZeroAndNonFiniteDirectionsFailClosed) {
+    CubemapFace face = CubemapFace::PositiveX;
+    EXPECT_FALSE(TrySelectCubemapFace(Math::Vector3{}, face));
+    EXPECT_FALSE(TrySelectCubemapFace(Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, face));
 }
 
-TEST(CubemapFaceUVETest, CaptureCameraLooksAlongTheFaceForward) {
-    static constexpr CubemapFaceUVE kFaces[] = {
-        CubemapFaceUVE::PositiveX, CubemapFaceUVE::NegativeX, CubemapFaceUVE::PositiveY,
-        CubemapFaceUVE::NegativeY, CubemapFaceUVE::PositiveZ, CubemapFaceUVE::NegativeZ};
-    for (const CubemapFaceUVE face : kFaces) {
-        Math::Vector3UVE forward{};
-        Math::Vector3UVE up{};
-        ASSERT_TRUE(TryGetCubemapFaceBasisUVE(face, forward, up));
-        Math::QuaternionUVE rotation{};
-        ASSERT_TRUE(TryMakeCubemapFaceCameraRotationUVE(face, rotation));
-        const Math::Vector3UVE look = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+TEST(CubemapFaceTest, CaptureCameraLooksAlongTheFaceForward) {
+    static constexpr CubemapFace kFaces[] = {
+        CubemapFace::PositiveX, CubemapFace::NegativeX, CubemapFace::PositiveY,
+        CubemapFace::NegativeY, CubemapFace::PositiveZ, CubemapFace::NegativeZ};
+    for (const CubemapFace face : kFaces) {
+        Math::Vector3 forward{};
+        Math::Vector3 up{};
+        ASSERT_TRUE(TryGetCubemapFaceBasis(face, forward, up));
+        Math::Quaternion rotation{};
+        ASSERT_TRUE(TryMakeCubemapFaceCameraRotation(face, rotation));
+        const Math::Vector3 look = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, -1.0F});
         EXPECT_NEAR(look.x, forward.x, 1.0e-5F);
         EXPECT_NEAR(look.y, forward.y, 1.0e-5F);
         EXPECT_NEAR(look.z, forward.z, 1.0e-5F);
-        const Math::Vector3UVE cameraUp = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-        EXPECT_GT(Math::DotUVE(cameraUp, up), 0.0F);
+        const Math::Vector3 cameraUp = Math::RotateVector(rotation, Math::Vector3{0.0F, 1.0F, 0.0F});
+        EXPECT_GT(Math::Dot(cameraUp, up), 0.0F);
     }
 }
 
-TEST(CubemapFaceUVETest, FaceCenterProjectsToUvHalf) {
-    Math::Vector2UVE uv{};
-    ASSERT_TRUE(TryMakeCubemapFaceUvUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, CubemapFaceUVE::PositiveX, uv));
+TEST(CubemapFaceTest, FaceCenterProjectsToUvHalf) {
+    Math::Vector2 uv{};
+    ASSERT_TRUE(TryMakeCubemapFaceUv(Math::Vector3{1.0F, 0.0F, 0.0F}, CubemapFace::PositiveX, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
-    ASSERT_TRUE(TryMakeCubemapFaceUvUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, CubemapFaceUVE::PositiveY, uv));
+    ASSERT_TRUE(TryMakeCubemapFaceUv(Math::Vector3{0.0F, 1.0F, 0.0F}, CubemapFace::PositiveY, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
-    ASSERT_TRUE(TryMakeCubemapFaceUvUVE(Math::Vector3UVE{0.0F, 0.0F, -1.0F}, CubemapFaceUVE::NegativeZ, uv));
+    ASSERT_TRUE(TryMakeCubemapFaceUv(Math::Vector3{0.0F, 0.0F, -1.0F}, CubemapFace::NegativeZ, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
 }
 
-TEST(CubemapFaceUVETest, PlusYOnPlusXRaisesVAndWrongHemisphereFails) {
-    Math::Vector2UVE uv{};
-    ASSERT_TRUE(TryMakeCubemapFaceUvUVE(Math::Vector3UVE{1.0F, 0.25F, 0.0F}, CubemapFaceUVE::PositiveX, uv));
+TEST(CubemapFaceTest, PlusYOnPlusXRaisesVAndWrongHemisphereFails) {
+    Math::Vector2 uv{};
+    ASSERT_TRUE(TryMakeCubemapFaceUv(Math::Vector3{1.0F, 0.25F, 0.0F}, CubemapFace::PositiveX, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_GT(uv.y, 0.5F);
-    EXPECT_FALSE(TryMakeCubemapFaceUvUVE(Math::Vector3UVE{-1.0F, 0.0F, 0.0F}, CubemapFaceUVE::PositiveX, uv));
+    EXPECT_FALSE(TryMakeCubemapFaceUv(Math::Vector3{-1.0F, 0.0F, 0.0F}, CubemapFace::PositiveX, uv));
 }
 
-TEST(CubemapFaceUVETest, CubeCornerLandsOnTheFaceCorner) {
-    CubemapFaceUVE face = CubemapFaceUVE::NegativeZ;
-    Math::Vector2UVE uv{};
-    ASSERT_TRUE(TryProjectCubemapDirectionUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F}, face, uv));
-    EXPECT_EQ(face, CubemapFaceUVE::PositiveX);
+TEST(CubemapFaceTest, CubeCornerLandsOnTheFaceCorner) {
+    CubemapFace face = CubemapFace::NegativeZ;
+    Math::Vector2 uv{};
+    ASSERT_TRUE(TryProjectCubemapDirection(Math::Vector3{1.0F, 1.0F, 1.0F}, face, uv));
+    EXPECT_EQ(face, CubemapFace::PositiveX);
     EXPECT_NEAR(uv.x, 1.0F, 1.0e-4F);
     EXPECT_NEAR(uv.y, 1.0F, 1.0e-4F);
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, FrameAxesFollowRotationAndInfluenceMatchesTheChebyshevRule) {
-    ReflectionProbe3DComponentUVE probe{};
-    probe.size = Math::Vector3UVE{4.0F, 4.0F, 4.0F};
-    probe.resolution = ReflectionProbeResolutionUVE::High;
-    ReflectionProbe3DFrameUVE frame{};
-    ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{1.0F, 2.0F, 3.0F}, Math::QuaternionUVE{},
+TEST_F(ReflectionProbe3DImageryTest, FrameAxesFollowRotationAndInfluenceMatchesTheChebyshevRule) {
+    ReflectionProbe3DComponent probe{};
+    probe.size = Math::Vector3{4.0F, 4.0F, 4.0F};
+    probe.resolution = ReflectionProbeResolution::High;
+    ReflectionProbe3DFrame frame{};
+    ASSERT_TRUE(TryMakeReflectionProbe3DFrame(probe, Math::Vector3{1.0F, 2.0F, 3.0F}, Math::Quaternion{},
                                                  frame));
     EXPECT_EQ(frame.halfExtents.x, 2.0F);
     EXPECT_EQ(frame.captureResolution, 256U);
-    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{1.0F, 2.0F, 3.0F}), 1.0F);
-    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{3.0F, 2.0F, 3.0F}), 0.0F);
-    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluenceUVE(frame, Math::Vector3UVE{2.0F, 2.0F, 3.0F}), 0.5F);
+    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluence(frame, Math::Vector3{1.0F, 2.0F, 3.0F}), 1.0F);
+    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluence(frame, Math::Vector3{3.0F, 2.0F, 3.0F}), 0.0F);
+    EXPECT_FLOAT_EQ(SampleReflectionProbe3DInfluence(frame, Math::Vector3{2.0F, 2.0F, 3.0F}), 0.5F);
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, ResolutionTiersAreBoundedAndMapToSquareCaptureSizes) {
-    const std::array<ReflectionProbeResolutionUVE, 4> tiers{
-        ReflectionProbeResolutionUVE::Low, ReflectionProbeResolutionUVE::Medium,
-        ReflectionProbeResolutionUVE::High, ReflectionProbeResolutionUVE::Ultra};
+TEST_F(ReflectionProbe3DImageryTest, ResolutionTiersAreBoundedAndMapToSquareCaptureSizes) {
+    const std::array<ReflectionProbeResolution, 4> tiers{
+        ReflectionProbeResolution::Low, ReflectionProbeResolution::Medium,
+        ReflectionProbeResolution::High, ReflectionProbeResolution::Ultra};
     const std::array<std::uint32_t, 4> pixels{64U, 128U, 256U, 512U};
-    ReflectionProbe3DComponentUVE probe{};
-    EXPECT_EQ(probe.resolution, ReflectionProbeResolutionUVE::Medium);
-    EXPECT_EQ(GetReflectionProbeResolutionPixelsUVE(probe.resolution), 128U);
+    ReflectionProbe3DComponent probe{};
+    EXPECT_EQ(probe.resolution, ReflectionProbeResolution::Medium);
+    EXPECT_EQ(GetReflectionProbeResolutionPixels(probe.resolution), 128U);
 
     for (std::size_t i = 0; i < tiers.size(); ++i) {
         probe.resolution = tiers[i];
-        EXPECT_TRUE(IsReflectionProbe3DObjectComponentValidUVE(probe));
-        EXPECT_EQ(GetReflectionProbeResolutionPixelsUVE(tiers[i]), pixels[i]);
-        ReflectionProbe3DFrameUVE frame{};
-        ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{}, Math::QuaternionUVE{}, frame));
+        EXPECT_TRUE(IsReflectionProbe3DObjectComponentValid(probe));
+        EXPECT_EQ(GetReflectionProbeResolutionPixels(tiers[i]), pixels[i]);
+        ReflectionProbe3DFrame frame{};
+        ASSERT_TRUE(TryMakeReflectionProbe3DFrame(probe, Math::Vector3{}, Math::Quaternion{}, frame));
         EXPECT_EQ(frame.captureResolution, pixels[i]);
     }
 
-    probe.resolution = static_cast<ReflectionProbeResolutionUVE>(255U);
-    EXPECT_FALSE(IsReflectionProbe3DObjectComponentValidUVE(probe));
-    ReflectionProbe3DFrameUVE invalidFrame{};
-    EXPECT_FALSE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{}, Math::QuaternionUVE{}, invalidFrame));
+    probe.resolution = static_cast<ReflectionProbeResolution>(255U);
+    EXPECT_FALSE(IsReflectionProbe3DObjectComponentValid(probe));
+    ReflectionProbe3DFrame invalidFrame{};
+    EXPECT_FALSE(TryMakeReflectionProbe3DFrame(probe, Math::Vector3{}, Math::Quaternion{}, invalidFrame));
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, BoxProjectionFromTheCentreHitsTheFace) {
-    ReflectionProbe3DComponentUVE probe{};
-    probe.size = Math::Vector3UVE{4.0F, 6.0F, 8.0F};
-    ReflectionProbe3DFrameUVE frame{};
-    ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{}, Math::QuaternionUVE{}, frame));
-    Math::Vector3UVE hit{};
-    ASSERT_TRUE(TryBoxProjectReflectionUVE(frame, Math::Vector3UVE{}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}, hit));
+TEST_F(ReflectionProbe3DImageryTest, BoxProjectionFromTheCentreHitsTheFace) {
+    ReflectionProbe3DComponent probe{};
+    probe.size = Math::Vector3{4.0F, 6.0F, 8.0F};
+    ReflectionProbe3DFrame frame{};
+    ASSERT_TRUE(TryMakeReflectionProbe3DFrame(probe, Math::Vector3{}, Math::Quaternion{}, frame));
+    Math::Vector3 hit{};
+    ASSERT_TRUE(TryBoxProjectReflection(frame, Math::Vector3{}, Math::Vector3{1.0F, 0.0F, 0.0F}, hit));
     EXPECT_NEAR(hit.x, 2.0F, 1.0e-4F);
     EXPECT_NEAR(hit.y, 0.0F, 1.0e-4F);
     EXPECT_NEAR(hit.z, 0.0F, 1.0e-4F);
-    ASSERT_TRUE(TryBoxProjectReflectionUVE(frame, Math::Vector3UVE{-1.0F, 1.0F, 0.0F},
-                                           Math::Vector3UVE{1.0F, 0.0F, 0.0F}, hit));
+    ASSERT_TRUE(TryBoxProjectReflection(frame, Math::Vector3{-1.0F, 1.0F, 0.0F},
+                                           Math::Vector3{1.0F, 0.0F, 0.0F}, hit));
     EXPECT_NEAR(hit.x, 2.0F, 1.0e-4F);
     EXPECT_NEAR(hit.y, 1.0F, 1.0e-4F);
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, CollectRanksByInfluenceAndSkipsHiddenDirtyAndDisabled) {
-    ReflectionProbe3DComponentUVE nearProbe{};
-    nearProbe.size = Math::Vector3UVE{10.0F, 10.0F, 10.0F};
+TEST_F(ReflectionProbe3DImageryTest, CollectRanksByInfluenceAndSkipsHiddenDirtyAndDisabled) {
+    ReflectionProbe3DComponent nearProbe{};
+    nearProbe.size = Math::Vector3{10.0F, 10.0F, 10.0F};
     nearProbe.capturedOnce = true;
-    TransformComponentUVE nearTransform{};
-    nearTransform.localPosition = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    const EntityUVE nearEntity = PlaceProbeUVE(nearProbe, nearTransform);
+    TransformComponent nearTransform{};
+    nearTransform.localPosition = Math::Vector3{1.0F, 0.0F, 0.0F};
+    const Entity nearEntity = PlaceProbe(nearProbe, nearTransform);
 
-    ReflectionProbe3DComponentUVE farProbe = nearProbe;
-    TransformComponentUVE farTransform{};
-    farTransform.localPosition = Math::Vector3UVE{4.0F, 0.0F, 0.0F};
-    const EntityUVE farEntity = PlaceProbeUVE(farProbe, farTransform);
+    ReflectionProbe3DComponent farProbe = nearProbe;
+    TransformComponent farTransform{};
+    farTransform.localPosition = Math::Vector3{4.0F, 0.0F, 0.0F};
+    const Entity farEntity = PlaceProbe(farProbe, farTransform);
 
-    ReflectionProbe3DComponentUVE hiddenProbe = nearProbe;
-    TransformComponentUVE hiddenTransform{};
-    hiddenTransform.localPosition = Math::Vector3UVE{};
-    const EntityUVE hiddenEntity = PlaceProbeUVE(hiddenProbe, hiddenTransform);
-    VisibilityComponentUVE hiddenVisibility{};
+    ReflectionProbe3DComponent hiddenProbe = nearProbe;
+    TransformComponent hiddenTransform{};
+    hiddenTransform.localPosition = Math::Vector3{};
+    const Entity hiddenEntity = PlaceProbe(hiddenProbe, hiddenTransform);
+    VisibilityComponent hiddenVisibility{};
     hiddenVisibility.visible = false;
-    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(hiddenEntity)) {
-        entityManager.AddComponentUVE<VisibilityComponentUVE>(hiddenEntity, hiddenVisibility);
+    if (!entityManager.HasComponent<VisibilityComponent>(hiddenEntity)) {
+        entityManager.AddComponent<VisibilityComponent>(hiddenEntity, hiddenVisibility);
     } else {
-        entityManager.GetComponentUVE<VisibilityComponentUVE>(hiddenEntity).visible = false;
+        entityManager.GetComponent<VisibilityComponent>(hiddenEntity).visible = false;
     }
-    sceneGraph.UpdateUVE(entityManager);
-    ASSERT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(hiddenEntity).visibleInHierarchy);
+    sceneGraph.Update(entityManager);
+    ASSERT_FALSE(entityManager.GetComponent<VisibilityComponent>(hiddenEntity).visibleInHierarchy);
 
-    ReflectionProbe3DComponentUVE disabledProbe = nearProbe;
+    ReflectionProbe3DComponent disabledProbe = nearProbe;
     disabledProbe.enabled = false;
-    PlaceProbeUVE(disabledProbe);
+    PlaceProbe(disabledProbe);
 
-    std::array<ReflectionProbe3DFrameUVE, 4> frames{};
+    std::array<ReflectionProbe3DFrame, 4> frames{};
     const std::size_t count =
-        CollectReflectionProbe3DFramesUVE(entityManager, Math::Vector3UVE{}, frames);
+        CollectReflectionProbe3DFrames(entityManager, Math::Vector3{}, frames);
     EXPECT_EQ(count, 2U);
     EXPECT_EQ(frames[0].entity, nearEntity);
     EXPECT_EQ(frames[1].entity, farEntity);
     EXPECT_GT(frames[0].influenceWeight, frames[1].influenceWeight);
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, GizmoSkipsEditorInternalAndDisabled) {
-    ReflectionProbe3DComponentUVE probe{};
-    const EntityUVE live = PlaceProbeUVE(probe);
+TEST_F(ReflectionProbe3DImageryTest, GizmoSkipsEditorInternalAndDisabled) {
+    ReflectionProbe3DComponent probe{};
+    const Entity live = PlaceProbe(probe);
     static_cast<void>(live);
-    const EntityUVE internal = PlaceProbeUVE(probe);
-    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(internal);
-    ReflectionProbe3DComponentUVE disabled{};
+    const Entity internal = PlaceProbe(probe);
+    entityManager.AddComponent<EditorInternalEntityComponent>(internal);
+    ReflectionProbe3DComponent disabled{};
     disabled.enabled = false;
-    PlaceProbeUVE(disabled);
+    PlaceProbe(disabled);
 
-    std::vector<ReflectionProbe3DGizmoUVE> gizmos;
-    CollectReflectionProbe3DGizmosUVE(entityManager, gizmos);
+    std::vector<ReflectionProbe3DGizmo> gizmos;
+    CollectReflectionProbe3DGizmos(entityManager, gizmos);
     EXPECT_EQ(gizmos.size(), 1U);
     EXPECT_NEAR(gizmos[0].halfExtents.x, 2.5F, 1.0e-5F);
 }
 
-TEST_F(ReflectionProbe3DImageryUVETest, FramePreservesVisibilityLayersAndResolutionForRendererCapture) {
-    ReflectionProbe3DComponentUVE probe{};
-    probe.size = Math::Vector3UVE{8.0F, 6.0F, 10.0F};
+TEST_F(ReflectionProbe3DImageryTest, FramePreservesVisibilityLayersAndResolutionForRendererCapture) {
+    ReflectionProbe3DComponent probe{};
+    probe.size = Math::Vector3{8.0F, 6.0F, 10.0F};
     probe.visibilityLayers = 0x00000004U;
-    probe.resolution = ReflectionProbeResolutionUVE::High;
+    probe.resolution = ReflectionProbeResolution::High;
     probe.capturedOnce = true;
     probe.captureGeneration = 3U;
 
-    ReflectionProbe3DFrameUVE frame{};
-    ASSERT_TRUE(TryMakeReflectionProbe3DFrameUVE(probe, Math::Vector3UVE{1.0F, 2.0F, 3.0F},
-                                                 Math::QuaternionUVE{}, frame));
+    ReflectionProbe3DFrame frame{};
+    ASSERT_TRUE(TryMakeReflectionProbe3DFrame(probe, Math::Vector3{1.0F, 2.0F, 3.0F},
+                                                 Math::Quaternion{}, frame));
     EXPECT_EQ(frame.visibilityLayers, 0x00000004U);
     EXPECT_EQ(frame.captureResolution, 256U);
     EXPECT_FLOAT_EQ(frame.halfExtents.x, 4.0F);

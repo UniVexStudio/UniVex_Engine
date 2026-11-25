@@ -14,7 +14,7 @@
 namespace UVE::Asset {
 namespace {
 
-struct SvgColorUVE final {
+struct SvgColor final {
     float r = 0.0F;
     float g = 0.0F;
     float b = 0.0F;
@@ -22,12 +22,12 @@ struct SvgColorUVE final {
     bool none = false;
 };
 
-struct SvgPointUVE final {
+struct SvgPoint final {
     float x = 0.0F;
     float y = 0.0F;
 };
 
-[[nodiscard]] std::string TrimLowerUVE(const std::string_view s) {
+[[nodiscard]] std::string TrimLower(const std::string_view s) {
     std::size_t a = 0U;
     while (a < s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
     std::size_t b = s.size();
@@ -40,7 +40,7 @@ struct SvgPointUVE final {
     return out;
 }
 
-[[nodiscard]] std::string ExtractAttrUVE(const std::string_view tag, const std::string_view name) {
+[[nodiscard]] std::string ExtractAttr(const std::string_view tag, const std::string_view name) {
     std::size_t pos = 0U;
     while (pos < tag.size()) {
         const std::size_t found = tag.find(name, pos);
@@ -67,7 +67,7 @@ struct SvgPointUVE final {
     return {};
 }
 
-[[nodiscard]] float ParseFloatUVE(const std::string& s, const float fallback) noexcept {
+[[nodiscard]] float ParseFloat(const std::string& s, const float fallback) noexcept {
     if (s.empty()) {
         return fallback;
     }
@@ -76,40 +76,40 @@ struct SvgPointUVE final {
     return (end != s.c_str() && std::isfinite(v)) ? v : fallback;
 }
 
-[[nodiscard]] int HexDigitUVE(const char c) noexcept {
+[[nodiscard]] int HexDigit(const char c) noexcept {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
     if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
     return 0;
 }
 
-[[nodiscard]] SvgColorUVE ParseColorUVE(const std::string_view raw, const SvgColorUVE& fallback) {
-    const std::string s = TrimLowerUVE(raw);
+[[nodiscard]] SvgColor ParseColor(const std::string_view raw, const SvgColor& fallback) {
+    const std::string s = TrimLower(raw);
     if (s.empty()) {
         return fallback;
     }
     if (s == "none" || s == "transparent") {
-        return SvgColorUVE{0.0F, 0.0F, 0.0F, 0.0F, true};
+        return SvgColor{0.0F, 0.0F, 0.0F, 0.0F, true};
     }
     if (s[0] == '#') {
         if (s.size() == 4U) {
-            return SvgColorUVE{
-                static_cast<float>(HexDigitUVE(s[1]) * 17) / 255.0F,
-                static_cast<float>(HexDigitUVE(s[2]) * 17) / 255.0F,
-                static_cast<float>(HexDigitUVE(s[3]) * 17) / 255.0F,
+            return SvgColor{
+                static_cast<float>(HexDigit(s[1]) * 17) / 255.0F,
+                static_cast<float>(HexDigit(s[2]) * 17) / 255.0F,
+                static_cast<float>(HexDigit(s[3]) * 17) / 255.0F,
                 1.0F,
                 false,
             };
         }
         if (s.size() >= 7U) {
-            const float r = static_cast<float>((HexDigitUVE(s[1]) << 4) | HexDigitUVE(s[2])) / 255.0F;
-            const float g = static_cast<float>((HexDigitUVE(s[3]) << 4) | HexDigitUVE(s[4])) / 255.0F;
-            const float b = static_cast<float>((HexDigitUVE(s[5]) << 4) | HexDigitUVE(s[6])) / 255.0F;
+            const float r = static_cast<float>((HexDigit(s[1]) << 4) | HexDigit(s[2])) / 255.0F;
+            const float g = static_cast<float>((HexDigit(s[3]) << 4) | HexDigit(s[4])) / 255.0F;
+            const float b = static_cast<float>((HexDigit(s[5]) << 4) | HexDigit(s[6])) / 255.0F;
             float a = 1.0F;
             if (s.size() >= 9U) {
-                a = static_cast<float>((HexDigitUVE(s[7]) << 4) | HexDigitUVE(s[8])) / 255.0F;
+                a = static_cast<float>((HexDigit(s[7]) << 4) | HexDigit(s[8])) / 255.0F;
             }
-            return SvgColorUVE{r, g, b, a, false};
+            return SvgColor{r, g, b, a, false};
         }
     }
     if (s == "white") return {1.0F, 1.0F, 1.0F, 1.0F, false};
@@ -125,7 +125,7 @@ struct SvgPointUVE final {
     return fallback;
 }
 
-[[nodiscard]] std::vector<float> ParseNumberListUVE(const std::string_view s) {
+[[nodiscard]] std::vector<float> ParseNumberList(const std::string_view s) {
     std::vector<float> out;
     const char* p = s.data();
     const char* const end = s.data() + s.size();
@@ -144,11 +144,11 @@ struct SvgPointUVE final {
     return out;
 }
 
-[[nodiscard]] std::vector<std::vector<SvgPointUVE>> ParsePathPolygonsUVE(const std::string_view d) {
-    std::vector<std::vector<SvgPointUVE>> polys;
-    std::vector<SvgPointUVE> cur;
-    SvgPointUVE pen{0.0F, 0.0F};
-    SvgPointUVE subStart{0.0F, 0.0F};
+[[nodiscard]] std::vector<std::vector<SvgPoint>> ParsePathPolygons(const std::string_view d) {
+    std::vector<std::vector<SvgPoint>> polys;
+    std::vector<SvgPoint> cur;
+    SvgPoint pen{0.0F, 0.0F};
+    SvgPoint subStart{0.0F, 0.0F};
     char cmd = 0;
 
     const char* p = d.data();
@@ -189,14 +189,14 @@ struct SvgPointUVE final {
                 polys.push_back(cur);
                 cur.clear();
             }
-            pen = (cmd == 'm') ? SvgPointUVE{pen.x + x, pen.y + y} : SvgPointUVE{x, y};
+            pen = (cmd == 'm') ? SvgPoint{pen.x + x, pen.y + y} : SvgPoint{x, y};
             subStart = pen;
             cur.push_back(pen);
             cmd = (cmd == 'm') ? 'l' : 'L';
         } else if (cmd == 'L' || cmd == 'l') {
             float x = 0.0F, y = 0.0F;
             if (!readNum(x) || !readNum(y)) break;
-            pen = (cmd == 'l') ? SvgPointUVE{pen.x + x, pen.y + y} : SvgPointUVE{x, y};
+            pen = (cmd == 'l') ? SvgPoint{pen.x + x, pen.y + y} : SvgPoint{x, y};
             cur.push_back(pen);
         } else if (cmd == 'H' || cmd == 'h') {
             float x = 0.0F;
@@ -211,13 +211,13 @@ struct SvgPointUVE final {
         } else if (cmd == 'Q' || cmd == 'q') {
             float cx = 0.0F, cy = 0.0F, x = 0.0F, y = 0.0F;
             if (!readNum(cx) || !readNum(cy) || !readNum(x) || !readNum(y)) break;
-            const SvgPointUVE p0 = pen;
-            const SvgPointUVE p1 = (cmd == 'q') ? SvgPointUVE{pen.x + cx, pen.y + cy} : SvgPointUVE{cx, cy};
-            const SvgPointUVE p2 = (cmd == 'q') ? SvgPointUVE{pen.x + x, pen.y + y} : SvgPointUVE{x, y};
+            const SvgPoint p0 = pen;
+            const SvgPoint p1 = (cmd == 'q') ? SvgPoint{pen.x + cx, pen.y + cy} : SvgPoint{cx, cy};
+            const SvgPoint p2 = (cmd == 'q') ? SvgPoint{pen.x + x, pen.y + y} : SvgPoint{x, y};
             for (int s = 1; s <= 12; ++s) {
                 const float t = static_cast<float>(s) / 12.0F;
                 const float u = 1.0F - t;
-                cur.push_back(SvgPointUVE{
+                cur.push_back(SvgPoint{
                     u * u * p0.x + 2.0F * u * t * p1.x + t * t * p2.x,
                     u * u * p0.y + 2.0F * u * t * p1.y + t * t * p2.y,
                 });
@@ -228,14 +228,14 @@ struct SvgPointUVE final {
             if (!readNum(c1x) || !readNum(c1y) || !readNum(c2x) || !readNum(c2y) || !readNum(x) || !readNum(y)) {
                 break;
             }
-            const SvgPointUVE p0 = pen;
-            const SvgPointUVE p1 = (cmd == 'c') ? SvgPointUVE{pen.x + c1x, pen.y + c1y} : SvgPointUVE{c1x, c1y};
-            const SvgPointUVE p2 = (cmd == 'c') ? SvgPointUVE{pen.x + c2x, pen.y + c2y} : SvgPointUVE{c2x, c2y};
-            const SvgPointUVE p3 = (cmd == 'c') ? SvgPointUVE{pen.x + x, pen.y + y} : SvgPointUVE{x, y};
+            const SvgPoint p0 = pen;
+            const SvgPoint p1 = (cmd == 'c') ? SvgPoint{pen.x + c1x, pen.y + c1y} : SvgPoint{c1x, c1y};
+            const SvgPoint p2 = (cmd == 'c') ? SvgPoint{pen.x + c2x, pen.y + c2y} : SvgPoint{c2x, c2y};
+            const SvgPoint p3 = (cmd == 'c') ? SvgPoint{pen.x + x, pen.y + y} : SvgPoint{x, y};
             for (int s = 1; s <= 16; ++s) {
                 const float t = static_cast<float>(s) / 16.0F;
                 const float u = 1.0F - t;
-                cur.push_back(SvgPointUVE{
+                cur.push_back(SvgPoint{
                     u * u * u * p0.x + 3.0F * u * u * t * p1.x + 3.0F * u * t * t * p2.x + t * t * t * p3.x,
                     u * u * u * p0.y + 3.0F * u * u * t * p1.y + 3.0F * u * t * t * p2.y + t * t * t * p3.y,
                 });
@@ -251,8 +251,8 @@ struct SvgPointUVE final {
     return polys;
 }
 
-[[nodiscard]] bool PointInPolygonUVE(const float x, const float y,
-                                     const std::vector<SvgPointUVE>& poly) noexcept {
+[[nodiscard]] bool PointInPolygon(const float x, const float y,
+                                     const std::vector<SvgPoint>& poly) noexcept {
     if (poly.size() < 3U) {
         return false;
     }
@@ -269,8 +269,8 @@ struct SvgPointUVE final {
     return inside;
 }
 
-[[nodiscard]] float DistSqPointSegmentUVE(const float px, const float py, const SvgPointUVE a,
-                                          const SvgPointUVE b) noexcept {
+[[nodiscard]] float DistSqPointSegment(const float px, const float py, const SvgPoint a,
+                                          const SvgPoint b) noexcept {
     const float dx = b.x - a.x;
     const float dy = b.y - a.y;
     const float lenSq = dx * dx + dy * dy;
@@ -280,8 +280,8 @@ struct SvgPointUVE final {
     return (px - cx) * (px - cx) + (py - cy) * (py - cy);
 }
 
-void BlendPixelUVE(std::vector<float>& canvas, const std::uint32_t width, const std::uint32_t x,
-                   const std::uint32_t y, const SvgColorUVE& color, const float coverage) noexcept {
+void BlendPixel(std::vector<float>& canvas, const std::uint32_t width, const std::uint32_t x,
+                   const std::uint32_t y, const SvgColor& color, const float coverage) noexcept {
     const float srcA = std::clamp(color.a * coverage, 0.0F, 1.0F);
     if (srcA <= 1.0e-5F) {
         return;
@@ -300,19 +300,19 @@ void BlendPixelUVE(std::vector<float>& canvas, const std::uint32_t width, const 
     }
 }
 
-struct SvgShapeUVE final {
-    std::vector<std::vector<SvgPointUVE>> polygons;
-    SvgColorUVE fill{0.0F, 0.0F, 0.0F, 1.0F, false};
-    SvgColorUVE stroke{0.0F, 0.0F, 0.0F, 0.0F, true};
+struct SvgShape final {
+    std::vector<std::vector<SvgPoint>> polygons;
+    SvgColor fill{0.0F, 0.0F, 0.0F, 1.0F, false};
+    SvgColor stroke{0.0F, 0.0F, 0.0F, 0.0F, true};
     float strokeWidth = 1.0F;
     bool closed = true;
 };
 
 } // namespace
 
-bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
-                                   const SvgRasterOptionsUVE& options,
-                                   TextureAssetUVE& outTexture) {
+bool RasterizeSvgToTextureAsset(const std::string_view svgSource,
+                                   const SvgRasterOptions& options,
+                                   TextureAsset& outTexture) {
     if (svgSource.find("<svg") == std::string_view::npos) {
         return false;
     }
@@ -321,7 +321,7 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
     float vbW = static_cast<float>(options.fallbackWidth);
     float vbH = static_cast<float>(options.fallbackHeight);
     float docW = 0.0F, docH = 0.0F;
-    std::vector<SvgShapeUVE> shapes;
+    std::vector<SvgShape> shapes;
 
     std::size_t cursor = 0U;
     while (cursor < svgSource.size()) {
@@ -339,12 +339,12 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                tag[nameEnd] != '/') {
             ++nameEnd;
         }
-        const std::string tagName = TrimLowerUVE(tag.substr(0U, nameEnd));
+        const std::string tagName = TrimLower(tag.substr(0U, nameEnd));
 
         if (tagName == "svg") {
-            docW = ParseFloatUVE(ExtractAttrUVE(tag, "width"), 0.0F);
-            docH = ParseFloatUVE(ExtractAttrUVE(tag, "height"), 0.0F);
-            const auto vb = ParseNumberListUVE(ExtractAttrUVE(tag, "viewBox"));
+            docW = ParseFloat(ExtractAttr(tag, "width"), 0.0F);
+            docH = ParseFloat(ExtractAttr(tag, "height"), 0.0F);
+            const auto vb = ParseNumberList(ExtractAttr(tag, "viewBox"));
             if (vb.size() >= 4U && vb[2] > 0.0F && vb[3] > 0.0F) {
                 vbX = vb[0];
                 vbY = vb[1];
@@ -357,34 +357,34 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
             continue;
         }
 
-        SvgShapeUVE shape{};
-        const float opacity = std::clamp(ParseFloatUVE(ExtractAttrUVE(tag, "opacity"), 1.0F), 0.0F, 1.0F);
-        const float fillOp = std::clamp(ParseFloatUVE(ExtractAttrUVE(tag, "fill-opacity"), 1.0F), 0.0F, 1.0F);
+        SvgShape shape{};
+        const float opacity = std::clamp(ParseFloat(ExtractAttr(tag, "opacity"), 1.0F), 0.0F, 1.0F);
+        const float fillOp = std::clamp(ParseFloat(ExtractAttr(tag, "fill-opacity"), 1.0F), 0.0F, 1.0F);
         const float strokeOp =
-            std::clamp(ParseFloatUVE(ExtractAttrUVE(tag, "stroke-opacity"), 1.0F), 0.0F, 1.0F);
-        shape.fill = ParseColorUVE(ExtractAttrUVE(tag, "fill"), SvgColorUVE{0.0F, 0.0F, 0.0F, 1.0F, false});
+            std::clamp(ParseFloat(ExtractAttr(tag, "stroke-opacity"), 1.0F), 0.0F, 1.0F);
+        shape.fill = ParseColor(ExtractAttr(tag, "fill"), SvgColor{0.0F, 0.0F, 0.0F, 1.0F, false});
         shape.fill.a *= opacity * fillOp;
-        shape.stroke = ParseColorUVE(ExtractAttrUVE(tag, "stroke"), SvgColorUVE{0.0F, 0.0F, 0.0F, 0.0F, true});
+        shape.stroke = ParseColor(ExtractAttr(tag, "stroke"), SvgColor{0.0F, 0.0F, 0.0F, 0.0F, true});
         shape.stroke.a *= opacity * strokeOp;
-        shape.strokeWidth = std::max(0.0F, ParseFloatUVE(ExtractAttrUVE(tag, "stroke-width"), 1.0F));
+        shape.strokeWidth = std::max(0.0F, ParseFloat(ExtractAttr(tag, "stroke-width"), 1.0F));
 
         if (tagName == "rect") {
-            const float x = ParseFloatUVE(ExtractAttrUVE(tag, "x"), 0.0F);
-            const float y = ParseFloatUVE(ExtractAttrUVE(tag, "y"), 0.0F);
-            const float w = ParseFloatUVE(ExtractAttrUVE(tag, "width"), 0.0F);
-            const float h = ParseFloatUVE(ExtractAttrUVE(tag, "height"), 0.0F);
+            const float x = ParseFloat(ExtractAttr(tag, "x"), 0.0F);
+            const float y = ParseFloat(ExtractAttr(tag, "y"), 0.0F);
+            const float w = ParseFloat(ExtractAttr(tag, "width"), 0.0F);
+            const float h = ParseFloat(ExtractAttr(tag, "height"), 0.0F);
             if (w > 0.0F && h > 0.0F) {
                 shape.polygons.push_back({{x, y}, {x + w, y}, {x + w, y + h}, {x, y + h}});
                 shapes.push_back(std::move(shape));
             }
         } else if (tagName == "circle" || tagName == "ellipse") {
-            const float cx = ParseFloatUVE(ExtractAttrUVE(tag, "cx"), 0.0F);
-            const float cy = ParseFloatUVE(ExtractAttrUVE(tag, "cy"), 0.0F);
-            const float rx = tagName == "circle" ? ParseFloatUVE(ExtractAttrUVE(tag, "r"), 0.0F)
-                                                 : ParseFloatUVE(ExtractAttrUVE(tag, "rx"), 0.0F);
-            const float ry = tagName == "circle" ? rx : ParseFloatUVE(ExtractAttrUVE(tag, "ry"), 0.0F);
+            const float cx = ParseFloat(ExtractAttr(tag, "cx"), 0.0F);
+            const float cy = ParseFloat(ExtractAttr(tag, "cy"), 0.0F);
+            const float rx = tagName == "circle" ? ParseFloat(ExtractAttr(tag, "r"), 0.0F)
+                                                 : ParseFloat(ExtractAttr(tag, "rx"), 0.0F);
+            const float ry = tagName == "circle" ? rx : ParseFloat(ExtractAttr(tag, "ry"), 0.0F);
             if (rx > 0.0F && ry > 0.0F) {
-                std::vector<SvgPointUVE> pts;
+                std::vector<SvgPoint> pts;
                 constexpr int kSteps = 48;
                 pts.reserve(kSteps);
                 for (int i = 0; i < kSteps; ++i) {
@@ -395,8 +395,8 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                 shapes.push_back(std::move(shape));
             }
         } else if (tagName == "polygon" || tagName == "polyline") {
-            const auto nums = ParseNumberListUVE(ExtractAttrUVE(tag, "points"));
-            std::vector<SvgPointUVE> pts;
+            const auto nums = ParseNumberList(ExtractAttr(tag, "points"));
+            std::vector<SvgPoint> pts;
             for (std::size_t i = 0U; i + 1U < nums.size(); i += 2U) {
                 pts.push_back({nums[i], nums[i + 1U]});
             }
@@ -406,16 +406,16 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                 shapes.push_back(std::move(shape));
             }
         } else if (tagName == "line") {
-            const float x1 = ParseFloatUVE(ExtractAttrUVE(tag, "x1"), 0.0F);
-            const float y1 = ParseFloatUVE(ExtractAttrUVE(tag, "y1"), 0.0F);
-            const float x2 = ParseFloatUVE(ExtractAttrUVE(tag, "x2"), 0.0F);
-            const float y2 = ParseFloatUVE(ExtractAttrUVE(tag, "y2"), 0.0F);
+            const float x1 = ParseFloat(ExtractAttr(tag, "x1"), 0.0F);
+            const float y1 = ParseFloat(ExtractAttr(tag, "y1"), 0.0F);
+            const float x2 = ParseFloat(ExtractAttr(tag, "x2"), 0.0F);
+            const float y2 = ParseFloat(ExtractAttr(tag, "y2"), 0.0F);
             shape.fill.none = true;
             shape.closed = false;
             shape.polygons.push_back({{x1, y1}, {x2, y2}});
             shapes.push_back(std::move(shape));
         } else if (tagName == "path") {
-            shape.polygons = ParsePathPolygonsUVE(ExtractAttrUVE(tag, "d"));
+            shape.polygons = ParsePathPolygons(ExtractAttr(tag, "d"));
             if (!shape.polygons.empty()) {
                 shapes.push_back(std::move(shape));
             }
@@ -436,7 +436,7 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
     const float scaleX = vbW / static_cast<float>(outW);
     const float scaleY = vbH / static_cast<float>(outH);
 
-    for (const SvgShapeUVE& shape : shapes) {
+    for (const SvgShape& shape : shapes) {
         const bool drawFill = !shape.fill.none && shape.fill.a > 1.0e-4F && shape.closed;
         const bool drawStroke = !shape.stroke.none && shape.stroke.a > 1.0e-4F && shape.strokeWidth > 0.0F;
         if (!drawFill && !drawStroke) {
@@ -458,7 +458,7 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                         if (drawFill) {
                             bool hit = false;
                             for (const auto& poly : shape.polygons) {
-                                if (PointInPolygonUVE(px, py, poly)) {
+                                if (PointInPolygon(px, py, poly)) {
                                     hit = !hit;
                                 }
                             }
@@ -472,7 +472,7 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                                 for (std::size_t i = 0U; i < segCount; ++i) {
                                     const auto& a = poly[i];
                                     const auto& b = poly[(i + 1U) % poly.size()];
-                                    if (DistSqPointSegmentUVE(px, py, a, b) <= halfStrokeSq) {
+                                    if (DistSqPointSegment(px, py, a, b) <= halfStrokeSq) {
                                         hit = true;
                                         break;
                                     }
@@ -484,21 +484,21 @@ bool RasterizeSvgToTextureAssetUVE(const std::string_view svgSource,
                     }
                 }
                 if (fillHits > 0) {
-                    BlendPixelUVE(canvas, outW, x, y, shape.fill, static_cast<float>(fillHits) * invSamples);
+                    BlendPixel(canvas, outW, x, y, shape.fill, static_cast<float>(fillHits) * invSamples);
                 }
                 if (strokeHits > 0) {
-                    BlendPixelUVE(canvas, outW, x, y, shape.stroke, static_cast<float>(strokeHits) * invSamples);
+                    BlendPixel(canvas, outW, x, y, shape.stroke, static_cast<float>(strokeHits) * invSamples);
                 }
             }
         }
     }
 
-    outTexture = TextureAssetUVE{};
+    outTexture = TextureAsset{};
     outTexture.width = outW;
     outTexture.height = outH;
-    outTexture.format = TextureAssetFormatUVE::RGBA8Unorm;
-    outTexture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
-    outTexture.usage = TextureUsageUVE::Color;
+    outTexture.format = TextureAssetFormat::RGBA8Unorm;
+    outTexture.colorSpace = TextureAssetColorSpace::Srgb;
+    outTexture.usage = TextureUsage::Color;
     outTexture.pixels.resize(static_cast<std::size_t>(outW) * outH * 4U);
     for (std::size_t i = 0U; i < outTexture.pixels.size(); ++i) {
         const int v = static_cast<int>(std::lrintf(std::clamp(canvas[i], 0.0F, 1.0F) * 255.0F));

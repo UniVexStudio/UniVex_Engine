@@ -10,18 +10,18 @@
 
 namespace UVE::Scene {
 
-bool IsSky3DObjectComponentValidUVE(const Sky3DComponentUVE& value) noexcept {
+bool IsSky3DObjectComponentValid(const Sky3DComponent& value) noexcept {
     // Every source a saved document could name, including the reserved one: an authored scene that
     // selected it must still load, and the renderer falls back to the gradient for it.
-    const bool sourceKnown = value.source == SkySourceUVE::Gradient || value.source == SkySourceUVE::Panorama ||
-                             value.source == SkySourceUVE::Atmosphere;
-    const auto colorIsSane = [](const Math::Vector3UVE& color) noexcept {
-        return IsFinite3DObjectVectorUVE(color) && color.x >= 0.0F && color.y >= 0.0F && color.z >= 0.0F;
+    const bool sourceKnown = value.source == SkySource::Gradient || value.source == SkySource::Panorama ||
+                             value.source == SkySource::Atmosphere;
+    const auto colorIsSane = [](const Math::Vector3& color) noexcept {
+        return IsFinite3DObjectVector(color) && color.x >= 0.0F && color.y >= 0.0F && color.z >= 0.0F;
     };
     return sourceKnown && colorIsSane(value.skyColor) && colorIsSane(value.horizonColor) &&
            colorIsSane(value.groundColor) && std::isfinite(value.skyCurve) && value.skyCurve > 0.0F &&
            std::isfinite(value.groundCurve) && value.groundCurve > 0.0F &&
-           IsBounded3DObjectStringUVE(value.panoramaPath) && std::isfinite(value.panoramaRotationDegrees) &&
+           IsBounded3DObjectString(value.panoramaPath) && std::isfinite(value.panoramaRotationDegrees) &&
            std::isfinite(value.panoramaExposure) &&
            // Densities are multipliers on real coefficients, so negative would mean negative air.
            // The anisotropy bound is the Henyey-Greenstein singularity: at exactly +/-1 the phase
@@ -66,26 +66,26 @@ namespace {
 /// Vertical Rayleigh optical depth per channel: the coefficient times the scale height, which is
 /// what a column of air presents looking straight up. The same coefficients the sky shader
 /// integrates, so ambient and the drawn sky cannot disagree about what colour the air is.
-constexpr float kRayleighPerMetreRedUVE = 5.8e-6F;
-constexpr float kRayleighPerMetreGreenUVE = 13.5e-6F;
-constexpr float kRayleighPerMetreBlueUVE = 33.1e-6F;
-constexpr float kRayleighScaleHeightMetresUVE = 8000.0F;
-constexpr float kPiUVE = 3.14159265358979323846F;
+constexpr float kRayleighPerMetreRed = 5.8e-6F;
+constexpr float kRayleighPerMetreGreen = 13.5e-6F;
+constexpr float kRayleighPerMetreBlue = 33.1e-6F;
+constexpr float kRayleighScaleHeightMetres = 8000.0F;
+constexpr float kPi = 3.14159265358979323846F;
 
 /// Calibration for the ambient the sky throws: chosen so a noon sky lands a little above the
 /// environment's authored default triple rather than several times above it. Not a physical
 /// constant - the irradiance integral it stands in for is not evaluated here - so it is named for
 /// what it is and kept in one place.
-constexpr float kSkyAmbientCalibrationUVE = 0.35F;
+constexpr float kSkyAmbientCalibration = 0.35F;
 /// How much of the sky's own tint the ground takes. The ground sees the sky above it, so it is lit
 /// by the same colour, but from a hemisphere dimmed by its own albedo.
-constexpr float kSkyAmbientGroundShareUVE = 0.75F;
+constexpr float kSkyAmbientGroundShare = 0.75F;
 
-[[nodiscard]] float LuminanceUVE(const Math::Vector3UVE& color) noexcept {
+[[nodiscard]] float Luminance(const Math::Vector3& color) noexcept {
     return 0.2126F * color.x + 0.7152F * color.y + 0.0722F * color.z;
 }
 
-[[nodiscard]] float SmoothStepUVE(const float edge0, const float edge1, const float value) noexcept {
+[[nodiscard]] float SmoothStep(const float edge0, const float edge1, const float value) noexcept {
     if (edge1 - edge0 <= 0.0F) {
         return value < edge0 ? 0.0F : 1.0F;
     }
@@ -93,54 +93,54 @@ constexpr float kSkyAmbientGroundShareUVE = 0.75F;
     return t * t * (3.0F - 2.0F * t);
 }
 
-[[nodiscard]] Math::Vector3UVE MixUVE(const Math::Vector3UVE& a, const Math::Vector3UVE& b,
+[[nodiscard]] Math::Vector3 Mix(const Math::Vector3& a, const Math::Vector3& b,
                                      const float t) noexcept {
-    return Math::Vector3UVE{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+    return Math::Vector3{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
 }
 
 /// Air mass: how much thicker the atmosphere is along a line to the sun than straight up. The
 /// Kasten-Young form is used rather than the naive 1/sin because it stays finite at the horizon,
 /// where 1/sin does not - and the horizon is exactly where this matters most.
-[[nodiscard]] float AirMassUVE(const float altitudeDegrees) noexcept {
+[[nodiscard]] float AirMass(const float altitudeDegrees) noexcept {
     const float altitude = std::max(altitudeDegrees, 0.0F);
-    const float denominator = std::sin(altitude * kPiUVE / 180.0F) +
+    const float denominator = std::sin(altitude * kPi / 180.0F) +
                               0.50572F * std::pow(altitude + 6.07995F, -1.6364F);
     return denominator > 1.0e-4F ? 1.0F / denominator : 1.0e4F;
 }
 
 } // namespace
 
-Math::Vector3UVE SkySunTransmittanceUVE(const float sunAltitudeRadians, const float rayleighDensity) noexcept {
+Math::Vector3 SkySunTransmittance(const float sunAltitudeRadians, const float rayleighDensity) noexcept {
     const float altitudeDegrees =
-        std::isfinite(sunAltitudeRadians) ? sunAltitudeRadians * 180.0F / kPiUVE : 90.0F;
+        std::isfinite(sunAltitudeRadians) ? sunAltitudeRadians * 180.0F / kPi : 90.0F;
     const float density = std::isfinite(rayleighDensity) ? std::max(rayleighDensity, 0.0F) : 1.0F;
-    const float path = AirMassUVE(altitudeDegrees) * density;
+    const float path = AirMass(altitudeDegrees) * density;
     const auto survive = [path](const float perMetre) {
-        return std::exp(-perMetre * kRayleighScaleHeightMetresUVE * path);
+        return std::exp(-perMetre * kRayleighScaleHeightMetres * path);
     };
-    return Math::Vector3UVE{survive(kRayleighPerMetreRedUVE), survive(kRayleighPerMetreGreenUVE),
-                            survive(kRayleighPerMetreBlueUVE)};
+    return Math::Vector3{survive(kRayleighPerMetreRed), survive(kRayleighPerMetreGreen),
+                            survive(kRayleighPerMetreBlue)};
 }
 
-SkyAmbientUVE ResolveSkyAmbientUVE(const Math::Vector3UVE& skyColor, const Math::Vector3UVE& horizonColor,
-                                   const Math::Vector3UVE& groundColor, const float rayleighDensity,
-                                   const float strengthScale, const Math::Vector3UVE& sunDirection) noexcept {
-    SkyAmbientUVE result;
+SkyAmbient ResolveSkyAmbient(const Math::Vector3& skyColor, const Math::Vector3& horizonColor,
+                                   const Math::Vector3& groundColor, const float rayleighDensity,
+                                   const float strengthScale, const Math::Vector3& sunDirection) noexcept {
+    SkyAmbient result;
     const bool directionUsable =
-        Math::IsFiniteUVE(sunDirection) && Math::LengthSquaredUVE(sunDirection) > 1.0e-12F;
-    const Math::Vector3UVE up =
-        directionUsable ? Math::NormalizeUVE(sunDirection) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    if (!Math::IsFiniteUVE(up)) {
+        Math::IsFinite(sunDirection) && Math::LengthSquared(sunDirection) > 1.0e-12F;
+    const Math::Vector3 up =
+        directionUsable ? Math::Normalize(sunDirection) : Math::Vector3{0.0F, 1.0F, 0.0F};
+    if (!Math::IsFinite(up)) {
         return result;
     }
-    const float altitudeDegrees = std::asin(std::clamp(up.y, -1.0F, 1.0F)) * 180.0F / kPiUVE;
+    const float altitudeDegrees = std::asin(std::clamp(up.y, -1.0F, 1.0F)) * 180.0F / kPi;
 
     // Two curves, and they are not the same curve. `daylight` is how much light there is at all: it
     // starts at astronomical twilight, -18 degrees, where the sky is still faintly lit, and reaches
     // full by four degrees, where the sun has cleared the haze. `lowness` is how red that light is:
     // it only begins at the horizon, because a high sun reddens nothing.
-    const float daylight = SmoothStepUVE(-18.0F, 4.0F, altitudeDegrees);
-    const float lowness = 1.0F - SmoothStepUVE(0.0F, 30.0F, altitudeDegrees);
+    const float daylight = SmoothStep(-18.0F, 4.0F, altitudeDegrees);
+    const float lowness = 1.0F - SmoothStep(0.0F, 30.0F, altitudeDegrees);
     result.daylight = daylight;
     if (daylight <= 0.0F) {
         return result;
@@ -149,47 +149,47 @@ SkyAmbientUVE ResolveSkyAmbientUVE(const Math::Vector3UVE& skyColor, const Math:
     // How warm the light is: the transmittance normalised by its own brightness, so what is left is
     // a colour. Floored and clamped because at the horizon the ratio runs away - red passes, blue
     // does not - and an unclamped ratio would turn a sunset's ambient into one blown-out channel.
-    const Math::Vector3UVE transmittance =
-        SkySunTransmittanceUVE(altitudeDegrees * kPiUVE / 180.0F, rayleighDensity);
-    const float brightness = std::max(LuminanceUVE(transmittance), 0.05F);
-    const Math::Vector3UVE tint{std::clamp(transmittance.x / brightness, 0.25F, 3.0F),
+    const Math::Vector3 transmittance =
+        SkySunTransmittance(altitudeDegrees * kPi / 180.0F, rayleighDensity);
+    const float brightness = std::max(Luminance(transmittance), 0.05F);
+    const Math::Vector3 tint{std::clamp(transmittance.x / brightness, 0.25F, 3.0F),
                                 std::clamp(transmittance.y / brightness, 0.25F, 3.0F),
                                 std::clamp(transmittance.z / brightness, 0.25F, 3.0F)};
 
     // Which band lights the upper hemisphere. At a high sun it is the zenith band; as the sun drops
     // more of it is the horizon band, which is why a sunset's fill is orange and not blue.
-    const Math::Vector3UVE above = MixUVE(skyColor, horizonColor, 0.75F * lowness);
-    const Math::Vector3UVE skyTint = MixUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F}, tint, 0.45F);
-    const Math::Vector3UVE groundTint = MixUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F}, tint, 0.30F);
+    const Math::Vector3 above = Mix(skyColor, horizonColor, 0.75F * lowness);
+    const Math::Vector3 skyTint = Mix(Math::Vector3{1.0F, 1.0F, 1.0F}, tint, 0.45F);
+    const Math::Vector3 groundTint = Mix(Math::Vector3{1.0F, 1.0F, 1.0F}, tint, 0.30F);
 
-    const float strength = kSkyAmbientCalibrationUVE * std::max(strengthScale, 0.0F) * daylight;
-    result.sky = Math::Vector3UVE{above.x * strength * skyTint.x, above.y * strength * skyTint.y,
+    const float strength = kSkyAmbientCalibration * std::max(strengthScale, 0.0F) * daylight;
+    result.sky = Math::Vector3{above.x * strength * skyTint.x, above.y * strength * skyTint.y,
                                   above.z * strength * skyTint.z};
-    const float groundStrength = strength * kSkyAmbientGroundShareUVE;
-    result.ground = Math::Vector3UVE{groundColor.x * groundStrength * groundTint.x,
+    const float groundStrength = strength * kSkyAmbientGroundShare;
+    result.ground = Math::Vector3{groundColor.x * groundStrength * groundTint.x,
                                      groundColor.y * groundStrength * groundTint.y,
                                      groundColor.z * groundStrength * groundTint.z};
     return result;
 }
 
-SkyAmbientUVE ResolveSkyAmbientUVE(const Sky3DComponentUVE& sky, const Math::Vector3UVE& sunDirection) noexcept {
-    return ResolveSkyAmbientUVE(sky.skyColor, sky.horizonColor, sky.groundColor, sky.atmosphereRayleigh,
+SkyAmbient ResolveSkyAmbient(const Sky3DComponent& sky, const Math::Vector3& sunDirection) noexcept {
+    return ResolveSkyAmbient(sky.skyColor, sky.horizonColor, sky.groundColor, sky.atmosphereRayleigh,
                                 sky.ambientStrength, sunDirection);
 }
 
-Math::Vector3UVE ResolveSkyFogColorUVE(const Math::Vector3UVE& groundColor,
-                                       const Math::Vector3UVE& horizonColor) noexcept {
+Math::Vector3 ResolveSkyFogColor(const Math::Vector3& groundColor,
+                                       const Math::Vector3& horizonColor) noexcept {
     // Fog is aerial perspective: distant geometry fades into the light it is seen THROUGH, which is
     // the horizon band, with some of the ground beneath it mixed in for a low, thick haze. Nothing
     // here reads the sun, because the sky's bands already carry the hour.
-    return MixUVE(groundColor, horizonColor, 0.65F);
+    return Mix(groundColor, horizonColor, 0.65F);
 }
 
-void ApplySky3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                   const Sky3DObjectDefinitionUVE& value) {
-    EnsureObjectBaselineUVE(entityManager, entity, Sky3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Sky3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<Sky3DComponentUVE>(entity, value.sky);
+void ApplySky3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                   const Sky3DObjectDefinition& value) {
+    EnsureObjectBaseline(entityManager, entity, Sky3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<Sky3DComponent>(entity)) {
+        entityManager.AddComponent<Sky3DComponent>(entity, value.sky);
     }
 }
 

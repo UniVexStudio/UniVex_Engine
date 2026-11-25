@@ -16,41 +16,41 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] Math::Vector3UVE GizmoColorUVE(const Math::Vector3UVE& color, const float energy) noexcept {
+[[nodiscard]] Math::Vector3 GizmoColor(const Math::Vector3& color, const float energy) noexcept {
     const float scale = std::max(energy, 0.35F);
-    return Math::Vector3UVE{std::clamp(color.x * scale, 0.15F, 1.0F),
+    return Math::Vector3{std::clamp(color.x * scale, 0.15F, 1.0F),
                             std::clamp(color.y * scale, 0.15F, 1.0F),
                             std::clamp(color.z * scale, 0.15F, 1.0F)};
 }
 
-void TryAddLightDirectionGizmoUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                  const Math::Vector3UVE& color, const float energy,
-                                  std::vector<LightDirectionGizmoUVE>& out) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+void TryAddLightDirectionGizmo(IEntityManager& entityManager, const Entity entity,
+                                  const Math::Vector3& color, const float energy,
+                                  std::vector<LightDirectionGizmo>& out) {
+    if (!entityManager.IsAlive(entity) ||
+        entityManager.HasComponent<EditorInternalEntityComponent>(entity) ||
+        !entityManager.HasComponent<WorldTransformComponent>(entity)) {
         return;
     }
-    const WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-    Math::QuaternionUVE rotation{};
-    if (!Math::IsFiniteUVE(world.worldPosition) || !Math::TryNormalizeUVE(world.worldRotation, rotation)) {
+    const WorldTransformComponent& world =
+        entityManager.GetComponent<WorldTransformComponent>(entity);
+    Math::Quaternion rotation{};
+    if (!Math::IsFinite(world.worldPosition) || !Math::TryNormalize(world.worldRotation, rotation)) {
         return;
     }
-    const Math::Vector3UVE direction = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
-    if (!Math::IsFiniteUVE(direction) || Math::LengthSquaredUVE(direction) < 1.0e-8F) {
+    const Math::Vector3 direction = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, -1.0F});
+    if (!Math::IsFinite(direction) || Math::LengthSquared(direction) < 1.0e-8F) {
         return;
     }
-    LightDirectionGizmoUVE gizmo;
+    LightDirectionGizmo gizmo;
     gizmo.origin = world.worldPosition;
-    gizmo.direction = Math::NormalizeUVE(direction);
-    gizmo.color = GizmoColorUVE(color, energy);
+    gizmo.direction = Math::Normalize(direction);
+    gizmo.color = GizmoColor(color, energy);
     out.push_back(gizmo);
 }
 
 } // namespace
 
-bool IsDirectionalLight3DComponentValidUVE(const DirectionalLight3DComponentUVE& value) noexcept {
+bool IsDirectionalLight3DComponentValid(const DirectionalLight3DComponent& value) noexcept {
     return std::isfinite(value.shadowMaxDistance) && value.shadowMaxDistance >= 0.0F &&
            std::isfinite(value.shadowSplitBlend) && value.shadowSplitBlend >= -1.0F && value.shadowSplitBlend <= 1.0F &&
            std::isfinite(value.shadowDistanceFadeRange) && value.shadowDistanceFadeRange >= 0.0F &&
@@ -63,41 +63,41 @@ bool IsDirectionalLight3DComponentValidUVE(const DirectionalLight3DComponentUVE&
            value.discLimbDarkening >= 0.0F && value.discLimbDarkening <= 1.0F;
 }
 
-void ApplyDirectionalLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                              const DirectionalLight3DObjectDefinitionUVE& value) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyDirectionalLight3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                              const DirectionalLight3DObjectDefinition& value) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
     // The definition's emitter first, so the base (which only adds what is missing) keeps it.
-    if (!entityManager.HasComponentUVE<LightEmitterComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<LightEmitterComponentUVE>(entity, value.emitter);
+    if (!entityManager.HasComponent<LightEmitterComponent>(entity)) {
+        entityManager.AddComponent<LightEmitterComponent>(entity, value.emitter);
     }
-    ApplyLightEmitter3DBaseUVE(entityManager, entity, DirectionalLight3DObjectDefinitionUVE::defaultName);
-    if (!entityManager.HasComponentUVE<DirectionalLight3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<DirectionalLight3DComponentUVE>(entity, value.light);
+    ApplyLightEmitter3DBase(entityManager, entity, DirectionalLight3DObjectDefinition::defaultName);
+    if (!entityManager.HasComponent<DirectionalLight3DComponent>(entity)) {
+        entityManager.AddComponent<DirectionalLight3DComponent>(entity, value.light);
     }
 }
 
-void CollectLightDirectionGizmosUVE(IEntityManagerUVE& entityManager, std::vector<LightDirectionGizmoUVE>& out) {
-    entityManager.ForEachUVE<WorldTransformComponentUVE, DirectionalLight3DComponentUVE, LightEmitterComponentUVE>(
-        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE&,
-                               const DirectionalLight3DComponentUVE& directional,
-                               const LightEmitterComponentUVE& emitter) {
-            if (!IsDirectionalLight3DComponentValidUVE(directional) ||
-                !IsLightEmitterComponentValidUVE(emitter)) {
+void CollectLightDirectionGizmos(IEntityManager& entityManager, std::vector<LightDirectionGizmo>& out) {
+    entityManager.ForEach<WorldTransformComponent, DirectionalLight3DComponent, LightEmitterComponent>(
+        [&entityManager, &out](const Entity entity, const WorldTransformComponent&,
+                               const DirectionalLight3DComponent& directional,
+                               const LightEmitterComponent& emitter) {
+            if (!IsDirectionalLight3DComponentValid(directional) ||
+                !IsLightEmitterComponentValid(emitter)) {
                 return;
             }
-            TryAddLightDirectionGizmoUVE(entityManager, entity, Math::ToVector3UVE(emitter.color),
+            TryAddLightDirectionGizmo(entityManager, entity, Math::ToVector3(emitter.color),
                                             emitter.energy, out);
         });
-    entityManager.ForEachUVE<WorldTransformComponentUVE, LightComponentUVE>(
-        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE&,
-                               const LightComponentUVE& light) {
-            if (!IsLightComponentValidUVE(light) || light.type != LightTypeUVE::Directional ||
-                entityManager.HasComponentUVE<DirectionalLight3DComponentUVE>(entity)) {
+    entityManager.ForEach<WorldTransformComponent, LightComponent>(
+        [&entityManager, &out](const Entity entity, const WorldTransformComponent&,
+                               const LightComponent& light) {
+            if (!IsLightComponentValid(light) || light.type != LightType::Directional ||
+                entityManager.HasComponent<DirectionalLight3DComponent>(entity)) {
                 return;
             }
-            TryAddLightDirectionGizmoUVE(entityManager, entity, Math::ToVector3UVE(light.color),
+            TryAddLightDirectionGizmo(entityManager, entity, Math::ToVector3(light.color),
                                             light.intensity, out);
         });
 }

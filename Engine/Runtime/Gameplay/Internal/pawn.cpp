@@ -9,100 +9,100 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsFiniteInputUVE(const Gameplay::GameplayInputUVE& input) noexcept {
+[[nodiscard]] bool IsFiniteInput(const Gameplay::GameplayInput& input) noexcept {
     return std::isfinite(input.move.x) && std::isfinite(input.move.y) && std::isfinite(input.move.z) &&
            std::isfinite(input.rise) && std::isfinite(input.lookPointer.x) &&
            std::isfinite(input.lookPointer.y) && std::isfinite(input.lookStick.x) &&
            std::isfinite(input.lookStick.y);
 }
 
-[[nodiscard]] bool IsEarlierUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
+[[nodiscard]] bool IsEarlier(const Entity lhs, const Entity rhs) noexcept {
     return lhs.index != rhs.index ? lhs.index < rhs.index : lhs.generation < rhs.generation;
 }
 
-[[nodiscard]] bool IsEarlierLinkUVE(const PossessionLinkUVE& lhs,
-                                    const PossessionLinkUVE& rhs) noexcept {
+[[nodiscard]] bool IsEarlierLink(const PossessionLink& lhs,
+                                    const PossessionLink& rhs) noexcept {
     if (lhs.controller.index != rhs.controller.index) {
         return lhs.controller.index < rhs.controller.index;
     }
     if (lhs.controller.generation != rhs.controller.generation) {
         return lhs.controller.generation < rhs.controller.generation;
     }
-    return IsEarlierUVE(lhs.pawn, rhs.pawn);
+    return IsEarlier(lhs.pawn, rhs.pawn);
 }
 
 // Links outlive their targets: a destroyed controller leaves a stale handle behind, and the
-// typed HasComponentUVE<T>() asserts liveness in debug builds. Every query below that follows a
+// typed HasComponent<T>() asserts liveness in debug builds. Every query below that follows a
 // link - rather than a handle proven live by iteration - goes through this guard.
 template <typename TComponent>
-[[nodiscard]] bool HasLiveComponentUVE(const IEntityManagerUVE& entityManager,
-                                       const EntityUVE entity) {
-    return entity != kInvalidEntityUVE && entityManager.IsAliveUVE(entity) &&
-           entityManager.HasComponentUVE<TComponent>(entity);
+[[nodiscard]] bool HasLiveComponent(const IEntityManager& entityManager,
+                                       const Entity entity) {
+    return entity != kInvalidEntity && entityManager.IsAlive(entity) &&
+           entityManager.HasComponent<TComponent>(entity);
 }
 
 } // namespace
 
-bool IsControllerComponentValidUVE(const ControllerComponentUVE& value) noexcept {
+bool IsControllerComponentValid(const ControllerComponent& value) noexcept {
     return static_cast<std::uint8_t>(value.kind) <=
-           static_cast<std::uint8_t>(ControllerKindUVE::AI);
+           static_cast<std::uint8_t>(ControllerKind::AI);
 }
 
-bool IsPawnComponentValidUVE(const PawnComponentUVE& value) noexcept {
-    return IsFiniteInputUVE(value.input);
+bool IsPawnComponentValid(const PawnComponent& value) noexcept {
+    return IsFiniteInput(value.input);
 }
 
-EntityUVE FindPossessedPawnUVE(const IEntityManagerUVE& entityManager,
-                               const EntityUVE controllerEntity) {
-    if (!HasLiveComponentUVE<ControllerComponentUVE>(entityManager, controllerEntity)) {
-        return kInvalidEntityUVE;
+Entity FindPossessedPawn(const IEntityManager& entityManager,
+                               const Entity controllerEntity) {
+    if (!HasLiveComponent<ControllerComponent>(entityManager, controllerEntity)) {
+        return kInvalidEntity;
     }
-    const EntityUVE pawn =
-        entityManager.GetComponentUVE<ControllerComponentUVE>(controllerEntity).pawn;
-    if (!HasLiveComponentUVE<PawnComponentUVE>(entityManager, pawn) ||
-        entityManager.GetComponentUVE<PawnComponentUVE>(pawn).controller != controllerEntity) {
-        return kInvalidEntityUVE;
+    const Entity pawn =
+        entityManager.GetComponent<ControllerComponent>(controllerEntity).pawn;
+    if (!HasLiveComponent<PawnComponent>(entityManager, pawn) ||
+        entityManager.GetComponent<PawnComponent>(pawn).controller != controllerEntity) {
+        return kInvalidEntity;
     }
     return pawn;
 }
 
-EntityUVE FindPawnControllerUVE(const IEntityManagerUVE& entityManager, const EntityUVE pawnEntity) {
-    if (!HasLiveComponentUVE<PawnComponentUVE>(entityManager, pawnEntity)) {
-        return kInvalidEntityUVE;
+Entity FindPawnController(const IEntityManager& entityManager, const Entity pawnEntity) {
+    if (!HasLiveComponent<PawnComponent>(entityManager, pawnEntity)) {
+        return kInvalidEntity;
     }
-    const EntityUVE controller =
-        entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity).controller;
-    if (!HasLiveComponentUVE<ControllerComponentUVE>(entityManager, controller) ||
-        entityManager.GetComponentUVE<ControllerComponentUVE>(controller).pawn != pawnEntity) {
-        return kInvalidEntityUVE;
+    const Entity controller =
+        entityManager.GetComponent<PawnComponent>(pawnEntity).controller;
+    if (!HasLiveComponent<ControllerComponent>(entityManager, controller) ||
+        entityManager.GetComponent<ControllerComponent>(controller).pawn != pawnEntity) {
+        return kInvalidEntity;
     }
     return controller;
 }
 
-bool PossessControllerUVE(IEntityManagerUVE& entityManager, const EntityUVE controllerEntity,
-                          const EntityUVE pawnEntity) {
-    if (!HasLiveComponentUVE<ControllerComponentUVE>(entityManager, controllerEntity) ||
-        !HasLiveComponentUVE<PawnComponentUVE>(entityManager, pawnEntity)) {
+bool PossessController(IEntityManager& entityManager, const Entity controllerEntity,
+                          const Entity pawnEntity) {
+    if (!HasLiveComponent<ControllerComponent>(entityManager, controllerEntity) ||
+        !HasLiveComponent<PawnComponent>(entityManager, pawnEntity)) {
         return false;
     }
-    ControllerComponentUVE& controller =
-        entityManager.GetComponentUVE<ControllerComponentUVE>(controllerEntity);
-    PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity);
+    ControllerComponent& controller =
+        entityManager.GetComponent<ControllerComponent>(controllerEntity);
+    PawnComponent& pawn = entityManager.GetComponent<PawnComponent>(pawnEntity);
     if (controller.pawn == pawnEntity && pawn.controller == controllerEntity) {
         return true;
     }
-    if (HasLiveComponentUVE<PawnComponentUVE>(entityManager, controller.pawn)) {
-        PawnComponentUVE& previous = entityManager.GetComponentUVE<PawnComponentUVE>(controller.pawn);
+    if (HasLiveComponent<PawnComponent>(entityManager, controller.pawn)) {
+        PawnComponent& previous = entityManager.GetComponent<PawnComponent>(controller.pawn);
         if (previous.controller == controllerEntity) {
-            previous.controller = kInvalidEntityUVE;
+            previous.controller = kInvalidEntity;
             previous.input = {};
         }
     }
-    if (HasLiveComponentUVE<ControllerComponentUVE>(entityManager, pawn.controller)) {
-        ControllerComponentUVE& previous =
-            entityManager.GetComponentUVE<ControllerComponentUVE>(pawn.controller);
+    if (HasLiveComponent<ControllerComponent>(entityManager, pawn.controller)) {
+        ControllerComponent& previous =
+            entityManager.GetComponent<ControllerComponent>(pawn.controller);
         if (previous.pawn == pawnEntity) {
-            previous.pawn = kInvalidEntityUVE;
+            previous.pawn = kInvalidEntity;
         }
     }
     controller.pawn = pawnEntity;
@@ -110,104 +110,104 @@ bool PossessControllerUVE(IEntityManagerUVE& entityManager, const EntityUVE cont
     return true;
 }
 
-bool UnpossessControllerUVE(IEntityManagerUVE& entityManager, const EntityUVE controllerEntity) {
-    if (!HasLiveComponentUVE<ControllerComponentUVE>(entityManager, controllerEntity)) {
+bool UnpossessController(IEntityManager& entityManager, const Entity controllerEntity) {
+    if (!HasLiveComponent<ControllerComponent>(entityManager, controllerEntity)) {
         return false;
     }
-    ControllerComponentUVE& controller =
-        entityManager.GetComponentUVE<ControllerComponentUVE>(controllerEntity);
-    if (controller.pawn == kInvalidEntityUVE) {
+    ControllerComponent& controller =
+        entityManager.GetComponent<ControllerComponent>(controllerEntity);
+    if (controller.pawn == kInvalidEntity) {
         return false;
     }
-    const EntityUVE pawnEntity = controller.pawn;
-    controller.pawn = kInvalidEntityUVE;
-    if (HasLiveComponentUVE<PawnComponentUVE>(entityManager, pawnEntity)) {
-        PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity);
+    const Entity pawnEntity = controller.pawn;
+    controller.pawn = kInvalidEntity;
+    if (HasLiveComponent<PawnComponent>(entityManager, pawnEntity)) {
+        PawnComponent& pawn = entityManager.GetComponent<PawnComponent>(pawnEntity);
         if (pawn.controller == controllerEntity) {
-            pawn.controller = kInvalidEntityUVE;
+            pawn.controller = kInvalidEntity;
             pawn.input = {};
         }
     }
     return true;
 }
 
-void RouteGameplayInputUVE(IEntityManagerUVE& entityManager,
-                           const Gameplay::GameplayInputUVE& snapshot) {
-    const bool writable = IsFiniteInputUVE(snapshot);
-    std::vector<EntityUVE> controllers;
-    entityManager.ForEachUVE<ControllerComponentUVE>(
-        [&controllers](const EntityUVE entity, const ControllerComponentUVE&) {
+void RouteGameplayInput(IEntityManager& entityManager,
+                           const Gameplay::GameplayInput& snapshot) {
+    const bool writable = IsFiniteInput(snapshot);
+    std::vector<Entity> controllers;
+    entityManager.ForEach<ControllerComponent>(
+        [&controllers](const Entity entity, const ControllerComponent&) {
             controllers.push_back(entity);
         });
-    std::sort(controllers.begin(), controllers.end(), IsEarlierUVE);
-    for (const EntityUVE controllerEntity : controllers) {
-        ControllerComponentUVE& controller =
-            entityManager.GetComponentUVE<ControllerComponentUVE>(controllerEntity);
-        if (controller.pawn == kInvalidEntityUVE) {
+    std::sort(controllers.begin(), controllers.end(), IsEarlier);
+    for (const Entity controllerEntity : controllers) {
+        ControllerComponent& controller =
+            entityManager.GetComponent<ControllerComponent>(controllerEntity);
+        if (controller.pawn == kInvalidEntity) {
             continue;
         }
-        const EntityUVE pawnEntity = controller.pawn;
-        if (!HasLiveComponentUVE<PawnComponentUVE>(entityManager, pawnEntity) ||
-            entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity).controller != controllerEntity) {
-            controller.pawn = kInvalidEntityUVE;
+        const Entity pawnEntity = controller.pawn;
+        if (!HasLiveComponent<PawnComponent>(entityManager, pawnEntity) ||
+            entityManager.GetComponent<PawnComponent>(pawnEntity).controller != controllerEntity) {
+            controller.pawn = kInvalidEntity;
             continue;
         }
-        if (writable && controller.kind == ControllerKindUVE::Player) {
-            entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity).input = snapshot;
+        if (writable && controller.kind == ControllerKind::Player) {
+            entityManager.GetComponent<PawnComponent>(pawnEntity).input = snapshot;
         }
     }
-    std::vector<EntityUVE> pawns;
-    entityManager.ForEachUVE<PawnComponentUVE>([&pawns](const EntityUVE entity, const PawnComponentUVE&) {
+    std::vector<Entity> pawns;
+    entityManager.ForEach<PawnComponent>([&pawns](const Entity entity, const PawnComponent&) {
         pawns.push_back(entity);
     });
-    std::sort(pawns.begin(), pawns.end(), IsEarlierUVE);
-    for (const EntityUVE pawnEntity : pawns) {
-        PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(pawnEntity);
-        if (pawn.controller == kInvalidEntityUVE) {
+    std::sort(pawns.begin(), pawns.end(), IsEarlier);
+    for (const Entity pawnEntity : pawns) {
+        PawnComponent& pawn = entityManager.GetComponent<PawnComponent>(pawnEntity);
+        if (pawn.controller == kInvalidEntity) {
             continue;
         }
-        const EntityUVE controllerEntity = pawn.controller;
-        if (!HasLiveComponentUVE<ControllerComponentUVE>(entityManager, controllerEntity) ||
-            entityManager.GetComponentUVE<ControllerComponentUVE>(controllerEntity).pawn != pawnEntity) {
-            pawn.controller = kInvalidEntityUVE;
+        const Entity controllerEntity = pawn.controller;
+        if (!HasLiveComponent<ControllerComponent>(entityManager, controllerEntity) ||
+            entityManager.GetComponent<ControllerComponent>(controllerEntity).pawn != pawnEntity) {
+            pawn.controller = kInvalidEntity;
             pawn.input = {};
         }
     }
 }
 
-PossessionLifecycleReportUVE PossessionLifecycleTrackerUVE::UpdateUVE(
-    IEntityManagerUVE& entityManager) {
-    PossessionLifecycleReportUVE report;
+PossessionLifecycleReport PossessionLifecycleTracker::Update(
+    IEntityManager& entityManager) {
+    PossessionLifecycleReport report;
     report.previousLinkCount = m_activeLinks.size();
-    std::vector<PossessionLinkUVE> current;
-    entityManager.ForEachUVE<ControllerComponentUVE>(
-        [&entityManager, &current](const EntityUVE controller, const ControllerComponentUVE&) {
-            const EntityUVE pawn = FindPossessedPawnUVE(entityManager, controller);
-            if (pawn != kInvalidEntityUVE) {
-                current.push_back(PossessionLinkUVE{controller, pawn});
+    std::vector<PossessionLink> current;
+    entityManager.ForEach<ControllerComponent>(
+        [&entityManager, &current](const Entity controller, const ControllerComponent&) {
+            const Entity pawn = FindPossessedPawn(entityManager, controller);
+            if (pawn != kInvalidEntity) {
+                current.push_back(PossessionLink{controller, pawn});
             }
         });
-    std::sort(current.begin(), current.end(), IsEarlierLinkUVE);
+    std::sort(current.begin(), current.end(), IsEarlierLink);
     report.currentLinkCount = current.size();
-    std::vector<PossessionLinkUVE> formed;
-    std::vector<PossessionLinkUVE> broken;
+    std::vector<PossessionLink> formed;
+    std::vector<PossessionLink> broken;
     std::set_difference(current.begin(), current.end(), m_activeLinks.begin(), m_activeLinks.end(),
-                         std::back_inserter(formed), IsEarlierLinkUVE);
+                         std::back_inserter(formed), IsEarlierLink);
     std::set_difference(m_activeLinks.begin(), m_activeLinks.end(), current.begin(), current.end(),
-                         std::back_inserter(broken), IsEarlierLinkUVE);
-    for (const PossessionLinkUVE& link : formed) {
+                         std::back_inserter(broken), IsEarlierLink);
+    for (const PossessionLink& link : formed) {
         report.transitions.push_back(
-            PossessionTransitionUVE{PossessionTransitionKindUVE::Possessed, link.controller, link.pawn});
+            PossessionTransition{PossessionTransitionKind::Possessed, link.controller, link.pawn});
     }
-    for (const PossessionLinkUVE& link : broken) {
-        report.transitions.push_back(PossessionTransitionUVE{
-            PossessionTransitionKindUVE::Unpossessed, link.controller, link.pawn});
+    for (const PossessionLink& link : broken) {
+        report.transitions.push_back(PossessionTransition{
+            PossessionTransitionKind::Unpossessed, link.controller, link.pawn});
     }
     m_activeLinks = std::move(current);
     return report;
 }
 
-void PossessionLifecycleTrackerUVE::ResetUVE() noexcept {
+void PossessionLifecycleTracker::Reset() noexcept {
     m_activeLinks.clear();
 }
 

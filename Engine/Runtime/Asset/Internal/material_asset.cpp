@@ -22,113 +22,113 @@ namespace UVE::Asset {
 namespace {
 
 // Colors persist under the same "x"/"y"/"z" keys vectors always used: old .uvmat files load
-// byte-identical, and the linear interpretation comes from the ColorUVE type, not the file.
-[[nodiscard]] nlohmann::json ColorToJsonUVE(const Math::ColorUVE& value) {
+// byte-identical, and the linear interpretation comes from the Color type, not the file.
+[[nodiscard]] nlohmann::json ColorToJson(const Math::Color& value) {
     return nlohmann::json{{"x", value.r}, {"y", value.g}, {"z", value.b}};
 }
 
-[[nodiscard]] Math::ColorUVE JsonToColorUVE(const nlohmann::json& value) {
-    return Math::ColorUVE{value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>()};
+[[nodiscard]] Math::Color JsonToColor(const nlohmann::json& value) {
+    return Math::Color{value.at("x").get<float>(), value.at("y").get<float>(), value.at("z").get<float>()};
 }
 
-[[nodiscard]] nlohmann::json Vector2ToJsonUVE(const Math::Vector2UVE& value) {
+[[nodiscard]] nlohmann::json Vector2ToJson(const Math::Vector2& value) {
     return nlohmann::json{{"x", value.x}, {"y", value.y}};
 }
 
-[[nodiscard]] Math::Vector2UVE JsonToVector2UVE(const nlohmann::json& value) {
-    return Math::Vector2UVE{value.at("x").get<float>(), value.at("y").get<float>()};
+[[nodiscard]] Math::Vector2 JsonToVector2(const nlohmann::json& value) {
+    return Math::Vector2{value.at("x").get<float>(), value.at("y").get<float>()};
 }
 
-[[nodiscard]] bool IsFiniteUnitIntervalUVE(const float value) noexcept {
+[[nodiscard]] bool IsFiniteUnitInterval(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
 }
 
-/// The JSON key of each MaterialMapUVE's settings, in order.
-constexpr std::array<const char*, static_cast<std::size_t>(MaterialMapUVE::Count)> kMaterialMapNamesUVE{
+/// The JSON key of each MaterialMap's settings, in order.
+constexpr std::array<const char*, static_cast<std::size_t>(MaterialMap::Count)> kMaterialMapNames{
     "albedo", "normal", "metallicRoughness", "occlusion", "emissive", "metallic", "roughness"};
 
-[[nodiscard]] bool IsFiniteNonNegativeColorUVE(const Math::ColorUVE& value) noexcept {
+[[nodiscard]] bool IsFiniteNonNegativeColor(const Math::Color& value) noexcept {
     return std::isfinite(value.r) && value.r >= 0.0F && std::isfinite(value.g) && value.g >= 0.0F &&
            std::isfinite(value.b) && value.b >= 0.0F;
 }
 
 } // namespace
 
-bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
-    return IsFiniteUnitIntervalUVE(material.albedoColor.r) &&
-           IsFiniteUnitIntervalUVE(material.albedoColor.g) &&
-           IsFiniteUnitIntervalUVE(material.albedoColor.b) &&
-           IsFiniteUnitIntervalUVE(material.albedoAlpha) &&
-           IsFiniteUnitIntervalUVE(material.metallic) && IsFiniteUnitIntervalUVE(material.roughness) &&
-           IsFiniteNonNegativeColorUVE(material.emissiveColor) &&
-           material.billboardMode <= MaterialBillboardModeUVE::Y &&
-           material.alphaSource <= MaterialAlphaSourceUVE::None &&
-           material.cullMode <= MaterialCullModeUVE::Disabled &&
-           material.blendMode <= MaterialBlendModeUVE::Multiply &&
-           material.depthDrawMode <= MaterialDepthDrawModeUVE::DepthPrePass &&
-           material.kind <= MaterialKindUVE::Shader &&
+bool IsMaterialAssetValid(const MaterialAsset& material) noexcept {
+    return IsFiniteUnitInterval(material.albedoColor.r) &&
+           IsFiniteUnitInterval(material.albedoColor.g) &&
+           IsFiniteUnitInterval(material.albedoColor.b) &&
+           IsFiniteUnitInterval(material.albedoAlpha) &&
+           IsFiniteUnitInterval(material.metallic) && IsFiniteUnitInterval(material.roughness) &&
+           IsFiniteNonNegativeColor(material.emissiveColor) &&
+           material.billboardMode <= MaterialBillboardMode::Y &&
+           material.alphaSource <= MaterialAlphaSource::None &&
+           material.cullMode <= MaterialCullMode::Disabled &&
+           material.blendMode <= MaterialBlendMode::Multiply &&
+           material.depthDrawMode <= MaterialDepthDrawMode::DepthPrePass &&
+           material.kind <= MaterialKind::Shader &&
            std::isfinite(material.emissiveEnergy) && material.emissiveEnergy >= 0.0F &&
            std::isfinite(material.normalScale) && material.normalScale >= 0.0F &&
-           IsFiniteUnitIntervalUVE(material.occlusionStrength) &&
+           IsFiniteUnitInterval(material.occlusionStrength) &&
            std::isfinite(material.uvScale.x) && std::isfinite(material.uvScale.y) &&
            std::isfinite(material.uvOffset.x) && std::isfinite(material.uvOffset.y) &&
            std::isfinite(material.uv2Scale.x) && std::isfinite(material.uv2Scale.y) &&
            std::isfinite(material.uv2Offset.x) && std::isfinite(material.uv2Offset.y) &&
            std::isfinite(material.triplanarBlendSharpness) && material.triplanarBlendSharpness >= 0.0F &&
            std::isfinite(material.uv2TriplanarSharpness) && material.uv2TriplanarSharpness >= 0.0F &&
-           IsFiniteUnitIntervalUVE(material.alphaCutoff) &&
-           IsFiniteUnitIntervalUVE(material.dielectricSpecular) &&
+           IsFiniteUnitInterval(material.alphaCutoff) &&
+           IsFiniteUnitInterval(material.dielectricSpecular) &&
            std::isfinite(material.heightScale) && material.heightScale >= 0.0F &&
-           IsFiniteUnitIntervalUVE(material.rimAmount) &&
-           IsFiniteUnitIntervalUVE(material.rimTint.r) && IsFiniteUnitIntervalUVE(material.rimTint.g) &&
-           IsFiniteUnitIntervalUVE(material.rimTint.b) &&
-           IsFiniteUnitIntervalUVE(material.clearcoatAmount) &&
-           IsFiniteUnitIntervalUVE(material.clearcoatRoughness) &&
-           IsFiniteUnitIntervalUVE(material.anisotropyAmount) &&
-           IsFiniteUnitIntervalUVE(material.subsurfaceStrength) &&
-           IsFiniteUnitIntervalUVE(material.refractionAmount) &&
+           IsFiniteUnitInterval(material.rimAmount) &&
+           IsFiniteUnitInterval(material.rimTint.r) && IsFiniteUnitInterval(material.rimTint.g) &&
+           IsFiniteUnitInterval(material.rimTint.b) &&
+           IsFiniteUnitInterval(material.clearcoatAmount) &&
+           IsFiniteUnitInterval(material.clearcoatRoughness) &&
+           IsFiniteUnitInterval(material.anisotropyAmount) &&
+           IsFiniteUnitInterval(material.subsurfaceStrength) &&
+           IsFiniteUnitInterval(material.refractionAmount) &&
            material.parallaxMinLayers > 0U && material.parallaxMinLayers <= material.parallaxMaxLayers &&
            std::isfinite(material.proximityFadeDistance) && material.proximityFadeDistance >= 0.0F &&
            std::isfinite(material.distanceFadeNear) && material.distanceFadeNear >= 0.0F &&
            std::isfinite(material.distanceFadeFar) && material.distanceFadeFar >= 0.0F &&
-           IsFiniteUnitIntervalUVE(material.textureTint.r) &&
-           IsFiniteUnitIntervalUVE(material.textureTint.g) &&
-           IsFiniteUnitIntervalUVE(material.textureTint.b) &&
+           IsFiniteUnitInterval(material.textureTint.r) &&
+           IsFiniteUnitInterval(material.textureTint.g) &&
+           IsFiniteUnitInterval(material.textureTint.b) &&
            std::isfinite(material.textureTileX) && std::isfinite(material.textureTileY) &&
-           std::ranges::all_of(material.maps, [](const MaterialMapSettingsUVE& map) {
+           std::ranges::all_of(material.maps, [](const MaterialMapSettings& map) {
                return std::isfinite(map.tiling.x) && std::isfinite(map.tiling.y) && std::isfinite(map.offset.x) &&
-                      std::isfinite(map.offset.y) && map.channel <= MaterialTextureChannelUVE::Rgb &&
-                      IsFiniteUnitIntervalUVE(map.strength);
+                      std::isfinite(map.offset.y) && map.channel <= MaterialTextureChannel::Rgb &&
+                      IsFiniteUnitInterval(map.strength);
            });
 }
 
-bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
-                                         const Math::Vector3UVE& objectPosition,
-                                         const Math::Vector3UVE& cameraPosition,
-                                         Math::QuaternionUVE& outRotation) noexcept {
-    if (mode == MaterialBillboardModeUVE::Disabled || mode > MaterialBillboardModeUVE::Y) {
+bool TryMakeMaterialBillboardRotation(const MaterialBillboardMode mode,
+                                         const Math::Vector3& objectPosition,
+                                         const Math::Vector3& cameraPosition,
+                                         Math::Quaternion& outRotation) noexcept {
+    if (mode == MaterialBillboardMode::Disabled || mode > MaterialBillboardMode::Y) {
         return false;
     }
-    if (!Math::IsFiniteUVE(objectPosition) || !Math::IsFiniteUVE(cameraPosition)) {
+    if (!Math::IsFinite(objectPosition) || !Math::IsFinite(cameraPosition)) {
         return false;
     }
-    Math::Vector3UVE toCamera = cameraPosition - objectPosition;
-    if (mode == MaterialBillboardModeUVE::Y) {
+    Math::Vector3 toCamera = cameraPosition - objectPosition;
+    if (mode == MaterialBillboardMode::Y) {
         toCamera.y = 0.0F;
     }
-    if (!Math::IsFiniteUVE(toCamera) || Math::LengthSquaredUVE(toCamera) <= 1.0e-12F) {
+    if (!Math::IsFinite(toCamera) || Math::LengthSquared(toCamera) <= 1.0e-12F) {
         return false;
     }
-    return Math::TryMakeLookAtUVE(toCamera, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, outRotation);
+    return Math::TryMakeLookAt(toCamera, Math::Vector3{0.0F, 1.0F, 0.0F}, outRotation);
 }
 
-bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& outMaterial) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+bool LoadMaterialAsset(const std::filesystem::path& path, MaterialAsset& outMaterial) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     if (!file.has_value()) {
-        return false; // ReadUveFileUVE already logged the specific reason.
+        return false; // ReadUveFile already logged the specific reason.
     }
-    if (file->first.assetType != AssetKindUVE::Material) {
-        UVE_ERROR("MaterialAssetUVE: \"{}\" is not a material file (asset type {})", path.string(),
+    if (file->first.assetType != AssetKind::Material) {
+        UVE_ERROR("MaterialAsset: \"{}\" is not a material file (asset type {})", path.string(),
                    static_cast<std::uint32_t>(file->first.assetType));
         return false;
     }
@@ -140,32 +140,32 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
     try {
         payload = nlohmann::json::parse(payloadText);
     } catch (const nlohmann::json::parse_error& parseError) {
-        UVE_ERROR("MaterialAssetUVE: failed to parse \"{}\": {}", path.string(), parseError.what());
+        UVE_ERROR("MaterialAsset: failed to parse \"{}\": {}", path.string(), parseError.what());
         return false;
     }
 
-    MaterialAssetUVE material;
+    MaterialAsset material;
     try {
-        material.albedoColor = JsonToColorUVE(payload.at("albedoColor"));
-        material.albedoTexture = AssetGuidUVE{payload.at("albedoTexture").get<std::uint64_t>()};
-        material.normalTexture = AssetGuidUVE{payload.at("normalTexture").get<std::uint64_t>()};
+        material.albedoColor = JsonToColor(payload.at("albedoColor"));
+        material.albedoTexture = AssetGuid{payload.at("albedoTexture").get<std::uint64_t>()};
+        material.normalTexture = AssetGuid{payload.at("normalTexture").get<std::uint64_t>()};
         material.metallic = payload.at("metallic").get<float>();
         material.roughness = payload.at("roughness").get<float>();
-        material.aoTexture = AssetGuidUVE{payload.at("aoTexture").get<std::uint64_t>()};
-        material.emissiveColor = JsonToColorUVE(payload.at("emissiveColor"));
-        material.vertexShader = AssetGuidUVE{payload.at("vertexShader").get<std::uint64_t>()};
-        material.fragmentShader = AssetGuidUVE{payload.at("fragmentShader").get<std::uint64_t>()};
+        material.aoTexture = AssetGuid{payload.at("aoTexture").get<std::uint64_t>()};
+        material.emissiveColor = JsonToColor(payload.at("emissiveColor"));
+        material.vertexShader = AssetGuid{payload.at("vertexShader").get<std::uint64_t>()};
+        material.fragmentShader = AssetGuid{payload.at("fragmentShader").get<std::uint64_t>()};
         material.isTransparent = payload.at("isTransparent").get<bool>();
         if (payload.contains("billboardMode")) {
             material.billboardMode =
-                static_cast<MaterialBillboardModeUVE>(payload.at("billboardMode").get<std::uint8_t>());
+                static_cast<MaterialBillboardMode>(payload.at("billboardMode").get<std::uint8_t>());
         }
         if (payload.contains("metallicRoughnessTexture")) {
             material.metallicRoughnessTexture =
-                AssetGuidUVE{payload.at("metallicRoughnessTexture").get<std::uint64_t>()};
+                AssetGuid{payload.at("metallicRoughnessTexture").get<std::uint64_t>()};
         }
         if (payload.contains("emissiveTexture")) {
-            material.emissiveTexture = AssetGuidUVE{payload.at("emissiveTexture").get<std::uint64_t>()};
+            material.emissiveTexture = AssetGuid{payload.at("emissiveTexture").get<std::uint64_t>()};
         }
         if (payload.contains("emissiveEnergy")) {
             material.emissiveEnergy = payload.at("emissiveEnergy").get<float>();
@@ -177,16 +177,16 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
             material.occlusionStrength = payload.at("occlusionStrength").get<float>();
         }
         if (payload.contains("uvScale")) {
-            material.uvScale = JsonToVector2UVE(payload.at("uvScale"));
+            material.uvScale = JsonToVector2(payload.at("uvScale"));
         }
         if (payload.contains("uvOffset")) {
-            material.uvOffset = JsonToVector2UVE(payload.at("uvOffset"));
+            material.uvOffset = JsonToVector2(payload.at("uvOffset"));
         }
         if (payload.contains("uv2Scale")) {
-            material.uv2Scale = JsonToVector2UVE(payload.at("uv2Scale"));
+            material.uv2Scale = JsonToVector2(payload.at("uv2Scale"));
         }
         if (payload.contains("uv2Offset")) {
-            material.uv2Offset = JsonToVector2UVE(payload.at("uv2Offset"));
+            material.uv2Offset = JsonToVector2(payload.at("uv2Offset"));
         }
         const auto readBool = [&payload](const char* key, bool& out) {
             if (payload.contains(key)) {
@@ -218,7 +218,7 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         readBool("receiveShadows", material.receiveShadows);
         readFloat("rimAmount", material.rimAmount);
         if (payload.contains("rimTint")) {
-            material.rimTint = JsonToColorUVE(payload.at("rimTint"));
+            material.rimTint = JsonToColor(payload.at("rimTint"));
         }
         readFloat("clearcoatRoughness", material.clearcoatRoughness);
         readFloat("anisotropyAmount", material.anisotropyAmount);
@@ -226,7 +226,7 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         readFloat("refractionAmount", material.refractionAmount);
         readFloat("heightScale", material.heightScale);
         if (payload.contains("heightTexture")) {
-            material.heightTexture = AssetGuidUVE{payload.at("heightTexture").get<std::uint64_t>()};
+            material.heightTexture = AssetGuid{payload.at("heightTexture").get<std::uint64_t>()};
         }
         if (payload.contains("parallaxMinLayers")) {
             material.parallaxMinLayers = payload.at("parallaxMinLayers").get<std::uint8_t>();
@@ -250,27 +250,27 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
             material.albedoAlpha = payload.at("albedoAlpha").get<float>();
         }
         if (payload.contains("metallicTexture")) {
-            material.metallicTexture = AssetGuidUVE{payload.at("metallicTexture").get<std::uint64_t>()};
+            material.metallicTexture = AssetGuid{payload.at("metallicTexture").get<std::uint64_t>()};
         }
         if (payload.contains("roughnessTexture")) {
-            material.roughnessTexture = AssetGuidUVE{payload.at("roughnessTexture").get<std::uint64_t>()};
+            material.roughnessTexture = AssetGuid{payload.at("roughnessTexture").get<std::uint64_t>()};
         }
         if (payload.contains("cullMode")) {
-            material.cullMode = static_cast<MaterialCullModeUVE>(payload.at("cullMode").get<std::uint8_t>());
+            material.cullMode = static_cast<MaterialCullMode>(payload.at("cullMode").get<std::uint8_t>());
         }
         if (payload.contains("blendMode")) {
-            material.blendMode = static_cast<MaterialBlendModeUVE>(payload.at("blendMode").get<std::uint8_t>());
+            material.blendMode = static_cast<MaterialBlendMode>(payload.at("blendMode").get<std::uint8_t>());
         }
         if (payload.contains("alphaSource")) {
             material.alphaSource =
-                static_cast<MaterialAlphaSourceUVE>(payload.at("alphaSource").get<std::uint8_t>());
+                static_cast<MaterialAlphaSource>(payload.at("alphaSource").get<std::uint8_t>());
         }
         if (payload.contains("alphaHashingEnabled")) {
             material.alphaHashingEnabled = payload.at("alphaHashingEnabled").get<bool>();
         }
         if (payload.contains("depthDrawMode")) {
             material.depthDrawMode =
-                static_cast<MaterialDepthDrawModeUVE>(payload.at("depthDrawMode").get<std::uint8_t>());
+                static_cast<MaterialDepthDrawMode>(payload.at("depthDrawMode").get<std::uint8_t>());
         }
         if (payload.contains("depthTestEnabled")) {
             material.depthTestEnabled = payload.at("depthTestEnabled").get<bool>();
@@ -285,22 +285,22 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
             material.clearcoatAmount = payload.at("clearcoatAmount").get<float>();
         }
         if (payload.contains("parentMaterial")) {
-            material.parentMaterial = AssetGuidUVE{payload.at("parentMaterial").get<std::uint64_t>()};
+            material.parentMaterial = AssetGuid{payload.at("parentMaterial").get<std::uint64_t>()};
         }
         if (payload.contains("nextPassMaterial")) {
-            material.nextPassMaterial = AssetGuidUVE{payload.at("nextPassMaterial").get<std::uint64_t>()};
+            material.nextPassMaterial = AssetGuid{payload.at("nextPassMaterial").get<std::uint64_t>()};
         }
         if (payload.contains("useCustomShaderCode")) {
             material.useCustomShaderCode = payload.at("useCustomShaderCode").get<bool>();
         }
         if (payload.contains("kind")) {
-            material.kind = static_cast<MaterialKindUVE>(payload.at("kind").get<std::uint8_t>());
+            material.kind = static_cast<MaterialKind>(payload.at("kind").get<std::uint8_t>());
         }
         if (payload.contains("customShader")) {
-            material.customShader = AssetGuidUVE{payload.at("customShader").get<std::uint64_t>()};
+            material.customShader = AssetGuid{payload.at("customShader").get<std::uint64_t>()};
         }
         if (payload.contains("textureTint")) {
-            material.textureTint = JsonToColorUVE(payload.at("textureTint"));
+            material.textureTint = JsonToColor(payload.at("textureTint"));
         }
         if (payload.contains("textureTileX")) {
             material.textureTileX = payload.at("textureTileX").get<float>();
@@ -312,20 +312,20 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("maps") && payload.at("maps").is_object()) {
             const nlohmann::json& maps = payload.at("maps");
             for (std::size_t index = 0U; index < material.maps.size(); ++index) {
-                const char* const name = kMaterialMapNamesUVE[index];
+                const char* const name = kMaterialMapNames[index];
                 if (!maps.contains(name) || !maps.at(name).is_object()) {
                     continue;
                 }
                 const nlohmann::json& entry = maps.at(name);
-                MaterialMapSettingsUVE& map = material.maps[index];
+                MaterialMapSettings& map = material.maps[index];
                 if (entry.contains("tiling")) {
-                    map.tiling = JsonToVector2UVE(entry.at("tiling"));
+                    map.tiling = JsonToVector2(entry.at("tiling"));
                 }
                 if (entry.contains("offset")) {
-                    map.offset = JsonToVector2UVE(entry.at("offset"));
+                    map.offset = JsonToVector2(entry.at("offset"));
                 }
                 if (entry.contains("channel")) {
-                    map.channel = static_cast<MaterialTextureChannelUVE>(entry.at("channel").get<std::uint8_t>());
+                    map.channel = static_cast<MaterialTextureChannel>(entry.at("channel").get<std::uint8_t>());
                 }
                 map.invert = entry.value("invert", false);
                 map.strength = entry.value("strength", 1.0F);
@@ -333,31 +333,31 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
             }
         }
     } catch (const nlohmann::json::exception& fieldError) {
-        UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
+        UVE_ERROR("MaterialAsset: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
     }
 
-    if (!IsMaterialAssetValidUVE(material)) {
-        UVE_ERROR("MaterialAssetUVE: decoded material contains invalid values in {}", path.string());
+    if (!IsMaterialAssetValid(material)) {
+        UVE_ERROR("MaterialAsset: decoded material contains invalid values in {}", path.string());
         return false;
     }
     outMaterial = material;
     return true;
 }
 
-bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesystem::path& path) {
-    if (!IsMaterialAssetValidUVE(material)) {
-        UVE_ERROR("MaterialAssetUVE: rejected non-finite or out-of-range values before writing {}", path.string());
+bool SaveMaterialAsset(const MaterialAsset& material, const std::filesystem::path& path) {
+    if (!IsMaterialAssetValid(material)) {
+        UVE_ERROR("MaterialAsset: rejected non-finite or out-of-range values before writing {}", path.string());
         return false;
     }
     nlohmann::json payload;
-    payload["albedoColor"] = ColorToJsonUVE(material.albedoColor);
+    payload["albedoColor"] = ColorToJson(material.albedoColor);
     payload["albedoTexture"] = material.albedoTexture.value;
     payload["normalTexture"] = material.normalTexture.value;
     payload["metallic"] = material.metallic;
     payload["roughness"] = material.roughness;
     payload["aoTexture"] = material.aoTexture.value;
-    payload["emissiveColor"] = ColorToJsonUVE(material.emissiveColor);
+    payload["emissiveColor"] = ColorToJson(material.emissiveColor);
     payload["vertexShader"] = material.vertexShader.value;
     payload["fragmentShader"] = material.fragmentShader.value;
     payload["isTransparent"] = material.isTransparent;
@@ -367,14 +367,14 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["emissiveEnergy"] = material.emissiveEnergy;
     payload["normalScale"] = material.normalScale;
     payload["occlusionStrength"] = material.occlusionStrength;
-    payload["uvScale"] = Vector2ToJsonUVE(material.uvScale);
-    payload["uvOffset"] = Vector2ToJsonUVE(material.uvOffset);
+    payload["uvScale"] = Vector2ToJson(material.uvScale);
+    payload["uvOffset"] = Vector2ToJson(material.uvOffset);
     // UV2 and triplanar only when set, so materials that never use them keep their files as they were.
     if (material.uv2Scale.x != 1.0F || material.uv2Scale.y != 1.0F) {
-        payload["uv2Scale"] = Vector2ToJsonUVE(material.uv2Scale);
+        payload["uv2Scale"] = Vector2ToJson(material.uv2Scale);
     }
     if (material.uv2Offset.x != 0.0F || material.uv2Offset.y != 0.0F) {
-        payload["uv2Offset"] = Vector2ToJsonUVE(material.uv2Offset);
+        payload["uv2Offset"] = Vector2ToJson(material.uv2Offset);
     }
     const auto writeBool = [&payload](const char* key, const bool value) {
         if (value) {
@@ -394,7 +394,7 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     writeSharpness("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
     writeBool("aoOnUv2", material.aoOnUv2);
     writeBool("emissionOnUv2", material.emissionOnUv2);
-    const MaterialAssetUVE defaults{};
+    const MaterialAsset defaults{};
     const auto writeFloat = [&payload](const char* key, const float value, const float fallback) {
         if (value != fallback) {
             payload[key] = value;
@@ -416,14 +416,14 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     writeFloat("rimAmount", material.rimAmount, defaults.rimAmount);
     if (material.rimTint.r != defaults.rimTint.r || material.rimTint.g != defaults.rimTint.g ||
         material.rimTint.b != defaults.rimTint.b) {
-        payload["rimTint"] = ColorToJsonUVE(material.rimTint);
+        payload["rimTint"] = ColorToJson(material.rimTint);
     }
     writeFloat("clearcoatRoughness", material.clearcoatRoughness, defaults.clearcoatRoughness);
     writeFloat("anisotropyAmount", material.anisotropyAmount, defaults.anisotropyAmount);
     writeFloat("subsurfaceStrength", material.subsurfaceStrength, defaults.subsurfaceStrength);
     writeFloat("refractionAmount", material.refractionAmount, defaults.refractionAmount);
     writeFloat("heightScale", material.heightScale, defaults.heightScale);
-    if (material.heightTexture != kInvalidAssetGuidUVE) {
+    if (material.heightTexture != kInvalidAssetGuid) {
         payload["heightTexture"] = material.heightTexture.value;
     }
     if (material.parallaxMinLayers != defaults.parallaxMinLayers) {
@@ -443,29 +443,29 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     if (material.albedoAlpha != 1.0F) {
         payload["albedoAlpha"] = material.albedoAlpha;
     }
-    if (material.metallicTexture != kInvalidAssetGuidUVE) {
+    if (material.metallicTexture != kInvalidAssetGuid) {
         payload["metallicTexture"] = material.metallicTexture.value;
     }
-    if (material.roughnessTexture != kInvalidAssetGuidUVE) {
+    if (material.roughnessTexture != kInvalidAssetGuid) {
         payload["roughnessTexture"] = material.roughnessTexture.value;
     }
-    if (material.cullMode != MaterialCullModeUVE::Back) {
+    if (material.cullMode != MaterialCullMode::Back) {
         payload["cullMode"] = static_cast<std::uint8_t>(material.cullMode);
     }
-    if (material.blendMode != MaterialBlendModeUVE::Opaque) {
+    if (material.blendMode != MaterialBlendMode::Opaque) {
         payload["blendMode"] = static_cast<std::uint8_t>(material.blendMode);
     }
     // alphaSource, depthDrawMode, depthTestEnabled and depthWriteEnabled decide what the fragment
     // shader emits and what the pipeline state is, and all four used to be dropped on save - the
     // Inspector could set them, the renderer could honour them, and reopening the material silently
     // reverted them to their defaults.
-    if (material.alphaSource != MaterialAlphaSourceUVE::AlbedoAlpha) {
+    if (material.alphaSource != MaterialAlphaSource::AlbedoAlpha) {
         payload["alphaSource"] = static_cast<std::uint8_t>(material.alphaSource);
     }
     if (material.alphaHashingEnabled) {
         payload["alphaHashingEnabled"] = material.alphaHashingEnabled;
     }
-    if (material.depthDrawMode != MaterialDepthDrawModeUVE::OpaqueOnly) {
+    if (material.depthDrawMode != MaterialDepthDrawMode::OpaqueOnly) {
         payload["depthDrawMode"] = static_cast<std::uint8_t>(material.depthDrawMode);
     }
     if (!material.depthTestEnabled) {
@@ -480,10 +480,10 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     if (material.clearcoatAmount != 0.0F) {
         payload["clearcoatAmount"] = material.clearcoatAmount;
     }
-    if (material.parentMaterial != kInvalidAssetGuidUVE) {
+    if (material.parentMaterial != kInvalidAssetGuid) {
         payload["parentMaterial"] = material.parentMaterial.value;
     }
-    if (material.nextPassMaterial != kInvalidAssetGuidUVE) {
+    if (material.nextPassMaterial != kInvalidAssetGuid) {
         payload["nextPassMaterial"] = material.nextPassMaterial.value;
     }
     if (material.useCustomShaderCode) {
@@ -491,15 +491,15 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     // Omitted for Standard so a material that never touched the selector keeps the same payload
     // bytes it had before the field existed.
-    if (material.kind != MaterialKindUVE::Standard) {
+    if (material.kind != MaterialKind::Standard) {
         payload["kind"] = static_cast<std::uint8_t>(material.kind);
     }
-    if (material.customShader != kInvalidAssetGuidUVE) {
+    if (material.customShader != kInvalidAssetGuid) {
         payload["customShader"] = material.customShader.value;
     }
     if (material.textureTint.r != defaults.textureTint.r || material.textureTint.g != defaults.textureTint.g ||
         material.textureTint.b != defaults.textureTint.b) {
-        payload["textureTint"] = ColorToJsonUVE(material.textureTint);
+        payload["textureTint"] = ColorToJson(material.textureTint);
     }
     if (material.textureTileX != 1.0F) {
         payload["textureTileX"] = material.textureTileX;
@@ -510,12 +510,12 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     // Only the maps read some other way than as authored, so an untouched material keeps its bytes.
     nlohmann::json maps = nlohmann::json::object();
     for (std::size_t index = 0U; index < material.maps.size(); ++index) {
-        const MaterialMapSettingsUVE& map = material.maps[index];
-        if (map == MaterialMapSettingsUVE{}) {
+        const MaterialMapSettings& map = material.maps[index];
+        if (map == MaterialMapSettings{}) {
             continue;
         }
-        maps[kMaterialMapNamesUVE[index]] = {{"tiling", Vector2ToJsonUVE(map.tiling)},
-                                             {"offset", Vector2ToJsonUVE(map.offset)},
+        maps[kMaterialMapNames[index]] = {{"tiling", Vector2ToJson(map.tiling)},
+                                             {"offset", Vector2ToJson(map.offset)},
                                              {"channel", static_cast<std::uint8_t>(map.channel)},
                                              {"invert", map.invert},
                                              {"strength", map.strength},
@@ -529,7 +529,7 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBuffer(payloadBytes, payloadBytes + payloadText.size());
 
-    return WriteUveFileUVE(path, AssetKindUVE::Material, payloadBuffer);
+    return WriteUveFile(path, AssetKind::Material, payloadBuffer);
 }
 
 } // namespace UVE::Asset

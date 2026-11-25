@@ -13,7 +13,7 @@ namespace UVE::Editor {
 
 /// The editor shortcut a PRISM key press makes ("Ctrl+S"): its key by the editor's stable name and
 /// its modifiers. Nothing for a key no shortcut may use (Escape, a modifier alone).
-[[nodiscard]] inline std::optional<EditorShortcutUVE> ShortcutFromPrismKeyUVE(const prism::Key key, const std::uint8_t mods) {
+[[nodiscard]] inline std::optional<EditorShortcut> ShortcutFromPrismKey(const prism::Key key, const std::uint8_t mods) {
     std::string name;
     const int k = static_cast<int>(key);
     if (key >= prism::Key::A && key <= prism::Key::Z) {
@@ -45,7 +45,7 @@ namespace UVE::Editor {
     text += (mods & prism::ModShift) != 0 ? "Shift+" : "";
     text += (mods & prism::ModAlt) != 0 ? "Alt+" : "";
     text += name;
-    return ParseEditorShortcutUVE(text);
+    return ParseEditorShortcut(text);
 }
 
 } // namespace UVE::Editor

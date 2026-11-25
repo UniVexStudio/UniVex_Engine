@@ -13,69 +13,69 @@
 namespace UVE::Render {
 namespace {
 
-constexpr std::size_t kNearPlaneIndexUVE = 4U;
+constexpr std::size_t kNearPlaneIndex = 4U;
 
-[[nodiscard]] bool IsOrderedFiniteAabbUVE(const Math::AabbUVE& bounds) noexcept {
-    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) && bounds.min.x <= bounds.max.x &&
+[[nodiscard]] bool IsOrderedFiniteAabb(const Math::Aabb& bounds) noexcept {
+    return Math::IsFinite(bounds.min) && Math::IsFinite(bounds.max) && bounds.min.x <= bounds.max.x &&
            bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
 } // namespace
 
-bool EvaluateMeshRenderPlacementUVE(const Scene::MeshComponentUVE& meshComponent,
-                                    const Scene::WorldTransformComponentUVE& worldTransform,
-                                    const Asset::MeshAssetUVE& mesh,
-                                    MeshRenderPlacementUVE& outPlacement) noexcept {
-    MeshRenderPlacementUVE candidate;
-    if (!Scene::IsMeshComponentValidUVE(meshComponent) ||
-        meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE ||
-        meshComponent.materialGuid == Asset::kInvalidAssetGuidUVE) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidAssetReferences;
+bool EvaluateMeshRenderPlacement(const Scene::MeshComponent& meshComponent,
+                                    const Scene::WorldTransformComponent& worldTransform,
+                                    const Asset::MeshAsset& mesh,
+                                    MeshRenderPlacement& outPlacement) noexcept {
+    MeshRenderPlacement candidate;
+    if (!Scene::IsMeshComponentValid(meshComponent) ||
+        meshComponent.meshGuid == Asset::kInvalidAssetGuid ||
+        meshComponent.materialGuid == Asset::kInvalidAssetGuid) {
+        candidate.reason = MeshRenderEligibilityReason::InvalidAssetReferences;
         outPlacement = candidate;
         return false;
     }
-    if (!Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale) ||
-        !Math::IsFiniteUVE(worldTransform.worldRotation)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
+    if (!Math::IsFinite(worldTransform.worldPosition) || !Math::IsFinite(worldTransform.worldScale) ||
+        !Math::IsFinite(worldTransform.worldRotation)) {
+        candidate.reason = MeshRenderEligibilityReason::InvalidWorldTransform;
         outPlacement = candidate;
         return false;
     }
-    Math::QuaternionUVE normalizedRotation;
-    if (!Math::TryNormalizeUVE(worldTransform.worldRotation, normalizedRotation)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
+    Math::Quaternion normalizedRotation;
+    if (!Math::TryNormalize(worldTransform.worldRotation, normalizedRotation)) {
+        candidate.reason = MeshRenderEligibilityReason::InvalidWorldTransform;
         outPlacement = candidate;
         return false;
     }
-    if (!IsOrderedFiniteAabbUVE(mesh.localBounds)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidLocalBounds;
+    if (!IsOrderedFiniteAabb(mesh.localBounds)) {
+        candidate.reason = MeshRenderEligibilityReason::InvalidLocalBounds;
         outPlacement = candidate;
         return false;
     }
 
-    candidate.worldMatrix = Math::Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, normalizedRotation,
+    candidate.worldMatrix = Math::Matrix4x4::ComposeTrs(worldTransform.worldPosition, normalizedRotation,
                                                                worldTransform.worldScale);
-    candidate.worldBounds = mesh.localBounds.TransformUVE(candidate.worldMatrix);
-    if (!IsOrderedFiniteAabbUVE(candidate.worldBounds)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
+    candidate.worldBounds = mesh.localBounds.Transform(candidate.worldMatrix);
+    if (!IsOrderedFiniteAabb(candidate.worldBounds)) {
+        candidate.reason = MeshRenderEligibilityReason::InvalidWorldTransform;
         outPlacement = candidate;
         return false;
     }
 
-    candidate.reason = MeshRenderEligibilityReasonUVE::Eligible;
+    candidate.reason = MeshRenderEligibilityReason::Eligible;
     outPlacement = candidate;
     return true;
 }
 
-bool TestMeshRenderVisibilityUVE(const MeshRenderPlacementUVE& placement,
-                                 const Math::FrustumUVE& cullFrustum,
-                                 MeshRenderEligibilityUVE& outEligibility,
+bool TestMeshRenderVisibility(const MeshRenderPlacement& placement,
+                                 const Math::Frustum& cullFrustum,
+                                 MeshRenderEligibility& outEligibility,
                                  const bool frustumTestsDisabled) noexcept {
-    MeshRenderEligibilityUVE candidate;
+    MeshRenderEligibility candidate;
 
     // A placement that failed carries no usable matrix or bounds, so its own failure reason is
     // propagated rather than overwritten with a frustum verdict - "outside the frustum" would be a
     // lie about a mesh whose transform was never valid to begin with.
-    if (!placement.IsPlacedUVE()) {
+    if (!placement.IsPlaced()) {
         candidate.reason = placement.reason;
         outEligibility = candidate;
         return false;
@@ -86,33 +86,33 @@ bool TestMeshRenderVisibilityUVE(const MeshRenderPlacementUVE& placement,
 
     // Skipped, not short-circuited away: the freeze still needs the sort depth below, which is
     // measured against this frustum's near plane whether or not the plane test ran.
-    if (!frustumTestsDisabled && !cullFrustum.IntersectsUVE(candidate.worldBounds)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::OutsideFrustum;
+    if (!frustumTestsDisabled && !cullFrustum.Intersects(candidate.worldBounds)) {
+        candidate.reason = MeshRenderEligibilityReason::OutsideFrustum;
         outEligibility = candidate;
         return false;
     }
-    candidate.sortDepth = std::fabs(cullFrustum.planes[kNearPlaneIndexUVE].GetSignedDistanceUVE(
-        candidate.worldBounds.GetCenterUVE()));
+    candidate.sortDepth = std::fabs(cullFrustum.planes[kNearPlaneIndex].GetSignedDistance(
+        candidate.worldBounds.GetCenter()));
     if (!std::isfinite(candidate.sortDepth)) {
-        candidate.reason = MeshRenderEligibilityReasonUVE::InvalidWorldTransform;
+        candidate.reason = MeshRenderEligibilityReason::InvalidWorldTransform;
         outEligibility = candidate;
         return false;
     }
-    candidate.reason = MeshRenderEligibilityReasonUVE::Eligible;
+    candidate.reason = MeshRenderEligibilityReason::Eligible;
     outEligibility = candidate;
     return true;
 }
 
-bool EvaluateMeshRenderEligibilityUVE(const Scene::MeshComponentUVE& meshComponent,
-                                      const Scene::WorldTransformComponentUVE& worldTransform,
-                                      const Asset::MeshAssetUVE& mesh,
-                                      const Math::FrustumUVE& cullFrustum,
-                                      MeshRenderEligibilityUVE& outEligibility) noexcept {
+bool EvaluateMeshRenderEligibility(const Scene::MeshComponent& meshComponent,
+                                      const Scene::WorldTransformComponent& worldTransform,
+                                      const Asset::MeshAsset& mesh,
+                                      const Math::Frustum& cullFrustum,
+                                      MeshRenderEligibility& outEligibility) noexcept {
     // Composed, never duplicated - see the header. The behaviour of this function is unchanged
     // from before the split, which the existing eligibility tests continue to assert.
-    MeshRenderPlacementUVE placement;
-    static_cast<void>(EvaluateMeshRenderPlacementUVE(meshComponent, worldTransform, mesh, placement));
-    return TestMeshRenderVisibilityUVE(placement, cullFrustum, outEligibility);
+    MeshRenderPlacement placement;
+    static_cast<void>(EvaluateMeshRenderPlacement(meshComponent, worldTransform, mesh, placement));
+    return TestMeshRenderVisibility(placement, cullFrustum, outEligibility);
 }
 
 } // namespace UVE::Render

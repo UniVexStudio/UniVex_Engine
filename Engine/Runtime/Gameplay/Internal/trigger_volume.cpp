@@ -7,41 +7,41 @@
 
 namespace UVE::Scene {
 
-bool IsTriggerVolumeComponentValidUVE(const TriggerVolumeComponentUVE& value) noexcept {
+bool IsTriggerVolumeComponentValid(const TriggerVolumeComponent& value) noexcept {
     return static_cast<std::uint8_t>(value.policy) <=
-               static_cast<std::uint8_t>(TriggerFirePolicyUVE::WhileOccupied) &&
+               static_cast<std::uint8_t>(TriggerFirePolicy::WhileOccupied) &&
            std::isfinite(value.intervalSeconds) && value.intervalSeconds > 0.0F &&
            std::isfinite(value.cooldownSeconds) && value.cooldownSeconds >= 0.0F &&
            std::isfinite(value.cooldownRemaining) && value.cooldownRemaining >= 0.0F &&
            std::isfinite(value.intervalRemaining) && value.intervalRemaining >= 0.0F;
 }
 
-std::vector<TriggerFiredResultUVE> UpdateTriggerVolumesUVE(
-    IEntityManagerUVE& entityManager, const Physics::AreaOverlapQueryResultUVE& snapshot,
-    const std::span<const Physics::AreaOverlapTransitionUVE> transitions, const float deltaSeconds) {
-    std::vector<TriggerFiredResultUVE> fires;
-    std::vector<EntityUVE> triggers;
-    entityManager.ForEachUVE<TriggerVolumeComponentUVE>(
-        [&triggers](const EntityUVE entity, const TriggerVolumeComponentUVE&) {
+std::vector<TriggerFiredResult> UpdateTriggerVolumes(
+    IEntityManager& entityManager, const Physics::AreaOverlapQueryResult& snapshot,
+    const std::span<const Physics::AreaOverlapTransition> transitions, const float deltaSeconds) {
+    std::vector<TriggerFiredResult> fires;
+    std::vector<Entity> triggers;
+    entityManager.ForEach<TriggerVolumeComponent>(
+        [&triggers](const Entity entity, const TriggerVolumeComponent&) {
             triggers.push_back(entity);
         });
-    std::sort(triggers.begin(), triggers.end(), [](const EntityUVE& lhs, const EntityUVE& rhs) {
+    std::sort(triggers.begin(), triggers.end(), [](const Entity& lhs, const Entity& rhs) {
         return lhs.index != rhs.index ? lhs.index < rhs.index : lhs.generation < rhs.generation;
     });
     // A bad step freezes the clocks; the edges below still process, because transitions are
     // ephemeral - the tracker never repeats them, so skipping them would lose fires.
     const float step = (std::isfinite(deltaSeconds) && deltaSeconds > 0.0F) ? deltaSeconds : 0.0F;
-    for (const EntityUVE trigger : triggers) {
-        TriggerVolumeComponentUVE& volume =
-            entityManager.GetComponentUVE<TriggerVolumeComponentUVE>(trigger);
-        if (!IsTriggerVolumeComponentValidUVE(volume) || !volume.armed) {
+    for (const Entity trigger : triggers) {
+        TriggerVolumeComponent& volume =
+            entityManager.GetComponent<TriggerVolumeComponent>(trigger);
+        if (!IsTriggerVolumeComponentValid(volume) || !volume.armed) {
             continue;
         }
         volume.cooldownRemaining = std::max(0.0F, volume.cooldownRemaining - step);
         volume.intervalRemaining = std::max(0.0F, volume.intervalRemaining - step);
         std::size_t occupancy = 0U;
-        EntityUVE firstOccupant = kInvalidEntityUVE;
-        for (const Physics::AreaOverlapPairUVE& overlap : snapshot.overlaps) {
+        Entity firstOccupant = kInvalidEntity;
+        for (const Physics::AreaOverlapPair& overlap : snapshot.overlaps) {
             if (overlap.area != trigger) {
                 continue;
             }
@@ -50,16 +50,16 @@ std::vector<TriggerFiredResultUVE> UpdateTriggerVolumesUVE(
             }
             ++occupancy;
         }
-        const auto fire = [&](const EntityUVE interactor) {
+        const auto fire = [&](const Entity interactor) {
             ++volume.firedCount;
             volume.cooldownRemaining = volume.cooldownSeconds;
-            if (volume.policy == TriggerFirePolicyUVE::WhileOccupied) {
+            if (volume.policy == TriggerFirePolicy::WhileOccupied) {
                 volume.intervalRemaining = volume.intervalSeconds;
             }
-            fires.push_back(TriggerFiredResultUVE{trigger, interactor, volume.firedCount});
+            fires.push_back(TriggerFiredResult{trigger, interactor, volume.firedCount});
         };
-        for (const Physics::AreaOverlapTransitionUVE& transition : transitions) {
-            if (transition.kind != Physics::AreaOverlapTransitionKindUVE::Entered ||
+        for (const Physics::AreaOverlapTransition& transition : transitions) {
+            if (transition.kind != Physics::AreaOverlapTransitionKind::Entered ||
                 transition.pair.area != trigger) {
                 continue;
             }
@@ -67,12 +67,12 @@ std::vector<TriggerFiredResultUVE> UpdateTriggerVolumesUVE(
                 continue;
             }
             fire(transition.pair.other);
-            if (volume.policy == TriggerFirePolicyUVE::OneShot) {
+            if (volume.policy == TriggerFirePolicy::OneShot) {
                 volume.armed = false;
                 break;
             }
         }
-        if (volume.policy == TriggerFirePolicyUVE::WhileOccupied && occupancy > 0U &&
+        if (volume.policy == TriggerFirePolicy::WhileOccupied && occupancy > 0U &&
             volume.cooldownRemaining <= 0.0F && volume.intervalRemaining <= 0.0F) {
             fire(firstOccupant);
         }
@@ -83,23 +83,23 @@ std::vector<TriggerFiredResultUVE> UpdateTriggerVolumesUVE(
     return fires;
 }
 
-bool RearmTriggerVolumeUVE(IEntityManagerUVE& entityManager, const EntityUVE trigger) {
-    if (!entityManager.HasComponentUVE<TriggerVolumeComponentUVE>(trigger)) {
+bool RearmTriggerVolume(IEntityManager& entityManager, const Entity trigger) {
+    if (!entityManager.HasComponent<TriggerVolumeComponent>(trigger)) {
         return false;
     }
-    TriggerVolumeComponentUVE& volume =
-        entityManager.GetComponentUVE<TriggerVolumeComponentUVE>(trigger);
+    TriggerVolumeComponent& volume =
+        entityManager.GetComponent<TriggerVolumeComponent>(trigger);
     volume.armed = true;
     volume.cooldownRemaining = 0.0F;
     volume.intervalRemaining = 0.0F;
     return true;
 }
 
-bool DisarmTriggerVolumeUVE(IEntityManagerUVE& entityManager, const EntityUVE trigger) {
-    if (!entityManager.HasComponentUVE<TriggerVolumeComponentUVE>(trigger)) {
+bool DisarmTriggerVolume(IEntityManager& entityManager, const Entity trigger) {
+    if (!entityManager.HasComponent<TriggerVolumeComponent>(trigger)) {
         return false;
     }
-    entityManager.GetComponentUVE<TriggerVolumeComponentUVE>(trigger).armed = false;
+    entityManager.GetComponent<TriggerVolumeComponent>(trigger).armed = false;
     return true;
 }
 

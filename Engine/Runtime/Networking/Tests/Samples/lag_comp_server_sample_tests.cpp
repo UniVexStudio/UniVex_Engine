@@ -10,8 +10,8 @@
 namespace UVE::Samples::Tests {
 namespace {
 
-TEST(LagCompServerSampleUVE, FullStoryPasses) {
-    const LagCompServerSampleResultUVE result = RunLagCompServerSampleUVE();
+TEST(LagCompServerSample, FullStoryPasses) {
+    const LagCompServerSampleResult result = RunLagCompServerSample();
     for (const std::string& failure : result.failures) {
         ADD_FAILURE() << failure;
     }
@@ -32,11 +32,11 @@ TEST(LagCompServerSampleUVE, FullStoryPasses) {
     EXPECT_FLOAT_EQ(result.stats.victimHealth, 9439.0F);
 }
 
-TEST(LagCompServerSampleUVE, RunsAreDeterministic) {
-    LagCompServerSampleConfigUVE config;
+TEST(LagCompServerSample, RunsAreDeterministic) {
+    LagCompServerSampleConfig config;
     config.ticks = 500U;
-    const LagCompServerSampleResultUVE first = RunLagCompServerSampleUVE(config);
-    const LagCompServerSampleResultUVE second = RunLagCompServerSampleUVE(config);
+    const LagCompServerSampleResult first = RunLagCompServerSample(config);
+    const LagCompServerSampleResult second = RunLagCompServerSample(config);
     for (const std::string& failure : first.failures) {
         ADD_FAILURE() << failure;
     }
@@ -58,12 +58,12 @@ TEST(LagCompServerSampleUVE, RunsAreDeterministic) {
     EXPECT_FLOAT_EQ(first.stats.victimHealth, second.stats.victimHealth);
 }
 
-TEST(LagCompServerSampleUVE, LogSinkSeesTheStory) {
-    LagCompServerSampleConfigUVE config;
+TEST(LagCompServerSample, LogSinkSeesTheStory) {
+    LagCompServerSampleConfig config;
     config.ticks = 500U;
     std::vector<std::string> lines;
     config.log = [&](const std::string& line) { lines.push_back(line); };
-    const LagCompServerSampleResultUVE result = RunLagCompServerSampleUVE(config);
+    const LagCompServerSampleResult result = RunLagCompServerSample(config);
     EXPECT_TRUE(result.success);
     EXPECT_FALSE(lines.empty());
     EXPECT_NE(lines.back().find("violation"), std::string::npos);

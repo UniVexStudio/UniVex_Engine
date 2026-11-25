@@ -8,12 +8,12 @@ namespace UVE::Scene {
 
 /// Which thread an entity's per-frame work is allowed to run on.
 ///
-/// The engine already has the machinery to run work off the main thread - ThreadPoolUVE,
-/// JobGraphUVE and its counters, FrameSchedulerUVE. What it had no way to express is which work is
+/// The engine already has the machinery to run work off the main thread - ThreadPool,
+/// JobGraph and its counters, FrameScheduler. What it had no way to express is which work is
 /// SAFE to move there, and that is not something a scheduler can infer: an entity that touches the
 /// renderer, the window or the editor UI must stay on the main thread no matter how independent its
 /// work looks. This is the author saying so.
-enum class ThreadGroupModeUVE : std::uint8_t {
+enum class ThreadGroupMode : std::uint8_t {
     /// Take the parent's answer, or MainThread at the top of the hierarchy - the safe default, so
     /// nothing moves off the main thread by accident.
     Inherit = 0,
@@ -25,47 +25,47 @@ enum class ThreadGroupModeUVE : std::uint8_t {
 };
 
 /// An entity's threading preference and its position in the group's ordering.
-struct ThreadGroupComponentUVE final {
-    ThreadGroupModeUVE mode = ThreadGroupModeUVE::Inherit;
+struct ThreadGroupComponent final {
+    ThreadGroupMode mode = ThreadGroupMode::Inherit;
 
     /// Order within the resolved group. Work in one group runs in this order; work in different
-    /// groups may overlap. Lower runs first, matching ProcessComponentUVE::priority.
+    /// groups may overlap. Lower runs first, matching ProcessComponent::priority.
     std::int32_t order = 0;
 
-    /// Derived: the mode resolved against ancestors. Written only by SceneGraphUVE::UpdateUVE.
+    /// Derived: the mode resolved against ancestors. Written only by SceneGraph::Update.
     ///
-    /// Note the asymmetry with ProcessComponentUVE, and that it is deliberate: a child under a
+    /// Note the asymmetry with ProcessComponent, and that it is deliberate: a child under a
     /// MainThread parent cannot escape to a worker, because the parent's constraint is a statement
     /// about shared state the child is part of. Pausing has no equivalent - a pause menu genuinely
     /// can run while its parent does not.
-    ThreadGroupModeUVE resolvedModeInHierarchy = ThreadGroupModeUVE::MainThread;
+    ThreadGroupMode resolvedModeInHierarchy = ThreadGroupMode::MainThread;
 };
 
-[[nodiscard]] bool IsThreadGroupModeValidUVE(ThreadGroupModeUVE mode) noexcept;
+[[nodiscard]] bool IsThreadGroupModeValid(ThreadGroupMode mode) noexcept;
 
-[[nodiscard]] bool IsThreadGroupComponentValidUVE(const ThreadGroupComponentUVE& component) noexcept;
+[[nodiscard]] bool IsThreadGroupComponentValid(const ThreadGroupComponent& component) noexcept;
 
 /// Resolves `mode` against the parent's already-resolved answer. Inherit passes through; SubThread
 /// is honoured only where the parent also permits it.
-[[nodiscard]] ThreadGroupModeUVE ResolveThreadGroupModeUVE(ThreadGroupModeUVE mode,
-                                                           ThreadGroupModeUVE parentMode) noexcept;
+[[nodiscard]] ThreadGroupMode ResolveThreadGroupMode(ThreadGroupMode mode,
+                                                           ThreadGroupMode parentMode) noexcept;
 
 /// Resolves and writes `component->resolvedModeInHierarchy` against `parentResolvedMode`
 /// (passes through when `component` is null).
-[[nodiscard]] ThreadGroupModeUVE ResolveHierarchyThreadGroupModeUVE(
-    ThreadGroupComponentUVE* component, ThreadGroupModeUVE parentResolvedMode) noexcept;
+[[nodiscard]] ThreadGroupMode ResolveHierarchyThreadGroupMode(
+    ThreadGroupComponent* component, ThreadGroupMode parentResolvedMode) noexcept;
 
 /// True when `component` is non-null and its resolved hierarchy mode permits worker execution (`SubThread`).
-[[nodiscard]] bool CanDispatchOnSubThreadUVE(const ThreadGroupComponentUVE* component) noexcept;
+[[nodiscard]] bool CanDispatchOnSubThread(const ThreadGroupComponent* component) noexcept;
 
 /// Deterministic execution-order comparator (`order` ascending, then `tieBreak`).
-[[nodiscard]] bool CompareThreadGroupExecutionOrderUVE(const ThreadGroupComponentUVE& lhs,
+[[nodiscard]] bool CompareThreadGroupExecutionOrder(const ThreadGroupComponent& lhs,
                                                        std::uint32_t lhsTieBreak,
-                                                       const ThreadGroupComponentUVE& rhs,
+                                                       const ThreadGroupComponent& rhs,
                                                        std::uint32_t rhsTieBreak) noexcept;
 
 /// Sanitizes `component` so invalid enum values fall back to `Inherit` / `MainThread`.
-[[nodiscard]] ThreadGroupComponentUVE SanitizeThreadGroupComponentUVE(
-    const ThreadGroupComponentUVE& component) noexcept;
+[[nodiscard]] ThreadGroupComponent SanitizeThreadGroupComponent(
+    const ThreadGroupComponent& component) noexcept;
 
 } // namespace UVE::Scene

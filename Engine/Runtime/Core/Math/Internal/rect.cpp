@@ -8,12 +8,12 @@
 
 namespace UVE::Math {
 
-bool IsFiniteUVE(const RectUVE& value) noexcept {
-    return IsFiniteUVE(value.position) && IsFiniteUVE(value.size);
+bool IsFinite(const Rect& value) noexcept {
+    return IsFinite(value.position) && IsFinite(value.size);
 }
 
-std::string ToStringUVE(const RectUVE& rect) {
-    return "(" + ToStringUVE(rect.position) + ", " + ToStringUVE(rect.size) + ")";
+std::string ToString(const Rect& rect) {
+    return "(" + ToString(rect.position) + ", " + ToString(rect.size) + ")";
 }
 
 } // namespace UVE::Math

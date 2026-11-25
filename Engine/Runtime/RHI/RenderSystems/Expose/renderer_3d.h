@@ -21,80 +21,80 @@
 
 namespace UVE::Render {
 
-/// Renderer3DUVE is the concrete, engine-standard implementation of IRenderer3DUVE. Unlike
-/// CameraSystemUVE/MeshRendererUVE, it is deliberately stateful (PIMPL, matching
-/// AssetManagerUVE's/NullRenderDeviceUVE's precedent for services that own real resources) — it
+/// Renderer3D is the concrete, engine-standard implementation of IRenderer3D. Unlike
+/// CameraSystem/MeshRenderer, it is deliberately stateful (PIMPL, matching
+/// AssetManager's/NullRenderDevice's precedent for services that own real resources) — it
 /// owns the offscreen render target and a GPU-resource cache (mesh GUID -> vertex/index buffers,
 /// material GUID -> pipeline) that must persist and be invalidated across frames.
-class Renderer3DUVE final : public IRenderer3DUVE {
+class Renderer3D final : public IRenderer3D {
 public:
     /// Constructs the offscreen color+depth render target at `targetWidth` x `targetHeight` and
-    /// subscribes to Asset::AssetReloadedEventUVE for GPU-resource-cache
+    /// subscribes to Asset::AssetReloadedEvent for GPU-resource-cache
     /// invalidation. `ambientColor` is the flat ambient term added to every item's final color
-    /// every frame regardless of whether an active light exists (see EngineConfigUVE::ambientColor,
+    /// every frame regardless of whether an active light exists (see EngineConfig::ambientColor,
     /// Increment 23). `shaderManager` compiles the built-in shadow-depth program used by the
     /// directional-light shadow pre-pass (Increment 26); `shadowMapResolution`/
     /// `shadowMapHalfExtent`/`shadowMapNearPlane`/`shadowMapFarPlane` size and bound that
-    /// pre-pass's orthographic projection (see EngineConfigUVE's matching fields). Increment 29
+    /// pre-pass's orthographic projection (see EngineConfig's matching fields). Increment 29
     /// derives the projection's actual bounds from the active camera frustum and applies
     /// `shadowFrustumPadding` to protect against edge clipping. `shadowCascadeSplitLambda`
     /// controls the bounded three-cascade practical split distribution. `shadowCascadeBlendRatio`
     /// cross-fades cascade transitions. `shadowPcfKernelRadius` controls the canonical material
     /// shader's bounded PCF filter: zero
     /// retains a hard shadow and one produces a 3x3 kernel. Every reference must outlive this
-    /// Renderer3DUVE.
-    Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& renderSystem, IMeshRendererUVE& meshRenderer,
-                  ICameraSystemUVE& cameraSystem, ILightSystemUVE& lightSystem,
-                  Shader::IShaderManagerUVE& shaderManager, Asset::IAssetManagerUVE& assetManager,
-                  Asset::IAssetDatabaseUVE& assetDatabase, Events::IEventSystemUVE& eventSystem,
-                  std::uint32_t targetWidth, std::uint32_t targetHeight, Math::Vector3UVE ambientColor,
+    /// Renderer3D.
+    Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem, IMeshRenderer& meshRenderer,
+                  ICameraSystem& cameraSystem, ILightSystem& lightSystem,
+                  Shader::IShaderManager& shaderManager, Asset::IAssetManager& assetManager,
+                  Asset::IAssetDatabase& assetDatabase, Events::IEventSystem& eventSystem,
+                  std::uint32_t targetWidth, std::uint32_t targetHeight, Math::Vector3 ambientColor,
                   std::uint32_t shadowMapResolution, float shadowMapHalfExtent, float shadowMapNearPlane,
                   float shadowMapFarPlane, float shadowFrustumPadding, float shadowCascadeSplitLambda,
                   float shadowCascadeBlendRatio, std::uint32_t shadowPcfKernelRadius);
-    ~Renderer3DUVE() override;
+    ~Renderer3D() override;
 
-    Renderer3DUVE(const Renderer3DUVE&) = delete;
-    Renderer3DUVE& operator=(const Renderer3DUVE&) = delete;
+    Renderer3D(const Renderer3D&) = delete;
+    Renderer3D& operator=(const Renderer3D&) = delete;
 
-    void RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) override;
-    [[nodiscard]] bool ResizeTargetsUVE(std::uint32_t width, std::uint32_t height) override;
-    void SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept override;
-    void RenderFrameWithParticleRuntimeUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                           const Scene::ParticleRuntimeUVE& particleRuntime) override;
-    void RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                const ViewportRectUVE& region,
-                                const Scene::ParticleRuntimeUVE* particleRuntime = nullptr) override;
-    void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
+    void RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity) override;
+    [[nodiscard]] bool ResizeTargets(std::uint32_t width, std::uint32_t height) override;
+    void SetSceneClearColor(const std::array<float, 4U>& color) noexcept override;
+    void RenderFrameWithParticleRuntime(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity,
+                                           const Scene::ParticleRuntime& particleRuntime) override;
+    void RenderFrameToRegion(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity,
+                                const ViewportRect& region,
+                                const Scene::ParticleRuntime* particleRuntime = nullptr) override;
+    void RenderFrameToTarget(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity,
+                                TextureHandle colorTarget, TextureHandle depthTarget,
                                 std::uint32_t width = 0U, std::uint32_t height = 0U,
                                 std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) override;
-    void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) override;
-    void SetPreviewEnvironmentUVE(const std::optional<Scene::WorldEnvironmentFrameUVE>& frame) override;
-    void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
-    void SetShadowAtlasTileResolutionUVE(std::uint32_t resolution) noexcept override;
-    void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;
-    void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept override;
-    void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
-    void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
-    void SetRendererProfileUVE(Platform::RendererProfileUVE profile) noexcept override;
-    [[nodiscard]] RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept override;
-    void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept override;
-    void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
-    void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept override;
-    void SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept override;
-    /// Renders every 3D View the UI drew last frame (UIView3DComponentUVE) into its own picture,
+    void SetPostProcessSettings(const PostProcessSettings& settings) override;
+    void SetPreviewEnvironment(const std::optional<Scene::WorldEnvironmentFrame>& frame) override;
+    void SetShadowBiasDefaults(float depthBias, float normalBias) noexcept override;
+    void SetShadowAtlasTileResolution(std::uint32_t resolution) noexcept override;
+    void SetCullingSettings(const CullingSettings& settings) noexcept override;
+    void SetMaterialSamplerSettings(bool repeatEnabled, float maxAnisotropy) noexcept override;
+    void SetShadingMode(std::int32_t shadingMode) noexcept override;
+    void SetScalabilityMode(std::int32_t scalabilityMode) noexcept override;
+    void SetRendererProfile(Platform::RendererProfile profile) noexcept override;
+    [[nodiscard]] RendererProfileResolution GetRendererProfileResolution() const noexcept override;
+    void SetMeshUploadBudget(std::size_t meshesPerFrame) noexcept override;
+    void SetUIRuntime(const UI::UIRuntime* uiRuntime) noexcept override;
+    void SetVfxDrawList(const VfxDrawList* vfxDrawList) noexcept override;
+    void SetStudioFloor(const std::optional<StudioFloorSettings>& settings) noexcept override;
+    /// Renders every 3D View the UI drew last frame (UIView3DComponent) into its own picture,
     /// which the UI pass then draws in its rect. Called at the start of each frame.
-    void CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
-    void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
+    void CaptureUIViews(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity);
+    void SetPhysicsInterpolationAlpha(float alpha) noexcept override;
 
-    [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
-    [[nodiscard]] SceneDepthExportUVE GetLastSceneDepthUVE() const noexcept override;
+    [[nodiscard]] Renderer3DFrameDiagnostics GetLastFrameDiagnostics() const noexcept override;
+    [[nodiscard]] SceneDepthExport GetLastSceneDepth() const noexcept override;
 
 private:
-    void CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
+    void CaptureDueReflectionProbes(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity);
 
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Render

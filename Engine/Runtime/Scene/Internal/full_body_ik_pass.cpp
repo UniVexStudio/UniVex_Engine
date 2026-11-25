@@ -28,47 +28,47 @@ namespace {
 
 /// The process mode the scene graph resolved for `entity` on its last update, or the hierarchy
 /// default for an entity it has not seen yet. Asking the graph rather than the entity's own
-/// ProcessComponentUVE is what lets an entity without one inherit its ancestors' answer.
-[[nodiscard]] TickModeUVE ResolvedTickModeUVE(const ISceneGraphUVE& sceneGraph, const EntityUVE entity) {
-    const std::optional<ResolvedObjectModesUVE> modes = sceneGraph.TryGetResolvedObjectModesUVE(entity);
-    return modes.has_value() ? modes->process : TickModeUVE::Running;
+/// ProcessComponent is what lets an entity without one inherit its ancestors' answer.
+[[nodiscard]] TickMode ResolvedTickMode(const ISceneGraph& sceneGraph, const Entity entity) {
+    const std::optional<ResolvedObjectModes> modes = sceneGraph.TryGetResolvedObjectModes(entity);
+    return modes.has_value() ? modes->process : TickMode::Running;
 }
 
 /// The bone a reference resolved to, or the sentinel. Index first - it is the reference that cannot
 /// go stale - then the exact name, which is the one an author can read in a DCC tool.
-[[nodiscard]] std::uint32_t ResolveBoneUVE(const Skeleton3DComponentUVE& skeleton, const std::uint32_t index,
+[[nodiscard]] std::uint32_t ResolveBone(const Skeleton3DComponent& skeleton, const std::uint32_t index,
                                            const std::string& name) noexcept {
     if (index < skeleton.bones.size()) {
         return index;
     }
-    std::uint32_t found = kInvalidSkeletonBoneIndexUVE;
-    return TryFindSkeletonBoneIndexUVE(skeleton, name, found) ? found : kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t found = kInvalidSkeletonBoneIndex;
+    return TryFindSkeletonBoneIndex(skeleton, name, found) ? found : kInvalidSkeletonBoneIndex;
 }
 
 /// A point authored in the skeleton's own space, placed in the world the skeleton lives in: scaled,
 /// then rotated, then moved - the order every TRS compose in this engine uses.
-[[nodiscard]] Math::Vector3UVE SkeletonSpaceToWorldUVE(const Math::Vector3UVE& point,
-                                                       const ObjectWorldFrameUVE& skeletonFrame) noexcept {
-    const Math::Vector3UVE scaled{point.x * skeletonFrame.scale.x, point.y * skeletonFrame.scale.y,
+[[nodiscard]] Math::Vector3 SkeletonSpaceToWorld(const Math::Vector3& point,
+                                                       const ObjectWorldFrame& skeletonFrame) noexcept {
+    const Math::Vector3 scaled{point.x * skeletonFrame.scale.x, point.y * skeletonFrame.scale.y,
                                   point.z * skeletonFrame.scale.z};
-    return skeletonFrame.position + Math::RotateVectorUVE(skeletonFrame.rotation, scaled);
+    return skeletonFrame.position + Math::RotateVector(skeletonFrame.rotation, scaled);
 }
 
 /// One bone's world frame as the pose currently puts it - the bone's own parent bone's frame
 /// composed through the skeleton, which is what the solver's world rotations are expressed in.
-[[nodiscard]] bool TryResolveBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton,
+[[nodiscard]] bool TryResolveBoneWorldFrame(const Skeleton3DComponent& skeleton,
                                                const std::uint32_t bone,
-                                               const ObjectWorldFrameUVE& skeletonFrame,
-                                               ObjectWorldFrameUVE& outFrame) noexcept {
-    return TryResolveSkeletonBoneWorldFrameUVE(skeleton, bone, skeletonFrame, outFrame);
+                                               const ObjectWorldFrame& skeletonFrame,
+                                               ObjectWorldFrame& outFrame) noexcept {
+    return TryResolveSkeletonBoneWorldFrame(skeleton, bone, skeletonFrame, outFrame);
 }
 
 } // namespace
 
-FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                                   const ISceneGraphUVE& sceneGraph,
-                                                   const std::span<const EntityUVE> posedSkeletons) {
-    FullBodyIKPassReportUVE report{};
+FullBodyIKPassReport SyncFullBodyIK3DObjects(IEntityManager& entityManager,
+                                                   const ISceneGraph& sceneGraph,
+                                                   const std::span<const Entity> posedSkeletons) {
+    FullBodyIKPassReport report{};
     if (posedSkeletons.empty()) {
         return report;
     }
@@ -77,15 +77,15 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
     // two-bone chain or another solve, and when they do the second has to answer against the pose
     // the first left, so the author's own ordering - physicsPriority - decides which, not archetype
     // storage order. Ties keep that order.
-    std::vector<std::pair<std::int32_t, EntityUVE>> ordered;
-    entityManager.ForEachUVE<FullBodyIK3DComponentUVE>(
-        [&ordered, &sceneGraph, &entityManager](const EntityUVE entity, FullBodyIK3DComponentUVE&) {
-            if (!IsTickingUVE(ResolvedTickModeUVE(sceneGraph, entity), /*simulationPaused=*/false)) {
+    std::vector<std::pair<std::int32_t, Entity>> ordered;
+    entityManager.ForEach<FullBodyIK3DComponent>(
+        [&ordered, &sceneGraph, &entityManager](const Entity entity, FullBodyIK3DComponent&) {
+            if (!IsTicking(ResolvedTickMode(sceneGraph, entity), /*simulationPaused=*/false)) {
                 return;
             }
             const std::int32_t priority =
-                entityManager.HasComponentUVE<ProcessComponentUVE>(entity)
-                    ? entityManager.GetComponentUVE<ProcessComponentUVE>(entity).physicsPriority
+                entityManager.HasComponent<ProcessComponent>(entity)
+                    ? entityManager.GetComponent<ProcessComponent>(entity).physicsPriority
                     : 0;
             ordered.emplace_back(priority, entity);
         });
@@ -98,28 +98,28 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
     for (const auto& [priority, entity] : ordered) {
         static_cast<void>(priority);
         ++report.considered;
-        FullBodyIK3DComponentUVE& solve = entityManager.GetComponentUVE<FullBodyIK3DComponentUVE>(entity);
+        FullBodyIK3DComponent& solve = entityManager.GetComponent<FullBodyIK3DComponent>(entity);
         // Every attempt starts from "nothing was solved": the state a refused solve leaves behind is
         // the same it has when it was never solvable, so nothing downstream can read a stale answer.
         solve.solved = false;
         solve.converged = false;
         solve.iterationsUsed = 0U;
-        for (FullBodyIKEffectorUVE& effector : solve.effectors) {
-            effector.resolvedBoneIndex = kInvalidSkeletonBoneIndexUVE;
+        for (FullBodyIKEffector& effector : solve.effectors) {
+            effector.resolvedBoneIndex = kInvalidSkeletonBoneIndex;
             effector.reached = false;
             effector.distanceMetres = 0.0F;
         }
 
-        const float influence = ResolveBoneModifierInfluenceUVE(entityManager, entity);
-        if (!IsBoneModifierActiveUVE(entityManager, entity) ||
-            !IsFullBodyIK3DObjectComponentResolvableUVE(solve) ||
-            !IsFullBodyIK3DObjectComponentValidUVE(solve)) {
+        const float influence = ResolveBoneModifierInfluence(entityManager, entity);
+        if (!IsBoneModifierActive(entityManager, entity) ||
+            !IsFullBodyIK3DObjectComponentResolvable(solve) ||
+            !IsFullBodyIK3DObjectComponentValid(solve)) {
             ++report.refused;
             continue;
         }
-        const EntityUVE skeletonEntity = solve.skeleton;
-        if (!entityManager.IsAliveUVE(skeletonEntity) ||
-            !entityManager.HasComponentUVE<Skeleton3DComponentUVE>(skeletonEntity)) {
+        const Entity skeletonEntity = solve.skeleton;
+        if (!entityManager.IsAlive(skeletonEntity) ||
+            !entityManager.HasComponent<Skeleton3DComponent>(skeletonEntity)) {
             ++report.refused;
             continue;
         }
@@ -129,11 +129,11 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
             ++report.refused;
             continue;
         }
-        Skeleton3DComponentUVE& skeleton = entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skeletonEntity);
-        const ObjectWorldFrameUVE skeletonFrame = ComposeSceneObjectWorldFrameUVE(entityManager, skeletonEntity);
+        Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity);
+        const ObjectWorldFrame skeletonFrame = ComposeSceneObjectWorldFrame(entityManager, skeletonEntity);
 
-        const std::uint32_t rootBone = ResolveBoneUVE(skeleton, solve.rootBoneIndex, solve.rootBoneName);
-        if (rootBone == kInvalidSkeletonBoneIndexUVE) {
+        const std::uint32_t rootBone = ResolveBone(skeleton, solve.rootBoneIndex, solve.rootBoneName);
+        if (rootBone == kInvalidSkeletonBoneIndex) {
             ++report.refused;
             continue;
         }
@@ -142,28 +142,28 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
         // than dropping that limb, because a solve that silently lost an effector would pose the
         // body against a problem the author did not author.
         std::vector<std::uint32_t> effectorBones;
-        std::vector<Math::Vector3UVE> effectorTargets;
+        std::vector<Math::Vector3> effectorTargets;
         std::vector<float> effectorWeights;
         bool effectorsResolved = !solve.effectors.empty();
-        for (const FullBodyIKEffectorUVE& effector : solve.effectors) {
-            const std::uint32_t bone = ResolveBoneUVE(skeleton, effector.boneIndex, effector.boneName);
-            if (bone == kInvalidSkeletonBoneIndexUVE) {
+        for (const FullBodyIKEffector& effector : solve.effectors) {
+            const std::uint32_t bone = ResolveBone(skeleton, effector.boneIndex, effector.boneName);
+            if (bone == kInvalidSkeletonBoneIndex) {
                 effectorsResolved = false;
                 break;
             }
-            Math::Vector3UVE target{};
-            if (effector.target != kInvalidEntityUVE) {
+            Math::Vector3 target{};
+            if (effector.target != kInvalidEntity) {
                 // A reference that names something which is gone refuses rather than falling back -
                 // the author pointed at an object, and silently solving toward another place would
                 // hide that it went.
-                if (!entityManager.IsAliveUVE(effector.target) ||
-                    !entityManager.HasComponentUVE<TransformComponentUVE>(effector.target)) {
+                if (!entityManager.IsAlive(effector.target) ||
+                    !entityManager.HasComponent<TransformComponent>(effector.target)) {
                     effectorsResolved = false;
                     break;
                 }
-                target = ComposeSceneObjectWorldFrameUVE(entityManager, effector.target).position;
+                target = ComposeSceneObjectWorldFrame(entityManager, effector.target).position;
             } else {
-                target = SkeletonSpaceToWorldUVE(effector.targetPosition, skeletonFrame);
+                target = SkeletonSpaceToWorld(effector.targetPosition, skeletonFrame);
             }
             effectorBones.push_back(bone);
             effectorTargets.push_back(target);
@@ -177,20 +177,20 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
         // The whole rig as the pose puts it, in world space: the solver drives the root bone's
         // subtree and leaves everything else - and every bone length - exactly as it found them.
         const std::size_t boneCount = skeleton.bones.size();
-        std::vector<SkeletonBonePoseUVE> pose = GetSkeletonCurrentPoseUVE(skeleton);
+        std::vector<SkeletonBonePose> pose = GetSkeletonCurrentPose(skeleton);
         if (pose.size() != boneCount) {
             ++report.refused;
             continue;
         }
-        FullBodyIKProblemUVE problem;
+        FullBodyIKProblem problem;
         problem.joints.reserve(boneCount);
         for (std::size_t bone = 0U; bone < boneCount; ++bone) {
-            ObjectWorldFrameUVE frame{};
-            if (!TryResolveBoneWorldFrameUVE(skeleton, static_cast<std::uint32_t>(bone), skeletonFrame, frame)) {
+            ObjectWorldFrame frame{};
+            if (!TryResolveBoneWorldFrame(skeleton, static_cast<std::uint32_t>(bone), skeletonFrame, frame)) {
                 problem.joints.clear();
                 break;
             }
-            problem.joints.push_back(FullBodyIKJointUVE{
+            problem.joints.push_back(FullBodyIKJoint{
                 skeleton.bones[bone].parentIndex, frame.position, frame.rotation, pose[bone].position});
         }
         if (problem.joints.size() != boneCount) {
@@ -204,10 +204,10 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
         problem.effectorTargets = std::move(effectorTargets);
         problem.effectorWeights = std::move(effectorWeights);
 
-        const FullBodyIKSolverSettingsUVE settings{
+        const FullBodyIKSolverSettings settings{
             static_cast<std::size_t>(rootBone), solve.maxIterations, solve.toleranceMetres,
             solve.rootTranslationWeight, solve.maxJointStepRadians};
-        const std::optional<FullBodyIKSolverReportUVE> solution = SolveFullBodyIKUVE(problem, settings);
+        const std::optional<FullBodyIKSolverReport> solution = SolveFullBodyIK(problem, settings);
         if (!solution.has_value()) {
             ++report.refused;
             continue;
@@ -233,10 +233,10 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
 
         // The root bone's world rotation right before the solve wrote anything: its parent is
         // outside the driven subtree, so this frame does not move.
-        ObjectWorldFrameUVE rootParentFrame = skeletonFrame;
+        ObjectWorldFrame rootParentFrame = skeletonFrame;
         if (skeleton.bones[rootBone].parentIndex >= 0) {
             const auto parentBone = static_cast<std::uint32_t>(skeleton.bones[rootBone].parentIndex);
-            if (!TryResolveBoneWorldFrameUVE(skeleton, parentBone, skeletonFrame, rootParentFrame)) {
+            if (!TryResolveBoneWorldFrame(skeleton, parentBone, skeletonFrame, rootParentFrame)) {
                 ++report.refused;
                 continue;
             }
@@ -255,14 +255,14 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
         bool writeOk = true;
         for (std::size_t bone = 0U; bone < boneCount && writeOk; ++bone) {
             if (driven[bone]) {
-                Math::QuaternionUVE parentWorldRotation = rootParentFrame.rotation;
+                Math::Quaternion parentWorldRotation = rootParentFrame.rotation;
                 if (skeleton.bones[bone].parentIndex >= 0) {
                     const auto parentBone = static_cast<std::size_t>(skeleton.bones[bone].parentIndex);
                     if (driven[parentBone]) {
                         parentWorldRotation = solution->solvedRotations[parentBone];
                     } else {
-                        ObjectWorldFrameUVE parentFrame{};
-                        if (!TryResolveBoneWorldFrameUVE(skeleton, static_cast<std::uint32_t>(parentBone),
+                        ObjectWorldFrame parentFrame{};
+                        if (!TryResolveBoneWorldFrame(skeleton, static_cast<std::uint32_t>(parentBone),
                                                          skeletonFrame, parentFrame)) {
                             writeOk = false;
                             break;
@@ -272,15 +272,15 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
                 } else {
                     parentWorldRotation = skeletonFrame.rotation;
                 }
-                Math::QuaternionUVE inverseParent{};
-                if (!Math::TryInverseUVE(parentWorldRotation, inverseParent)) {
+                Math::Quaternion inverseParent{};
+                if (!Math::TryInverse(parentWorldRotation, inverseParent)) {
                     writeOk = false;
                     break;
                 }
-                const Math::QuaternionUVE solvedLocal =
-                    Math::MultiplyUVE(inverseParent, solution->solvedRotations[bone]);
-                Math::QuaternionUVE blended{};
-                if (!TryBlendTwoBoneIKRotationUVE(pose[bone].rotation, solvedLocal, influence, blended)) {
+                const Math::Quaternion solvedLocal =
+                    Math::Multiply(inverseParent, solution->solvedRotations[bone]);
+                Math::Quaternion blended{};
+                if (!TryBlendTwoBoneIKRotation(pose[bone].rotation, solvedLocal, influence, blended)) {
                     writeOk = false;
                     break;
                 }
@@ -288,18 +288,18 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
             }
         }
         if (writeOk) {
-            Math::Vector3UVE worldDelta = solution->solvedPositions[static_cast<std::size_t>(rootBone)] -
+            Math::Vector3 worldDelta = solution->solvedPositions[static_cast<std::size_t>(rootBone)] -
                                           rootParentFrame.position;
-            Math::QuaternionUVE inverseParent{};
-            if (!Math::TryInverseUVE(rootParentFrame.rotation, inverseParent)) {
+            Math::Quaternion inverseParent{};
+            if (!Math::TryInverse(rootParentFrame.rotation, inverseParent)) {
                 writeOk = false;
             } else {
-                const Math::Vector3UVE unrotated = Math::RotateVectorUVE(inverseParent, worldDelta);
-                const Math::Vector3UVE localDelta{unrotated.x / rootParentFrame.scale.x,
+                const Math::Vector3 unrotated = Math::RotateVector(inverseParent, worldDelta);
+                const Math::Vector3 localDelta{unrotated.x / rootParentFrame.scale.x,
                                                   unrotated.y / rootParentFrame.scale.y,
                                                   unrotated.z / rootParentFrame.scale.z};
-                pose[static_cast<std::size_t>(rootBone)].position = BlendBoneModifierPositionUVE(
-                    BoneModifierComponentUVE{true, influence}, pose[static_cast<std::size_t>(rootBone)].position,
+                pose[static_cast<std::size_t>(rootBone)].position = BlendBoneModifierPosition(
+                    BoneModifierComponent{true, influence}, pose[static_cast<std::size_t>(rootBone)].position,
                     localDelta);
             }
         }
@@ -312,7 +312,7 @@ FullBodyIKPassReportUVE SyncFullBodyIK3DObjectsUVE(IEntityManagerUVE& entityMana
         skeleton.pose = std::move(pose);
 
         for (std::size_t index = 0U; index < solve.effectors.size(); ++index) {
-            FullBodyIKEffectorUVE& effector = solve.effectors[index];
+            FullBodyIKEffector& effector = solve.effectors[index];
             effector.resolvedBoneIndex = effectorBones[index];
             effector.reached = solution->reached[index];
             effector.distanceMetres = solution->distances[index];

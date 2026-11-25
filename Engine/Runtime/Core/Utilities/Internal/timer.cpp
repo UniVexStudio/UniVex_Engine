@@ -9,15 +9,15 @@
 namespace UVE::Utilities {
 namespace {
 
-[[nodiscard]] bool IsValidPositiveTimingValueUVE(const double value) noexcept {
+[[nodiscard]] bool IsValidPositiveTimingValue(const double value) noexcept {
     return std::isfinite(value) && value > 0.0;
 }
 
 } // namespace
 
-TimerUVE::TimerUVE() : m_lastTickTime(std::chrono::steady_clock::now()) {}
+Timer::Timer() : m_lastTickTime(std::chrono::steady_clock::now()) {}
 
-void TimerUVE::Tick() {
+void Timer::Tick() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     const double rawDelta = std::chrono::duration<double>(now - m_lastTickTime).count();
     m_lastTickTime = now;
@@ -33,45 +33,45 @@ void TimerUVE::Tick() {
     }
 }
 
-double TimerUVE::GetDeltaTimeUVE() const {
+double Timer::GetDeltaTime() const {
     return m_deltaTime;
 }
 
-float TimerUVE::GetDeltaTimeFloatUVE() const {
+float Timer::GetDeltaTimeFloat() const {
     return static_cast<float>(m_deltaTime);
 }
 
-double TimerUVE::GetTotalTimeUVE() const {
+double Timer::GetTotalTime() const {
     return m_totalTime;
 }
 
-void TimerUVE::Reset() {
+void Timer::Reset() {
     m_lastTickTime = std::chrono::steady_clock::now();
     m_deltaTime = 0.0;
     m_totalTime = 0.0;
     m_accumulator = 0.0;
 }
 
-void TimerUVE::SetMaxDeltaTimeUVE(double maxDeltaSeconds) {
-    if (IsValidPositiveTimingValueUVE(maxDeltaSeconds)) {
+void Timer::SetMaxDeltaTime(double maxDeltaSeconds) {
+    if (IsValidPositiveTimingValue(maxDeltaSeconds)) {
         m_maxDeltaTime = maxDeltaSeconds;
     }
 }
 
-void TimerUVE::SetFixedTimestepUVE(double fixedDeltaSeconds) {
-    if (IsValidPositiveTimingValueUVE(fixedDeltaSeconds)) {
+void Timer::SetFixedTimestep(double fixedDeltaSeconds) {
+    if (IsValidPositiveTimingValue(fixedDeltaSeconds)) {
         m_fixedDeltaTime = fixedDeltaSeconds;
     }
 }
 
-void TimerUVE::SetMaxStepsPerTickUVE(const int maxSteps) {
+void Timer::SetMaxStepsPerTick(const int maxSteps) {
     if (maxSteps >= 1) {
         m_maxStepsPerTick = maxSteps;
     }
 }
 
-FixedStepResultUVE TimerUVE::AdvanceFixedStepUVE() {
-    FixedStepResultUVE result;
+FixedStepResult Timer::AdvanceFixedStep() {
+    FixedStepResult result;
 
     while (m_accumulator >= m_fixedDeltaTime && result.stepsToRun < m_maxStepsPerTick) {
         m_accumulator -= m_fixedDeltaTime;
@@ -89,7 +89,7 @@ FixedStepResultUVE TimerUVE::AdvanceFixedStepUVE() {
     return result;
 }
 
-void TimerUVE::DiscardFixedStepAccumulatorUVE() noexcept {
+void Timer::DiscardFixedStepAccumulator() noexcept {
     m_accumulator = 0.0;
 }
 

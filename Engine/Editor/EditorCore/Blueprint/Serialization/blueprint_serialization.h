@@ -20,107 +20,107 @@ namespace UVE::Blueprint::Serialization {
 // Versioning
 // ---------------------------------------------------------------------------
 
-struct BlueprintSchemaVersionUVE final {
+struct BlueprintSchemaVersion final {
     std::uint32_t major = 1U;
     std::uint32_t minor = 0U;
 
-    [[nodiscard]] bool operator==(const BlueprintSchemaVersionUVE&) const = default;
-    [[nodiscard]] auto operator<=>(const BlueprintSchemaVersionUVE&) const = default;
+    [[nodiscard]] bool operator==(const BlueprintSchemaVersion&) const = default;
+    [[nodiscard]] auto operator<=>(const BlueprintSchemaVersion&) const = default;
 };
 
-inline constexpr BlueprintSchemaVersionUVE kCurrentBlueprintSchemaVersionUVE{1U, 0U};
+inline constexpr BlueprintSchemaVersion kCurrentBlueprintSchemaVersion{1U, 0U};
 
-[[nodiscard]] std::string FormatBlueprintSchemaVersionUVE(BlueprintSchemaVersionUVE version);
-[[nodiscard]] std::optional<BlueprintSchemaVersionUVE> ParseBlueprintSchemaVersionUVE(std::string_view schemaText);
+[[nodiscard]] std::string FormatBlueprintSchemaVersion(BlueprintSchemaVersion version);
+[[nodiscard]] std::optional<BlueprintSchemaVersion> ParseBlueprintSchemaVersion(std::string_view schemaText);
 
 // ---------------------------------------------------------------------------
 // Pin / Node / Wire / Asset Serialization Helpers
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] std::string_view BlueprintPinTypeToNameUVE(Asset::BlueprintPinTypeUVE type) noexcept;
-[[nodiscard]] std::optional<Asset::BlueprintPinTypeUVE> ParseBlueprintPinTypeNameUVE(std::string_view name) noexcept;
+[[nodiscard]] std::string_view BlueprintPinTypeToName(Asset::BlueprintPinType type) noexcept;
+[[nodiscard]] std::optional<Asset::BlueprintPinType> ParseBlueprintPinTypeName(std::string_view name) noexcept;
 
-[[nodiscard]] std::string SerializeBlueprintPinSpecJsonUVE(const Asset::BlueprintPinSpecUVE& pin);
-[[nodiscard]] std::optional<Asset::BlueprintPinSpecUVE> ParseBlueprintPinSpecJsonUVE(std::string_view jsonText);
+[[nodiscard]] std::string SerializeBlueprintPinSpecJson(const Asset::BlueprintPinSpec& pin);
+[[nodiscard]] std::optional<Asset::BlueprintPinSpec> ParseBlueprintPinSpecJson(std::string_view jsonText);
 
-[[nodiscard]] std::string SerializeBlueprintNodeJsonUVE(const Asset::BlueprintNodeUVE& node);
-[[nodiscard]] std::optional<Asset::BlueprintNodeUVE> ParseBlueprintNodeJsonUVE(std::string_view jsonText);
+[[nodiscard]] std::string SerializeBlueprintNodeJson(const Asset::BlueprintNode& node);
+[[nodiscard]] std::optional<Asset::BlueprintNode> ParseBlueprintNodeJson(std::string_view jsonText);
 
-[[nodiscard]] std::string SerializeBlueprintWireJsonUVE(const Asset::BlueprintWireUVE& wire);
-[[nodiscard]] std::optional<Asset::BlueprintWireUVE> ParseBlueprintWireJsonUVE(std::string_view jsonText);
+[[nodiscard]] std::string SerializeBlueprintWireJson(const Asset::BlueprintWire& wire);
+[[nodiscard]] std::optional<Asset::BlueprintWire> ParseBlueprintWireJson(std::string_view jsonText);
 
-[[nodiscard]] std::string SerializeFunctionLibraryAssetUVE(const Assets::BlueprintFunctionLibraryAssetUVE& library);
-[[nodiscard]] std::optional<Assets::BlueprintFunctionLibraryAssetUVE> ParseFunctionLibraryAssetUVE(
+[[nodiscard]] std::string SerializeFunctionLibraryAsset(const Assets::BlueprintFunctionLibraryAsset& library);
+[[nodiscard]] std::optional<Assets::BlueprintFunctionLibraryAsset> ParseFunctionLibraryAsset(
     std::string_view jsonText);
 
-[[nodiscard]] std::string SerializeMacroLibraryAssetUVE(const Assets::BlueprintMacroLibraryAssetUVE& library);
-[[nodiscard]] std::optional<Assets::BlueprintMacroLibraryAssetUVE> ParseMacroLibraryAssetUVE(
+[[nodiscard]] std::string SerializeMacroLibraryAsset(const Assets::BlueprintMacroLibraryAsset& library);
+[[nodiscard]] std::optional<Assets::BlueprintMacroLibraryAsset> ParseMacroLibraryAsset(
     std::string_view jsonText);
 
-[[nodiscard]] std::string SerializeInterfaceAssetUVE(const Assets::BlueprintInterfaceAssetUVE& iface);
-[[nodiscard]] std::optional<Assets::BlueprintInterfaceAssetUVE> ParseInterfaceAssetUVE(std::string_view jsonText);
+[[nodiscard]] std::string SerializeInterfaceAsset(const Assets::BlueprintInterfaceAsset& iface);
+[[nodiscard]] std::optional<Assets::BlueprintInterfaceAsset> ParseInterfaceAsset(std::string_view jsonText);
 
 // ---------------------------------------------------------------------------
 // Migration
 // ---------------------------------------------------------------------------
 
-struct BlueprintMigrationResultUVE final {
+struct BlueprintMigrationResult final {
     bool success = false;
-    BlueprintSchemaVersionUVE fromVersion{0U, 0U};
-    BlueprintSchemaVersionUVE toVersion = kCurrentBlueprintSchemaVersionUVE;
+    BlueprintSchemaVersion fromVersion{0U, 0U};
+    BlueprintSchemaVersion toVersion = kCurrentBlueprintSchemaVersion;
     std::string migratedJson;
     std::vector<std::string> appliedSteps;
     std::string error;
 };
 
-struct BlueprintMigrationStepUVE final {
-    BlueprintSchemaVersionUVE fromVersion;
-    BlueprintSchemaVersionUVE toVersion;
+struct BlueprintMigrationStep final {
+    BlueprintSchemaVersion fromVersion;
+    BlueprintSchemaVersion toVersion;
     std::string description;
     /// Transforms a JSON document string from `fromVersion` to `toVersion`, returning empty on failure.
     std::function<std::optional<std::string>(std::string_view)> transform;
 };
 
-class BlueprintMigrationRegistryUVE final {
+class BlueprintMigrationRegistry final {
 public:
     /// Constructs a registry pre-populated with built-in legacy schema migrations (e.g. v0 -> v1).
-    static BlueprintMigrationRegistryUVE CreateDefaultUVE();
+    static BlueprintMigrationRegistry CreateDefault();
 
-    void RegisterStepUVE(BlueprintMigrationStepUVE step);
+    void RegisterStep(BlueprintMigrationStep step);
 
-    [[nodiscard]] BlueprintMigrationResultUVE MigrateJsonUVE(
+    [[nodiscard]] BlueprintMigrationResult MigrateJson(
         std::string_view jsonText,
-        BlueprintSchemaVersionUVE targetVersion = kCurrentBlueprintSchemaVersionUVE) const;
+        BlueprintSchemaVersion targetVersion = kCurrentBlueprintSchemaVersion) const;
 
 private:
-    std::vector<BlueprintMigrationStepUVE> m_steps;
+    std::vector<BlueprintMigrationStep> m_steps;
 };
 
 // ---------------------------------------------------------------------------
 // Import & Export
 // ---------------------------------------------------------------------------
 
-enum class BlueprintExportFormatUVE : std::uint8_t {
+enum class BlueprintExportFormat : std::uint8_t {
     JsonPretty = 0,
     JsonCompact,
     UVScriptSource,
 };
 
-struct BlueprintImportResultUVE final {
-    std::optional<Asset::BlueprintAssetUVE> asset;
-    BlueprintSchemaVersionUVE sourceVersion{0U, 0U};
+struct BlueprintImportResult final {
+    std::optional<Asset::BlueprintAsset> asset;
+    BlueprintSchemaVersion sourceVersion{0U, 0U};
     bool migrated = false;
     std::vector<std::string> notes;
     std::string error;
 
-    [[nodiscard]] bool IsSuccessUVE() const noexcept { return asset.has_value() && error.empty(); }
+    [[nodiscard]] bool IsSuccess() const noexcept { return asset.has_value() && error.empty(); }
 };
 
-[[nodiscard]] std::string ExportBlueprintAssetUVE(const Asset::BlueprintAssetUVE& blueprint,
-                                                  BlueprintExportFormatUVE format,
+[[nodiscard]] std::string ExportBlueprintAsset(const Asset::BlueprintAsset& blueprint,
+                                                  BlueprintExportFormat format,
                                                   std::string_view objectName = "BlueprintObject");
 
-[[nodiscard]] BlueprintImportResultUVE ImportBlueprintFromJsonUVE(
-    std::string_view jsonText, const BlueprintMigrationRegistryUVE* customRegistry = nullptr);
+[[nodiscard]] BlueprintImportResult ImportBlueprintFromJson(
+    std::string_view jsonText, const BlueprintMigrationRegistry* customRegistry = nullptr);
 
 } // namespace UVE::Blueprint::Serialization

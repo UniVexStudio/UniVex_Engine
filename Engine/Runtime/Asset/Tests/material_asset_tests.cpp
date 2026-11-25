@@ -29,62 +29,62 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] MaterialAssetUVE MakeTestMaterialUVE() {
-    MaterialAssetUVE material;
-    material.albedoColor = Math::ColorUVE{0.8F, 0.2F, 0.2F};
-    material.albedoTexture = AssetGuidUVE{111};
-    material.normalTexture = AssetGuidUVE{222};
+[[nodiscard]] MaterialAsset MakeTestMaterial() {
+    MaterialAsset material;
+    material.albedoColor = Math::Color{0.8F, 0.2F, 0.2F};
+    material.albedoTexture = AssetGuid{111};
+    material.normalTexture = AssetGuid{222};
     material.metallic = 0.5F;
     material.roughness = 0.3F;
-    material.aoTexture = AssetGuidUVE{333};
-    material.emissiveColor = Math::ColorUVE{0.1F, 0.0F, 0.0F};
-    material.vertexShader = AssetGuidUVE{444};
-    material.fragmentShader = AssetGuidUVE{555};
+    material.aoTexture = AssetGuid{333};
+    material.emissiveColor = Math::Color{0.1F, 0.0F, 0.0F};
+    material.vertexShader = AssetGuid{444};
+    material.fragmentShader = AssetGuid{555};
     material.isTransparent = true;
-    material.billboardMode = MaterialBillboardModeUVE::Y;
-    material.metallicRoughnessTexture = AssetGuidUVE{666};
-    material.emissiveTexture = AssetGuidUVE{777};
+    material.billboardMode = MaterialBillboardMode::Y;
+    material.metallicRoughnessTexture = AssetGuid{666};
+    material.emissiveTexture = AssetGuid{777};
     material.emissiveEnergy = 2.5F;
     material.normalScale = 0.75F;
     material.occlusionStrength = 0.4F;
-    material.uvScale = Math::Vector2UVE{2.0F, 3.0F};
-    material.uvOffset = Math::Vector2UVE{0.1F, 0.2F};
+    material.uvScale = Math::Vector2{2.0F, 3.0F};
+    material.uvOffset = Math::Vector2{0.1F, 0.2F};
     material.unshaded = true;
     material.alphaCutoff = 0.35F;
     return material;
 }
 
-TEST(MaterialAssetUVETest, DefaultConstruction_HasSensibleDefaults) {
-    constexpr MaterialAssetUVE material;
-    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.normalTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.aoTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.vertexShader, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.fragmentShader, kInvalidAssetGuidUVE);
+TEST(MaterialAssetTest, DefaultConstruction_HasSensibleDefaults) {
+    constexpr MaterialAsset material;
+    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuid);
+    EXPECT_EQ(material.normalTexture, kInvalidAssetGuid);
+    EXPECT_EQ(material.aoTexture, kInvalidAssetGuid);
+    EXPECT_EQ(material.vertexShader, kInvalidAssetGuid);
+    EXPECT_EQ(material.fragmentShader, kInvalidAssetGuid);
     EXPECT_EQ(material.metallic, 0.0F);
     EXPECT_EQ(material.roughness, 0.5F);
     EXPECT_FALSE(material.isTransparent);
-    EXPECT_EQ(material.billboardMode, MaterialBillboardModeUVE::Disabled);
-    EXPECT_EQ(material.metallicRoughnessTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(material.emissiveTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(material.billboardMode, MaterialBillboardMode::Disabled);
+    EXPECT_EQ(material.metallicRoughnessTexture, kInvalidAssetGuid);
+    EXPECT_EQ(material.emissiveTexture, kInvalidAssetGuid);
     EXPECT_EQ(material.emissiveEnergy, 1.0F);
     EXPECT_EQ(material.normalScale, 1.0F);
     EXPECT_EQ(material.occlusionStrength, 1.0F);
-    EXPECT_EQ(material.uvScale, (Math::Vector2UVE{1.0F, 1.0F}));
-    EXPECT_EQ(material.uvOffset, (Math::Vector2UVE{0.0F, 0.0F}));
+    EXPECT_EQ(material.uvScale, (Math::Vector2{1.0F, 1.0F}));
+    EXPECT_EQ(material.uvOffset, (Math::Vector2{0.0F, 0.0F}));
     EXPECT_FALSE(material.unshaded);
     EXPECT_EQ(material.alphaCutoff, 0.0F);
-    EXPECT_EQ(material.kind, MaterialKindUVE::Standard);
+    EXPECT_EQ(material.kind, MaterialKind::Standard);
 }
 
-TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
+TEST(MaterialAssetTest, SaveThenLoad_RoundTripsFieldExact) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip.uvmat";
     std::filesystem::remove(path);
-    const MaterialAssetUVE original = MakeTestMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    const MaterialAsset original = MakeTestMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    MaterialAssetUVE loaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    MaterialAsset loaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
 
     EXPECT_EQ(loaded.albedoColor, original.albedoColor);
     EXPECT_EQ(loaded.albedoTexture, original.albedoTexture);
@@ -114,31 +114,31 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsFieldExact) {
 // on save is invisible until a material is reopened and quietly reverts to its default blend, cull
 // or depth behaviour. Also checks the two non-default orientations (cull Front, depth Test off) -
 // a serializer that writes a field but reads back only "was it set" would pass a Back/true check.
-TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsTheRenderingStateFields) {
+TEST(MaterialAssetTest, SaveThenLoad_RoundTripsTheRenderingStateFields) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip_rendering_state.uvmat";
     std::filesystem::remove(path);
 
-    MaterialAssetUVE original = MakeTestMaterialUVE();
-    original.blendMode = MaterialBlendModeUVE::Subtractive;
-    original.cullMode = MaterialCullModeUVE::Front;
-    original.depthDrawMode = MaterialDepthDrawModeUVE::Never;
+    MaterialAsset original = MakeTestMaterial();
+    original.blendMode = MaterialBlendMode::Subtractive;
+    original.cullMode = MaterialCullMode::Front;
+    original.depthDrawMode = MaterialDepthDrawMode::Never;
     original.depthTestEnabled = false;
     original.depthWriteEnabled = false;
-    original.alphaSource = MaterialAlphaSourceUVE::None;
+    original.alphaSource = MaterialAlphaSource::None;
     original.alphaHashingEnabled = true;
     original.renderPriority = 7;
     original.albedoAlpha = 0.25F;
     original.isTransparent = true;
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    MaterialAssetUVE loaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
-    EXPECT_EQ(loaded.blendMode, MaterialBlendModeUVE::Subtractive);
-    EXPECT_EQ(loaded.cullMode, MaterialCullModeUVE::Front);
-    EXPECT_EQ(loaded.depthDrawMode, MaterialDepthDrawModeUVE::Never);
+    MaterialAsset loaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
+    EXPECT_EQ(loaded.blendMode, MaterialBlendMode::Subtractive);
+    EXPECT_EQ(loaded.cullMode, MaterialCullMode::Front);
+    EXPECT_EQ(loaded.depthDrawMode, MaterialDepthDrawMode::Never);
     EXPECT_FALSE(loaded.depthTestEnabled);
     EXPECT_FALSE(loaded.depthWriteEnabled);
-    EXPECT_EQ(loaded.alphaSource, MaterialAlphaSourceUVE::None);
+    EXPECT_EQ(loaded.alphaSource, MaterialAlphaSource::None);
     EXPECT_TRUE(loaded.alphaHashingEnabled);
     EXPECT_EQ(loaded.renderPriority, 7);
     EXPECT_FLOAT_EQ(loaded.albedoAlpha, 0.25F);
@@ -146,29 +146,29 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsTheRenderingStateFields) {
 
     // And the defaults have to survive the other direction: a material that never touched these
     // must not acquire a non-default state by being saved once.
-    MaterialAssetUVE defaults = MakeTestMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(defaults, path));
-    MaterialAssetUVE defaultsLoaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, defaultsLoaded));
-    EXPECT_EQ(defaultsLoaded.blendMode, MaterialBlendModeUVE::Opaque);
-    EXPECT_EQ(defaultsLoaded.cullMode, MaterialCullModeUVE::Back);
-    EXPECT_EQ(defaultsLoaded.depthDrawMode, MaterialDepthDrawModeUVE::OpaqueOnly);
+    MaterialAsset defaults = MakeTestMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(defaults, path));
+    MaterialAsset defaultsLoaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, defaultsLoaded));
+    EXPECT_EQ(defaultsLoaded.blendMode, MaterialBlendMode::Opaque);
+    EXPECT_EQ(defaultsLoaded.cullMode, MaterialCullMode::Back);
+    EXPECT_EQ(defaultsLoaded.depthDrawMode, MaterialDepthDrawMode::OpaqueOnly);
     EXPECT_TRUE(defaultsLoaded.depthTestEnabled);
     EXPECT_TRUE(defaultsLoaded.depthWriteEnabled);
-    EXPECT_EQ(defaultsLoaded.alphaSource, MaterialAlphaSourceUVE::AlbedoAlpha);
+    EXPECT_EQ(defaultsLoaded.alphaSource, MaterialAlphaSource::AlbedoAlpha);
     EXPECT_FALSE(defaultsLoaded.alphaHashingEnabled);
     EXPECT_EQ(defaultsLoaded.renderPriority, 0);
 
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFields) {
+TEST(MaterialAssetTest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFields) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip_uv_sets.uvmat";
     std::filesystem::remove(path);
 
-    MaterialAssetUVE original = MakeTestMaterialUVE();
-    original.uv2Scale = Math::Vector2UVE{2.0F, 3.0F};
-    original.uv2Offset = Math::Vector2UVE{0.25F, 0.5F};
+    MaterialAsset original = MakeTestMaterial();
+    original.uv2Scale = Math::Vector2{2.0F, 3.0F};
+    original.uv2Offset = Math::Vector2{0.25F, 0.5F};
     original.triplanarEnabled = true;
     original.worldSpaceTriplanar = true;
     original.triplanarBlendSharpness = 4.0F;
@@ -182,16 +182,16 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFiel
     original.disableFog = true;
     original.receiveShadows = false;
     original.rimAmount = 0.5F;
-    original.rimTint = Math::ColorUVE{0.5F, 0.25F, 1.0F};
-    original.textureTint = Math::ColorUVE{0.3F, 0.6F, 0.9F};
+    original.rimTint = Math::Color{0.5F, 0.25F, 1.0F};
+    original.textureTint = Math::Color{0.3F, 0.6F, 0.9F};
     original.refractionAmount = 0.75F;
     original.renderLayerMask = 0x5U;
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    MaterialAssetUVE loaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
-    EXPECT_EQ(loaded.uv2Scale, (Math::Vector2UVE{2.0F, 3.0F}));
-    EXPECT_EQ(loaded.uv2Offset, (Math::Vector2UVE{0.25F, 0.5F}));
+    MaterialAsset loaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
+    EXPECT_EQ(loaded.uv2Scale, (Math::Vector2{2.0F, 3.0F}));
+    EXPECT_EQ(loaded.uv2Offset, (Math::Vector2{0.25F, 0.5F}));
     EXPECT_TRUE(loaded.triplanarEnabled);
     EXPECT_TRUE(loaded.worldSpaceTriplanar);
     EXPECT_FLOAT_EQ(loaded.triplanarBlendSharpness, 4.0F);
@@ -214,47 +214,47 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFiel
     EXPECT_EQ(loaded.renderLayerMask, 0x5U);
 
     // Untouched, they stay at their defaults through a save.
-    ASSERT_TRUE(SaveMaterialAssetUVE(MakeTestMaterialUVE(), path));
-    MaterialAssetUVE defaultsLoaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, defaultsLoaded));
+    ASSERT_TRUE(SaveMaterialAsset(MakeTestMaterial(), path));
+    MaterialAsset defaultsLoaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, defaultsLoaded));
     EXPECT_FALSE(defaultsLoaded.triplanarEnabled);
     EXPECT_FALSE(defaultsLoaded.aoOnUv2);
     EXPECT_FLOAT_EQ(defaultsLoaded.dielectricSpecular, 0.5F);
     EXPECT_TRUE(defaultsLoaded.receiveShadows);
     EXPECT_EQ(defaultsLoaded.renderLayerMask, 0xFFFFFFFFU);
 
-    MaterialAssetUVE invalidParallax = MakeTestMaterialUVE();
+    MaterialAsset invalidParallax = MakeTestMaterial();
     invalidParallax.parallaxMinLayers = 32U;
     invalidParallax.parallaxMaxLayers = 8U;
-    EXPECT_FALSE(IsMaterialAssetValidUVE(invalidParallax));
+    EXPECT_FALSE(IsMaterialAssetValid(invalidParallax));
 
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEveryKind) {
+TEST(MaterialAssetTest, SaveThenLoad_RoundTripsEveryKind) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip_kind.uvmat";
-    for (const MaterialKindUVE kind : {MaterialKindUVE::Standard, MaterialKindUVE::Orm, MaterialKindUVE::Shader}) {
+    for (const MaterialKind kind : {MaterialKind::Standard, MaterialKind::Orm, MaterialKind::Shader}) {
         std::filesystem::remove(path);
-        MaterialAssetUVE original = MakeTestMaterialUVE();
+        MaterialAsset original = MakeTestMaterial();
         original.kind = kind;
-        ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+        ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-        MaterialAssetUVE loaded;
-        ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+        MaterialAsset loaded;
+        ASSERT_TRUE(LoadMaterialAsset(path, loaded));
         EXPECT_EQ(loaded.kind, kind);
     }
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_WritesKindOnlyForNonStandardPresets) {
+TEST(MaterialAssetTest, SaveMaterialAsset_WritesKindOnlyForNonStandardPresets) {
     const std::filesystem::path path = "uve_material_asset_tests_kind_payload.uvmat";
     std::filesystem::remove(path);
-    MaterialAssetUVE material = MakeTestMaterialUVE();
-    material.kind = MaterialKindUVE::Standard;
-    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
+    MaterialAsset material = MakeTestMaterial();
+    material.kind = MaterialKind::Standard;
+    ASSERT_TRUE(SaveMaterialAsset(material, path));
 
     const auto payloadText = [&path]() {
-        const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+        const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
         if (!file.has_value()) {
             return std::string{};
         }
@@ -264,146 +264,146 @@ TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_WritesKindOnlyForNonStandardPres
     // A Standard material keeps the exact payload it had before the field existed.
     EXPECT_EQ(payloadText().find("\"kind\""), std::string::npos);
 
-    material.kind = MaterialKindUVE::Orm;
-    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
+    material.kind = MaterialKind::Orm;
+    ASSERT_TRUE(SaveMaterialAsset(material, path));
     EXPECT_NE(payloadText().find("\"kind\":1"), std::string::npos);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEachMapsOwnReading) {
+TEST(MaterialAssetTest, SaveThenLoad_RoundTripsEachMapsOwnReading) {
     const std::filesystem::path path = "uve_material_asset_tests_map_settings.uvmat";
     std::filesystem::remove(path);
-    MaterialAssetUVE original = MakeTestMaterialUVE();
-    MaterialMapSettingsUVE& albedo = original.MapUVE(MaterialMapUVE::Albedo);
-    albedo.tiling = Math::Vector2UVE{4.0F, 2.0F};
-    albedo.offset = Math::Vector2UVE{0.25F, -0.5F};
-    MaterialMapSettingsUVE& roughness = original.MapUVE(MaterialMapUVE::Roughness);
-    roughness.channel = MaterialTextureChannelUVE::Green;
+    MaterialAsset original = MakeTestMaterial();
+    MaterialMapSettings& albedo = original.Map(MaterialMap::Albedo);
+    albedo.tiling = Math::Vector2{4.0F, 2.0F};
+    albedo.offset = Math::Vector2{0.25F, -0.5F};
+    MaterialMapSettings& roughness = original.Map(MaterialMap::Roughness);
+    roughness.channel = MaterialTextureChannel::Green;
     roughness.invert = true;
     roughness.strength = 0.5F;
-    original.MapUVE(MaterialMapUVE::Occlusion).onUv2 = true;
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    original.Map(MaterialMap::Occlusion).onUv2 = true;
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    MaterialAssetUVE loaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    MaterialAsset loaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
     EXPECT_EQ(loaded.maps, original.maps);
     // The maps nobody touched read as authored.
-    EXPECT_EQ(loaded.MapUVE(MaterialMapUVE::Normal), MaterialMapSettingsUVE{});
+    EXPECT_EQ(loaded.Map(MaterialMap::Normal), MaterialMapSettings{});
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_LeavesMapsOutWhenEveryMapReadsAsAuthored) {
+TEST(MaterialAssetTest, SaveMaterialAsset_LeavesMapsOutWhenEveryMapReadsAsAuthored) {
     const std::filesystem::path path = "uve_material_asset_tests_map_payload.uvmat";
     std::filesystem::remove(path);
-    MaterialAssetUVE material = MakeTestMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+    MaterialAsset material = MakeTestMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(material, path));
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     ASSERT_TRUE(file.has_value());
     const std::string payload(reinterpret_cast<const char*>(file->second.data()), file->second.size());
     EXPECT_EQ(payload.find("\"maps\""), std::string::npos);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, IsMaterialAssetValidUVE_RejectsAMapStrengthOutsideZeroToOne) {
-    MaterialAssetUVE material = MakeTestMaterialUVE();
-    EXPECT_TRUE(IsMaterialAssetValidUVE(material));
-    material.MapUVE(MaterialMapUVE::Emissive).strength = 1.5F;
-    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
-    material.MapUVE(MaterialMapUVE::Emissive).strength = 1.0F;
-    material.MapUVE(MaterialMapUVE::Albedo).tiling.x = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
+TEST(MaterialAssetTest, IsMaterialAssetValid_RejectsAMapStrengthOutsideZeroToOne) {
+    MaterialAsset material = MakeTestMaterial();
+    EXPECT_TRUE(IsMaterialAssetValid(material));
+    material.Map(MaterialMap::Emissive).strength = 1.5F;
+    EXPECT_FALSE(IsMaterialAssetValid(material));
+    material.Map(MaterialMap::Emissive).strength = 1.0F;
+    material.Map(MaterialMap::Albedo).tiling.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsMaterialAssetValid(material));
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsUnknownKind) {
+TEST(MaterialAssetTest, LoadMaterialAsset_RejectsUnknownKind) {
     const std::filesystem::path path = "uve_material_asset_tests_unknown_kind.uvmat";
     std::filesystem::remove(path);
     // Every required field is present, so the only reason this can fail is the unknown preset.
     const std::string invalidJson =
         R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":0.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false,"kind":7})";
     const auto* const jsonBytes = reinterpret_cast<const std::byte*>(invalidJson.data());
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Material,
                                  std::vector<std::byte>(jsonBytes, jsonBytes + invalidJson.size())));
 
-    MaterialAssetUVE output;
-    output.kind = MaterialKindUVE::Standard;
-    EXPECT_FALSE(LoadMaterialAssetUVE(path, output));
-    EXPECT_EQ(output.kind, MaterialKindUVE::Standard);
+    MaterialAsset output;
+    output.kind = MaterialKind::Standard;
+    EXPECT_FALSE(LoadMaterialAsset(path, output));
+    EXPECT_EQ(output.kind, MaterialKind::Standard);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_RejectsInvalidValuesBeforeReplacingDestination) {
+TEST(MaterialAssetTest, SaveMaterialAsset_RejectsInvalidValuesBeforeReplacingDestination) {
     const std::filesystem::path path = "uve_material_asset_tests_invalid_save.uvmat";
     std::filesystem::remove(path);
-    const MaterialAssetUVE original = MakeTestMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    const MaterialAsset original = MakeTestMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    MaterialAssetUVE invalid = original;
+    MaterialAsset invalid = original;
     invalid.metallic = 2.0F;
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.roughness = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.emissiveColor.r = -1.0F;
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.emissiveEnergy = -0.1F;
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.normalScale = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.occlusionStrength = 1.5F;
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.uvScale.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
     invalid = original;
     invalid.alphaCutoff = 2.0F;
-    EXPECT_FALSE(SaveMaterialAssetUVE(invalid, path));
+    EXPECT_FALSE(SaveMaterialAsset(invalid, path));
 
-    MaterialAssetUVE loaded;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    MaterialAsset loaded;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
     EXPECT_EQ(loaded.metallic, original.metallic);
     EXPECT_EQ(loaded.roughness, original.roughness);
     EXPECT_EQ(loaded.emissiveColor, original.emissiveColor);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsOutOfRangeDecodedValuesBeforePublication) {
+TEST(MaterialAssetTest, LoadMaterialAsset_RejectsOutOfRangeDecodedValuesBeforePublication) {
     const std::filesystem::path path = "uve_material_asset_tests_invalid_values.uvmat";
     std::filesystem::remove(path);
     const std::string invalidJson =
         R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":2.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false})";
     const auto* const jsonBytes = reinterpret_cast<const std::byte*>(invalidJson.data());
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Material,
                                  std::vector<std::byte>(jsonBytes, jsonBytes + invalidJson.size())));
 
-    MaterialAssetUVE output;
+    MaterialAsset output;
     output.metallic = 0.25F;
-    EXPECT_FALSE(LoadMaterialAssetUVE(path, output));
+    EXPECT_FALSE(LoadMaterialAsset(path, output));
     EXPECT_EQ(output.metallic, 0.25F);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_WrongAssetKind_FailsCleanlyAndLogsError) {
+TEST(MaterialAssetTest, LoadMaterialAsset_WrongAssetKind_FailsCleanlyAndLogsError) {
     const std::filesystem::path path = "uve_material_asset_tests_wrong_kind.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, {}));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, {}));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    MaterialAssetUVE material;
-    EXPECT_FALSE(LoadMaterialAssetUVE(path, material));
+    MaterialAsset material;
+    EXPECT_FALSE(LoadMaterialAsset(path, material));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("not a material file");
         });
     EXPECT_TRUE(foundError);
@@ -412,35 +412,35 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_WrongAssetKind_FailsCleanlyAndLo
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingFile_ReturnsFalse) {
+TEST(MaterialAssetTest, LoadMaterialAsset_MissingFile_ReturnsFalse) {
     const std::filesystem::path path = "uve_material_asset_tests_nonexistent.uvmat";
     std::filesystem::remove(path);
 
-    MaterialAssetUVE material;
-    EXPECT_FALSE(LoadMaterialAssetUVE(path, material));
+    MaterialAsset material;
+    EXPECT_FALSE(LoadMaterialAsset(path, material));
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingField_FailsAndLogsError) {
+TEST(MaterialAssetTest, LoadMaterialAsset_MissingField_FailsAndLogsError) {
     const std::filesystem::path path = "uve_material_asset_tests_missing_field.uvmat";
     std::filesystem::remove(path);
     const std::string incompleteJson = "{\"albedoColor\": {\"x\": 1.0, \"y\": 1.0, \"z\": 1.0}}";
     const auto* const jsonBytes = reinterpret_cast<const std::byte*>(incompleteJson.data());
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Material,
                                  std::vector<std::byte>(jsonBytes, jsonBytes + incompleteJson.size())));
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    MaterialAssetUVE material;
-    EXPECT_FALSE(LoadMaterialAssetUVE(path, material));
+    MaterialAsset material;
+    EXPECT_FALSE(LoadMaterialAsset(path, material));
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("missing an expected field");
         });
     EXPECT_TRUE(foundError);
@@ -449,31 +449,31 @@ TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingField_FailsAndLogsError) 
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithMatchingData) {
+TEST(MaterialAssetTest, EndToEnd_RegisterLoaderThenLoad_ReachesLoadedWithMatchingData) {
     const std::filesystem::path path = "uve_material_asset_tests_end_to_end.uvmat";
     std::filesystem::remove(path);
-    const MaterialAssetUVE original = MakeTestMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+    const MaterialAsset original = MakeTestMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(original, path));
 
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE assetDatabase;
-    AssetManagerUVE assetManager(threadPool, eventSystem);
-    assetManager.RegisterLoaderUVE<MaterialAssetUVE>(&LoadMaterialAssetUVE);
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetDatabase assetDatabase;
+    AssetManager assetManager(threadPool, eventSystem);
+    assetManager.RegisterLoader<MaterialAsset>(&LoadMaterialAsset);
 
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
-    const AssetHandleUVE<MaterialAssetUVE> handle = assetManager.LoadUVE<MaterialAssetUVE>(guid, assetDatabase);
+    const AssetGuid guid = assetDatabase.Register(path);
+    const AssetHandle<MaterialAsset> handle = assetManager.Load<MaterialAsset>(guid, assetDatabase);
 
     bool ready = false;
     for (int iteration = 0; iteration < 200000 && !ready; ++iteration) {
-        ready = handle.IsReadyUVE() || handle.HasFailedUVE();
+        ready = handle.IsReady() || handle.HasFailed();
         if (!ready) {
             std::this_thread::yield();
         }
     }
     ASSERT_TRUE(ready);
-    ASSERT_TRUE(handle.IsReadyUVE());
-    const MaterialAssetUVE* const loaded = handle.TryGetUVE();
+    ASSERT_TRUE(handle.IsReady());
+    const MaterialAsset* const loaded = handle.TryGet();
     ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->albedoTexture, original.albedoTexture);
     EXPECT_EQ(loaded->isTransparent, original.isTransparent);
@@ -482,114 +482,114 @@ TEST(MaterialAssetUVETest, EndToEnd_RegisterLoaderThenLoadUVE_ReachesLoadedWithM
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_MissingBillboardMode_DefaultsToDisabled) {
+TEST(MaterialAssetTest, LoadMaterialAsset_MissingBillboardMode_DefaultsToDisabled) {
     const std::filesystem::path path = "uve_material_asset_tests_legacy_billboard.uvmat";
     std::filesystem::remove(path);
     const std::string legacyJson =
         R"({"albedoColor":{"x":1.0,"y":1.0,"z":1.0},"albedoTexture":0,"normalTexture":0,"metallic":0.0,"roughness":0.5,"aoTexture":0,"emissiveColor":{"x":0.0,"y":0.0,"z":0.0},"vertexShader":0,"fragmentShader":0,"isTransparent":false})";
     const auto* const jsonBytes = reinterpret_cast<const std::byte*>(legacyJson.data());
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Material,
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Material,
                                  std::vector<std::byte>(jsonBytes, jsonBytes + legacyJson.size())));
 
-    MaterialAssetUVE loaded;
-    loaded.billboardMode = MaterialBillboardModeUVE::Enabled;
-    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
-    EXPECT_EQ(loaded.billboardMode, MaterialBillboardModeUVE::Disabled);
-    EXPECT_EQ(loaded.metallicRoughnessTexture, kInvalidAssetGuidUVE);
-    EXPECT_EQ(loaded.emissiveTexture, kInvalidAssetGuidUVE);
+    MaterialAsset loaded;
+    loaded.billboardMode = MaterialBillboardMode::Enabled;
+    ASSERT_TRUE(LoadMaterialAsset(path, loaded));
+    EXPECT_EQ(loaded.billboardMode, MaterialBillboardMode::Disabled);
+    EXPECT_EQ(loaded.metallicRoughnessTexture, kInvalidAssetGuid);
+    EXPECT_EQ(loaded.emissiveTexture, kInvalidAssetGuid);
     EXPECT_EQ(loaded.emissiveEnergy, 1.0F);
     EXPECT_EQ(loaded.normalScale, 1.0F);
     EXPECT_EQ(loaded.occlusionStrength, 1.0F);
-    EXPECT_EQ(loaded.uvScale, (Math::Vector2UVE{1.0F, 1.0F}));
-    EXPECT_EQ(loaded.uvOffset, (Math::Vector2UVE{0.0F, 0.0F}));
+    EXPECT_EQ(loaded.uvScale, (Math::Vector2{1.0F, 1.0F}));
+    EXPECT_EQ(loaded.uvOffset, (Math::Vector2{0.0F, 0.0F}));
     EXPECT_FALSE(loaded.unshaded);
     EXPECT_EQ(loaded.alphaCutoff, 0.0F);
     std::filesystem::remove(path);
 }
 
-TEST(MaterialAssetUVETest, IsMaterialAssetValidUVE_RejectsUnknownBillboardMode) {
-    MaterialAssetUVE material = MakeTestMaterialUVE();
-    material.billboardMode = static_cast<MaterialBillboardModeUVE>(9U);
-    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
+TEST(MaterialAssetTest, IsMaterialAssetValid_RejectsUnknownBillboardMode) {
+    MaterialAsset material = MakeTestMaterial();
+    material.billboardMode = static_cast<MaterialBillboardMode>(9U);
+    EXPECT_FALSE(IsMaterialAssetValid(material));
 }
 
-TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_DisabledLeavesTheRotation) {
-    Math::QuaternionUVE rotation{0.1F, 0.2F, 0.3F, 0.4F};
-    EXPECT_FALSE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Disabled,
-                                                     Math::Vector3UVE{0.0F, 0.0F, -10.0F},
-                                                     Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rotation));
+TEST(MaterialAssetTest, TryMakeMaterialBillboardRotation_DisabledLeavesTheRotation) {
+    Math::Quaternion rotation{0.1F, 0.2F, 0.3F, 0.4F};
+    EXPECT_FALSE(TryMakeMaterialBillboardRotation(MaterialBillboardMode::Disabled,
+                                                     Math::Vector3{0.0F, 0.0F, -10.0F},
+                                                     Math::Vector3{0.0F, 0.0F, 0.0F}, rotation));
     EXPECT_EQ(rotation.x, 0.1F);
     EXPECT_EQ(rotation.y, 0.2F);
     EXPECT_EQ(rotation.z, 0.3F);
     EXPECT_EQ(rotation.w, 0.4F);
 }
 
-TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_EnabledPointsLocalZAtTheCamera) {
-    Math::QuaternionUVE rotation{};
-    ASSERT_TRUE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Enabled,
-                                                   Math::Vector3UVE{0.0F, 0.0F, -10.0F},
-                                                   Math::Vector3UVE{0.0F, 0.0F, 0.0F}, rotation));
-    const Math::Vector3UVE localZ = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
+TEST(MaterialAssetTest, TryMakeMaterialBillboardRotation_EnabledPointsLocalZAtTheCamera) {
+    Math::Quaternion rotation{};
+    ASSERT_TRUE(TryMakeMaterialBillboardRotation(MaterialBillboardMode::Enabled,
+                                                   Math::Vector3{0.0F, 0.0F, -10.0F},
+                                                   Math::Vector3{0.0F, 0.0F, 0.0F}, rotation));
+    const Math::Vector3 localZ = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, 1.0F});
     EXPECT_NEAR(localZ.x, 0.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.y, 0.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.z, 1.0F, 1.0e-4F);
 }
 
-TEST(MaterialAssetUVETest, TryMakeMaterialBillboardRotationUVE_YIgnoresCameraHeight) {
-    Math::QuaternionUVE rotation{};
-    ASSERT_TRUE(TryMakeMaterialBillboardRotationUVE(MaterialBillboardModeUVE::Y, Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                                                   Math::Vector3UVE{10.0F, 50.0F, 0.0F}, rotation));
-    const Math::Vector3UVE localZ = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
+TEST(MaterialAssetTest, TryMakeMaterialBillboardRotation_YIgnoresCameraHeight) {
+    Math::Quaternion rotation{};
+    ASSERT_TRUE(TryMakeMaterialBillboardRotation(MaterialBillboardMode::Y, Math::Vector3{0.0F, 0.0F, 0.0F},
+                                                   Math::Vector3{10.0F, 50.0F, 0.0F}, rotation));
+    const Math::Vector3 localZ = Math::RotateVector(rotation, Math::Vector3{0.0F, 0.0F, 1.0F});
     EXPECT_NEAR(localZ.x, 1.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.y, 0.0F, 1.0e-4F);
     EXPECT_NEAR(localZ.z, 0.0F, 1.0e-4F);
 }
 
-TEST(MaterialAssetUVETest, ExtendedMaterialTextureAndImportSidecarRoundTripAndValidateDeterministically) {
-    MaterialAssetUVE material = MakeTestMaterialUVE();
+TEST(MaterialAssetTest, ExtendedMaterialTextureAndImportSidecarRoundTripAndValidateDeterministically) {
+    MaterialAsset material = MakeTestMaterial();
     material.albedoAlpha = 0.5F;
-    material.metallicTexture = AssetGuidUVE{101U};
-    material.roughnessTexture = AssetGuidUVE{102U};
-    material.cullMode = MaterialCullModeUVE::Disabled;
-    material.blendMode = MaterialBlendModeUVE::AlphaBlend;
+    material.metallicTexture = AssetGuid{101U};
+    material.roughnessTexture = AssetGuid{102U};
+    material.cullMode = MaterialCullMode::Disabled;
+    material.blendMode = MaterialBlendMode::AlphaBlend;
     material.clearcoatAmount = 0.6F;
-    material.parentMaterial = AssetGuidUVE{103U};
-    material.nextPassMaterial = AssetGuidUVE{104U};
+    material.parentMaterial = AssetGuid{103U};
+    material.nextPassMaterial = AssetGuid{104U};
 
-    EXPECT_TRUE(ShouldBucketMaterialTransparentUVE(material));
+    EXPECT_TRUE(ShouldBucketMaterialTransparent(material));
     const std::filesystem::path matPath = "uve_extended_material_asset_test.uvmat";
     std::filesystem::remove(matPath);
-    ASSERT_TRUE(SaveMaterialAssetUVE(material, matPath));
+    ASSERT_TRUE(SaveMaterialAsset(material, matPath));
 
-    MaterialAssetUVE loadedMat;
-    ASSERT_TRUE(LoadMaterialAssetUVE(matPath, loadedMat));
+    MaterialAsset loadedMat;
+    ASSERT_TRUE(LoadMaterialAsset(matPath, loadedMat));
     EXPECT_FLOAT_EQ(loadedMat.albedoAlpha, 0.5F);
-    EXPECT_EQ(loadedMat.metallicTexture, AssetGuidUVE{101U});
-    EXPECT_EQ(loadedMat.roughnessTexture, AssetGuidUVE{102U});
-    EXPECT_EQ(loadedMat.cullMode, MaterialCullModeUVE::Disabled);
-    EXPECT_EQ(loadedMat.blendMode, MaterialBlendModeUVE::AlphaBlend);
+    EXPECT_EQ(loadedMat.metallicTexture, AssetGuid{101U});
+    EXPECT_EQ(loadedMat.roughnessTexture, AssetGuid{102U});
+    EXPECT_EQ(loadedMat.cullMode, MaterialCullMode::Disabled);
+    EXPECT_EQ(loadedMat.blendMode, MaterialBlendMode::AlphaBlend);
     EXPECT_FLOAT_EQ(loadedMat.clearcoatAmount, 0.6F);
-    EXPECT_EQ(loadedMat.parentMaterial, AssetGuidUVE{103U});
-    EXPECT_EQ(loadedMat.nextPassMaterial, AssetGuidUVE{104U});
+    EXPECT_EQ(loadedMat.parentMaterial, AssetGuid{103U});
+    EXPECT_EQ(loadedMat.nextPassMaterial, AssetGuid{104U});
     std::filesystem::remove(matPath);
 
-    TextureImportSettingsUVE texSettings{};
+    TextureImportSettings texSettings{};
     texSettings.generateMipmaps = false;
-    texSettings.compressionMode = TextureCompressionModeUVE::None;
-    EXPECT_EQ(EstimateImportedTextureMemoryBytesUVE(64U, 64U, texSettings), 64U * 64U * 4U);
+    texSettings.compressionMode = TextureCompressionMode::None;
+    EXPECT_EQ(EstimateImportedTextureMemoryBytes(64U, 64U, texSettings), 64U * 64U * 4U);
 
-    const std::filesystem::path sidecarPath = GetImportSidecarPathUVE("hero_mesh.fbx");
+    const std::filesystem::path sidecarPath = GetImportSidecarPath("hero_mesh.fbx");
     EXPECT_EQ(sidecarPath.filename(), "hero_mesh.fbx.uvimport");
-    AssetImportSidecarUVE sidecar{};
+    AssetImportSidecar sidecar{};
     sidecar.importerVersion = "v2";
     sidecar.presetName = "CharacterHigh";
     sidecar.reimportNeeded = true;
     sidecar.warnings.push_back("Degenerate triangle skipped");
     sidecar.options["scaleFactor"] = "0.01";
-    ASSERT_TRUE(SaveImportSidecarUVE(sidecar, sidecarPath));
+    ASSERT_TRUE(SaveImportSidecar(sidecar, sidecarPath));
 
-    AssetImportSidecarUVE loadedSidecar{};
-    ASSERT_TRUE(LoadImportSidecarUVE(sidecarPath, loadedSidecar));
+    AssetImportSidecar loadedSidecar{};
+    ASSERT_TRUE(LoadImportSidecar(sidecarPath, loadedSidecar));
     EXPECT_EQ(loadedSidecar.importerVersion, "v2");
     EXPECT_EQ(loadedSidecar.presetName, "CharacterHigh");
     EXPECT_TRUE(loadedSidecar.reimportNeeded);
@@ -597,23 +597,23 @@ TEST(MaterialAssetUVETest, ExtendedMaterialTextureAndImportSidecarRoundTripAndVa
     EXPECT_EQ(loadedSidecar.options.at("scaleFactor"), "0.01");
     std::filesystem::remove(sidecarPath);
 
-    MeshImportSettingsUVE meshSettings{};
+    MeshImportSettings meshSettings{};
     meshSettings.generateLods = true;
     meshSettings.lodCount = 4U;
-    EXPECT_NE(meshSettings.GetCacheVersionUVE().find("lods=4"), std::string::npos);
+    EXPECT_NE(meshSettings.GetCacheVersion().find("lods=4"), std::string::npos);
 
-    PrimitiveGeometryParametersUVE primitives{};
-    EXPECT_TRUE(IsPrimitiveGeometryParametersValidUVE(primitives));
+    PrimitiveGeometryParameters primitives{};
+    EXPECT_TRUE(IsPrimitiveGeometryParametersValid(primitives));
     primitives.torusOuterRadius = 0.1F;
-    EXPECT_FALSE(IsPrimitiveGeometryParametersValidUVE(primitives));
+    EXPECT_FALSE(IsPrimitiveGeometryParametersValid(primitives));
 
-    AudioImportSettingsUVE audioSettings{};
+    AudioImportSettings audioSettings{};
     audioSettings.forceMono = true;
-    EXPECT_NE(audioSettings.GetCacheVersionUVE().find("mono=1"), std::string::npos);
+    EXPECT_NE(audioSettings.GetCacheVersion().find("mono=1"), std::string::npos);
 
-    FontImportSettingsUVE fontSettings{};
+    FontImportSettings fontSettings{};
     fontSettings.baseSizePixels = 48U;
-    EXPECT_NE(fontSettings.GetCacheVersionUVE().find("size=48"), std::string::npos);
+    EXPECT_NE(fontSettings.GetCacheVersion().find("size=48"), std::string::npos);
 }
 
 } // namespace

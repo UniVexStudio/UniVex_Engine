@@ -10,46 +10,46 @@
 namespace UVE::Containers::Tests {
 namespace {
 
-TEST(RingBufferUVETest, FifoOrder_PushBackPopFront) {
-    RingBufferUVE<int, 4U> ring;
-    EXPECT_TRUE(ring.EmptyUVE());
-    ring.PushBackUVE(1);
-    ring.PushBackUVE(2);
-    ring.PushBackUVE(3);
-    EXPECT_EQ(ring.SizeUVE(), 3U);
-    EXPECT_EQ(ring.FrontUVE(), 1);
-    EXPECT_EQ(ring.BackUVE(), 3);
-    ring.PopFrontUVE();
-    EXPECT_EQ(ring.FrontUVE(), 2);
-    EXPECT_EQ(ring.SizeUVE(), 2U);
+TEST(RingBufferTest, FifoOrder_PushBackPopFront) {
+    RingBuffer<int, 4U> ring;
+    EXPECT_TRUE(ring.Empty());
+    ring.PushBack(1);
+    ring.PushBack(2);
+    ring.PushBack(3);
+    EXPECT_EQ(ring.Size(), 3U);
+    EXPECT_EQ(ring.Front(), 1);
+    EXPECT_EQ(ring.Back(), 3);
+    ring.PopFront();
+    EXPECT_EQ(ring.Front(), 2);
+    EXPECT_EQ(ring.Size(), 2U);
 }
 
-TEST(RingBufferUVETest, Overflow_OverwritesOldestAndCountsDrops) {
-    RingBufferUVE<int, 3U> ring;
-    ring.PushBackUVE(1);
-    ring.PushBackUVE(2);
-    ring.PushBackUVE(3);
-    EXPECT_TRUE(ring.FullUVE());
-    EXPECT_EQ(ring.DroppedCountUVE(), 0U);
-    ring.PushBackUVE(4);
-    ring.PushBackUVE(5);
-    EXPECT_EQ(ring.SizeUVE(), 3U);
-    EXPECT_EQ(ring.DroppedCountUVE(), 2U);
-    EXPECT_EQ(ring.FrontUVE(), 3);
-    EXPECT_EQ(ring.BackUVE(), 5);
-    EXPECT_EQ(ring.AtUVE(0U), 3);
-    EXPECT_EQ(ring.AtUVE(1U), 4);
-    EXPECT_EQ(ring.AtUVE(2U), 5);
+TEST(RingBufferTest, Overflow_OverwritesOldestAndCountsDrops) {
+    RingBuffer<int, 3U> ring;
+    ring.PushBack(1);
+    ring.PushBack(2);
+    ring.PushBack(3);
+    EXPECT_TRUE(ring.Full());
+    EXPECT_EQ(ring.DroppedCount(), 0U);
+    ring.PushBack(4);
+    ring.PushBack(5);
+    EXPECT_EQ(ring.Size(), 3U);
+    EXPECT_EQ(ring.DroppedCount(), 2U);
+    EXPECT_EQ(ring.Front(), 3);
+    EXPECT_EQ(ring.Back(), 5);
+    EXPECT_EQ(ring.At(0U), 3);
+    EXPECT_EQ(ring.At(1U), 4);
+    EXPECT_EQ(ring.At(2U), 5);
 }
 
-TEST(RingBufferUVETest, Iteration_WalksOldestToNewestAcrossTheWrap) {
-    RingBufferUVE<std::string, 4U> ring;
-    ring.PushBackUVE("a");
-    ring.PushBackUVE("b");
-    ring.PopFrontUVE();
-    ring.PushBackUVE("c");
-    ring.PushBackUVE("d");
-    ring.PushBackUVE("e"); // Wraps: live are b, c, d, e.
+TEST(RingBufferTest, Iteration_WalksOldestToNewestAcrossTheWrap) {
+    RingBuffer<std::string, 4U> ring;
+    ring.PushBack("a");
+    ring.PushBack("b");
+    ring.PopFront();
+    ring.PushBack("c");
+    ring.PushBack("d");
+    ring.PushBack("e"); // Wraps: live are b, c, d, e.
     std::vector<std::string> seen;
     for (const std::string& value : ring) {
         seen.push_back(value);
@@ -61,16 +61,16 @@ TEST(RingBufferUVETest, Iteration_WalksOldestToNewestAcrossTheWrap) {
     EXPECT_EQ(seen[3U], "e");
 }
 
-TEST(RingBufferUVETest, Clear_EmptiesAndZeroesDrops) {
-    RingBufferUVE<int, 2U> ring;
-    ring.PushBackUVE(1);
-    ring.PushBackUVE(2);
-    ring.PushBackUVE(3);
-    ring.ClearUVE();
-    EXPECT_TRUE(ring.EmptyUVE());
-    EXPECT_EQ(ring.DroppedCountUVE(), 0U);
-    ring.PushBackUVE(4);
-    EXPECT_EQ(ring.FrontUVE(), 4);
+TEST(RingBufferTest, Clear_EmptiesAndZeroesDrops) {
+    RingBuffer<int, 2U> ring;
+    ring.PushBack(1);
+    ring.PushBack(2);
+    ring.PushBack(3);
+    ring.Clear();
+    EXPECT_TRUE(ring.Empty());
+    EXPECT_EQ(ring.DroppedCount(), 0U);
+    ring.PushBack(4);
+    EXPECT_EQ(ring.Front(), 4);
 }
 
 } // namespace

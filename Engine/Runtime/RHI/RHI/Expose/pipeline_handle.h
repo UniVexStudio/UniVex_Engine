@@ -7,13 +7,13 @@
 
 namespace UVE::Render {
 
-/// Opaque handle to a pipeline state object created via IRenderDeviceUVE::CreatePipelineUVE().
-/// Instantiation of the shared ResourceHandleUVE template - see resource_handle_uve.h for the
+/// Opaque handle to a pipeline state object created via IRenderDevice::CreatePipeline().
+/// Instantiation of the shared ResourceHandle template - see resource_handle_uve.h for the
 /// shared wrapper/equality/hash semantics.
-struct PipelineTagUVE {};
-using PipelineHandleUVE = ResourceHandleUVE<PipelineTagUVE>;
+struct PipelineTag {};
+using PipelineHandle = ResourceHandle<PipelineTag>;
 
-/// The sentinel "no pipeline" value. Never returned by a successful CreatePipelineUVE() call.
-inline constexpr PipelineHandleUVE kInvalidPipelineHandleUVE{};
+/// The sentinel "no pipeline" value. Never returned by a successful CreatePipeline() call.
+inline constexpr PipelineHandle kInvalidPipelineHandle{};
 
 } // namespace UVE::Render

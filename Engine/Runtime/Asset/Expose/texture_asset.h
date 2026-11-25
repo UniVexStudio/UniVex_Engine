@@ -10,25 +10,25 @@
 
 namespace UVE::Asset {
 
-/// Pixel formats a loadable TextureAssetUVE can use. This stays separate from
-/// `Render::TextureFormatUVE`: the renderer translates asset formats to the RHI without creating
+/// Pixel formats a loadable TextureAsset can use. This stays separate from
+/// `Render::TextureFormat`: the renderer translates asset formats to the RHI without creating
 /// an Asset-to-RHI dependency cycle. Depth formats remain GPU render-target resources, not
 /// imported texture-asset formats.
-enum class TextureAssetFormatUVE : std::uint8_t {
+enum class TextureAssetFormat : std::uint8_t {
     RGBA8Unorm = 0,
     RGBA16Float = 1,
 };
 
 /// Interpretation of color channels when a texture is sampled. The renderer maps this metadata to
 /// the RHI's sampled color-space view; it does not change the stored pixel bytes.
-enum class TextureAssetColorSpaceUVE : std::uint8_t {
+enum class TextureAssetColorSpace : std::uint8_t {
     Linear = 0,
     Srgb = 1,
 };
 
 /// Broad intended role used by import/cook policy. It is deliberately independent from the
 /// material slot so a texture can be validated or cooked before a material references it.
-enum class TextureUsageUVE : std::uint8_t {
+enum class TextureUsage : std::uint8_t {
     Generic = 0,
     Color = 1,
     Normal = 2,
@@ -38,37 +38,37 @@ enum class TextureUsageUVE : std::uint8_t {
 
 /// How texture bytes are stored in the asset payload. BasisUniversalKtx2 keeps one portable
 /// KTX2/Basis bitstream; the renderer transcodes it to a device-supported GPU format at load time.
-enum class TexturePayloadEncodingUVE : std::uint8_t {
+enum class TexturePayloadEncoding : std::uint8_t {
     RawPixels = 0,
     BasisUniversalKtx2 = 1,
 };
 
 /// One additional level after level 0. Its dimensions are stored explicitly and validated against
 /// the conventional max(1, previousDimension / 2) mip progression.
-struct TextureMipLevelUVE {
+struct TextureMipLevel {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::vector<std::byte> pixels;
 
-    [[nodiscard]] bool operator==(const TextureMipLevelUVE&) const = default;
+    [[nodiscard]] bool operator==(const TextureMipLevel&) const = default;
 };
 
 /// The CPU-side, engine-native representation of a `.uvtex` asset. Raw assets store level 0 in
 /// `pixels` and levels 1..N in `mipLevels`. Basis assets store a portable KTX2 bitstream in
 /// `basisKtx2Data` instead. Texture arrays, cubemaps, and volumes remain separate later increments.
-struct TextureAssetUVE {
+struct TextureAsset {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
-    TextureAssetFormatUVE format = TextureAssetFormatUVE::RGBA8Unorm;
+    TextureAssetFormat format = TextureAssetFormat::RGBA8Unorm;
     std::vector<std::byte> pixels;
     // Appended after the legacy members so existing aggregate initialization of the first four
     // fields remains source-compatible.
-    TextureAssetColorSpaceUVE colorSpace = TextureAssetColorSpaceUVE::Linear;
-    TextureUsageUVE usage = TextureUsageUVE::Generic;
+    TextureAssetColorSpace colorSpace = TextureAssetColorSpace::Linear;
+    TextureUsage usage = TextureUsage::Generic;
     // Additional mip levels only; level 0 remains in the legacy `pixels` member above.
-    std::vector<TextureMipLevelUVE> mipLevels;
+    std::vector<TextureMipLevel> mipLevels;
     // Appended to preserve aggregate initialization of the uncompressed/mipmap asset layout.
-    TexturePayloadEncodingUVE payloadEncoding = TexturePayloadEncodingUVE::RawPixels;
+    TexturePayloadEncoding payloadEncoding = TexturePayloadEncoding::RawPixels;
     // Populated only for BasisUniversalKtx2. It contains a complete portable KTX2 file including
     // all encoded mip levels; `format` remains the logical decoded pixel format (RGBA8Unorm).
     std::vector<std::byte> basisKtx2Data;
@@ -76,26 +76,26 @@ struct TextureAssetUVE {
 
 /// The exact byte size of one pixel in `format` (4 for RGBA8Unorm, 8 for RGBA16Float). Returns
 /// zero for an unsupported enumerator.
-[[nodiscard]] std::uint32_t BytesPerPixelUVE(TextureAssetFormatUVE format) noexcept;
+[[nodiscard]] std::uint32_t BytesPerPixel(TextureAssetFormat format) noexcept;
 
 /// Validates the format/color-space/usage combination without inspecting dimensions or pixel bytes.
-[[nodiscard]] bool IsTextureAssetMetadataValidUVE(const TextureAssetUVE& texture) noexcept;
+[[nodiscard]] bool IsTextureAssetMetadataValid(const TextureAsset& texture) noexcept;
 
 /// Validates dimensions, metadata, format, the exact level-0 pixel byte count, and the dimensions/
 /// bytes of every additional mip level.
-[[nodiscard]] bool IsTextureAssetValidUVE(const TextureAssetUVE& texture) noexcept;
+[[nodiscard]] bool IsTextureAssetValid(const TextureAsset& texture) noexcept;
 
-/// Loads `path` as a `.uve*` envelope with `AssetKindUVE::Texture`, filling `outTexture`. Both the
+/// Loads `path` as a `.uve*` envelope with `AssetKind::Texture`, filling `outTexture`. Both the
 /// original metadata-free payload and the current versioned payload are accepted. Legacy payloads
 /// receive the neutral `Linear`/`Generic` metadata defaults.
-[[nodiscard]] bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture);
+[[nodiscard]] bool LoadTextureAsset(const std::filesystem::path& path, TextureAsset& outTexture);
 
 /// Writes `texture` to `path` as a versioned `.uve*` texture payload. Invalid descriptors are
 /// rejected before opening the destination; publication failures are reported and return false.
-[[nodiscard]] bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::path& path);
+[[nodiscard]] bool SaveTextureAsset(const TextureAsset& texture, const std::filesystem::path& path);
 
 /// Loads `path` for a consumer that only holds a reference to a texture: a published `.uvtex` is
-/// read exactly as LoadTextureAssetUVE reads it, and a raw PNG/JPEG/BMP/TGA source image is decoded
+/// read exactly as LoadTextureAsset reads it, and a raw PNG/JPEG/BMP/TGA source image is decoded
 /// here and given a mip chain on the spot.
 ///
 /// This exists next to the envelope reader because a texture reference can legitimately name either
@@ -109,7 +109,7 @@ struct TextureAssetUVE {
 ///
 /// Bounded like the importers: a source image over 64 MB, an unsupported form, or a decode that
 /// fails returns false and leaves `outTexture` untouched.
-[[nodiscard]] bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture);
+[[nodiscard]] bool LoadTextureAssetSource(const std::filesystem::path& path, TextureAsset& outTexture);
 
 /// Derives a tangent-space normal map from an image's own light and shade: height is the pixel's
 /// luminance, and the normal is the slope of that height across the pixel's neighbours.
@@ -127,14 +127,14 @@ struct TextureAssetUVE {
 /// The result is RGBA8, linear, usage Normal, with a full box-filtered mip chain: directly
 /// saveable as a `.uvtex` and interchangeable with an imported normal map. `outNormal` is left
 /// untouched when the source is not RGBA8, has no pixels, or `strength` is out of range.
-[[nodiscard]] bool DeriveNormalTextureUVE(const TextureAssetUVE& source, float strength,
-                                          TextureAssetUVE& outNormal);
+[[nodiscard]] bool DeriveNormalTexture(const TextureAsset& source, float strength,
+                                          TextureAsset& outNormal);
 
 /// Packs separate grey maps into one ORM texture the lit shader reads: R occlusion, G roughness,
 /// B metallic, each taken from its map's red channel (white where a map is not given). Every map
 /// is RGBA8 raw pixels; the result is as large as the largest map, linear, usage Data, with a full
 /// box-filtered mip chain. Returns false when no map is given or one is not RGBA8 raw pixels.
-[[nodiscard]] bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* roughness,
-                                     const TextureAssetUVE* metallic, TextureAssetUVE& outOrm);
+[[nodiscard]] bool PackOrmTexture(const TextureAsset* occlusion, const TextureAsset* roughness,
+                                     const TextureAsset* metallic, TextureAsset& outOrm);
 
 } // namespace UVE::Asset

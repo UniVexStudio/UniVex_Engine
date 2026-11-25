@@ -12,7 +12,7 @@
 namespace UVE::Retarget {
 namespace {
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsTheSameBoneTheSameWayAcrossNamingStyles) {
+TEST(RetargetNamesTest, MakeBoneKey_ReadsTheSameBoneTheSameWayAcrossNamingStyles) {
     const std::vector<std::pair<const char*, const char*>> cases{
         {"upperarm_twist_01_l", "L|upperarm twist 1"},
         {"UpperArmTwist1_L", "L|upperarm twist 1"},
@@ -31,11 +31,11 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsTheSameBoneTheSameWayAcrossNaming
         {"attach", "C|mount"},
     };
     for (const auto& [name, key] : cases) {
-        EXPECT_EQ(MakeBoneKeyUVE(name), key) << name;
+        EXPECT_EQ(MakeBoneKey(name), key) << name;
     }
 }
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsAnAutoRiggerSkeleton) {
+TEST(RetargetNamesTest, MakeBoneKey_ReadsAnAutoRiggerSkeleton) {
     const std::vector<std::pair<const char*, const char*>> cases{
         {"mixamorig:LeftShoulder", "L|clavicle"},  {"mixamorig:LeftArm", "L|upperarm"},
         {"mixamorig:LeftHand", "L|hand"},          {"mixamorig:LeftHandIndex1", "L|index 1"},
@@ -44,20 +44,20 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsAnAutoRiggerSkeleton) {
         {"mixamorig:Spine2", "C|spine 2"},         {"mixamorig:HeadTop_End", "C|head top end"},
     };
     for (const auto& [name, key] : cases) {
-        EXPECT_EQ(MakeBoneKeyUVE(name), key) << name;
+        EXPECT_EQ(MakeBoneKey(name), key) << name;
     }
 }
 
-using NameCasesUVE = std::vector<std::pair<const char*, const char*>>;
+using NameCases = std::vector<std::pair<const char*, const char*>>;
 
-void ExpectKeysUVE(const NameCasesUVE& cases) {
+void ExpectKeys(const NameCases& cases) {
     for (const auto& [name, key] : cases) {
-        EXPECT_EQ(MakeBoneKeyUVE(name), key) << name;
+        EXPECT_EQ(MakeBoneKey(name), key) << name;
     }
 }
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsUnityHumanoidBones) {
-    ExpectKeysUVE({{"Hips", "C|hips"},
+TEST(RetargetNamesTest, MakeBoneKey_ReadsUnityHumanoidBones) {
+    ExpectKeys({{"Hips", "C|hips"},
                    {"Spine", "C|spine"},
                    {"UpperChest", "C|upper chest"},
                    {"LeftShoulder", "L|clavicle"},
@@ -71,8 +71,8 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsUnityHumanoidBones) {
                    {"LeftIndexDistal", "L|index 3"}});
 }
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRokokoBones) {
-    ExpectKeysUVE({{"LeftInHandIndex", "L|index metacarpal"},
+TEST(RetargetNamesTest, MakeBoneKey_ReadsRokokoBones) {
+    ExpectKeys({{"LeftInHandIndex", "L|index metacarpal"},
                    {"RightInHandPinky", "R|pinky metacarpal"},
                    {"LeftIndexProximal", "L|index 1"},
                    {"RightMiddleDistal", "R|middle 3"},
@@ -80,8 +80,8 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRokokoBones) {
                    {"RightLowerLeg", "R|shin"}});
 }
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRigifyDeformBones) {
-    ExpectKeysUVE({{"DEF-spine", "C|hips"},
+TEST(RetargetNamesTest, MakeBoneKey_ReadsRigifyDeformBones) {
+    ExpectKeys({{"DEF-spine", "C|hips"},
                    {"DEF-spine.001", "C|spine 1"},
                    {"DEF-spine.003", "C|spine 3"},
                    {"DEF-spine.004", "C|neck 1"},
@@ -104,8 +104,8 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsRigifyDeformBones) {
                    {"DEF-palm.04.R", "R|pinky metacarpal"}});
 }
 
-TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsMocapAndBipedRigs) {
-    ExpectKeysUVE({{"Bip01 Pelvis", "C|hips"},
+TEST(RetargetNamesTest, MakeBoneKey_ReadsMocapAndBipedRigs) {
+    ExpectKeys({{"Bip01 Pelvis", "C|hips"},
                    {"Bip01 Spine1", "C|spine 1"},
                    {"Bip01 L Thigh", "L|thigh"},
                    {"Bip01 L Calf", "L|shin"},
@@ -125,23 +125,23 @@ TEST(RetargetNamesUVETest, MakeBoneKeyUVE_ReadsMocapAndBipedRigs) {
                    {"lCollar", "L|clavicle"}});
 }
 
-TEST(RetargetNamesUVETest, MakeHumanoidBoneNameUVE_SpellsKeysInPascalCaseWithASideSuffix) {
-    EXPECT_EQ(MakeHumanoidBoneNameUVE("L|upperarm twist 1"), "UpperArmTwist1_L");
-    EXPECT_EQ(MakeHumanoidBoneNameUVE("R|ik hand"), "IKHand_R");
-    EXPECT_EQ(MakeHumanoidBoneNameUVE("C|com"), "CenterOfMass");
-    EXPECT_EQ(MakeHumanoidBoneNameUVE("C|hips"), "Hips");
-    EXPECT_EQ(MakeHumanoidBoneNameUVE("L|forearm out"), "ForeArmOuter_L");
+TEST(RetargetNamesTest, MakeHumanoidBoneName_SpellsKeysInPascalCaseWithASideSuffix) {
+    EXPECT_EQ(MakeHumanoidBoneName("L|upperarm twist 1"), "UpperArmTwist1_L");
+    EXPECT_EQ(MakeHumanoidBoneName("R|ik hand"), "IKHand_R");
+    EXPECT_EQ(MakeHumanoidBoneName("C|com"), "CenterOfMass");
+    EXPECT_EQ(MakeHumanoidBoneName("C|hips"), "Hips");
+    EXPECT_EQ(MakeHumanoidBoneName("L|forearm out"), "ForeArmOuter_L");
 }
 
 // Every name the shipped reference uses reads back as its own key, so the reference's names are
 // recognised by the matcher exactly like any other rig's.
-TEST(RetargetNamesUVETest, EveryReferenceNameKeysBackToItself) {
-    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+TEST(RetargetNamesTest, EveryReferenceNameKeysBackToItself) {
+    const HumanoidReference& reference = GetHumanoidReference();
     ASSERT_FALSE(reference.skeleton.bones.empty());
     for (std::size_t index = 0U; index < reference.skeleton.bones.size(); ++index) {
         const std::string& name = reference.skeleton.bones[index].name;
-        EXPECT_EQ(MakeBoneKeyUVE(name), reference.info[index].key) << name;
-        EXPECT_EQ(MakeHumanoidBoneNameUVE(reference.info[index].key), name) << name;
+        EXPECT_EQ(MakeBoneKey(name), reference.info[index].key) << name;
+        EXPECT_EQ(MakeHumanoidBoneName(reference.info[index].key), name) << name;
     }
 }
 

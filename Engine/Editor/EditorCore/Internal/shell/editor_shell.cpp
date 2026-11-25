@@ -52,21 +52,21 @@
 namespace UVE::Editor {
 namespace {
 
-using SceneObjectKindUVE = Scene::Objects::SceneObjectKindUVE;
+using SceneObjectKind = Scene::Objects::SceneObjectKind;
 
 
-void HashUVE(std::uint64_t& h, const std::uint64_t v) {
+void Hash(std::uint64_t& h, const std::uint64_t v) {
     h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2);
 }
 
-void HashUVE(std::uint64_t& h, const std::string& s) {
+void Hash(std::uint64_t& h, const std::string& s) {
     for (const char c : s) {
-        HashUVE(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
+        Hash(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
     }
 }
 
 /// The picture every thumbnail sits on (a dark checker), from the editor's assets.
-void LoadThumbnailBackdropUVE(const std::filesystem::path& file) {
+void LoadThumbnailBackdrop(const std::filesystem::path& file) {
     std::ifstream in(file, std::ios::binary);
     if (!in) {
         return;
@@ -75,8 +75,8 @@ void LoadThumbnailBackdropUVE(const std::filesystem::path& file) {
     for (char ch; in.get(ch);) {
         bytes.push_back(static_cast<std::byte>(ch));
     }
-    Asset::PngRgba8ImageUVE image;
-    if (!Asset::DecodePngRgba8ImageUVE(bytes, image) || image.width == 0U || image.height == 0U) {
+    Asset::PngRgba8Image image;
+    if (!Asset::DecodePngRgba8Image(bytes, image) || image.width == 0U || image.height == 0U) {
         return;
     }
     const auto* const rgba = reinterpret_cast<const std::uint8_t*>(image.pixels.data());
@@ -90,16 +90,16 @@ void LoadThumbnailBackdropUVE(const std::filesystem::path& file) {
 
 } // namespace
 
-EditorShellUVE::EditorShellUVE(EditorUVE& editor)
+EditorShell::EditorShell(Editor& editor)
     : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host),
       m_preferencesWindow(editor, m_host, editor.m_preferencesWindow.visible,
                           [&editor] {
-                              EditorSettingsWindowUVE::SourceUVE source;
+                              EditorSettingsWindow::Source source;
                               source.title = "Editor Preferences";
                               source.registry = &editor.m_settingsRegistry;
-                              source.get = [&editor](const std::string_view id) { return editor.GetEditorSettingUVE(id); };
-                              source.set = [&editor](const std::string_view id, const Config::SettingValueUVE& value) {
-                                  return editor.SetEditorSettingUVE(id, value);
+                              source.get = [&editor](const std::string_view id) { return editor.GetEditorSetting(id); };
+                              source.set = [&editor](const std::string_view id, const Config::SettingValue& value) {
+                                  return editor.SetEditorSetting(id, value);
                               };
                               source.note = [] { return std::string("Changes apply at once and are kept with your editor session."); };
                               return source;
@@ -107,67 +107,67 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                           &editor.m_preferencesWindow.focusPending),
       m_projectSettingsWindow(editor, m_host, editor.m_projectSettingsWindow.visible,
                               [&editor] {
-                                  Config::SettingsDocumentUVE& project = editor.m_services->GetProjectSettingsUVE();
-                                  EditorSettingsWindowUVE::SourceUVE source;
+                                  Config::SettingsDocument& project = editor.m_services->GetProjectSettings();
+                                  EditorSettingsWindow::Source source;
                                   source.title = "Project Settings";
-                                  source.registry = &project.GetRegistryUVE();
-                                  source.get = [&project](const std::string_view id) { return project.GetValueUVE(id); };
-                                  source.set = [&project](const std::string_view id, const Config::SettingValueUVE& value) {
-                                      return project.SetValueUVE(id, value);
+                                  source.registry = &project.GetRegistry();
+                                  source.get = [&project](const std::string_view id) { return project.GetValue(id); };
+                                  source.set = [&project](const std::string_view id, const Config::SettingValue& value) {
+                                      return project.SetValue(id, value);
                                   };
                                   source.note = [&project] {
-                                      const std::string file = project.GetPathUVE().filename().string();
-                                      return project.IsDirtyUVE() ? "Unsaved changes to " + file + "." : "Saved in " + file + ", with the project.";
+                                      const std::string file = project.GetPath().filename().string();
+                                      return project.IsDirty() ? "Unsaved changes to " + file + "." : "Saved in " + file + ", with the project.";
                                   };
-                                  source.dirty = [&project] { return project.IsDirtyUVE(); };
-                                  source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
+                                  source.dirty = [&project] { return project.IsDirty(); };
+                                  source.save = [&editor] { return editor.SaveProjectSettings(); };
                                   return source;
                               },
                               &editor.m_projectSettingsWindow.focusPending),
       m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_vfxEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_assetTable(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
-        ShowDockPanelUVE(0, true);
-        m_assetTable.RevealFileUVE(path);
-        m_host.FocusWindowUVE(EditorHostUVE::kMainWindowUVE);
+        ShowDockPanel(0, true);
+        m_assetTable.RevealFile(path);
+        m_host.FocusWindow(EditorHost::kMainWindow);
     };
 }
 
-bool EditorShellUVE::SaveVfxEditorScreenshotUVE(const std::filesystem::path& path) {
-    return m_vfxEditor.SaveScreenshotUVE(path);
+bool EditorShell::SaveVfxEditorScreenshot(const std::filesystem::path& path) {
+    return m_vfxEditor.SaveScreenshot(path);
 }
 
-bool EditorShellUVE::SaveEntityEditorScreenshotUVE(const std::filesystem::path& path) {
-    const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
-    return m_entityEditor.SaveScreenshotUVE(path);
+bool EditorShell::SaveEntityEditorScreenshot(const std::filesystem::path& path) {
+    const Editor::EntityDocumentScope scope(m_editor);
+    return m_entityEditor.SaveScreenshot(path);
 }
 
-EditorShellUVE::~EditorShellUVE() {
-    ShutdownUVE();
+EditorShell::~EditorShell() {
+    Shutdown();
 }
 
-bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesystem::path& assetDir) {
-    if (!m_host.InitializeUVE(window, assetDir)) {
+bool EditorShell::Initialize(GLFWwindow* const window, const std::filesystem::path& assetDir) {
+    if (!m_host.Initialize(window, assetDir)) {
         return false;
     }
-    LoadThumbnailBackdropUVE(assetDir / "images" / "thumbnail_backdrop.png");
-    m_dockPanels.AttachLogUVE();
-    m_editor.SetFilePickerHostUVE([this](FilePickerRequestUVE request) { m_fileDialog.OpenUVE(std::move(request)); });
+    LoadThumbnailBackdrop(assetDir / "images" / "thumbnail_backdrop.png");
+    m_dockPanels.AttachLog();
+    m_editor.SetFilePickerHost([this](FilePickerRequest request) { m_fileDialog.Open(std::move(request)); });
     // Dropped from the file manager: imported into the folder the Asset Table shows.
     m_host.onFilesDropped = [this](std::vector<std::filesystem::path> files) {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-        static_cast<void>(m_editor.ImportExternalFilesUVE(files, root / m_editor.m_assetTableDirectory));
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+        static_cast<void>(m_editor.ImportExternalFiles(files, root / m_editor.m_assetTableDirectory));
     };
-    m_host.SetRootUVE(BuildLayoutUVE());
+    m_host.SetRoot(BuildLayout());
     // Every keyboard shortcut is an editor command's (the same registry the menus use).
-    m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
-        return DispatchShortcutUVE(key, mods);
+    m_host.App().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
+        return DispatchShortcut(key, mods);
     });
     // A game holding the mouse lets go on Escape, whatever has the keyboard, so the editor's own
     // controls (Stop above all) can be reached again.
-    m_host.SetKeyHookUVE([this](const int key, const int action) {
-        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && m_editor.IsGameMouseCapturedUVE()) {
-            m_editor.SetGameMouseCapturedUVE(false);
+    m_host.SetKeyHook([this](const int key, const int action) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && m_editor.IsGameMouseCaptured()) {
+            m_editor.SetGameMouseCaptured(false);
             return true;
         }
         return false;
@@ -175,40 +175,40 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     return true;
 }
 
-void EditorShellUVE::ShutdownUVE() {
-    m_editor.SetFilePickerHostUVE({});
-    if (m_host.IsReadyUVE() && m_fileDialog.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_fileDialog.WindowIdUVE());
+void EditorShell::Shutdown() {
+    m_editor.SetFilePickerHost({});
+    if (m_host.IsReady() && m_fileDialog.WindowId() != 0) {
+        m_host.CloseWindow(m_fileDialog.WindowId());
     }
-    if (m_host.IsReadyUVE() && m_entityEditor.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_entityEditor.WindowIdUVE());
+    if (m_host.IsReady() && m_entityEditor.WindowId() != 0) {
+        m_host.CloseWindow(m_entityEditor.WindowId());
     }
-    for (const int id : {m_preferencesWindow.WindowIdUVE(), m_projectSettingsWindow.WindowIdUVE(), m_shortcutsWindow.WindowIdUVE(), m_inputMapWindow.WindowIdUVE(), m_captureWindow.WindowIdUVE(), m_audioMixerWindow.WindowIdUVE()}) {
-        if (m_host.IsReadyUVE() && id != 0) {
-            m_host.CloseWindowUVE(id);
+    for (const int id : {m_preferencesWindow.WindowId(), m_projectSettingsWindow.WindowId(), m_shortcutsWindow.WindowId(), m_inputMapWindow.WindowId(), m_captureWindow.WindowId(), m_audioMixerWindow.WindowId()}) {
+        if (m_host.IsReady() && id != 0) {
+            m_host.CloseWindow(id);
         }
     }
-    if (m_host.IsReadyUVE() && m_entityClassWindow.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_entityClassWindow.WindowIdUVE());
+    if (m_host.IsReady() && m_entityClassWindow.WindowId() != 0) {
+        m_host.CloseWindow(m_entityClassWindow.WindowId());
     }
-    if (m_host.IsReadyUVE() && m_montageEditor.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_montageEditor.WindowIdUVE());
+    if (m_host.IsReady() && m_montageEditor.WindowId() != 0) {
+        m_host.CloseWindow(m_montageEditor.WindowId());
     }
-    if (m_host.IsReadyUVE() && m_vfxEditor.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_vfxEditor.WindowIdUVE());
+    if (m_host.IsReady() && m_vfxEditor.WindowId() != 0) {
+        m_host.CloseWindow(m_vfxEditor.WindowId());
     }
-    if (m_host.IsReadyUVE() && m_retargetEditor.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_retargetEditor.WindowIdUVE());
+    if (m_host.IsReady() && m_retargetEditor.WindowId() != 0) {
+        m_host.CloseWindow(m_retargetEditor.WindowId());
     }
-    if (m_host.IsReadyUVE() && m_animationLibraryEditor.WindowIdUVE() != 0) {
-        m_host.CloseWindowUVE(m_animationLibraryEditor.WindowIdUVE());
+    if (m_host.IsReady() && m_animationLibraryEditor.WindowId() != 0) {
+        m_host.CloseWindow(m_animationLibraryEditor.WindowId());
     }
-    m_host.ShutdownUVE();
+    m_host.Shutdown();
 }
 
 // --------------------------------------------------------------------------------------- layout
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildLayout() {
     // Editor design sheet, top to bottom:
     //   [#1 logo] [#15 title bar: menus | drag strip | - [] x]
     //   [       ] [#2 viewport / level name tab               ]
@@ -217,16 +217,16 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     //   [#6 Outliner | #25 viewport over the dock panel | #17 Details]
     //   #16 dock bar: Asset Table, Output Log, Console, Profiler ...
     auto window = prism::vbox();
-    window->add(BuildTitleBarUVE());
-    window->add(m_viewToolbar.BuildUVE());
+    window->add(BuildTitleBar());
+    window->add(m_viewToolbar.Build());
 
-    const bool singleSurface = m_host.AppUVE().platform().singleSurface();
-    const float logicalWidth = m_host.AppUVE().windowSize().x;
+    const bool singleSurface = m_host.App().platform().singleSurface();
+    const float logicalWidth = m_host.App().windowSize().x;
     const bool narrowLandscape = singleSurface && logicalWidth > 0.0F && logicalWidth < 760.0F;
 
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, singleSurface ? 120.0F : 160.0F, 1e9F, true});
-    m_dockArea = BuildDockUVE();
+    centre->add(BuildViewport(), prism::Splitter::Pane{400.0F, singleSurface ? 120.0F : 160.0F, 1e9F, true});
+    m_dockArea = BuildDock();
     centre->add(m_dockArea, prism::Splitter::Pane{singleSurface ? 150.0F : 290.0F, singleSurface ? 90.0F : 110.0F, 900.0F, false});
     if (singleSurface) {
         m_dockVisible = false;
@@ -234,8 +234,8 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     }
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    m_outlinerColumn = BuildOutlinerUVE();
-    m_detailsColumn = BuildDetailsUVE();
+    m_outlinerColumn = BuildOutliner();
+    m_detailsColumn = BuildDetails();
     columns->add(m_outlinerColumn, prism::Splitter::Pane{singleSurface ? 190.0F : 250.0F, singleSurface ? 150.0F : 170.0F, 700.0F, false});
     columns->add(centre, prism::Splitter::Pane{800.0F, singleSurface ? 240.0F : 320.0F, 1e9F, true});
     columns->add(m_detailsColumn, prism::Splitter::Pane{singleSurface ? 230.0F : 330.0F, singleSurface ? 180.0F : 220.0F, 800.0F, false});
@@ -247,14 +247,14 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     m_dockSpace = std::make_unique<prism::DockSpace>("level-editor");
     m_dockSpace->attach(*m_outlinerTabs);
     m_dockSpace->attach(*m_detailsTabs);
-    m_dockSpace->onChanged = [this] { UpdateDockColumnsUVE(); };
+    m_dockSpace->onChanged = [this] { UpdateDockColumns(); };
     if (narrowLandscape) {
         m_editor.m_scenePanelVisible = false;
         m_editor.m_inspectorPanelVisible = false;
-        UpdateDockColumnsUVE();
+        UpdateDockColumns();
     }
 
-    window->add(BuildDockBarUVE());
+    window->add(BuildDockBar());
 
     m_safeFrame = prism::make<prism::Border>();
     m_safeFrame->setBackground(prism::ThemeColor(&prism::Theme::window));
@@ -263,51 +263,51 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     // The loading screen over everything while the editor starts (and a corner panel after).
     auto root = prism::make<prism::Overlay>();
     root->add(m_safeFrame);
-    m_loadingScreen = prism::make<EditorLoadingScreenUVE>();
+    m_loadingScreen = prism::make<EditorLoadingScreen>();
     {
-        const Core::VersionUVE version = Core::EngineCoreUVE::GetEngineVersionUVE();
-        m_loadingScreen->SetVersionUVE("v" + std::to_string(version.major) + "." + std::to_string(version.minor) + "." +
+        const Core::Version version = Core::EngineCore::GetEngineVersion();
+        m_loadingScreen->SetVersion("v" + std::to_string(version.major) + "." + std::to_string(version.minor) + "." +
                                        std::to_string(version.patch) + "." + std::to_string(version.build));
     }
-    m_loadingScreen->onDismiss = [this] { m_editor.DismissStartupLoadingUVE(); };
-    m_loadingScreen->onCancel = [this] { m_editor.CancelBackgroundImportsUVE(); };
+    m_loadingScreen->onDismiss = [this] { m_editor.DismissStartupLoading(); };
+    m_loadingScreen->onCancel = [this] { m_editor.CancelBackgroundImports(); };
     root->add(m_loadingScreen);
     return root;
 }
 
-std::vector<prism::MenuItem> EditorShellUVE::CommandItemsUVE(const std::initializer_list<const char*> ids) {
+std::vector<prism::MenuItem> EditorShell::CommandItems(const std::initializer_list<const char*> ids) {
     std::vector<prism::MenuItem> items;
     for (const char* const id : ids) {
         if (id == nullptr) {
             items.push_back(prism::MenuItem::Sep());
             continue;
         }
-        EditorCommandUVE* const command = m_editor.FindEditorCommandUVE(id);
+        EditorCommand* const command = m_editor.FindEditorCommand(id);
         if (command == nullptr) {
             continue;
         }
         prism::MenuItem item = prism::MenuItem::Item(
-            command->label, [this, commandId = std::string(id)] { static_cast<void>(m_editor.RunEditorCommandUVE(commandId)); },
-            DisplayEditorShortcutUVE(command->shortcuts[0]));
+            command->label, [this, commandId = std::string(id)] { static_cast<void>(m_editor.RunEditorCommand(commandId)); },
+            DisplayEditorShortcut(command->shortcuts[0]));
         item.enabled = !command->isEnabled || command->isEnabled();
         items.push_back(std::move(item));
     }
     return items;
 }
 
-bool EditorShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_t mods) {
+bool EditorShell::DispatchShortcut(const prism::Key key, const std::uint8_t mods) {
     // Flying the viewport: W, A, S, D, Q and E move the camera, so no shortcut may take them.
-    if (m_editor.IsViewportFlyingUVE()) {
+    if (m_editor.IsViewportFlying()) {
         return true;
     }
     // PRISM key + modifiers -> the editor's stable shortcut ("Ctrl+S") -> its command.
-    const std::optional<EditorShortcutUVE> pressed = ShortcutFromPrismKeyUVE(key, mods);
+    const std::optional<EditorShortcut> pressed = ShortcutFromPrismKey(key, mods);
     if (!pressed.has_value()) {
         return false;
     }
-    for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+    for (const EditorCommand& command : m_editor.GetEditorCommands()) {
         if (command.shortcuts[0] == *pressed || command.shortcuts[1] == *pressed) {
-            return m_editor.RunEditorCommandUVE(command.id);
+            return m_editor.RunEditorCommand(command.id);
         }
     }
     return false;
@@ -317,9 +317,9 @@ namespace {
 
 
 /// The Outliner's drop target for content dragged from the Asset Table.
-class OutlinerDropUVE final : public prism::Border {
+class OutlinerDrop final : public prism::Border {
 public:
-    explicit OutlinerDropUVE(EditorShellUVE& shell) : m_shell(shell) {}
+    explicit OutlinerDrop(EditorShell& shell) : m_shell(shell) {}
     bool onDragEnter(const prism::DragDropEvent& e) override { return Accepts(e); }
     bool onDragOver(const prism::DragDropEvent& e) override {
         const bool accepts = Accepts(e);
@@ -340,7 +340,7 @@ public:
             return false;
         }
         const std::string* path = e.operation->getPayload<std::string>();
-        return path != nullptr && m_shell.DropContentOnOutlinerUVE(*path, e.pos);
+        return path != nullptr && m_shell.DropContentOnOutliner(*path, e.pos);
     }
     void paint(prism::Canvas& c) override {
         prism::Border::paint(c);
@@ -351,73 +351,73 @@ public:
 
 private:
     [[nodiscard]] static bool Accepts(const prism::DragDropEvent& e) {
-        return e.operation && e.operation->tag() == EditorAssetTableUVE::kDragTagUVE;
+        return e.operation && e.operation->tag() == EditorAssetTable::kDragTag;
     }
-    EditorShellUVE& m_shell;
+    EditorShell& m_shell;
     bool m_hot = false;
 };
 
 } // namespace
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
-    auto viewportTab = prism::make<DocumentTabUVE>();
+prism::Ref<prism::Widget> EditorShell::BuildTitleBar() {
+    auto viewportTab = prism::make<DocumentTab>();
     viewportTab->onClick = [this] {
-        const Scene::EntityUVE viewport = m_editor.GetDocumentViewportUVE();
-        if (viewport != Scene::kInvalidEntityUVE) {
-            m_editor.SelectEntityUVE(viewport);
+        const Scene::Entity viewport = m_editor.GetDocumentViewport();
+        if (viewport != Scene::kInvalidEntity) {
+            m_editor.SelectEntity(viewport);
         }
     };
     m_viewportNameTab = viewportTab;
 
-    EditorHeaderDescUVE desc;
+    EditorHeaderDesc desc;
     desc.documentTab = viewportTab;
-    desc.toolbarRow = BuildToolbarRowUVE();
+    desc.toolbarRow = BuildToolbarRow();
     desc.onClose = [] { prism::Application::get().quit(); };
     desc.mainWindow = true;
     desc.outTitleRow = &m_titleBarRow;
 
     desc.menus.push_back({"File", [this] {
-        std::vector<prism::MenuItem> items = CommandItemsUVE({"file.saveScene", "file.saveAll", "file.loadScene", nullptr});
+        std::vector<prism::MenuItem> items = CommandItems({"file.saveScene", "file.saveAll", "file.loadScene", nullptr});
         items.push_back(prism::MenuItem::Item("Import Files...", [this] {
-            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-            static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
+            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+            static_cast<void>(m_editor.PromptImportFiles(root / m_editor.m_assetTableDirectory));
         }, "", prism::Icon::Open));
         items.push_back(prism::MenuItem::Item("Import Folder...", [this] {
-            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-            static_cast<void>(m_editor.PromptImportFolderUVE(root / m_editor.m_assetTableDirectory));
+            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
+            static_cast<void>(m_editor.PromptImportFolder(root / m_editor.m_assetTableDirectory));
         }, "", prism::Icon::FolderOpen));
         items.push_back(prism::MenuItem::Sep());
-        for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.inputMap", "file.preferences",
+        for (prism::MenuItem& item : CommandItems({"file.projectSettings", "file.inputMap", "file.preferences",
                                                       "file.keyboardShortcuts", "file.commandPalette"})) {
             items.push_back(std::move(item));
         }
         items.push_back(prism::MenuItem::Item("Save Editor Preferences",
-                                              [this] { static_cast<void>(m_editor.SaveSessionSettingsUVE()); }));
+                                              [this] { static_cast<void>(m_editor.SaveSessionSettings()); }));
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Return to Hub", [] { prism::Application::get().quit(); }, "",
                                               prism::Icon::ChevronLeft));
         return items;
     }});
     desc.menus.push_back({"Edit", [this] {
-        return CommandItemsUVE({"edit.undo", "edit.redo", nullptr, "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete"});
+        return CommandItems({"edit.undo", "edit.redo", nullptr, "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete"});
     }});
     desc.menus.push_back({"Window", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Check("Outliner", m_editor.m_scenePanelVisible, [this] {
             m_editor.m_scenePanelVisible = !m_editor.m_scenePanelVisible;
-            UpdateDockColumnsUVE();
+            UpdateDockColumns();
         }));
         items.push_back(prism::MenuItem::Check("Inspector", m_editor.m_inspectorPanelVisible, [this] {
             m_editor.m_inspectorPanelVisible = !m_editor.m_inspectorPanelVisible;
-            UpdateDockColumnsUVE();
+            UpdateDockColumns();
         }));
         items.push_back(prism::MenuItem::Sub("Layout", {
-            prism::MenuItem::Item("Default", [this] { ApplyLayoutPresetUVE(0); }),
-            prism::MenuItem::Item("Inspector under Outliner", [this] { ApplyLayoutPresetUVE(1); }),
-            prism::MenuItem::Item("Inspector beside Outliner", [this] { ApplyLayoutPresetUVE(2); }),
-            prism::MenuItem::Item("Wide Viewport", [this] { ApplyLayoutPresetUVE(3); }),
+            prism::MenuItem::Item("Default", [this] { ApplyLayoutPreset(0); }),
+            prism::MenuItem::Item("Inspector under Outliner", [this] { ApplyLayoutPreset(1); }),
+            prism::MenuItem::Item("Inspector beside Outliner", [this] { ApplyLayoutPreset(2); }),
+            prism::MenuItem::Item("Wide Viewport", [this] { ApplyLayoutPreset(3); }),
         }, prism::Icon::Frame));
-        items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ApplyLayoutPresetUVE(0); }));
+        items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ApplyLayoutPreset(0); }));
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Check("Network Capture", m_editor.m_showCaptureWindow, [this] {
             m_editor.m_showCaptureWindow = !m_editor.m_showCaptureWindow;
@@ -432,16 +432,16 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
             }
         }));
         items.push_back(prism::MenuItem::Check("Bottom Dock", m_dockVisible, [this] {
-            ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
+            ShowDockPanel(m_dockPages ? m_dockPages->activeIndex() : 0, false);
         }));
         return items;
     }});
     desc.menus.push_back({"Tools", [this] {
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Project Browser", [this] { ShowDockPanelUVE(0, true); }));
+        items.push_back(prism::MenuItem::Item("Project Browser", [this] { ShowDockPanel(0, true); }));
         items.push_back(prism::MenuItem::Item("Import Queue", {}).disabled());
         items.push_back(prism::MenuItem::Sep());
-        for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.preferences", "file.commandPalette"})) {
+        for (prism::MenuItem& item : CommandItems({"file.projectSettings", "file.preferences", "file.commandPalette"})) {
             items.push_back(std::move(item));
         }
         return items;
@@ -468,26 +468,26 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
         };
     };
 
-    return BuildEditorHeaderUVE(std::move(desc));
+    return BuildEditorHeader(std::move(desc));
 }
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildToolbarRow() {
     // Sub row 1 (moved up cleanly into row 2 on Android): open folder, save, mode | blueprint | Play/Pause/Stop | status.
-    const bool singleSurface = m_host.AppUVE().platform().singleSurface();
+    const bool singleSurface = m_host.App().platform().singleSurface();
     auto row = prism::hbox(3.0F);
     row->setPadding(prism::Margin(5.0F, 1.0F, 5.0F, 1.0F));
 
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Asset Table)");
-    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
+    auto openFolder = ToolButton(prism::Icon::FolderOpen, "Open folder (Asset Table)");
+    openFolder->onClick = [this] { ShowDockPanel(0, true); };
     row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
-    save->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
+    auto save = ToolButton(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
+    save->onClick = [this] { static_cast<void>(m_editor.RunEditorCommand("file.saveAll")); };
     row->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
 
     m_selectionMode = prism::make<prism::ComboBox>(std::vector<std::string>{"Universal", "Move", "Rotate", "Scale"}, 0);
     m_selectionMode->setTooltip("Selection mode");
     m_selectionMode->onChange = [this](const int index) {
-        using Mode = EditorUVE::ViewportGizmoModeUVE;
+        using Mode = Editor::ViewportGizmoMode;
         static constexpr std::array<Mode, 4> kModes{Mode::Universal, Mode::Move, Mode::Rotate, Mode::Scale};
         m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     };
@@ -495,9 +495,9 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     modeBox->setWidthOverride(singleSurface ? 98.0F : 136.0F);
     modeBox->setContent(m_selectionMode);
     row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row->add(HSeparatorUVE());
+    row->add(HSeparator());
 
-    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
+    auto blueprint = ToolButton(prism::Icon::Blueprint, "Blueprint editor (beta)");
     blueprint->onClick = [] {
         if (prism::Application::exists()) {
             prism::Application::get().notify("Blueprint editor (beta) - coming in the blueprint milestone",
@@ -505,21 +505,21 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
         }
     };
     row->add(blueprint, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row->add(HSeparatorUVE());
+    row->add(HSeparator());
 
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    m_playButton = ToolButtonUVE(prism::Icon::Play, "Play");
+    m_playButton = ToolButton(prism::Icon::Play, "Play");
     m_playButton->onClick = [this] {
-        if (m_editor.GetPlayModeStateUVE() == EditorPlayModeStateUVE::Paused) {
-            static_cast<void>(m_editor.ResumePlayModeUVE());
+        if (m_editor.GetPlayModeState() == EditorPlayModeState::Paused) {
+            static_cast<void>(m_editor.ResumePlayMode());
         } else {
-            static_cast<void>(m_editor.EnterPlayModeUVE());
+            static_cast<void>(m_editor.EnterPlayMode());
         }
     };
-    m_pauseButton = ToolButtonUVE(prism::Icon::Pause, "Pause");
-    m_pauseButton->onClick = [this] { static_cast<void>(m_editor.PausePlayModeUVE()); };
-    m_stopButton = ToolButtonUVE(prism::Icon::Stop, "Stop");
-    m_stopButton->onClick = [this] { static_cast<void>(m_editor.StopPlayModeUVE()); };
+    m_pauseButton = ToolButton(prism::Icon::Pause, "Pause");
+    m_pauseButton->onClick = [this] { static_cast<void>(m_editor.PausePlayMode()); };
+    m_stopButton = ToolButton(prism::Icon::Stop, "Stop");
+    m_stopButton->onClick = [this] { static_cast<void>(m_editor.StopPlayMode()); };
     row->add(m_playButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(m_pauseButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(m_stopButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -531,37 +531,37 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     m_rendererProfileButton = prism::make<prism::Button>("Forward+", prism::Icon::Profiler, prism::ButtonStyle::Toolbar);
     m_rendererProfileButton->setTooltip("Project Renderer Profile (Compatibility / Mobile / Forward+)");
     m_rendererProfileButton->onClick = [this] {
-        const Render::RendererProfileResolutionUVE res = m_editor.GetRendererProfileResolutionUVE();
-        static constexpr std::array<Platform::RendererProfileUVE, 3> kProfiles{
-            Platform::RendererProfileUVE::Compatibility,
-            Platform::RendererProfileUVE::Mobile,
-            Platform::RendererProfileUVE::ForwardPlus,
+        const Render::RendererProfileResolution res = m_editor.GetRendererProfileResolution();
+        static constexpr std::array<Platform::RendererProfile, 3> kProfiles{
+            Platform::RendererProfile::Compatibility,
+            Platform::RendererProfile::Mobile,
+            Platform::RendererProfile::ForwardPlus,
         };
         std::vector<prism::MenuItem> items;
-        for (const Platform::RendererProfileUVE profile : kProfiles) {
-            std::string label(Platform::GetRendererProfileDisplayNameUVE(profile));
-            if (profile == Platform::RendererProfileUVE::Compatibility) {
+        for (const Platform::RendererProfile profile : kProfiles) {
+            std::string label(Platform::GetRendererProfileDisplayName(profile));
+            if (profile == Platform::RendererProfile::Compatibility) {
                 label += " (Low-End / Fast RGBA8)";
-            } else if (profile == Platform::RendererProfileUVE::Mobile) {
+            } else if (profile == Platform::RendererProfile::Mobile) {
                 label += " (Balanced Mobile PBR)";
             } else {
                 label += " (Desktop Full PBR)";
             }
             items.push_back(prism::MenuItem::Check(
                 std::move(label), res.requested == profile, [this, profile] {
-                    m_editor.SetRendererProfileUVE(profile);
-                    const Render::RendererProfileResolutionUVE updated = m_editor.GetRendererProfileResolutionUVE();
+                    m_editor.SetRendererProfile(profile);
+                    const Render::RendererProfileResolution updated = m_editor.GetRendererProfileResolution();
                     if (prism::Application::exists()) {
                         if (updated.fallbackApplied) {
                             prism::Application::get().notify(
-                                std::string(Platform::GetRendererProfileDisplayNameUVE(updated.requested)) +
+                                std::string(Platform::GetRendererProfileDisplayName(updated.requested)) +
                                     " not supported on this GPU - using " +
-                                    std::string(Platform::GetRendererProfileDisplayNameUVE(updated.effective)),
+                                    std::string(Platform::GetRendererProfileDisplayName(updated.effective)),
                                 prism::ToastLevel::Warning);
                         } else {
                             prism::Application::get().notify(
                                 "Renderer switched to " +
-                                    std::string(Platform::GetRendererProfileDisplayNameUVE(updated.effective)),
+                                    std::string(Platform::GetRendererProfileDisplayName(updated.effective)),
                                 prism::ToastLevel::Info);
                         }
                     }
@@ -583,19 +583,19 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
 }
 
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildOutliner() {
     // #6 tab, #7 '+', #8 filter, #10 search, #11 tree (#12 its scrollbar).
     auto page = prism::vbox(4.0F);
     page->setPadding(prism::Margin(4.0F));
 
     auto bar = prism::hbox(4.0F);
     // A folder in one click, and the level's objects (Basic, Lights, Shapes, ...) under one button.
-    m_addButton = ToolButtonUVE(prism::Icon::Folder, "New Folder");
+    m_addButton = ToolButton(prism::Icon::Folder, "New Folder");
     m_addButton->onClick = [this] {
-        static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(SceneObjectKindUVE::Folder));
+        static_cast<void>(m_editor.CreateDocumentSceneObject(SceneObjectKind::Folder));
     };
-    m_filterButton = ToolButtonUVE(prism::Icon::Cube, "Place an object in the level");
-    m_filterButton->onClick = [this] { ShowAddMenuUVE(); };
+    m_filterButton = ToolButton(prism::Icon::Cube, "Place an object in the level");
+    m_filterButton->onClick = [this] { ShowAddMenu(); };
     m_outlinerSearch = prism::make<prism::TextInput>("", "Search");
     m_outlinerSearch->onChanged = [this](const std::string& text) {
         if (m_outliner) {
@@ -618,102 +618,102 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
         }
         bool first = true;
         for (const prism::TreeNode* node : nodes) {
-            const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-            if (entity == Scene::kInvalidEntityUVE) {
+            const Scene::Entity entity = EntityForTreeId(node->id);
+            if (entity == Scene::kInvalidEntity) {
                 continue;
             }
             if (first) {
-                m_editor.SelectEntityUVE(entity);
+                m_editor.SelectEntity(entity);
                 first = false;
-            } else if (!m_editor.IsEntitySelectedUVE(entity)) {
-                m_editor.ToggleEntitySelectionUVE(entity);
+            } else if (!m_editor.IsEntitySelected(entity)) {
+                m_editor.ToggleEntitySelection(entity);
             }
         }
     };
     m_outliner->onVisibilityToggle = [this](prism::TreeNode* node) {
-        const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-        if (entity != Scene::kInvalidEntityUVE) {
-            static_cast<void>(m_editor.SetEntityVisibleUVE(entity, node->visible));
+        const Scene::Entity entity = EntityForTreeId(node->id);
+        if (entity != Scene::kInvalidEntity) {
+            static_cast<void>(m_editor.SetEntityVisible(entity, node->visible));
         }
     };
     m_outliner->onRename = [this](prism::TreeNode* node, const std::string& name) {
-        const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-        if (entity != Scene::kInvalidEntityUVE) {
-            m_editor.SelectEntityUVE(entity);
-            static_cast<void>(m_editor.SetSelectedEntityNameUVE(name));
+        const Scene::Entity entity = EntityForTreeId(node->id);
+        if (entity != Scene::kInvalidEntity) {
+            m_editor.SelectEntity(entity);
+            static_cast<void>(m_editor.SetSelectedEntityName(name));
         }
     };
     m_outliner->onDelete = [this](prism::TreeNode* node) {
-        const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-        if (entity != Scene::kInvalidEntityUVE) {
-            if (!m_editor.IsEntitySelectedUVE(entity)) {
-                m_editor.SelectEntityUVE(entity);
+        const Scene::Entity entity = EntityForTreeId(node->id);
+        if (entity != Scene::kInvalidEntity) {
+            if (!m_editor.IsEntitySelected(entity)) {
+                m_editor.SelectEntity(entity);
             }
-            m_editor.RequestDeleteSelectedEntitiesUVE();
+            m_editor.RequestDeleteSelectedEntities();
         }
     };
     m_outliner->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
-        const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
-        EditorObjectMenuUVE::HooksUVE hooks;
+        const Scene::Entity entity = node != nullptr ? EntityForTreeId(node->id) : Scene::kInvalidEntity;
+        EditorObjectMenu::Hooks hooks;
         hooks.tree = m_outliner.get();
-        hooks.addChild = [this] { ShowAddMenuUVE(); };
-        EditorObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
+        hooks.addChild = [this] { ShowAddMenu(); };
+        EditorObjectMenu::Show(m_editor, entity, node, at, hooks);
     };
     // Drag an object onto another: inside it (a child), or before / after it (a sibling).
     m_outliner->canDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
-        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
-        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
-        if (entity == Scene::kInvalidEntityUVE || onto == Scene::kInvalidEntityUVE || !m_editor.IsReparentableObjectUVE(entity)) {
+        const Scene::Entity entity = EntityForTreeId(dragged->id);
+        const Scene::Entity onto = EntityForTreeId(target->id);
+        if (entity == Scene::kInvalidEntity || onto == Scene::kInvalidEntity || !m_editor.IsReparentableObject(entity)) {
             return false;
         }
         if (where == prism::TreeView::DropWhere::Inside) {
-            return m_editor.IsAllowedOutlinerParentUVE(entity, onto);
+            return m_editor.IsAllowedOutlinerParent(entity, onto);
         }
-        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-        return m_editor.TryGetDocumentParentUVE(onto, parent) && m_editor.IsAllowedOutlinerParentUVE(entity, parent);
+        Scene::Entity parent = Scene::kInvalidEntity;
+        return m_editor.TryGetDocumentParent(onto, parent) && m_editor.IsAllowedOutlinerParent(entity, parent);
     };
     m_outliner->onDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
-        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
-        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        const Scene::Entity entity = EntityForTreeId(dragged->id);
+        const Scene::Entity onto = EntityForTreeId(target->id);
         const int place = where == prism::TreeView::DropWhere::Before ? 0 : where == prism::TreeView::DropWhere::Inside ? 1 : 2;
-        if (m_editor.PlaceDocumentEntityUVE(entity, onto, place)) {
-            m_editor.SelectEntityUVE(entity);
+        if (m_editor.PlaceDocumentEntity(entity, onto, place)) {
+            m_editor.SelectEntity(entity);
         }
     };
     // Double-click a placed entity: it opens in the Entity Editor (its inside is edited there).
     m_outliner->onActivate = [this](prism::TreeNode* node) {
-        const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
-        if (!m_editor.IsSealedHierarchyRowUVE(entity)) {
+        const Scene::Entity entity = node != nullptr ? EntityForTreeId(node->id) : Scene::kInvalidEntity;
+        if (!m_editor.IsSealedHierarchyRow(entity)) {
             return;
         }
-        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-        const Asset::AssetGuidUVE guid = em.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity).sourcePrefabGuid;
-        const std::filesystem::path source = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
+        const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+        const Asset::AssetGuid guid = em.GetComponent<Scene::PrefabInstanceComponent>(entity).sourcePrefabGuid;
+        const std::filesystem::path source = m_editor.m_services->GetAssetDatabase().Resolve(guid);
         if (!source.empty()) {
-            static_cast<void>(m_editor.OpenEntityEditorUVE(source));
+            static_cast<void>(m_editor.OpenEntityEditor(source));
         }
     };
     // Content dragged from the Asset Table lands here, under the row it is dropped on.
-    auto drop = prism::make<OutlinerDropUVE>(*this);
+    auto drop = prism::make<OutlinerDrop>(*this);
     drop->setChild(m_outliner);
     page->add(drop, prism::Slot{1.0F});
 
     m_outlinerTabs = prism::make<prism::TabView>();
-    m_outlinerTabs->addTab("Outliner", prism::Icon::Layers, PanelUVE(page));
+    m_outlinerTabs->addTab("Outliner", prism::Icon::Layers, Panel(page));
     return m_outlinerTabs;
 }
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildViewportUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildViewport() {
     // #25: the viewport itself (its name is tab #2 under the title bar).
     m_viewport = prism::make<prism::EngineView>();
     m_viewport->mode = prism::EngineView::Mode::Hole;
-    // Input reaches the viewport through the host's raw state (CaptureViewInputUVE); onInput only
+    // Input reaches the viewport through the host's raw state (CaptureViewInput); onInput only
     // makes the view focusable so clicking it takes keyboard focus away from text fields.
     m_viewport->onInput = [](const prism::EngineInput&) {};
     // Every gizmo (navigation, transform, object gizmos and billboards) is PRISM's, drawn over the
     // engine's image of the scene; the renderer draws none of its own (hostDrawsGizmos).
-    m_gizmos = prism::make<EditorViewportGizmosUVE>(m_editor);
-    m_cameraScreen = prism::make<CameraScreenUVE>();
+    m_gizmos = prism::make<EditorViewportGizmos>(m_editor);
+    m_cameraScreen = prism::make<CameraScreen>();
     m_cameraScreen->setVisible(false);
     auto stack = prism::make<prism::Overlay>();
     stack->add(m_viewport);
@@ -722,32 +722,32 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildViewportUVE() {
     return stack;
 }
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildDetailsUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildDetails() {
     // #17 tab, #18 search, #20 the selected object's components (#21 scroll), drawn from the
-    // engine's component metadata (EditorDetailsUVE).
+    // engine's component metadata (EditorDetails).
     m_detailsTabs = prism::make<prism::TabView>();
-    m_detailsTabs->addTab("Inspector", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
+    m_detailsTabs->addTab("Inspector", prism::Icon::Properties, Panel(m_details2.Build()));
     return m_detailsTabs;
 }
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildDockUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildDock() {
     // The dock panel (above the #16 dock bar): one page per dock tab.
     m_dockPages = prism::make<prism::StackSwitcher>();
-    m_dockPages->addPage(PanelUVE(m_assetTable.BuildUVE()));
-    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildOutputLogUVE()));
-    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildConsoleUVE()));
-    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildProfilerUVE()));
-    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildSearchUVE()));
+    m_dockPages->addPage(Panel(m_assetTable.Build()));
+    m_dockPages->addPage(Panel(m_dockPanels.BuildOutputLog()));
+    m_dockPages->addPage(Panel(m_dockPanels.BuildConsole()));
+    m_dockPages->addPage(Panel(m_dockPanels.BuildProfiler()));
+    m_dockPages->addPage(Panel(m_dockPanels.BuildSearch()));
     return m_dockPages;
 }
 
-prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
+prism::Ref<prism::Widget> EditorShell::BuildDockBar() {
     // #16: the dock bar along the bottom; each tab shows its panel, the active one hides it.
-    const bool singleSurface = m_host.AppUVE().platform().singleSurface();
+    const bool singleSurface = m_host.App().platform().singleSurface();
     auto bar = prism::hbox(2.0F);
     bar->setPadding(prism::Margin(4.0F, 0.0F, 6.0F, 0.0F));
-    struct DockTabUVE { const char* label; prism::Icon icon; };
-    static constexpr std::array<DockTabUVE, 5> kTabs{{
+    struct DockTab { const char* label; prism::Icon icon; };
+    static constexpr std::array<DockTab, 5> kTabs{{
         {"Asset Table", prism::Icon::AssetBrowser},
         {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
@@ -758,7 +758,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
         tab->setCheckable(true);
         tab->setChecked(m_dockVisible && i == 0);
-        tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanelUVE(index, false); };
+        tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanel(index, false); };
         m_dockTabs.push_back(tab);
         bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
@@ -773,43 +773,43 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
     return border;
 }
 
-bool EditorShellUVE::DropContentOnOutlinerUVE(const std::string& relativePath, const prism::Vec2 at) {
+bool EditorShell::DropContentOnOutliner(const std::string& relativePath, const prism::Vec2 at) {
     // Entity assets and models dropped on a row go under that row's object (else where a new
     // object goes), through the same calls as the Asset Table's "Place in Scene".
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path relative(relativePath);
-    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    Scene::Entity parent = Scene::kInvalidEntity;
     if (m_outliner) {
         if (const prism::TreeNode* node = m_outliner->nodeAt(at); node != nullptr) {
-            parent = EntityForTreeIdUVE(node->id);
+            parent = EntityForTreeId(node->id);
         }
     }
     std::string extension = relative.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const std::filesystem::path clipSource =
-        extension == ".uvanim" ? m_editor.FindAnimationClipSourceUVE(relative) : std::filesystem::path{};
-    Scene::EntityUVE placed = Scene::kInvalidEntityUVE;
+        extension == ".uvanim" ? m_editor.FindAnimationClipSource(relative) : std::filesystem::path{};
+    Scene::Entity placed = Scene::kInvalidEntity;
     if (extension == ".uventity" || extension == ".uvprefab") {
-        placed = m_editor.PlaceEntityAssetUVE(snapshot.contentRoot / relative, parent);
-    } else if (EditorUVE::IsModelSourcePathUVE(relative) || extension == ".uvmodel") {
-        placed = m_editor.PlaceModelSourceUVE(relative, parent);
+        placed = m_editor.PlaceEntityAsset(snapshot.contentRoot / relative, parent);
+    } else if (Editor::IsModelSourcePath(relative) || extension == ".uvmodel") {
+        placed = m_editor.PlaceModelSource(relative, parent);
     } else if (!clipSource.empty()) {
         // The Asset Table lists an animation-only file as its clips: one places the file, playing it.
-        placed = m_editor.PlaceModelSourceUVE(clipSource, parent, relative);
+        placed = m_editor.PlaceModelSource(clipSource, parent, relative);
     } else {
         m_editor.m_contentStatusMessage = "Only entity assets and models can be placed in the Outliner.";
         return false;
     }
-    if (placed == Scene::kInvalidEntityUVE && m_editor.m_contentStatusMessage.empty()) {
+    if (placed == Scene::kInvalidEntity && m_editor.m_contentStatusMessage.empty()) {
         m_editor.m_contentStatusMessage = "Could not place " + relative.filename().string() + ".";
     }
-    return placed != Scene::kInvalidEntityUVE;
+    return placed != Scene::kInvalidEntity;
 }
 
-void EditorShellUVE::ApplyLayoutPresetUVE(const int preset) {
+void EditorShell::ApplyLayoutPreset(const int preset) {
     // Window > Layout: ready-made arrangements of the panels; every panel re-flows at once.
-    ResetPanelLayoutUVE();
+    ResetPanelLayout();
     if (!m_dockSpace || !m_outlinerTabs || !m_detailsTabs) {
         return;
     }
@@ -826,19 +826,19 @@ void EditorShellUVE::ApplyLayoutPresetUVE(const int preset) {
             m_editor.m_scenePanelVisible = false;
             m_editor.m_inspectorPanelVisible = false;
             if (m_dockVisible) {
-                ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
+                ShowDockPanel(m_dockPages ? m_dockPages->activeIndex() : 0, false);
             }
             break;
         default:
             if (!m_dockVisible) {
-                ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, true);
+                ShowDockPanel(m_dockPages ? m_dockPages->activeIndex() : 0, true);
             }
             break;
     }
-    UpdateDockColumnsUVE();
+    UpdateDockColumns();
 }
 
-void EditorShellUVE::UpdateDockColumnsUVE() {
+void EditorShell::UpdateDockColumns() {
     if (m_outlinerColumn && m_outlinerTabs) {
         m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible && m_outlinerTabs->count() > 0);
     }
@@ -850,7 +850,7 @@ void EditorShellUVE::UpdateDockColumnsUVE() {
     }
 }
 
-void EditorShellUVE::ResetPanelLayoutUVE() {
+void EditorShell::ResetPanelLayout() {
     if (!m_dockSpace || !m_outlinerTabs || !m_detailsTabs) {
         return;
     }
@@ -868,10 +868,10 @@ void EditorShellUVE::ResetPanelLayoutUVE() {
     m_detailsTabs->setCurrent(0);
     m_editor.m_scenePanelVisible = true;
     m_editor.m_inspectorPanelVisible = true;
-    UpdateDockColumnsUVE();
+    UpdateDockColumns();
 }
 
-void EditorShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
+void EditorShell::ShowDockPanel(const int index, const bool forceVisible) {
     if (!m_dockPages) {
         return;
     }
@@ -893,13 +893,13 @@ void EditorShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) 
 // ---------------------------------------------------------------------------------- add / filter
 
 
-void EditorShellUVE::ShowCommandPaletteUVE() {
-    const auto itemFor = [this](const EditorCommandUVE& command, const bool withCategory) {
+void EditorShell::ShowCommandPalette() {
+    const auto itemFor = [this](const EditorCommand& command, const bool withCategory) {
         const std::string id = command.id;
-        prism::MenuItem item = prism::MenuItem::Item(withCategory ? EditorUVE::CommandTitleTextUVE(command) : command.label,
-                                                     [this, id] { static_cast<void>(m_editor.RunEditorCommandUVE(id)); },
-                                                     DisplayEditorShortcutUVE(command.shortcuts[0]));
-        if (!EditorUVE::IsCommandEnabledUVE(command)) {
+        prism::MenuItem item = prism::MenuItem::Item(withCategory ? Editor::CommandTitleText(command) : command.label,
+                                                     [this, id] { static_cast<void>(m_editor.RunEditorCommand(id)); },
+                                                     DisplayEditorShortcut(command.shortcuts[0]));
+        if (!Editor::IsCommandEnabled(command)) {
             item.disabled();
         }
         return item;
@@ -907,7 +907,7 @@ void EditorShellUVE::ShowCommandPaletteUVE() {
     std::vector<prism::MenuItem> items;
     // The commands run last, most recent first; then every command by its category.
     for (const std::string& recent : m_editor.m_recentCommandIds) {
-        if (const EditorCommandUVE* const command = m_editor.FindEditorCommandUVE(recent)) {
+        if (const EditorCommand* const command = m_editor.FindEditorCommand(recent)) {
             items.push_back(itemFor(*command, true));
         }
     }
@@ -915,31 +915,31 @@ void EditorShellUVE::ShowCommandPaletteUVE() {
         items.push_back(prism::MenuItem::Sep());
     }
     std::vector<std::string> categories;
-    for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+    for (const EditorCommand& command : m_editor.GetEditorCommands()) {
         if (std::find(categories.begin(), categories.end(), command.category) == categories.end()) {
             categories.push_back(command.category);
         }
     }
     for (const std::string& category : categories) {
         std::vector<prism::MenuItem> group;
-        for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+        for (const EditorCommand& command : m_editor.GetEditorCommands()) {
             if (command.category == category) {
                 group.push_back(itemFor(command, false));
             }
         }
         items.push_back(prism::MenuItem::Sub(category, std::move(group)));
     }
-    const prism::Vec2 size = m_host.AppUVE().windowSize();
+    const prism::Vec2 size = m_host.App().windowSize();
     prism::showSearchMenu(std::move(items), prism::Rect{size.x * 0.5F - 240.0F, 70.0F, 480.0F, 1.0F}, prism::PopupPlacement::Below,
                           "Run a command");
 }
 
-void EditorShellUVE::ShowAddMenuUVE() {
+void EditorShell::ShowAddMenu() {
     // GET CONTENT, PLACE OBJECTS (a flyout per group) and RECENTLY PLACED; typing searches them all.
     // Only what a level holds: a character's parts are built in an Entity, and an entity of the
     // project (a player, a character) is offered under Basic once it is in Content.
-    const auto place = [this](const SceneObjectKindUVE kind) {
-        static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind));
+    const auto place = [this](const SceneObjectKind kind) {
+        static_cast<void>(m_editor.CreateDocumentSceneObject(kind));
         const int key = static_cast<int>(kind);
         m_recentKinds.erase(std::remove(m_recentKinds.begin(), m_recentKinds.end(), key), m_recentKinds.end());
         m_recentKinds.insert(m_recentKinds.begin(), key);
@@ -947,26 +947,26 @@ void EditorShellUVE::ShowAddMenuUVE() {
             m_recentKinds.resize(5U);
         }
     };
-    const auto itemFor = [this, &place](const SceneObjectKindUVE kind, std::string label = {}) {
-        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+    const auto itemFor = [this, &place](const SceneObjectKind kind, std::string label = {}) {
+        const Scene::Objects::SceneObjectDescriptor* const descriptor = Scene::Objects::FindSceneObjectDescriptor(kind);
         if (label.empty()) {
             label = descriptor != nullptr ? std::string(descriptor->displayName) : std::string("Object");
         }
-        prism::MenuItem item = prism::MenuItem::Item(label, [place, kind] { place(kind); }, "", ObjectKindGlyphUVE(kind));
-        if (const EditorIconsUVE::ImageUVE icon = m_icons.ObjectUVE(kind, 16); icon) {
+        prism::MenuItem item = prism::MenuItem::Item(label, [place, kind] { place(kind); }, "", ObjectKindGlyph(kind));
+        if (const EditorIcons::Image icon = m_icons.Object(kind, 16); icon) {
             item.withImage(icon.pixels, icon.size);
         }
         return item;
     };
-    const auto offered = [](const SceneObjectKindUVE kind) {
-        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
-        return descriptor != nullptr && descriptor->libraryCreatable && IsObjectOfferedUVE(kind, AddObjectContextUVE::Level);
+    const auto offered = [](const SceneObjectKind kind) {
+        const Scene::Objects::SceneObjectDescriptor* const descriptor = Scene::Objects::FindSceneObjectDescriptor(kind);
+        return descriptor != nullptr && descriptor->libraryCreatable && IsObjectOffered(kind, AddObjectContext::Level);
     };
     std::set<int> grouped;
-    const auto group = [&](const char* const title, const prism::Icon icon, std::initializer_list<SceneObjectKindUVE> kinds,
+    const auto group = [&](const char* const title, const prism::Icon icon, std::initializer_list<SceneObjectKind> kinds,
                            std::vector<prism::MenuItem> extra = {}) {
         std::vector<prism::MenuItem> sub = std::move(extra);
-        for (const SceneObjectKindUVE kind : kinds) {
+        for (const SceneObjectKind kind : kinds) {
             if (offered(kind)) {
                 sub.push_back(itemFor(kind));
                 grouped.insert(static_cast<int>(kind));
@@ -978,51 +978,51 @@ void EditorShellUVE::ShowAddMenuUVE() {
     std::vector<prism::MenuItem> items;
     items.push_back(prism::MenuItem::Header("GET CONTENT"));
     items.push_back(prism::MenuItem::Item("Import Files...", [this] {
-        static_cast<void>(m_editor.PromptImportFilesUVE(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot));
+        static_cast<void>(m_editor.PromptImportFiles(m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot));
     }, "", prism::Icon::Open));
     items.push_back(prism::MenuItem::Item("Import Folder...", [this] {
-        static_cast<void>(m_editor.PromptImportFolderUVE(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot));
+        static_cast<void>(m_editor.PromptImportFolder(m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot));
     }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Header("PLACE OBJECTS"));
 
     // The project's own entities (a player, a character): placed as they are in Content.
     std::vector<prism::MenuItem> entities;
     {
-        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-            if (entry.kind != Asset::ProjectFileEntryKindUVE::File || entry.relativePath.extension() != ".uventity") {
+        const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+        for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+            if (entry.kind != Asset::ProjectFileEntryKind::File || entry.relativePath.extension() != ".uventity") {
                 continue;
             }
             const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
             entities.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, absolute] {
-                static_cast<void>(m_editor.PlaceEntityAssetUVE(absolute));
+                static_cast<void>(m_editor.PlaceEntityAsset(absolute));
             }, "", prism::Icon::PreviewCharacter));
         }
     }
     items.push_back(group("Basic", prism::Icon::Object3D,
-                          {SceneObjectKindUVE::Object3D, SceneObjectKindUVE::Marker3D, SceneObjectKindUVE::SpawnPoint3D,
-                           SceneObjectKindUVE::Camera3D, SceneObjectKindUVE::Light3D, SceneObjectKindUVE::Area3D},
+                          {SceneObjectKind::Object3D, SceneObjectKind::Marker3D, SceneObjectKind::SpawnPoint3D,
+                           SceneObjectKind::Camera3D, SceneObjectKind::Light3D, SceneObjectKind::Area3D},
                           std::move(entities)));
     items.push_back(group("Lights", prism::Icon::Light,
-                          {SceneObjectKindUVE::DirectionalLight3D, SceneObjectKindUVE::Light3D, SceneObjectKindUVE::WorldEnvironment3D,
-                           SceneObjectKindUVE::Sky, SceneObjectKindUVE::ReflectionProbe3D}));
+                          {SceneObjectKind::DirectionalLight3D, SceneObjectKind::Light3D, SceneObjectKind::WorldEnvironment3D,
+                           SceneObjectKind::Sky, SceneObjectKind::ReflectionProbe3D}));
     items.push_back(group("Shapes", prism::Icon::Cube,
-                          {SceneObjectKindUVE::BoxMesh3D, SceneObjectKindUVE::SphereMesh3D, SceneObjectKindUVE::PlaneMesh3D,
-                           SceneObjectKindUVE::MeshInstance3D, SceneObjectKindUVE::LODGroup3D}));
+                          {SceneObjectKind::BoxMesh3D, SceneObjectKind::SphereMesh3D, SceneObjectKind::PlaneMesh3D,
+                           SceneObjectKind::MeshInstance3D, SceneObjectKind::LODGroup3D}));
     items.push_back(group("Cinematic", prism::Icon::Camera,
-                          {SceneObjectKindUVE::Camera3D, SceneObjectKindUVE::SpringArm3D, SceneObjectKindUVE::AnimationSequencer}));
+                          {SceneObjectKind::Camera3D, SceneObjectKind::SpringArm3D, SceneObjectKind::AnimationSequencer}));
     items.push_back(group("Visual Effects", prism::Icon::Environment,
-                          {SceneObjectKindUVE::ParticleEmitter3D, SceneObjectKindUVE::Decal3D, SceneObjectKindUVE::FogVolume3D}));
+                          {SceneObjectKind::ParticleEmitter3D, SceneObjectKind::Decal3D, SceneObjectKind::FogVolume3D}));
     items.push_back(group("Volumes", prism::Icon::Collider,
-                          {SceneObjectKindUVE::Area3D, SceneObjectKindUVE::Collider3D, SceneObjectKindUVE::NavMeshVolume3D,
-                           SceneObjectKindUVE::LevelStreamer3D, SceneObjectKindUVE::WorldPartition3D, SceneObjectKindUVE::Occluder3D,
-                           SceneObjectKindUVE::VisibilityRegion3D}));
+                          {SceneObjectKind::Area3D, SceneObjectKind::Collider3D, SceneObjectKind::NavMeshVolume3D,
+                           SceneObjectKind::LevelStreamer3D, SceneObjectKind::WorldPartition3D, SceneObjectKind::Occluder3D,
+                           SceneObjectKind::VisibilityRegion3D}));
     // Kept for what comes next; nothing in it yet.
     items.push_back(prism::MenuItem::Sub("More", {prism::MenuItem::Item("Nothing here yet", {}).disabled()}, prism::Icon::Plus));
     if (!m_recentKinds.empty()) {
         items.push_back(prism::MenuItem::Header("RECENTLY PLACED"));
         for (const int key : m_recentKinds) {
-            items.push_back(itemFor(static_cast<SceneObjectKindUVE>(key)));
+            items.push_back(itemFor(static_cast<SceneObjectKind>(key)));
         }
     }
     prism::showSearchMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
@@ -1031,57 +1031,57 @@ void EditorShellUVE::ShowAddMenuUVE() {
 
 // ---------------------------------------------------------------------------------------- refresh
 
-std::vector<Scene::EntityUVE> EditorShellUVE::OutlinerRootsUVE() {
+std::vector<Scene::Entity> EditorShell::OutlinerRoots() {
     // The scene root is structural and stays out of the Outliner, as it always has: when the
     // document has its Viewport, the rows start at the scene root's children (the Viewport and
     // anything beside it); a document without one lists its roots.
-    if (m_editor.GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
-        const Scene::EntityUVE sceneRoot = m_editor.GetDocumentSceneRootUVE();
-        if (sceneRoot != Scene::kInvalidEntityUVE) {
-            return m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(m_editor.m_services->GetEntityManagerUVE(),
+    if (m_editor.GetDocumentViewport() != Scene::kInvalidEntity) {
+        const Scene::Entity sceneRoot = m_editor.GetDocumentSceneRoot();
+        if (sceneRoot != Scene::kInvalidEntity) {
+            return m_editor.m_services->GetSceneGraph().GetChildren(m_editor.m_services->GetEntityManager(),
                                                                          sceneRoot);
         }
     }
-    return m_editor.GetDocumentRootsUVE();
+    return m_editor.GetDocumentRoots();
 }
 
-int EditorShellUVE::TreeIdForUVE(const Scene::EntityUVE entity) {
+int EditorShell::TreeIdFor(const Scene::Entity entity) {
     m_treeEntities.push_back(entity);
     return static_cast<int>(m_treeEntities.size());
 }
 
-Scene::EntityUVE EditorShellUVE::EntityForTreeIdUVE(const int id) const {
+Scene::Entity EditorShell::EntityForTreeId(const int id) const {
     if (id <= 0 || static_cast<std::size_t>(id) > m_treeEntities.size()) {
-        return Scene::kInvalidEntityUVE;
+        return Scene::kInvalidEntity;
     }
     return m_treeEntities[static_cast<std::size_t>(id - 1)];
 }
 
-std::uint64_t EditorShellUVE::OutlinerSignatureUVE() {
+std::uint64_t EditorShell::OutlinerSignature() {
     std::uint64_t h = 1469598103934665603ULL;
-    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const std::function<void(Scene::EntityUVE, int)> visit = [&](const Scene::EntityUVE e, const int depth) {
-        HashUVE(h, (static_cast<std::uint64_t>(e.index) << 32U) | e.generation);
-        HashUVE(h, static_cast<std::uint64_t>(depth));
-        HashUVE(h, m_editor.GetEntityDisplayLabelUVE(e));
-        HashUVE(h, m_editor.IsEntitySelectedUVE(e) ? 1U : 0U);
-        if (m_editor.IsSealedHierarchyRowUVE(e)) {
+    Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    const std::function<void(Scene::Entity, int)> visit = [&](const Scene::Entity e, const int depth) {
+        Hash(h, (static_cast<std::uint64_t>(e.index) << 32U) | e.generation);
+        Hash(h, static_cast<std::uint64_t>(depth));
+        Hash(h, m_editor.GetEntityDisplayLabel(e));
+        Hash(h, m_editor.IsEntitySelected(e) ? 1U : 0U);
+        if (m_editor.IsSealedHierarchyRow(e)) {
             return; // a placed entity is one row: its inside is the Entity Editor's
         }
-        for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
+        for (const Scene::Entity child : m_editor.m_services->GetSceneGraph().GetChildren(em, e)) {
             visit(child, depth + 1);
         }
     };
-    for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
+    for (const Scene::Entity root : OutlinerRoots()) {
         visit(root, 0);
     }
-    for (const Scene::EntityUVE e : m_editor.GetSelectedEntitiesUVE()) {
-        HashUVE(h, (static_cast<std::uint64_t>(e.index) << 32U) | e.generation);
+    for (const Scene::Entity e : m_editor.GetSelectedEntities()) {
+        Hash(h, (static_cast<std::uint64_t>(e.index) << 32U) | e.generation);
     }
     return h;
 }
 
-void EditorShellUVE::RefreshOutlinerUVE() {
+void EditorShell::RefreshOutliner() {
     if (!m_outliner) {
         return;
     }
@@ -1089,7 +1089,7 @@ void EditorShellUVE::RefreshOutlinerUVE() {
     // a change of selection is taken at once (the tree shows it).
     {
         std::uint64_t selection = 1469598103934665603ULL;
-        for (const Scene::EntityUVE e : m_editor.m_selectedEntities) {
+        for (const Scene::Entity e : m_editor.m_selectedEntities) {
             selection = (selection ^ ((static_cast<std::uint64_t>(e.index) << 32U) | e.generation)) * 1099511628211ULL;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -1099,7 +1099,7 @@ void EditorShellUVE::RefreshOutlinerUVE() {
         m_outlinerSelection = selection;
         m_outlinerCheckedAt = now;
     }
-    const std::uint64_t signature = OutlinerSignatureUVE();
+    const std::uint64_t signature = OutlinerSignature();
     if (signature == m_outlinerSignature) {
         return;
     }
@@ -1107,16 +1107,16 @@ void EditorShellUVE::RefreshOutlinerUVE() {
     m_syncingSelection = true;
     m_outliner->clear();
     m_treeEntities.clear();
-    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
     std::vector<int> selected;
     std::unordered_map<std::uint64_t, int> rowOf;
-    const std::function<void(prism::TreeNode*, Scene::EntityUVE)> add = [&](prism::TreeNode* parent,
-                                                                           const Scene::EntityUVE e) {
-        const int id = TreeIdForUVE(e);
-        const std::string_view typeName = m_editor.GetObjectTypeNameUVE(e);
-        prism::TreeNode* node = m_outliner->addNode(parent, m_editor.GetEntityDisplayLabelUVE(e), prism::Icon::Dot, id);
+    const std::function<void(prism::TreeNode*, Scene::Entity)> add = [&](prism::TreeNode* parent,
+                                                                           const Scene::Entity e) {
+        const int id = TreeIdFor(e);
+        const std::string_view typeName = m_editor.GetObjectTypeName(e);
+        prism::TreeNode* node = m_outliner->addNode(parent, m_editor.GetEntityDisplayLabel(e), prism::Icon::Dot, id);
         // The engine's own icon for the object type (a folder in golden dark brown).
-        if (const EditorIconsUVE::ImageUVE icon = m_icons.ObjectUVE(Scene::ResolveSceneObjectKindUVE(em, e), 16);
+        if (const EditorIcons::Image icon = m_icons.Object(Scene::ResolveSceneObjectKind(em, e), 16);
             icon) {
             node->image = icon.pixels;
             node->imageSize = icon.size;
@@ -1125,19 +1125,19 @@ void EditorShellUVE::RefreshOutlinerUVE() {
         rowOf[(static_cast<std::uint64_t>(e.index) << 32U) | e.generation] = id;
         // A placed entity is one row, like a mesh is one object: what is inside it belongs to the
         // Entity Editor (double-click or Open Entity), not to the level's tree.
-        if (m_editor.IsSealedHierarchyRowUVE(e)) {
+        if (m_editor.IsSealedHierarchyRow(e)) {
             return;
         }
-        for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
+        for (const Scene::Entity child : m_editor.m_services->GetSceneGraph().GetChildren(em, e)) {
             add(node, child);
         }
     };
-    for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
+    for (const Scene::Entity root : OutlinerRoots()) {
         add(nullptr, root);
     }
     // Something selected inside a placed entity shows as its entity's row.
-    for (const Scene::EntityUVE e : m_editor.GetSelectedEntitiesUVE()) {
-        const Scene::EntityUVE owner = m_editor.ResolveHierarchyRowOwnerUVE(e);
+    for (const Scene::Entity e : m_editor.GetSelectedEntities()) {
+        const Scene::Entity owner = m_editor.ResolveHierarchyRowOwner(e);
         const auto row = rowOf.find((static_cast<std::uint64_t>(owner.index) << 32U) | owner.generation);
         if (row != rowOf.end() && std::find(selected.begin(), selected.end(), row->second) == selected.end()) {
             selected.push_back(row->second);
@@ -1151,20 +1151,20 @@ void EditorShellUVE::RefreshOutlinerUVE() {
     m_syncingSelection = false;
 }
 
-void EditorShellUVE::RefreshDetailsUVE() {
-    m_details2.RefreshUVE();
+void EditorShell::RefreshDetails() {
+    m_details2.Refresh();
 }
 
-void EditorShellUVE::RefreshToolbarUVE() {
-    const EditorPlayModeStateUVE play = m_editor.GetPlayModeStateUVE();
+void EditorShell::RefreshToolbar() {
+    const EditorPlayModeState play = m_editor.GetPlayModeState();
     if (m_playButton) {
-        m_playButton->setChecked(play == EditorPlayModeStateUVE::Playing);
+        m_playButton->setChecked(play == EditorPlayModeState::Playing);
     }
     if (m_pauseButton) {
-        m_pauseButton->setChecked(play == EditorPlayModeStateUVE::Paused);
+        m_pauseButton->setChecked(play == EditorPlayModeState::Paused);
     }
-    m_viewToolbar.RefreshUVE();
-    using Mode = EditorUVE::ViewportGizmoModeUVE;
+    m_viewToolbar.Refresh();
+    using Mode = Editor::ViewportGizmoMode;
     int mode = 0;
     switch (m_editor.m_viewportOverlayState.gizmoMode) {
         case Mode::Universal: mode = 0; break;
@@ -1177,12 +1177,12 @@ void EditorShellUVE::RefreshToolbarUVE() {
     }
     if (m_viewportNameTab) {
         // The same Viewport object the Outliner shows: its own name and its own icon.
-        auto* tab = static_cast<DocumentTabUVE*>(m_viewportNameTab.get());
-        const Scene::EntityUVE viewport = m_editor.GetDocumentViewportUVE();
-        if (viewport != Scene::kInvalidEntityUVE) {
-            tab->setName(m_editor.GetEntityDisplayLabelUVE(viewport));
-            const EditorIconsUVE::ImageUVE icon = m_icons.ObjectUVE(
-                Scene::ResolveSceneObjectKindUVE(m_editor.m_services->GetEntityManagerUVE(), viewport), 16);
+        auto* tab = static_cast<DocumentTab*>(m_viewportNameTab.get());
+        const Scene::Entity viewport = m_editor.GetDocumentViewport();
+        if (viewport != Scene::kInvalidEntity) {
+            tab->setName(m_editor.GetEntityDisplayLabel(viewport));
+            const EditorIcons::Image icon = m_icons.Object(
+                Scene::ResolveSceneObjectKind(m_editor.m_services->GetEntityManager(), viewport), 16);
             tab->setIcon(icon.pixels, icon.size);
         } else {
             const std::string stem = m_editor.m_activeScenePath.stem().string();
@@ -1191,16 +1191,16 @@ void EditorShellUVE::RefreshToolbarUVE() {
         }
     }
     if (m_statusLabel) {
-        const char* const state = play == EditorPlayModeStateUVE::Edit      ? "Editing"
-                                  : play == EditorPlayModeStateUVE::Playing ? "Playing"
+        const char* const state = play == EditorPlayModeState::Edit      ? "Editing"
+                                  : play == EditorPlayModeState::Playing ? "Playing"
                                                                             : "Paused";
         std::string text = m_editor.m_sceneDirty ? "unsaved" : "saved";
         text += " | " + std::to_string(m_editor.m_selectedEntities.size()) + " selected | ";
         text += state;
-        const Core::VersionUVE version = Core::EngineCoreUVE::GetEngineVersionUVE();
+        const Core::Version version = Core::EngineCore::GetEngineVersion();
         const std::string versionTag = std::to_string(version.major) + "." + std::to_string(version.minor) + "." +
                                        std::to_string(version.patch) + "." + std::to_string(version.build);
-        if (!m_host.AppUVE().platform().singleSurface()) {
+        if (!m_host.App().platform().singleSurface()) {
             text += "    UVE Editor " + versionTag;
         } else {
             text += " | v" + versionTag;
@@ -1210,8 +1210,8 @@ void EditorShellUVE::RefreshToolbarUVE() {
         }
     }
     if (m_rendererProfileButton) {
-        const Render::RendererProfileResolutionUVE res = m_editor.GetRendererProfileResolutionUVE();
-        std::string label(Platform::GetRendererProfileDisplayNameUVE(res.effective));
+        const Render::RendererProfileResolution res = m_editor.GetRendererProfileResolution();
+        std::string label(Platform::GetRendererProfileDisplayName(res.effective));
         if (res.fallbackApplied) {
             label += " (Fallback)";
         }
@@ -1219,11 +1219,11 @@ void EditorShellUVE::RefreshToolbarUVE() {
             m_rendererProfileButton->setText(label);
             if (res.fallbackApplied) {
                 m_rendererProfileButton->setTooltip(
-                    "Requested " + std::string(Platform::GetRendererProfileDisplayNameUVE(res.requested)) +
+                    "Requested " + std::string(Platform::GetRendererProfileDisplayName(res.requested)) +
                     " -> Fallback: " + std::string(res.fallbackReason));
             } else {
                 m_rendererProfileButton->setTooltip(
-                    std::string(Platform::GetRendererProfileDescriptionUVE(res.effective)));
+                    std::string(Platform::GetRendererProfileDescription(res.effective)));
             }
         }
     }
@@ -1231,43 +1231,43 @@ void EditorShellUVE::RefreshToolbarUVE() {
 
 // ------------------------------------------------------------------------------------------ frame
 
-void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetailsUVE& details,
-                                                CameraScreenUVE* screen,
-                                                std::vector<EditorHostUVE::ViewImageUVE>& views) {
+void EditorShell::AppendCameraScreen(Editor& editor, const EditorDetails& details,
+                                                CameraScreen* screen,
+                                                std::vector<EditorHost::ViewImage>& views) {
     // A selected Camera3D's view in the viewport's corner, while the view itself stays the editor's
     // (not while the viewport already looks through that camera).
     if (screen == nullptr) {
         return;
     }
-    const Scene::EntityUVE selected = editor.GetSelectedEntityUVE();
-    const bool show = details.CameraScreenOpenUVE() && editor.m_viewports.cameraPreview && editor.m_selectedEntities.size() == 1U &&
-                      Scene::IsDocumentCameraEntityUVE(editor.m_services->GetEntityManagerUVE(), selected) &&
-                      editor.GetPreviewCameraUVE() != selected;
+    const Scene::Entity selected = editor.GetSelectedEntity();
+    const bool show = details.CameraScreenOpen() && editor.m_viewports.cameraPreview && editor.m_selectedEntities.size() == 1U &&
+                      Scene::IsDocumentCameraEntity(editor.m_services->GetEntityManager(), selected) &&
+                      editor.GetPreviewCamera() != selected;
     if (screen->visible() != show) {
         screen->setVisible(show);
     }
     if (!show) {
         return;
     }
-    screen->setTitle("Camera3D: " + editor.GetEntityDisplayLabelUVE(selected));
+    screen->setTitle("Camera3D: " + editor.GetEntityDisplayLabel(selected));
     const prism::Rect rect = screen->viewRect();
     if (rect.w < 8.0F || rect.h < 8.0F) {
         return;
     }
-    static EditorUVE::ViewportOverlayStateUVE state{};
+    static Editor::ViewportOverlayState state{};
     state.hostDrawsGizmos = false;
     state.gameWorkspaceActive = false;
     state.studioView = false;
-    state.entityAuthoringView = editor.IsEntityDocumentActiveUVE();
-    state.input = EditorViewportInputUVE{};
+    state.entityAuthoringView = editor.IsEntityDocumentActive();
+    state.input = EditorViewportInput{};
     const float dpiScale = std::max(1.0F, prism::Application::get().platform().dpiScale());
-    Math::Vector2UVE used{0.0F, 0.0F};
+    Math::Vector2 used{0.0F, 0.0F};
     const std::uint64_t texture = editor.m_viewports.cameraPreview(
-        Math::Vector2UVE{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
+        Math::Vector2{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
         used, state);
     if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
         const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
-        EditorHostUVE::ViewImageUVE view{};
+        EditorHost::ViewImage view{};
         view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
         view.texture = static_cast<std::uint32_t>(texture);
         view.usedWidth = used.x;
@@ -1278,13 +1278,13 @@ void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetail
     }
 }
 
-void EditorShellUVE::FrameUVE() {
-    if (!m_host.IsReadyUVE()) {
+void EditorShell::Frame() {
+    if (!m_host.IsReady()) {
         return;
     }
-    m_host.BeginGpuTimerUVE();
+    m_host.BeginGpuTimer();
     if (m_safeFrame) {
-        const std::array<float, 4> area = m_editor.SafeAreaInsetsUVE();
+        const std::array<float, 4> area = m_editor.SafeAreaInsets();
         if (area != m_safeArea) {
             m_safeArea = area;
             // Keep the 3D viewport and panels 100% edge-to-edge across camera punch-holes (zero
@@ -1301,10 +1301,10 @@ void EditorShellUVE::FrameUVE() {
     // The editor's own work per frame (UI, views, panels), logged every five seconds: what a slow
     // machine pays for the editor itself, apart from waiting on the display.
     const auto frameStart = std::chrono::steady_clock::now();
-    struct FrameTimerUVE final {
-        EditorShellUVE& shell;
+    struct FrameTimer final {
+        EditorShell& shell;
         std::chrono::steady_clock::time_point start;
-        ~FrameTimerUVE() {
+        ~FrameTimer() {
             const auto end = std::chrono::steady_clock::now();
             shell.m_frameWorkSeconds += std::chrono::duration<double>(end - start).count();
             ++shell.m_frameCount;
@@ -1321,36 +1321,36 @@ void EditorShellUVE::FrameUVE() {
             }
         }
     } frameTimer{*this, frameStart};
-    RefreshOutlinerUVE();
-    RefreshDetailsUVE();
-    RefreshToolbarUVE();
-    m_assetTable.RefreshUVE();
+    RefreshOutliner();
+    RefreshDetails();
+    RefreshToolbar();
+    m_assetTable.Refresh();
     {
         const int page = m_dockPages ? m_dockPages->activeIndex() : 0;
-        m_dockPanels.RefreshUVE(m_dockVisible && page == 2, m_dockVisible && page == 3, m_host.GpuFrameMsUVE());
+        m_dockPanels.Refresh(m_dockVisible && page == 2, m_dockVisible && page == 3, m_host.GpuFrameMs());
     }
     // The Entity Editor's window follows the entity session; its panels read the entity's document.
-    m_entityEditor.SyncUVE();
-    m_montageEditor.SyncUVE();
-    m_vfxEditor.SyncUVE();
-    m_retargetEditor.SyncUVE();
-    m_animationLibraryEditor.SyncUVE();
+    m_entityEditor.Sync();
+    m_montageEditor.Sync();
+    m_vfxEditor.Sync();
+    m_retargetEditor.Sync();
+    m_animationLibraryEditor.Sync();
     {
-        const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
-        m_entityEditor.RefreshUVE();
+        const Editor::EntityDocumentScope scope(m_editor);
+        m_entityEditor.Refresh();
     }
     if (m_loadingScreen) {
-        const EditorUVE::EditorLoadingStateUVE loading = m_editor.GetLoadingStateUVE();
+        const Editor::EditorLoadingState loading = m_editor.GetLoadingState();
         if (loading.startup && m_projectName.empty() && m_editor.m_projectFileSnapshotInitialized) {
             // The project's folder: the one that holds its content folder.
             std::error_code error;
-            std::filesystem::path content = std::filesystem::absolute(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
+            std::filesystem::path content = std::filesystem::absolute(m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot, error);
             if (content.filename().empty()) {
                 content = content.parent_path();
             }
             m_projectName = content.parent_path().filename().string();
         }
-        m_loadingScreen->SyncUVE(loading, m_projectName);
+        m_loadingScreen->Sync(loading, m_projectName);
         m_startupCovered = loading.startup;
     }
     // The level view starts gently: nothing while the loading screen covers it, then a frame now
@@ -1359,7 +1359,7 @@ void EditorShellUVE::FrameUVE() {
     bool renderView = !m_startupCovered;
     // While the Entity Editor's own window has focus its view is the one being looked at: the level
     // view keeps its last frame instead of drawing the whole scene again behind it.
-    const bool entityEditorFocused = m_entityEditor.WindowIdUVE() != 0 && m_host.IsWindowFocusedUVE(m_entityEditor.WindowIdUVE());
+    const bool entityEditorFocused = m_entityEditor.WindowId() != 0 && m_host.IsWindowFocused(m_entityEditor.WindowId());
     if (renderView) {
         const auto now = std::chrono::steady_clock::now();
         if (m_viewWarmBegan == std::chrono::steady_clock::time_point{}) {
@@ -1371,12 +1371,12 @@ void EditorShellUVE::FrameUVE() {
         // "Loading render" over the view: until the warm-up is through and the renderer has
         // nothing left to load or send to the GPU (it sends a few meshes a frame), with the names
         // of the meshes it is drawing now.
-        Render::IRenderer3DUVE& renderer = m_editor.m_services->GetRenderer3DUVE();
+        Render::IRenderer3D& renderer = m_editor.m_services->GetRenderer3D();
         if (!m_uploadBudgetSet) {
-            renderer.SetMeshUploadBudgetUVE(2U);
+            renderer.SetMeshUploadBudget(2U);
             m_uploadBudgetSet = true;
         }
-        const Render::Renderer3DFrameDiagnosticsUVE frame = renderer.GetLastFrameDiagnosticsUVE();
+        const Render::Renderer3DFrameDiagnostics frame = renderer.GetLastFrameDiagnostics();
         const std::size_t loading = frame.pendingAssetLoads + frame.primitiveMaterialPending + frame.meshUploadsDeferred;
         if (warm < 0.05) {
             m_renderLoadPeak = 0U;
@@ -1384,11 +1384,11 @@ void EditorShellUVE::FrameUVE() {
             m_renderLoadNames.clear();
         }
         // Names of the meshes just drawn for the first time (an imported part reads as its part name).
-        for (const Asset::AssetGuidUVE guid : frame.uploadedMeshes) {
-            if (guid == Asset::AssetGuidUVE{}) {
+        for (const Asset::AssetGuid guid : frame.uploadedMeshes) {
+            if (guid == Asset::AssetGuid{}) {
                 continue;
             }
-            std::string name = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid).stem().string();
+            std::string name = m_editor.m_services->GetAssetDatabase().Resolve(guid).stem().string();
             if (const std::size_t part = name.find(".part-"); part != std::string::npos) {
                 name = name.substr(part + 6U);
             }
@@ -1413,17 +1413,17 @@ void EditorShellUVE::FrameUVE() {
             for (const std::string& name : m_renderLoadNames) {
                 detail += (detail.empty() ? "Rendering " : ", ") + name;
             }
-            m_loadingScreen->SyncRenderUVE(!m_renderLoadDone && m_viewport->visible(), m_viewport->rect(), text, detail,
+            m_loadingScreen->SyncRender(!m_renderLoadDone && m_viewport->visible(), m_viewport->rect(), text, detail,
                                            std::min(warmPart, assetPart));
         }
     }
     if (m_loadingScreen && !m_startupCovered) {
-        m_loadingScreen->SyncUVE(m_editor.GetLoadingStateUVE(), m_projectName);
+        m_loadingScreen->Sync(m_editor.GetLoadingState(), m_projectName);
     }
-    m_host.BeginFrameUVE();
+    m_host.BeginFrame();
 
-    const bool occludedByFullPage = m_host.HasOpaqueFullPageUVE();
-    std::vector<EditorHostUVE::ViewImageUVE> views;
+    const bool occludedByFullPage = m_host.HasOpaqueFullPage();
+    std::vector<EditorHost::ViewImage> views;
     if (occludedByFullPage || (entityEditorFocused && m_lastView.texture != 0U)) {
         renderView = false;
     }
@@ -1432,25 +1432,25 @@ void EditorShellUVE::FrameUVE() {
     } else if (!occludedByFullPage && renderView && m_viewport && m_viewport->visible() && m_editor.m_viewports.level) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
-            EditorUVE::ViewportOverlayStateUVE& state = m_editor.m_viewportOverlayState;
-            state.gameWorkspaceActive = m_editor.m_activeWorkspace == EditorUVE::EditorWorkspaceUVE::Game;
+            Editor::ViewportOverlayState& state = m_editor.m_viewportOverlayState;
+            state.gameWorkspaceActive = m_editor.m_activeWorkspace == Editor::EditorWorkspace::Game;
             state.studioView = false;
             state.entityAuthoringView = false;
             state.bones.clear();
             state.colliderLines.clear();
             if (!state.gameWorkspaceActive) {
-                m_editor.BuildSkeletonOverlayUVE(state.bones);
-                m_editor.BuildColliderOverlayUVE(state.colliderLines);
+                m_editor.BuildSkeletonOverlay(state.bones);
+                m_editor.BuildColliderOverlay(state.colliderLines);
             }
             state.pointerOverOverlay = false;
             state.hostDrawsGizmos = true;
             if (m_gizmos) {
-                const std::array<float, 2> orbit = m_gizmos->TakeOrbitRequestUVE();
+                const std::array<float, 2> orbit = m_gizmos->TakeOrbitRequest();
                 state.orbitRequestX = orbit[0];
                 state.orbitRequestY = orbit[1];
-                m_gizmos->ApplyTouchControllerToStateUVE(state);
+                m_gizmos->ApplyTouchControllerToState(state);
             }
-            state.input = m_host.CaptureViewInputUVE(rect);
+            state.input = m_host.CaptureViewInput(rect);
             const float dpiScale = std::max(1.0F, state.input.dpiScale);
             const bool compactSurface = prism::Application::get().platform().singleSurface();
             const float renderScale = state.resolvedRenderScale > 0.1F
@@ -1466,30 +1466,30 @@ void EditorShellUVE::FrameUVE() {
                 renderH = m_lastView.usedHeight;
             }
             if (renderScale < 0.999F) {
-                state.input.imageOrigin = Math::Vector2UVE{state.input.imageOrigin.x * renderScale,
+                state.input.imageOrigin = Math::Vector2{state.input.imageOrigin.x * renderScale,
                                                            state.input.imageOrigin.y * renderScale};
-                state.input.mousePos = Math::Vector2UVE{state.input.mousePos.x * renderScale,
+                state.input.mousePos = Math::Vector2{state.input.mousePos.x * renderScale,
                                                         state.input.mousePos.y * renderScale};
-                state.input.mouseDelta = Math::Vector2UVE{state.input.mouseDelta.x * renderScale,
+                state.input.mouseDelta = Math::Vector2{state.input.mouseDelta.x * renderScale,
                                                           state.input.mouseDelta.y * renderScale};
                 state.input.dpiScale = effectiveScale;
-                for (std::size_t i = 0U; i < EditorViewportInputUVE::kButtonCountUVE; ++i) {
-                    state.input.pressPos[i] = Math::Vector2UVE{state.input.pressPos[i].x * renderScale,
+                for (std::size_t i = 0U; i < EditorViewportInput::kButtonCount; ++i) {
+                    state.input.pressPos[i] = Math::Vector2{state.input.pressPos[i].x * renderScale,
                                                                state.input.pressPos[i].y * renderScale};
                     state.input.dragDistance[i] *= renderScale;
                 }
             }
-            Math::Vector2UVE used{0.0F, 0.0F};
+            Math::Vector2 used{0.0F, 0.0F};
             const std::uint64_t texture =
-                m_editor.m_viewports.level(Math::Vector2UVE{renderW, renderH}, used, state);
-            m_host.ApplyViewCursorUVE(state.input);
+                m_editor.m_viewports.level(Math::Vector2{renderW, renderH}, used, state);
+            m_host.ApplyViewCursor(state.input);
             state.orbitRequestX = 0.0F;
             state.orbitRequestY = 0.0F;
             if (m_gizmos) {
-                m_gizmos->SyncUVE();
+                m_gizmos->Sync();
             }
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
-                EditorHostUVE::ViewImageUVE view{};
+                EditorHost::ViewImage view{};
                 view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), std::floor(rect.w), std::floor(rect.h)};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
@@ -1502,29 +1502,29 @@ void EditorShellUVE::FrameUVE() {
         }
     }
     if (!occludedByFullPage) {
-        AppendCameraScreenUVE(m_editor, m_details2, m_cameraScreen.get(), views);
-        m_host.RenderUVE(views);
+        AppendCameraScreen(m_editor, m_details2, m_cameraScreen.get(), views);
+        m_host.Render(views);
     }
-    m_host.EndGpuTimerUVE();
+    m_host.EndGpuTimer();
     {
-        const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
-        m_entityEditor.RenderUVE();
+        const Editor::EntityDocumentScope scope(m_editor);
+        m_entityEditor.Render();
     }
-    m_montageEditor.RenderUVE();
-    m_vfxEditor.RenderUVE();
-    m_retargetEditor.RenderUVE();
-    m_animationLibraryEditor.RenderUVE();
-    m_fileDialog.FrameUVE();
-    m_entityClassWindow.FrameUVE();
-    m_preferencesWindow.FrameUVE();
-    m_projectSettingsWindow.FrameUVE();
-    m_shortcutsWindow.FrameUVE();
-    m_inputMapWindow.FrameUVE();
-    m_captureWindow.FrameUVE();
-    m_audioMixerWindow.FrameUVE();
+    m_montageEditor.Render();
+    m_vfxEditor.Render();
+    m_retargetEditor.Render();
+    m_animationLibraryEditor.Render();
+    m_fileDialog.Frame();
+    m_entityClassWindow.Frame();
+    m_preferencesWindow.Frame();
+    m_projectSettingsWindow.Frame();
+    m_shortcutsWindow.Frame();
+    m_inputMapWindow.Frame();
+    m_captureWindow.Frame();
+    m_audioMixerWindow.Frame();
     if (m_editor.m_commandPalette.open) {
         m_editor.m_commandPalette.open = false;
-        ShowCommandPaletteUVE();
+        ShowCommandPalette();
     }
 }
 

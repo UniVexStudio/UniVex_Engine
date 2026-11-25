@@ -10,58 +10,58 @@ namespace UVE::Save {
 
 namespace {
 
-[[nodiscard]] std::string BoundedReasonUVE(const char* const reason) {
+[[nodiscard]] std::string BoundedReason(const char* const reason) {
     std::string bounded(reason);
-    if (bounded.size() > kMaximumSaveMigrationReasonBytesUVE) {
-        bounded.resize(kMaximumSaveMigrationReasonBytesUVE);
+    if (bounded.size() > kMaximumSaveMigrationReasonBytes) {
+        bounded.resize(kMaximumSaveMigrationReasonBytes);
     }
     return bounded;
 }
 
 } // namespace
 
-SaveMigrationRegistrationResultUVE SavePayloadMigrationRegistryUVE::RegisterUVE(
+SaveMigrationRegistrationResult SavePayloadMigrationRegistry::Register(
     const std::uint32_t sourceSchemaVersion, const std::uint32_t targetSchemaVersion,
-    SavePayloadMigrationTransformUVE transform) {
+    SavePayloadMigrationTransform transform) {
     if (targetSchemaVersion == 0U || sourceSchemaVersion == targetSchemaVersion) {
-        return {SaveMigrationRegistrationCodeUVE::InvalidVersionRange,
+        return {SaveMigrationRegistrationCode::InvalidVersionRange,
                 "Save migration source and target versions must differ and target must be non-zero."};
     }
     if (!transform) {
-        return {SaveMigrationRegistrationCodeUVE::MissingTransform,
+        return {SaveMigrationRegistrationCode::MissingTransform,
                 "Save migration registration requires a callable transform."};
     }
     const auto duplicate = std::find_if(m_entries.cbegin(), m_entries.cend(),
-                                        [sourceSchemaVersion, targetSchemaVersion](const EntryUVE& entry) {
+                                        [sourceSchemaVersion, targetSchemaVersion](const Entry& entry) {
                                             return entry.sourceSchemaVersion == sourceSchemaVersion &&
                                                    entry.targetSchemaVersion == targetSchemaVersion;
                                         });
     if (duplicate != m_entries.cend()) {
-        return {SaveMigrationRegistrationCodeUVE::DuplicateTransform,
+        return {SaveMigrationRegistrationCode::DuplicateTransform,
                 "A save migration transform for this source/target pair is already registered."};
     }
-    if (m_entries.size() >= kMaximumSaveMigrationTransformsUVE) {
-        return {SaveMigrationRegistrationCodeUVE::CapacityExceeded,
+    if (m_entries.size() >= kMaximumSaveMigrationTransforms) {
+        return {SaveMigrationRegistrationCode::CapacityExceeded,
                 "The bounded save migration registry has reached its maximum capacity."};
     }
-    m_entries.push_back(EntryUVE{sourceSchemaVersion, targetSchemaVersion, std::move(transform)});
-    return {SaveMigrationRegistrationCodeUVE::Accepted, "Save migration transform registered."};
+    m_entries.push_back(Entry{sourceSchemaVersion, targetSchemaVersion, std::move(transform)});
+    return {SaveMigrationRegistrationCode::Accepted, "Save migration transform registered."};
 }
 
-SaveMigrationDiagnosticsUVE SavePayloadMigrationRegistryUVE::MigrateUVE(
+SaveMigrationDiagnostics SavePayloadMigrationRegistry::Migrate(
     const std::uint32_t sourceSchemaVersion, const std::uint32_t targetSchemaVersion,
     std::vector<std::byte>& payload) const {
-    SaveMigrationDiagnosticsUVE diagnostics;
+    SaveMigrationDiagnostics diagnostics;
     diagnostics.sourceSchemaVersion = sourceSchemaVersion;
     diagnostics.targetSchemaVersion = targetSchemaVersion;
 
     if (sourceSchemaVersion == targetSchemaVersion &&
-        sourceSchemaVersion == kCurrentSavePayloadSchemaVersionUVE) {
-        return MigrateSavePayloadUVE(sourceSchemaVersion, targetSchemaVersion, payload);
+        sourceSchemaVersion == kCurrentSavePayloadSchemaVersion) {
+        return MigrateSavePayload(sourceSchemaVersion, targetSchemaVersion, payload);
     }
     if (sourceSchemaVersion == targetSchemaVersion) {
-        diagnostics.status = SaveMigrationStatusUVE::UnsupportedSourceVersion;
-        diagnostics.reason = BoundedReasonUVE("source save payload schema version is unsupported");
+        diagnostics.status = SaveMigrationStatus::UnsupportedSourceVersion;
+        diagnostics.reason = BoundedReason("source save payload schema version is unsupported");
         return diagnostics;
     }
 
@@ -74,7 +74,7 @@ SaveMigrationDiagnosticsUVE SavePayloadMigrationRegistryUVE::MigrateUVE(
     while (queueIndex < discoveredVersions.size() && targetVersionIndex == invalidIndex) {
         const std::uint32_t currentVersion = discoveredVersions[queueIndex];
         for (std::size_t entryIndex = 0U; entryIndex < m_entries.size(); ++entryIndex) {
-            const EntryUVE& entry = m_entries[entryIndex];
+            const Entry& entry = m_entries[entryIndex];
             if (entry.sourceSchemaVersion != currentVersion ||
                 std::find(discoveredVersions.cbegin(), discoveredVersions.cend(), entry.targetSchemaVersion) !=
                     discoveredVersions.cend()) {
@@ -92,17 +92,17 @@ SaveMigrationDiagnosticsUVE SavePayloadMigrationRegistryUVE::MigrateUVE(
     }
 
     if (targetVersionIndex == invalidIndex) {
-        diagnostics.status = targetSchemaVersion == kCurrentSavePayloadSchemaVersionUVE
-                                 ? SaveMigrationStatusUVE::UnsupportedSourceVersion
-                                 : SaveMigrationStatusUVE::UnsupportedTargetVersion;
-        diagnostics.reason = BoundedReasonUVE(targetSchemaVersion == kCurrentSavePayloadSchemaVersionUVE
+        diagnostics.status = targetSchemaVersion == kCurrentSavePayloadSchemaVersion
+                                 ? SaveMigrationStatus::UnsupportedSourceVersion
+                                 : SaveMigrationStatus::UnsupportedTargetVersion;
+        diagnostics.reason = BoundedReason(targetSchemaVersion == kCurrentSavePayloadSchemaVersion
                                                   ? "no migration path reaches the current save schema version"
                                                   : "no migration path reaches the requested save schema version");
         return diagnostics;
     }
-    if (payload.empty() || payload.size() > kMaximumSaveMigrationPayloadBytesUVE) {
-        diagnostics.status = SaveMigrationStatusUVE::InvalidPayload;
-        diagnostics.reason = BoundedReasonUVE(payload.empty() ? "save payload is empty"
+    if (payload.empty() || payload.size() > kMaximumSaveMigrationPayloadBytes) {
+        diagnostics.status = SaveMigrationStatus::InvalidPayload;
+        diagnostics.reason = BoundedReason(payload.empty() ? "save payload is empty"
                                                                : "save payload exceeds migration cap");
         return diagnostics;
     }
@@ -121,23 +121,23 @@ SaveMigrationDiagnosticsUVE SavePayloadMigrationRegistryUVE::MigrateUVE(
         failureReason.clear();
         try {
             if (!m_entries[entryIndex].transform(migratedPayload, failureReason)) {
-                diagnostics.status = SaveMigrationStatusUVE::InvalidPayload;
+                diagnostics.status = SaveMigrationStatus::InvalidPayload;
                 diagnostics.reason = failureReason.empty()
-                                         ? BoundedReasonUVE("save migration transform rejected payload")
+                                         ? BoundedReason("save migration transform rejected payload")
                                          : std::move(failureReason);
-                if (diagnostics.reason.size() > kMaximumSaveMigrationReasonBytesUVE) {
-                    diagnostics.reason.resize(kMaximumSaveMigrationReasonBytesUVE);
+                if (diagnostics.reason.size() > kMaximumSaveMigrationReasonBytes) {
+                    diagnostics.reason.resize(kMaximumSaveMigrationReasonBytes);
                 }
                 return diagnostics;
             }
         } catch (...) {
-            diagnostics.status = SaveMigrationStatusUVE::InvalidPayload;
-            diagnostics.reason = BoundedReasonUVE("save migration transform raised an exception");
+            diagnostics.status = SaveMigrationStatus::InvalidPayload;
+            diagnostics.reason = BoundedReason("save migration transform raised an exception");
             return diagnostics;
         }
-        if (migratedPayload.empty() || migratedPayload.size() > kMaximumSaveMigrationPayloadBytesUVE) {
-            diagnostics.status = SaveMigrationStatusUVE::InvalidPayload;
-            diagnostics.reason = BoundedReasonUVE(migratedPayload.empty()
+        if (migratedPayload.empty() || migratedPayload.size() > kMaximumSaveMigrationPayloadBytes) {
+            diagnostics.status = SaveMigrationStatus::InvalidPayload;
+            diagnostics.reason = BoundedReason(migratedPayload.empty()
                                                        ? "save migration transform produced an empty payload"
                                                        : "save migration transform exceeded migration cap");
             return diagnostics;
@@ -145,40 +145,40 @@ SaveMigrationDiagnosticsUVE SavePayloadMigrationRegistryUVE::MigrateUVE(
         ++diagnostics.appliedStepCount;
     }
     payload.swap(migratedPayload);
-    diagnostics.status = SaveMigrationStatusUVE::Migrated;
-    diagnostics.reason = BoundedReasonUVE("save payload migrated successfully");
+    diagnostics.status = SaveMigrationStatus::Migrated;
+    diagnostics.reason = BoundedReason("save payload migrated successfully");
     return diagnostics;
 }
 
-std::size_t SavePayloadMigrationRegistryUVE::GetTransformCountUVE() const noexcept {
+std::size_t SavePayloadMigrationRegistry::GetTransformCount() const noexcept {
     return m_entries.size();
 }
 
-SaveMigrationDiagnosticsUVE MigrateSavePayloadUVE(const std::uint32_t sourceSchemaVersion,
+SaveMigrationDiagnostics MigrateSavePayload(const std::uint32_t sourceSchemaVersion,
                                                    const std::uint32_t targetSchemaVersion,
                                                    std::vector<std::byte>& payload) {
-    SaveMigrationDiagnosticsUVE diagnostics;
+    SaveMigrationDiagnostics diagnostics;
     diagnostics.sourceSchemaVersion = sourceSchemaVersion;
     diagnostics.targetSchemaVersion = targetSchemaVersion;
 
-    if (targetSchemaVersion != kCurrentSavePayloadSchemaVersionUVE) {
-        diagnostics.status = SaveMigrationStatusUVE::UnsupportedTargetVersion;
-        diagnostics.reason = BoundedReasonUVE("target save payload schema version is unsupported");
+    if (targetSchemaVersion != kCurrentSavePayloadSchemaVersion) {
+        diagnostics.status = SaveMigrationStatus::UnsupportedTargetVersion;
+        diagnostics.reason = BoundedReason("target save payload schema version is unsupported");
         return diagnostics;
     }
-    if (sourceSchemaVersion != kCurrentSavePayloadSchemaVersionUVE) {
-        diagnostics.status = SaveMigrationStatusUVE::UnsupportedSourceVersion;
-        diagnostics.reason = BoundedReasonUVE("source save payload schema version is unsupported");
+    if (sourceSchemaVersion != kCurrentSavePayloadSchemaVersion) {
+        diagnostics.status = SaveMigrationStatus::UnsupportedSourceVersion;
+        diagnostics.reason = BoundedReason("source save payload schema version is unsupported");
         return diagnostics;
     }
-    if (payload.empty() || payload.size() > kMaximumSaveMigrationPayloadBytesUVE) {
-        diagnostics.status = SaveMigrationStatusUVE::InvalidPayload;
-        diagnostics.reason = BoundedReasonUVE(payload.empty() ? "save payload is empty"
+    if (payload.empty() || payload.size() > kMaximumSaveMigrationPayloadBytes) {
+        diagnostics.status = SaveMigrationStatus::InvalidPayload;
+        diagnostics.reason = BoundedReason(payload.empty() ? "save payload is empty"
                                                                : "save payload exceeds migration cap");
         return diagnostics;
     }
 
-    diagnostics.status = SaveMigrationStatusUVE::NotRequired;
+    diagnostics.status = SaveMigrationStatus::NotRequired;
     return diagnostics;
 }
 

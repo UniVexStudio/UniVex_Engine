@@ -3,27 +3,27 @@
 #include <algorithm>
 #include <cmath>
 namespace UVE::Input {
-bool ApplyTouchOrientationUVE(const Math::Vector2UVE normalizedPosition,
-                              const TouchOrientationUVE orientation,
-                              Math::Vector2UVE& outOriented) noexcept {
+bool ApplyTouchOrientation(const Math::Vector2 normalizedPosition,
+                              const TouchOrientation orientation,
+                              Math::Vector2& outOriented) noexcept {
     if (!std::isfinite(normalizedPosition.x) || !std::isfinite(normalizedPosition.y) ||
         normalizedPosition.x < 0.0F || normalizedPosition.x > 1.0F || normalizedPosition.y < 0.0F ||
         normalizedPosition.y > 1.0F) {
         return false;
     }
-    Math::Vector2UVE oriented;
+    Math::Vector2 oriented;
     switch (orientation) {
-        case TouchOrientationUVE::Deg0:
+        case TouchOrientation::Deg0:
             oriented = normalizedPosition;
             break;
-        case TouchOrientationUVE::Deg90:
-            oriented = Math::Vector2UVE{1.0F - normalizedPosition.y, normalizedPosition.x};
+        case TouchOrientation::Deg90:
+            oriented = Math::Vector2{1.0F - normalizedPosition.y, normalizedPosition.x};
             break;
-        case TouchOrientationUVE::Deg180:
-            oriented = Math::Vector2UVE{1.0F - normalizedPosition.x, 1.0F - normalizedPosition.y};
+        case TouchOrientation::Deg180:
+            oriented = Math::Vector2{1.0F - normalizedPosition.x, 1.0F - normalizedPosition.y};
             break;
-        case TouchOrientationUVE::Deg270:
-            oriented = Math::Vector2UVE{normalizedPosition.y, 1.0F - normalizedPosition.x};
+        case TouchOrientation::Deg270:
+            oriented = Math::Vector2{normalizedPosition.y, 1.0F - normalizedPosition.x};
             break;
         default:
             return false;
@@ -32,11 +32,11 @@ bool ApplyTouchOrientationUVE(const Math::Vector2UVE normalizedPosition,
     return true;
 }
 
-bool NormalizeTouchCoordinateUVE(const Math::Vector2UVE pixelPosition,
-                                 const TouchCoordinateViewportUVE& viewport,
-                                 Math::Vector2UVE& outNormalized) noexcept {
+bool NormalizeTouchCoordinate(const Math::Vector2 pixelPosition,
+                                 const TouchCoordinateViewport& viewport,
+                                 Math::Vector2& outNormalized) noexcept {
     if (!std::isfinite(pixelPosition.x) || !std::isfinite(pixelPosition.y) ||
-        !ValidateTouchCoordinateViewportUVE(viewport)) {
+        !ValidateTouchCoordinateViewport(viewport)) {
         return false;
     }
     const float usableWidth = viewport.width - viewport.safeLeft - viewport.safeRight;

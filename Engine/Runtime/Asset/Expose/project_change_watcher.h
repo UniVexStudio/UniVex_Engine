@@ -13,34 +13,34 @@ namespace UVE::Asset {
 /// Portable, interval-driven project-content change journal. The watcher compares complete
 /// symlink-safe snapshots only when due, publishes ordered copied deltas, and marks derived cache
 /// records stale for observed regular-file source changes. It owns no OS watcher handle, importer,
-/// runtime reload policy, or ProjectFileIndexUVE; native backends may later implement the same
+/// runtime reload policy, or ProjectFileIndex; native backends may later implement the same
 /// interface. Thread-safe: all state is protected by implementation-private synchronization.
-class ProjectChangeWatcherUVE final : public IProjectChangeWatcherUVE {
+class ProjectChangeWatcher final : public IProjectChangeWatcher {
 public:
-    ProjectChangeWatcherUVE(std::filesystem::path contentRoot, double pollIntervalSeconds,
+    ProjectChangeWatcher(std::filesystem::path contentRoot, double pollIntervalSeconds,
                             std::size_t journalCapacity);
-    ~ProjectChangeWatcherUVE() override;
+    ~ProjectChangeWatcher() override;
 
-    ProjectChangeWatcherUVE(const ProjectChangeWatcherUVE&) = delete;
-    ProjectChangeWatcherUVE& operator=(const ProjectChangeWatcherUVE&) = delete;
+    ProjectChangeWatcher(const ProjectChangeWatcher&) = delete;
+    ProjectChangeWatcher& operator=(const ProjectChangeWatcher&) = delete;
 
     /// Negative or non-finite deltas are ignored before accumulator, scan, journal, or cache mutation.
-    [[nodiscard]] bool PollUVE(double deltaTimeSeconds, const IAssetDatabaseUVE& assetDatabase,
-                                IDerivedArtifactCacheUVE& derivedArtifactCache) override;
-    [[nodiscard]] bool PollNowUVE(const IAssetDatabaseUVE& assetDatabase,
-                                   IDerivedArtifactCacheUVE& derivedArtifactCache) override;
-    [[nodiscard]] ProjectChangeSnapshotUVE GetSnapshotUVE() const override;
-    void AcknowledgeThroughUVE(std::uint64_t sequence) override;
-    void AcknowledgeRescanUVE() override;
+    [[nodiscard]] bool Poll(double deltaTimeSeconds, const IAssetDatabase& assetDatabase,
+                                IDerivedArtifactCache& derivedArtifactCache) override;
+    [[nodiscard]] bool PollNow(const IAssetDatabase& assetDatabase,
+                                   IDerivedArtifactCache& derivedArtifactCache) override;
+    [[nodiscard]] ProjectChangeSnapshot GetSnapshot() const override;
+    void AcknowledgeThrough(std::uint64_t sequence) override;
+    void AcknowledgeRescan() override;
 
 private:
     /// Performs one complete baseline comparison while m_impl's mutex is already held. Both
     /// interval-driven and explicit polls share this routine so they cannot drift semantically.
-    [[nodiscard]] bool ScanNowLockedUVE(const IAssetDatabaseUVE& assetDatabase,
-                                        IDerivedArtifactCacheUVE& derivedArtifactCache);
+    [[nodiscard]] bool ScanNowLocked(const IAssetDatabase& assetDatabase,
+                                        IDerivedArtifactCache& derivedArtifactCache);
 
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Asset

@@ -14,93 +14,93 @@
 namespace UVE::CommandLine::Tests {
 namespace {
 
-TEST(CommandLineUVETest, EmptyArgs_NoFlagsPresent) {
-    const CommandLineUVE commandLine(std::vector<std::string>{});
-    EXPECT_FALSE(commandLine.HasFlagUVE("project"));
-    EXPECT_FALSE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("project", "default"), "default");
+TEST(CommandLineTest, EmptyArgs_NoFlagsPresent) {
+    const CommandLine commandLine(std::vector<std::string>{});
+    EXPECT_FALSE(commandLine.HasFlag("project"));
+    EXPECT_FALSE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("project", "default"), "default");
 }
 
-TEST(CommandLineUVETest, FlagWithValue_IsCapturedUnderNormalizedName) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--project", "MyGame"});
-    EXPECT_TRUE(commandLine.HasFlagUVE("project"));
-    EXPECT_EQ(commandLine.GetValueUVE("project", "default"), "MyGame");
+TEST(CommandLineTest, FlagWithValue_IsCapturedUnderNormalizedName) {
+    const CommandLine commandLine(std::vector<std::string>{"--project", "MyGame"});
+    EXPECT_TRUE(commandLine.HasFlag("project"));
+    EXPECT_EQ(commandLine.GetValue("project", "default"), "MyGame");
 }
 
-TEST(CommandLineUVETest, RawDashDashPrefixedQuery_DoesNotMatch) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--project", "MyGame", "--server"});
+TEST(CommandLineTest, RawDashDashPrefixedQuery_DoesNotMatch) {
+    const CommandLine commandLine(std::vector<std::string>{"--project", "MyGame", "--server"});
 
-    EXPECT_TRUE(commandLine.HasFlagUVE("project"));
-    EXPECT_EQ(commandLine.GetValueUVE("project", ""), "MyGame");
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("server", "default"), "default");
+    EXPECT_TRUE(commandLine.HasFlag("project"));
+    EXPECT_EQ(commandLine.GetValue("project", ""), "MyGame");
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("server", "default"), "default");
 
     // Proves the normalization layer actually strips "--" rather than being a no-op.
-    EXPECT_FALSE(commandLine.HasFlagUVE("--project"));
-    EXPECT_FALSE(commandLine.HasFlagUVE("--server"));
-    EXPECT_EQ(commandLine.GetValueUVE("--project", "default"), "default");
+    EXPECT_FALSE(commandLine.HasFlag("--project"));
+    EXPECT_FALSE(commandLine.HasFlag("--server"));
+    EXPECT_EQ(commandLine.GetValue("--project", "default"), "default");
 }
 
-TEST(CommandLineUVETest, AbsentFlag_HasFlagFalseAndGetValueReturnsDefault) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--project", "MyGame"});
-    EXPECT_FALSE(commandLine.HasFlagUVE("build"));
-    EXPECT_EQ(commandLine.GetValueUVE("build", "fallback"), "fallback");
+TEST(CommandLineTest, AbsentFlag_HasFlagFalseAndGetValueReturnsDefault) {
+    const CommandLine commandLine(std::vector<std::string>{"--project", "MyGame"});
+    EXPECT_FALSE(commandLine.HasFlag("build"));
+    EXPECT_EQ(commandLine.GetValue("build", "fallback"), "fallback");
 }
 
-TEST(CommandLineUVETest, PresenceOnlyFlag_AsLastToken_HasFlagTrueValueIsDefault) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--server"});
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("server", "unset"), "unset");
+TEST(CommandLineTest, PresenceOnlyFlag_AsLastToken_HasFlagTrueValueIsDefault) {
+    const CommandLine commandLine(std::vector<std::string>{"--server"});
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("server", "unset"), "unset");
 }
 
-TEST(CommandLineUVETest, PresenceOnlyFlag_FollowedByAnotherFlag_BothRecognizedIndependently) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--server", "--verbose"});
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("server", "unset"), "unset");
-    EXPECT_TRUE(commandLine.HasFlagUVE("verbose"));
-    EXPECT_EQ(commandLine.GetValueUVE("verbose", "unset"), "unset");
+TEST(CommandLineTest, PresenceOnlyFlag_FollowedByAnotherFlag_BothRecognizedIndependently) {
+    const CommandLine commandLine(std::vector<std::string>{"--server", "--verbose"});
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("server", "unset"), "unset");
+    EXPECT_TRUE(commandLine.HasFlag("verbose"));
+    EXPECT_EQ(commandLine.GetValue("verbose", "unset"), "unset");
 }
 
-TEST(CommandLineUVETest, OptionalValueDistinguishesAbsentPresenceOnlyAndEmptyValues) {
-    const CommandLineUVE commandLine(std::vector<std::string>{"--server", "--empty", ""});
+TEST(CommandLineTest, OptionalValueDistinguishesAbsentPresenceOnlyAndEmptyValues) {
+    const CommandLine commandLine(std::vector<std::string>{"--server", "--empty", ""});
 
-    EXPECT_FALSE(commandLine.GetOptionalValueUVE("missing").has_value());
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_FALSE(commandLine.GetOptionalValueUVE("server").has_value());
-    ASSERT_TRUE(commandLine.GetOptionalValueUVE("empty").has_value());
-    EXPECT_TRUE(commandLine.GetOptionalValueUVE("empty")->empty());
+    EXPECT_FALSE(commandLine.GetOptionalValue("missing").has_value());
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_FALSE(commandLine.GetOptionalValue("server").has_value());
+    ASSERT_TRUE(commandLine.GetOptionalValue("empty").has_value());
+    EXPECT_TRUE(commandLine.GetOptionalValue("empty")->empty());
 }
 
-TEST(CommandLineUVETest, MixedFlags_HubStyleInvocation_ParsesAllCorrectly) {
-    const CommandLineUVE commandLine(
+TEST(CommandLineTest, MixedFlags_HubStyleInvocation_ParsesAllCorrectly) {
+    const CommandLine commandLine(
         std::vector<std::string>{"--project", "/path/to/project", "--build", "linux", "--server"});
-    EXPECT_EQ(commandLine.GetValueUVE("project", ""), "/path/to/project");
-    EXPECT_EQ(commandLine.GetValueUVE("build", ""), "linux");
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("server", "unset"), "unset");
+    EXPECT_EQ(commandLine.GetValue("project", ""), "/path/to/project");
+    EXPECT_EQ(commandLine.GetValue("build", ""), "linux");
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("server", "unset"), "unset");
 }
 
-TEST(CommandLineUVETest, ArgcArgvConstructor_SkipsProgramPath_MatchesVectorConstructor) {
+TEST(CommandLineTest, ArgcArgvConstructor_SkipsProgramPath_MatchesVectorConstructor) {
     const char* rawArgs[] = {"/usr/bin/uve_runtime", "--project", "MyGame", "--server"};
     const int argc = static_cast<int>(std::size(rawArgs));
-    const CommandLineUVE commandLine(argc, const_cast<char**>(rawArgs));
+    const CommandLine commandLine(argc, const_cast<char**>(rawArgs));
 
-    EXPECT_TRUE(commandLine.HasFlagUVE("project"));
-    EXPECT_EQ(commandLine.GetValueUVE("project", ""), "MyGame");
-    EXPECT_TRUE(commandLine.HasFlagUVE("server"));
-    EXPECT_EQ(commandLine.GetValueUVE("server", "unset"), "unset");
+    EXPECT_TRUE(commandLine.HasFlag("project"));
+    EXPECT_EQ(commandLine.GetValue("project", ""), "MyGame");
+    EXPECT_TRUE(commandLine.HasFlag("server"));
+    EXPECT_EQ(commandLine.GetValue("server", "unset"), "unset");
 }
 
-TEST(CommandLineUVETest, ArgcArgvConstructor_ArgcOne_NoArgumentsBeyondProgramPath) {
+TEST(CommandLineTest, ArgcArgvConstructor_ArgcOne_NoArgumentsBeyondProgramPath) {
     const char* rawArgs[] = {"/usr/bin/uve_runtime"};
     const int argc = static_cast<int>(std::size(rawArgs));
-    const CommandLineUVE commandLine(argc, const_cast<char**>(rawArgs));
+    const CommandLine commandLine(argc, const_cast<char**>(rawArgs));
 
-    EXPECT_FALSE(commandLine.HasFlagUVE("project"));
+    EXPECT_FALSE(commandLine.HasFlag("project"));
 }
 
-TEST(CommandLineUVETest, ConcurrentReads_FromManyThreads_NoDataRacesOrCrashes) {
-    const CommandLineUVE commandLine(
+TEST(CommandLineTest, ConcurrentReads_FromManyThreads_NoDataRacesOrCrashes) {
+    const CommandLine commandLine(
         std::vector<std::string>{"--project", "/path/to/project", "--build", "linux", "--server"});
 
     constexpr int kThreadCount = 8;
@@ -112,10 +112,10 @@ TEST(CommandLineUVETest, ConcurrentReads_FromManyThreads_NoDataRacesOrCrashes) {
     for (int threadIndex = 0; threadIndex < kThreadCount; ++threadIndex) {
         threads.emplace_back([&commandLine, &mismatchCount] {
             for (int iteration = 0; iteration < kIterationsPerThread; ++iteration) {
-                if (!commandLine.HasFlagUVE("project") ||
-                    commandLine.GetValueUVE("project", "") != "/path/to/project" ||
-                    !commandLine.HasFlagUVE("server") ||
-                    commandLine.GetValueUVE("server", "unset") != "unset") {
+                if (!commandLine.HasFlag("project") ||
+                    commandLine.GetValue("project", "") != "/path/to/project" ||
+                    !commandLine.HasFlag("server") ||
+                    commandLine.GetValue("server", "unset") != "unset") {
                     mismatchCount.fetch_add(1, std::memory_order_relaxed);
                 }
             }

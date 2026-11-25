@@ -10,7 +10,7 @@
 namespace UVE::Scene {
 
 /// How a Character3D reads the world around it.
-enum class CharacterMotionModeUVE : std::uint8_t {
+enum class CharacterMotionMode : std::uint8_t {
     /// Walks: gravity pulls it down, it stands on floors, climbs steps and slides off walls.
     Grounded = 0,
     /// Flies or swims: no gravity, no floor, and every surface is a wall it slides along.
@@ -20,7 +20,7 @@ enum class CharacterMotionModeUVE : std::uint8_t {
 /// What a moving platform does to a body standing on it when it leaves the body behind. The three
 /// names are the three answers a platformer ever wants: nothing (the body keeps its own velocity),
 /// the platform's whole velocity, or only the part of it that pushes the body up.
-enum class CharacterPlatformLeaveModeUVE : std::uint8_t {
+enum class CharacterPlatformLeaveMode : std::uint8_t {
     /// The body keeps only the velocity it had of its own - a lift that drops away leaves the
     /// rider hanging in the air with no inherited side motion.
     KeepVelocity = 0,
@@ -34,17 +34,17 @@ enum class CharacterPlatformLeaveModeUVE : std::uint8_t {
 };
 
 /// Character3D's own state: a body moved by its code (or by the built-in movement below)
-/// rather than by forces, driven every fixed step by `EngineCoreUVE::SyncCharacterControllersUVE()`.
+/// rather than by forces, driven every fixed step by `EngineCore::SyncCharacterControllers()`.
 /// Its shape is the entity's collider.
 ///
 /// Authored settings come first; the runtime state the controller writes back each step comes
 /// last and is shown in the Inspector only while playing.
-struct CharacterControllerComponentUVE final {
-    CharacterMotionModeUVE motionMode = CharacterMotionModeUVE::Grounded;
+struct CharacterControllerComponent final {
+    CharacterMotionMode motionMode = CharacterMotionMode::Grounded;
     /// The body's own up. Floors, jumps, gravity and ceilings are measured from this. Defaults to
     /// world +Y because the engine's gravity is along -Y; a body that walks on a wall or a planet
     /// writes a different up here and the mover, the jump and the floor probe all follow it.
-    Math::Vector3UVE upDirection{0.0F, 1.0F, 0.0F};
+    Math::Vector3 upDirection{0.0F, 1.0F, 0.0F};
     /// Multiplies the engine's gravity: 1 = normal, 0 = none. Ignored while Floating.
     float gravityScale = 1.0F;
 
@@ -98,7 +98,7 @@ struct CharacterControllerComponentUVE final {
 
     // ---- Platforms ---------------------------------------------------------------------------------
     /// What the platform does to this body's velocity when the body leaves it behind.
-    CharacterPlatformLeaveModeUVE platformOnLeave = CharacterPlatformLeaveModeUVE::AddVelocity;
+    CharacterPlatformLeaveMode platformOnLeave = CharacterPlatformLeaveMode::AddVelocity;
     /// The fastest a platform's motion may carry the body, in metres per second. A platform that
     /// teleported - a script writing a transform - would otherwise fling its rider across the
     /// level; past this, the step treats it as standing still.
@@ -116,49 +116,49 @@ struct CharacterControllerComponentUVE final {
     /// How many pieces a move is cut into to follow walls and corners; more is smoother and dearer.
     std::uint32_t maxSlides = 8U;
     /// The most contacts one move reports, biggest first. Past this the extras are dropped, which
-    /// `CharacterMotionResultUVE::contactsTruncated` says out loud.
+    /// `CharacterMotionResult::contactsTruncated` says out loud.
     std::uint32_t maximumContacts = 64U;
 
     // ---- Script steering (runtime, never saved) -----------------------------------------------------
     /// Where a script asked the body to go this frame (world X/Z, at most unit length), on top of
     /// any player input: Add Movement Input. Cleared each frame before the scripts run.
-    Math::Vector3UVE scriptMove{};
+    Math::Vector3 scriptMove{};
     /// A script asked for a jump; the next step takes it (with the jump buffer and coyote time).
     bool scriptJump = false;
 
     // ---- Runtime state, written by the controller every step ---------------------------------------
     /// Metres per second. With built-in movement off, set this and the body goes there, sliding
     /// along walls. With it on and Floating, Space rises and Left Ctrl sinks.
-    Math::Vector3UVE velocity{};
+    Math::Vector3 velocity{};
     bool grounded = false;
     bool isOnCeiling = false;
     /// Touching a wall after the last step.
     bool onWall = false;
     /// The floor's normal while on it; straight up otherwise.
-    Math::Vector3UVE floorNormal{0.0F, 1.0F, 0.0F};
+    Math::Vector3 floorNormal{0.0F, 1.0F, 0.0F};
     /// The last wall's normal, zero when no wall was met.
-    Math::Vector3UVE wallNormal{};
+    Math::Vector3 wallNormal{};
     /// The last ceiling's normal, zero when no ceiling was met.
-    Math::Vector3UVE ceilingNormal{};
+    Math::Vector3 ceilingNormal{};
     /// Seconds since last on the floor (drives coyote time).
     float timeSinceOnFloor = 0.0F;
     /// Seconds a buffered jump has left to happen.
     float jumpBufferRemaining = 0.0F;
     /// What the last step actually moved the body by, after slides, steps and snapping.
-    Math::Vector3UVE lastMotion{};
+    Math::Vector3 lastMotion{};
     /// lastMotion divided by that step's duration: the body's real speed, which is not `velocity`
     /// whenever a wall or a ceiling stopped part of the motion.
-    Math::Vector3UVE realVelocity{};
-    /// The platform the body is standing on, or kInvalidEntityUVE. Runtime scaffolding: it is
+    Math::Vector3 realVelocity{};
+    /// The platform the body is standing on, or kInvalidEntity. Runtime scaffolding: it is
     /// re-established by the first step that stands on something, and a stale one is never trusted
     /// without a fresh query against the live entity.
-    EntityUVE platform{};
+    Entity platform{};
     /// That platform's world position at the end of the last step - the reference the next step
     /// measures its motion against, because what matters about a moving platform is how far it
     /// moved, not a velocity number it happens to publish.
-    Math::Vector3UVE platformWorldPosition{};
+    Math::Vector3 platformWorldPosition{};
     /// The platform velocity measured over the last step. Zero while not riding one.
-    Math::Vector3UVE platformVelocity{};
+    Math::Vector3 platformVelocity{};
     /// Whether `platformWorldPosition` is a position a previous step actually observed. A platform
     /// sitting at the world origin is a real platform, so "no reference yet" cannot be spelled as
     /// a zero vector - it needs its own bit.
@@ -166,7 +166,7 @@ struct CharacterControllerComponentUVE final {
 };
 
 /// Every setting finite and in its range, and every state value finite.
-[[nodiscard]] bool IsCharacterControllerComponentValidUVE(
-    const CharacterControllerComponentUVE& characterController) noexcept;
+[[nodiscard]] bool IsCharacterControllerComponentValid(
+    const CharacterControllerComponent& characterController) noexcept;
 
 } // namespace UVE::Scene

@@ -6,10 +6,10 @@
 #include "lag_comp_server_sample.h"
 
 int main() {
-    UVE::Samples::LagCompServerSampleConfigUVE config;
+    UVE::Samples::LagCompServerSampleConfig config;
     config.log = [](const std::string& line) { std::printf("%s\n", line.c_str()); };
-    const UVE::Samples::LagCompServerSampleResultUVE result =
-        UVE::Samples::RunLagCompServerSampleUVE(config);
+    const UVE::Samples::LagCompServerSampleResult result =
+        UVE::Samples::RunLagCompServerSample(config);
     if (!result.success) {
         std::printf("SAMPLE FAIL (%zu violation%s):\n", result.failures.size(),
                     result.failures.size() == 1U ? "" : "s");

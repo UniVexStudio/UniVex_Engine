@@ -33,415 +33,415 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class ReplicatedEntityUVETest : public ::testing::Test {
+class ReplicatedEntityTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystemA;
-    Events::EventSystemUVE eventSystemB;
-    EntityManagerUVE entityManagerA{memoryManager.GetDefaultAllocatorUVE(), eventSystemA};
-    EntityManagerUVE entityManagerB{memoryManager.GetDefaultAllocatorUVE(), eventSystemB};
-    SceneGraphUVE sceneGraphA;
-    SceneGraphUVE sceneGraphB;
-    ReplicatedEntityMapUVE mapA;
-    ReplicatedEntityMapUVE mapB;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystemA;
+    Events::EventSystem eventSystemB;
+    EntityManager entityManagerA{memoryManager.GetDefaultAllocator(), eventSystemA};
+    EntityManager entityManagerB{memoryManager.GetDefaultAllocator(), eventSystemB};
+    SceneGraph sceneGraphA;
+    SceneGraph sceneGraphB;
+    ReplicatedEntityMap mapA;
+    ReplicatedEntityMap mapB;
 
-    [[nodiscard]] EntityUVE MakeDollUVE(IEntityManagerUVE& entityManager,
-                                        SceneGraphUVE& sceneGraph,
-                                        const Math::Vector3UVE position) {
+    [[nodiscard]] Entity MakeDoll(IEntityManager& entityManager,
+                                        SceneGraph& sceneGraph,
+                                        const Math::Vector3 position) {
         // A proxy's whole body: the transform triple, nothing simulated.
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        TransformComponentUVE transform;
+        const Entity entity = entityManager.CreateEntity();
+        TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    void MoveDollUVE(IEntityManagerUVE& entityManager, SceneGraphUVE& sceneGraph,
-                     const EntityUVE entity, const Math::Vector3UVE position) {
-        TransformComponentUVE transform =
-            entityManager.GetComponentUVE<TransformComponentUVE>(entity);
+    void MoveDoll(IEntityManager& entityManager, SceneGraph& sceneGraph,
+                     const Entity entity, const Math::Vector3 position) {
+        TransformComponent transform =
+            entityManager.GetComponent<TransformComponent>(entity);
         transform.localPosition = position;
-        sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.SetLocalTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
     }
 
-    [[nodiscard]] Math::Vector3UVE WorldPositionUVE(IEntityManagerUVE& entityManager,
-                                                    const EntityUVE entity) {
-        return entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).worldPosition;
+    [[nodiscard]] Math::Vector3 WorldPosition(IEntityManager& entityManager,
+                                                    const Entity entity) {
+        return entityManager.GetComponent<WorldTransformComponent>(entity).worldPosition;
     }
 
-    [[nodiscard]] Math::Vector3UVE LocalPositionUVE(IEntityManagerUVE& entityManager,
-                                                    const EntityUVE entity) {
-        return entityManager.GetComponentUVE<TransformComponentUVE>(entity).localPosition;
+    [[nodiscard]] Math::Vector3 LocalPosition(IEntityManager& entityManager,
+                                                    const Entity entity) {
+        return entityManager.GetComponent<TransformComponent>(entity).localPosition;
     }
 };
 
-struct ReplicatedSidesUVE final {
-    Network::LoopbackTransportPairUVE link;
-    Network::NetworkReplicatorUVE a;
-    Network::NetworkReplicatorUVE b;
+struct ReplicatedSides final {
+    Network::LoopbackTransportPair link;
+    Network::NetworkReplicator a;
+    Network::NetworkReplicator b;
 
-    void UpdateBothUVE(const std::uint64_t nowMs) {
-        a.UpdateUVE(nowMs);
-        b.UpdateUVE(nowMs);
+    void UpdateBoth(const std::uint64_t nowMs) {
+        a.Update(nowMs);
+        b.Update(nowMs);
     }
 
-    [[nodiscard]] bool EstablishUVE(const std::uint64_t nowMs) {
-        if (!a.SessionUVE().ConnectUVE(nowMs)) {
+    [[nodiscard]] bool Establish(const std::uint64_t nowMs) {
+        if (!a.Session().Connect(nowMs)) {
             return false;
         }
-        UpdateBothUVE(nowMs);
-        UpdateBothUVE(nowMs);
-        return a.SessionUVE().StateUVE() == Network::SessionStateUVE::Established &&
-               b.SessionUVE().StateUVE() == Network::SessionStateUVE::Established;
+        UpdateBoth(nowMs);
+        UpdateBoth(nowMs);
+        return a.Session().State() == Network::SessionState::Established &&
+               b.Session().State() == Network::SessionState::Established;
     }
 };
 
-[[nodiscard]] ReplicatedSidesUVE MakeSidesUVE() {
-    Network::LoopbackTransportPairUVE pair = Network::CreateLoopbackTransportPairUVE(256U);
-    Network::NetworkSessionUVE sessionA(Network::SessionRoleUVE::Client,
-                                        std::make_unique<Network::LoopbackEndpointUVE>(pair.a));
-    Network::NetworkSessionUVE sessionB(Network::SessionRoleUVE::Server,
-                                        std::make_unique<Network::LoopbackEndpointUVE>(pair.b));
-    Network::NetworkReplicatorUVE a(std::move(sessionA));
-    Network::NetworkReplicatorUVE b(std::move(sessionB));
-    return ReplicatedSidesUVE{std::move(pair), std::move(a), std::move(b)};
+[[nodiscard]] ReplicatedSides MakeSides() {
+    Network::LoopbackTransportPair pair = Network::CreateLoopbackTransportPair(256U);
+    Network::NetworkSession sessionA(Network::SessionRole::Client,
+                                        std::make_unique<Network::LoopbackEndpoint>(pair.a));
+    Network::NetworkSession sessionB(Network::SessionRole::Server,
+                                        std::make_unique<Network::LoopbackEndpoint>(pair.b));
+    Network::NetworkReplicator a(std::move(sessionA));
+    Network::NetworkReplicator b(std::move(sessionB));
+    return ReplicatedSides{std::move(pair), std::move(a), std::move(b)};
 }
 
-struct TransferEventUVE final {
-    Network::NetworkEntityIdUVE netId = 0U;
-    Network::OwnershipTransferEventUVE event = Network::OwnershipTransferEventUVE::Requested;
+struct TransferEvent final {
+    Network::NetworkEntityId netId = 0U;
+    Network::OwnershipTransferEvent event = Network::OwnershipTransferEvent::Requested;
 
-    [[nodiscard]] bool operator==(const TransferEventUVE&) const = default;
+    [[nodiscard]] bool operator==(const TransferEvent&) const = default;
 };
 
-TEST_F(ReplicatedEntityUVETest, SamplerHoldsLastKnownPose) {
-    const EntityUVE doll = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const Network::PositionSamplerUVE sampler =
-        MakeReplicationSamplerUVE(entityManagerA, doll);
+TEST_F(ReplicatedEntityTest, SamplerHoldsLastKnownPose) {
+    const Entity doll = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Network::PositionSampler sampler =
+        MakeReplicationSampler(entityManagerA, doll);
     ASSERT_TRUE(sampler);
-    EXPECT_EQ(sampler(), (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
+    EXPECT_EQ(sampler(), (Math::Vector3{1.0F, 2.0F, 3.0F}));
 
     // A factory-time failure is an empty sampler, never a poisoned one.
     EXPECT_FALSE(
-        MakeReplicationSamplerUVE(entityManagerA, entityManagerA.CreateEntityUVE()));
+        MakeReplicationSampler(entityManagerA, entityManagerA.CreateEntity()));
 
     // Death holds the last pose: sampled still, never zeroed, never crashing.
-    entityManagerA.DestroyEntityUVE(doll);
-    EXPECT_EQ(sampler(), (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    EXPECT_FALSE(MakeReplicationSamplerUVE(entityManagerA, doll));
+    entityManagerA.DestroyEntity(doll);
+    EXPECT_EQ(sampler(), (Math::Vector3{1.0F, 2.0F, 3.0F}));
+    EXPECT_FALSE(MakeReplicationSampler(entityManagerA, doll));
 }
 
-TEST_F(ReplicatedEntityUVETest, ApplierWritesThroughGraph) {
-    const EntityUVE doll = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const Network::PositionApplierUVE applier =
-        MakeReplicationApplierUVE(entityManagerA, sceneGraphA, doll);
-    applier(Math::Vector3UVE{4.0F, 5.0F, 6.0F});
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, doll), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
-    EXPECT_EQ(LocalPositionUVE(entityManagerA, doll), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
+TEST_F(ReplicatedEntityTest, ApplierWritesThroughGraph) {
+    const Entity doll = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Network::PositionApplier applier =
+        MakeReplicationApplier(entityManagerA, sceneGraphA, doll);
+    applier(Math::Vector3{4.0F, 5.0F, 6.0F});
+    EXPECT_EQ(WorldPosition(entityManagerA, doll), (Math::Vector3{4.0F, 5.0F, 6.0F}));
+    EXPECT_EQ(LocalPosition(entityManagerA, doll), (Math::Vector3{4.0F, 5.0F, 6.0F}));
 
     // A dead entity: skipped silently, never crashing.
-    entityManagerA.DestroyEntityUVE(doll);
-    applier(Math::Vector3UVE{7.0F, 8.0F, 9.0F});
+    entityManagerA.DestroyEntity(doll);
+    applier(Math::Vector3{7.0F, 8.0F, 9.0F});
 
     // A parented body: skipped, local pose untouched...
-    const EntityUVE parent = MakeDollUVE(entityManagerA, sceneGraphA, {10.0F, 0.0F, 0.0F});
-    const EntityUVE child = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    sceneGraphA.SetParentUVE(entityManagerA, child, parent);
-    sceneGraphA.UpdateUVE(entityManagerA);
-    const Math::Vector3UVE localBefore = LocalPositionUVE(entityManagerA, child);
-    MakeReplicationApplierUVE(entityManagerA, sceneGraphA, child)(
-        Math::Vector3UVE{9.0F, 9.0F, 9.0F});
-    EXPECT_EQ(LocalPositionUVE(entityManagerA, child), localBefore);
+    const Entity parent = MakeDoll(entityManagerA, sceneGraphA, {10.0F, 0.0F, 0.0F});
+    const Entity child = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    sceneGraphA.SetParent(entityManagerA, child, parent);
+    sceneGraphA.Update(entityManagerA);
+    const Math::Vector3 localBefore = LocalPosition(entityManagerA, child);
+    MakeReplicationApplier(entityManagerA, sceneGraphA, child)(
+        Math::Vector3{9.0F, 9.0F, 9.0F});
+    EXPECT_EQ(LocalPosition(entityManagerA, child), localBefore);
 
     // ...and poison in never lands.
-    const EntityUVE sound = MakeDollUVE(entityManagerA, sceneGraphA, {7.0F, 8.0F, 9.0F});
-    const Network::PositionApplierUVE soundApplier =
-        MakeReplicationApplierUVE(entityManagerA, sceneGraphA, sound);
+    const Entity sound = MakeDoll(entityManagerA, sceneGraphA, {7.0F, 8.0F, 9.0F});
+    const Network::PositionApplier soundApplier =
+        MakeReplicationApplier(entityManagerA, sceneGraphA, sound);
     soundApplier(
-        Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F});
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, sound), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
+        Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F});
+    EXPECT_EQ(WorldPosition(entityManagerA, sound), (Math::Vector3{7.0F, 8.0F, 9.0F}));
 }
 
-TEST_F(ReplicatedEntityUVETest, RegisterUnregisterRoundTrip) {
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE doll = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+TEST_F(ReplicatedEntityTest, RegisterUnregisterRoundTrip) {
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity doll = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
 
-    EXPECT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, doll,
-                                            7U, Network::ReplicationAuthorityUVE::Shared));
-    EXPECT_EQ(FindReplicatedEntityUVE(mapA, 7U), doll);
-    EXPECT_EQ(FindReplicatedNetIdUVE(mapA, doll),
-              (std::optional<Network::NetworkEntityIdUVE>{7U}));
-    EXPECT_EQ(FindReplicatedEntityUVE(mapA, 8U), kInvalidEntityUVE);
+    EXPECT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, doll,
+                                            7U, Network::ReplicationAuthority::Shared));
+    EXPECT_EQ(FindReplicatedEntity(mapA, 7U), doll);
+    EXPECT_EQ(FindReplicatedNetId(mapA, doll),
+              (std::optional<Network::NetworkEntityId>{7U}));
+    EXPECT_EQ(FindReplicatedEntity(mapA, 8U), kInvalidEntity);
     EXPECT_FALSE(
-        FindReplicatedNetIdUVE(mapA, entityManagerA.CreateEntityUVE()).has_value());
+        FindReplicatedNetId(mapA, entityManagerA.CreateEntity()).has_value());
 
     // Duplicates refuse on both axes: the id and the entity.
-    const EntityUVE other = MakeDollUVE(entityManagerA, sceneGraphA, {});
-    EXPECT_FALSE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, other,
-                                             7U, Network::ReplicationAuthorityUVE::Shared));
-    EXPECT_FALSE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, doll,
-                                             8U, Network::ReplicationAuthorityUVE::Shared));
+    const Entity other = MakeDoll(entityManagerA, sceneGraphA, {});
+    EXPECT_FALSE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, other,
+                                             7U, Network::ReplicationAuthority::Shared));
+    EXPECT_FALSE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, doll,
+                                             8U, Network::ReplicationAuthority::Shared));
     // The dead and the unsampleable refuse too.
-    EXPECT_FALSE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA,
-                                             entityManagerA.CreateEntityUVE(), 9U,
-                                             Network::ReplicationAuthorityUVE::Shared));
+    EXPECT_FALSE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA,
+                                             entityManagerA.CreateEntity(), 9U,
+                                             Network::ReplicationAuthority::Shared));
 
     // Unregister forgets both sides of the mapping: the core reports never-registered after.
-    EXPECT_TRUE(UnregisterReplicatedEntityUVE(sides.a, mapA, doll));
+    EXPECT_TRUE(UnregisterReplicatedEntity(sides.a, mapA, doll));
     EXPECT_TRUE(mapA.empty());
-    EXPECT_FALSE(sides.a.UnregisterEntityUVE(7U));
-    EXPECT_FALSE(UnregisterReplicatedEntityUVE(sides.a, mapA, doll));
-    EXPECT_FALSE(UnregisterReplicatedEntityByIdUVE(sides.a, mapA, 7U));
+    EXPECT_FALSE(sides.a.UnregisterEntity(7U));
+    EXPECT_FALSE(UnregisterReplicatedEntity(sides.a, mapA, doll));
+    EXPECT_FALSE(UnregisterReplicatedEntityById(sides.a, mapA, 7U));
 
     // By id, for the transfer answerer.
-    EXPECT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, other,
-                                            7U, Network::ReplicationAuthorityUVE::Proxy));
-    EXPECT_TRUE(UnregisterReplicatedEntityByIdUVE(sides.a, mapA, 7U));
+    EXPECT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, other,
+                                            7U, Network::ReplicationAuthority::Proxy));
+    EXPECT_TRUE(UnregisterReplicatedEntityById(sides.a, mapA, 7U));
     EXPECT_TRUE(mapA.empty());
 }
 
-TEST_F(ReplicatedEntityUVETest, OwnerProxyLiveExchange) {
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE owner = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const EntityUVE proxy = MakeDollUVE(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, owner,
-                                            7U, Network::ReplicationAuthorityUVE::Owner));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerB, sceneGraphB, sides.b, mapB, proxy,
-                                            7U, Network::ReplicationAuthorityUVE::Proxy));
+TEST_F(ReplicatedEntityTest, OwnerProxyLiveExchange) {
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity owner = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Entity proxy = MakeDoll(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, owner,
+                                            7U, Network::ReplicationAuthority::Owner));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerB, sceneGraphB, sides.b, mapB, proxy,
+                                            7U, Network::ReplicationAuthority::Proxy));
 
     // The owner's pose arrives...
-    MoveDollUVE(entityManagerA, sceneGraphA, owner, {4.0F, 5.0F, 6.0F});
-    sides.UpdateBothUVE(1100U);
-    sides.UpdateBothUVE(1100U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, proxy), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
+    MoveDoll(entityManagerA, sceneGraphA, owner, {4.0F, 5.0F, 6.0F});
+    sides.UpdateBoth(1100U);
+    sides.UpdateBoth(1100U);
+    EXPECT_EQ(WorldPosition(entityManagerB, proxy), (Math::Vector3{4.0F, 5.0F, 6.0F}));
 
     // ...and the proxy's never leaves: the owner holds while the local move stands.
-    MoveDollUVE(entityManagerB, sceneGraphB, proxy, {7.0F, 8.0F, 9.0F});
-    sides.UpdateBothUVE(1200U);
-    sides.UpdateBothUVE(1200U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, owner), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, proxy), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
+    MoveDoll(entityManagerB, sceneGraphB, proxy, {7.0F, 8.0F, 9.0F});
+    sides.UpdateBoth(1200U);
+    sides.UpdateBoth(1200U);
+    EXPECT_EQ(WorldPosition(entityManagerA, owner), (Math::Vector3{4.0F, 5.0F, 6.0F}));
+    EXPECT_EQ(WorldPosition(entityManagerB, proxy), (Math::Vector3{7.0F, 8.0F, 9.0F}));
 }
 
-TEST_F(ReplicatedEntityUVETest, SharedSequentialExchange) {
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE aDoll = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const EntityUVE bDoll = MakeDollUVE(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, aDoll,
-                                            7U, Network::ReplicationAuthorityUVE::Shared));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerB, sceneGraphB, sides.b, mapB, bDoll,
-                                            7U, Network::ReplicationAuthorityUVE::Shared));
+TEST_F(ReplicatedEntityTest, SharedSequentialExchange) {
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity aDoll = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Entity bDoll = MakeDoll(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, aDoll,
+                                            7U, Network::ReplicationAuthority::Shared));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerB, sceneGraphB, sides.b, mapB, bDoll,
+                                            7U, Network::ReplicationAuthority::Shared));
 
     // A moves first: whoever's snapshot lands first wins the tick, so both adopt A's pose.
-    MoveDollUVE(entityManagerA, sceneGraphA, aDoll, {4.0F, 5.0F, 6.0F});
-    sides.UpdateBothUVE(1100U);
-    sides.UpdateBothUVE(1100U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, aDoll), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, bDoll), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
+    MoveDoll(entityManagerA, sceneGraphA, aDoll, {4.0F, 5.0F, 6.0F});
+    sides.UpdateBoth(1100U);
+    sides.UpdateBoth(1100U);
+    EXPECT_EQ(WorldPosition(entityManagerA, aDoll), (Math::Vector3{4.0F, 5.0F, 6.0F}));
+    EXPECT_EQ(WorldPosition(entityManagerB, bDoll), (Math::Vector3{4.0F, 5.0F, 6.0F}));
 
     // Then B moves alone: A adopts in its turn.
-    MoveDollUVE(entityManagerB, sceneGraphB, bDoll, {7.0F, 8.0F, 9.0F});
-    sides.UpdateBothUVE(1200U);
-    sides.UpdateBothUVE(1200U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, aDoll), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, bDoll), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
+    MoveDoll(entityManagerB, sceneGraphB, bDoll, {7.0F, 8.0F, 9.0F});
+    sides.UpdateBoth(1200U);
+    sides.UpdateBoth(1200U);
+    EXPECT_EQ(WorldPosition(entityManagerA, aDoll), (Math::Vector3{7.0F, 8.0F, 9.0F}));
+    EXPECT_EQ(WorldPosition(entityManagerB, bDoll), (Math::Vector3{7.0F, 8.0F, 9.0F}));
 }
 
-TEST_F(ReplicatedEntityUVETest, RelevancySkipsSend) {
+TEST_F(ReplicatedEntityTest, RelevancySkipsSend) {
     bool relevant = false;
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE owner = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const EntityUVE proxy = MakeDollUVE(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity owner = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Entity proxy = MakeDoll(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
+    ASSERT_TRUE(RegisterReplicatedEntity(
         entityManagerA, sceneGraphA, sides.a, mapA, owner, 7U,
-        Network::ReplicationAuthorityUVE::Owner, [&relevant]() { return relevant; }));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerB, sceneGraphB, sides.b, mapB, proxy,
-                                            7U, Network::ReplicationAuthorityUVE::Proxy));
+        Network::ReplicationAuthority::Owner, [&relevant]() { return relevant; }));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerB, sceneGraphB, sides.b, mapB, proxy,
+                                            7U, Network::ReplicationAuthority::Proxy));
 
     // Irrelevant: neither sampled nor sent, counted out loud.
-    MoveDollUVE(entityManagerA, sceneGraphA, owner, {4.0F, 5.0F, 6.0F});
-    sides.UpdateBothUVE(1100U);
-    sides.UpdateBothUVE(1100U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, proxy), (Math::Vector3UVE{9.0F, 9.0F, 9.0F}));
-    EXPECT_GT(sides.a.StatsUVE().entriesSkippedIrrelevant, 0U);
+    MoveDoll(entityManagerA, sceneGraphA, owner, {4.0F, 5.0F, 6.0F});
+    sides.UpdateBoth(1100U);
+    sides.UpdateBoth(1100U);
+    EXPECT_EQ(WorldPosition(entityManagerB, proxy), (Math::Vector3{9.0F, 9.0F, 9.0F}));
+    EXPECT_GT(sides.a.Stats().entriesSkippedIrrelevant, 0U);
 
     // Interest returns: a first sighting with no baseline, shipped unconditionally.
     relevant = true;
-    sides.UpdateBothUVE(1200U);
-    sides.UpdateBothUVE(1200U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, proxy), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
+    sides.UpdateBoth(1200U);
+    sides.UpdateBoth(1200U);
+    EXPECT_EQ(WorldPosition(entityManagerB, proxy), (Math::Vector3{4.0F, 5.0F, 6.0F}));
 }
 
-TEST_F(ReplicatedEntityUVETest, PruneDropsDeadAndMutilated) {
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE survivor = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 0.0F, 0.0F});
-    const EntityUVE doomed = MakeDollUVE(entityManagerA, sceneGraphA, {2.0F, 0.0F, 0.0F});
-    const EntityUVE stripped = MakeDollUVE(entityManagerA, sceneGraphA, {3.0F, 0.0F, 0.0F});
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA,
+TEST_F(ReplicatedEntityTest, PruneDropsDeadAndMutilated) {
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity survivor = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 0.0F, 0.0F});
+    const Entity doomed = MakeDoll(entityManagerA, sceneGraphA, {2.0F, 0.0F, 0.0F});
+    const Entity stripped = MakeDoll(entityManagerA, sceneGraphA, {3.0F, 0.0F, 0.0F});
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA,
                                             survivor, 1U,
-                                            Network::ReplicationAuthorityUVE::Shared));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, doomed,
-                                            2U, Network::ReplicationAuthorityUVE::Shared));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, stripped,
-                                            3U, Network::ReplicationAuthorityUVE::Shared));
-    EXPECT_EQ(PruneReplicatedEntitiesUVE(entityManagerA, sides.a, mapA), 0U);
+                                            Network::ReplicationAuthority::Shared));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, doomed,
+                                            2U, Network::ReplicationAuthority::Shared));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, stripped,
+                                            3U, Network::ReplicationAuthority::Shared));
+    EXPECT_EQ(PruneReplicatedEntities(entityManagerA, sides.a, mapA), 0U);
 
-    entityManagerA.DestroyEntityUVE(doomed);
-    entityManagerA.RemoveComponentUVE<WorldTransformComponentUVE>(stripped);
-    EXPECT_EQ(PruneReplicatedEntitiesUVE(entityManagerA, sides.a, mapA), 2U);
+    entityManagerA.DestroyEntity(doomed);
+    entityManagerA.RemoveComponent<WorldTransformComponent>(stripped);
+    EXPECT_EQ(PruneReplicatedEntities(entityManagerA, sides.a, mapA), 2U);
     EXPECT_EQ(mapA.size(), 1U);
-    EXPECT_EQ(FindReplicatedEntityUVE(mapA, 1U), survivor);
+    EXPECT_EQ(FindReplicatedEntity(mapA, 1U), survivor);
     // The core forgot both: its own unregister now reports never-registered.
-    EXPECT_FALSE(sides.a.UnregisterEntityUVE(2U));
-    EXPECT_FALSE(sides.a.UnregisterEntityUVE(3U));
+    EXPECT_FALSE(sides.a.UnregisterEntity(2U));
+    EXPECT_FALSE(sides.a.UnregisterEntity(3U));
 }
 
-TEST_F(ReplicatedEntityUVETest, TransferHandoffMovesAuthority) {
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    const EntityUVE aDoll = MakeDollUVE(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
-    const EntityUVE bDoll = MakeDollUVE(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, aDoll,
-                                            7U, Network::ReplicationAuthorityUVE::Owner));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerB, sceneGraphB, sides.b, mapB, bDoll,
-                                            7U, Network::ReplicationAuthorityUVE::Proxy));
+TEST_F(ReplicatedEntityTest, TransferHandoffMovesAuthority) {
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    const Entity aDoll = MakeDoll(entityManagerA, sceneGraphA, {1.0F, 2.0F, 3.0F});
+    const Entity bDoll = MakeDoll(entityManagerB, sceneGraphB, {9.0F, 9.0F, 9.0F});
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, aDoll,
+                                            7U, Network::ReplicationAuthority::Owner));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerB, sceneGraphB, sides.b, mapB, bDoll,
+                                            7U, Network::ReplicationAuthority::Proxy));
 
     // Sanity first: the owner's pose arrives before the handoff.
-    MoveDollUVE(entityManagerA, sceneGraphA, aDoll, {4.0F, 5.0F, 6.0F});
-    sides.UpdateBothUVE(1100U);
-    sides.UpdateBothUVE(1100U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, bDoll), (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
+    MoveDoll(entityManagerA, sceneGraphA, aDoll, {4.0F, 5.0F, 6.0F});
+    sides.UpdateBoth(1100U);
+    sides.UpdateBoth(1100U);
+    EXPECT_EQ(WorldPosition(entityManagerB, bDoll), (Math::Vector3{4.0F, 5.0F, 6.0F}));
 
     // B asks; A grants through the handler, finding its entity by net id as a game would.
-    std::vector<TransferEventUVE> eventsA;
-    std::vector<TransferEventUVE> eventsB;
-    sides.a.SetOwnershipTransferHandlerUVE(
-        [&](const Network::NetworkEntityIdUVE netId,
-            const Network::OwnershipTransferEventUVE event) {
-            eventsA.push_back(TransferEventUVE{netId, event});
-            if (event == Network::OwnershipTransferEventUVE::Requested) {
-                EXPECT_EQ(FindReplicatedEntityUVE(mapA, netId), aDoll);
-                EXPECT_TRUE(sides.a.AcceptTransferUVE(netId));
+    std::vector<TransferEvent> eventsA;
+    std::vector<TransferEvent> eventsB;
+    sides.a.SetOwnershipTransferHandler(
+        [&](const Network::NetworkEntityId netId,
+            const Network::OwnershipTransferEvent event) {
+            eventsA.push_back(TransferEvent{netId, event});
+            if (event == Network::OwnershipTransferEvent::Requested) {
+                EXPECT_EQ(FindReplicatedEntity(mapA, netId), aDoll);
+                EXPECT_TRUE(sides.a.AcceptTransfer(netId));
             }
         });
-    sides.b.SetOwnershipTransferHandlerUVE(
-        [&](const Network::NetworkEntityIdUVE netId,
-            const Network::OwnershipTransferEventUVE event) {
-            eventsB.push_back(TransferEventUVE{netId, event});
+    sides.b.SetOwnershipTransferHandler(
+        [&](const Network::NetworkEntityId netId,
+            const Network::OwnershipTransferEvent event) {
+            eventsB.push_back(TransferEvent{netId, event});
         });
-    ASSERT_TRUE(sides.b.RequestOwnershipUVE(7U, 1200U));
-    sides.UpdateBothUVE(1200U);
-    sides.UpdateBothUVE(1200U);
-    const TransferEventUVE completed{7U, Network::OwnershipTransferEventUVE::Completed};
+    ASSERT_TRUE(sides.b.RequestOwnership(7U, 1200U));
+    sides.UpdateBoth(1200U);
+    sides.UpdateBoth(1200U);
+    const TransferEvent completed{7U, Network::OwnershipTransferEvent::Completed};
     EXPECT_NE(std::find(eventsA.begin(), eventsA.end(), completed), eventsA.end());
     EXPECT_NE(std::find(eventsB.begin(), eventsB.end(), completed), eventsB.end());
 
     // After the handoff the direction reverses: B drives, A follows...
-    MoveDollUVE(entityManagerB, sceneGraphB, bDoll, {7.0F, 8.0F, 9.0F});
-    sides.UpdateBothUVE(1300U);
-    sides.UpdateBothUVE(1300U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, aDoll), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, bDoll), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
+    MoveDoll(entityManagerB, sceneGraphB, bDoll, {7.0F, 8.0F, 9.0F});
+    sides.UpdateBoth(1300U);
+    sides.UpdateBoth(1300U);
+    EXPECT_EQ(WorldPosition(entityManagerA, aDoll), (Math::Vector3{7.0F, 8.0F, 9.0F}));
+    EXPECT_EQ(WorldPosition(entityManagerB, bDoll), (Math::Vector3{7.0F, 8.0F, 9.0F}));
 
     // ...and A's proxy-side move never leaves: B holds while the local move stands.
-    MoveDollUVE(entityManagerA, sceneGraphA, aDoll, {1.0F, 1.0F, 1.0F});
-    sides.UpdateBothUVE(1400U);
-    sides.UpdateBothUVE(1400U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, bDoll), (Math::Vector3UVE{7.0F, 8.0F, 9.0F}));
-    EXPECT_EQ(WorldPositionUVE(entityManagerA, aDoll), (Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
+    MoveDoll(entityManagerA, sceneGraphA, aDoll, {1.0F, 1.0F, 1.0F});
+    sides.UpdateBoth(1400U);
+    sides.UpdateBoth(1400U);
+    EXPECT_EQ(WorldPosition(entityManagerB, bDoll), (Math::Vector3{7.0F, 8.0F, 9.0F}));
+    EXPECT_EQ(WorldPosition(entityManagerA, aDoll), (Math::Vector3{1.0F, 1.0F, 1.0F}));
 }
 
-TEST_F(ReplicatedEntityUVETest, PredictedPawnRidesReplicationAsOwner) {
+TEST_F(ReplicatedEntityTest, PredictedPawnRidesReplicationAsOwner) {
     // The documented pairing: the client predicts its pawn and owns its replication entry;
     // the server holds a dumb doll as proxy. Two loopback pairs - prediction and
     // replication ride separate sessions, like separate channels would.
-    const EntityUVE pawn = entityManagerA.CreateEntityUVE();
-    TransformComponentUVE spawnTransform;
-    sceneGraphA.AttachTransformUVE(entityManagerA, pawn, spawnTransform);
-    ApplyCharacter3DObjectDefinitionUVE(entityManagerA, pawn,
-                                        Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
-    sceneGraphA.UpdateUVE(entityManagerA);
-    const EntityUVE driver = entityManagerA.CreateEntityUVE();
-    ControllerComponentUVE controller;
-    controller.kind = ControllerKindUVE::Player;
-    entityManagerA.AddComponentUVE<ControllerComponentUVE>(driver, controller);
-    ASSERT_TRUE(PossessControllerUVE(entityManagerA, driver, pawn));
-    Gameplay::GameplayInputUVE push;
+    const Entity pawn = entityManagerA.CreateEntity();
+    TransformComponent spawnTransform;
+    sceneGraphA.AttachTransform(entityManagerA, pawn, spawnTransform);
+    ApplyCharacter3DObjectDefinition(entityManagerA, pawn,
+                                        Character3DObjectDefinition::WithDefaultCollider());
+    sceneGraphA.Update(entityManagerA);
+    const Entity driver = entityManagerA.CreateEntity();
+    ControllerComponent controller;
+    controller.kind = ControllerKind::Player;
+    entityManagerA.AddComponent<ControllerComponent>(driver, controller);
+    ASSERT_TRUE(PossessController(entityManagerA, driver, pawn));
+    Gameplay::GameplayInput push;
     push.move = {1.0F, 0.0F, 0.0F};
-    entityManagerA.GetComponentUVE<PawnComponentUVE>(pawn).input = push;
-    entityManagerA.AddComponentUVE<PredictedCharacterComponentUVE>(pawn,
-                                                                  PredictedCharacterComponentUVE{});
+    entityManagerA.GetComponent<PawnComponent>(pawn).input = push;
+    entityManagerA.AddComponent<PredictedCharacterComponent>(pawn,
+                                                                  PredictedCharacterComponent{});
 
-    const EntityUVE doll = MakeDollUVE(entityManagerB, sceneGraphB, {0.0F, 0.0F, 0.0F});
+    const Entity doll = MakeDoll(entityManagerB, sceneGraphB, {0.0F, 0.0F, 0.0F});
 
-    const std::optional<Network::PredictedStateUVE> spawn =
-        PackPredictedStateUVE(entityManagerA, pawn);
+    const std::optional<Network::PredictedState> spawn =
+        PackPredictedState(entityManagerA, pawn);
     ASSERT_TRUE(spawn.has_value());
 
-    Network::LoopbackTransportPairUVE predictionLink =
-        Network::CreateLoopbackTransportPairUVE(256U);
-    Network::NetworkSessionUVE predictionSessionA(
-        Network::SessionRoleUVE::Client,
-        std::make_unique<Network::LoopbackEndpointUVE>(predictionLink.a));
-    Network::NetworkSessionUVE predictionSessionB(
-        Network::SessionRoleUVE::Server,
-        std::make_unique<Network::LoopbackEndpointUVE>(predictionLink.b));
-    Network::NetworkPredictionUVE predictorA(
-        std::move(predictionSessionA), Network::SessionRoleUVE::Client,
-        MakeCharacterPredictionStepperUVE(CharacterControllerComponentUVE{}, -9.81F), *spawn);
-    Network::NetworkPredictionUVE predictorB(
-        std::move(predictionSessionB), Network::SessionRoleUVE::Server,
-        MakeCharacterPredictionStepperUVE(CharacterControllerComponentUVE{}, -9.81F), *spawn);
-    ASSERT_TRUE(predictorA.SessionUVE().ConnectUVE(1000U));
+    Network::LoopbackTransportPair predictionLink =
+        Network::CreateLoopbackTransportPair(256U);
+    Network::NetworkSession predictionSessionA(
+        Network::SessionRole::Client,
+        std::make_unique<Network::LoopbackEndpoint>(predictionLink.a));
+    Network::NetworkSession predictionSessionB(
+        Network::SessionRole::Server,
+        std::make_unique<Network::LoopbackEndpoint>(predictionLink.b));
+    Network::NetworkPrediction predictorA(
+        std::move(predictionSessionA), Network::SessionRole::Client,
+        MakeCharacterPredictionStepper(CharacterControllerComponent{}, -9.81F), *spawn);
+    Network::NetworkPrediction predictorB(
+        std::move(predictionSessionB), Network::SessionRole::Server,
+        MakeCharacterPredictionStepper(CharacterControllerComponent{}, -9.81F), *spawn);
+    ASSERT_TRUE(predictorA.Session().Connect(1000U));
     for (int i = 0; i < 2; ++i) {
-        predictorA.UpdateUVE(1000U);
-        predictorB.UpdateUVE(1000U);
+        predictorA.Update(1000U);
+        predictorB.Update(1000U);
     }
-    ASSERT_EQ(predictorA.SessionUVE().StateUVE(), Network::SessionStateUVE::Established);
-    ASSERT_EQ(predictorB.SessionUVE().StateUVE(), Network::SessionStateUVE::Established);
+    ASSERT_EQ(predictorA.Session().State(), Network::SessionState::Established);
+    ASSERT_EQ(predictorB.Session().State(), Network::SessionState::Established);
 
-    ReplicatedSidesUVE sides = MakeSidesUVE();
-    ASSERT_TRUE(sides.EstablishUVE(1000U));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerA, sceneGraphA, sides.a, mapA, pawn,
-                                            7U, Network::ReplicationAuthorityUVE::Owner));
-    ASSERT_TRUE(RegisterReplicatedEntityUVE(entityManagerB, sceneGraphB, sides.b, mapB, doll,
-                                            7U, Network::ReplicationAuthorityUVE::Proxy));
+    ReplicatedSides sides = MakeSides();
+    ASSERT_TRUE(sides.Establish(1000U));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerA, sceneGraphA, sides.a, mapA, pawn,
+                                            7U, Network::ReplicationAuthority::Owner));
+    ASSERT_TRUE(RegisterReplicatedEntity(entityManagerB, sceneGraphB, sides.b, mapB, doll,
+                                            7U, Network::ReplicationAuthority::Proxy));
 
     // Five fixed steps: predict, pump, sync, replicate - the doll tracks the pawn exactly.
     for (std::uint64_t n = 1U; n <= 5U; ++n) {
         const std::uint64_t nowMs = 1000U + n * 100U;
-        EXPECT_EQ(TickPredictedPawnUVE(entityManagerA, sceneGraphA, pawn, predictorA), n);
-        predictorA.UpdateUVE(nowMs);
-        predictorB.UpdateUVE(nowMs);
-        predictorA.UpdateUVE(nowMs);
-        predictorB.UpdateUVE(nowMs);
-        EXPECT_TRUE(SyncPredictedPawnUVE(entityManagerA, sceneGraphA, pawn, predictorA));
-        sides.UpdateBothUVE(nowMs);
-        sides.UpdateBothUVE(nowMs);
-        EXPECT_EQ(WorldPositionUVE(entityManagerB, doll),
-                  WorldPositionUVE(entityManagerA, pawn));
+        EXPECT_EQ(TickPredictedPawn(entityManagerA, sceneGraphA, pawn, predictorA), n);
+        predictorA.Update(nowMs);
+        predictorB.Update(nowMs);
+        predictorA.Update(nowMs);
+        predictorB.Update(nowMs);
+        EXPECT_TRUE(SyncPredictedPawn(entityManagerA, sceneGraphA, pawn, predictorA));
+        sides.UpdateBoth(nowMs);
+        sides.UpdateBoth(nowMs);
+        EXPECT_EQ(WorldPosition(entityManagerB, doll),
+                  WorldPosition(entityManagerA, pawn));
     }
-    EXPECT_EQ(predictorA.StatsUVE().reconciles, 0U);
-    EXPECT_EQ(predictorA.LastAckedTickUVE(), 5U);
-    EXPECT_EQ(predictorB.LastAppliedTickUVE(), 5U);
-    EXPECT_GT(WorldPositionUVE(entityManagerB, doll).x, 0.0F);
+    EXPECT_EQ(predictorA.Stats().reconciles, 0U);
+    EXPECT_EQ(predictorA.LastAckedTick(), 5U);
+    EXPECT_EQ(predictorB.LastAppliedTick(), 5U);
+    EXPECT_GT(WorldPosition(entityManagerB, doll).x, 0.0F);
 
     // The reverse never flows: a teleported doll is a local move on a proxy, and the pawn
     // it mirrors never hears about it.
-    MoveDollUVE(entityManagerB, sceneGraphB, doll, {50.0F, 50.0F, 50.0F});
-    sides.UpdateBothUVE(1600U);
-    sides.UpdateBothUVE(1600U);
-    EXPECT_EQ(WorldPositionUVE(entityManagerB, doll),
-              (Math::Vector3UVE{50.0F, 50.0F, 50.0F}));
-    EXPECT_NE(WorldPositionUVE(entityManagerA, pawn),
-              (Math::Vector3UVE{50.0F, 50.0F, 50.0F}));
+    MoveDoll(entityManagerB, sceneGraphB, doll, {50.0F, 50.0F, 50.0F});
+    sides.UpdateBoth(1600U);
+    sides.UpdateBoth(1600U);
+    EXPECT_EQ(WorldPosition(entityManagerB, doll),
+              (Math::Vector3{50.0F, 50.0F, 50.0F}));
+    EXPECT_NE(WorldPosition(entityManagerA, pawn),
+              (Math::Vector3{50.0F, 50.0F, 50.0F}));
 }
 
 } // namespace

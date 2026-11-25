@@ -27,7 +27,7 @@ uniform float uTexelSizeY;
 uniform int uUpsampleMode;
 uniform float uUpsampleScatter;
 
-vec3 SampleSourceClampedUVE(vec2 uv, vec2 halfTexel) {
+vec3 SampleSourceClamped(vec2 uv, vec2 halfTexel) {
     return max(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb, vec3(0.0));
 }
 
@@ -41,15 +41,15 @@ void main() {
         float x = texel.x;
         float y = texel.y;
 
-        vec3 a = SampleSourceClampedUVE(vTexCoord + vec2(-x,  y), halfTexel);
-        vec3 b = SampleSourceClampedUVE(vTexCoord + vec2( 0.0, y), halfTexel);
-        vec3 c = SampleSourceClampedUVE(vTexCoord + vec2( x,  y), halfTexel);
-        vec3 d = SampleSourceClampedUVE(vTexCoord + vec2(-x,  0.0), halfTexel);
-        vec3 e = SampleSourceClampedUVE(vTexCoord, halfTexel);
-        vec3 f = SampleSourceClampedUVE(vTexCoord + vec2( x,  0.0), halfTexel);
-        vec3 g = SampleSourceClampedUVE(vTexCoord + vec2(-x, -y), halfTexel);
-        vec3 h = SampleSourceClampedUVE(vTexCoord + vec2( 0.0, -y), halfTexel);
-        vec3 i = SampleSourceClampedUVE(vTexCoord + vec2( x, -y), halfTexel);
+        vec3 a = SampleSourceClamped(vTexCoord + vec2(-x,  y), halfTexel);
+        vec3 b = SampleSourceClamped(vTexCoord + vec2( 0.0, y), halfTexel);
+        vec3 c = SampleSourceClamped(vTexCoord + vec2( x,  y), halfTexel);
+        vec3 d = SampleSourceClamped(vTexCoord + vec2(-x,  0.0), halfTexel);
+        vec3 e = SampleSourceClamped(vTexCoord, halfTexel);
+        vec3 f = SampleSourceClamped(vTexCoord + vec2( x,  0.0), halfTexel);
+        vec3 g = SampleSourceClamped(vTexCoord + vec2(-x, -y), halfTexel);
+        vec3 h = SampleSourceClamped(vTexCoord + vec2( 0.0, -y), halfTexel);
+        vec3 i = SampleSourceClamped(vTexCoord + vec2( x, -y), halfTexel);
 
         vec3 tent = (e * 4.0 + (b + d + f + h) * 2.0 + (a + c + g + i)) * (1.0 / 16.0);
         vec3 higher = max(texture(uHigherMipTexture, vTexCoord).rgb, vec3(0.0));
@@ -64,11 +64,11 @@ void main() {
     vec2 direction = vec2(uBlurDirectionX, uBlurDirectionY);
     vec2 texelSize = vec2(uTexelSizeX, uTexelSizeY);
     vec2 halfTexel = texelSize * 0.5;
-    vec3 result = SampleSourceClampedUVE(vTexCoord, halfTexel) * weights[0];
+    vec3 result = SampleSourceClamped(vTexCoord, halfTexel) * weights[0];
     for (int tap = 1; tap < 5; ++tap) {
         vec2 offset = direction * texelSize * float(tap);
-        result += SampleSourceClampedUVE(vTexCoord + offset, halfTexel) * weights[tap];
-        result += SampleSourceClampedUVE(vTexCoord - offset, halfTexel) * weights[tap];
+        result += SampleSourceClamped(vTexCoord + offset, halfTexel) * weights[tap];
+        result += SampleSourceClamped(vTexCoord - offset, halfTexel) * weights[tap];
     }
     FragColor = vec4(result, 1.0);
 }

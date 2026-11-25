@@ -11,294 +11,294 @@
 #include <gtest/gtest.h>
 namespace UVE::Render::Tests {
 namespace {
-using ResultUVE = RenderOperationResultUVE;
-TEST(DeviceOperationsUVETest, NullCapabilitiesNeverClaimNativeTimingOrSurface) {
-    NullRenderDeviceUVE device;
-    const auto caps = device.GetCapabilitiesUVE();
-    EXPECT_EQ(caps.fences, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(caps.memoryBarriers, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(caps.bufferCopy, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(caps.textureBlit, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(caps.timestampQueries, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(caps.surface, RenderFeatureSupportUVE::Unsupported);
-    RenderSurfaceUVE surface(device);
-    RenderSurfaceInfoUVE sentinel{42, 17, true, true, 9};
-    EXPECT_EQ(surface.DescribeUVE(sentinel), ResultUVE::Unsupported);
+using Result = RenderOperationResult;
+TEST(DeviceOperationsTest, NullCapabilitiesNeverClaimNativeTimingOrSurface) {
+    NullRenderDevice device;
+    const auto caps = device.GetCapabilities();
+    EXPECT_EQ(caps.fences, RenderFeatureSupport::Model);
+    EXPECT_EQ(caps.memoryBarriers, RenderFeatureSupport::Model);
+    EXPECT_EQ(caps.bufferCopy, RenderFeatureSupport::Model);
+    EXPECT_EQ(caps.textureBlit, RenderFeatureSupport::Model);
+    EXPECT_EQ(caps.timestampQueries, RenderFeatureSupport::Model);
+    EXPECT_EQ(caps.surface, RenderFeatureSupport::Unsupported);
+    RenderSurface surface(device);
+    RenderSurfaceInfo sentinel{42, 17, true, true, 9};
+    EXPECT_EQ(surface.Describe(sentinel), Result::Unsupported);
     EXPECT_EQ(sentinel.width, 42U);
-    EXPECT_EQ(surface.PresentUVE(), ResultUVE::Unsupported);
-    EXPECT_EQ(device.GetPresentCallCountUVE(), 0U);
+    EXPECT_EQ(surface.Present(), Result::Unsupported);
+    EXPECT_EQ(device.GetPresentCallCount(), 0U);
 }
-TEST(DeviceOperationsUVETest, CopyChangesRealModelBytesAndRecordsDescriptor) {
-    NullRenderDeviceUVE device;
+TEST(DeviceOperationsTest, CopyChangesRealModelBytesAndRecordsDescriptor) {
+    NullRenderDevice device;
     const std::array<std::byte, 8> bytes{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
-    const auto source = device.CreateBufferUVE({8, BufferUsageUVE::Storage}, bytes);
-    const auto target = device.CreateBufferUVE({8, BufferUsageUVE::Storage});
-    ASSERT_EQ(device.CopyBufferUVE({source, target, 1, 3, 3}), ResultUVE::Recorded);
+    const auto source = device.CreateBuffer({8, BufferUsage::Storage}, bytes);
+    const auto target = device.CreateBuffer({8, BufferUsage::Storage});
+    ASSERT_EQ(device.CopyBuffer({source, target, 1, 3, 3}), Result::Recorded);
     std::array<std::byte, 8> output{};
-    ASSERT_TRUE(device.ReadbackBufferUVE(target, output));
+    ASSERT_TRUE(device.ReadbackBuffer(target, output));
     EXPECT_EQ(output[2], std::byte{0});
     EXPECT_EQ(output[3], std::byte{2});
     EXPECT_EQ(output[4], std::byte{3});
     EXPECT_EQ(output[5], std::byte{4});
-    ASSERT_EQ(device.GetRecordedDeviceOperationsUVE().size(), 1U);
-    const auto &copy = std::get<BufferCopyDescUVE>(device.GetRecordedDeviceOperationsUVE().front());
+    ASSERT_EQ(device.GetRecordedDeviceOperations().size(), 1U);
+    const auto &copy = std::get<BufferCopyDesc>(device.GetRecordedDeviceOperations().front());
     EXPECT_EQ(copy.sourceOffset, 1U);
     EXPECT_EQ(copy.destinationOffset, 3U);
     EXPECT_EQ(copy.sizeBytes, 3U);
 }
-TEST(DeviceOperationsUVETest, InvalidCopyRangesAndOverlapAreFailureAtomic) {
-    NullRenderDeviceUVE device;
+TEST(DeviceOperationsTest, InvalidCopyRangesAndOverlapAreFailureAtomic) {
+    NullRenderDevice device;
     const std::array<std::byte, 8> bytes{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
-    const auto buffer = device.CreateBufferUVE({8, BufferUsageUVE::Storage}, bytes);
-    EXPECT_EQ(device.CopyBufferUVE({{}, buffer, 0, 0, 1}), ResultUVE::InvalidHandle);
-    EXPECT_EQ(device.CopyBufferUVE({buffer, buffer, 0, 0, 0}), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.CopyBufferUVE({buffer, buffer, 0, 1, 4}), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.CopyBufferUVE({buffer, buffer, UINT64_MAX, 0, 1}), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.CopyBufferUVE({buffer, buffer, 0, 7, 2}), ResultUVE::InvalidArgument);
+    const auto buffer = device.CreateBuffer({8, BufferUsage::Storage}, bytes);
+    EXPECT_EQ(device.CopyBuffer({{}, buffer, 0, 0, 1}), Result::InvalidHandle);
+    EXPECT_EQ(device.CopyBuffer({buffer, buffer, 0, 0, 0}), Result::InvalidArgument);
+    EXPECT_EQ(device.CopyBuffer({buffer, buffer, 0, 1, 4}), Result::InvalidArgument);
+    EXPECT_EQ(device.CopyBuffer({buffer, buffer, UINT64_MAX, 0, 1}), Result::InvalidArgument);
+    EXPECT_EQ(device.CopyBuffer({buffer, buffer, 0, 7, 2}), Result::InvalidArgument);
     std::array<std::byte, 8> result{};
-    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, result));
+    ASSERT_TRUE(device.ReadbackBuffer(buffer, result));
     EXPECT_EQ(result, bytes);
-    EXPECT_TRUE(device.GetRecordedDeviceOperationsUVE().empty());
-    EXPECT_EQ(device.CopyBufferUVE({buffer, buffer, 0, 4, 4}), ResultUVE::Recorded);
-    ASSERT_TRUE(device.ReadbackBufferUVE(buffer, result));
+    EXPECT_TRUE(device.GetRecordedDeviceOperations().empty());
+    EXPECT_EQ(device.CopyBuffer({buffer, buffer, 0, 4, 4}), Result::Recorded);
+    ASSERT_TRUE(device.ReadbackBuffer(buffer, result));
     EXPECT_EQ(result[7], std::byte{4});
 }
-TEST(DeviceOperationsUVETest, BlitValidatesMipLayerFormatAndRegionsBeforeRecording) {
-    NullRenderDeviceUVE device;
-    const auto source = device.CreateTextureUVE({4, 4, TextureFormatUVE::RGBA8Unorm});
-    const auto target = device.CreateTextureUVE({2, 2, TextureFormatUVE::RGBA8Unorm});
-    TextureBlitDescUVE blit{source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Linear};
-    ASSERT_EQ(device.BlitTextureUVE(blit), ResultUVE::Recorded);
-    const auto count = device.GetRecordedDeviceOperationsUVE().size();
+TEST(DeviceOperationsTest, BlitValidatesMipLayerFormatAndRegionsBeforeRecording) {
+    NullRenderDevice device;
+    const auto source = device.CreateTexture({4, 4, TextureFormat::RGBA8Unorm});
+    const auto target = device.CreateTexture({2, 2, TextureFormat::RGBA8Unorm});
+    TextureBlitDesc blit{source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilter::Linear};
+    ASSERT_EQ(device.BlitTexture(blit), Result::Recorded);
+    const auto count = device.GetRecordedDeviceOperations().size();
     blit.sourceRegion.x = UINT32_MAX;
-    EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidArgument);
+    EXPECT_EQ(device.BlitTexture(blit), Result::InvalidArgument);
     blit.sourceRegion.x = 0;
     blit.sourceRegion.layer = 1;
-    EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidArgument);
+    EXPECT_EQ(device.BlitTexture(blit), Result::InvalidArgument);
     blit.sourceRegion.layer = 0;
     blit.sourceRegion.mip = 1;
-    EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidArgument);
+    EXPECT_EQ(device.BlitTexture(blit), Result::InvalidArgument);
     blit.sourceRegion.mip = 0;
-    blit.filter = static_cast<BlitFilterUVE>(255);
-    EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.GetRecordedDeviceOperationsUVE().size(), count);
-    device.DestroyTextureUVE(source);
-    EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::InvalidHandle);
+    blit.filter = static_cast<BlitFilter>(255);
+    EXPECT_EQ(device.BlitTexture(blit), Result::InvalidArgument);
+    EXPECT_EQ(device.GetRecordedDeviceOperations().size(), count);
+    device.DestroyTexture(source);
+    EXPECT_EQ(device.BlitTexture(blit), Result::InvalidHandle);
 }
-TEST(DeviceOperationsUVETest, BlitAndMipsAcceptEveryUncompressedColorFormatAndNothingElse) {
+TEST(DeviceOperationsTest, BlitAndMipsAcceptEveryUncompressedColorFormatAndNothingElse) {
     // Format slice: the shared validators gate on "uncompressed colour", not on a two-format list,
     // so one- and two-channel and 32-bit float textures blit and build mip chains while depth
     // and block-compressed textures still cannot. Formats must still match between the two ends.
-    NullRenderDeviceUVE device;
-    for (const TextureFormatUVE format : {TextureFormatUVE::R8Unorm, TextureFormatUVE::RG8Unorm,
-                                          TextureFormatUVE::R16Float, TextureFormatUVE::RG16Float,
-                                          TextureFormatUVE::R32Float, TextureFormatUVE::RG32Float,
-                                          TextureFormatUVE::RGBA32Float}) {
+    NullRenderDevice device;
+    for (const TextureFormat format : {TextureFormat::R8Unorm, TextureFormat::RG8Unorm,
+                                          TextureFormat::R16Float, TextureFormat::RG16Float,
+                                          TextureFormat::R32Float, TextureFormat::RG32Float,
+                                          TextureFormat::RGBA32Float}) {
         // Mip chains must be uploaded in full (the existing contract), so size the data from
         // the shared block table: (16 + 4 + 1) texels of the format's byte size.
-        const std::vector<std::byte> chain(static_cast<std::size_t>(21U * GetTextureFormatBlockInfoUVE(format).bytes));
-        const auto source = device.CreateTextureUVE({4, 4, format, 3}, chain);
-        const auto target = device.CreateTextureUVE({2, 2, format});
-        ASSERT_NE(source, kInvalidTextureHandleUVE);
-        ASSERT_NE(target, kInvalidTextureHandleUVE);
-        const TextureBlitDescUVE blit{source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Linear};
-        EXPECT_EQ(device.BlitTextureUVE(blit), ResultUVE::Recorded) << static_cast<int>(format);
-        EXPECT_EQ(device.GenerateMipmapsUVE(source), ResultUVE::Recorded) << static_cast<int>(format);
-        EXPECT_EQ(device.GenerateMipmapsUVE(target), ResultUVE::InvalidArgument) << "single level";
-        device.DestroyTextureUVE(source);
-        device.DestroyTextureUVE(target);
+        const std::vector<std::byte> chain(static_cast<std::size_t>(21U * GetTextureFormatBlockInfo(format).bytes));
+        const auto source = device.CreateTexture({4, 4, format, 3}, chain);
+        const auto target = device.CreateTexture({2, 2, format});
+        ASSERT_NE(source, kInvalidTextureHandle);
+        ASSERT_NE(target, kInvalidTextureHandle);
+        const TextureBlitDesc blit{source, target, {0, 0, 0, 0, 4, 4}, {0, 0, 0, 0, 2, 2}, BlitFilter::Linear};
+        EXPECT_EQ(device.BlitTexture(blit), Result::Recorded) << static_cast<int>(format);
+        EXPECT_EQ(device.GenerateMipmaps(source), Result::Recorded) << static_cast<int>(format);
+        EXPECT_EQ(device.GenerateMipmaps(target), Result::InvalidArgument) << "single level";
+        device.DestroyTexture(source);
+        device.DestroyTexture(target);
     }
-    const auto r8 = device.CreateTextureUVE({2, 2, TextureFormatUVE::R8Unorm});
-    const auto rg8 = device.CreateTextureUVE({2, 2, TextureFormatUVE::RG8Unorm});
-    EXPECT_EQ(device.BlitTextureUVE({r8, rg8, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
-              ResultUVE::InvalidArgument)
+    const auto r8 = device.CreateTexture({2, 2, TextureFormat::R8Unorm});
+    const auto rg8 = device.CreateTexture({2, 2, TextureFormat::RG8Unorm});
+    EXPECT_EQ(device.BlitTexture({r8, rg8, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilter::Point}),
+              Result::InvalidArgument)
         << "format conversion stays rejected";
-    const auto depth = device.CreateTextureUVE({2, 2, TextureFormatUVE::Depth32Float});
-    ASSERT_NE(depth, kInvalidTextureHandleUVE);
-    EXPECT_EQ(device.GenerateMipmapsUVE(depth), ResultUVE::InvalidArgument) << "depth never builds mips";
-    EXPECT_EQ(device.BlitTextureUVE({depth, depth, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilterUVE::Point}),
-              ResultUVE::InvalidArgument);
+    const auto depth = device.CreateTexture({2, 2, TextureFormat::Depth32Float});
+    ASSERT_NE(depth, kInvalidTextureHandle);
+    EXPECT_EQ(device.GenerateMipmaps(depth), Result::InvalidArgument) << "depth never builds mips";
+    EXPECT_EQ(device.BlitTexture({depth, depth, {0, 0, 0, 0, 2, 2}, {0, 0, 0, 0, 2, 2}, BlitFilter::Point}),
+              Result::InvalidArgument);
 }
 
-TEST(DeviceOperationsUVETest, MipsRequireAllocatedColorLevelsAndDescriptorReadPreservesFailureOutput) {
-    NullRenderDeviceUVE device;
+TEST(DeviceOperationsTest, MipsRequireAllocatedColorLevelsAndDescriptorReadPreservesFailureOutput) {
+    NullRenderDevice device;
     const std::vector<std::byte> pixels(84U);
-    const auto texture = device.CreateTextureUVE({4, 4, TextureFormatUVE::RGBA8Unorm, 3}, pixels);
-    ASSERT_NE(texture, kInvalidTextureHandleUVE);
-    EXPECT_EQ(device.GenerateMipmapsUVE(texture), ResultUVE::Recorded);
-    const auto single = device.CreateTextureUVE({4, 4, TextureFormatUVE::RGBA8Unorm});
-    EXPECT_EQ(device.GenerateMipmapsUVE(single), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.GenerateMipmapsUVE({}), ResultUVE::InvalidHandle);
-    TextureDescUVE output{99, 99, TextureFormatUVE::RGBA8Unorm};
-    EXPECT_EQ(device.GetTextureDescUVE({}, output), ResultUVE::InvalidHandle);
+    const auto texture = device.CreateTexture({4, 4, TextureFormat::RGBA8Unorm, 3}, pixels);
+    ASSERT_NE(texture, kInvalidTextureHandle);
+    EXPECT_EQ(device.GenerateMipmaps(texture), Result::Recorded);
+    const auto single = device.CreateTexture({4, 4, TextureFormat::RGBA8Unorm});
+    EXPECT_EQ(device.GenerateMipmaps(single), Result::InvalidArgument);
+    EXPECT_EQ(device.GenerateMipmaps({}), Result::InvalidHandle);
+    TextureDesc output{99, 99, TextureFormat::RGBA8Unorm};
+    EXPECT_EQ(device.GetTextureDesc({}, output), Result::InvalidHandle);
     EXPECT_EQ(output.width, 99U);
-    EXPECT_EQ(device.GetTextureDescUVE(texture, output), ResultUVE::Success);
+    EXPECT_EQ(device.GetTextureDesc(texture, output), Result::Success);
     EXPECT_EQ(output.mipLevels, 3U);
 }
-TEST(DeviceOperationsUVETest, MemoryBarriersRecordOnlyValidOutsidePassDependencies) {
-    NullRenderDeviceUVE device;
-    auto commands = device.CreateCommandBufferUVE();
-    EXPECT_EQ(commands->MemoryBarrierUVE(static_cast<MemoryBarrierMaskUVE>(0)), ResultUVE::InvalidArgument);
-    EXPECT_EQ(commands->MemoryBarrierUVE(static_cast<MemoryBarrierMaskUVE>(64)), ResultUVE::InvalidArgument);
-    commands->BeginRenderPassUVE({});
-    EXPECT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::All), ResultUVE::InvalidState);
-    commands->EndRenderPassUVE();
-    EXPECT_EQ(commands->MemoryBarrierUVE(MemoryBarrierMaskUVE::ShaderStorage |
-                                         MemoryBarrierMaskUVE::IndirectCommands),
-              ResultUVE::Recorded);
-    device.SubmitUVE(std::move(commands));
-    const auto &recorded = device.GetLastSubmittedCommandsUVE();
+TEST(DeviceOperationsTest, MemoryBarriersRecordOnlyValidOutsidePassDependencies) {
+    NullRenderDevice device;
+    auto commands = device.CreateCommandBuffer();
+    EXPECT_EQ(commands->MemoryBarrier(static_cast<MemoryBarrierMask>(0)), Result::InvalidArgument);
+    EXPECT_EQ(commands->MemoryBarrier(static_cast<MemoryBarrierMask>(64)), Result::InvalidArgument);
+    commands->BeginRenderPass({});
+    EXPECT_EQ(commands->MemoryBarrier(MemoryBarrierMask::All), Result::InvalidState);
+    commands->EndRenderPass();
+    EXPECT_EQ(commands->MemoryBarrier(MemoryBarrierMask::ShaderStorage |
+                                         MemoryBarrierMask::IndirectCommands),
+              Result::Recorded);
+    device.Submit(std::move(commands));
+    const auto &recorded = device.GetLastSubmittedCommands();
     ASSERT_EQ(recorded.size(), 3U);
-    EXPECT_EQ(std::get<MemoryBarrierCommandUVE>(recorded.back()).mask,
-              MemoryBarrierMaskUVE::ShaderStorage | MemoryBarrierMaskUVE::IndirectCommands);
+    EXPECT_EQ(std::get<MemoryBarrierCommand>(recorded.back()).mask,
+              MemoryBarrierMask::ShaderStorage | MemoryBarrierMask::IndirectCommands);
 }
-TEST(DeviceOperationsUVETest, FenceLifecycleIsExplicitlyAModelAndRejectsDestroyedHandles) {
-    NullRenderDeviceUVE device;
-    FenceHandleUVE fence;
-    ASSERT_EQ(device.InsertFenceUVE(fence), ResultUVE::Recorded);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
-    EXPECT_EQ(device.WaitFenceUVE(fence, 0), ResultUVE::Recorded);
-    EXPECT_EQ(device.DestroyFenceUVE(fence), ResultUVE::Recorded);
-    EXPECT_EQ(device.WaitFenceUVE(fence, UINT64_MAX), ResultUVE::InvalidHandle);
-    EXPECT_EQ(device.DestroyFenceUVE(fence), ResultUVE::InvalidHandle);
-    FenceHandleUVE next;
-    ASSERT_EQ(device.InsertFenceUVE(next), ResultUVE::Recorded);
+TEST(DeviceOperationsTest, FenceLifecycleIsExplicitlyAModelAndRejectsDestroyedHandles) {
+    NullRenderDevice device;
+    FenceHandle fence;
+    ASSERT_EQ(device.InsertFence(fence), Result::Recorded);
+    EXPECT_EQ(device.GetLiveResourceCount(), 1U);
+    EXPECT_EQ(device.WaitFence(fence, 0), Result::Recorded);
+    EXPECT_EQ(device.DestroyFence(fence), Result::Recorded);
+    EXPECT_EQ(device.WaitFence(fence, UINT64_MAX), Result::InvalidHandle);
+    EXPECT_EQ(device.DestroyFence(fence), Result::InvalidHandle);
+    FenceHandle next;
+    ASSERT_EQ(device.InsertFence(next), Result::Recorded);
     EXPECT_NE(next, fence);
-    EXPECT_EQ(device.WaitIdleUVE(), ResultUVE::Recorded);
+    EXPECT_EQ(device.WaitIdle(), Result::Recorded);
 }
-TEST(DeviceOperationsUVETest, QueryStateMachineRejectsWrongKindsAndNestedQueries) {
-    NullRenderDeviceUVE device;
-    QueryHandleUVE query, another, timestamp;
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, query), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, another), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
+TEST(DeviceOperationsTest, QueryStateMachineRejectsWrongKindsAndNestedQueries) {
+    NullRenderDevice device;
+    QueryHandle query, another, timestamp;
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, query), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, another), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::Timestamp, timestamp), Result::Recorded);
     auto unchanged = query;
-    EXPECT_EQ(device.CreateQueryUVE(static_cast<RenderQueryKindUVE>(255), unchanged),
-              ResultUVE::InvalidArgument);
+    EXPECT_EQ(device.CreateQuery(static_cast<RenderQueryKind>(255), unchanged),
+              Result::InvalidArgument);
     EXPECT_EQ(unchanged, query);
-    EXPECT_EQ(device.EndQueryUVE(query), ResultUVE::InvalidState);
-    EXPECT_EQ(device.BeginQueryUVE(timestamp), ResultUVE::InvalidArgument);
-    EXPECT_EQ(device.WriteTimestampUVE(query), ResultUVE::InvalidArgument);
-    ASSERT_EQ(device.BeginQueryUVE(query), ResultUVE::Recorded);
-    EXPECT_EQ(device.BeginQueryUVE(another), ResultUVE::InvalidState);
-    EXPECT_EQ(device.EndQueryUVE(another), ResultUVE::InvalidState);
-    EXPECT_EQ(device.DestroyQueryUVE(query), ResultUVE::InvalidState);
-    ASSERT_EQ(device.EndQueryUVE(query), ResultUVE::Recorded);
-    EXPECT_EQ(device.DestroyQueryUVE(query), ResultUVE::Recorded);
-    EXPECT_EQ(device.BeginQueryUVE(query), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device.EndQuery(query), Result::InvalidState);
+    EXPECT_EQ(device.BeginQuery(timestamp), Result::InvalidArgument);
+    EXPECT_EQ(device.WriteTimestamp(query), Result::InvalidArgument);
+    ASSERT_EQ(device.BeginQuery(query), Result::Recorded);
+    EXPECT_EQ(device.BeginQuery(another), Result::InvalidState);
+    EXPECT_EQ(device.EndQuery(another), Result::InvalidState);
+    EXPECT_EQ(device.DestroyQuery(query), Result::InvalidState);
+    ASSERT_EQ(device.EndQuery(query), Result::Recorded);
+    EXPECT_EQ(device.DestroyQuery(query), Result::Recorded);
+    EXPECT_EQ(device.BeginQuery(query), Result::InvalidHandle);
 }
-TEST(DeviceOperationsUVETest, NullNeverInventsGpuVisibilityOrNanoseconds) {
-    NullRenderDeviceUVE device;
-    QueryHandleUVE handle;
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, handle), ResultUVE::Recorded);
-    RenderQueryResultUVE output{RenderQueryKindUVE::AnySamplesPassed, 42};
-    EXPECT_EQ(device.GetQueryResultUVE(handle, output), ResultUVE::NotReady);
-    ASSERT_EQ(device.WriteTimestampUVE(handle), ResultUVE::Recorded);
-    EXPECT_EQ(device.GetQueryResultUVE(handle, output, true), ResultUVE::Unsupported);
-    EXPECT_EQ(output.kind, RenderQueryKindUVE::AnySamplesPassed);
+TEST(DeviceOperationsTest, NullNeverInventsGpuVisibilityOrNanoseconds) {
+    NullRenderDevice device;
+    QueryHandle handle;
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::Timestamp, handle), Result::Recorded);
+    RenderQueryResult output{RenderQueryKind::AnySamplesPassed, 42};
+    EXPECT_EQ(device.GetQueryResult(handle, output), Result::NotReady);
+    ASSERT_EQ(device.WriteTimestamp(handle), Result::Recorded);
+    EXPECT_EQ(device.GetQueryResult(handle, output, true), Result::Unsupported);
+    EXPECT_EQ(output.kind, RenderQueryKind::AnySamplesPassed);
     EXPECT_EQ(output.value, 42U);
-    EXPECT_EQ(device.DestroyQueryUVE(handle), ResultUVE::Recorded);
-    EXPECT_EQ(device.GetQueryResultUVE(handle, output), ResultUVE::InvalidHandle);
+    EXPECT_EQ(device.DestroyQuery(handle), Result::Recorded);
+    EXPECT_EQ(device.GetQueryResult(handle, output), Result::InvalidHandle);
 }
-TEST(DeviceOperationsUVETest, DeviceDiagnosticHistoryIsBoundedAndReportsEviction) {
-    NullRenderDeviceUVE device;
+TEST(DeviceOperationsTest, DeviceDiagnosticHistoryIsBoundedAndReportsEviction) {
+    NullRenderDevice device;
     for (int i = 0; i < 300; ++i) {
-        FenceHandleUVE handle;
-        ASSERT_EQ(device.InsertFenceUVE(handle), ResultUVE::Recorded);
-        ASSERT_EQ(device.DestroyFenceUVE(handle), ResultUVE::Recorded);
+        FenceHandle handle;
+        ASSERT_EQ(device.InsertFence(handle), Result::Recorded);
+        ASSERT_EQ(device.DestroyFence(handle), Result::Recorded);
     }
-    EXPECT_EQ(device.GetRecordedDeviceOperationsUVE().size(), 256U);
-    EXPECT_EQ(device.GetDroppedDeviceOperationCountUVE(), 44U);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+    EXPECT_EQ(device.GetRecordedDeviceOperations().size(), 256U);
+    EXPECT_EQ(device.GetDroppedDeviceOperationCount(), 44U);
+    EXPECT_EQ(device.GetLiveResourceCount(), 0U);
 }
 
-// ---- Foundation WP3: recorded query brackets (ICommandBufferUVE) ------------------------
-TEST(DeviceOperationsUVETest, NullCommandBufferRecordsQueryBracketsInOrder) {
-    NullRenderDeviceUVE device;
-    QueryHandleUVE occlusion, timestamp;
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
-    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+// ---- Foundation WP3: recorded query brackets (ICommandBuffer) ------------------------
+TEST(DeviceOperationsTest, NullCommandBufferRecordsQueryBracketsInOrder) {
+    NullRenderDevice device;
+    QueryHandle occlusion, timestamp;
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, occlusion), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::Timestamp, timestamp), Result::Recorded);
+    std::unique_ptr<ICommandBuffer> commands = device.CreateCommandBuffer();
     ASSERT_NE(commands, nullptr);
-    EXPECT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
-    commands->BeginRenderPassUVE(RenderPassDescUVE{});
-    EXPECT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
-    commands->DrawUVE(3U, 1U);
-    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
-    commands->EndRenderPassUVE();
-    EXPECT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
-    device.SubmitUVE(std::move(commands));
-    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    EXPECT_EQ(commands->WriteTimestamp(timestamp), Result::Recorded);
+    commands->BeginRenderPass(RenderPassDesc{});
+    EXPECT_EQ(commands->BeginQuery(occlusion), Result::Recorded);
+    commands->Draw(3U, 1U);
+    EXPECT_EQ(commands->EndQuery(occlusion), Result::Recorded);
+    commands->EndRenderPass();
+    EXPECT_EQ(commands->WriteTimestamp(timestamp), Result::Recorded);
+    device.Submit(std::move(commands));
+    const std::vector<RecordedCommand>& recorded = device.GetLastSubmittedCommands();
     ASSERT_EQ(recorded.size(), 7U);
-    EXPECT_TRUE(std::holds_alternative<WriteTimestampCommandUVE>(recorded[0]));
-    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommandUVE>(recorded[1]));
-    ASSERT_TRUE(std::holds_alternative<BeginQueryCommandUVE>(recorded[2]));
-    EXPECT_EQ(std::get<BeginQueryCommandUVE>(recorded[2]).query, occlusion);
-    EXPECT_TRUE(std::holds_alternative<DrawCommandUVE>(recorded[3]));
-    ASSERT_TRUE(std::holds_alternative<EndQueryCommandUVE>(recorded[4]));
-    EXPECT_EQ(std::get<EndQueryCommandUVE>(recorded[4]).query, occlusion);
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[5]));
-    ASSERT_TRUE(std::holds_alternative<WriteTimestampCommandUVE>(recorded[6]));
-    EXPECT_EQ(std::get<WriteTimestampCommandUVE>(recorded[6]).query, timestamp);
+    EXPECT_TRUE(std::holds_alternative<WriteTimestampCommand>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<BeginRenderPassCommand>(recorded[1]));
+    ASSERT_TRUE(std::holds_alternative<BeginQueryCommand>(recorded[2]));
+    EXPECT_EQ(std::get<BeginQueryCommand>(recorded[2]).query, occlusion);
+    EXPECT_TRUE(std::holds_alternative<DrawCommand>(recorded[3]));
+    ASSERT_TRUE(std::holds_alternative<EndQueryCommand>(recorded[4]));
+    EXPECT_EQ(std::get<EndQueryCommand>(recorded[4]).query, occlusion);
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommand>(recorded[5]));
+    ASSERT_TRUE(std::holds_alternative<WriteTimestampCommand>(recorded[6]));
+    EXPECT_EQ(std::get<WriteTimestampCommand>(recorded[6]).query, timestamp);
 }
 
-TEST(DeviceOperationsUVETest, NullCommandBufferRejectsBadQueryBrackets) {
-    NullRenderDeviceUVE device;
-    QueryHandleUVE occlusion, second, timestamp;
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, second), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
-    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+TEST(DeviceOperationsTest, NullCommandBufferRejectsBadQueryBrackets) {
+    NullRenderDevice device;
+    QueryHandle occlusion, second, timestamp;
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, occlusion), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, second), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::Timestamp, timestamp), Result::Recorded);
+    std::unique_ptr<ICommandBuffer> commands = device.CreateCommandBuffer();
     ASSERT_NE(commands, nullptr);
     // Handle and kind validation against the device's query table.
-    EXPECT_EQ(commands->BeginQueryUVE(kInvalidQueryHandleUVE), ResultUVE::InvalidHandle);
-    EXPECT_EQ(commands->BeginQueryUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
-    EXPECT_EQ(commands->BeginQueryUVE(timestamp), ResultUVE::InvalidArgument);
-    EXPECT_EQ(commands->WriteTimestampUVE(occlusion), ResultUVE::InvalidArgument);
-    EXPECT_EQ(commands->WriteTimestampUVE(QueryHandleUVE{999999U}), ResultUVE::InvalidHandle);
+    EXPECT_EQ(commands->BeginQuery(kInvalidQueryHandle), Result::InvalidHandle);
+    EXPECT_EQ(commands->BeginQuery(QueryHandle{999999U}), Result::InvalidHandle);
+    EXPECT_EQ(commands->BeginQuery(timestamp), Result::InvalidArgument);
+    EXPECT_EQ(commands->WriteTimestamp(occlusion), Result::InvalidArgument);
+    EXPECT_EQ(commands->WriteTimestamp(QueryHandle{999999U}), Result::InvalidHandle);
     // End without begin, nesting, and ending the wrong query.
-    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::InvalidState);
-    commands->BeginRenderPassUVE(RenderPassDescUVE{});
-    EXPECT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
-    EXPECT_EQ(commands->BeginQueryUVE(second), ResultUVE::InvalidState);
-    EXPECT_EQ(commands->EndQueryUVE(second), ResultUVE::InvalidState);
-    EXPECT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
+    EXPECT_EQ(commands->EndQuery(occlusion), Result::InvalidState);
+    commands->BeginRenderPass(RenderPassDesc{});
+    EXPECT_EQ(commands->BeginQuery(occlusion), Result::Recorded);
+    EXPECT_EQ(commands->BeginQuery(second), Result::InvalidState);
+    EXPECT_EQ(commands->EndQuery(second), Result::InvalidState);
+    EXPECT_EQ(commands->EndQuery(occlusion), Result::Recorded);
     // A bracket may not span the pass boundary: the pass end closes it, the late end fails.
-    EXPECT_EQ(commands->BeginQueryUVE(second), ResultUVE::Recorded);
-    commands->EndRenderPassUVE();
-    EXPECT_EQ(commands->EndQueryUVE(second), ResultUVE::InvalidState);
-    device.SubmitUVE(std::move(commands));
-    const std::vector<RecordedCommandUVE>& recorded = device.GetLastSubmittedCommandsUVE();
+    EXPECT_EQ(commands->BeginQuery(second), Result::Recorded);
+    commands->EndRenderPass();
+    EXPECT_EQ(commands->EndQuery(second), Result::InvalidState);
+    device.Submit(std::move(commands));
+    const std::vector<RecordedCommand>& recorded = device.GetLastSubmittedCommands();
     // begin-pass, begin(occlusion), end(occlusion), begin(second), auto end(second), end-pass
     ASSERT_EQ(recorded.size(), 6U);
-    ASSERT_TRUE(std::holds_alternative<EndQueryCommandUVE>(recorded[4]));
-    EXPECT_EQ(std::get<EndQueryCommandUVE>(recorded[4]).query, second);
-    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommandUVE>(recorded[5]));
+    ASSERT_TRUE(std::holds_alternative<EndQueryCommand>(recorded[4]));
+    EXPECT_EQ(std::get<EndQueryCommand>(recorded[4]).query, second);
+    EXPECT_TRUE(std::holds_alternative<EndRenderPassCommand>(recorded[5]));
 }
 
-TEST(DeviceOperationsUVETest, NullRecordedQueriesNeverInventResults) {
-    NullRenderDeviceUVE device;
-    QueryHandleUVE occlusion, timestamp;
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::AnySamplesPassed, occlusion), ResultUVE::Recorded);
-    ASSERT_EQ(device.CreateQueryUVE(RenderQueryKindUVE::Timestamp, timestamp), ResultUVE::Recorded);
-    std::unique_ptr<ICommandBufferUVE> commands = device.CreateCommandBufferUVE();
+TEST(DeviceOperationsTest, NullRecordedQueriesNeverInventResults) {
+    NullRenderDevice device;
+    QueryHandle occlusion, timestamp;
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::AnySamplesPassed, occlusion), Result::Recorded);
+    ASSERT_EQ(device.CreateQuery(RenderQueryKind::Timestamp, timestamp), Result::Recorded);
+    std::unique_ptr<ICommandBuffer> commands = device.CreateCommandBuffer();
     ASSERT_NE(commands, nullptr);
-    commands->BeginRenderPassUVE(RenderPassDescUVE{});
-    ASSERT_EQ(commands->BeginQueryUVE(occlusion), ResultUVE::Recorded);
-    commands->DrawUVE(3U, 1U);
-    ASSERT_EQ(commands->EndQueryUVE(occlusion), ResultUVE::Recorded);
-    commands->EndRenderPassUVE();
-    ASSERT_EQ(commands->WriteTimestampUVE(timestamp), ResultUVE::Recorded);
-    device.SubmitUVE(std::move(commands));
-    device.PresentUVE();
-    RenderQueryResultUVE untouched{};
+    commands->BeginRenderPass(RenderPassDesc{});
+    ASSERT_EQ(commands->BeginQuery(occlusion), Result::Recorded);
+    commands->Draw(3U, 1U);
+    ASSERT_EQ(commands->EndQuery(occlusion), Result::Recorded);
+    commands->EndRenderPass();
+    ASSERT_EQ(commands->WriteTimestamp(timestamp), Result::Recorded);
+    device.Submit(std::move(commands));
+    device.Present();
+    RenderQueryResult untouched{};
     untouched.value = 4321U;
-    EXPECT_EQ(device.GetQueryResultUVE(occlusion, untouched, false), ResultUVE::NotReady);
-    EXPECT_EQ(device.GetQueryResultUVE(occlusion, untouched, true), ResultUVE::NotReady);
-    EXPECT_EQ(device.GetQueryResultUVE(timestamp, untouched, false), ResultUVE::NotReady);
+    EXPECT_EQ(device.GetQueryResult(occlusion, untouched, false), Result::NotReady);
+    EXPECT_EQ(device.GetQueryResult(occlusion, untouched, true), Result::NotReady);
+    EXPECT_EQ(device.GetQueryResult(timestamp, untouched, false), Result::NotReady);
     EXPECT_EQ(untouched.value, 4321U) << "a recorded bracket never produces a visibility or timing number";
-    EXPECT_EQ(device.DestroyQueryUVE(occlusion), ResultUVE::Recorded);
-    EXPECT_EQ(device.DestroyQueryUVE(timestamp), ResultUVE::Recorded);
+    EXPECT_EQ(device.DestroyQuery(occlusion), Result::Recorded);
+    EXPECT_EQ(device.DestroyQuery(timestamp), Result::Recorded);
 }
 } // namespace
 } // namespace UVE::Render::Tests

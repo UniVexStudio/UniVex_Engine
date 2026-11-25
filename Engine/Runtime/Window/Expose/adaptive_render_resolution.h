@@ -8,12 +8,12 @@
 
 namespace UVE::Window {
 
-struct AdaptiveRenderResolutionLimitsUVE final {
+struct AdaptiveRenderResolutionLimits final {
     std::uint32_t maximumAxis = 1U;
     std::uint64_t maximumPixels = 1ULL;
 };
 
-struct AdaptiveRenderResolutionUVE final {
+struct AdaptiveRenderResolution final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
 };
@@ -23,9 +23,9 @@ struct AdaptiveRenderResolutionUVE final {
 /// applied before those safety limits; it does not change the presentation surface. Invalid sizes,
 /// scales, or limits return {0,0}. The helper is deterministic and platform-neutral so Android
 /// startup clamping and live desktop/Android target resizing cannot drift into different policies.
-[[nodiscard]] inline AdaptiveRenderResolutionUVE ComputeAdaptiveRenderResolutionUVE(
+[[nodiscard]] inline AdaptiveRenderResolution ComputeAdaptiveRenderResolution(
     const std::uint32_t drawableWidth, const std::uint32_t drawableHeight,
-    const AdaptiveRenderResolutionLimitsUVE limits, const double renderScale = 1.0) noexcept {
+    const AdaptiveRenderResolutionLimits limits, const double renderScale = 1.0) noexcept {
     if (drawableWidth == 0U || drawableHeight == 0U || limits.maximumAxis == 0U || limits.maximumPixels == 0ULL ||
         !std::isfinite(renderScale) || renderScale <= 0.0) {
         return {};
@@ -48,7 +48,7 @@ struct AdaptiveRenderResolutionUVE final {
         return {};
     }
 
-    return AdaptiveRenderResolutionUVE{
+    return AdaptiveRenderResolution{
         std::max(1U, static_cast<std::uint32_t>(std::floor(width * safetyScale))),
         std::max(1U, static_cast<std::uint32_t>(std::floor(height * safetyScale))),
     };

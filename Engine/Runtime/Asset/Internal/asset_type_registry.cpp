@@ -8,38 +8,38 @@
 namespace UVE::Asset {
 namespace {
 
-struct EnvelopeExtensionEntryUVE final {
+struct EnvelopeExtensionEntry final {
     std::string_view normalizedExtension;
-    AssetKindUVE assetKind;
-    AssetImportSourceKindUVE importSourceKind;
+    AssetKind assetKind;
+    AssetImportSourceKind importSourceKind;
     bool cookableContent;
 };
 
-constexpr std::array<EnvelopeExtensionEntryUVE, 21> kEnvelopeExtensionTableUVE{{
-    {"uvscene", AssetKindUVE::Scene, AssetImportSourceKindUVE::SceneEnvelope, true},
-    {"uvprefab", AssetKindUVE::Prefab, AssetImportSourceKindUVE::PrefabEnvelope, true},
-    {"uventity", AssetKindUVE::Prefab, AssetImportSourceKindUVE::PrefabEnvelope, true},
-    {"uvwbp", AssetKindUVE::Prefab, AssetImportSourceKindUVE::PrefabEnvelope, true},
-    {"uvbundle", AssetKindUVE::Bundle, AssetImportSourceKindUVE::Unknown, false},
-    {"uvmodel", AssetKindUVE::Mesh, AssetImportSourceKindUVE::MeshEnvelope, true},
-    {"uvtex", AssetKindUVE::Texture, AssetImportSourceKindUVE::TextureEnvelope, true},
-    {"uvshader", AssetKindUVE::Shader, AssetImportSourceKindUVE::ShaderEnvelope, true},
-    {"uvmat", AssetKindUVE::Material, AssetImportSourceKindUVE::MaterialEnvelope, true},
-    {"uvmaterial", AssetKindUVE::Material, AssetImportSourceKindUVE::MaterialEnvelope, true},
-    {"uvsave", AssetKindUVE::Save, AssetImportSourceKindUVE::Unknown, false},
-    {"uvtable", AssetKindUVE::DataTable, AssetImportSourceKindUVE::DataTableEnvelope, true},
-    {"uvaudio", AssetKindUVE::Audio, AssetImportSourceKindUVE::AudioEnvelope, true},
-    {"uvanim", AssetKindUVE::Animation, AssetImportSourceKindUVE::AnimationEnvelope, true},
-    {"uvskel", AssetKindUVE::Skeleton, AssetImportSourceKindUVE::SkeletonEnvelope, true},
-    {"uvanimlib", AssetKindUVE::AnimationLibrary, AssetImportSourceKindUVE::AnimationLibraryEnvelope, true},
-    {"uvfont", AssetKindUVE::Font, AssetImportSourceKindUVE::FontEnvelope, true},
-    {"uvmontage", AssetKindUVE::MotionMontage, AssetImportSourceKindUVE::MotionMontageEnvelope, true},
-    {"uvmontagelib", AssetKindUVE::MontageLibrary, AssetImportSourceKindUVE::MontageLibraryEnvelope, true},
-    {"uvbp", AssetKindUVE::Blueprint, AssetImportSourceKindUVE::BlueprintEnvelope, true},
-    {"uvfx", AssetKindUVE::ParticleSystem, AssetImportSourceKindUVE::ParticleSystemEnvelope, true},
+constexpr std::array<EnvelopeExtensionEntry, 21> kEnvelopeExtensionTable{{
+    {"uvscene", AssetKind::Scene, AssetImportSourceKind::SceneEnvelope, true},
+    {"uvprefab", AssetKind::Prefab, AssetImportSourceKind::PrefabEnvelope, true},
+    {"uventity", AssetKind::Prefab, AssetImportSourceKind::PrefabEnvelope, true},
+    {"uvwbp", AssetKind::Prefab, AssetImportSourceKind::PrefabEnvelope, true},
+    {"uvbundle", AssetKind::Bundle, AssetImportSourceKind::Unknown, false},
+    {"uvmodel", AssetKind::Mesh, AssetImportSourceKind::MeshEnvelope, true},
+    {"uvtex", AssetKind::Texture, AssetImportSourceKind::TextureEnvelope, true},
+    {"uvshader", AssetKind::Shader, AssetImportSourceKind::ShaderEnvelope, true},
+    {"uvmat", AssetKind::Material, AssetImportSourceKind::MaterialEnvelope, true},
+    {"uvmaterial", AssetKind::Material, AssetImportSourceKind::MaterialEnvelope, true},
+    {"uvsave", AssetKind::Save, AssetImportSourceKind::Unknown, false},
+    {"uvtable", AssetKind::DataTable, AssetImportSourceKind::DataTableEnvelope, true},
+    {"uvaudio", AssetKind::Audio, AssetImportSourceKind::AudioEnvelope, true},
+    {"uvanim", AssetKind::Animation, AssetImportSourceKind::AnimationEnvelope, true},
+    {"uvskel", AssetKind::Skeleton, AssetImportSourceKind::SkeletonEnvelope, true},
+    {"uvanimlib", AssetKind::AnimationLibrary, AssetImportSourceKind::AnimationLibraryEnvelope, true},
+    {"uvfont", AssetKind::Font, AssetImportSourceKind::FontEnvelope, true},
+    {"uvmontage", AssetKind::MotionMontage, AssetImportSourceKind::MotionMontageEnvelope, true},
+    {"uvmontagelib", AssetKind::MontageLibrary, AssetImportSourceKind::MontageLibraryEnvelope, true},
+    {"uvbp", AssetKind::Blueprint, AssetImportSourceKind::BlueprintEnvelope, true},
+    {"uvfx", AssetKind::ParticleSystem, AssetImportSourceKind::ParticleSystemEnvelope, true},
 }};
 
-constexpr std::array<std::string_view, 19> kBuiltInGenericEnvelopeExtensionsUVE{{
+constexpr std::array<std::string_view, 19> kBuiltInGenericEnvelopeExtensions{{
     "uvscene",
     "uvprefab",
     "uventity",
@@ -61,7 +61,7 @@ constexpr std::array<std::string_view, 19> kBuiltInGenericEnvelopeExtensionsUVE{
     "uvfx",
 }};
 
-constexpr std::array<std::string_view, 6> kCookableRuntimeTextExtensionsUVE{{
+constexpr std::array<std::string_view, 6> kCookableRuntimeTextExtensions{{
     "uvs",
     "glsl",
     "vert",
@@ -70,9 +70,9 @@ constexpr std::array<std::string_view, 6> kCookableRuntimeTextExtensionsUVE{{
     "glslinc",
 }};
 
-[[nodiscard]] const EnvelopeExtensionEntryUVE* FindEnvelopeExtensionEntryUVE(
+[[nodiscard]] const EnvelopeExtensionEntry* FindEnvelopeExtensionEntry(
     const std::string_view normalizedExtension) noexcept {
-    for (const EnvelopeExtensionEntryUVE& entry : kEnvelopeExtensionTableUVE) {
+    for (const EnvelopeExtensionEntry& entry : kEnvelopeExtensionTable) {
         if (entry.normalizedExtension == normalizedExtension) {
             return &entry;
         }
@@ -82,7 +82,7 @@ constexpr std::array<std::string_view, 6> kCookableRuntimeTextExtensionsUVE{{
 
 } // namespace
 
-std::string NormalizeAssetExtensionUVE(const std::string_view extension) {
+std::string NormalizeAssetExtension(const std::string_view extension) {
     std::string_view trimmed = extension;
     if (!trimmed.empty() && trimmed.front() == '.') {
         trimmed.remove_prefix(1U);
@@ -95,33 +95,33 @@ std::string NormalizeAssetExtensionUVE(const std::string_view extension) {
     return normalized;
 }
 
-std::string NormalizeAssetPathExtensionUVE(const std::filesystem::path& path) {
-    return NormalizeAssetExtensionUVE(path.extension().string());
+std::string NormalizeAssetPathExtension(const std::filesystem::path& path) {
+    return NormalizeAssetExtension(path.extension().string());
 }
 
-std::optional<AssetKindUVE> ExpectedAssetKindForExtensionUVE(const std::string_view extension) {
-    const std::string normalized = NormalizeAssetExtensionUVE(extension);
-    if (const EnvelopeExtensionEntryUVE* const entry = FindEnvelopeExtensionEntryUVE(normalized); entry != nullptr) {
+std::optional<AssetKind> ExpectedAssetKindForExtension(const std::string_view extension) {
+    const std::string normalized = NormalizeAssetExtension(extension);
+    if (const EnvelopeExtensionEntry* const entry = FindEnvelopeExtensionEntry(normalized); entry != nullptr) {
         return entry->assetKind;
     }
     return std::nullopt;
 }
 
-std::optional<AssetKindUVE> ExpectedAssetKindForPathUVE(const std::filesystem::path& path) {
-    return ExpectedAssetKindForExtensionUVE(path.extension().string());
+std::optional<AssetKind> ExpectedAssetKindForPath(const std::filesystem::path& path) {
+    return ExpectedAssetKindForExtension(path.extension().string());
 }
 
-bool IsCookableNativeEnvelopeExtensionUVE(const std::string_view extension) {
-    const std::string normalized = NormalizeAssetExtensionUVE(extension);
-    if (const EnvelopeExtensionEntryUVE* const entry = FindEnvelopeExtensionEntryUVE(normalized); entry != nullptr) {
+bool IsCookableNativeEnvelopeExtension(const std::string_view extension) {
+    const std::string normalized = NormalizeAssetExtension(extension);
+    if (const EnvelopeExtensionEntry* const entry = FindEnvelopeExtensionEntry(normalized); entry != nullptr) {
         return entry->cookableContent;
     }
     return false;
 }
 
-bool IsCookableRuntimeTextExtensionUVE(const std::string_view extension) {
-    const std::string normalized = NormalizeAssetExtensionUVE(extension);
-    for (const std::string_view candidate : kCookableRuntimeTextExtensionsUVE) {
+bool IsCookableRuntimeTextExtension(const std::string_view extension) {
+    const std::string normalized = NormalizeAssetExtension(extension);
+    for (const std::string_view candidate : kCookableRuntimeTextExtensions) {
         if (candidate == normalized) {
             return true;
         }
@@ -129,96 +129,96 @@ bool IsCookableRuntimeTextExtensionUVE(const std::string_view extension) {
     return false;
 }
 
-bool IsCookableRuntimeExtensionUVE(const std::string_view extension) {
-    return IsCookableNativeEnvelopeExtensionUVE(extension) || IsCookableRuntimeTextExtensionUVE(extension);
+bool IsCookableRuntimeExtension(const std::string_view extension) {
+    return IsCookableNativeEnvelopeExtension(extension) || IsCookableRuntimeTextExtension(extension);
 }
 
-std::span<const std::string_view> GetBuiltInEnvelopeExtensionsUVE() noexcept {
-    return kBuiltInGenericEnvelopeExtensionsUVE;
+std::span<const std::string_view> GetBuiltInEnvelopeExtensions() noexcept {
+    return kBuiltInGenericEnvelopeExtensions;
 }
 
-AssetImportSourceKindUVE ClassifyImportSourceKindForExtensionUVE(const std::string_view extension) noexcept {
-    const std::string normalized = NormalizeAssetExtensionUVE(extension);
+AssetImportSourceKind ClassifyImportSourceKindForExtension(const std::string_view extension) noexcept {
+    const std::string normalized = NormalizeAssetExtension(extension);
     if (normalized == "txt") {
-        return AssetImportSourceKindUVE::PlainText;
+        return AssetImportSourceKind::PlainText;
     }
-    if (const EnvelopeExtensionEntryUVE* const entry = FindEnvelopeExtensionEntryUVE(normalized);
-        entry != nullptr && entry->importSourceKind != AssetImportSourceKindUVE::Unknown) {
+    if (const EnvelopeExtensionEntry* const entry = FindEnvelopeExtensionEntry(normalized);
+        entry != nullptr && entry->importSourceKind != AssetImportSourceKind::Unknown) {
         return entry->importSourceKind;
     }
     if (normalized == "vert" || normalized == "frag" || normalized == "comp") {
-        return AssetImportSourceKindUVE::RawShader;
+        return AssetImportSourceKind::RawShader;
     }
     if (normalized == "fbx" || normalized == "obj" || normalized == "gltf" || normalized == "glb" ||
         normalized == "dae") {
-        return AssetImportSourceKindUVE::RawModel;
+        return AssetImportSourceKind::RawModel;
     }
     if (normalized == "png" || normalized == "jpg" || normalized == "jpeg" || normalized == "tga" ||
         normalized == "bmp" || normalized == "webp" || normalized == "hdr" || normalized == "exr") {
-        return AssetImportSourceKindUVE::RawTexture;
+        return AssetImportSourceKind::RawTexture;
     }
     if (normalized == "material" || normalized == "mat" || normalized == "mtl") {
-        return AssetImportSourceKindUVE::RawMaterial;
+        return AssetImportSourceKind::RawMaterial;
     }
     if (normalized == "wav" || normalized == "ogg" || normalized == "mp3" || normalized == "flac" ||
         normalized == "aac" || normalized == "m4a" || normalized == "wma") {
-        return AssetImportSourceKindUVE::RawAudio;
+        return AssetImportSourceKind::RawAudio;
     }
     if (normalized == "ttf" || normalized == "otf") {
-        return AssetImportSourceKindUVE::RawFont;
+        return AssetImportSourceKind::RawFont;
     }
-    return AssetImportSourceKindUVE::Unknown;
+    return AssetImportSourceKind::Unknown;
 }
 
-std::string_view AssetImportSourceKindLabelUVE(const AssetImportSourceKindUVE kind) noexcept {
+std::string_view AssetImportSourceKindLabel(const AssetImportSourceKind kind) noexcept {
     switch (kind) {
-        case AssetImportSourceKindUVE::PlainText:
+        case AssetImportSourceKind::PlainText:
             return "plainText";
-        case AssetImportSourceKindUVE::SceneEnvelope:
+        case AssetImportSourceKind::SceneEnvelope:
             return "sceneEnvelope";
-        case AssetImportSourceKindUVE::PrefabEnvelope:
+        case AssetImportSourceKind::PrefabEnvelope:
             return "prefabEnvelope";
-        case AssetImportSourceKindUVE::MeshEnvelope:
+        case AssetImportSourceKind::MeshEnvelope:
             return "meshEnvelope";
-        case AssetImportSourceKindUVE::TextureEnvelope:
+        case AssetImportSourceKind::TextureEnvelope:
             return "textureEnvelope";
-        case AssetImportSourceKindUVE::ShaderEnvelope:
+        case AssetImportSourceKind::ShaderEnvelope:
             return "shaderEnvelope";
-        case AssetImportSourceKindUVE::MaterialEnvelope:
+        case AssetImportSourceKind::MaterialEnvelope:
             return "materialEnvelope";
-        case AssetImportSourceKindUVE::AnimationEnvelope:
+        case AssetImportSourceKind::AnimationEnvelope:
             return "animationEnvelope";
-        case AssetImportSourceKindUVE::SkeletonEnvelope:
+        case AssetImportSourceKind::SkeletonEnvelope:
             return "skeletonEnvelope";
-        case AssetImportSourceKindUVE::AnimationLibraryEnvelope:
+        case AssetImportSourceKind::AnimationLibraryEnvelope:
             return "animationLibraryEnvelope";
-        case AssetImportSourceKindUVE::FontEnvelope:
+        case AssetImportSourceKind::FontEnvelope:
             return "fontEnvelope";
-        case AssetImportSourceKindUVE::MotionMontageEnvelope:
+        case AssetImportSourceKind::MotionMontageEnvelope:
             return "motionMontageEnvelope";
-        case AssetImportSourceKindUVE::MontageLibraryEnvelope:
+        case AssetImportSourceKind::MontageLibraryEnvelope:
             return "montageLibraryEnvelope";
-        case AssetImportSourceKindUVE::BlueprintEnvelope:
+        case AssetImportSourceKind::BlueprintEnvelope:
             return "blueprintEnvelope";
-        case AssetImportSourceKindUVE::ParticleSystemEnvelope:
+        case AssetImportSourceKind::ParticleSystemEnvelope:
             return "particleSystemEnvelope";
-        case AssetImportSourceKindUVE::DataTableEnvelope:
+        case AssetImportSourceKind::DataTableEnvelope:
             return "dataTableEnvelope";
-        case AssetImportSourceKindUVE::AudioEnvelope:
+        case AssetImportSourceKind::AudioEnvelope:
             return "audioEnvelope";
-        case AssetImportSourceKindUVE::RawModel:
+        case AssetImportSourceKind::RawModel:
             return "rawModel";
-        case AssetImportSourceKindUVE::RawTexture:
+        case AssetImportSourceKind::RawTexture:
             return "rawTexture";
-        case AssetImportSourceKindUVE::RawMaterial:
+        case AssetImportSourceKind::RawMaterial:
             return "rawMaterial";
-        case AssetImportSourceKindUVE::RawShader:
+        case AssetImportSourceKind::RawShader:
             return "rawShader";
-        case AssetImportSourceKindUVE::RawAudio:
+        case AssetImportSourceKind::RawAudio:
             return "rawAudio";
-        case AssetImportSourceKindUVE::RawFont:
+        case AssetImportSourceKind::RawFont:
             return "rawFont";
-        case AssetImportSourceKindUVE::Unknown:
+        case AssetImportSourceKind::Unknown:
             return "unknown";
     }
     return "unknown";

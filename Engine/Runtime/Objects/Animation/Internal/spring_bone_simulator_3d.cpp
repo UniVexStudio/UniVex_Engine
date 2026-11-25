@@ -17,13 +17,13 @@ namespace {
 
 /// Below this a link is a point, not a segment: the direction to its tail is undefined and the
 /// chain cannot be posed. Bones that close to zero length are left at their animated rotation.
-constexpr float kMinimumSpringLinkLengthUVE = 1.0e-4F;
+constexpr float kMinimumSpringLinkLength = 1.0e-4F;
 
-constexpr float kSpringBoneDegreesToRadiansUVE = Math::kPiUVE / 180.0F;
+constexpr float kSpringBoneDegreesToRadians = Math::kPi / 180.0F;
 
-[[nodiscard]] Math::Vector3UVE NormalizeOrUVE(const Math::Vector3UVE& vector,
-                                              const Math::Vector3UVE& fallback) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(vector);
+[[nodiscard]] Math::Vector3 NormalizeOr(const Math::Vector3& vector,
+                                              const Math::Vector3& fallback) noexcept {
+    const float lengthSquared = Math::LengthSquared(vector);
     if (!(lengthSquared > 1.0e-12F)) {
         return fallback;
     }
@@ -35,25 +35,25 @@ constexpr float kSpringBoneDegreesToRadiansUVE = Math::kPiUVE / 180.0F;
 /// The antiparallel case has no unique axis, so it picks a fixed perpendicular one instead of
 /// returning garbage: which way a bone flips through 180 degrees is arbitrary either way, but it
 /// must be arbitrary in the SAME way every frame or the chain jitters.
-[[nodiscard]] Math::QuaternionUVE FromToRotationUVE(const Math::Vector3UVE& from,
-                                                    const Math::Vector3UVE& to,
+[[nodiscard]] Math::Quaternion FromToRotation(const Math::Vector3& from,
+                                                    const Math::Vector3& to,
                                                     float& outRadians) noexcept {
-    const float dot = std::clamp(Math::DotUVE(from, to), -1.0F, 1.0F);
+    const float dot = std::clamp(Math::Dot(from, to), -1.0F, 1.0F);
     outRadians = std::acos(dot);
-    const Math::Vector3UVE axis = Math::CrossUVE(from, to);
-    const float axisLength = std::sqrt(Math::LengthSquaredUVE(axis));
-    Math::QuaternionUVE rotation;
+    const Math::Vector3 axis = Math::Cross(from, to);
+    const float axisLength = std::sqrt(Math::LengthSquared(axis));
+    Math::Quaternion rotation;
     if (axisLength > 1.0e-6F) {
-        static_cast<void>(Math::TryMakeAxisAngleUVE(axis * (1.0F / axisLength), outRadians, rotation));
+        static_cast<void>(Math::TryMakeAxisAngle(axis * (1.0F / axisLength), outRadians, rotation));
         return rotation;
     }
     if (dot >= 0.0F) {
-        return Math::QuaternionUVE{};
+        return Math::Quaternion{};
     }
-    const Math::Vector3UVE fallbackAxis = (std::fabs(from.x) < 0.9F) ? Math::Vector3UVE{1.0F, 0.0F, 0.0F}
-                                                                     : Math::Vector3UVE{0.0F, 0.0F, 1.0F};
-    static_cast<void>(Math::TryMakeAxisAngleUVE(
-        NormalizeOrUVE(Math::CrossUVE(from, fallbackAxis), Math::Vector3UVE{0.0F, 1.0F, 0.0F}),
+    const Math::Vector3 fallbackAxis = (std::fabs(from.x) < 0.9F) ? Math::Vector3{1.0F, 0.0F, 0.0F}
+                                                                     : Math::Vector3{0.0F, 0.0F, 1.0F};
+    static_cast<void>(Math::TryMakeAxisAngle(
+        NormalizeOr(Math::Cross(from, fallbackAxis), Math::Vector3{0.0F, 1.0F, 0.0F}),
         outRadians, rotation));
     return rotation;
 }
@@ -61,7 +61,7 @@ constexpr float kSpringBoneDegreesToRadiansUVE = Math::kPiUVE / 180.0F;
 /// Grows `pose` until it covers every bone, seeding the new entries from the rest pose. Entries
 /// animation has already written are left alone - a spring bone runs after the clip, not instead
 /// of it.
-void EnsureSkeletonPoseUVE(Skeleton3DComponentUVE& skeleton) {
+void EnsureSkeletonPose(Skeleton3DComponent& skeleton) {
     const std::size_t boneCount = skeleton.bones.size();
     if (skeleton.pose.size() >= boneCount) {
         return;
@@ -69,7 +69,7 @@ void EnsureSkeletonPoseUVE(Skeleton3DComponentUVE& skeleton) {
     const std::size_t filled = skeleton.pose.size();
     skeleton.pose.resize(boneCount);
     for (std::size_t index = filled; index < boneCount; ++index) {
-        skeleton.pose[index] = SkeletonBonePoseUVE{skeleton.bones[index].localPosition,
+        skeleton.pose[index] = SkeletonBonePose{skeleton.bones[index].localPosition,
                                                    skeleton.bones[index].localRotation,
                                                    skeleton.bones[index].localScale};
     }
@@ -78,7 +78,7 @@ void EnsureSkeletonPoseUVE(Skeleton3DComponentUVE& skeleton) {
 /// The chain a simulator drives: `root` and its first-child descendants, in storage order. A bone
 /// with several children follows the first one, and the walk stops when a bone has none - so an
 /// authored `chainLength` longer than the rig is harmless rather than an error.
-[[nodiscard]] std::uint32_t ResolveSpringChainUVE(const Skeleton3DComponentUVE& skeleton,
+[[nodiscard]] std::uint32_t ResolveSpringChain(const Skeleton3DComponent& skeleton,
                                                   const std::uint32_t root,
                                                   const std::uint32_t length,
                                                   std::vector<std::uint32_t>& outBones) {
@@ -89,14 +89,14 @@ void EnsureSkeletonPoseUVE(Skeleton3DComponentUVE& skeleton) {
     outBones.push_back(root);
     std::uint32_t current = root;
     while (outBones.size() < length) {
-        std::uint32_t next = kInvalidSkeletonBoneIndexUVE;
+        std::uint32_t next = kInvalidSkeletonBoneIndex;
         for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
             if (skeleton.bones[index].parentIndex == static_cast<std::int32_t>(current)) {
                 next = static_cast<std::uint32_t>(index);
                 break;
             }
         }
-        if (next == kInvalidSkeletonBoneIndexUVE) {
+        if (next == kInvalidSkeletonBoneIndex) {
             break;
         }
         outBones.push_back(next);
@@ -107,34 +107,34 @@ void EnsureSkeletonPoseUVE(Skeleton3DComponentUVE& skeleton) {
 
 /// The local tail offset of one chain segment: the next bone's rest position, or the simulator's
 /// authored tip for the last segment.
-[[nodiscard]] Math::Vector3UVE ChainTailLocalUVE(const Skeleton3DComponentUVE& skeleton,
+[[nodiscard]] Math::Vector3 ChainTailLocal(const Skeleton3DComponent& skeleton,
                                                  const std::vector<std::uint32_t>& chain,
                                                  const std::size_t segment,
-                                                 const Math::Vector3UVE& finalTipLocal) {
+                                                 const Math::Vector3& finalTipLocal) {
     if (segment + 1U < chain.size()) {
         return skeleton.bones[chain[segment + 1U]].localPosition;
     }
     return finalTipLocal;
 }
 
-[[nodiscard]] Math::Vector3UVE ScaleOffsetUVE(const Math::Vector3UVE& offset,
-                                              const Math::Vector3UVE& scale) noexcept {
-    return Math::Vector3UVE{offset.x * scale.x, offset.y * scale.y, offset.z * scale.z};
+[[nodiscard]] Math::Vector3 ScaleOffset(const Math::Vector3& offset,
+                                              const Math::Vector3& scale) noexcept {
+    return Math::Vector3{offset.x * scale.x, offset.y * scale.y, offset.z * scale.z};
 }
 
-struct SpringBoneObstacleUVE final {
-    Math::Vector3UVE center{};
+struct SpringBoneObstacle final {
+    Math::Vector3 center{};
     float radius = 0.0F;
 };
 
 /// One fixed step of the whole chain against `skeleton`'s pose, which is written back as it goes.
 /// Returns the number of segments solved, or 0 when nothing could be resolved.
-std::uint32_t SolveSpringBoneChainStepUVE(SpringBoneSimulator3DComponentUVE& simulator,
-                                          Skeleton3DComponentUVE& skeleton,
-                                          const ObjectWorldFrameUVE& skeletonWorldFrame,
+std::uint32_t SolveSpringBoneChainStep(SpringBoneSimulator3DComponent& simulator,
+                                          Skeleton3DComponent& skeleton,
+                                          const ObjectWorldFrame& skeletonWorldFrame,
                                           const std::vector<std::uint32_t>& chain,
-                                          const std::vector<Math::QuaternionUVE>& animatedLocalRotations,
-                                          const std::vector<SpringBoneObstacleUVE>& obstacles,
+                                          const std::vector<Math::Quaternion>& animatedLocalRotations,
+                                          const std::vector<SpringBoneObstacle>& obstacles,
                                           const float deltaTimeSeconds) {
     const std::uint32_t segmentCount = static_cast<std::uint32_t>(chain.size());
     if (segmentCount == 0U) {
@@ -148,87 +148,87 @@ std::uint32_t SolveSpringBoneChainStepUVE(SpringBoneSimulator3DComponentUVE& sim
     }
     if (!simulator.initialized || simulator.tips.size() != segmentCount) {
         // Seed from the animated pose: the first frame must not pop, whatever the clip is doing.
-        simulator.tips.assign(segmentCount, SpringBoneTipStateUVE{});
+        simulator.tips.assign(segmentCount, SpringBoneTipState{});
         for (std::size_t segment = 0U; segment < segmentCount; ++segment) {
-            ObjectWorldFrameUVE boneFrame;
-            if (!TryResolveSkeletonBoneWorldFrameUVE(skeleton, chain[segment], skeletonWorldFrame,
+            ObjectWorldFrame boneFrame;
+            if (!TryResolveSkeletonBoneWorldFrame(skeleton, chain[segment], skeletonWorldFrame,
                                                      boneFrame)) {
                 simulator.tips.clear();
                 return 0U;
             }
-            const Math::Vector3UVE tailLocal =
-                ChainTailLocalUVE(skeleton, chain, segment, simulator.tipOffsetLocal);
+            const Math::Vector3 tailLocal =
+                ChainTailLocal(skeleton, chain, segment, simulator.tipOffsetLocal);
             simulator.tips[segment].position =
                 boneFrame.position +
-                Math::RotateVectorUVE(boneFrame.rotation, ScaleOffsetUVE(tailLocal, boneFrame.scale));
-            simulator.tips[segment].velocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+                Math::RotateVector(boneFrame.rotation, ScaleOffset(tailLocal, boneFrame.scale));
+            simulator.tips[segment].velocity = Math::Vector3{0.0F, 0.0F, 0.0F};
         }
         simulator.initialized = true;
     }
 
-    const float limitRadians = simulator.limitAngleDegrees * kSpringBoneDegreesToRadiansUVE;
+    const float limitRadians = simulator.limitAngleDegrees * kSpringBoneDegreesToRadians;
     for (std::size_t segment = 0U; segment < segmentCount; ++segment) {
         const std::uint32_t boneIndex = chain[segment];
-        ObjectWorldFrameUVE boneFrame;
-        if (!TryResolveSkeletonBoneWorldFrameUVE(skeleton, boneIndex, skeletonWorldFrame, boneFrame)) {
+        ObjectWorldFrame boneFrame;
+        if (!TryResolveSkeletonBoneWorldFrame(skeleton, boneIndex, skeletonWorldFrame, boneFrame)) {
             return static_cast<std::uint32_t>(segment);
         }
-        const Math::Vector3UVE tailLocal =
-            ChainTailLocalUVE(skeleton, chain, segment, simulator.tipOffsetLocal);
-        const Math::Vector3UVE scaledTail = ScaleOffsetUVE(tailLocal, boneFrame.scale);
-        const float linkLength = std::sqrt(Math::LengthSquaredUVE(scaledTail));
-        if (!(linkLength > kMinimumSpringLinkLengthUVE)) {
+        const Math::Vector3 tailLocal =
+            ChainTailLocal(skeleton, chain, segment, simulator.tipOffsetLocal);
+        const Math::Vector3 scaledTail = ScaleOffset(tailLocal, boneFrame.scale);
+        const float linkLength = std::sqrt(Math::LengthSquared(scaledTail));
+        if (!(linkLength > kMinimumSpringLinkLength)) {
             continue;
         }
-        const Math::Vector3UVE restTailWorld =
-            boneFrame.position + Math::RotateVectorUVE(boneFrame.rotation, scaledTail);
+        const Math::Vector3 restTailWorld =
+            boneFrame.position + Math::RotateVector(boneFrame.rotation, scaledTail);
         // The pivot is the parent's SIMULATED tail, so the chain stays connected when the root
         // swings; only the first segment hangs off the bone that animation posed.
-        const Math::Vector3UVE pivot =
+        const Math::Vector3 pivot =
             (segment == 0U) ? boneFrame.position : simulator.tips[segment - 1U].position;
 
-        StepSpringBoneTipUVE(simulator.tips[segment], simulator, pivot, restTailWorld, deltaTimeSeconds);
-        for (const SpringBoneObstacleUVE& obstacle : obstacles) {
-            static_cast<void>(ResolveSpringBoneSphereCollisionUVE(
+        StepSpringBoneTip(simulator.tips[segment], simulator, pivot, restTailWorld, deltaTimeSeconds);
+        for (const SpringBoneObstacle& obstacle : obstacles) {
+            static_cast<void>(ResolveSpringBoneSphereCollision(
                 simulator.tips[segment], pivot, obstacle.center, obstacle.radius, simulator.hitRadius));
         }
 
-        const Math::Vector3UVE restDirection =
-            NormalizeOrUVE(restTailWorld - boneFrame.position, Math::Vector3UVE{0.0F, -1.0F, 0.0F});
-        Math::Vector3UVE simulatedDirection =
-            NormalizeOrUVE(simulator.tips[segment].position - pivot, restDirection);
+        const Math::Vector3 restDirection =
+            NormalizeOr(restTailWorld - boneFrame.position, Math::Vector3{0.0F, -1.0F, 0.0F});
+        Math::Vector3 simulatedDirection =
+            NormalizeOr(simulator.tips[segment].position - pivot, restDirection);
         float bendRadians = 0.0F;
-        const Math::QuaternionUVE bend = FromToRotationUVE(restDirection, simulatedDirection, bendRadians);
+        const Math::Quaternion bend = FromToRotation(restDirection, simulatedDirection, bendRadians);
         if (bendRadians > limitRadians) {
             // Clamp inside the cone around the animated direction, then move the tip onto the
             // clamped direction: the state must agree with the pose we are about to write.
             const float alpha = (bendRadians > 0.0F) ? (limitRadians / bendRadians) : 0.0F;
-            Math::QuaternionUVE clamped;
-            if (!Math::TrySlerpUVE(Math::QuaternionUVE{}, bend, alpha, clamped)) {
+            Math::Quaternion clamped;
+            if (!Math::TrySlerp(Math::Quaternion{}, bend, alpha, clamped)) {
                 return static_cast<std::uint32_t>(segment);
             }
-            simulatedDirection = NormalizeOrUVE(Math::RotateVectorUVE(clamped, restDirection), restDirection);
+            simulatedDirection = NormalizeOr(Math::RotateVector(clamped, restDirection), restDirection);
             simulator.tips[segment].position = pivot + simulatedDirection * linkLength;
         }
 
         float appliedRadians = 0.0F;
-        const Math::QuaternionUVE bendApplied =
-            FromToRotationUVE(restDirection, simulatedDirection, appliedRadians);
-        ObjectWorldFrameUVE parentFrame = skeletonWorldFrame;
+        const Math::Quaternion bendApplied =
+            FromToRotation(restDirection, simulatedDirection, appliedRadians);
+        ObjectWorldFrame parentFrame = skeletonWorldFrame;
         const std::int32_t parentIndex = skeleton.bones[boneIndex].parentIndex;
         if (parentIndex >= 0 &&
-            !TryResolveSkeletonBoneWorldFrameUVE(skeleton, static_cast<std::uint32_t>(parentIndex),
+            !TryResolveSkeletonBoneWorldFrame(skeleton, static_cast<std::uint32_t>(parentIndex),
                                                  skeletonWorldFrame, parentFrame)) {
             return static_cast<std::uint32_t>(segment);
         }
-        Math::QuaternionUVE parentInverse;
-        if (!Math::TryInverseUVE(parentFrame.rotation, parentInverse)) {
+        Math::Quaternion parentInverse;
+        if (!Math::TryInverse(parentFrame.rotation, parentInverse)) {
             return static_cast<std::uint32_t>(segment);
         }
-        const Math::QuaternionUVE localRotation =
-            Math::MultiplyUVE(parentInverse, Math::MultiplyUVE(bendApplied, boneFrame.rotation));
-        Math::QuaternionUVE normalized;
-        if (!Math::TryNormalizeUVE(localRotation, normalized)) {
+        const Math::Quaternion localRotation =
+            Math::Multiply(parentInverse, Math::Multiply(bendApplied, boneFrame.rotation));
+        Math::Quaternion normalized;
+        if (!Math::TryNormalize(localRotation, normalized)) {
             return static_cast<std::uint32_t>(segment);
         }
         skeleton.pose[boneIndex].rotation = normalized;
@@ -239,17 +239,17 @@ std::uint32_t SolveSpringBoneChainStepUVE(SpringBoneSimulator3DComponentUVE& sim
 
 } // namespace
 
-bool IsSpringBoneCollision3DComponentValidUVE(
-    const SpringBoneCollision3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.centerOffset) && std::isfinite(value.radius) &&
+bool IsSpringBoneCollision3DComponentValid(
+    const SpringBoneCollision3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.centerOffset) && std::isfinite(value.radius) &&
            value.radius > 0.0F;
 }
 
-SpringBoneCollision3DComponentUVE SanitizeSpringBoneCollision3DComponentUVE(
-    const SpringBoneCollision3DComponentUVE& value) noexcept {
-    SpringBoneCollision3DComponentUVE out = value;
-    if (!IsFinite3DObjectVectorUVE(out.centerOffset)) {
-        out.centerOffset = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+SpringBoneCollision3DComponent SanitizeSpringBoneCollision3DComponent(
+    const SpringBoneCollision3DComponent& value) noexcept {
+    SpringBoneCollision3DComponent out = value;
+    if (!IsFinite3DObjectVector(out.centerOffset)) {
+        out.centerOffset = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     if (!std::isfinite(out.radius) || out.radius <= 0.0F) {
         out.radius = 0.25F;
@@ -257,50 +257,50 @@ SpringBoneCollision3DComponentUVE SanitizeSpringBoneCollision3DComponentUVE(
     return out;
 }
 
-bool IsSpringBoneCollision3DObjectDefinitionValidUVE(
-    const SpringBoneCollision3DObjectDefinitionUVE& value) noexcept {
-    return IsSpringBoneCollision3DComponentValidUVE(value.collision);
+bool IsSpringBoneCollision3DObjectDefinitionValid(
+    const SpringBoneCollision3DObjectDefinition& value) noexcept {
+    return IsSpringBoneCollision3DComponentValid(value.collision);
 }
 
-void ApplySpringBoneCollision3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE entity,
-    const SpringBoneCollision3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              SpringBoneCollision3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<SpringBoneCollision3DComponentUVE>(
-        entity, SanitizeSpringBoneCollision3DComponentUVE(value.collision));
+void ApplySpringBoneCollision3DObjectDefinition(
+    IEntityManager& entityManager, const Entity entity,
+    const SpringBoneCollision3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity,
+                              SpringBoneCollision3DObjectDefinition::defaultName);
+    entityManager.AddComponent<SpringBoneCollision3DComponent>(
+        entity, SanitizeSpringBoneCollision3DComponent(value.collision));
 }
 
-bool IsSpringBoneSimulator3DComponentValidUVE(
-    const SpringBoneSimulator3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.boneName) &&
-           IsFinite3DObjectVectorUVE(value.tipOffsetLocal) &&
-           Math::LengthSquaredUVE(value.tipOffsetLocal) > 1.0e-8F &&
-           value.chainLength >= 1U && value.chainLength <= kMaximumSpringBoneChainLengthUVE &&
+bool IsSpringBoneSimulator3DComponentValid(
+    const SpringBoneSimulator3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.boneName) &&
+           IsFinite3DObjectVector(value.tipOffsetLocal) &&
+           Math::LengthSquared(value.tipOffsetLocal) > 1.0e-8F &&
+           value.chainLength >= 1U && value.chainLength <= kMaximumSpringBoneChainLength &&
            std::isfinite(value.stiffness) && value.stiffness >= 0.0F &&
            std::isfinite(value.damping) && value.damping >= 0.0F && value.damping <= 1.0F &&
            std::isfinite(value.gravityScale) &&
-           IsFinite3DObjectVectorUVE(value.gravityDirection) &&
-           Math::LengthSquaredUVE(value.gravityDirection) > 1.0e-8F &&
+           IsFinite3DObjectVector(value.gravityDirection) &&
+           Math::LengthSquared(value.gravityDirection) > 1.0e-8F &&
            std::isfinite(value.hitRadius) && value.hitRadius >= 0.0F &&
            std::isfinite(value.limitAngleDegrees) && value.limitAngleDegrees >= 0.0F &&
            value.limitAngleDegrees <= 180.0F;
 }
 
-SpringBoneSimulator3DComponentUVE SanitizeSpringBoneSimulator3DComponentUVE(
-    const SpringBoneSimulator3DComponentUVE& value) noexcept {
-    SpringBoneSimulator3DComponentUVE out = value;
-    if (!IsBounded3DObjectStringUVE(out.boneName)) {
-        out.boneName.resize(kMaximum3DObjectStringLengthUVE);
+SpringBoneSimulator3DComponent SanitizeSpringBoneSimulator3DComponent(
+    const SpringBoneSimulator3DComponent& value) noexcept {
+    SpringBoneSimulator3DComponent out = value;
+    if (!IsBounded3DObjectString(out.boneName)) {
+        out.boneName.resize(kMaximum3DObjectStringLength);
     }
-    if (!IsFinite3DObjectVectorUVE(out.tipOffsetLocal) ||
-        Math::LengthSquaredUVE(out.tipOffsetLocal) <= 1.0e-8F) {
-        out.tipOffsetLocal = Math::Vector3UVE{0.0F, -0.25F, 0.0F};
+    if (!IsFinite3DObjectVector(out.tipOffsetLocal) ||
+        Math::LengthSquared(out.tipOffsetLocal) <= 1.0e-8F) {
+        out.tipOffsetLocal = Math::Vector3{0.0F, -0.25F, 0.0F};
     }
     if (out.chainLength < 1U) {
         out.chainLength = 1U;
-    } else if (out.chainLength > kMaximumSpringBoneChainLengthUVE) {
-        out.chainLength = static_cast<std::uint32_t>(kMaximumSpringBoneChainLengthUVE);
+    } else if (out.chainLength > kMaximumSpringBoneChainLength) {
+        out.chainLength = static_cast<std::uint32_t>(kMaximumSpringBoneChainLength);
     }
     if (!std::isfinite(out.stiffness) || out.stiffness < 0.0F) {
         out.stiffness = 15.0F;
@@ -313,9 +313,9 @@ SpringBoneSimulator3DComponentUVE SanitizeSpringBoneSimulator3DComponentUVE(
     if (!std::isfinite(out.gravityScale)) {
         out.gravityScale = 0.0F;
     }
-    if (!IsFinite3DObjectVectorUVE(out.gravityDirection) ||
-        Math::LengthSquaredUVE(out.gravityDirection) <= 1.0e-8F) {
-        out.gravityDirection = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    if (!IsFinite3DObjectVector(out.gravityDirection) ||
+        Math::LengthSquared(out.gravityDirection) <= 1.0e-8F) {
+        out.gravityDirection = Math::Vector3{0.0F, -1.0F, 0.0F};
     }
     if (!std::isfinite(out.hitRadius) || out.hitRadius < 0.0F) {
         out.hitRadius = 0.05F;
@@ -328,37 +328,37 @@ SpringBoneSimulator3DComponentUVE SanitizeSpringBoneSimulator3DComponentUVE(
     return out;
 }
 
-void StepSpringBoneTipUVE(SpringBoneTipStateUVE& tip,
-                          const SpringBoneSimulator3DComponentUVE& simulator,
-                          const Math::Vector3UVE& pivotWorldPosition,
-                          const Math::Vector3UVE& restTipWorldPosition,
+void StepSpringBoneTip(SpringBoneTipState& tip,
+                          const SpringBoneSimulator3DComponent& simulator,
+                          const Math::Vector3& pivotWorldPosition,
+                          const Math::Vector3& restTipWorldPosition,
                           const float deltaTimeSeconds) noexcept {
-    if (!IsFinite3DObjectVectorUVE(pivotWorldPosition) ||
-        !IsFinite3DObjectVectorUVE(restTipWorldPosition)) {
+    if (!IsFinite3DObjectVector(pivotWorldPosition) ||
+        !IsFinite3DObjectVector(restTipWorldPosition)) {
         return;
     }
-    if (!IsFinite3DObjectVectorUVE(tip.position) || !IsFinite3DObjectVectorUVE(tip.velocity)) {
+    if (!IsFinite3DObjectVector(tip.position) || !IsFinite3DObjectVector(tip.velocity)) {
         tip.position = restTipWorldPosition;
-        tip.velocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        tip.velocity = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
         return;
     }
     const float dt = std::min(deltaTimeSeconds, 0.1F);
-    const Math::Vector3UVE gravDir =
-        NormalizeOrUVE(simulator.gravityDirection, Math::Vector3UVE{0.0F, -1.0F, 0.0F});
-    const Math::Vector3UVE springForce =
+    const Math::Vector3 gravDir =
+        NormalizeOr(simulator.gravityDirection, Math::Vector3{0.0F, -1.0F, 0.0F});
+    const Math::Vector3 springForce =
         (restTipWorldPosition - tip.position) * simulator.stiffness + gravDir * simulator.gravityScale;
     const float decay =
-        std::exp(-std::clamp(simulator.damping, 0.0F, 1.0F) * kSpringBoneDampingRateUVE * dt);
+        std::exp(-std::clamp(simulator.damping, 0.0F, 1.0F) * kSpringBoneDampingRate * dt);
     tip.velocity = tip.velocity * decay + springForce * dt;
-    Math::Vector3UVE nextTip = tip.position + tip.velocity * dt;
+    Math::Vector3 nextTip = tip.position + tip.velocity * dt;
 
-    const float linkLength = Math::LengthUVE(restTipWorldPosition - pivotWorldPosition);
-    if (linkLength > kMinimumSpringLinkLengthUVE) {
-        const Math::Vector3UVE fromPivot = nextTip - pivotWorldPosition;
-        const float distance = std::sqrt(Math::LengthSquaredUVE(fromPivot));
-        if (distance > kMinimumSpringLinkLengthUVE) {
+    const float linkLength = Math::Length(restTipWorldPosition - pivotWorldPosition);
+    if (linkLength > kMinimumSpringLinkLength) {
+        const Math::Vector3 fromPivot = nextTip - pivotWorldPosition;
+        const float distance = std::sqrt(Math::LengthSquared(fromPivot));
+        if (distance > kMinimumSpringLinkLength) {
             nextTip = pivotWorldPosition + fromPivot * (linkLength / distance);
         } else {
             nextTip = restTipWorldPosition;
@@ -367,39 +367,39 @@ void StepSpringBoneTipUVE(SpringBoneTipStateUVE& tip,
     tip.position = nextTip;
 }
 
-bool ResolveSpringBoneSphereCollisionUVE(SpringBoneTipStateUVE& tip,
-                                         const Math::Vector3UVE& pivotWorldPosition,
-                                         const Math::Vector3UVE& sphereCenterWorld,
+bool ResolveSpringBoneSphereCollision(SpringBoneTipState& tip,
+                                         const Math::Vector3& pivotWorldPosition,
+                                         const Math::Vector3& sphereCenterWorld,
                                          const float sphereRadius, const float hitRadius) noexcept {
-    if (!IsFinite3DObjectVectorUVE(tip.position) || !std::isfinite(sphereRadius) ||
+    if (!IsFinite3DObjectVector(tip.position) || !std::isfinite(sphereRadius) ||
         sphereRadius <= 0.0F) {
         return false;
     }
     const float combinedRadius = sphereRadius + std::max(0.0F, hitRadius);
-    const Math::Vector3UVE delta = tip.position - sphereCenterWorld;
-    const float distanceSquared = Math::LengthSquaredUVE(delta);
+    const Math::Vector3 delta = tip.position - sphereCenterWorld;
+    const float distanceSquared = Math::LengthSquared(delta);
     if (distanceSquared >= combinedRadius * combinedRadius) {
         return false;
     }
-    const Math::Vector3UVE boneDirection = tip.position - pivotWorldPosition;
-    const float linkLength = std::sqrt(Math::LengthSquaredUVE(boneDirection));
-    Math::Vector3UVE pushNormal = (distanceSquared > 1.0e-8F)
+    const Math::Vector3 boneDirection = tip.position - pivotWorldPosition;
+    const float linkLength = std::sqrt(Math::LengthSquared(boneDirection));
+    Math::Vector3 pushNormal = (distanceSquared > 1.0e-8F)
                                       ? delta * (1.0F / std::sqrt(distanceSquared))
-                                      : Math::Vector3UVE{0.0F, 0.0F, 1.0F};
-    if (linkLength > kMinimumSpringLinkLengthUVE) {
-        const Math::Vector3UVE unitBone = boneDirection * (1.0F / linkLength);
-        if (std::fabs(Math::DotUVE(pushNormal, unitBone)) > 0.99F) {
-            const Math::Vector3UVE fallbackAxis =
-                (std::fabs(unitBone.x) < 0.9F) ? Math::Vector3UVE{1.0F, 0.0F, 0.0F}
-                                               : Math::Vector3UVE{0.0F, 0.0F, 1.0F};
-            pushNormal = NormalizeOrUVE(Math::CrossUVE(unitBone, fallbackAxis),
-                                        Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+                                      : Math::Vector3{0.0F, 0.0F, 1.0F};
+    if (linkLength > kMinimumSpringLinkLength) {
+        const Math::Vector3 unitBone = boneDirection * (1.0F / linkLength);
+        if (std::fabs(Math::Dot(pushNormal, unitBone)) > 0.99F) {
+            const Math::Vector3 fallbackAxis =
+                (std::fabs(unitBone.x) < 0.9F) ? Math::Vector3{1.0F, 0.0F, 0.0F}
+                                               : Math::Vector3{0.0F, 0.0F, 1.0F};
+            pushNormal = NormalizeOr(Math::Cross(unitBone, fallbackAxis),
+                                        Math::Vector3{0.0F, 1.0F, 0.0F});
         }
     }
-    Math::Vector3UVE pushed = sphereCenterWorld + pushNormal * combinedRadius;
-    if (linkLength > kMinimumSpringLinkLengthUVE) {
-        const Math::Vector3UVE fromPivot = pushed - pivotWorldPosition;
-        const float fromPivotSquared = Math::LengthSquaredUVE(fromPivot);
+    Math::Vector3 pushed = sphereCenterWorld + pushNormal * combinedRadius;
+    if (linkLength > kMinimumSpringLinkLength) {
+        const Math::Vector3 fromPivot = pushed - pivotWorldPosition;
+        const float fromPivotSquared = Math::LengthSquared(fromPivot);
         if (fromPivotSquared > 1.0e-8F) {
             pushed = pivotWorldPosition + fromPivot * (linkLength / std::sqrt(fromPivotSquared));
         }
@@ -407,48 +407,48 @@ bool ResolveSpringBoneSphereCollisionUVE(SpringBoneTipStateUVE& tip,
     tip.position = pushed;
     // Bleed the velocity that was driving the tip in: without this the spring keeps pushing the
     // tip through the sphere every step and the chain buzzes against it.
-    const float intoSurface = Math::DotUVE(tip.velocity, pushNormal);
+    const float intoSurface = Math::Dot(tip.velocity, pushNormal);
     if (intoSurface < 0.0F) {
         tip.velocity = tip.velocity - pushNormal * intoSurface;
     }
     return true;
 }
 
-bool IsSpringBoneSimulator3DObjectDefinitionValidUVE(
-    const SpringBoneSimulator3DObjectDefinitionUVE& value) noexcept {
-    return IsSpringBoneSimulator3DComponentValidUVE(value.simulator);
+bool IsSpringBoneSimulator3DObjectDefinitionValid(
+    const SpringBoneSimulator3DObjectDefinition& value) noexcept {
+    return IsSpringBoneSimulator3DComponentValid(value.simulator);
 }
 
-void ApplySpringBoneSimulator3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE entity,
-    const SpringBoneSimulator3DObjectDefinitionUVE& value) {
-    ApplyBoneModifier3DBaseUVE(entityManager, entity,
-                               SpringBoneSimulator3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<SpringBoneSimulator3DComponentUVE>(
-        entity, SanitizeSpringBoneSimulator3DComponentUVE(value.simulator));
+void ApplySpringBoneSimulator3DObjectDefinition(
+    IEntityManager& entityManager, const Entity entity,
+    const SpringBoneSimulator3DObjectDefinition& value) {
+    ApplyBoneModifier3DBase(entityManager, entity,
+                               SpringBoneSimulator3DObjectDefinition::defaultName);
+    entityManager.AddComponent<SpringBoneSimulator3DComponent>(
+        entity, SanitizeSpringBoneSimulator3DComponent(value.simulator));
 }
 
-std::size_t UpdateSpringBoneSimulator3DObjectsUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdateSpringBoneSimulator3DObjects(IEntityManager& entityManager,
                                                   const float deltaTimeSeconds) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
         return 0U;
     }
-    std::vector<SpringBoneObstacleUVE> obstacles;
-    entityManager.ForEachUVE<SpringBoneCollision3DComponentUVE, WorldTransformComponentUVE>(
-        [&](const EntityUVE entity, const SpringBoneCollision3DComponentUVE& collision,
-            const WorldTransformComponentUVE& world) {
-            if (!collision.enabled || entityManager.HasComponentUVE<DisabledComponentUVE>(entity) ||
-                !IsSpringBoneCollision3DComponentValidUVE(collision) ||
-                !IsWorldTransformComponentValidUVE(world)) {
+    std::vector<SpringBoneObstacle> obstacles;
+    entityManager.ForEach<SpringBoneCollision3DComponent, WorldTransformComponent>(
+        [&](const Entity entity, const SpringBoneCollision3DComponent& collision,
+            const WorldTransformComponent& world) {
+            if (!collision.enabled || entityManager.HasComponent<DisabledComponent>(entity) ||
+                !IsSpringBoneCollision3DComponentValid(collision) ||
+                !IsWorldTransformComponentValid(world)) {
                 return;
             }
-            obstacles.push_back(SpringBoneObstacleUVE{
-                TransformWorldPointUVE(world, collision.centerOffset), collision.radius});
+            obstacles.push_back(SpringBoneObstacle{
+                TransformWorldPoint(world, collision.centerOffset), collision.radius});
         });
 
     std::size_t steppedCount = 0U;
-    entityManager.ForEachUVE<SpringBoneSimulator3DComponentUVE>(
-        [&](const EntityUVE entity, SpringBoneSimulator3DComponentUVE& simulator) {
+    entityManager.ForEach<SpringBoneSimulator3DComponent>(
+        [&](const Entity entity, SpringBoneSimulator3DComponent& simulator) {
             const auto resetRuntimeState = [&simulator]() {
                 simulator.initialized = false;
                 simulator.resolvedBoneCount = 0U;
@@ -457,35 +457,35 @@ std::size_t UpdateSpringBoneSimulator3DObjectsUVE(IEntityManagerUVE& entityManag
                 simulator.writtenRotations.clear();
                 simulator.pendingSeconds = 0.0F;
             };
-            if (!simulator.enabled || entityManager.HasComponentUVE<DisabledComponentUVE>(entity) ||
-                !IsSpringBoneSimulator3DComponentValidUVE(simulator) ||
-                !entityManager.IsAliveUVE(simulator.skeleton) ||
-                !entityManager.HasComponentUVE<Skeleton3DComponentUVE>(simulator.skeleton) ||
-                !entityManager.HasComponentUVE<WorldTransformComponentUVE>(simulator.skeleton)) {
+            if (!simulator.enabled || entityManager.HasComponent<DisabledComponent>(entity) ||
+                !IsSpringBoneSimulator3DComponentValid(simulator) ||
+                !entityManager.IsAlive(simulator.skeleton) ||
+                !entityManager.HasComponent<Skeleton3DComponent>(simulator.skeleton) ||
+                !entityManager.HasComponent<WorldTransformComponent>(simulator.skeleton)) {
                 resetRuntimeState();
                 return;
             }
-            Skeleton3DComponentUVE& skeleton =
-                entityManager.GetComponentUVE<Skeleton3DComponentUVE>(simulator.skeleton);
-            const WorldTransformComponentUVE& skeletonWorld =
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(simulator.skeleton);
-            if (!skeleton.enabled || !IsSkeleton3DObjectComponentValidUVE(skeleton) ||
-                !IsWorldTransformComponentValidUVE(skeletonWorld)) {
+            Skeleton3DComponent& skeleton =
+                entityManager.GetComponent<Skeleton3DComponent>(simulator.skeleton);
+            const WorldTransformComponent& skeletonWorld =
+                entityManager.GetComponent<WorldTransformComponent>(simulator.skeleton);
+            if (!skeleton.enabled || !IsSkeleton3DObjectComponentValid(skeleton) ||
+                !IsWorldTransformComponentValid(skeletonWorld)) {
                 resetRuntimeState();
                 return;
             }
-            std::uint32_t resolvedBone = kInvalidSkeletonBoneIndexUVE;
-            if (!TryFindSkeletonBoneIndexUVE(skeleton, simulator.boneName, resolvedBone)) {
+            std::uint32_t resolvedBone = kInvalidSkeletonBoneIndex;
+            if (!TryFindSkeletonBoneIndex(skeleton, simulator.boneName, resolvedBone)) {
                 resetRuntimeState();
                 return;
             }
             simulator.boneIndex = resolvedBone;
             std::vector<std::uint32_t> chain;
-            if (ResolveSpringChainUVE(skeleton, resolvedBone, simulator.chainLength, chain) == 0U) {
+            if (ResolveSpringChain(skeleton, resolvedBone, simulator.chainLength, chain) == 0U) {
                 resetRuntimeState();
                 return;
             }
-            EnsureSkeletonPoseUVE(skeleton);
+            EnsureSkeletonPose(skeleton);
             // The pose as animation left it, captured once for the whole update: every fixed step
             // re-applies it, so the simulation is the only state carried between steps. The pose
             // still holds OUR last answer when no animation is running, so only a rotation that
@@ -493,12 +493,12 @@ std::size_t UpdateSpringBoneSimulator3DObjectsUVE(IEntityManagerUVE& entityManag
             simulator.referenceRotations.resize(chain.size());
             simulator.writtenRotations.resize(chain.size());
             for (std::size_t segment = 0U; segment < chain.size(); ++segment) {
-                const Math::QuaternionUVE current = skeleton.pose[chain[segment]].rotation;
+                const Math::Quaternion current = skeleton.pose[chain[segment]].rotation;
                 if (!simulator.initialized || simulator.writtenRotations[segment] != current) {
                     simulator.referenceRotations[segment] = current;
                 }
             }
-            const ObjectWorldFrameUVE skeletonFrame{skeletonWorld.worldPosition,
+            const ObjectWorldFrame skeletonFrame{skeletonWorld.worldPosition,
                                                     skeletonWorld.worldRotation,
                                                     skeletonWorld.worldScale};
 
@@ -508,18 +508,18 @@ std::size_t UpdateSpringBoneSimulator3DObjectsUVE(IEntityManagerUVE& entityManag
             simulator.pendingSeconds += deltaTimeSeconds;
             simulator.pendingSeconds =
                 std::min(simulator.pendingSeconds,
-                         kSpringBoneFixedStepSecondsUVE *
-                             static_cast<float>(kMaximumSpringBoneSubstepsUVE));
+                         kSpringBoneFixedStepSeconds *
+                             static_cast<float>(kMaximumSpringBoneSubsteps));
             std::uint32_t stepsTaken = 0U;
-            while (simulator.pendingSeconds >= kSpringBoneFixedStepSecondsUVE &&
-                   stepsTaken < kMaximumSpringBoneSubstepsUVE) {
-                if (SolveSpringBoneChainStepUVE(simulator, skeleton, skeletonFrame, chain,
+            while (simulator.pendingSeconds >= kSpringBoneFixedStepSeconds &&
+                   stepsTaken < kMaximumSpringBoneSubsteps) {
+                if (SolveSpringBoneChainStep(simulator, skeleton, skeletonFrame, chain,
                                                 simulator.referenceRotations, obstacles,
-                                                kSpringBoneFixedStepSecondsUVE) == 0U) {
+                                                kSpringBoneFixedStepSeconds) == 0U) {
                     resetRuntimeState();
                     return;
                 }
-                simulator.pendingSeconds -= kSpringBoneFixedStepSecondsUVE;
+                simulator.pendingSeconds -= kSpringBoneFixedStepSeconds;
                 ++stepsTaken;
             }
             for (std::size_t segment = 0U; segment < chain.size(); ++segment) {

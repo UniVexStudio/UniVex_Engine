@@ -4,7 +4,7 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsSkinComponentValidUVE(const SkinComponentUVE& skin) noexcept {
+[[nodiscard]] bool IsSkinComponentValid(const SkinComponent& skin) noexcept {
     return skin.bindCount == static_cast<std::uint32_t>(skin.boneBinds.size());
 }
 

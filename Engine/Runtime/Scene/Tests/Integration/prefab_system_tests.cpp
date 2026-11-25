@@ -30,7 +30,7 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class FakePrefabOverrideTargetUVE final : public IPrefabOverrideTargetUVE {
+class FakePrefabOverrideTarget final : public IPrefabOverrideTarget {
 public:
     std::map<std::string, std::string> values;
     std::string failingReadPath;
@@ -41,9 +41,9 @@ public:
     std::size_t readCount = 0U;
     std::size_t writeCount = 0U;
 
-    [[nodiscard]] bool ReadPropertyUVE(const std::string_view propertyPath,
+    [[nodiscard]] bool ReadProperty(const std::string_view propertyPath,
                                        std::string& serializedValue) const override {
-        ++const_cast<FakePrefabOverrideTargetUVE*>(this)->readCount;
+        ++const_cast<FakePrefabOverrideTarget*>(this)->readCount;
         if (!throwingReadPath.empty() && propertyPath == throwingReadPath) {
             throw std::runtime_error("injected prefab read exception");
         }
@@ -58,7 +58,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool WritePropertyUVE(const std::string_view propertyPath,
+    [[nodiscard]] bool WriteProperty(const std::string_view propertyPath,
                                         const std::string_view serializedValue) override {
         ++writeCount;
         if (!throwingWritePath.empty() && propertyPath == throwingWritePath &&
@@ -77,39 +77,39 @@ public:
     }
 };
 
-class RejectingPrefabAssetDatabaseUVE final : public Asset::IAssetDatabaseUVE {
+class RejectingPrefabAssetDatabase final : public Asset::IAssetDatabase {
 public:
-    bool LoadUVE(const std::filesystem::path&) override { return false; }
-    bool SaveUVE() override {
+    bool Load(const std::filesystem::path&) override { return false; }
+    bool Save() override {
         ++saveCallCount;
         return false;
     }
-    bool SaveUVE(const std::filesystem::path&) override { return false; }
-    [[nodiscard]] Asset::AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
-        return Asset::kInvalidAssetGuidUVE;
+    bool Save(const std::filesystem::path&) override { return false; }
+    [[nodiscard]] Asset::AssetGuid Register(const std::filesystem::path&) override {
+        return Asset::kInvalidAssetGuid;
     }
-    [[nodiscard]] std::filesystem::path ResolveUVE(Asset::AssetGuidUVE) const override { return {}; }
-    [[nodiscard]] bool HasGuidUVE(Asset::AssetGuidUVE) const override { return false; }
-    [[nodiscard]] std::vector<Asset::AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+    [[nodiscard]] std::filesystem::path Resolve(Asset::AssetGuid) const override { return {}; }
+    [[nodiscard]] bool HasGuid(Asset::AssetGuid) const override { return false; }
+    [[nodiscard]] std::vector<Asset::AssetRecord> GetRegisteredAssets() const override { return {}; }
 
     std::size_t saveCallCount = 0U;
 };
 
-class ThrowingPrefabAssetDatabaseUVE final : public Asset::IAssetDatabaseUVE {
+class ThrowingPrefabAssetDatabase final : public Asset::IAssetDatabase {
 public:
-    bool LoadUVE(const std::filesystem::path&) override { return false; }
-    bool SaveUVE() override { return true; }
-    bool SaveUVE(const std::filesystem::path&) override { return true; }
-    [[nodiscard]] Asset::AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
+    bool Load(const std::filesystem::path&) override { return false; }
+    bool Save() override { return true; }
+    bool Save(const std::filesystem::path&) override { return true; }
+    [[nodiscard]] Asset::AssetGuid Register(const std::filesystem::path&) override {
         if (throwOnRegister) {
             if (throwUnknown) {
                 throw 7;
             }
             throw std::runtime_error("injected prefab registration failure");
         }
-        return Asset::AssetGuidUVE{99U};
+        return Asset::AssetGuid{99U};
     }
-    [[nodiscard]] std::filesystem::path ResolveUVE(Asset::AssetGuidUVE) const override {
+    [[nodiscard]] std::filesystem::path Resolve(Asset::AssetGuid) const override {
         if (throwOnResolve) {
             if (throwUnknown) {
                 throw 8;
@@ -118,103 +118,103 @@ public:
         }
         return {};
     }
-    [[nodiscard]] bool HasGuidUVE(Asset::AssetGuidUVE) const override { return false; }
-    [[nodiscard]] std::vector<Asset::AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+    [[nodiscard]] bool HasGuid(Asset::AssetGuid) const override { return false; }
+    [[nodiscard]] std::vector<Asset::AssetRecord> GetRegisteredAssets() const override { return {}; }
 
     bool throwOnRegister = false;
     bool throwOnResolve = false;
     bool throwUnknown = false;
 };
 
-class PrefabSystemUVETest : public ::testing::Test {
+class PrefabSystemTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
-    Asset::AssetDatabaseUVE assetDatabase;
-    PrefabSystemUVE prefabSystem;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
+    Asset::AssetDatabase assetDatabase;
+    PrefabSystem prefabSystem;
 };
 
-TEST(PrefabInstanceComponentUVE, ApplyAndRevertPrefabOverridesUVE_RestoresExplicitBaseline) {
-    PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{7U},
+TEST(PrefabInstanceComponent, ApplyAndRevertPrefabOverrides_RestoresExplicitBaseline) {
+    PrefabInstanceComponent instance{
+        Asset::AssetGuid{7U},
         {{"Transform.position", "[1,2,3]"}, {"Transform.rotation", "[0,0,0,1]"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{
+    const std::vector<PrefabPropertyOverride> baseline{
         {"Transform.position", "[0,0,0]"}, {"Transform.rotation", "[0,0,0,1]"}};
-    FakePrefabOverrideTargetUVE target;
+    FakePrefabOverrideTarget target;
     target.values = {{"Transform.position", "[0,0,0]"}, {"Transform.rotation", "[0,0,0,1]"}};
 
-    const PrefabOverrideOperationResultUVE applied = ApplyPrefabOverridesUVE(instance, target);
-    ASSERT_TRUE(applied.IsAppliedUVE());
+    const PrefabOverrideOperationResult applied = ApplyPrefabOverrides(instance, target);
+    ASSERT_TRUE(applied.IsApplied());
     EXPECT_EQ(applied.affectedCount, 2U);
     EXPECT_EQ(target.values.at("Transform.position"), "[1,2,3]");
     EXPECT_EQ(instance.overrides.size(), 2U);
 
-    const PrefabOverrideOperationResultUVE reverted = RevertPrefabOverridesUVE(instance, baseline, target);
-    ASSERT_TRUE(reverted.IsAppliedUVE());
+    const PrefabOverrideOperationResult reverted = RevertPrefabOverrides(instance, baseline, target);
+    ASSERT_TRUE(reverted.IsApplied());
     EXPECT_EQ(reverted.affectedCount, 2U);
     EXPECT_EQ(target.values.at("Transform.position"), "[0,0,0]");
     EXPECT_EQ(target.values.at("Transform.rotation"), "[0,0,0,1]");
     EXPECT_TRUE(instance.overrides.empty());
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_BakesAndClearsAfterCleanBaseline) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{13U}, {{"A.value", "new-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_BakesAndClearsAfterCleanBaseline) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{13U}, {{"A.value", "new-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "old-a"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source);
 
-    ASSERT_TRUE(result.IsAppliedUVE());
+    ASSERT_TRUE(result.IsApplied());
     EXPECT_EQ(result.affectedCount, 1U);
     EXPECT_EQ(source.values.at("A.value"), "new-a");
     EXPECT_TRUE(instance.overrides.empty());
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_PublishesCommittedRevisionAfterSuccess) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{16U}, { {"A.value", "new-a"} }, 4U, 4U};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_PublishesCommittedRevisionAfterSuccess) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{16U}, { {"A.value", "new-a"} }, 4U, 4U};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "old-a"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source, 5U);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source, 5U);
 
-    ASSERT_TRUE(result.IsAppliedUVE());
+    ASSERT_TRUE(result.IsApplied());
     EXPECT_EQ(instance.sourceRevision, 5U);
     EXPECT_EQ(instance.instanceRevision, 5U);
     EXPECT_TRUE(instance.overrides.empty());
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_RejectsZeroCommittedRevisionAtomically) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{17U}, {{"A.value", "new-a"}}, 4U, 4U};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_RejectsZeroCommittedRevisionAtomically) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{17U}, {{"A.value", "new-a"}}, 4U, 4U};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "old-a"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source, 0U);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source, 0U);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::InvalidInstance);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::InvalidInstance);
     EXPECT_EQ(instance.sourceRevision, 4U);
     EXPECT_EQ(instance.instanceRevision, 4U);
     ASSERT_EQ(instance.overrides.size(), 1U);
     EXPECT_EQ(source.writeCount, 0U);
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_RejectsRevisionRegressionAtomically) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{18U}, {{"A.value", "new-a"}}, 4U, 4U};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_RejectsRevisionRegressionAtomically) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{18U}, {{"A.value", "new-a"}}, 4U, 4U};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "old-a"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source, 3U);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source, 3U);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::InvalidInstance);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::InvalidInstance);
     EXPECT_EQ(instance.sourceRevision, 4U);
     EXPECT_EQ(instance.instanceRevision, 4U);
     ASSERT_EQ(instance.overrides.size(), 1U);
@@ -222,63 +222,63 @@ TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_RejectsRevisio
     EXPECT_EQ(source.values.at("A.value"), "old-a");
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_RejectsStaleBaselineWithoutWrite) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{14U}, {{"A.value", "new-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_RejectsStaleBaselineWithoutWrite) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{14U}, {{"A.value", "new-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "external-a"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::ConflictDetected);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::ConflictDetected);
     EXPECT_EQ(source.writeCount, 0U);
     EXPECT_EQ(source.values.at("A.value"), "external-a");
     ASSERT_EQ(instance.overrides.size(), 1U);
 }
 
-TEST(PrefabInstanceComponentUVE, CommitPrefabOverridesToSourceUVE_PreservesInstanceOnWriteFailure) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{15U}, {{"A.value", "new-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE source;
+TEST(PrefabInstanceComponent, CommitPrefabOverridesToSource_PreservesInstanceOnWriteFailure) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{15U}, {{"A.value", "new-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget source;
     source.values = {{"A.value", "old-a"}};
     source.failingWritePath = "A.value";
 
-    const PrefabOverrideOperationResultUVE result =
-        CommitPrefabOverridesToSourceUVE(instance, baseline, source);
+    const PrefabOverrideOperationResult result =
+        CommitPrefabOverridesToSource(instance, baseline, source);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::WriteFailed);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::WriteFailed);
     EXPECT_EQ(source.values.at("A.value"), "old-a");
     ASSERT_EQ(instance.overrides.size(), 1U);
     EXPECT_EQ(instance.overrides.front().serializedValue, "new-a");
 }
 
-TEST(PrefabInstanceComponentUVE, ApplyPrefabOverridesUVE_RollsBackEarlierWritesOnFailure) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{8U},
+TEST(PrefabInstanceComponent, ApplyPrefabOverrides_RollsBackEarlierWritesOnFailure) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{8U},
         {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    FakePrefabOverrideTargetUVE target;
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}, {"B.value", "old-b"}};
     target.failingWritePath = "B.value";
 
-    const PrefabOverrideOperationResultUVE result = ApplyPrefabOverridesUVE(instance, target);
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::WriteFailed);
+    const PrefabOverrideOperationResult result = ApplyPrefabOverrides(instance, target);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::WriteFailed);
     EXPECT_EQ(target.values.at("A.value"), "old-a");
     EXPECT_EQ(target.values.at("B.value"), "old-b");
     EXPECT_EQ(instance.overrides.size(), 2U);
 }
 
-TEST(PrefabInstanceComponentUVE, ApplyPrefabOverridesUVE_StagesAllReadsBeforeWriting) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{18U},
+TEST(PrefabInstanceComponent, ApplyPrefabOverrides_StagesAllReadsBeforeWriting) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{18U},
         {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    FakePrefabOverrideTargetUVE target;
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}, {"B.value", "old-b"}};
     target.failingReadPath = "B.value";
 
-    const PrefabOverrideOperationResultUVE result = ApplyPrefabOverridesUVE(instance, target);
+    const PrefabOverrideOperationResult result = ApplyPrefabOverrides(instance, target);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::ReadFailed);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::ReadFailed);
     EXPECT_EQ(result.affectedCount, 1U);
     EXPECT_EQ(target.readCount, 2U);
     EXPECT_EQ(target.writeCount, 0U);
@@ -286,76 +286,76 @@ TEST(PrefabInstanceComponentUVE, ApplyPrefabOverridesUVE_StagesAllReadsBeforeWri
     EXPECT_EQ(target.values.at("B.value"), "old-b");
 }
 
-TEST(PrefabInstanceComponentUVE, ApplyPrefabOverridesUVE_ConvertsReadExceptionToFailureWithoutWriting) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{19U},
+TEST(PrefabInstanceComponent, ApplyPrefabOverrides_ConvertsReadExceptionToFailureWithoutWriting) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{19U},
         {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    FakePrefabOverrideTargetUVE target;
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}, {"B.value", "old-b"}};
     target.throwingReadPath = "B.value";
 
-    const PrefabOverrideOperationResultUVE result = ApplyPrefabOverridesUVE(instance, target);
+    const PrefabOverrideOperationResult result = ApplyPrefabOverrides(instance, target);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::ReadFailed);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::ReadFailed);
     EXPECT_EQ(target.writeCount, 0U);
     EXPECT_EQ(target.values.at("A.value"), "old-a");
     EXPECT_EQ(target.values.at("B.value"), "old-b");
 }
 
-TEST(PrefabInstanceComponentUVE, ApplyPrefabOverridesUVE_RollsBackAfterWriteException) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{20U},
+TEST(PrefabInstanceComponent, ApplyPrefabOverrides_RollsBackAfterWriteException) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{20U},
         {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    FakePrefabOverrideTargetUVE target;
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}, {"B.value", "old-b"}};
     target.throwingWritePath = "B.value";
     target.throwingWriteValue = "new-b";
 
-    const PrefabOverrideOperationResultUVE result = ApplyPrefabOverridesUVE(instance, target);
+    const PrefabOverrideOperationResult result = ApplyPrefabOverrides(instance, target);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::WriteFailed);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::WriteFailed);
     EXPECT_EQ(target.values.at("A.value"), "old-a");
     EXPECT_EQ(target.values.at("B.value"), "old-b");
 }
 
-TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_ConvertsReadExceptionToReadFailed) {
-    const PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{21U}, {{"A.value", "new-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE target;
+TEST(PrefabInstanceComponent, DetectPrefabOverrideConflicts_ConvertsReadExceptionToReadFailed) {
+    const PrefabInstanceComponent instance{Asset::AssetGuid{21U}, {{"A.value", "new-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}};
     target.throwingReadPath = "A.value";
 
-    const PrefabOverrideConflictReportUVE report =
-        DetectPrefabOverrideConflictsUVE(instance, baseline, target);
+    const PrefabOverrideConflictReport report =
+        DetectPrefabOverrideConflicts(instance, baseline, target);
 
-    EXPECT_EQ(report.code, PrefabOverrideOperationCodeUVE::ReadFailed);
+    EXPECT_EQ(report.code, PrefabOverrideOperationCode::ReadFailed);
     EXPECT_EQ(report.inspectedCount, 0U);
     EXPECT_TRUE(report.conflicts.empty());
 }
 
-TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_CleanBaselineIsReadOnly) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{10U}, {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}, {"B.value", "old-b"}};
-    FakePrefabOverrideTargetUVE target;
+TEST(PrefabInstanceComponent, DetectPrefabOverrideConflicts_CleanBaselineIsReadOnly) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{10U}, {{"A.value", "new-a"}, {"B.value", "new-b"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}, {"B.value", "old-b"}};
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "old-a"}, {"B.value", "old-b"}};
 
-    const PrefabOverrideConflictReportUVE report = DetectPrefabOverrideConflictsUVE(instance, baseline, target);
-    EXPECT_TRUE(report.IsConflictFreeUVE());
+    const PrefabOverrideConflictReport report = DetectPrefabOverrideConflicts(instance, baseline, target);
+    EXPECT_TRUE(report.IsConflictFree());
     EXPECT_EQ(report.inspectedCount, 2U);
     EXPECT_TRUE(report.conflicts.empty());
     EXPECT_FALSE(report.truncated);
     EXPECT_EQ(target.writeCount, 0U);
 }
 
-TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_ReportsExternalMutationWithoutWriting) {
-    const PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{11U}, {{"A.value", "new-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}};
-    FakePrefabOverrideTargetUVE target;
+TEST(PrefabInstanceComponent, DetectPrefabOverrideConflicts_ReportsExternalMutationWithoutWriting) {
+    const PrefabInstanceComponent instance{Asset::AssetGuid{11U}, {{"A.value", "new-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}};
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "external-a"}};
 
-    const PrefabOverrideConflictReportUVE report = DetectPrefabOverrideConflictsUVE(instance, baseline, target);
-    ASSERT_EQ(report.code, PrefabOverrideOperationCodeUVE::ConflictDetected);
+    const PrefabOverrideConflictReport report = DetectPrefabOverrideConflicts(instance, baseline, target);
+    ASSERT_EQ(report.code, PrefabOverrideOperationCode::ConflictDetected);
     ASSERT_EQ(report.conflicts.size(), 1U);
     EXPECT_EQ(report.conflicts.front().propertyPath, "A.value");
     EXPECT_EQ(report.conflicts.front().expectedSerializedValue, "old-a");
@@ -364,55 +364,55 @@ TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_ReportsExterna
     EXPECT_EQ(target.values.at("A.value"), "external-a");
 }
 
-TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_HonorsConflictHardCap) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{12U}, {{"A.value", "new-a"}, {"B.value", "new-b"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "old-a"}, {"B.value", "old-b"}};
-    FakePrefabOverrideTargetUVE target;
+TEST(PrefabInstanceComponent, DetectPrefabOverrideConflicts_HonorsConflictHardCap) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{12U}, {{"A.value", "new-a"}, {"B.value", "new-b"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "old-a"}, {"B.value", "old-b"}};
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "external-a"}, {"B.value", "external-b"}};
 
-    const PrefabOverrideConflictReportUVE report = DetectPrefabOverrideConflictsUVE(instance, baseline, target, 1U);
-    EXPECT_EQ(report.code, PrefabOverrideOperationCodeUVE::ConflictDetected);
+    const PrefabOverrideConflictReport report = DetectPrefabOverrideConflicts(instance, baseline, target, 1U);
+    EXPECT_EQ(report.code, PrefabOverrideOperationCode::ConflictDetected);
     EXPECT_EQ(report.inspectedCount, 2U);
     EXPECT_EQ(report.conflicts.size(), 1U);
     EXPECT_TRUE(report.truncated);
     EXPECT_EQ(target.writeCount, 0U);
 }
 
-TEST(PrefabInstanceComponentUVE, DetectPrefabOverrideConflictsUVE_ClampsCallerLimitToSharedHardCap) {
-    std::vector<PrefabPropertyOverrideUVE> overrides;
-    std::vector<PrefabPropertyOverrideUVE> baseline;
-    FakePrefabOverrideTargetUVE target;
-    overrides.reserve(kMaximumPrefabConflictsUVE + 1U);
-    baseline.reserve(kMaximumPrefabConflictsUVE + 1U);
-    for (std::size_t index = 0U; index <= kMaximumPrefabConflictsUVE; ++index) {
+TEST(PrefabInstanceComponent, DetectPrefabOverrideConflicts_ClampsCallerLimitToSharedHardCap) {
+    std::vector<PrefabPropertyOverride> overrides;
+    std::vector<PrefabPropertyOverride> baseline;
+    FakePrefabOverrideTarget target;
+    overrides.reserve(kMaximumPrefabConflicts + 1U);
+    baseline.reserve(kMaximumPrefabConflicts + 1U);
+    for (std::size_t index = 0U; index <= kMaximumPrefabConflicts; ++index) {
         const std::string propertyPath = "A." + std::to_string(1000U + index);
         overrides.push_back({propertyPath, "new"});
         baseline.push_back({propertyPath, "old"});
         target.values.emplace(propertyPath, "external");
     }
 
-    const PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{13U}, overrides};
-    const PrefabOverrideConflictReportUVE report = DetectPrefabOverrideConflictsUVE(
-        instance, baseline, target, kMaximumPrefabConflictsUVE + 100U);
-    EXPECT_EQ(report.code, PrefabOverrideOperationCodeUVE::ConflictDetected);
-    EXPECT_EQ(report.inspectedCount, kMaximumPrefabConflictsUVE + 1U);
-    EXPECT_EQ(report.conflicts.size(), kMaximumPrefabConflictsUVE);
+    const PrefabInstanceComponent instance{Asset::AssetGuid{13U}, overrides};
+    const PrefabOverrideConflictReport report = DetectPrefabOverrideConflicts(
+        instance, baseline, target, kMaximumPrefabConflicts + 100U);
+    EXPECT_EQ(report.code, PrefabOverrideOperationCode::ConflictDetected);
+    EXPECT_EQ(report.inspectedCount, kMaximumPrefabConflicts + 1U);
+    EXPECT_EQ(report.conflicts.size(), kMaximumPrefabConflicts);
     EXPECT_TRUE(report.truncated);
     EXPECT_EQ(target.writeCount, 0U);
 }
 
-TEST(PrefabInstanceComponentUVE, MergePrefabOverridesUVE_CombinesNonConflictingLocalAndRemoteChanges) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{14U}, {{"A.value", "base-a"}, {"B.value", "local-b"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "base-a"}, {"B.value", "base-b"}};
-    const std::vector<PrefabPropertyOverrideUVE> remote{{"A.value", "remote-a"}, {"B.value", "base-b"}};
-    std::vector<PrefabPropertyOverrideUVE> merged;
+TEST(PrefabInstanceComponent, MergePrefabOverrides_CombinesNonConflictingLocalAndRemoteChanges) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{14U}, {{"A.value", "base-a"}, {"B.value", "local-b"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "base-a"}, {"B.value", "base-b"}};
+    const std::vector<PrefabPropertyOverride> remote{{"A.value", "remote-a"}, {"B.value", "base-b"}};
+    std::vector<PrefabPropertyOverride> merged;
 
-    const PrefabOverrideOperationResultUVE result =
-        MergePrefabOverridesUVE(instance, baseline, remote, merged);
+    const PrefabOverrideOperationResult result =
+        MergePrefabOverrides(instance, baseline, remote, merged);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::Applied);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::Applied);
     EXPECT_EQ(result.affectedCount, 2U);
     ASSERT_EQ(merged.size(), 2U);
     EXPECT_EQ(merged[0].propertyPath, "A.value");
@@ -421,192 +421,192 @@ TEST(PrefabInstanceComponentUVE, MergePrefabOverridesUVE_CombinesNonConflictingL
     EXPECT_EQ(merged[1].serializedValue, "local-b");
 }
 
-TEST(PrefabInstanceComponentUVE, MergePrefabOverridesUVE_RejectsConflictsWithoutPartialOutput) {
-    const PrefabInstanceComponentUVE instance{
-        Asset::AssetGuidUVE{15U}, {{"A.value", "local-a"}}};
-    const std::vector<PrefabPropertyOverrideUVE> baseline{{"A.value", "base-a"}};
-    const std::vector<PrefabPropertyOverrideUVE> remote{{"A.value", "remote-a"}};
-    std::vector<PrefabPropertyOverrideUVE> merged{{"sentinel", "unchanged"}};
+TEST(PrefabInstanceComponent, MergePrefabOverrides_RejectsConflictsWithoutPartialOutput) {
+    const PrefabInstanceComponent instance{
+        Asset::AssetGuid{15U}, {{"A.value", "local-a"}}};
+    const std::vector<PrefabPropertyOverride> baseline{{"A.value", "base-a"}};
+    const std::vector<PrefabPropertyOverride> remote{{"A.value", "remote-a"}};
+    std::vector<PrefabPropertyOverride> merged{{"sentinel", "unchanged"}};
 
-    const PrefabOverrideOperationResultUVE result =
-        MergePrefabOverridesUVE(instance, baseline, remote, merged);
+    const PrefabOverrideOperationResult result =
+        MergePrefabOverrides(instance, baseline, remote, merged);
 
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::ConflictDetected);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::ConflictDetected);
     EXPECT_EQ(result.affectedCount, 1U);
     ASSERT_EQ(merged.size(), 1U);
     EXPECT_EQ(merged.front().propertyPath, "sentinel");
 }
 
-TEST(PrefabInstanceComponentUVE, RevertPrefabOverridesUVE_RejectsInvalidBaselineWithoutMutation) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{9U}, {{"A.value", "new-a"}}};
-    FakePrefabOverrideTargetUVE target;
+TEST(PrefabInstanceComponent, RevertPrefabOverrides_RejectsInvalidBaselineWithoutMutation) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{9U}, {{"A.value", "new-a"}}};
+    FakePrefabOverrideTarget target;
     target.values = {{"A.value", "current-a"}};
-    const std::vector<PrefabPropertyOverrideUVE> invalidBaseline{{"B.value", "one"}, {"A.value", "two"}};
+    const std::vector<PrefabPropertyOverride> invalidBaseline{{"B.value", "one"}, {"A.value", "two"}};
 
-    const PrefabOverrideOperationResultUVE result = RevertPrefabOverridesUVE(instance, invalidBaseline, target);
-    EXPECT_EQ(result.code, PrefabOverrideOperationCodeUVE::InvalidBaseline);
+    const PrefabOverrideOperationResult result = RevertPrefabOverrides(instance, invalidBaseline, target);
+    EXPECT_EQ(result.code, PrefabOverrideOperationCode::InvalidBaseline);
     EXPECT_EQ(target.values.at("A.value"), "current-a");
     ASSERT_EQ(instance.overrides.size(), 1U);
     EXPECT_EQ(instance.overrides.front().serializedValue, "new-a");
 }
 
-TEST(PrefabInstanceComponentUVE, IsPrefabInstanceComponentValidUVE_RequiresSourceGuidAndSortedOverrides) {
-    EXPECT_FALSE(IsPrefabInstanceComponentValidUVE(
-        PrefabInstanceComponentUVE{Asset::kInvalidAssetGuidUVE, {}}));
-    EXPECT_TRUE(IsPrefabInstanceComponentValidUVE(PrefabInstanceComponentUVE{Asset::AssetGuidUVE{7U}, {}}));
-    EXPECT_TRUE(IsPrefabInstanceComponentValidUVE(PrefabInstanceComponentUVE{
-        Asset::AssetGuidUVE{7U}, {{"Transform.position", "[1,2,3]"}, {"Transform.rotation", "[0,0,0,1]"}}}));
-    EXPECT_FALSE(IsPrefabInstanceComponentValidUVE(PrefabInstanceComponentUVE{
-        Asset::AssetGuidUVE{7U}, {{"Transform.rotation", "[0,0,0,1]"}, {"Transform.position", "[1,2,3]"}}}));
-    EXPECT_FALSE(IsPrefabInstanceComponentValidUVE(
-        PrefabInstanceComponentUVE{Asset::AssetGuidUVE{7U}, {{"Transform.position", ""}}}));
-    EXPECT_FALSE(IsPrefabInstanceComponentValidUVE(PrefabInstanceComponentUVE{
-        Asset::AssetGuidUVE{7U}, std::vector<PrefabPropertyOverrideUVE>(kMaximumPrefabOverridesUVE + 1U)}));
+TEST(PrefabInstanceComponent, IsPrefabInstanceComponentValid_RequiresSourceGuidAndSortedOverrides) {
+    EXPECT_FALSE(IsPrefabInstanceComponentValid(
+        PrefabInstanceComponent{Asset::kInvalidAssetGuid, {}}));
+    EXPECT_TRUE(IsPrefabInstanceComponentValid(PrefabInstanceComponent{Asset::AssetGuid{7U}, {}}));
+    EXPECT_TRUE(IsPrefabInstanceComponentValid(PrefabInstanceComponent{
+        Asset::AssetGuid{7U}, {{"Transform.position", "[1,2,3]"}, {"Transform.rotation", "[0,0,0,1]"}}}));
+    EXPECT_FALSE(IsPrefabInstanceComponentValid(PrefabInstanceComponent{
+        Asset::AssetGuid{7U}, {{"Transform.rotation", "[0,0,0,1]"}, {"Transform.position", "[1,2,3]"}}}));
+    EXPECT_FALSE(IsPrefabInstanceComponentValid(
+        PrefabInstanceComponent{Asset::AssetGuid{7U}, {{"Transform.position", ""}}}));
+    EXPECT_FALSE(IsPrefabInstanceComponentValid(PrefabInstanceComponent{
+        Asset::AssetGuid{7U}, std::vector<PrefabPropertyOverride>(kMaximumPrefabOverrides + 1U)}));
 }
 
-TEST_F(PrefabSystemUVETest, SaveThenInstantiate_ProducesEntityWithSameComponentValues) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{11}, Asset::AssetGuidUVE{12}});
+TEST_F(PrefabSystemTest, SaveThenInstantiate_ProducesEntityWithSameComponentValues) {
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{11}, Asset::AssetGuid{12}});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_oak.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-    const EntityUVE instance =
-        prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntityUVE);
-    ASSERT_NE(instance, kInvalidEntityUVE);
+    const Entity instance =
+        prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntity);
+    ASSERT_NE(instance, kInvalidEntity);
     ASSERT_NE(instance, source);
 
-    EXPECT_EQ(entityManager.GetComponentUVE<MeshComponentUVE>(instance).meshGuid, Asset::AssetGuidUVE{11});
-    ASSERT_TRUE(entityManager.HasComponentUVE<PrefabInstanceComponentUVE>(instance));
-    EXPECT_EQ(entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(instance).sourcePrefabGuid, guid);
-    const std::optional<std::uint64_t> expectedRevision = ComputePrefabSourceRevisionUVE(prefabPath);
+    EXPECT_EQ(entityManager.GetComponent<MeshComponent>(instance).meshGuid, Asset::AssetGuid{11});
+    ASSERT_TRUE(entityManager.HasComponent<PrefabInstanceComponent>(instance));
+    EXPECT_EQ(entityManager.GetComponent<PrefabInstanceComponent>(instance).sourcePrefabGuid, guid);
+    const std::optional<std::uint64_t> expectedRevision = ComputePrefabSourceRevision(prefabPath);
     ASSERT_TRUE(expectedRevision.has_value());
-    EXPECT_EQ(entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(instance).sourceRevision, *expectedRevision);
-    EXPECT_EQ(entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(instance).instanceRevision, *expectedRevision);
+    EXPECT_EQ(entityManager.GetComponent<PrefabInstanceComponent>(instance).sourceRevision, *expectedRevision);
+    EXPECT_EQ(entityManager.GetComponent<PrefabInstanceComponent>(instance).instanceRevision, *expectedRevision);
 
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateWithRevisionUVE_StampsRevisionAndRejectsZero) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{13}, Asset::AssetGuidUVE{14}});
+TEST_F(PrefabSystemTest, InstantiateWithRevision_StampsRevisionAndRejectsZero) {
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{13}, Asset::AssetGuid{14}});
     const std::filesystem::path prefabPath = "uve_prefab_tests_revision.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-    const EntityUVE instance = prefabSystem.InstantiateWithRevisionUVE(
-        entityManager, sceneGraph, assetDatabase, guid, kInvalidEntityUVE, 42U);
-    ASSERT_NE(instance, kInvalidEntityUVE);
-    const PrefabInstanceComponentUVE& component =
-        entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(instance);
+    const Entity instance = prefabSystem.InstantiateWithRevision(
+        entityManager, sceneGraph, assetDatabase, guid, kInvalidEntity, 42U);
+    ASSERT_NE(instance, kInvalidEntity);
+    const PrefabInstanceComponent& component =
+        entityManager.GetComponent<PrefabInstanceComponent>(instance);
     EXPECT_EQ(component.sourceRevision, 42U);
     EXPECT_EQ(component.instanceRevision, 42U);
-    const std::size_t entityCountAfterValid = entityManager.GetEntityCountUVE();
+    const std::size_t entityCountAfterValid = entityManager.GetEntityCount();
 
-    EXPECT_EQ(prefabSystem.InstantiateWithRevisionUVE(entityManager, sceneGraph, assetDatabase, guid,
-                                                       kInvalidEntityUVE, 0U),
-              kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountAfterValid);
+    EXPECT_EQ(prefabSystem.InstantiateWithRevision(entityManager, sceneGraph, assetDatabase, guid,
+                                                       kInvalidEntity, 0U),
+              kInvalidEntity);
+    EXPECT_EQ(entityManager.GetEntityCount(), entityCountAfterValid);
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateTwice_ProducesIndependentEntities) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<Rigid3DComponentUVE>(source, Rigid3DComponentUVE{1.0F, false});
+TEST_F(PrefabSystemTest, InstantiateTwice_ProducesIndependentEntities) {
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<Rigid3DComponent>(source, Rigid3DComponent{1.0F, false});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_independent.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
 
-    const EntityUVE instanceA =
-        prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntityUVE);
-    const EntityUVE instanceB =
-        prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntityUVE);
+    const Entity instanceA =
+        prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntity);
+    const Entity instanceB =
+        prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, kInvalidEntity);
     ASSERT_NE(instanceA, instanceB);
 
-    entityManager.GetComponentUVE<Rigid3DComponentUVE>(instanceA).mass = 99.0F;
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(instanceB).mass, 1.0F);
+    entityManager.GetComponent<Rigid3DComponent>(instanceA).mass = 99.0F;
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Rigid3DComponent>(instanceB).mass, 1.0F);
 
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateUVE_InvalidParentFailsBeforeEntityMutation) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{21}, Asset::AssetGuidUVE{22}});
-    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+TEST_F(PrefabSystemTest, Instantiate_InvalidParentFailsBeforeEntityMutation) {
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{21}, Asset::AssetGuid{22}});
+    sceneGraph.AttachTransform(entityManager, source, TransformComponent{});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_invalid_parent.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
-    const std::size_t entityCountBefore = entityManager.GetEntityCountUVE();
-    const EntityUVE invalidParent{0xFFFFFFFFU, 1U};
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
+    const std::size_t entityCountBefore = entityManager.GetEntityCount();
+    const Entity invalidParent{0xFFFFFFFFU, 1U};
 
-    const EntityUVE instance = prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, invalidParent);
+    const Entity instance = prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, invalidParent);
 
-    EXPECT_EQ(instance, kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), entityCountBefore);
+    EXPECT_EQ(instance, kInvalidEntity);
+    EXPECT_EQ(entityManager.GetEntityCount(), entityCountBefore);
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateUVE_WithParent_ReparentsNewRoot) {
-    const EntityUVE parent = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+TEST_F(PrefabSystemTest, Instantiate_WithParent_ReparentsNewRoot) {
+    const Entity parent = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, parent, TransformComponent{});
 
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{21}, Asset::AssetGuidUVE{22}});
-    sceneGraph.AttachTransformUVE(entityManager, source, TransformComponentUVE{});
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{21}, Asset::AssetGuid{22}});
+    sceneGraph.AttachTransform(entityManager, source, TransformComponent{});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_reparent.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
 
-    const EntityUVE instance = prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, parent);
-    ASSERT_NE(instance, kInvalidEntityUVE);
-    EXPECT_EQ(entityManager.GetComponentUVE<HierarchyComponentUVE>(instance).parent, parent);
+    const Entity instance = prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, parent);
+    ASSERT_NE(instance, kInvalidEntity);
+    EXPECT_EQ(entityManager.GetComponent<HierarchyComponent>(instance).parent, parent);
 
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateUVE_WithParent_AttachesTransformToTransformlessRoot) {
-    const EntityUVE parent = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, parent, TransformComponentUVE{});
+TEST_F(PrefabSystemTest, Instantiate_WithParent_AttachesTransformToTransformlessRoot) {
+    const Entity parent = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, parent, TransformComponent{});
 
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{23}, Asset::AssetGuidUVE{24}});
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{23}, Asset::AssetGuid{24}});
 
     const std::filesystem::path prefabPath = "uve_prefab_tests_transformless_parent.uvprefab";
     std::filesystem::remove(prefabPath);
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, prefabPath);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, prefabPath);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-    const EntityUVE instance = prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, guid, parent);
-    ASSERT_NE(instance, kInvalidEntityUVE);
-    ASSERT_TRUE(entityManager.HasComponentUVE<TransformComponentUVE>(instance));
-    ASSERT_TRUE(entityManager.HasComponentUVE<WorldTransformComponentUVE>(instance));
-    ASSERT_TRUE(entityManager.HasComponentUVE<HierarchyComponentUVE>(instance));
-    EXPECT_EQ(entityManager.GetComponentUVE<HierarchyComponentUVE>(instance).parent, parent);
+    const Entity instance = prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, guid, parent);
+    ASSERT_NE(instance, kInvalidEntity);
+    ASSERT_TRUE(entityManager.HasComponent<TransformComponent>(instance));
+    ASSERT_TRUE(entityManager.HasComponent<WorldTransformComponent>(instance));
+    ASSERT_TRUE(entityManager.HasComponent<HierarchyComponent>(instance));
+    EXPECT_EQ(entityManager.GetComponent<HierarchyComponent>(instance).parent, parent);
 
     std::filesystem::remove(prefabPath);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateUVE_UnknownGuid_ReturnsInvalidAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST_F(PrefabSystemTest, Instantiate_UnknownGuid_ReturnsInvalidAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    const EntityUVE instance = prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase,
-                                                            Asset::AssetGuidUVE{424242}, kInvalidEntityUVE);
-    EXPECT_EQ(instance, kInvalidEntityUVE);
+    const Entity instance = prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase,
+                                                            Asset::AssetGuid{424242}, kInvalidEntity);
+    EXPECT_EQ(instance, kInvalidEntity);
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("unknown prefab GUID");
         });
     EXPECT_TRUE(foundError);
@@ -614,96 +614,96 @@ TEST_F(PrefabSystemUVETest, InstantiateUVE_UnknownGuid_ReturnsInvalidAndLogsErro
     logger.Shutdown();
 }
 
-TEST_F(PrefabSystemUVETest, NestedPrefab_PreservesSourceGuidWithoutRecursiveReinstantiation) {
-    const EntityUVE innerSource = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(innerSource, MeshComponentUVE{Asset::AssetGuidUVE{31}, Asset::AssetGuidUVE{32}});
-    sceneGraph.AttachTransformUVE(entityManager, innerSource, TransformComponentUVE{});
+TEST_F(PrefabSystemTest, NestedPrefab_PreservesSourceGuidWithoutRecursiveReinstantiation) {
+    const Entity innerSource = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(innerSource, MeshComponent{Asset::AssetGuid{31}, Asset::AssetGuid{32}});
+    sceneGraph.AttachTransform(entityManager, innerSource, TransformComponent{});
     const std::filesystem::path innerPath = "uve_prefab_tests_inner.uvprefab";
     std::filesystem::remove(innerPath);
-    const Asset::AssetGuidUVE innerGuid =
-        prefabSystem.SavePrefabUVE(entityManager, assetDatabase, innerSource, innerPath);
+    const Asset::AssetGuid innerGuid =
+        prefabSystem.SavePrefab(entityManager, assetDatabase, innerSource, innerPath);
 
-    const EntityUVE outerRoot = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, outerRoot, TransformComponentUVE{});
-    const EntityUVE innerInstance =
-        prefabSystem.InstantiateUVE(entityManager, sceneGraph, assetDatabase, innerGuid, outerRoot);
-    ASSERT_NE(innerInstance, kInvalidEntityUVE);
+    const Entity outerRoot = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, outerRoot, TransformComponent{});
+    const Entity innerInstance =
+        prefabSystem.Instantiate(entityManager, sceneGraph, assetDatabase, innerGuid, outerRoot);
+    ASSERT_NE(innerInstance, kInvalidEntity);
 
     const std::filesystem::path outerPath = "uve_prefab_tests_outer.uvprefab";
     std::filesystem::remove(outerPath);
-    const Asset::AssetGuidUVE outerGuid =
-        prefabSystem.SavePrefabUVE(entityManager, assetDatabase, outerRoot, outerPath);
+    const Asset::AssetGuid outerGuid =
+        prefabSystem.SavePrefab(entityManager, assetDatabase, outerRoot, outerPath);
 
-    EntityManagerUVE freshManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
-    SceneGraphUVE freshSceneGraph;
-    const EntityUVE outerInstance =
-        prefabSystem.InstantiateUVE(freshManager, freshSceneGraph, assetDatabase, outerGuid, kInvalidEntityUVE);
-    ASSERT_NE(outerInstance, kInvalidEntityUVE);
+    EntityManager freshManager(memoryManager.GetDefaultAllocator(), eventSystem);
+    SceneGraph freshSceneGraph;
+    const Entity outerInstance =
+        prefabSystem.Instantiate(freshManager, freshSceneGraph, assetDatabase, outerGuid, kInvalidEntity);
+    ASSERT_NE(outerInstance, kInvalidEntity);
 
-    EntityUVE nestedChild = kInvalidEntityUVE;
-    freshManager.ForEachUVE<HierarchyComponentUVE>(
-        [&nestedChild, outerInstance](EntityUVE entity, HierarchyComponentUVE& hierarchy) {
+    Entity nestedChild = kInvalidEntity;
+    freshManager.ForEach<HierarchyComponent>(
+        [&nestedChild, outerInstance](Entity entity, HierarchyComponent& hierarchy) {
             if (hierarchy.parent == outerInstance) {
                 nestedChild = entity;
             }
         });
-    ASSERT_NE(nestedChild, kInvalidEntityUVE);
-    ASSERT_TRUE(freshManager.HasComponentUVE<MeshComponentUVE>(nestedChild));
-    EXPECT_EQ(freshManager.GetComponentUVE<MeshComponentUVE>(nestedChild).meshGuid, Asset::AssetGuidUVE{31});
-    ASSERT_TRUE(freshManager.HasComponentUVE<PrefabInstanceComponentUVE>(nestedChild));
-    EXPECT_EQ(freshManager.GetComponentUVE<PrefabInstanceComponentUVE>(nestedChild).sourcePrefabGuid, innerGuid);
+    ASSERT_NE(nestedChild, kInvalidEntity);
+    ASSERT_TRUE(freshManager.HasComponent<MeshComponent>(nestedChild));
+    EXPECT_EQ(freshManager.GetComponent<MeshComponent>(nestedChild).meshGuid, Asset::AssetGuid{31});
+    ASSERT_TRUE(freshManager.HasComponent<PrefabInstanceComponent>(nestedChild));
+    EXPECT_EQ(freshManager.GetComponent<PrefabInstanceComponent>(nestedChild).sourcePrefabGuid, innerGuid);
 
     std::filesystem::remove(innerPath);
     std::filesystem::remove(outerPath);
 }
 
-TEST_F(PrefabSystemUVETest, SavePrefabUVE_RegistrationExceptionFailsClosed) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
+TEST_F(PrefabSystemTest, SavePrefab_RegistrationExceptionFailsClosed) {
+    const Entity source = entityManager.CreateEntity();
     const std::filesystem::path path = "uve_prefab_tests_registration_exception.uvprefab";
     std::filesystem::remove(path);
-    ThrowingPrefabAssetDatabaseUVE throwingDatabase;
+    ThrowingPrefabAssetDatabase throwingDatabase;
     throwingDatabase.throwOnRegister = true;
 
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, throwingDatabase, source, path);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, throwingDatabase, source, path);
 
-    EXPECT_EQ(guid, Asset::kInvalidAssetGuidUVE);
+    EXPECT_EQ(guid, Asset::kInvalidAssetGuid);
     EXPECT_TRUE(std::filesystem::exists(path));
     std::filesystem::remove(path);
 }
 
-TEST_F(PrefabSystemUVETest, InstantiateUVE_ResolutionUnknownExceptionFailsBeforeEntityPublication) {
-    ThrowingPrefabAssetDatabaseUVE throwingDatabase;
+TEST_F(PrefabSystemTest, Instantiate_ResolutionUnknownExceptionFailsBeforeEntityPublication) {
+    ThrowingPrefabAssetDatabase throwingDatabase;
     throwingDatabase.throwOnResolve = true;
     throwingDatabase.throwUnknown = true;
 
-    const EntityUVE instance = prefabSystem.InstantiateUVE(entityManager, sceneGraph, throwingDatabase,
-                                                            Asset::AssetGuidUVE{424242}, kInvalidEntityUVE);
+    const Entity instance = prefabSystem.Instantiate(entityManager, sceneGraph, throwingDatabase,
+                                                            Asset::AssetGuid{424242}, kInvalidEntity);
 
-    EXPECT_EQ(instance, kInvalidEntityUVE);
+    EXPECT_EQ(instance, kInvalidEntity);
 }
 
-TEST_F(PrefabSystemUVETest, SavePrefabUVE_InvalidRegistrationFailsBeforeRegistrySave) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
+TEST_F(PrefabSystemTest, SavePrefab_InvalidRegistrationFailsBeforeRegistrySave) {
+    const Entity source = entityManager.CreateEntity();
     const std::filesystem::path path = "uve_prefab_tests_invalid_registration.uvprefab";
     std::filesystem::remove(path);
-    RejectingPrefabAssetDatabaseUVE rejectingDatabase;
+    RejectingPrefabAssetDatabase rejectingDatabase;
 
-    const Asset::AssetGuidUVE guid = prefabSystem.SavePrefabUVE(entityManager, rejectingDatabase, source, path);
+    const Asset::AssetGuid guid = prefabSystem.SavePrefab(entityManager, rejectingDatabase, source, path);
 
-    EXPECT_EQ(guid, Asset::kInvalidAssetGuidUVE);
+    EXPECT_EQ(guid, Asset::kInvalidAssetGuid);
     EXPECT_EQ(rejectingDatabase.saveCallCount, 0U);
     std::filesystem::remove(path);
 }
 
-TEST_F(PrefabSystemUVETest, SavePrefabUVE_SamePathTwice_KeepsGuidStable) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<MeshComponentUVE>(source, MeshComponentUVE{Asset::AssetGuidUVE{41}, Asset::AssetGuidUVE{42}});
+TEST_F(PrefabSystemTest, SavePrefab_SamePathTwice_KeepsGuidStable) {
+    const Entity source = entityManager.CreateEntity();
+    entityManager.AddComponent<MeshComponent>(source, MeshComponent{Asset::AssetGuid{41}, Asset::AssetGuid{42}});
 
     const std::filesystem::path path = "uve_prefab_tests_stable_guid.uvprefab";
     std::filesystem::remove(path);
 
-    const Asset::AssetGuidUVE firstGuid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);
-    const Asset::AssetGuidUVE secondGuid = prefabSystem.SavePrefabUVE(entityManager, assetDatabase, source, path);
+    const Asset::AssetGuid firstGuid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, path);
+    const Asset::AssetGuid secondGuid = prefabSystem.SavePrefab(entityManager, assetDatabase, source, path);
     EXPECT_EQ(firstGuid, secondGuid);
 
     std::filesystem::remove(path);

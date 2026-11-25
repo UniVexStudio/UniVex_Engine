@@ -15,9 +15,9 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-enum class CSGPrimitiveKindUVE : std::uint8_t {
+enum class CSGPrimitiveKind : std::uint8_t {
     Box = 0,
     Sphere = 1,
     Cylinder = 2,
@@ -27,94 +27,94 @@ enum class CSGPrimitiveKindUVE : std::uint8_t {
     Combiner = 6,
 };
 
-enum class CSGOperationUVE : std::uint8_t {
+enum class CSGOperation : std::uint8_t {
     Union = 0,
     Intersection = 1,
     Subtraction = 2,
 };
 
-/// Constructive solid geometry shape & boolean combiner component built on `SurfaceInstance3DBaseUVE`.
-struct CSGShape3DComponentUVE final {
-    CSGPrimitiveKindUVE primitiveKind = CSGPrimitiveKindUVE::Box;
-    CSGOperationUVE operation = CSGOperationUVE::Union;
-    Math::Vector3UVE boxSize{1.0F, 1.0F, 1.0F};
+/// Constructive solid geometry shape & boolean combiner component built on `SurfaceInstance3DBase`.
+struct CSGShape3DComponent final {
+    CSGPrimitiveKind primitiveKind = CSGPrimitiveKind::Box;
+    CSGOperation operation = CSGOperation::Union;
+    Math::Vector3 boxSize{1.0F, 1.0F, 1.0F};
     float radius = 0.5F;
     float innerRadius = 0.25F;
     float height = 1.0F;
-    Asset::AssetGuidUVE meshAssetGuid = Asset::kInvalidAssetGuidUVE;
-    Asset::AssetGuidUVE materialAssetGuid = Asset::kInvalidAssetGuidUVE;
-    std::vector<Math::Vector2UVE> polygonVertices2D{};
+    Asset::AssetGuid meshAssetGuid = Asset::kInvalidAssetGuid;
+    Asset::AssetGuid materialAssetGuid = Asset::kInvalidAssetGuid;
+    std::vector<Math::Vector2> polygonVertices2D{};
     bool useCollision = false;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const CSGShape3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const CSGShape3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsCSGShape3DComponentValidUVE(const CSGShape3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsCSGShape3DComponentValid(const CSGShape3DComponent& value) noexcept;
 
-[[nodiscard]] CSGShape3DComponentUVE SanitizeCSGShape3DComponentUVE(
-    const CSGShape3DComponentUVE& value);
+[[nodiscard]] CSGShape3DComponent SanitizeCSGShape3DComponent(
+    const CSGShape3DComponent& value);
 
-struct CSGBox3DObjectDefinitionUVE final {
+struct CSGBox3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGBox3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Box};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Box};
 };
-struct CSGSphere3DObjectDefinitionUVE final {
+struct CSGSphere3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGSphere3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Sphere};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Sphere};
 };
-struct CSGCylinder3DObjectDefinitionUVE final {
+struct CSGCylinder3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGCylinder3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Cylinder};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Cylinder};
 };
-struct CSGTorus3DObjectDefinitionUVE final {
+struct CSGTorus3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGTorus3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Torus};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Torus};
 };
-struct CSGMesh3DObjectDefinitionUVE final {
+struct CSGMesh3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGMesh3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Mesh};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Mesh};
 };
-struct CSGPolygon3DObjectDefinitionUVE final {
+struct CSGPolygon3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGPolygon3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Polygon};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Polygon};
 };
-struct CSGCombiner3DObjectDefinitionUVE final {
+struct CSGCombiner3DObjectDefinition final {
     static constexpr std::string_view defaultName = "CSGCombiner3D";
-    CSGShape3DComponentUVE csg{CSGPrimitiveKindUVE::Combiner};
+    CSGShape3DComponent csg{CSGPrimitiveKind::Combiner};
 };
 
-void ApplyCSGBox3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                      const CSGBox3DObjectDefinitionUVE& value);
-void ApplyCSGSphere3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                         const CSGSphere3DObjectDefinitionUVE& value);
-void ApplyCSGCylinder3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                           const CSGCylinder3DObjectDefinitionUVE& value);
-void ApplyCSGTorus3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const CSGTorus3DObjectDefinitionUVE& value);
-void ApplyCSGMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                       const CSGMesh3DObjectDefinitionUVE& value);
-void ApplyCSGPolygon3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                          const CSGPolygon3DObjectDefinitionUVE& value);
-void ApplyCSGCombiner3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                           const CSGCombiner3DObjectDefinitionUVE& value);
+void ApplyCSGBox3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                      const CSGBox3DObjectDefinition& value);
+void ApplyCSGSphere3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                         const CSGSphere3DObjectDefinition& value);
+void ApplyCSGCylinder3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                           const CSGCylinder3DObjectDefinition& value);
+void ApplyCSGTorus3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                        const CSGTorus3DObjectDefinition& value);
+void ApplyCSGMesh3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                       const CSGMesh3DObjectDefinition& value);
+void ApplyCSGPolygon3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                          const CSGPolygon3DObjectDefinition& value);
+void ApplyCSGCombiner3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                           const CSGCombiner3DObjectDefinition& value);
 
-class CSGShape3DUVE final {
+class CSGShape3D final {
 public:
-    CSGShape3DUVE() = delete;
+    CSGShape3D() = delete;
 
     /// Computes the local-space AABB of `shape`.
-    [[nodiscard]] static Math::AabbUVE ComputeLocalAabbUVE(
-        const CSGShape3DComponentUVE& shape) noexcept;
+    [[nodiscard]] static Math::Aabb ComputeLocalAabb(
+        const CSGShape3DComponent& shape) noexcept;
 
     /// Evaluates the local-space signed distance field of `shape` at `localPoint` (negative inside,
     /// positive outside).
-    [[nodiscard]] static float EvaluateLocalSignedDistanceUVE(
-        const CSGShape3DComponentUVE& shape, const Math::Vector3UVE& localPoint) noexcept;
+    [[nodiscard]] static float EvaluateLocalSignedDistance(
+        const CSGShape3DComponent& shape, const Math::Vector3& localPoint) noexcept;
 
     /// Combines two signed-distance values `sdfA` and `sdfB` under `operation` (`Union = min`,
     /// `Intersection = max`, `Subtraction = max(sdfA, -sdfB)`).
-    [[nodiscard]] static float CombineSignedDistanceUVE(CSGOperationUVE operation, float sdfA,
+    [[nodiscard]] static float CombineSignedDistance(CSGOperation operation, float sdfA,
                                                         float sdfB) noexcept;
 };
 

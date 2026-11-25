@@ -9,13 +9,13 @@
 namespace UVE::Core {
 namespace {
 
-constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
+constexpr std::size_t kMaximumIdentifierBytes = 128U;
 
-[[nodiscard]] bool IsBoundedIdentifierUVE(const std::string& value) noexcept {
-    return !value.empty() && value.size() <= kMaximumIdentifierBytesUVE;
+[[nodiscard]] bool IsBoundedIdentifier(const std::string& value) noexcept {
+    return !value.empty() && value.size() <= kMaximumIdentifierBytes;
 }
 
-[[nodiscard]] const AnimationClipUVE* FindClipUVE(const AnimationStateMachineUVE& machine,
+[[nodiscard]] const AnimationClip* FindClip(const AnimationStateMachine& machine,
                                                   const std::string& clipId) noexcept {
     const auto iterator = std::find_if(machine.clips.cbegin(), machine.clips.cend(), [&clipId](const auto& clip) {
         return clip.clipId == clipId;
@@ -23,93 +23,93 @@ constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
     return iterator == machine.clips.cend() ? nullptr : &*iterator;
 }
 
-[[nodiscard]] bool IsFiniteRangeUVE(const float value, const float minimum, const float maximum) noexcept {
+[[nodiscard]] bool IsFiniteRange(const float value, const float minimum, const float maximum) noexcept {
     return std::isfinite(value) && value >= minimum && value <= maximum;
 }
 
 } // namespace
 
-AnimationStateMachineValidationResultUVE ValidateAnimationStateMachineUVE(
-    const AnimationStateMachineUVE& machine) noexcept {
+AnimationStateMachineValidationResult ValidateAnimationStateMachine(
+    const AnimationStateMachine& machine) noexcept {
     if (machine.states.empty() || machine.initialStateId.empty()) {
-        return {AnimationStateMachineValidationCodeUVE::EmptyMachine, {},
+        return {AnimationStateMachineValidationCode::EmptyMachine, {},
                 "Animation state machine requires states and an initial state."};
     }
-    if (machine.states.size() > AnimationStateMachineUVE::kMaximumStatesUVE ||
-        machine.transitions.size() > AnimationStateMachineUVE::kMaximumTransitionsUVE) {
-        return {AnimationStateMachineValidationCodeUVE::CapacityExceeded, {},
+    if (machine.states.size() > AnimationStateMachine::kMaximumStates ||
+        machine.transitions.size() > AnimationStateMachine::kMaximumTransitions) {
+        return {AnimationStateMachineValidationCode::CapacityExceeded, {},
                 "Animation state machine exceeds the bounded state or transition limit."};
     }
     std::vector<std::string> stateIds;
     stateIds.reserve(machine.states.size());
-    for (const AnimationStateUVE& state : machine.states) {
-        if (!IsBoundedIdentifierUVE(state.stateId) || !IsBoundedIdentifierUVE(state.clipId) ||
-            ((!IsBoundedIdentifierUVE(state.syncGroupId) && !state.syncGroupId.empty())) ||
-            ((!IsBoundedIdentifierUVE(state.layerMaskId) && !state.layerMaskId.empty())) ||
-            !IsFiniteRangeUVE(state.speed, 0.0F, std::numeric_limits<float>::max())) {
-            return {AnimationStateMachineValidationCodeUVE::InvalidState, state.stateId,
+    for (const AnimationState& state : machine.states) {
+        if (!IsBoundedIdentifier(state.stateId) || !IsBoundedIdentifier(state.clipId) ||
+            ((!IsBoundedIdentifier(state.syncGroupId) && !state.syncGroupId.empty())) ||
+            ((!IsBoundedIdentifier(state.layerMaskId) && !state.layerMaskId.empty())) ||
+            !IsFiniteRange(state.speed, 0.0F, std::numeric_limits<float>::max())) {
+            return {AnimationStateMachineValidationCode::InvalidState, state.stateId,
                     "Animation state identity, optional metadata, or speed is invalid."};
         }
         if (std::find(stateIds.begin(), stateIds.end(), state.stateId) != stateIds.end()) {
-            return {AnimationStateMachineValidationCodeUVE::DuplicateState, state.stateId,
+            return {AnimationStateMachineValidationCode::DuplicateState, state.stateId,
                     "Animation state identifiers must be unique."};
         }
         stateIds.push_back(state.stateId);
-        if (FindClipUVE(machine, state.clipId) == nullptr) {
-            return {AnimationStateMachineValidationCodeUVE::UnknownClip, state.clipId,
+        if (FindClip(machine, state.clipId) == nullptr) {
+            return {AnimationStateMachineValidationCode::UnknownClip, state.clipId,
                     "Animation state references an unknown AnimationClip."};
         }
     }
     if (std::find(stateIds.begin(), stateIds.end(), machine.initialStateId) == stateIds.end()) {
-        return {AnimationStateMachineValidationCodeUVE::MissingInitialState, machine.initialStateId,
+        return {AnimationStateMachineValidationCode::MissingInitialState, machine.initialStateId,
                 "Animation state machine initial state is not registered."};
     }
     std::vector<std::string> transitionIds;
     transitionIds.reserve(machine.transitions.size());
-    for (const AnimationTransitionUVE& transition : machine.transitions) {
-        if (!IsBoundedIdentifierUVE(transition.transitionId) ||
-            !IsBoundedIdentifierUVE(transition.sourceStateId) ||
-            !IsBoundedIdentifierUVE(transition.targetStateId) ||
+    for (const AnimationTransition& transition : machine.transitions) {
+        if (!IsBoundedIdentifier(transition.transitionId) ||
+            !IsBoundedIdentifier(transition.sourceStateId) ||
+            !IsBoundedIdentifier(transition.targetStateId) ||
             transition.sourceStateId == transition.targetStateId) {
-            return {AnimationStateMachineValidationCodeUVE::InvalidTransition, transition.transitionId,
+            return {AnimationStateMachineValidationCode::InvalidTransition, transition.transitionId,
                     "Animation transition identity or endpoints are invalid."};
         }
         if (std::find(transitionIds.begin(), transitionIds.end(), transition.transitionId) != transitionIds.end()) {
-            return {AnimationStateMachineValidationCodeUVE::DuplicateTransition, transition.transitionId,
+            return {AnimationStateMachineValidationCode::DuplicateTransition, transition.transitionId,
                     "Animation transition identifiers must be unique."};
         }
         if (std::find(stateIds.begin(), stateIds.end(), transition.sourceStateId) == stateIds.end() ||
             std::find(stateIds.begin(), stateIds.end(), transition.targetStateId) == stateIds.end()) {
-            return {AnimationStateMachineValidationCodeUVE::UnknownState, transition.transitionId,
+            return {AnimationStateMachineValidationCode::UnknownState, transition.transitionId,
                     "Animation transition references an unknown state."};
         }
-        if (!IsFiniteRangeUVE(transition.durationSeconds, 0.0F, std::numeric_limits<float>::max())) {
-            return {AnimationStateMachineValidationCodeUVE::InvalidDuration, transition.transitionId,
+        if (!IsFiniteRange(transition.durationSeconds, 0.0F, std::numeric_limits<float>::max())) {
+            return {AnimationStateMachineValidationCode::InvalidDuration, transition.transitionId,
                     "Animation transition duration is invalid."};
         }
-        if (!IsFiniteRangeUVE(transition.exitTime, 0.0F, 1.0F)) {
-            return {AnimationStateMachineValidationCodeUVE::InvalidExitTime, transition.transitionId,
+        if (!IsFiniteRange(transition.exitTime, 0.0F, 1.0F)) {
+            return {AnimationStateMachineValidationCode::InvalidExitTime, transition.transitionId,
                     "Animation transition exit time must be within [0, 1]."};
         }
         transitionIds.push_back(transition.transitionId);
     }
-    return {AnimationStateMachineValidationCodeUVE::Valid, {}, "Animation state machine is valid."};
+    return {AnimationStateMachineValidationCode::Valid, {}, "Animation state machine is valid."};
 }
 
-AnimationStateMachineEvaluatorUVE::AnimationStateMachineEvaluatorUVE(
-    const AnimationStateMachineUVE& machine) : m_machine(machine) {
+AnimationStateMachineEvaluator::AnimationStateMachineEvaluator(
+    const AnimationStateMachine& machine) : m_machine(machine) {
     m_debug.currentStateId = machine.initialStateId;
 }
 
-AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::EvaluateUVE(
+AnimationStateMachineEvaluationResult AnimationStateMachineEvaluator::Evaluate(
     const double deltaSeconds) {
-    AnimationStateMachineEvaluationResultUVE result;
-    if (!ValidateAnimationStateMachineUVE(m_machine).IsValidUVE() || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0) {
+    AnimationStateMachineEvaluationResult result;
+    if (!ValidateAnimationStateMachine(m_machine).IsValid() || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0) {
         result.message = "Animation state-machine evaluation rejected invalid input.";
         result.debug = m_debug;
         return result;
     }
-    const AnimationStateUVE* current = FindStateUVE(m_debug.currentStateId);
+    const AnimationState* current = FindState(m_debug.currentStateId);
     if (current == nullptr) {
         result.message = "Animation state-machine current state is unavailable.";
         result.debug = m_debug;
@@ -121,7 +121,7 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
 
     const bool transitionWasActiveAtFrameStart = m_debug.transitioning;
     if (!m_debug.transitioning) {
-        const AnimationTransitionUVE* transition = SelectTransitionUVE(*current);
+        const AnimationTransition* transition = SelectTransition(*current);
         if (transition != nullptr) {
             m_debug.activeTransitionId = transition->transitionId;
             m_debug.targetStateId = transition->targetStateId;
@@ -133,7 +133,7 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
                 m_debug.targetStateId.clear();
                 m_debug.activeTransitionId.clear();
                 m_debug.normalizedTime = 0.0;
-                current = FindStateUVE(m_debug.currentStateId);
+                current = FindState(m_debug.currentStateId);
             }
         }
     }
@@ -147,10 +147,10 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
             result.debug = m_debug;
             return result;
         }
-        const AnimationTransitionUVE& transition = *transitionIterator;
-        const AnimationTransitionUVE* transitionToAdvance = &transition;
+        const AnimationTransition& transition = *transitionIterator;
+        const AnimationTransition* transitionToAdvance = &transition;
         if (transitionWasActiveAtFrameStart) {
-            if (const AnimationTransitionUVE* interruption = SelectInterruptionTransitionUVE(transition);
+            if (const AnimationTransition* interruption = SelectInterruptionTransition(transition);
                 interruption != nullptr) {
                 m_debug.activeTransitionId = interruption->transitionId;
                 m_debug.targetStateId = interruption->targetStateId;
@@ -164,7 +164,7 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
                     m_debug.transitioning = false;
                     m_debug.transitionAlpha = 0.0;
                     m_debug.normalizedTime = 0.0;
-                    current = FindStateUVE(m_debug.currentStateId);
+                    current = FindState(m_debug.currentStateId);
                 }
             }
         }
@@ -180,21 +180,21 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
             m_debug.transitioning = false;
             m_debug.transitionAlpha = 0.0;
             m_debug.normalizedTime = 0.0;
-            current = FindStateUVE(m_debug.currentStateId);
+            current = FindState(m_debug.currentStateId);
         }
     }
 
-    TransformPoseUVE currentPose;
-    if (!SampleStateUVE(*current, m_debug.normalizedTime, currentPose)) {
+    TransformPose currentPose;
+    if (!SampleState(*current, m_debug.normalizedTime, currentPose)) {
         result.message = "Animation state-machine current clip sampling failed.";
         result.debug = m_debug;
         return result;
     }
     result.pose = currentPose;
     if (m_debug.transitioning) {
-        const AnimationStateUVE* target = FindStateUVE(m_debug.targetStateId);
-        TransformPoseUVE targetPose;
-        if (target == nullptr || !SampleStateUVE(*target, m_debug.normalizedTime, targetPose)) {
+        const AnimationState* target = FindState(m_debug.targetStateId);
+        TransformPose targetPose;
+        if (target == nullptr || !SampleState(*target, m_debug.normalizedTime, targetPose)) {
             result.message = "Animation state-machine target clip sampling failed.";
             result.debug = m_debug;
             return result;
@@ -202,14 +202,14 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
         const float alpha = static_cast<float>(m_debug.transitionAlpha);
         result.pose.position = currentPose.position * (1.0F - alpha) + targetPose.position * alpha;
         result.pose.scale = currentPose.scale * (1.0F - alpha) + targetPose.scale * alpha;
-        result.pose.rotation = Math::QuaternionUVE{
+        result.pose.rotation = Math::Quaternion{
             currentPose.rotation.x * (1.0F - alpha) + targetPose.rotation.x * alpha,
             currentPose.rotation.y * (1.0F - alpha) + targetPose.rotation.y * alpha,
             currentPose.rotation.z * (1.0F - alpha) + targetPose.rotation.z * alpha,
             currentPose.rotation.w * (1.0F - alpha) + targetPose.rotation.w * alpha,
         };
-        TransformPoseUVE normalized;
-        if (!TryNormalizeTransformPoseUVE(result.pose, normalized)) {
+        TransformPose normalized;
+        if (!TryNormalizeTransformPose(result.pose, normalized)) {
             result.message = "Animation state-machine blend produced an invalid pose.";
             result.debug = m_debug;
             return result;
@@ -224,28 +224,28 @@ AnimationStateMachineEvaluationResultUVE AnimationStateMachineEvaluatorUVE::Eval
     return result;
 }
 
-const AnimationStateMachineDebugSnapshotUVE& AnimationStateMachineEvaluatorUVE::GetDebugSnapshotUVE() const noexcept {
+const AnimationStateMachineDebugSnapshot& AnimationStateMachineEvaluator::GetDebugSnapshot() const noexcept {
     return m_debug;
 }
 
-const AnimationStateUVE* AnimationStateMachineEvaluatorUVE::FindStateUVE(const std::string& stateId) const noexcept {
+const AnimationState* AnimationStateMachineEvaluator::FindState(const std::string& stateId) const noexcept {
     const auto iterator = std::find_if(m_machine.states.cbegin(), m_machine.states.cend(), [&stateId](const auto& state) {
         return state.stateId == stateId;
     });
     return iterator == m_machine.states.cend() ? nullptr : &*iterator;
 }
 
-const AnimationTransitionUVE* AnimationStateMachineEvaluatorUVE::SelectInterruptionTransitionUVE(
-    const AnimationTransitionUVE& activeTransition) const noexcept {
-    if (activeTransition.interruption == AnimationInterruptionPolicyUVE::None) {
+const AnimationTransition* AnimationStateMachineEvaluator::SelectInterruptionTransition(
+    const AnimationTransition& activeTransition) const noexcept {
+    if (activeTransition.interruption == AnimationInterruptionPolicy::None) {
         return nullptr;
     }
-    const auto allowsSource = activeTransition.interruption == AnimationInterruptionPolicyUVE::Source ||
-                              activeTransition.interruption == AnimationInterruptionPolicyUVE::SourceOrTarget;
-    const auto allowsTarget = activeTransition.interruption == AnimationInterruptionPolicyUVE::Target ||
-                              activeTransition.interruption == AnimationInterruptionPolicyUVE::SourceOrTarget;
-    const AnimationTransitionUVE* selected = nullptr;
-    for (const AnimationTransitionUVE& candidate : m_machine.transitions) {
+    const auto allowsSource = activeTransition.interruption == AnimationInterruptionPolicy::Source ||
+                              activeTransition.interruption == AnimationInterruptionPolicy::SourceOrTarget;
+    const auto allowsTarget = activeTransition.interruption == AnimationInterruptionPolicy::Target ||
+                              activeTransition.interruption == AnimationInterruptionPolicy::SourceOrTarget;
+    const AnimationTransition* selected = nullptr;
+    for (const AnimationTransition& candidate : m_machine.transitions) {
         const bool sourceMatch = allowsSource && candidate.sourceStateId == activeTransition.sourceStateId;
         const bool targetMatch = allowsTarget && candidate.sourceStateId == activeTransition.targetStateId;
         if (candidate.transitionId == activeTransition.transitionId || (!sourceMatch && !targetMatch) ||
@@ -260,10 +260,10 @@ const AnimationTransitionUVE* AnimationStateMachineEvaluatorUVE::SelectInterrupt
     return selected;
 }
 
-const AnimationTransitionUVE* AnimationStateMachineEvaluatorUVE::SelectTransitionUVE(
-    const AnimationStateUVE& source) const noexcept {
-    const AnimationTransitionUVE* selected = nullptr;
-    for (const AnimationTransitionUVE& transition : m_machine.transitions) {
+const AnimationTransition* AnimationStateMachineEvaluator::SelectTransition(
+    const AnimationState& source) const noexcept {
+    const AnimationTransition* selected = nullptr;
+    for (const AnimationTransition& transition : m_machine.transitions) {
         if (transition.sourceStateId != source.stateId ||
             m_debug.normalizedTime + 1.0e-9 < static_cast<double>(transition.exitTime)) {
             continue;
@@ -276,11 +276,11 @@ const AnimationTransitionUVE* AnimationStateMachineEvaluatorUVE::SelectTransitio
     return selected;
 }
 
-bool AnimationStateMachineEvaluatorUVE::SampleStateUVE(const AnimationStateUVE& state,
+bool AnimationStateMachineEvaluator::SampleState(const AnimationState& state,
                                                        const double timeSeconds,
-                                                       TransformPoseUVE& outPose) const noexcept {
-    const AnimationClipUVE* clip = FindClipUVE(m_machine, state.clipId);
-    return clip != nullptr && TrySampleAnimationClipUVE(*clip, timeSeconds, true, outPose);
+                                                       TransformPose& outPose) const noexcept {
+    const AnimationClip* clip = FindClip(m_machine, state.clipId);
+    return clip != nullptr && TrySampleAnimationClip(*clip, timeSeconds, true, outPose);
 }
 
 } // namespace UVE::Core

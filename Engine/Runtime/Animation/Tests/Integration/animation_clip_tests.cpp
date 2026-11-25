@@ -9,68 +9,68 @@
 namespace UVE::Core {
 namespace {
 
-AnimationClipUVE MakeClipUVE() {
-    AnimationClipUVE clip;
+AnimationClip MakeClip() {
+    AnimationClip clip;
     clip.clipId = "walk";
     clip.durationSeconds = 1.0;
     clip.samples = {
-        PoseSampleUVE{0.0, TransformPoseUVE{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
-        PoseSampleUVE{1.0, TransformPoseUVE{{10.0F, 2.0F, 0.0F}, {}, {2.0F, 2.0F, 2.0F}}},
+        PoseSample{0.0, TransformPose{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
+        PoseSample{1.0, TransformPose{{10.0F, 2.0F, 0.0F}, {}, {2.0F, 2.0F, 2.0F}}},
     };
-    clip.events = {AnimationEventUVE{0.2, "step_left"}, AnimationEventUVE{0.8, "step_right"}};
+    clip.events = {AnimationEvent{0.2, "step_left"}, AnimationEvent{0.8, "step_right"}};
     return clip;
 }
 
 } // namespace
 
-TEST(AnimationClipUVETest, ValidateAnimationClipUVE_AcceptsBoundedSortedClip) {
-    const AnimationClipUVE clip = MakeClipUVE();
-    const AnimationClipValidationResultUVE result = ValidateAnimationClipUVE(clip);
+TEST(AnimationClipTest, ValidateAnimationClip_AcceptsBoundedSortedClip) {
+    const AnimationClip clip = MakeClip();
+    const AnimationClipValidationResult result = ValidateAnimationClip(clip);
 
-    EXPECT_TRUE(result.IsValidUVE());
-    EXPECT_EQ(result.code, AnimationClipValidationCodeUVE::Valid);
+    EXPECT_TRUE(result.IsValid());
+    EXPECT_EQ(result.code, AnimationClipValidationCode::Valid);
 }
 
-TEST(AnimationClipUVETest, TrySampleAnimationClipUVE_InterpolatesAndLoopsDeterministically) {
-    const AnimationClipUVE clip = MakeClipUVE();
-    TransformPoseUVE midpoint;
-    TransformPoseUVE looped;
+TEST(AnimationClipTest, TrySampleAnimationClip_InterpolatesAndLoopsDeterministically) {
+    const AnimationClip clip = MakeClip();
+    TransformPose midpoint;
+    TransformPose looped;
 
-    ASSERT_TRUE(TrySampleAnimationClipUVE(clip, 0.5, false, midpoint));
-    EXPECT_EQ(midpoint.position, (Math::Vector3UVE{5.0F, 1.0F, 0.0F}));
-    EXPECT_EQ(midpoint.scale, (Math::Vector3UVE{1.5F, 1.5F, 1.5F}));
-    ASSERT_TRUE(TrySampleAnimationClipUVE(clip, 1.25, true, looped));
-    EXPECT_EQ(looped.position, (Math::Vector3UVE{2.5F, 0.5F, 0.0F}));
+    ASSERT_TRUE(TrySampleAnimationClip(clip, 0.5, false, midpoint));
+    EXPECT_EQ(midpoint.position, (Math::Vector3{5.0F, 1.0F, 0.0F}));
+    EXPECT_EQ(midpoint.scale, (Math::Vector3{1.5F, 1.5F, 1.5F}));
+    ASSERT_TRUE(TrySampleAnimationClip(clip, 1.25, true, looped));
+    EXPECT_EQ(looped.position, (Math::Vector3{2.5F, 0.5F, 0.0F}));
 }
 
-TEST(AnimationClipUVETest, CollectAnimationEventsUVE_ReturnsEventsAcrossLoopBoundaryInOrder) {
-    const AnimationClipUVE clip = MakeClipUVE();
-    const std::vector<AnimationEventUVE> events = CollectAnimationEventsUVE(clip, 0.7, 1.2, true);
+TEST(AnimationClipTest, CollectAnimationEvents_ReturnsEventsAcrossLoopBoundaryInOrder) {
+    const AnimationClip clip = MakeClip();
+    const std::vector<AnimationEvent> events = CollectAnimationEvents(clip, 0.7, 1.2, true);
 
     ASSERT_EQ(events.size(), 2U);
     EXPECT_EQ(events[0].eventId, "step_right");
     EXPECT_EQ(events[1].eventId, "step_left");
 }
 
-TEST(AnimationClipUVETest, CollectAnimationEventsUVE_RejectsUnboundedFiniteLoopRange) {
-    const AnimationClipUVE clip = MakeClipUVE();
-    const std::vector<AnimationEventUVE> events =
-        CollectAnimationEventsUVE(clip, 0.0, std::numeric_limits<double>::max(), true);
+TEST(AnimationClipTest, CollectAnimationEvents_RejectsUnboundedFiniteLoopRange) {
+    const AnimationClip clip = MakeClip();
+    const std::vector<AnimationEvent> events =
+        CollectAnimationEvents(clip, 0.0, std::numeric_limits<double>::max(), true);
     EXPECT_TRUE(events.empty());
 }
 
-TEST(AnimationClipUVETest, ValidateAnimationClipUVE_RejectsUnsortedOrInvalidData) {
-    AnimationClipUVE clip = MakeClipUVE();
+TEST(AnimationClipTest, ValidateAnimationClip_RejectsUnsortedOrInvalidData) {
+    AnimationClip clip = MakeClip();
     clip.samples[1].timeSeconds = -0.1;
-    EXPECT_EQ(ValidateAnimationClipUVE(clip).code, AnimationClipValidationCodeUVE::InvalidSampleTime);
+    EXPECT_EQ(ValidateAnimationClip(clip).code, AnimationClipValidationCode::InvalidSampleTime);
 
-    clip = MakeClipUVE();
+    clip = MakeClip();
     clip.events[0].eventId.clear();
-    EXPECT_EQ(ValidateAnimationClipUVE(clip).code, AnimationClipValidationCodeUVE::InvalidEventIdentifier);
+    EXPECT_EQ(ValidateAnimationClip(clip).code, AnimationClipValidationCode::InvalidEventIdentifier);
 
-    clip = MakeClipUVE();
-    clip.samples[1].pose.rotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
-    EXPECT_EQ(ValidateAnimationClipUVE(clip).code, AnimationClipValidationCodeUVE::InvalidPose);
+    clip = MakeClip();
+    clip.samples[1].pose.rotation = Math::Quaternion{0.0F, 0.0F, 0.0F, 0.0F};
+    EXPECT_EQ(ValidateAnimationClip(clip).code, AnimationClipValidationCode::InvalidPose);
 }
 
 } // namespace UVE::Core

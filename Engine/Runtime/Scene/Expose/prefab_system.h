@@ -8,31 +8,31 @@
 
 namespace UVE::Scene {
 
-/// PrefabSystemUVE is the concrete, engine-standard implementation of IPrefabSystemUVE. Owns a
-/// private SceneSerializerUVE by value (it needs no constructor arguments of its own), so
+/// PrefabSystem is the concrete, engine-standard implementation of IPrefabSystem. Owns a
+/// private SceneSerializer by value (it needs no constructor arguments of its own), so
 /// callers never have to separately fetch a serializer just to save/instantiate prefabs.
-class PrefabSystemUVE final : public IPrefabSystemUVE {
+class PrefabSystem final : public IPrefabSystem {
 public:
-    PrefabSystemUVE() = default;
+    PrefabSystem() = default;
 
-    [[nodiscard]] Asset::AssetGuidUVE SavePrefabUVE(IEntityManagerUVE& entityManager,
-                                                     Asset::IAssetDatabaseUVE& assetDatabase,
-                                                     EntityUVE rootEntity,
+    [[nodiscard]] Asset::AssetGuid SavePrefab(IEntityManager& entityManager,
+                                                     Asset::IAssetDatabase& assetDatabase,
+                                                     Entity rootEntity,
                                                      const std::filesystem::path& path) override;
-    [[nodiscard]] EntityUVE InstantiateUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                                           Asset::IAssetDatabaseUVE& assetDatabase,
-                                           Asset::AssetGuidUVE prefabGuid, EntityUVE parent) override;
-    [[nodiscard]] EntityUVE InstantiateWithRevisionUVE(
-        IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-        Asset::IAssetDatabaseUVE& assetDatabase, Asset::AssetGuidUVE prefabGuid, EntityUVE parent,
+    [[nodiscard]] Entity Instantiate(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                                           Asset::IAssetDatabase& assetDatabase,
+                                           Asset::AssetGuid prefabGuid, Entity parent) override;
+    [[nodiscard]] Entity InstantiateWithRevision(
+        IEntityManager& entityManager, ISceneGraph& sceneGraph,
+        Asset::IAssetDatabase& assetDatabase, Asset::AssetGuid prefabGuid, Entity parent,
         std::uint64_t sourceRevision) override;
-    [[nodiscard]] PrefabRefreshResultUVE RefreshInstanceUVE(
-        IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-        Asset::IAssetDatabaseUVE& assetDatabase, EntityUVE instanceRoot,
+    [[nodiscard]] PrefabRefreshResult RefreshInstance(
+        IEntityManager& entityManager, ISceneGraph& sceneGraph,
+        Asset::IAssetDatabase& assetDatabase, Entity instanceRoot,
         bool forceRefresh = false) override;
 
 private:
-    SceneSerializerUVE m_sceneSerializer;
+    SceneSerializer m_sceneSerializer;
 };
 
 } // namespace UVE::Scene

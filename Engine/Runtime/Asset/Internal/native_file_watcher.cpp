@@ -11,7 +11,7 @@
 #include <unistd.h>
 #endif
 namespace UVE::Asset::Detail {
-NativeFileWatcherUVE::NativeFileWatcherUVE(bool enabled) {
+NativeFileWatcher::NativeFileWatcher(bool enabled) {
 #if defined(__linux__)
     if (enabled)
         m_descriptor = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
@@ -19,15 +19,15 @@ NativeFileWatcherUVE::NativeFileWatcherUVE(bool enabled) {
     static_cast<void>(enabled);
 #endif
 }
-NativeFileWatcherUVE::~NativeFileWatcherUVE() {
+NativeFileWatcher::~NativeFileWatcher() {
 #if defined(__linux__)
     if (m_descriptor >= 0)
         static_cast<void>(close(m_descriptor));
 #endif
 }
-void NativeFileWatcherUVE::SetDirectoriesUVE(const std::set<std::filesystem::path> &directories) {
+void NativeFileWatcher::SetDirectories(const std::set<std::filesystem::path> &directories) {
 #if defined(__linux__)
-    if (!IsAvailableUVE())
+    if (!IsAvailable())
         return;
     std::map<std::filesystem::path, int> next;
     for (const auto &directory : directories) {
@@ -62,11 +62,11 @@ void NativeFileWatcherUVE::SetDirectoriesUVE(const std::set<std::filesystem::pat
     static_cast<void>(directories);
 #endif
 }
-NativeFileChangesUVE NativeFileWatcherUVE::PollUVE() {
-    NativeFileChangesUVE changes;
+NativeFileChanges NativeFileWatcher::Poll() {
+    NativeFileChanges changes;
     changes.rescanRequired = std::exchange(m_rescanRequired, false);
 #if defined(__linux__)
-    if (!IsAvailableUVE())
+    if (!IsAvailable())
         return changes;
     std::array<std::byte, 16U * 1024U> bytes{};
     for (std::size_t readIndex = 0; readIndex < 64U; ++readIndex) {

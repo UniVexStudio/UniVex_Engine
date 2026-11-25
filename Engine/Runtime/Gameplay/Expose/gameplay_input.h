@@ -12,28 +12,28 @@
 
 namespace UVE::Gameplay {
 
-inline constexpr std::string_view kMoveHorizontalActionUVE = "MoveHorizontal";
-inline constexpr std::string_view kMoveForwardActionUVE = "MoveForward";
-inline constexpr std::string_view kJumpActionUVE = "Jump";
-inline constexpr std::string_view kInteractActionUVE = "Interact";
-inline constexpr std::string_view kLookHorizontalActionUVE = "LookHorizontal";
-inline constexpr std::string_view kLookVerticalActionUVE = "LookVertical";
+inline constexpr std::string_view kMoveHorizontalAction = "MoveHorizontal";
+inline constexpr std::string_view kMoveForwardAction = "MoveForward";
+inline constexpr std::string_view kJumpAction = "Jump";
+inline constexpr std::string_view kInteractAction = "Interact";
+inline constexpr std::string_view kLookHorizontalAction = "LookHorizontal";
+inline constexpr std::string_view kLookVerticalAction = "LookVertical";
 
-struct GameplayInputUVE final {
-    Math::Vector3UVE move{};
+struct GameplayInput final {
+    Math::Vector3 move{};
     float rise = 0.0F;
     bool jumpPressed = false;
-    Math::Vector2UVE lookPointer{};
-    Math::Vector2UVE lookStick{};
+    Math::Vector2 lookPointer{};
+    Math::Vector2 lookStick{};
     bool interactPressed = false;
 
-    [[nodiscard]] bool operator==(const GameplayInputUVE&) const = default;
+    [[nodiscard]] bool operator==(const GameplayInput&) const = default;
 };
 
-[[nodiscard]] std::vector<Input::InputActionUVE> MakeDefaultGameplayActionsUVE();
+[[nodiscard]] std::vector<Input::InputAction> MakeDefaultGameplayActions();
 
-void RegisterDefaultGameplayActionsUVE(Input::IInputSystemUVE& inputSystem);
+void RegisterDefaultGameplayActions(Input::IInputSystem& inputSystem);
 
-[[nodiscard]] GameplayInputUVE CollectGameplayInputUVE(const Input::IInputSystemUVE& inputSystem);
+[[nodiscard]] GameplayInput CollectGameplayInput(const Input::IInputSystem& inputSystem);
 
 } // namespace UVE::Gameplay

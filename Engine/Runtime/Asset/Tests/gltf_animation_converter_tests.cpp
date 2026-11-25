@@ -23,70 +23,70 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-std::filesystem::path TestPathUVE(const char* const name) {
-    return ::UVE::Tests::ScratchRootUVE() / name;
+std::filesystem::path TestPath(const char* const name) {
+    return ::UVE::Tests::ScratchRoot() / name;
 }
 
-void AppendU32LittleEndianUVE(std::vector<std::byte>& bytes, const std::uint32_t value) {
+void AppendU32LittleEndian(std::vector<std::byte>& bytes, const std::uint32_t value) {
     for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
         bytes.push_back(std::byte{static_cast<unsigned char>((value >> shift) & 0xFFU)});
     }
 }
 
-void AppendFloatLittleEndianUVE(std::vector<std::byte>& bytes, const float value) {
-    AppendU32LittleEndianUVE(bytes, std::bit_cast<std::uint32_t>(value));
+void AppendFloatLittleEndian(std::vector<std::byte>& bytes, const float value) {
+    AppendU32LittleEndian(bytes, std::bit_cast<std::uint32_t>(value));
 }
 
-SkeletonAssetUVE MakeTwoJointSkeletonAssetUVE() {
-    SkeletonJointUVE root;
+SkeletonAsset MakeTwoJointSkeletonAsset() {
+    SkeletonJoint root;
     root.name = "Root";
     root.parent = -1;
-    SkeletonJointUVE child;
+    SkeletonJoint child;
     child.name = "Child";
     child.parent = 0;
-    child.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    SkeletonAssetUVE skeleton;
+    child.position = Math::Vector3{0.0F, 1.0F, 0.0F};
+    SkeletonAsset skeleton;
     skeleton.skeletonId = "Rig";
     skeleton.joints = {root, child};
     return skeleton;
 }
 
-struct HandBuiltAnimationUVE final {
+struct HandBuiltAnimation final {
     std::vector<std::vector<std::byte>> buffers;
-    GltfAnimationSourceUVE source;
+    GltfAnimationSource source;
 };
 
 // Moving a vector keeps its heap buffer at the same address, so spans taken here stay valid
-// across later AddChannelUVE calls even when `buffers` reallocates.
-void AddChannelUVE(HandBuiltAnimationUVE& anim, const char* bone, const GltfAnimationPathUVE path,
-                   const GltfAnimationInterpolationUVE interpolation, const std::vector<float>& times,
+// across later AddChannel calls even when `buffers` reallocates.
+void AddChannel(HandBuiltAnimation& anim, const char* bone, const GltfAnimationPath path,
+                   const GltfAnimationInterpolation interpolation, const std::vector<float>& times,
                    const std::vector<float>& flatValues) {
     std::vector<std::byte> timeBytes;
     std::vector<std::byte> valueBytes;
     for (const float time : times) {
-        AppendFloatLittleEndianUVE(timeBytes, time);
+        AppendFloatLittleEndian(timeBytes, time);
     }
     for (const float value : flatValues) {
-        AppendFloatLittleEndianUVE(valueBytes, value);
+        AppendFloatLittleEndian(valueBytes, value);
     }
     anim.buffers.push_back(std::move(timeBytes));
     anim.buffers.push_back(std::move(valueBytes));
     const std::size_t count = times.size();
-    GltfAnimationChannelSourceUVE channel;
+    GltfAnimationChannelSource channel;
     channel.bone = bone;
     channel.path = path;
     channel.interpolation = interpolation;
-    channel.times = GltfAccessorViewUVE{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 2U]},
+    channel.times = GltfAccessorView{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 2U]},
                                         0U, static_cast<std::uint64_t>(count), 0U,
-                                        GltfComponentTypeUVE::Float};
-    channel.values = GltfAccessorViewUVE{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 1U]},
+                                        GltfComponentType::Float};
+    channel.values = GltfAccessorView{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 1U]},
                                          0U, static_cast<std::uint64_t>(count), 0U,
-                                         GltfComponentTypeUVE::Float};
+                                         GltfComponentType::Float};
     anim.source.channels.push_back(std::move(channel));
 }
 
-const AnimationAssetBoneTrackUVE* FindTrackUVE(const AnimationClipAssetUVE& clip, const char* bone) {
-    for (const AnimationAssetBoneTrackUVE& track : clip.bones) {
+const AnimationAssetBoneTrack* FindTrack(const AnimationClipAsset& clip, const char* bone) {
+    for (const AnimationAssetBoneTrack& track : clip.bones) {
         if (track.bone == bone) {
             return &track;
         }
@@ -94,8 +94,8 @@ const AnimationAssetBoneTrackUVE* FindTrackUVE(const AnimationClipAssetUVE& clip
     return nullptr;
 }
 
-const AnimationAssetSampleUVE* FindSampleUVE(const AnimationAssetBoneTrackUVE& track, const double time) {
-    for (const AnimationAssetSampleUVE& sample : track.samples) {
+const AnimationAssetSample* FindSample(const AnimationAssetBoneTrack& track, const double time) {
+    for (const AnimationAssetSample& sample : track.samples) {
         if (sample.timeSeconds == time) {
             return &sample;
         }
@@ -105,36 +105,36 @@ const AnimationAssetSampleUVE* FindSampleUVE(const AnimationAssetBoneTrackUVE& t
 
 // A weights channel: `morphTargetCount` floats per key, end to end, which is the layout glTF
 // defines for a SCALAR weights output.
-void AddWeightChannelUVE(HandBuiltAnimationUVE& anim, const char* node,
+void AddWeightChannel(HandBuiltAnimation& anim, const char* node,
                          const std::size_t morphTargetCount,
-                         const GltfAnimationInterpolationUVE interpolation,
+                         const GltfAnimationInterpolation interpolation,
                          const std::vector<float>& times, const std::vector<float>& flatValues) {
     std::vector<std::byte> timeBytes;
     std::vector<std::byte> valueBytes;
     for (const float time : times) {
-        AppendFloatLittleEndianUVE(timeBytes, time);
+        AppendFloatLittleEndian(timeBytes, time);
     }
     for (const float value : flatValues) {
-        AppendFloatLittleEndianUVE(valueBytes, value);
+        AppendFloatLittleEndian(valueBytes, value);
     }
     anim.buffers.push_back(std::move(timeBytes));
     anim.buffers.push_back(std::move(valueBytes));
-    GltfAnimationChannelSourceUVE channel;
+    GltfAnimationChannelSource channel;
     channel.node = node;
-    channel.path = GltfAnimationPathUVE::Weights;
+    channel.path = GltfAnimationPath::Weights;
     channel.interpolation = interpolation;
     channel.morphTargetCount = morphTargetCount;
-    channel.times = GltfAccessorViewUVE{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 2U]},
+    channel.times = GltfAccessorView{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 2U]},
                                         0U, static_cast<std::uint64_t>(times.size()), 0U,
-                                        GltfComponentTypeUVE::Float};
-    channel.values = GltfAccessorViewUVE{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 1U]},
+                                        GltfComponentType::Float};
+    channel.values = GltfAccessorView{std::span<const std::byte>{anim.buffers[anim.buffers.size() - 1U]},
                                          0U, static_cast<std::uint64_t>(flatValues.size()), 0U,
-                                         GltfComponentTypeUVE::Float};
+                                         GltfComponentType::Float};
     anim.source.channels.push_back(std::move(channel));
 }
 
-const AnimationAssetMorphTrackUVE* FindMorphTrackUVE(const AnimationClipAssetUVE& clip, const char* node) {
-    for (const AnimationAssetMorphTrackUVE& track : clip.morphWeights) {
+const AnimationAssetMorphTrack* FindMorphTrack(const AnimationClipAsset& clip, const char* node) {
+    for (const AnimationAssetMorphTrack& track : clip.morphWeights) {
         if (track.node == node) {
             return &track;
         }
@@ -142,13 +142,13 @@ const AnimationAssetMorphTrackUVE* FindMorphTrackUVE(const AnimationClipAssetUVE
     return nullptr;
 }
 
-void AppendIdentityMatrixUVE(std::vector<std::byte>& bytes) {
+void AppendIdentityMatrix(std::vector<std::byte>& bytes) {
     for (int i = 0; i < 16; ++i) {
-        AppendFloatLittleEndianUVE(bytes, i % 5 == 0 ? 1.0F : 0.0F);
+        AppendFloatLittleEndian(bytes, i % 5 == 0 ? 1.0F : 0.0F);
     }
 }
 
-void AppendColumnMajorTranslationUVE(std::vector<std::byte>& bytes, const float x, const float y,
+void AppendColumnMajorTranslation(std::vector<std::byte>& bytes, const float x, const float y,
                                      const float z) {
     for (int i = 0; i < 16; ++i) {
         float value = 0.0F;
@@ -161,7 +161,7 @@ void AppendColumnMajorTranslationUVE(std::vector<std::byte>& bytes, const float 
         } else if (i == 14) {
             value = z;
         }
-        AppendFloatLittleEndianUVE(bytes, value);
+        AppendFloatLittleEndian(bytes, value);
     }
 }
 
@@ -170,31 +170,31 @@ void AppendColumnMajorTranslationUVE(std::vector<std::byte>& bytes, const float 
 // one triangle (v0 on the root, v1/v2 on the child), and a one-second clip rotating the child
 // 90 degrees about Z. Buffer: IBM 128B @0, POSITION 36B @128, JOINTS_0 12B @164,
 // WEIGHTS_0 48B @176, TIME 8B @224, ROT 32B @232.
-std::vector<std::byte> MakeEndToEndBufferUVE() {
+std::vector<std::byte> MakeEndToEndBuffer() {
     std::vector<std::byte> buffer;
-    AppendIdentityMatrixUVE(buffer);
-    AppendColumnMajorTranslationUVE(buffer, 0.0F, -1.0F, 0.0F);
+    AppendIdentityMatrix(buffer);
+    AppendColumnMajorTranslation(buffer, 0.0F, -1.0F, 0.0F);
     for (const float v : {0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F, 2.0F, 0.0F}) {
-        AppendFloatLittleEndianUVE(buffer, v);
+        AppendFloatLittleEndian(buffer, v);
     }
     for (const std::uint32_t j : {0U, 0U, 0U, 0U, 1U, 0U, 0U, 0U, 1U, 0U, 0U, 0U}) {
         buffer.push_back(std::byte{static_cast<unsigned char>(j)});
     }
     for (int i = 0; i < 3; ++i) {
-        AppendFloatLittleEndianUVE(buffer, 1.0F);
-        AppendFloatLittleEndianUVE(buffer, 0.0F);
-        AppendFloatLittleEndianUVE(buffer, 0.0F);
-        AppendFloatLittleEndianUVE(buffer, 0.0F);
+        AppendFloatLittleEndian(buffer, 1.0F);
+        AppendFloatLittleEndian(buffer, 0.0F);
+        AppendFloatLittleEndian(buffer, 0.0F);
+        AppendFloatLittleEndian(buffer, 0.0F);
     }
-    AppendFloatLittleEndianUVE(buffer, 0.0F);
-    AppendFloatLittleEndianUVE(buffer, 1.0F);
+    AppendFloatLittleEndian(buffer, 0.0F);
+    AppendFloatLittleEndian(buffer, 1.0F);
     for (const float q : {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.70710678F, 0.70710678F}) {
-        AppendFloatLittleEndianUVE(buffer, q);
+        AppendFloatLittleEndian(buffer, q);
     }
     return buffer;
 }
 
-constexpr const char* kEndToEndDocumentUVE = R"json({
+constexpr const char* kEndToEndDocument = R"json({
   "asset": {"version": "2.0"},
   "nodes": [
     {"name": "Root", "children": [1]},
@@ -229,19 +229,19 @@ constexpr const char* kEndToEndDocumentUVE = R"json({
 // A lip-sync export the way a DCC tool writes one: a head mesh with two blend shapes, an eyes mesh
 // with one, and a weights channel on the head - and NO skin, because a facial take does not need a
 // skeleton. Buffer: TIME 12B @0, WEIGHTS 24B @12.
-std::vector<std::byte> MakeLipSyncBufferUVE() {
+std::vector<std::byte> MakeLipSyncBuffer() {
     std::vector<std::byte> buffer;
     for (const float time : {0.0F, 0.5F, 1.0F}) {
-        AppendFloatLittleEndianUVE(buffer, time);
+        AppendFloatLittleEndian(buffer, time);
     }
     // Key 0 neutral, key 1 half a smile and a quarter blink, key 2 full smile and half blink.
     for (const float weight : {0.0F, 0.0F, 0.5F, 0.25F, 1.0F, 0.5F}) {
-        AppendFloatLittleEndianUVE(buffer, weight);
+        AppendFloatLittleEndian(buffer, weight);
     }
     return buffer;
 }
 
-constexpr const char* kLipSyncDocumentUVE = R"json({
+constexpr const char* kLipSyncDocument = R"json({
   "asset": {"version": "2.0"},
   "nodes": [
     {"name": "Head", "mesh": 0},
@@ -269,7 +269,7 @@ constexpr const char* kLipSyncDocumentUVE = R"json({
 
 // Two nodes that share one name and one mesh: the track names must stay distinct, or the runtime
 // would drive the same mesh twice and never the second instance.
-constexpr const char* kDuplicateNodeNamesDocumentUVE = R"json({
+constexpr const char* kDuplicateNodeNamesDocument = R"json({
   "asset": {"version": "2.0"},
   "nodes": [
     {"name": "Head", "mesh": 0},
@@ -299,22 +299,22 @@ constexpr const char* kDuplicateNodeNamesDocumentUVE = R"json({
 
 } // namespace
 
-TEST(GltfAnimationConverterUVETest, MergesChannelsOntoUnionTimesInSkeletonOrder) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, MergesChannelsOntoUnionTimesInSkeletonOrder) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Jump";
     // Inserted child-first to prove tracks come out in skeleton order, not insertion order.
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F}, {0.0F, 1.0F, 0.0F, 0.0F, 2.0F, 0.0F});
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation,
-                  GltfAnimationInterpolationUVE::Linear, {0.5F}, {0.0F, 0.0F, 0.0F, 1.0F});
-    AddChannelUVE(anim, "Root", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F}, {0.0F, 1.0F, 0.0F, 0.0F, 2.0F, 0.0F});
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation,
+                  GltfAnimationInterpolation::Linear, {0.5F}, {0.0F, 0.0F, 0.0F, 1.0F});
+    AddChannel(anim, "Root", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
     EXPECT_EQ(clip.clipId, "Jump");
     EXPECT_DOUBLE_EQ(clip.durationSeconds, 1.0);
-    EXPECT_TRUE(IsAnimationClipAssetValidUVE(clip));
+    EXPECT_TRUE(IsAnimationClipAssetValid(clip));
 
     ASSERT_EQ(clip.bones.size(), 2U);
     EXPECT_EQ(clip.bones[0].bone, "Root");
@@ -323,7 +323,7 @@ TEST(GltfAnimationConverterUVETest, MergesChannelsOntoUnionTimesInSkeletonOrder)
     EXPECT_EQ(clip.rest[1].bone, "Child");
     EXPECT_EQ(clip.rest[1].parent, 0);
 
-    const AnimationAssetBoneTrackUVE* child = FindTrackUVE(clip, "Child");
+    const AnimationAssetBoneTrack* child = FindTrack(clip, "Child");
     ASSERT_NE(child, nullptr);
     ASSERT_EQ(child->samples.size(), 3U);
     EXPECT_DOUBLE_EQ(child->samples[0].timeSeconds, 0.0);
@@ -338,22 +338,22 @@ TEST(GltfAnimationConverterUVETest, MergesChannelsOntoUnionTimesInSkeletonOrder)
     EXPECT_FLOAT_EQ(child->samples[2].pose.position.y, 2.0F);
 }
 
-TEST(GltfAnimationConverterUVETest, SlerpBakesRotationBetweenKeys) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, SlerpBakesRotationBetweenKeys) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Turn";
     // Identity to 180 degrees about Y: the midpoint must be 90 degrees about Y.
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                   {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 1.0F, 0.0F, 0.0F});
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.5F}, {0.0F, 1.0F, 0.0F});
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.5F}, {0.0F, 1.0F, 0.0F});
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
-    const AnimationAssetBoneTrackUVE* child = FindTrackUVE(clip, "Child");
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
+    const AnimationAssetBoneTrack* child = FindTrack(clip, "Child");
     ASSERT_NE(child, nullptr);
     ASSERT_EQ(child->samples.size(), 3U);
-    const Math::QuaternionUVE& mid = child->samples[1].pose.rotation;
+    const Math::Quaternion& mid = child->samples[1].pose.rotation;
     EXPECT_NEAR(mid.x, 0.0F, 1.0e-5F);
     EXPECT_NEAR(mid.y, 0.70710678F, 1.0e-5F);
     EXPECT_NEAR(mid.z, 0.0F, 1.0e-5F);
@@ -361,121 +361,121 @@ TEST(GltfAnimationConverterUVETest, SlerpBakesRotationBetweenKeys) {
     EXPECT_NEAR(mid.x * mid.x + mid.y * mid.y + mid.z * mid.z + mid.w * mid.w, 1.0F, 1.0e-5F);
 }
 
-TEST(GltfAnimationConverterUVETest, StepHoldsPreviousKey) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, StepHoldsPreviousKey) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Snap";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Step, {0.0F, 1.0F},
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Step, {0.0F, 1.0F},
                   {0.0F, 0.0F, 0.0F, 0.0F, 9.0F, 0.0F});
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Scale,
-                  GltfAnimationInterpolationUVE::Linear, {0.5F}, {1.0F, 1.0F, 1.0F});
+    AddChannel(anim, "Child", GltfAnimationPath::Scale,
+                  GltfAnimationInterpolation::Linear, {0.5F}, {1.0F, 1.0F, 1.0F});
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
-    const AnimationAssetBoneTrackUVE* child = FindTrackUVE(clip, "Child");
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
+    const AnimationAssetBoneTrack* child = FindTrack(clip, "Child");
     ASSERT_NE(child, nullptr);
     ASSERT_EQ(child->samples.size(), 3U);
     EXPECT_FLOAT_EQ(child->samples[1].pose.position.y, 0.0F);
     EXPECT_FLOAT_EQ(child->samples[2].pose.position.y, 9.0F);
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsUnknownBone) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsUnknownBone) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Ghost", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AddChannel(anim, "Ghost", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsDuplicateBonePath) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsDuplicateBonePath) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Step, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Step, {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsRepeatedKeyTime) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsRepeatedKeyTime) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 0.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 0.0F}, {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsNegativeKeyTime) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsNegativeKeyTime) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {-1.0F, 1.0F},
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {-1.0F, 1.0F},
                   {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsZeroDuration) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsZeroDuration) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F}, {0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F}, {0.0F, 0.0F, 0.0F});
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsZeroQuaternion) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsZeroQuaternion) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                   {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsValueCountMismatch) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsValueCountMismatch) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Translation,
-                  GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddChannel(anim, "Child", GltfAnimationPath::Translation,
+                  GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                   {0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F});
     anim.source.channels.back().values.elementCount = 1U;
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsEmptyChannels) {
-    GltfAnimationSourceUVE source;
+TEST(GltfAnimationConverterTest, RejectsEmptyChannels) {
+    GltfAnimationSource source;
     source.clipId = "Empty";
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, DocumentParseConvertsAndRoundTripsClip) {
-    const std::vector<std::byte> buffer = MakeEndToEndBufferUVE();
-    const std::optional<GltfAnimationSourceUVE> source =
-        ParseGltfAnimationSourceUVE(kEndToEndDocumentUVE, buffer);
+TEST(GltfAnimationConverterTest, DocumentParseConvertsAndRoundTripsClip) {
+    const std::vector<std::byte> buffer = MakeEndToEndBuffer();
+    const std::optional<GltfAnimationSource> source =
+        ParseGltfAnimationSource(kEndToEndDocument, buffer);
     ASSERT_TRUE(source.has_value());
     EXPECT_EQ(source->clipId, "Wave");
     ASSERT_EQ(source->channels.size(), 1U);
     EXPECT_EQ(source->channels[0].bone, "Child");
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(*source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(*source, MakeTwoJointSkeletonAsset(), clip));
     EXPECT_DOUBLE_EQ(clip.durationSeconds, 1.0);
-    const AnimationAssetBoneTrackUVE* child = FindTrackUVE(clip, "Child");
+    const AnimationAssetBoneTrack* child = FindTrack(clip, "Child");
     ASSERT_NE(child, nullptr);
     ASSERT_EQ(child->samples.size(), 2U);
 
-    const std::filesystem::path path = TestPathUVE("uve_gltf_animation_clip_round_trip.uvanim");
+    const std::filesystem::path path = TestPath("uve_gltf_animation_clip_round_trip.uvanim");
     std::filesystem::remove(path);
-    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
-    AnimationClipAssetUVE reloaded;
-    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, reloaded));
+    ASSERT_TRUE(SaveAnimationClipAsset(clip, path));
+    AnimationClipAsset reloaded;
+    ASSERT_TRUE(LoadAnimationClipAsset(path, reloaded));
     EXPECT_EQ(reloaded.clipId, "Wave");
     EXPECT_DOUBLE_EQ(reloaded.durationSeconds, 1.0);
     ASSERT_EQ(reloaded.bones.size(), 1U);
@@ -485,94 +485,94 @@ TEST(GltfAnimationConverterUVETest, DocumentParseConvertsAndRoundTripsClip) {
     std::filesystem::remove(path);
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsDocumentWithCubicspline) {
-    std::string document = kEndToEndDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsDocumentWithCubicspline) {
+    std::string document = kEndToEndDocument;
     ASSERT_NE(document.find("LINEAR"), std::string::npos);
     document.replace(document.find("LINEAR"), 6U, "CUBICSPLINE");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, MakeEndToEndBufferUVE()).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, MakeEndToEndBuffer()).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphWeightsPathOnNodeWithoutMesh) {
+TEST(GltfAnimationConverterTest, RejectsMorphWeightsPathOnNodeWithoutMesh) {
     // "Child" is a joint, not a mesh node: a weights channel has nothing to drive there, and the
     // skeleton cannot supply a target count for it either.
-    std::string document = kEndToEndDocumentUVE;
+    std::string document = kEndToEndDocument;
     ASSERT_NE(document.find("\"rotation\""), std::string::npos);
     document.replace(document.find("\"rotation\""), 10U, "\"weights\"");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, MakeEndToEndBufferUVE()).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, MakeEndToEndBuffer()).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsDocumentWithNonJointTarget) {
-    std::string document = kEndToEndDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsDocumentWithNonJointTarget) {
+    std::string document = kEndToEndDocument;
     ASSERT_NE(document.find("\"node\": 1"), std::string::npos);
     document.replace(document.find("\"node\": 1"), 8U, "\"node\": 7");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, MakeEndToEndBufferUVE()).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, MakeEndToEndBuffer()).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsDocumentWithoutAnimation) {
+TEST(GltfAnimationConverterTest, RejectsDocumentWithoutAnimation) {
     constexpr const char* kNoAnimation = R"json({
   "asset": {"version": "2.0"},
   "nodes": [{"name": "Root"}],
   "skins": [{"joints": [0]}]
 })json";
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(kNoAnimation, MakeEndToEndBufferUVE()).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(kNoAnimation, MakeEndToEndBuffer()).has_value());
 }
 
 // The Tier 2.6 proof: a glTF skinned mesh animates. The end-to-end document imports through both
 // converters and both asset round-trips, then the clip's own samples drive the existing CPU pose
 // resolution and skinning. Mid-key sampling is Tier 3.1's runtime sampler; here the samples are
 // the clip's exact keys.
-TEST(GltfAnimationConverterUVETest, SkinnedMeshAnimatesEndToEnd) {
-    const std::vector<std::byte> buffer = MakeEndToEndBufferUVE();
+TEST(GltfAnimationConverterTest, SkinnedMeshAnimatesEndToEnd) {
+    const std::vector<std::byte> buffer = MakeEndToEndBuffer();
 
-    const std::optional<GltfSkinSourceUVE> skinSource =
-        ParseGltfSkinSourceUVE(kEndToEndDocumentUVE, buffer);
+    const std::optional<GltfSkinSource> skinSource =
+        ParseGltfSkinSource(kEndToEndDocument, buffer);
     ASSERT_TRUE(skinSource.has_value());
-    GltfSkinResultUVE skinResult;
-    ASSERT_TRUE(ConvertGltfSkinUVE(*skinSource, skinResult));
-    const std::filesystem::path skeletonPath = TestPathUVE("uve_gltf_end_to_end_skeleton.uvskel");
+    GltfSkinResult skinResult;
+    ASSERT_TRUE(ConvertGltfSkin(*skinSource, skinResult));
+    const std::filesystem::path skeletonPath = TestPath("uve_gltf_end_to_end_skeleton.uvskel");
     std::filesystem::remove(skeletonPath);
-    ASSERT_TRUE(SaveSkeletonAssetUVE(skinResult.skeleton, skeletonPath));
-    SkeletonAssetUVE skeleton;
-    ASSERT_TRUE(LoadSkeletonAssetUVE(skeletonPath, skeleton));
+    ASSERT_TRUE(SaveSkeletonAsset(skinResult.skeleton, skeletonPath));
+    SkeletonAsset skeleton;
+    ASSERT_TRUE(LoadSkeletonAsset(skeletonPath, skeleton));
     EXPECT_EQ(skeleton, skinResult.skeleton);
     std::filesystem::remove(skeletonPath);
 
-    const std::optional<GltfAnimationSourceUVE> animSource =
-        ParseGltfAnimationSourceUVE(kEndToEndDocumentUVE, buffer);
+    const std::optional<GltfAnimationSource> animSource =
+        ParseGltfAnimationSource(kEndToEndDocument, buffer);
     ASSERT_TRUE(animSource.has_value());
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(*animSource, skeleton, clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(*animSource, skeleton, clip));
 
-    MeshAssetUVE mesh;
+    MeshAsset mesh;
     mesh.vertices = {
-        MeshVertexUVE{.position = Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                      .normal = Math::Vector3UVE{0.0F, 0.0F, 1.0F}},
-        MeshVertexUVE{.position = Math::Vector3UVE{1.0F, 1.0F, 0.0F},
-                      .normal = Math::Vector3UVE{0.0F, 0.0F, 1.0F}},
-        MeshVertexUVE{.position = Math::Vector3UVE{1.0F, 2.0F, 0.0F},
-                      .normal = Math::Vector3UVE{0.0F, 0.0F, 1.0F}},
+        MeshVertex{.position = Math::Vector3{0.0F, 0.0F, 0.0F},
+                      .normal = Math::Vector3{0.0F, 0.0F, 1.0F}},
+        MeshVertex{.position = Math::Vector3{1.0F, 1.0F, 0.0F},
+                      .normal = Math::Vector3{0.0F, 0.0F, 1.0F}},
+        MeshVertex{.position = Math::Vector3{1.0F, 2.0F, 0.0F},
+                      .normal = Math::Vector3{0.0F, 0.0F, 1.0F}},
     };
     mesh.indices = {0U, 1U, 2U};
     mesh.skinningInfluences = skinResult.influences;
     mesh.joints = skinResult.joints;
-    ASSERT_TRUE(IsMeshSkinningDataValidUVE(mesh));
+    ASSERT_TRUE(IsMeshSkinningDataValid(mesh));
 
-    const AnimationAssetBoneTrackUVE* child = FindTrackUVE(clip, "Child");
+    const AnimationAssetBoneTrack* child = FindTrack(clip, "Child");
     ASSERT_NE(child, nullptr);
     ASSERT_EQ(clip.rest.size(), 2U);
 
     for (const double time : {0.0, 1.0}) {
-        const AnimationAssetSampleUVE* sample = FindSampleUVE(*child, time);
+        const AnimationAssetSample* sample = FindSample(*child, time);
         ASSERT_NE(sample, nullptr) << "no baked sample at t=" << time;
-        std::vector<Math::Matrix4x4UVE> localPose;
-        localPose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(
+        std::vector<Math::Matrix4x4> localPose;
+        localPose.push_back(Math::Matrix4x4::ComposeTrs(
             clip.rest[0].position, clip.rest[0].rotation, clip.rest[0].scale));
-        localPose.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(sample->pose.position,
+        localPose.push_back(Math::Matrix4x4::ComposeTrs(sample->pose.position,
                                                               sample->pose.rotation, sample->pose.scale));
-        std::vector<Math::Matrix4x4UVE> skinningMatrices;
-        ASSERT_TRUE(TryResolvePoseUVE(mesh.joints, localPose, skinningMatrices));
-        std::vector<MeshVertexUVE> skinned;
-        ASSERT_TRUE(TrySkinMeshUVE(mesh, skinningMatrices, skinned));
+        std::vector<Math::Matrix4x4> skinningMatrices;
+        ASSERT_TRUE(TryResolvePose(mesh.joints, localPose, skinningMatrices));
+        std::vector<MeshVertex> skinned;
+        ASSERT_TRUE(TrySkinMesh(mesh, skinningMatrices, skinned));
         ASSERT_EQ(skinned.size(), 3U);
         if (time == 0.0) {
             EXPECT_NEAR(skinned[0].position.x, 0.0F, 1.0e-4F);
@@ -603,18 +603,18 @@ TEST(GltfAnimationConverterUVETest, SkinnedMeshAnimatesEndToEnd) {
 // importer against that layout, against the skin-less export a lip-sync tool writes, and against
 // the inputs that must fail loudly instead of animating the wrong face.
 
-TEST(GltfAnimationConverterUVETest, MorphChannelBecomesATrackWithTheFilesOwnKeys) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, MorphChannelBecomesATrackWithTheFilesOwnKeys) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Face";
-    AddWeightChannelUVE(anim, "Head", 2U, GltfAnimationInterpolationUVE::Linear, {0.0F, 0.5F, 1.0F},
+    AddWeightChannel(anim, "Head", 2U, GltfAnimationInterpolation::Linear, {0.0F, 0.5F, 1.0F},
                         {0.0F, 0.0F, 0.5F, 0.25F, 1.0F, 0.5F});
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
     EXPECT_DOUBLE_EQ(clip.durationSeconds, 1.0);
     EXPECT_TRUE(clip.bones.empty());
     EXPECT_TRUE(clip.rest.empty());
     ASSERT_EQ(clip.morphWeights.size(), 1U);
-    const AnimationAssetMorphTrackUVE& track = clip.morphWeights[0];
+    const AnimationAssetMorphTrack& track = clip.morphWeights[0];
     EXPECT_EQ(track.node, "Head");
     ASSERT_EQ(track.samples.size(), 3U);
     // The file's keys ARE the clip's keys: nothing is resampled, so a key the animator placed is
@@ -626,151 +626,151 @@ TEST(GltfAnimationConverterUVETest, MorphChannelBecomesATrackWithTheFilesOwnKeys
     EXPECT_EQ(track.samples[2].weights, (std::vector<float>{1.0F, 0.5F}));
 }
 
-TEST(GltfAnimationConverterUVETest, MorphOnlyClipRoundTripsThroughTheAnimationAsset) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, MorphOnlyClipRoundTripsThroughTheAnimationAsset) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "LipSync";
-    AddWeightChannelUVE(anim, "Head", 2U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 2U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 0.0F, 1.0F, 0.5F});
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 
-    const std::filesystem::path path = TestPathUVE("uve_gltf_morph_only_clip.uvanim");
+    const std::filesystem::path path = TestPath("uve_gltf_morph_only_clip.uvanim");
     std::filesystem::remove(path);
-    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
-    AnimationClipAssetUVE reloaded;
-    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, reloaded));
+    ASSERT_TRUE(SaveAnimationClipAsset(clip, path));
+    AnimationClipAsset reloaded;
+    ASSERT_TRUE(LoadAnimationClipAsset(path, reloaded));
     EXPECT_EQ(reloaded.morphWeights, clip.morphWeights);
     EXPECT_TRUE(reloaded.bones.empty());
     std::filesystem::remove(path);
 }
 
-TEST(GltfAnimationConverterUVETest, MorphAndBoneChannelsCoexistInOneClip) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, MorphAndBoneChannelsCoexistInOneClip) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "TalkAndNod";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation, GltfAnimationInterpolationUVE::Linear,
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation, GltfAnimationInterpolation::Linear,
                   {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.3826834F, 0.9238795F});
-    AddWeightChannelUVE(anim, "Head", 1U, GltfAnimationInterpolationUVE::Linear, {0.0F, 0.25F},
+    AddWeightChannel(anim, "Head", 1U, GltfAnimationInterpolation::Linear, {0.0F, 0.25F},
                         {0.0F, 0.5F});
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
     EXPECT_DOUBLE_EQ(clip.durationSeconds, 1.0);
     ASSERT_EQ(clip.bones.size(), 1U);
     ASSERT_EQ(clip.morphWeights.size(), 1U);
     EXPECT_EQ(clip.rest.size(), 2U);
-    EXPECT_NE(FindTrackUVE(clip, "Child"), nullptr);
-    EXPECT_NE(FindMorphTrackUVE(clip, "Head"), nullptr);
+    EXPECT_NE(FindTrack(clip, "Child"), nullptr);
+    EXPECT_NE(FindMorphTrack(clip, "Head"), nullptr);
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphChannelWhoseValueStreamIsShort) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsMorphChannelWhoseValueStreamIsShort) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 2U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 2U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 0.0F, 1.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphChannelWithNoTargets) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsMorphChannelWithNoTargets) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 0U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 0U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 1.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphChannelAboveTheShapeCap) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsMorphChannelAboveTheShapeCap) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", kMaximumMeshMorphTargetsUVE + 1U,
-                        GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F}, {0.5F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AddWeightChannel(anim, "Head", kMaximumMeshMorphTargets + 1U,
+                        GltfAnimationInterpolation::Linear, {0.0F, 1.0F}, {0.5F});
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsDuplicateMorphNode) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsDuplicateMorphNode) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 1U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 1U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 1.0F});
-    AddWeightChannelUVE(anim, "Head", 1U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 1U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {1.0F, 0.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsStepMorphChannel) {
+TEST(GltfAnimationConverterTest, RejectsStepMorphChannel) {
     // A clip's morph track is linear by definition; honouring STEP would need keys the file does
     // not have, and lerping anyway would silently change the performance.
-    HandBuiltAnimationUVE anim;
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 1U, GltfAnimationInterpolationUVE::Step, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 1U, GltfAnimationInterpolation::Step, {0.0F, 1.0F},
                         {0.0F, 1.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsNonFiniteMorphWeight) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsNonFiniteMorphWeight) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 2U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 2U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 0.0F, std::numeric_limits<float>::quiet_NaN(), 0.5F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphChannelWithoutNode) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsMorphChannelWithoutNode) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "", 1U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "", 1U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 1.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsMorphChannelThatAlsoNamesABone) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsMorphChannelThatAlsoNamesABone) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddWeightChannelUVE(anim, "Head", 1U, GltfAnimationInterpolationUVE::Linear, {0.0F, 1.0F},
+    AddWeightChannel(anim, "Head", 1U, GltfAnimationInterpolation::Linear, {0.0F, 1.0F},
                         {0.0F, 1.0F});
     anim.source.channels.back().bone = "Child";
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsTransformChannelCarryingWeightsData) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsTransformChannelCarryingWeightsData) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation, GltfAnimationInterpolationUVE::Linear,
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation, GltfAnimationInterpolation::Linear,
                   {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F});
     anim.source.channels.back().morphTargetCount = 2U;
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, MakeTwoJointSkeletonAssetUVE(), clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, MakeTwoJointSkeletonAsset(), clip));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsBoneChannelWithoutASkeleton) {
-    HandBuiltAnimationUVE anim;
+TEST(GltfAnimationConverterTest, RejectsBoneChannelWithoutASkeleton) {
+    HandBuiltAnimation anim;
     anim.source.clipId = "Bad";
-    AddChannelUVE(anim, "Child", GltfAnimationPathUVE::Rotation, GltfAnimationInterpolationUVE::Linear,
+    AddChannel(anim, "Child", GltfAnimationPath::Rotation, GltfAnimationInterpolation::Linear,
                   {0.0F, 1.0F}, {0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F});
-    AnimationClipAssetUVE clip;
-    EXPECT_FALSE(ConvertGltfAnimationUVE(anim.source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    EXPECT_FALSE(ConvertGltfAnimation(anim.source, SkeletonAsset{}, clip));
 }
 
-TEST(GltfAnimationConverterUVETest, ParsesSkinlessWeightsChannelIntoAMorphTrack) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    const std::optional<GltfAnimationSourceUVE> source =
-        ParseGltfAnimationSourceUVE(kLipSyncDocumentUVE, buffer);
+TEST(GltfAnimationConverterTest, ParsesSkinlessWeightsChannelIntoAMorphTrack) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    const std::optional<GltfAnimationSource> source =
+        ParseGltfAnimationSource(kLipSyncDocument, buffer);
     ASSERT_TRUE(source.has_value());
     EXPECT_EQ(source->clipId, "LipSync");
     ASSERT_EQ(source->channels.size(), 1U);
-    EXPECT_EQ(source->channels[0].path, GltfAnimationPathUVE::Weights);
+    EXPECT_EQ(source->channels[0].path, GltfAnimationPath::Weights);
     EXPECT_EQ(source->channels[0].node, "Head");
     EXPECT_TRUE(source->channels[0].bone.empty());
     EXPECT_EQ(source->channels[0].morphTargetCount, 2U);
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(*source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(*source, SkeletonAsset{}, clip));
     ASSERT_EQ(clip.morphWeights.size(), 1U);
     EXPECT_EQ(clip.morphWeights[0].node, "Head");
     ASSERT_EQ(clip.morphWeights[0].samples.size(), 3U);
@@ -779,77 +779,77 @@ TEST(GltfAnimationConverterUVETest, ParsesSkinlessWeightsChannelIntoAMorphTrack)
     EXPECT_EQ(clip.morphWeights[0].samples[2].weights, (std::vector<float>{1.0F, 0.5F}));
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsWeightsChannelOnMeshWithoutMorphTargets) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsWeightsChannelOnMeshWithoutMorphTargets) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     ASSERT_NE(document.find("\"node\": 0"), std::string::npos);
     document.replace(document.find("\"node\": 0"), 9U, "\"node\": 1");
     ASSERT_NE(document.find("\"targets\": [{}]"), std::string::npos);
     document.replace(document.find("\"targets\": [{}]"), 15U, "\"targets\": []");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsWeightsChannelWithMismatchedValueCount) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsWeightsChannelWithMismatchedValueCount) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     ASSERT_NE(document.find("\"count\": 6"), std::string::npos);
     // Three keys of two targets is six floats; five cannot be sliced into keys at all.
     document.replace(document.find("\"count\": 6"), 10U, "\"count\": 5");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsStepWeightsChannel) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsStepWeightsChannel) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     ASSERT_NE(document.find("LINEAR"), std::string::npos);
     document.replace(document.find("LINEAR"), 6U, "STEP");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsWeightsChannelWithNonScalarOutput) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsWeightsChannelWithNonScalarOutput) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     const std::size_t firstType = document.find("\"type\": \"SCALAR\"");
     ASSERT_NE(firstType, std::string::npos);
     const std::size_t secondType = document.find("\"type\": \"SCALAR\"", firstType + 1U);
     ASSERT_NE(secondType, std::string::npos);
     document.replace(secondType, 16U, "\"type\": \"VEC3\"");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsWeightsChannelOnNodeOutOfRange) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsWeightsChannelOnNodeOutOfRange) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     ASSERT_NE(document.find("\"node\": 0"), std::string::npos);
     document.replace(document.find("\"node\": 0"), 9U, "\"node\": 9");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, NodeNamesStayUniqueAcrossTheDocument) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    const std::optional<GltfAnimationSourceUVE> source =
-        ParseGltfAnimationSourceUVE(kDuplicateNodeNamesDocumentUVE, buffer);
+TEST(GltfAnimationConverterTest, NodeNamesStayUniqueAcrossTheDocument) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    const std::optional<GltfAnimationSource> source =
+        ParseGltfAnimationSource(kDuplicateNodeNamesDocument, buffer);
     ASSERT_TRUE(source.has_value());
     ASSERT_EQ(source->channels.size(), 2U);
     EXPECT_EQ(source->channels[0].node, "Head");
     EXPECT_EQ(source->channels[1].node, "Head_1");
 
-    AnimationClipAssetUVE clip;
-    ASSERT_TRUE(ConvertGltfAnimationUVE(*source, SkeletonAssetUVE{}, clip));
+    AnimationClipAsset clip;
+    ASSERT_TRUE(ConvertGltfAnimation(*source, SkeletonAsset{}, clip));
     ASSERT_EQ(clip.morphWeights.size(), 2U);
-    EXPECT_NE(FindMorphTrackUVE(clip, "Head"), nullptr);
-    EXPECT_NE(FindMorphTrackUVE(clip, "Head_1"), nullptr);
+    EXPECT_NE(FindMorphTrack(clip, "Head"), nullptr);
+    EXPECT_NE(FindMorphTrack(clip, "Head_1"), nullptr);
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsTransformChannelInASkinlessDocument) {
-    const std::vector<std::byte> buffer = MakeLipSyncBufferUVE();
-    std::string document = kLipSyncDocumentUVE;
+TEST(GltfAnimationConverterTest, RejectsTransformChannelInASkinlessDocument) {
+    const std::vector<std::byte> buffer = MakeLipSyncBuffer();
+    std::string document = kLipSyncDocument;
     ASSERT_NE(document.find("\"path\": \"weights\""), std::string::npos);
     document.replace(document.find("\"path\": \"weights\""), 17U, "\"path\": \"translation\"");
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
-TEST(GltfAnimationConverterUVETest, RejectsAnimationAboveTheChannelCap) {
+TEST(GltfAnimationConverterTest, RejectsAnimationAboveTheChannelCap) {
     // One channel per bone per path, plus one per morph track, is the most a clip can represent.
     // The parse refuses the list before decoding it, so an oversized file costs nothing.
     constexpr const char* kTemplate = R"json({
@@ -873,7 +873,7 @@ TEST(GltfAnimationConverterUVETest, RejectsAnimationAboveTheChannelCap) {
 })json";
     std::string channels;
     const std::size_t channelCap =
-        kMaximumAnimationAssetBonesUVE * 3U + kMaximumAnimationAssetMorphTracksUVE;
+        kMaximumAnimationAssetBones * 3U + kMaximumAnimationAssetMorphTracks;
     for (std::size_t index = 0U; index <= channelCap; ++index) {
         if (index != 0U) {
             channels += ", ";
@@ -884,7 +884,7 @@ TEST(GltfAnimationConverterUVETest, RejectsAnimationAboveTheChannelCap) {
     ASSERT_NE(document.find("CHANNELS"), std::string::npos);
     document.replace(document.find("CHANNELS"), 8U, channels);
     const std::vector<std::byte> buffer(16U, std::byte{0});
-    EXPECT_FALSE(ParseGltfAnimationSourceUVE(document, buffer).has_value());
+    EXPECT_FALSE(ParseGltfAnimationSource(document, buffer).has_value());
 }
 
 } // namespace UVE::Asset::Tests

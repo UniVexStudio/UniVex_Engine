@@ -16,11 +16,11 @@ namespace UVE::Physics {
 namespace {
 
 // A zero direction has no line to cast along; anything shorter is degenerate input, not a ray.
-inline constexpr float kMinimumRayLengthUVE = 1e-6F;
+inline constexpr float kMinimumRayLength = 1e-6F;
 
-[[nodiscard]] const LagPoseUVE* FindPoseUVE(
-    const std::vector<std::pair<Scene::EntityUVE, LagPoseUVE>>& snapshot,
-    const Scene::EntityUVE entity) noexcept {
+[[nodiscard]] const LagPose* FindPose(
+    const std::vector<std::pair<Scene::Entity, LagPose>>& snapshot,
+    const Scene::Entity entity) noexcept {
     for (const auto& [posed, pose] : snapshot) {
         if (posed == entity) {
             return &pose;
@@ -32,12 +32,12 @@ inline constexpr float kMinimumRayLengthUVE = 1e-6F;
 // Blends two poses at alpha: positions and scales lerp, rotations slerp. A failed slerp
 // (degenerate input quaternions) keeps the floor pose - the same answer fraction 0 would
 // give, and the resolve's TryNormalize pass treats it like any recorded pose.
-[[nodiscard]] LagPoseUVE BlendPoseUVE(const LagPoseUVE& floor, const LagPoseUVE& ceiling,
+[[nodiscard]] LagPose BlendPose(const LagPose& floor, const LagPose& ceiling,
                                       const float alpha) {
-    LagPoseUVE blended;
+    LagPose blended;
     blended.position = floor.position + (ceiling.position - floor.position) * alpha;
     blended.scale = floor.scale + (ceiling.scale - floor.scale) * alpha;
-    if (!Math::TrySlerpUVE(floor.rotation, ceiling.rotation, alpha, blended.rotation)) {
+    if (!Math::TrySlerp(floor.rotation, ceiling.rotation, alpha, blended.rotation)) {
         blended.rotation = floor.rotation;
     }
     return blended;
@@ -46,9 +46,9 @@ inline constexpr float kMinimumRayLengthUVE = 1e-6F;
 // Rewound half-extents: authored size times the absolute recorded scale (a mirror occupies
 // the same box). Zero, negative-authored, or non-finite products are unhittable - a
 // zero-scale body renders nothing, and garbage resolves empty, fail closed.
-[[nodiscard]] bool TryRewoundHalfExtentsUVE(const Math::Vector3UVE& authored,
-                                            const Math::Vector3UVE& scale,
-                                            Math::Vector3UVE& out) noexcept {
+[[nodiscard]] bool TryRewoundHalfExtents(const Math::Vector3& authored,
+                                            const Math::Vector3& scale,
+                                            Math::Vector3& out) noexcept {
     const float x = authored.x * std::fabs(scale.x);
     const float y = authored.y * std::fabs(scale.y);
     const float z = authored.z * std::fabs(scale.z);
@@ -56,43 +56,43 @@ inline constexpr float kMinimumRayLengthUVE = 1e-6F;
         z <= 0.0F) {
         return false;
     }
-    out = Math::Vector3UVE{x, y, z};
+    out = Math::Vector3{x, y, z};
     return true;
 }
 
 } // namespace
 
-bool HitboxLagCompensatorUVE::RecordUVE(const LagTickUVE tick,
-                                        Scene::IEntityManagerUVE& entityManager) {
+bool HitboxLagCompensator::Record(const LagTick tick,
+                                        Scene::IEntityManager& entityManager) {
     if (m_hasHistory && tick <= m_lastRecorded) {
         ++m_stats.recordsRejected;
         return false;
     }
-    SnapshotUVE snapshot;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE>(
-        [&entityManager, &snapshot](const Scene::EntityUVE entity,
-                                    const Scene::WorldTransformComponentUVE& world) {
-            if (!entityManager.HasComponentUVE<Scene::Hitbox3DComponentUVE>(entity) &&
-                !entityManager.HasComponentUVE<Scene::Hurtbox3DComponentUVE>(entity)) {
+    Snapshot snapshot;
+    entityManager.ForEach<Scene::WorldTransformComponent>(
+        [&entityManager, &snapshot](const Scene::Entity entity,
+                                    const Scene::WorldTransformComponent& world) {
+            if (!entityManager.HasComponent<Scene::Hitbox3DComponent>(entity) &&
+                !entityManager.HasComponent<Scene::Hurtbox3DComponent>(entity)) {
                 return;
             }
             snapshot.emplace_back(entity,
-                                LagPoseUVE{world.worldPosition, world.worldRotation,
+                                LagPose{world.worldPosition, world.worldRotation,
                                            world.worldScale});
         });
     m_history.emplace(tick, std::move(snapshot));
     m_lastRecorded = tick;
     m_hasHistory = true;
     ++m_stats.snapshotsRecorded;
-    while (m_history.size() > kLagHistoryMaximumTicksUVE) {
+    while (m_history.size() > kLagHistoryMaximumTicks) {
         m_history.erase(m_history.begin());
         ++m_stats.snapshotsEvicted;
     }
     return true;
 }
 
-const HitboxLagCompensatorUVE::SnapshotUVE* HitboxLagCompensatorUVE::FindSnapshotUVE(
-    const LagTickUVE targetTick, LagTickUVE& resolvedTick, bool& clamped) const {
+const HitboxLagCompensator::Snapshot* HitboxLagCompensator::FindSnapshot(
+    const LagTick targetTick, LagTick& resolvedTick, bool& clamped) const {
     if (m_history.empty()) {
         resolvedTick = 0U;
         clamped = true;
@@ -111,15 +111,15 @@ const HitboxLagCompensatorUVE::SnapshotUVE* HitboxLagCompensatorUVE::FindSnapsho
     return &newer->second;
 }
 
-const HitboxLagCompensatorUVE::SnapshotUVE* HitboxLagCompensatorUVE::ResolveBracketUVE(
-    const LagTickUVE tick, const float fraction, LagTickUVE& resolvedTick, bool& clamped,
-    bool& interpolated, SnapshotUVE& scratch) const {
+const HitboxLagCompensator::Snapshot* HitboxLagCompensator::ResolveBracket(
+    const LagTick tick, const float fraction, LagTick& resolvedTick, bool& clamped,
+    bool& interpolated, Snapshot& scratch) const {
     interpolated = false;
-    const SnapshotUVE* const floor = FindSnapshotUVE(tick, resolvedTick, clamped);
+    const Snapshot* const floor = FindSnapshot(tick, resolvedTick, clamped);
     if (floor == nullptr || fraction == 0.0F || resolvedTick != tick) {
         return floor;
     }
-    if (tick == std::numeric_limits<LagTickUVE>::max()) {
+    if (tick == std::numeric_limits<LagTick>::max()) {
         return floor;
     }
     const auto ceiling = m_history.find(tick + 1U);
@@ -132,21 +132,21 @@ const HitboxLagCompensatorUVE::SnapshotUVE* HitboxLagCompensatorUVE::ResolveBrac
     scratch.clear();
     scratch.reserve(floor->size());
     for (const auto& [entity, pose] : *floor) {
-        const LagPoseUVE* const next = FindPoseUVE(ceiling->second, entity);
+        const LagPose* const next = FindPose(ceiling->second, entity);
         scratch.emplace_back(entity,
-                             next == nullptr ? pose : BlendPoseUVE(pose, *next, fraction));
+                             next == nullptr ? pose : BlendPose(pose, *next, fraction));
     }
     interpolated = true;
     return &scratch;
 }
 
-LagShotReportUVE HitboxLagCompensatorUVE::ResolveShotFromUVE(
-    const Scene::EntityUVE shooter, const SnapshotUVE* snapshot, const LagTickUVE resolvedTick,
-    const bool clamped, Scene::IEntityManagerUVE& entityManager) {
-    LagShotReportUVE report;
+LagShotReport HitboxLagCompensator::ResolveShotFrom(
+    const Scene::Entity shooter, const Snapshot* snapshot, const LagTick resolvedTick,
+    const bool clamped, Scene::IEntityManager& entityManager) {
+    LagShotReport report;
     // A shot from nothing - or from the destroyed - hits nothing. The invalid check comes
     // first so the manager never sees an id it cannot even ask about.
-    if (shooter == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(shooter)) {
+    if (shooter == Scene::kInvalidEntity || !entityManager.IsAlive(shooter)) {
         return report;
     }
     report.resolvedTick = resolvedTick;
@@ -158,97 +158,97 @@ LagShotReportUVE HitboxLagCompensatorUVE::ResolveShotFromUVE(
         return report;
     }
     // Current state, rewound pose: the attack is live now, the question is who it touched then.
-    if (!entityManager.HasComponentUVE<Scene::Hitbox3DComponentUVE>(shooter)) {
+    if (!entityManager.HasComponent<Scene::Hitbox3DComponent>(shooter)) {
         return report;
     }
-    const Scene::Hitbox3DComponentUVE& hitbox =
-        entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(shooter);
-    if (!hitbox.enabled || !Scene::Hitbox3DUVE::IsArmedUVE(hitbox)) {
+    const Scene::Hitbox3DComponent& hitbox =
+        entityManager.GetComponent<Scene::Hitbox3DComponent>(shooter);
+    if (!hitbox.enabled || !Scene::Hitbox3D::IsArmed(hitbox)) {
         return report;
     }
-    const LagPoseUVE* const shooterPose = FindPoseUVE(*snapshot, shooter);
+    const LagPose* const shooterPose = FindPose(*snapshot, shooter);
     if (shooterPose == nullptr) {
         return report;
     }
     // The shooter's own rewound size: a zero-scale attacker swings nothing.
-    Math::Vector3UVE shooterHalf{};
-    if (!TryRewoundHalfExtentsUVE(hitbox.halfExtents, shooterPose->scale, shooterHalf)) {
+    Math::Vector3 shooterHalf{};
+    if (!TryRewoundHalfExtents(hitbox.halfExtents, shooterPose->scale, shooterHalf)) {
         return report;
     }
-    Math::QuaternionUVE shooterRotation{};
-    if (!Math::TryNormalizeUVE(shooterPose->rotation, shooterRotation)) {
+    Math::Quaternion shooterRotation{};
+    if (!Math::TryNormalize(shooterPose->rotation, shooterRotation)) {
         shooterRotation = {};
     }
     for (const auto& [entity, pose] : *snapshot) {
         // Snapshots outlive their entities: the dead keep their poses but lose their hurtboxes.
-        if (!entityManager.IsAliveUVE(entity) ||
-            !entityManager.HasComponentUVE<Scene::Hurtbox3DComponentUVE>(entity)) {
+        if (!entityManager.IsAlive(entity) ||
+            !entityManager.HasComponent<Scene::Hurtbox3DComponent>(entity)) {
             continue;
         }
-        const Scene::Hurtbox3DComponentUVE& hurtbox =
-            entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(entity);
-        if (!Scene::Hurtbox3DUVE::IsVulnerableUVE(hurtbox)) {
+        const Scene::Hurtbox3DComponent& hurtbox =
+            entityManager.GetComponent<Scene::Hurtbox3DComponent>(entity);
+        if (!Scene::Hurtbox3D::IsVulnerable(hurtbox)) {
             continue;
         }
         ++report.candidatesConsidered;
         // The live scan's own gates, in its own order: hitbox accepts, hurtbox accepts, then
         // the rewound-size gate, then the exact 15-axis test. Self-pairs die in the acceptance
         // checks, exactly as live.
-        if (!Scene::Hitbox3DUVE::AcceptsTargetUVE(shooter, hitbox, entity, hurtbox.collisionLayer,
+        if (!Scene::Hitbox3D::AcceptsTarget(shooter, hitbox, entity, hurtbox.collisionLayer,
                                                   hurtbox.collisionMask, hurtbox.damageChannel)) {
             continue;
         }
-        if (!Scene::Hurtbox3DUVE::AcceptsAttackerUVE(entity, hurtbox, shooter, hitbox.collisionLayer,
+        if (!Scene::Hurtbox3D::AcceptsAttacker(entity, hurtbox, shooter, hitbox.collisionLayer,
                                                      hitbox.collisionMask, hitbox.damageChannel)) {
             continue;
         }
-        Math::Vector3UVE targetHalf{};
-        if (!TryRewoundHalfExtentsUVE(hurtbox.halfExtents, pose.scale, targetHalf)) {
+        Math::Vector3 targetHalf{};
+        if (!TryRewoundHalfExtents(hurtbox.halfExtents, pose.scale, targetHalf)) {
             continue;
         }
-        Math::QuaternionUVE targetRotation{};
-        if (!Math::TryNormalizeUVE(pose.rotation, targetRotation)) {
+        Math::Quaternion targetRotation{};
+        if (!Math::TryNormalize(pose.rotation, targetRotation)) {
             targetRotation = {};
         }
-        const std::optional<Math::PenetrationUVE> penetration =
-            Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+        const std::optional<Math::Penetration> penetration =
+            Detail::ComputeOrientedBoxOrientedBoxPenetration(
                 shooterPose->position, shooterHalf, shooterRotation, pose.position, targetHalf,
                 targetRotation);
         if (!penetration.has_value()) {
             continue;
         }
-        report.pairs.push_back(Hitbox3DStrikePairUVE{shooter, entity, penetration->depth,
+        report.pairs.push_back(Hitbox3DStrikePair{shooter, entity, penetration->depth,
                                                      penetration->axis, hitbox.damageChannel});
     }
     m_stats.pairsFound += report.pairs.size();
     return report;
 }
 
-LagShotReportUVE HitboxLagCompensatorUVE::ResolveShotUVE(
-    const Scene::EntityUVE shooter, const LagTickUVE targetTick,
-    Scene::IEntityManagerUVE& entityManager) {
+LagShotReport HitboxLagCompensator::ResolveShot(
+    const Scene::Entity shooter, const LagTick targetTick,
+    Scene::IEntityManager& entityManager) {
     ++m_stats.shotsResolved;
-    LagTickUVE resolvedTick = 0U;
+    LagTick resolvedTick = 0U;
     bool clamped = false;
-    const SnapshotUVE* const snapshot = FindSnapshotUVE(targetTick, resolvedTick, clamped);
-    return ResolveShotFromUVE(shooter, snapshot, resolvedTick, clamped, entityManager);
+    const Snapshot* const snapshot = FindSnapshot(targetTick, resolvedTick, clamped);
+    return ResolveShotFrom(shooter, snapshot, resolvedTick, clamped, entityManager);
 }
 
-LagShotReportUVE HitboxLagCompensatorUVE::ResolveShotAtUVE(
-    const Scene::EntityUVE shooter, const LagTickUVE tick, const float tickFraction,
-    Scene::IEntityManagerUVE& entityManager) {
+LagShotReport HitboxLagCompensator::ResolveShotAt(
+    const Scene::Entity shooter, const LagTick tick, const float tickFraction,
+    Scene::IEntityManager& entityManager) {
     ++m_stats.shotsResolved;
     if (!std::isfinite(tickFraction) || tickFraction < 0.0F || tickFraction >= 1.0F) {
-        return LagShotReportUVE{};
+        return LagShotReport{};
     }
-    SnapshotUVE scratch;
-    LagTickUVE resolvedTick = 0U;
+    Snapshot scratch;
+    LagTick resolvedTick = 0U;
     bool clamped = false;
     bool interpolated = false;
-    const SnapshotUVE* const snapshot =
-        ResolveBracketUVE(tick, tickFraction, resolvedTick, clamped, interpolated, scratch);
-    LagShotReportUVE report =
-        ResolveShotFromUVE(shooter, snapshot, resolvedTick, clamped, entityManager);
+    const Snapshot* const snapshot =
+        ResolveBracket(tick, tickFraction, resolvedTick, clamped, interpolated, scratch);
+    LagShotReport report =
+        ResolveShotFrom(shooter, snapshot, resolvedTick, clamped, entityManager);
     report.interpolated = interpolated;
     if (interpolated) {
         ++m_stats.resolvesInterpolated;
@@ -256,12 +256,12 @@ LagShotReportUVE HitboxLagCompensatorUVE::ResolveShotAtUVE(
     return report;
 }
 
-LagRayReportUVE HitboxLagCompensatorUVE::ResolveRayFromUVE(
-    const Scene::EntityUVE shooter, const Math::RayUVE& ray, const float maxDistance,
-    const SnapshotUVE* snapshot, const LagTickUVE resolvedTick, const bool clamped,
-    Scene::IEntityManagerUVE& entityManager) {
-    LagRayReportUVE report;
-    if (shooter == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(shooter)) {
+LagRayReport HitboxLagCompensator::ResolveRayFrom(
+    const Scene::Entity shooter, const Math::Ray& ray, const float maxDistance,
+    const Snapshot* snapshot, const LagTick resolvedTick, const bool clamped,
+    Scene::IEntityManager& entityManager) {
+    LagRayReport report;
+    if (shooter == Scene::kInvalidEntity || !entityManager.IsAlive(shooter)) {
         return report;
     }
     report.resolvedTick = resolvedTick;
@@ -274,41 +274,41 @@ LagRayReportUVE HitboxLagCompensatorUVE::ResolveRayFromUVE(
     }
     // Identity only, no arming gate: the ray is not the hitbox's attack, it just borrows the
     // shooter's layers, mask, and channel for the same symmetric acceptance.
-    if (!entityManager.HasComponentUVE<Scene::Hitbox3DComponentUVE>(shooter)) {
+    if (!entityManager.HasComponent<Scene::Hitbox3DComponent>(shooter)) {
         return report;
     }
-    const Scene::Hitbox3DComponentUVE& hitbox =
-        entityManager.GetComponentUVE<Scene::Hitbox3DComponentUVE>(shooter);
+    const Scene::Hitbox3DComponent& hitbox =
+        entityManager.GetComponent<Scene::Hitbox3DComponent>(shooter);
     bool found = false;
     float nearest = maxDistance;
     for (const auto& [entity, pose] : *snapshot) {
-        if (!entityManager.IsAliveUVE(entity) ||
-            !entityManager.HasComponentUVE<Scene::Hurtbox3DComponentUVE>(entity)) {
+        if (!entityManager.IsAlive(entity) ||
+            !entityManager.HasComponent<Scene::Hurtbox3DComponent>(entity)) {
             continue;
         }
-        const Scene::Hurtbox3DComponentUVE& hurtbox =
-            entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(entity);
-        if (!Scene::Hurtbox3DUVE::IsVulnerableUVE(hurtbox)) {
+        const Scene::Hurtbox3DComponent& hurtbox =
+            entityManager.GetComponent<Scene::Hurtbox3DComponent>(entity);
+        if (!Scene::Hurtbox3D::IsVulnerable(hurtbox)) {
             continue;
         }
-        if (!Scene::Hitbox3DUVE::AcceptsTargetUVE(shooter, hitbox, entity, hurtbox.collisionLayer,
+        if (!Scene::Hitbox3D::AcceptsTarget(shooter, hitbox, entity, hurtbox.collisionLayer,
                                                   hurtbox.collisionMask, hurtbox.damageChannel)) {
             continue;
         }
-        if (!Scene::Hurtbox3DUVE::AcceptsAttackerUVE(entity, hurtbox, shooter, hitbox.collisionLayer,
+        if (!Scene::Hurtbox3D::AcceptsAttacker(entity, hurtbox, shooter, hitbox.collisionLayer,
                                                      hitbox.collisionMask, hitbox.damageChannel)) {
             continue;
         }
-        Math::Vector3UVE targetHalf{};
-        if (!TryRewoundHalfExtentsUVE(hurtbox.halfExtents, pose.scale, targetHalf)) {
+        Math::Vector3 targetHalf{};
+        if (!TryRewoundHalfExtents(hurtbox.halfExtents, pose.scale, targetHalf)) {
             continue;
         }
-        Math::QuaternionUVE targetRotation{};
-        if (!Math::TryNormalizeUVE(pose.rotation, targetRotation)) {
+        Math::Quaternion targetRotation{};
+        if (!Math::TryNormalize(pose.rotation, targetRotation)) {
             targetRotation = {};
         }
-        const std::optional<Math::RayHitUVE> hit = Detail::IntersectRayOrientedBoxUVE(
-            ray, Math::OrientedBoxUVE{pose.position, targetHalf, targetRotation}, maxDistance);
+        const std::optional<Math::RayHit> hit = Detail::IntersectRayOrientedBox(
+            ray, Math::OrientedBox{pose.position, targetHalf, targetRotation}, maxDistance);
         // Strictly nearer wins, so ties keep snapshot order - deterministic per frame.
         if (hit.has_value() && (!found || hit->distance < nearest)) {
             found = true;
@@ -323,51 +323,51 @@ LagRayReportUVE HitboxLagCompensatorUVE::ResolveRayFromUVE(
     return report;
 }
 
-LagRayReportUVE HitboxLagCompensatorUVE::ResolveRayUVE(
-    const Scene::EntityUVE shooter, const Math::RayUVE& ray, const float maxDistance,
-    const LagTickUVE targetTick, Scene::IEntityManagerUVE& entityManager) {
+LagRayReport HitboxLagCompensator::ResolveRay(
+    const Scene::Entity shooter, const Math::Ray& ray, const float maxDistance,
+    const LagTick targetTick, Scene::IEntityManager& entityManager) {
     ++m_stats.raysResolved;
-    LagRayReportUVE report;
+    LagRayReport report;
     if (!std::isfinite(maxDistance) || maxDistance <= 0.0F) {
         return report;
     }
-    const float length = Math::LengthUVE(ray.direction);
-    if (!std::isfinite(length) || length < kMinimumRayLengthUVE) {
+    const float length = Math::Length(ray.direction);
+    if (!std::isfinite(length) || length < kMinimumRayLength) {
         return report;
     }
-    Math::RayUVE unit = ray;
+    Math::Ray unit = ray;
     unit.direction = ray.direction * (1.0F / length);
-    LagTickUVE resolvedTick = 0U;
+    LagTick resolvedTick = 0U;
     bool clamped = false;
-    const SnapshotUVE* const snapshot = FindSnapshotUVE(targetTick, resolvedTick, clamped);
-    return ResolveRayFromUVE(shooter, unit, maxDistance, snapshot, resolvedTick, clamped,
+    const Snapshot* const snapshot = FindSnapshot(targetTick, resolvedTick, clamped);
+    return ResolveRayFrom(shooter, unit, maxDistance, snapshot, resolvedTick, clamped,
                              entityManager);
 }
 
-LagRayReportUVE HitboxLagCompensatorUVE::ResolveRayAtUVE(
-    const Scene::EntityUVE shooter, const Math::RayUVE& ray, const float maxDistance,
-    const LagTickUVE tick, const float tickFraction, Scene::IEntityManagerUVE& entityManager) {
+LagRayReport HitboxLagCompensator::ResolveRayAt(
+    const Scene::Entity shooter, const Math::Ray& ray, const float maxDistance,
+    const LagTick tick, const float tickFraction, Scene::IEntityManager& entityManager) {
     ++m_stats.raysResolved;
-    LagRayReportUVE report;
+    LagRayReport report;
     if (!std::isfinite(maxDistance) || maxDistance <= 0.0F) {
         return report;
     }
-    const float length = Math::LengthUVE(ray.direction);
-    if (!std::isfinite(length) || length < kMinimumRayLengthUVE) {
+    const float length = Math::Length(ray.direction);
+    if (!std::isfinite(length) || length < kMinimumRayLength) {
         return report;
     }
     if (!std::isfinite(tickFraction) || tickFraction < 0.0F || tickFraction >= 1.0F) {
-        return LagRayReportUVE{};
+        return LagRayReport{};
     }
-    Math::RayUVE unit = ray;
+    Math::Ray unit = ray;
     unit.direction = ray.direction * (1.0F / length);
-    SnapshotUVE scratch;
-    LagTickUVE resolvedTick = 0U;
+    Snapshot scratch;
+    LagTick resolvedTick = 0U;
     bool clamped = false;
     bool interpolated = false;
-    const SnapshotUVE* const snapshot =
-        ResolveBracketUVE(tick, tickFraction, resolvedTick, clamped, interpolated, scratch);
-    report = ResolveRayFromUVE(shooter, unit, maxDistance, snapshot, resolvedTick, clamped,
+    const Snapshot* const snapshot =
+        ResolveBracket(tick, tickFraction, resolvedTick, clamped, interpolated, scratch);
+    report = ResolveRayFrom(shooter, unit, maxDistance, snapshot, resolvedTick, clamped,
                                entityManager);
     report.interpolated = interpolated;
     if (interpolated) {

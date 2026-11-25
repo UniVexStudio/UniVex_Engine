@@ -9,11 +9,11 @@
 #include "navmesh.h"
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::Physics {
-class IRaycastSystemUVE;
+class IRaycastSystem;
 }
 
 namespace UVE::Navigation {
@@ -25,7 +25,7 @@ namespace UVE::Navigation {
 /// ceiling lower than that, how steep a slope it can climb, and how tall a step it can take. A
 /// second agent with different proportions needs its own bake, which is why these settings are
 /// recorded on the resulting mesh rather than kept beside it.
-struct NavmeshBakeSettingsUVE final {
+struct NavmeshBakeSettings final {
     /// The rasterization grid. Finer cells follow the geometry more closely and cost more rays;
     /// 0.5 m is the reference engine's own default scale for walkable ground.
     float cellSize = 0.5F;
@@ -59,7 +59,7 @@ struct NavmeshBakeSettingsUVE final {
 
 /// What one bake did. Counters rather than a log, matching the other passes' reports: a caller that
 /// only wants the mesh ignores them, and a test or the editor can pin them.
-struct NavmeshBakeReportUVE final {
+struct NavmeshBakeReport final {
     /// Grid columns the region resolved to. `columnsTested` counts the ones actually rasterized,
     /// which is all of them: a bake either covers its region or says it did not.
     std::size_t columnsPlanned = 0U;
@@ -97,9 +97,9 @@ struct NavmeshBakeReportUVE final {
 /// what the navmesh considers walkable is what a character standing there would actually collide
 /// with. `outMesh` is cleared first and left empty when the bake finds nothing walkable - a region
 /// over a void bakes to an empty mesh, which is a fact about the region and not an error.
-[[nodiscard]] NavmeshBakeReportUVE BakeNavmeshUVE(Scene::IEntityManagerUVE& entityManager,
-                                                  const Physics::IRaycastSystemUVE& raycasts,
-                                                  const NavmeshBakeSettingsUVE& settings,
-                                                  const Math::AabbUVE& bounds, NavmeshUVE& outMesh);
+[[nodiscard]] NavmeshBakeReport BakeNavmesh(Scene::IEntityManager& entityManager,
+                                                  const Physics::IRaycastSystem& raycasts,
+                                                  const NavmeshBakeSettings& settings,
+                                                  const Math::Aabb& bounds, Navmesh& outMesh);
 
 } // namespace UVE::Navigation

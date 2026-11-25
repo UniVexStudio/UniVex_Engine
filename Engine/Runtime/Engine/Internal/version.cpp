@@ -13,7 +13,7 @@
 
 namespace UVE::Core {
 
-std::string VersionUVE::ToStringUVE() const {
+std::string Version::ToString() const {
     return std::to_string(major) + '.' + std::to_string(minor) + '.' + std::to_string(patch) +
            "+build." + std::to_string(build);
 }

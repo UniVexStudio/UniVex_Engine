@@ -15,670 +15,670 @@
 namespace UVE::Core::Tests {
 namespace {
 
-using Config::ConfigManagerUVE;
-using Config::SettingValueSourceUVE;
+using Config::ConfigManager;
+using Config::SettingValueSource;
 
-TEST(EngineSettingsLayeringUVETest, AttachesLayersAndAppliesResolvedSourcesToEngineConfig) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+TEST(EngineSettingsLayeringTest, AttachesLayersAndAppliesResolvedSourcesToEngineConfig) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLine;
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLine));
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLine;
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLine));
 
-    namespace Id = EngineProjectSettingIdUVE;
-    project.SetDoubleUVE(Id::kPhysicsTicksPerSecondUVE, 30.0);
-    user.SetDoubleUVE(Id::kPhysicsTicksPerSecondUVE, 90.0);
-    platform.SetDoubleUVE(Id::kPhysicsTicksPerSecondUVE, 240.0); // Not marked PerPlatform.
+    namespace Id = EngineProjectSettingId;
+    project.SetDouble(Id::kPhysicsTicksPerSecond, 30.0);
+    user.SetDouble(Id::kPhysicsTicksPerSecond, 90.0);
+    platform.SetDouble(Id::kPhysicsTicksPerSecond, 240.0); // Not marked PerPlatform.
 
-    project.SetIntUVE(Id::kShadowMapResolutionUVE, 4096);
-    user.SetIntUVE(Id::kShadowMapResolutionUVE, 2048);
-    platform.SetIntUVE(Id::kShadowMapResolutionUVE, 1024);
-    commandLine.SetIntUVE(Id::kShadowMapResolutionUVE, 512);
+    project.SetInt(Id::kShadowMapResolution, 4096);
+    user.SetInt(Id::kShadowMapResolution, 2048);
+    platform.SetInt(Id::kShadowMapResolution, 1024);
+    commandLine.SetInt(Id::kShadowMapResolution, 512);
 
     // NotPersisted settings only read from the command-line layer.
-    project.SetBoolUVE(Id::kHeadlessUVE, true);
-    user.SetBoolUVE(Id::kHeadlessUVE, true);
-    platform.SetBoolUVE(Id::kHeadlessUVE, true);
-    commandLine.SetBoolUVE(Id::kHeadlessUVE, true);
-    project.SetBoolUVE(Id::kQuitOnLastWindowClosedUVE, true);
-    user.SetBoolUVE(Id::kQuitOnLastWindowClosedUVE, false);
-    commandLine.SetBoolUVE(Id::kQuitOnLastWindowClosedUVE, true);
+    project.SetBool(Id::kHeadless, true);
+    user.SetBool(Id::kHeadless, true);
+    platform.SetBool(Id::kHeadless, true);
+    commandLine.SetBool(Id::kHeadless, true);
+    project.SetBool(Id::kQuitOnLastWindowClosed, true);
+    user.SetBool(Id::kQuitOnLastWindowClosed, false);
+    commandLine.SetBool(Id::kQuitOnLastWindowClosed, true);
 
-    const auto ticks = settings.ResolveUVE(Id::kPhysicsTicksPerSecondUVE);
+    const auto ticks = settings.Resolve(Id::kPhysicsTicksPerSecond);
     ASSERT_TRUE(ticks.has_value());
-    EXPECT_EQ(ticks->source, SettingValueSourceUVE::User);
+    EXPECT_EQ(ticks->source, SettingValueSource::User);
     EXPECT_DOUBLE_EQ(std::get<double>(ticks->value), 90.0);
-    EXPECT_FALSE(settings.GetStoredValueUVE(SettingValueSourceUVE::Platform, Id::kPhysicsTicksPerSecondUVE)
+    EXPECT_FALSE(settings.GetStoredValue(SettingValueSource::Platform, Id::kPhysicsTicksPerSecond)
                      .has_value());
 
-    const auto shadowResolution = settings.ResolveUVE(Id::kShadowMapResolutionUVE);
+    const auto shadowResolution = settings.Resolve(Id::kShadowMapResolution);
     ASSERT_TRUE(shadowResolution.has_value());
-    EXPECT_EQ(shadowResolution->source, SettingValueSourceUVE::CommandLine);
+    EXPECT_EQ(shadowResolution->source, SettingValueSource::CommandLine);
     EXPECT_EQ(std::get<std::int64_t>(shadowResolution->value), 512);
 
-    const auto headless = settings.ResolveUVE(Id::kHeadlessUVE);
+    const auto headless = settings.Resolve(Id::kHeadless);
     ASSERT_TRUE(headless.has_value());
-    EXPECT_EQ(headless->source, SettingValueSourceUVE::CommandLine);
+    EXPECT_EQ(headless->source, SettingValueSource::CommandLine);
 
-    EngineConfigUVE config{};
-    config.autoSaveIntervalSecondsUVE = 777.0; // No layer supplies this setting; preserve the caller's base.
-    ApplyEngineSettingsUVE(settings, config);
+    EngineConfig config{};
+    config.autoSaveIntervalSeconds = 777.0; // No layer supplies this setting; preserve the caller's base.
+    ApplyEngineSettings(settings, config);
     EXPECT_DOUBLE_EQ(config.fixedUpdateFps, 90.0);
     EXPECT_EQ(config.shadowMapResolution, 512U);
-    EXPECT_TRUE(config.headlessUVE);
-    EXPECT_TRUE(config.quitOnLastWindowClosedUVE);
-    EXPECT_DOUBLE_EQ(config.autoSaveIntervalSecondsUVE, 777.0);
+    EXPECT_TRUE(config.headless);
+    EXPECT_TRUE(config.quitOnLastWindowClosed);
+    EXPECT_DOUBLE_EQ(config.autoSaveIntervalSeconds, 777.0);
 
     // An invalid command-line enum value must not mask the valid platform value below it.
-    commandLine.SetIntUVE(Id::kShadowMapResolutionUVE, 1536);
-    const auto fallback = settings.ResolveUVE(Id::kShadowMapResolutionUVE);
+    commandLine.SetInt(Id::kShadowMapResolution, 1536);
+    const auto fallback = settings.Resolve(Id::kShadowMapResolution);
     ASSERT_TRUE(fallback.has_value());
-    EXPECT_EQ(fallback->source, SettingValueSourceUVE::Platform);
+    EXPECT_EQ(fallback->source, SettingValueSource::Platform);
     EXPECT_EQ(std::get<std::int64_t>(fallback->value), 1024);
-    ApplyEngineSettingsUVE(settings, config);
+    ApplyEngineSettings(settings, config);
     EXPECT_EQ(config.shadowMapResolution, 1024U);
 }
 
-TEST(EngineSettingsLayeringUVETest, WindowSettingsExposeExpectedPortableDefaults) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    Config::SettingsStackUVE settings(registry);
-    namespace Id = EngineProjectSettingIdUVE;
+TEST(EngineSettingsLayeringTest, WindowSettingsExposeExpectedPortableDefaults) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    Config::SettingsStack settings(registry);
+    namespace Id = EngineProjectSettingId;
 
-    const auto rendererBackend = settings.GetValueUVE(Id::kRenderBackendPreferenceUVE);
+    const auto rendererBackend = settings.GetValue(Id::kRenderBackendPreference);
     ASSERT_TRUE(rendererBackend.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*rendererBackend),
-              static_cast<std::int64_t>(RenderBackendPreferenceUVE::AutoUVE));
-    const auto renderResolutionScale = settings.GetValueUVE(Id::kRenderResolutionScaleUVE);
+              static_cast<std::int64_t>(RenderBackendPreference::Auto));
+    const auto renderResolutionScale = settings.GetValue(Id::kRenderResolutionScale);
     ASSERT_TRUE(renderResolutionScale.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*renderResolutionScale), 1.0);
-    const Config::SettingDescriptorUVE* const renderScaleDescriptor =
-        registry.FindUVE(Id::kRenderResolutionScaleUVE);
+    const Config::SettingDescriptor* const renderScaleDescriptor =
+        registry.Find(Id::kRenderResolutionScale);
     ASSERT_NE(renderScaleDescriptor, nullptr);
-    EXPECT_TRUE(renderScaleDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(renderScaleDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
+    EXPECT_TRUE(renderScaleDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(renderScaleDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
     ASSERT_TRUE(renderScaleDescriptor->minimum.has_value());
     ASSERT_TRUE(renderScaleDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*renderScaleDescriptor->minimum, 0.5);
     EXPECT_DOUBLE_EQ(*renderScaleDescriptor->maximum, 1.0);
-    const auto dynamicResolution = settings.GetValueUVE(Id::kDynamicRenderResolutionEnabledUVE);
+    const auto dynamicResolution = settings.GetValue(Id::kDynamicRenderResolutionEnabled);
     ASSERT_TRUE(dynamicResolution.has_value());
     EXPECT_FALSE(std::get<bool>(*dynamicResolution));
-    const auto minimumRenderScale = settings.GetValueUVE(Id::kMinimumRenderResolutionScaleUVE);
+    const auto minimumRenderScale = settings.GetValue(Id::kMinimumRenderResolutionScale);
     ASSERT_TRUE(minimumRenderScale.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*minimumRenderScale), 0.5);
     const auto targetRenderFrameTime =
-        settings.GetValueUVE(Id::kRenderResolutionTargetFrameTimeMillisecondsUVE);
+        settings.GetValue(Id::kRenderResolutionTargetFrameTimeMilliseconds);
     ASSERT_TRUE(targetRenderFrameTime.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*targetRenderFrameTime), 16.6667);
-    const auto shaderCacheDirectory = settings.GetValueUVE(Id::kShaderProgramCacheDirectoryUVE);
+    const auto shaderCacheDirectory = settings.GetValue(Id::kShaderProgramCacheDirectory);
     ASSERT_TRUE(shaderCacheDirectory.has_value());
     EXPECT_EQ(std::get<std::string>(*shaderCacheDirectory), "shader_cache/");
-    const auto shaderCompilationMode = settings.GetValueUVE(Id::kShaderCompilationModeUVE);
+    const auto shaderCompilationMode = settings.GetValue(Id::kShaderCompilationMode);
     ASSERT_TRUE(shaderCompilationMode.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*shaderCompilationMode),
-              static_cast<std::int64_t>(ShaderCompilationModeUVE::AsynchronousOnDemandUVE));
-    const Config::SettingDescriptorUVE* const shaderCompilationDescriptor =
-        registry.FindUVE(Id::kShaderCompilationModeUVE);
+              static_cast<std::int64_t>(ShaderCompilationMode::AsynchronousOnDemand));
+    const Config::SettingDescriptor* const shaderCompilationDescriptor =
+        registry.Find(Id::kShaderCompilationMode);
     ASSERT_NE(shaderCompilationDescriptor, nullptr);
-    EXPECT_EQ(shaderCompilationDescriptor->type, Config::SettingTypeUVE::Enum);
+    EXPECT_EQ(shaderCompilationDescriptor->type, Config::SettingType::Enum);
     ASSERT_EQ(shaderCompilationDescriptor->enumEntries.size(), 2U);
     EXPECT_EQ(shaderCompilationDescriptor->enumEntries[0U].value,
-              static_cast<std::int64_t>(ShaderCompilationModeUVE::SynchronousOnDemandUVE));
+              static_cast<std::int64_t>(ShaderCompilationMode::SynchronousOnDemand));
     EXPECT_EQ(shaderCompilationDescriptor->enumEntries[1U].value,
-              static_cast<std::int64_t>(ShaderCompilationModeUVE::AsynchronousOnDemandUVE));
-    EXPECT_TRUE(shaderCompilationDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(shaderCompilationDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto vulkanValidation = settings.GetValueUVE(Id::kVulkanValidationLayersEnabledUVE);
+              static_cast<std::int64_t>(ShaderCompilationMode::AsynchronousOnDemand));
+    EXPECT_TRUE(shaderCompilationDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(shaderCompilationDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto vulkanValidation = settings.GetValue(Id::kVulkanValidationLayersEnabled);
     ASSERT_TRUE(vulkanValidation.has_value());
-    EXPECT_EQ(std::get<bool>(*vulkanValidation), EngineConfigUVE{}.vulkanValidationLayersEnabledUVE);
-    const Config::SettingDescriptorUVE* const vulkanValidationDescriptor =
-        registry.FindUVE(Id::kVulkanValidationLayersEnabledUVE);
+    EXPECT_EQ(std::get<bool>(*vulkanValidation), EngineConfig{}.vulkanValidationLayersEnabled);
+    const Config::SettingDescriptor* const vulkanValidationDescriptor =
+        registry.Find(Id::kVulkanValidationLayersEnabled);
     ASSERT_NE(vulkanValidationDescriptor, nullptr);
-    EXPECT_EQ(vulkanValidationDescriptor->type, Config::SettingTypeUVE::Bool);
-    EXPECT_TRUE(vulkanValidationDescriptor->HasFlagUVE(Config::kSettingFlagAdvancedUVE));
-    EXPECT_TRUE(vulkanValidationDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(vulkanValidationDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto upscalingMethod = settings.GetValueUVE(Id::kSpatialUpscalingMethodUVE);
+    EXPECT_EQ(vulkanValidationDescriptor->type, Config::SettingType::Bool);
+    EXPECT_TRUE(vulkanValidationDescriptor->HasFlag(Config::kSettingFlagAdvanced));
+    EXPECT_TRUE(vulkanValidationDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(vulkanValidationDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto upscalingMethod = settings.GetValue(Id::kSpatialUpscalingMethod);
     ASSERT_TRUE(upscalingMethod.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*upscalingMethod),
-              static_cast<std::int64_t>(SpatialUpscalingMethodUVE::BilinearUVE));
-    const auto toneMappingMethod = settings.GetValueUVE(Id::kToneMappingMethodUVE);
+              static_cast<std::int64_t>(SpatialUpscalingMethod::Bilinear));
+    const auto toneMappingMethod = settings.GetValue(Id::kToneMappingMethod);
     ASSERT_TRUE(toneMappingMethod.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*toneMappingMethod),
-              static_cast<std::int64_t>(ToneMappingMethodUVE::SoftFilmicUVE));
-    const auto sharpeningAmount = settings.GetValueUVE(Id::kSharpeningAmountUVE);
+              static_cast<std::int64_t>(ToneMappingMethod::SoftFilmic));
+    const auto sharpeningAmount = settings.GetValue(Id::kSharpeningAmount);
     ASSERT_TRUE(sharpeningAmount.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*sharpeningAmount), 0.0);
-    const Config::SettingDescriptorUVE* const sharpeningDescriptor = registry.FindUVE(Id::kSharpeningAmountUVE);
+    const Config::SettingDescriptor* const sharpeningDescriptor = registry.Find(Id::kSharpeningAmount);
     ASSERT_NE(sharpeningDescriptor, nullptr);
-    EXPECT_EQ(sharpeningDescriptor->type, Config::SettingTypeUVE::Float);
+    EXPECT_EQ(sharpeningDescriptor->type, Config::SettingType::Float);
     ASSERT_TRUE(sharpeningDescriptor->minimum.has_value());
     ASSERT_TRUE(sharpeningDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*sharpeningDescriptor->minimum, 0.0);
     EXPECT_DOUBLE_EQ(*sharpeningDescriptor->maximum, 1.0);
-    EXPECT_TRUE(sharpeningDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(sharpeningDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto ditheringEnabled = settings.GetValueUVE(Id::kDitheringEnabledUVE);
+    EXPECT_TRUE(sharpeningDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(sharpeningDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto ditheringEnabled = settings.GetValue(Id::kDitheringEnabled);
     ASSERT_TRUE(ditheringEnabled.has_value());
-    EXPECT_EQ(std::get<bool>(*ditheringEnabled), EngineConfigUVE{}.ditheringEnabledUVE);
-    const Config::SettingDescriptorUVE* const ditheringDescriptor = registry.FindUVE(Id::kDitheringEnabledUVE);
+    EXPECT_EQ(std::get<bool>(*ditheringEnabled), EngineConfig{}.ditheringEnabled);
+    const Config::SettingDescriptor* const ditheringDescriptor = registry.Find(Id::kDitheringEnabled);
     ASSERT_NE(ditheringDescriptor, nullptr);
-    EXPECT_EQ(ditheringDescriptor->type, Config::SettingTypeUVE::Bool);
-    EXPECT_TRUE(ditheringDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(ditheringDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto aaMethod = settings.GetValueUVE(Id::kPostProcessAAMethodUVE);
+    EXPECT_EQ(ditheringDescriptor->type, Config::SettingType::Bool);
+    EXPECT_TRUE(ditheringDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(ditheringDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto aaMethod = settings.GetValue(Id::kPostProcessAAMethod);
     ASSERT_TRUE(aaMethod.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*aaMethod), static_cast<std::int64_t>(PostProcessAAMethodUVE::NoneUVE));
-    const Config::SettingDescriptorUVE* const aaMethodDescriptor = registry.FindUVE(Id::kPostProcessAAMethodUVE);
+    EXPECT_EQ(std::get<std::int64_t>(*aaMethod), static_cast<std::int64_t>(PostProcessAAMethod::None));
+    const Config::SettingDescriptor* const aaMethodDescriptor = registry.Find(Id::kPostProcessAAMethod);
     ASSERT_NE(aaMethodDescriptor, nullptr);
-    EXPECT_EQ(aaMethodDescriptor->type, Config::SettingTypeUVE::Enum);
+    EXPECT_EQ(aaMethodDescriptor->type, Config::SettingType::Enum);
     ASSERT_EQ(aaMethodDescriptor->enumEntries.size(), 2U);
-    EXPECT_TRUE(aaMethodDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(aaMethodDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto aaQuality = settings.GetValueUVE(Id::kScreenSpaceAAQualityUVE);
+    EXPECT_TRUE(aaMethodDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(aaMethodDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto aaQuality = settings.GetValue(Id::kScreenSpaceAAQuality);
     ASSERT_TRUE(aaQuality.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*aaQuality), 1);
-    const auto shadowBiasDefault = settings.GetValueUVE(Id::kShadowBiasDefaultUVE);
+    const auto shadowBiasDefault = settings.GetValue(Id::kShadowBiasDefault);
     ASSERT_TRUE(shadowBiasDefault.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowBiasDefault),
-                     static_cast<double>(EngineConfigUVE{}.shadowBiasDefaultUVE));
-    const auto shadowNormalBiasDefault = settings.GetValueUVE(Id::kShadowNormalBiasDefaultUVE);
+                     static_cast<double>(EngineConfig{}.shadowBiasDefault));
+    const auto shadowNormalBiasDefault = settings.GetValue(Id::kShadowNormalBiasDefault);
     ASSERT_TRUE(shadowNormalBiasDefault.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowNormalBiasDefault),
-                     static_cast<double>(EngineConfigUVE{}.shadowNormalBiasDefaultUVE));
-    const auto shadowCascadeSplitBlend = settings.GetValueUVE(Id::kShadowCascadeSplitBlendUVE);
+                     static_cast<double>(EngineConfig{}.shadowNormalBiasDefault));
+    const auto shadowCascadeSplitBlend = settings.GetValue(Id::kShadowCascadeSplitBlend);
     ASSERT_TRUE(shadowCascadeSplitBlend.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowCascadeSplitBlend),
-                     static_cast<double>(EngineConfigUVE{}.shadowCascadeSplitLambda));
-    const Config::SettingDescriptorUVE* const shadowCascadeSplitBlendDescriptor =
-        registry.FindUVE(Id::kShadowCascadeSplitBlendUVE);
+                     static_cast<double>(EngineConfig{}.shadowCascadeSplitLambda));
+    const Config::SettingDescriptor* const shadowCascadeSplitBlendDescriptor =
+        registry.Find(Id::kShadowCascadeSplitBlend);
     ASSERT_NE(shadowCascadeSplitBlendDescriptor, nullptr);
-    EXPECT_EQ(shadowCascadeSplitBlendDescriptor->type, Config::SettingTypeUVE::Float);
-    EXPECT_TRUE(shadowCascadeSplitBlendDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(shadowCascadeSplitBlendDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    for (const std::string_view id : {Id::kShadowBiasDefaultUVE, Id::kShadowNormalBiasDefaultUVE}) {
-        const Config::SettingDescriptorUVE* const biasDescriptor = registry.FindUVE(id);
+    EXPECT_EQ(shadowCascadeSplitBlendDescriptor->type, Config::SettingType::Float);
+    EXPECT_TRUE(shadowCascadeSplitBlendDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(shadowCascadeSplitBlendDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    for (const std::string_view id : {Id::kShadowBiasDefault, Id::kShadowNormalBiasDefault}) {
+        const Config::SettingDescriptor* const biasDescriptor = registry.Find(id);
         ASSERT_NE(biasDescriptor, nullptr);
-        EXPECT_EQ(biasDescriptor->type, Config::SettingTypeUVE::Float);
+        EXPECT_EQ(biasDescriptor->type, Config::SettingType::Float);
         ASSERT_TRUE(biasDescriptor->minimum.has_value());
         ASSERT_TRUE(biasDescriptor->maximum.has_value());
         EXPECT_DOUBLE_EQ(*biasDescriptor->minimum, 0.0);
         EXPECT_DOUBLE_EQ(*biasDescriptor->maximum, 10.0);
-        EXPECT_TRUE(biasDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-        EXPECT_TRUE(biasDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
+        EXPECT_TRUE(biasDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+        EXPECT_TRUE(biasDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
     }
-    const Config::SettingDescriptorUVE* const aaQualityDescriptor = registry.FindUVE(Id::kScreenSpaceAAQualityUVE);
+    const Config::SettingDescriptor* const aaQualityDescriptor = registry.Find(Id::kScreenSpaceAAQuality);
     ASSERT_NE(aaQualityDescriptor, nullptr);
     ASSERT_EQ(aaQualityDescriptor->enumEntries.size(), 3U);
-    const Config::SettingDescriptorUVE* const shaderCacheDescriptor =
-        registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE);
+    const Config::SettingDescriptor* const shaderCacheDescriptor =
+        registry.Find(Id::kShaderProgramCacheDirectory);
     ASSERT_NE(shaderCacheDescriptor, nullptr);
-    EXPECT_EQ(shaderCacheDescriptor->type, Config::SettingTypeUVE::FilePath);
+    EXPECT_EQ(shaderCacheDescriptor->type, Config::SettingType::FilePath);
     EXPECT_EQ(shaderCacheDescriptor->maxLength, 512U);
-    EXPECT_TRUE(shaderCacheDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(shaderCacheDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const Config::SettingDescriptorUVE* const targetFrameTimeDescriptor =
-        registry.FindUVE(Id::kRenderResolutionTargetFrameTimeMillisecondsUVE);
+    EXPECT_TRUE(shaderCacheDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(shaderCacheDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const Config::SettingDescriptor* const targetFrameTimeDescriptor =
+        registry.Find(Id::kRenderResolutionTargetFrameTimeMilliseconds);
     ASSERT_NE(targetFrameTimeDescriptor, nullptr);
     ASSERT_TRUE(targetFrameTimeDescriptor->minimum.has_value());
     ASSERT_TRUE(targetFrameTimeDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*targetFrameTimeDescriptor->minimum,
-                     kMinimumRenderResolutionTargetFrameTimeMillisecondsUVE);
+                     kMinimumRenderResolutionTargetFrameTimeMilliseconds);
     EXPECT_DOUBLE_EQ(*targetFrameTimeDescriptor->maximum,
-                     kMaximumRenderResolutionTargetFrameTimeMillisecondsUVE);
-    const Config::SettingDescriptorUVE* const dynamicResolutionDescriptor =
-        registry.FindUVE(Id::kDynamicRenderResolutionEnabledUVE);
+                     kMaximumRenderResolutionTargetFrameTimeMilliseconds);
+    const Config::SettingDescriptor* const dynamicResolutionDescriptor =
+        registry.Find(Id::kDynamicRenderResolutionEnabled);
     ASSERT_NE(dynamicResolutionDescriptor, nullptr);
-    EXPECT_TRUE(dynamicResolutionDescriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(dynamicResolutionDescriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    const auto defaultClearColor = settings.GetValueUVE(Id::kBootBackgroundColorUVE);
+    EXPECT_TRUE(dynamicResolutionDescriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(dynamicResolutionDescriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    const auto defaultClearColor = settings.GetValue(Id::kBootBackgroundColor);
     ASSERT_TRUE(defaultClearColor.has_value());
-    EXPECT_EQ(std::get<Config::SettingColorUVE>(*defaultClearColor),
-              (Config::SettingColorUVE{0.05F, 0.05F, 0.05F, 1.0F}));
-    const auto width = settings.GetValueUVE(Id::kWindowWidthUVE);
+    EXPECT_EQ(std::get<Config::SettingColor>(*defaultClearColor),
+              (Config::SettingColor{0.05F, 0.05F, 0.05F, 1.0F}));
+    const auto width = settings.GetValue(Id::kWindowWidth);
     ASSERT_TRUE(width.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*width), 1280);
-    const auto height = settings.GetValueUVE(Id::kWindowHeightUVE);
+    const auto height = settings.GetValue(Id::kWindowHeight);
     ASSERT_TRUE(height.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*height), 720);
-    const auto mode = settings.GetValueUVE(Id::kWindowModeUVE);
+    const auto mode = settings.GetValue(Id::kWindowMode);
     ASSERT_TRUE(mode.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*mode),
-              static_cast<std::int64_t>(Platform::WindowModeUVE::Windowed));
-    const auto vsync = settings.GetValueUVE(Id::kWindowVSyncModeUVE);
+              static_cast<std::int64_t>(Platform::WindowMode::Windowed));
+    const auto vsync = settings.GetValue(Id::kWindowVSyncMode);
     ASSERT_TRUE(vsync.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*vsync), static_cast<std::int64_t>(Platform::VSyncModeUVE::On));
-    const auto cursorVisible = settings.GetValueUVE(Id::kWindowCursorVisibleUVE);
+    EXPECT_EQ(std::get<std::int64_t>(*vsync), static_cast<std::int64_t>(Platform::VSyncMode::On));
+    const auto cursorVisible = settings.GetValue(Id::kWindowCursorVisible);
     ASSERT_TRUE(cursorVisible.has_value());
     EXPECT_TRUE(std::get<bool>(*cursorVisible));
-    const auto cursorConfined = settings.GetValueUVE(Id::kWindowCursorConfinedUVE);
+    const auto cursorConfined = settings.GetValue(Id::kWindowCursorConfined);
     ASSERT_TRUE(cursorConfined.has_value());
     EXPECT_FALSE(std::get<bool>(*cursorConfined));
-    const auto allowDisplaySleep = settings.GetValueUVE(Id::kWindowAllowDisplaySleepUVE);
+    const auto allowDisplaySleep = settings.GetValue(Id::kWindowAllowDisplaySleep);
     ASSERT_TRUE(allowDisplaySleep.has_value());
     EXPECT_TRUE(std::get<bool>(*allowDisplaySleep));
-    const auto allowedOrientations = settings.GetValueUVE(Id::kWindowAllowedOrientationsUVE);
+    const auto allowedOrientations = settings.GetValue(Id::kWindowAllowedOrientations);
     ASSERT_TRUE(allowedOrientations.has_value());
-    EXPECT_EQ(std::get<Config::SettingStringListUVE>(*allowedOrientations),
-              (Config::SettingStringListUVE{"landscape", "portrait"}));
+    EXPECT_EQ(std::get<Config::SettingStringList>(*allowedOrientations),
+              (Config::SettingStringList{"landscape", "portrait"}));
 }
 
-TEST(EngineSettingsLayeringUVETest, WindowSettingsApplyTypedPoliciesAndRespectPlatformOverrides) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    namespace Id = EngineProjectSettingIdUVE;
+TEST(EngineSettingsLayeringTest, WindowSettingsApplyTypedPoliciesAndRespectPlatformOverrides) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    namespace Id = EngineProjectSettingId;
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLine;
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLine));
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLine;
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLine));
 
-    project.SetIntUVE(Id::kWindowWidthUVE, 1920);
-    project.SetIntUVE(Id::kWindowHeightUVE, 1080);
-    project.SetIntUVE(Id::kWindowModeUVE, 3);
-    project.SetIntUVE(Id::kWindowVSyncModeUVE, 2);
-    project.SetIntUVE(Id::kWindowMaximumWidthUVE, 2560);
-    project.SetIntUVE(Id::kRenderBackendPreferenceUVE,
-                      static_cast<std::int64_t>(RenderBackendPreferenceUVE::OpenGLUVE));
-    platform.SetIntUVE(Id::kRenderBackendPreferenceUVE,
-                       static_cast<std::int64_t>(RenderBackendPreferenceUVE::VulkanUVE));
-    project.SetDoubleUVE(Id::kRenderResolutionScaleUVE, 0.9);
-    platform.SetDoubleUVE(Id::kRenderResolutionScaleUVE, 0.75);
-    project.SetBoolUVE(Id::kDynamicRenderResolutionEnabledUVE, true);
-    project.SetDoubleUVE(Id::kMinimumRenderResolutionScaleUVE, 0.65);
-    platform.SetDoubleUVE(Id::kMinimumRenderResolutionScaleUVE, 0.6);
-    project.SetDoubleUVE(Id::kRenderResolutionTargetFrameTimeMillisecondsUVE, 33.3333);
-    platform.SetDoubleUVE(Id::kRenderResolutionTargetFrameTimeMillisecondsUVE, 20.0);
-    project.SetStringUVE(Id::kShaderProgramCacheDirectoryUVE, "shader_cache/project");
-    platform.SetStringUVE(Id::kShaderProgramCacheDirectoryUVE, "shader_cache/platform");
-    project.SetIntUVE(Id::kShaderCompilationModeUVE,
-                      static_cast<std::int64_t>(ShaderCompilationModeUVE::SynchronousOnDemandUVE));
-    platform.SetIntUVE(Id::kShaderCompilationModeUVE,
-                       static_cast<std::int64_t>(ShaderCompilationModeUVE::AsynchronousOnDemandUVE));
-    project.SetBoolUVE(Id::kVulkanValidationLayersEnabledUVE, true);
-    platform.SetBoolUVE(Id::kVulkanValidationLayersEnabledUVE, false);
-    project.SetIntUVE(Id::kSpatialUpscalingMethodUVE,
-                      static_cast<std::int64_t>(SpatialUpscalingMethodUVE::NearestUVE));
-    platform.SetIntUVE(Id::kSpatialUpscalingMethodUVE,
-                       static_cast<std::int64_t>(SpatialUpscalingMethodUVE::BilinearUVE));
-    project.SetIntUVE(Id::kToneMappingMethodUVE,
-                      static_cast<std::int64_t>(ToneMappingMethodUVE::LinearClampUVE));
-    platform.SetIntUVE(Id::kToneMappingMethodUVE,
-                       static_cast<std::int64_t>(ToneMappingMethodUVE::AcesUVE));
-    project.SetDoubleUVE(Id::kSharpeningAmountUVE, 0.25);
-    platform.SetDoubleUVE(Id::kSharpeningAmountUVE, 0.5);
-    project.SetBoolUVE(Id::kDitheringEnabledUVE, false);
-    platform.SetBoolUVE(Id::kDitheringEnabledUVE, true);
-    project.SetIntUVE(Id::kPostProcessAAMethodUVE,
-                      static_cast<std::int64_t>(PostProcessAAMethodUVE::FastApproximateUVE));
-    platform.SetIntUVE(Id::kPostProcessAAMethodUVE,
-                       static_cast<std::int64_t>(PostProcessAAMethodUVE::NoneUVE));
-    project.SetIntUVE(Id::kScreenSpaceAAQualityUVE, 2);
-    platform.SetIntUVE(Id::kScreenSpaceAAQualityUVE, 1);
-    project.SetDoubleUVE(Id::kShadowCascadeSplitBlendUVE, 0.25);
-    platform.SetDoubleUVE(Id::kShadowCascadeSplitBlendUVE, 0.75);
-    project.SetDoubleUVE(Id::kShadowBiasDefaultUVE, 0.2);
-    platform.SetDoubleUVE(Id::kShadowBiasDefaultUVE, 0.4);
-    project.SetDoubleUVE(Id::kShadowNormalBiasDefaultUVE, 1.5);
-    platform.SetDoubleUVE(Id::kShadowNormalBiasDefaultUVE, 0.5);
-    project.SetDoubleUVE(Id::kWindowContentScaleOverrideUVE, 1.5);
-    project.SetIntUVE(Id::kWindowFocusedFrameRateCapUVE, 144);
-    project.SetIntUVE(Id::kWindowUnfocusedFrameRateCapUVE, 30);
-    project.SetStringUVE(Id::kWindowTitleFormatUVE, "{projectName} — {sceneName}");
-    project.SetBoolUVE(Id::kWindowAppendSceneInEditorPlayUVE, true);
-    ASSERT_TRUE(registry.SetValueUVE(
-        project, Id::kWindowAllowedOrientationsUVE,
-        Config::SettingValueUVE{Config::SettingStringListUVE{"landscapeLeft", "portrait"}}));
-    platform.SetBoolUVE(Id::kWindowPerMonitorScalingUVE, false);
-    user.SetBoolUVE(Id::kWindowAlwaysOnTopUVE, true);
+    project.SetInt(Id::kWindowWidth, 1920);
+    project.SetInt(Id::kWindowHeight, 1080);
+    project.SetInt(Id::kWindowMode, 3);
+    project.SetInt(Id::kWindowVSyncMode, 2);
+    project.SetInt(Id::kWindowMaximumWidth, 2560);
+    project.SetInt(Id::kRenderBackendPreference,
+                      static_cast<std::int64_t>(RenderBackendPreference::OpenGL));
+    platform.SetInt(Id::kRenderBackendPreference,
+                       static_cast<std::int64_t>(RenderBackendPreference::Vulkan));
+    project.SetDouble(Id::kRenderResolutionScale, 0.9);
+    platform.SetDouble(Id::kRenderResolutionScale, 0.75);
+    project.SetBool(Id::kDynamicRenderResolutionEnabled, true);
+    project.SetDouble(Id::kMinimumRenderResolutionScale, 0.65);
+    platform.SetDouble(Id::kMinimumRenderResolutionScale, 0.6);
+    project.SetDouble(Id::kRenderResolutionTargetFrameTimeMilliseconds, 33.3333);
+    platform.SetDouble(Id::kRenderResolutionTargetFrameTimeMilliseconds, 20.0);
+    project.SetString(Id::kShaderProgramCacheDirectory, "shader_cache/project");
+    platform.SetString(Id::kShaderProgramCacheDirectory, "shader_cache/platform");
+    project.SetInt(Id::kShaderCompilationMode,
+                      static_cast<std::int64_t>(ShaderCompilationMode::SynchronousOnDemand));
+    platform.SetInt(Id::kShaderCompilationMode,
+                       static_cast<std::int64_t>(ShaderCompilationMode::AsynchronousOnDemand));
+    project.SetBool(Id::kVulkanValidationLayersEnabled, true);
+    platform.SetBool(Id::kVulkanValidationLayersEnabled, false);
+    project.SetInt(Id::kSpatialUpscalingMethod,
+                      static_cast<std::int64_t>(SpatialUpscalingMethod::Nearest));
+    platform.SetInt(Id::kSpatialUpscalingMethod,
+                       static_cast<std::int64_t>(SpatialUpscalingMethod::Bilinear));
+    project.SetInt(Id::kToneMappingMethod,
+                      static_cast<std::int64_t>(ToneMappingMethod::LinearClamp));
+    platform.SetInt(Id::kToneMappingMethod,
+                       static_cast<std::int64_t>(ToneMappingMethod::Aces));
+    project.SetDouble(Id::kSharpeningAmount, 0.25);
+    platform.SetDouble(Id::kSharpeningAmount, 0.5);
+    project.SetBool(Id::kDitheringEnabled, false);
+    platform.SetBool(Id::kDitheringEnabled, true);
+    project.SetInt(Id::kPostProcessAAMethod,
+                      static_cast<std::int64_t>(PostProcessAAMethod::FastApproximate));
+    platform.SetInt(Id::kPostProcessAAMethod,
+                       static_cast<std::int64_t>(PostProcessAAMethod::None));
+    project.SetInt(Id::kScreenSpaceAAQuality, 2);
+    platform.SetInt(Id::kScreenSpaceAAQuality, 1);
+    project.SetDouble(Id::kShadowCascadeSplitBlend, 0.25);
+    platform.SetDouble(Id::kShadowCascadeSplitBlend, 0.75);
+    project.SetDouble(Id::kShadowBiasDefault, 0.2);
+    platform.SetDouble(Id::kShadowBiasDefault, 0.4);
+    project.SetDouble(Id::kShadowNormalBiasDefault, 1.5);
+    platform.SetDouble(Id::kShadowNormalBiasDefault, 0.5);
+    project.SetDouble(Id::kWindowContentScaleOverride, 1.5);
+    project.SetInt(Id::kWindowFocusedFrameRateCap, 144);
+    project.SetInt(Id::kWindowUnfocusedFrameRateCap, 30);
+    project.SetString(Id::kWindowTitleFormat, "{projectName} — {sceneName}");
+    project.SetBool(Id::kWindowAppendSceneInEditorPlay, true);
+    ASSERT_TRUE(registry.SetValue(
+        project, Id::kWindowAllowedOrientations,
+        Config::SettingValue{Config::SettingStringList{"landscapeLeft", "portrait"}}));
+    platform.SetBool(Id::kWindowPerMonitorScaling, false);
+    user.SetBool(Id::kWindowAlwaysOnTop, true);
 
-    EngineConfigUVE config;
-    ApplyEngineSettingsUVE(settings, config);
+    EngineConfig config;
+    ApplyEngineSettings(settings, config);
     EXPECT_EQ(config.windowWidth, 1920U);
     EXPECT_EQ(config.windowHeight, 1080U);
-    EXPECT_EQ(config.windowModeUVE, Platform::WindowModeUVE::ExclusiveFullscreen);
-    EXPECT_EQ(config.vsyncModeUVE, Platform::VSyncModeUVE::Adaptive);
-    EXPECT_TRUE(config.vsyncModeExplicitUVE);
-    EXPECT_TRUE(config.vsyncEnabledUVE);
-    EXPECT_EQ(config.windowMaximumWidthUVE, 2560U);
-    EXPECT_EQ(config.renderBackendPreferenceUVE, RenderBackendPreferenceUVE::VulkanUVE);
-    EXPECT_DOUBLE_EQ(config.renderResolutionScaleUVE, 0.75);
-    EXPECT_TRUE(config.dynamicRenderResolutionEnabledUVE);
-    EXPECT_DOUBLE_EQ(config.minimumRenderResolutionScaleUVE, 0.6);
-    EXPECT_DOUBLE_EQ(config.renderResolutionTargetFrameTimeMillisecondsUVE, 20.0);
+    EXPECT_EQ(config.windowMode, Platform::WindowMode::ExclusiveFullscreen);
+    EXPECT_EQ(config.vsyncMode, Platform::VSyncMode::Adaptive);
+    EXPECT_TRUE(config.vsyncModeExplicit);
+    EXPECT_TRUE(config.vsyncEnabled);
+    EXPECT_EQ(config.windowMaximumWidth, 2560U);
+    EXPECT_EQ(config.renderBackendPreference, RenderBackendPreference::Vulkan);
+    EXPECT_DOUBLE_EQ(config.renderResolutionScale, 0.75);
+    EXPECT_TRUE(config.dynamicRenderResolutionEnabled);
+    EXPECT_DOUBLE_EQ(config.minimumRenderResolutionScale, 0.6);
+    EXPECT_DOUBLE_EQ(config.renderResolutionTargetFrameTimeMilliseconds, 20.0);
     EXPECT_EQ(config.shaderCachePath, std::filesystem::path("shader_cache/platform"));
-    EXPECT_EQ(config.shaderCompilationModeUVE, ShaderCompilationModeUVE::AsynchronousOnDemandUVE);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kShaderCompilationModeUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.shaderCompilationModeUVE, ShaderCompilationModeUVE::SynchronousOnDemandUVE);
-    EXPECT_FALSE(config.vulkanValidationLayersEnabledUVE);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kVulkanValidationLayersEnabledUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_TRUE(config.vulkanValidationLayersEnabledUVE);
-    EXPECT_EQ(config.spatialUpscalingMethodUVE, SpatialUpscalingMethodUVE::BilinearUVE);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kSpatialUpscalingMethodUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.spatialUpscalingMethodUVE, SpatialUpscalingMethodUVE::NearestUVE);
-    EXPECT_EQ(config.toneMappingMethodUVE, ToneMappingMethodUVE::AcesUVE);
-    EXPECT_FLOAT_EQ(config.sharpeningAmountUVE, 0.5F);
-    EXPECT_TRUE(config.ditheringEnabledUVE);
+    EXPECT_EQ(config.shaderCompilationMode, ShaderCompilationMode::AsynchronousOnDemand);
+    ASSERT_TRUE(platform.RemoveKey(Id::kShaderCompilationMode));
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.shaderCompilationMode, ShaderCompilationMode::SynchronousOnDemand);
+    EXPECT_FALSE(config.vulkanValidationLayersEnabled);
+    ASSERT_TRUE(platform.RemoveKey(Id::kVulkanValidationLayersEnabled));
+    ApplyEngineSettings(settings, config);
+    EXPECT_TRUE(config.vulkanValidationLayersEnabled);
+    EXPECT_EQ(config.spatialUpscalingMethod, SpatialUpscalingMethod::Bilinear);
+    ASSERT_TRUE(platform.RemoveKey(Id::kSpatialUpscalingMethod));
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.spatialUpscalingMethod, SpatialUpscalingMethod::Nearest);
+    EXPECT_EQ(config.toneMappingMethod, ToneMappingMethod::Aces);
+    EXPECT_FLOAT_EQ(config.sharpeningAmount, 0.5F);
+    EXPECT_TRUE(config.ditheringEnabled);
     EXPECT_FLOAT_EQ(config.shadowCascadeSplitLambda, 0.75F);
-    EXPECT_FLOAT_EQ(config.shadowBiasDefaultUVE, 0.4F);
-    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefaultUVE, 0.5F);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kShadowCascadeSplitBlendUVE));
-    ApplyEngineSettingsUVE(settings, config);
+    EXPECT_FLOAT_EQ(config.shadowBiasDefault, 0.4F);
+    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefault, 0.5F);
+    ASSERT_TRUE(platform.RemoveKey(Id::kShadowCascadeSplitBlend));
+    ApplyEngineSettings(settings, config);
     EXPECT_FLOAT_EQ(config.shadowCascadeSplitLambda, 0.25F);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kShadowBiasDefaultUVE));
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kShadowNormalBiasDefaultUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_FLOAT_EQ(config.shadowBiasDefaultUVE, 0.2F);
-    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefaultUVE, 1.5F);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kToneMappingMethodUVE));
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kSharpeningAmountUVE));
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kDitheringEnabledUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.toneMappingMethodUVE, ToneMappingMethodUVE::LinearClampUVE);
-    EXPECT_FLOAT_EQ(config.sharpeningAmountUVE, 0.25F);
-    EXPECT_FALSE(config.ditheringEnabledUVE);
-    EXPECT_EQ(config.postProcessAAMethodUVE, PostProcessAAMethodUVE::NoneUVE);
-    EXPECT_EQ(config.screenSpaceAAQualityUVE, 1U);
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kPostProcessAAMethodUVE));
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kScreenSpaceAAQualityUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.postProcessAAMethodUVE, PostProcessAAMethodUVE::FastApproximateUVE);
-    EXPECT_EQ(config.screenSpaceAAQualityUVE, 2U);
-    EXPECT_DOUBLE_EQ(config.contentScaleOverrideUVE, 1.5);
-    EXPECT_FALSE(config.perMonitorScalingUVE);
-    EXPECT_TRUE(config.windowAlwaysOnTopUVE);
-    EXPECT_EQ(config.focusedFrameRateCapUVE, 144U);
-    EXPECT_EQ(config.unfocusedFrameRateCapUVE, 30U);
-    EXPECT_EQ(config.allowedOrientationsUVE,
-              (std::vector<Platform::DisplayOrientationUVE>{Platform::DisplayOrientationUVE::LandscapeLeft,
-                                                           Platform::DisplayOrientationUVE::Portrait}));
-    EXPECT_EQ(config.windowTitleFormatUVE, "{projectName} — {sceneName}");
-    EXPECT_TRUE(config.appendSceneNameInEditorPlayModeUVE);
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kRenderBackendPreferenceUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kRenderResolutionScaleUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kDynamicRenderResolutionEnabledUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kMinimumRenderResolutionScaleUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kRenderResolutionTargetFrameTimeMillisecondsUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kShaderProgramCacheDirectoryUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kShaderCompilationModeUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kVulkanValidationLayersEnabledUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kSpatialUpscalingMethodUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kToneMappingMethodUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kSharpeningAmountUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kDitheringEnabledUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kShadowCascadeSplitBlendUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kShadowBiasDefaultUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kShadowNormalBiasDefaultUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kPostProcessAAMethodUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kScreenSpaceAAQualityUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kWindowModeUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kWindowCursorImageUVE));
+    ASSERT_TRUE(platform.RemoveKey(Id::kShadowBiasDefault));
+    ASSERT_TRUE(platform.RemoveKey(Id::kShadowNormalBiasDefault));
+    ApplyEngineSettings(settings, config);
+    EXPECT_FLOAT_EQ(config.shadowBiasDefault, 0.2F);
+    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefault, 1.5F);
+    ASSERT_TRUE(platform.RemoveKey(Id::kToneMappingMethod));
+    ASSERT_TRUE(platform.RemoveKey(Id::kSharpeningAmount));
+    ASSERT_TRUE(platform.RemoveKey(Id::kDitheringEnabled));
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.toneMappingMethod, ToneMappingMethod::LinearClamp);
+    EXPECT_FLOAT_EQ(config.sharpeningAmount, 0.25F);
+    EXPECT_FALSE(config.ditheringEnabled);
+    EXPECT_EQ(config.postProcessAAMethod, PostProcessAAMethod::None);
+    EXPECT_EQ(config.screenSpaceAAQuality, 1U);
+    ASSERT_TRUE(platform.RemoveKey(Id::kPostProcessAAMethod));
+    ASSERT_TRUE(platform.RemoveKey(Id::kScreenSpaceAAQuality));
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.postProcessAAMethod, PostProcessAAMethod::FastApproximate);
+    EXPECT_EQ(config.screenSpaceAAQuality, 2U);
+    EXPECT_DOUBLE_EQ(config.contentScaleOverride, 1.5);
+    EXPECT_FALSE(config.perMonitorScaling);
+    EXPECT_TRUE(config.windowAlwaysOnTop);
+    EXPECT_EQ(config.focusedFrameRateCap, 144U);
+    EXPECT_EQ(config.unfocusedFrameRateCap, 30U);
+    EXPECT_EQ(config.allowedOrientations,
+              (std::vector<Platform::DisplayOrientation>{Platform::DisplayOrientation::LandscapeLeft,
+                                                           Platform::DisplayOrientation::Portrait}));
+    EXPECT_EQ(config.windowTitleFormat, "{projectName} — {sceneName}");
+    EXPECT_TRUE(config.appendSceneNameInEditorPlayMode);
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kRenderBackendPreference));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kRenderResolutionScale));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kDynamicRenderResolutionEnabled));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kMinimumRenderResolutionScale));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kRenderResolutionTargetFrameTimeMilliseconds));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kShaderProgramCacheDirectory));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kShaderCompilationMode));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kVulkanValidationLayersEnabled));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kSpatialUpscalingMethod));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kToneMappingMethod));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kSharpeningAmount));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kDitheringEnabled));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kShadowCascadeSplitBlend));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kShadowBiasDefault));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kShadowNormalBiasDefault));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kPostProcessAAMethod));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kScreenSpaceAAQuality));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kWindowMode));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kWindowCursorImage));
 }
 
-TEST(EngineSettingsLayeringUVETest, UnsafeShaderCacheOverrideFallsThroughToSafeLowerLayer) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    namespace Id = EngineProjectSettingIdUVE;
+TEST(EngineSettingsLayeringTest, UnsafeShaderCacheOverrideFallsThroughToSafeLowerLayer) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    namespace Id = EngineProjectSettingId;
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLine;
-    project.SetStringUVE(Id::kShaderProgramCacheDirectoryUVE, "shader_cache/project");
-    platform.SetStringUVE(Id::kShaderProgramCacheDirectoryUVE, "shader_cache/platform");
-    commandLine.SetStringUVE(Id::kShaderProgramCacheDirectoryUVE, "../outside_cache");
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLine;
+    project.SetString(Id::kShaderProgramCacheDirectory, "shader_cache/project");
+    platform.SetString(Id::kShaderProgramCacheDirectory, "shader_cache/platform");
+    commandLine.SetString(Id::kShaderProgramCacheDirectory, "../outside_cache");
 
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLine));
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLine));
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
     EXPECT_EQ(config.shaderCachePath, std::filesystem::path("shader_cache/platform"));
 
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kShaderProgramCacheDirectoryUVE));
-    ASSERT_TRUE(project.RemoveKeyUVE(Id::kShaderProgramCacheDirectoryUVE));
+    ASSERT_TRUE(platform.RemoveKey(Id::kShaderProgramCacheDirectory));
+    ASSERT_TRUE(project.RemoveKey(Id::kShaderProgramCacheDirectory));
     config.shaderCachePath = "application_cache";
-    ApplyEngineSettingsUVE(settings, config);
+    ApplyEngineSettings(settings, config);
     EXPECT_EQ(config.shaderCachePath, std::filesystem::path("application_cache"));
 }
 
-TEST(EngineSettingsLayeringUVETest, SSAOControlsHaveDefaultsBoundsAndPlatformOverrides) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    Config::SettingsStackUVE defaults(registry);
-    namespace Id = EngineProjectSettingIdUVE;
+TEST(EngineSettingsLayeringTest, SSAOControlsHaveDefaultsBoundsAndPlatformOverrides) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    Config::SettingsStack defaults(registry);
+    namespace Id = EngineProjectSettingId;
 
-    const auto enabled = defaults.GetValueUVE(Id::kSsaoEnabledUVE);
+    const auto enabled = defaults.GetValue(Id::kSsaoEnabled);
     ASSERT_TRUE(enabled.has_value());
     EXPECT_TRUE(std::get<bool>(*enabled));
-    const auto radius = defaults.GetValueUVE(Id::kSsaoRadiusUVE);
+    const auto radius = defaults.GetValue(Id::kSsaoRadius);
     ASSERT_TRUE(radius.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*radius), 0.5);
-    const auto intensity = defaults.GetValueUVE(Id::kSsaoIntensityUVE);
+    const auto intensity = defaults.GetValue(Id::kSsaoIntensity);
     ASSERT_TRUE(intensity.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*intensity), 1.0);
-    const auto power = defaults.GetValueUVE(Id::kSsaoPowerUVE);
+    const auto power = defaults.GetValue(Id::kSsaoPower);
     ASSERT_TRUE(power.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*power), 1.0);
-    const auto quality = defaults.GetValueUVE(Id::kSsaoQualityUVE);
+    const auto quality = defaults.GetValue(Id::kSsaoQuality);
     ASSERT_TRUE(quality.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*quality), 2);
-    const auto blur = defaults.GetValueUVE(Id::kSsaoBlurEnabledUVE);
+    const auto blur = defaults.GetValue(Id::kSsaoBlurEnabled);
     ASSERT_TRUE(blur.has_value());
     EXPECT_TRUE(std::get<bool>(*blur));
 
-    for (const std::string_view id : {Id::kSsaoEnabledUVE, Id::kSsaoRadiusUVE, Id::kSsaoIntensityUVE,
-                                      Id::kSsaoPowerUVE, Id::kSsaoQualityUVE, Id::kSsaoBlurEnabledUVE}) {
-        const Config::SettingDescriptorUVE* const descriptor = registry.FindUVE(id);
+    for (const std::string_view id : {Id::kSsaoEnabled, Id::kSsaoRadius, Id::kSsaoIntensity,
+                                      Id::kSsaoPower, Id::kSsaoQuality, Id::kSsaoBlurEnabled}) {
+        const Config::SettingDescriptor* const descriptor = registry.Find(id);
         ASSERT_NE(descriptor, nullptr) << id;
-        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE)) << id;
-        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) << id;
+        EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagPerPlatform)) << id;
+        EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagRestartRequired)) << id;
     }
-    const Config::SettingDescriptorUVE* const radiusDescriptor = registry.FindUVE(Id::kSsaoRadiusUVE);
+    const Config::SettingDescriptor* const radiusDescriptor = registry.Find(Id::kSsaoRadius);
     ASSERT_NE(radiusDescriptor, nullptr);
     ASSERT_TRUE(radiusDescriptor->minimum.has_value());
     ASSERT_TRUE(radiusDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*radiusDescriptor->minimum, 0.01);
     EXPECT_DOUBLE_EQ(*radiusDescriptor->maximum, 10.0);
-    const Config::SettingDescriptorUVE* const intensityDescriptor = registry.FindUVE(Id::kSsaoIntensityUVE);
+    const Config::SettingDescriptor* const intensityDescriptor = registry.Find(Id::kSsaoIntensity);
     ASSERT_NE(intensityDescriptor, nullptr);
     ASSERT_TRUE(intensityDescriptor->minimum.has_value());
     ASSERT_TRUE(intensityDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*intensityDescriptor->minimum, 0.0);
     EXPECT_DOUBLE_EQ(*intensityDescriptor->maximum, 4.0);
-    const Config::SettingDescriptorUVE* const powerDescriptor = registry.FindUVE(Id::kSsaoPowerUVE);
+    const Config::SettingDescriptor* const powerDescriptor = registry.Find(Id::kSsaoPower);
     ASSERT_NE(powerDescriptor, nullptr);
     ASSERT_TRUE(powerDescriptor->minimum.has_value());
     ASSERT_TRUE(powerDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*powerDescriptor->minimum, 0.1);
     EXPECT_DOUBLE_EQ(*powerDescriptor->maximum, 4.0);
-    const Config::SettingDescriptorUVE* const qualityDescriptor = registry.FindUVE(Id::kSsaoQualityUVE);
+    const Config::SettingDescriptor* const qualityDescriptor = registry.Find(Id::kSsaoQuality);
     ASSERT_NE(qualityDescriptor, nullptr);
     ASSERT_EQ(qualityDescriptor->enumEntries.size(), 3U);
     EXPECT_EQ(qualityDescriptor->enumEntries[0].label, "Low (4 samples)");
     EXPECT_EQ(qualityDescriptor->enumEntries[1].label, "Medium (8 samples)");
     EXPECT_EQ(qualityDescriptor->enumEntries[2].label, "High (12 samples)");
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLineValues;
-    project.SetDoubleUVE(Id::kSsaoPowerUVE, 1.5);
-    platform.SetDoubleUVE(Id::kSsaoIntensityUVE, 2.25);
-    CommandLine::CommandLineUVE commandLine({
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
+    project.SetDouble(Id::kSsaoPower, 1.5);
+    platform.SetDouble(Id::kSsaoIntensity, 2.25);
+    CommandLine::CommandLine commandLine({
         "--rendering.ssao.enabled", "false",
         "--rendering.ssao.radius", "1.1",
         "--rendering.ssao.quality", "Low (4 samples)",
         "--rendering.ssao.blurEnabled", "true",
     });
-    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    PopulateEngineCommandLineSettings(registry, commandLine, commandLineValues);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_FALSE(config.ssaoEnabledUVE);
-    EXPECT_FLOAT_EQ(config.ssaoRadiusUVE, 1.1F);
-    EXPECT_FLOAT_EQ(config.ssaoIntensityUVE, 2.25F);
-    EXPECT_FLOAT_EQ(config.ssaoPowerUVE, 1.5F);
-    EXPECT_EQ(config.ssaoQualityUVE, 0U);
-    EXPECT_TRUE(config.ssaoBlurEnabledUVE);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_FALSE(config.ssaoEnabled);
+    EXPECT_FLOAT_EQ(config.ssaoRadius, 1.1F);
+    EXPECT_FLOAT_EQ(config.ssaoIntensity, 2.25F);
+    EXPECT_FLOAT_EQ(config.ssaoPower, 1.5F);
+    EXPECT_EQ(config.ssaoQuality, 0U);
+    EXPECT_TRUE(config.ssaoBlurEnabled);
 }
 
-TEST(EngineSettingsLayeringUVETest, ContactShadowControlsHaveDefaultsBoundsAndPlatformOverrides) {
+TEST(EngineSettingsLayeringTest, ContactShadowControlsHaveDefaultsBoundsAndPlatformOverrides) {
     // Contact shadows landed as a pass in front of three project settings that already existed and
     // had never been read by anything. This pins the whole family the pass now consumes: the two new
-    // knobs, the bounds the editor shows, and that a value reaches EngineConfigUVE through the
+    // knobs, the bounds the editor shows, and that a value reaches EngineConfig through the
     // ordinary layer order.
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    namespace Id = EngineProjectSettingIdUVE;
-    const EngineConfigUVE defaults{};
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    namespace Id = EngineProjectSettingId;
+    const EngineConfig defaults{};
 
-    Config::SettingsStackUVE defaultsStack(registry);
-    const auto enabled = defaultsStack.GetValueUVE(Id::kContactShadowsEnabledUVE);
+    Config::SettingsStack defaultsStack(registry);
+    const auto enabled = defaultsStack.GetValue(Id::kContactShadowsEnabled);
     ASSERT_TRUE(enabled.has_value());
     EXPECT_FALSE(std::get<bool>(*enabled)) << "contact shadows must stay opt-in";
-    const auto length = defaultsStack.GetValueUVE(Id::kContactShadowsLengthUVE);
+    const auto length = defaultsStack.GetValue(Id::kContactShadowsLength);
     ASSERT_TRUE(length.has_value());
-    EXPECT_DOUBLE_EQ(std::get<double>(*length), defaults.contactShadowsLengthUVE);
-    const auto thickness = defaultsStack.GetValueUVE(Id::kContactShadowsThicknessUVE);
+    EXPECT_DOUBLE_EQ(std::get<double>(*length), defaults.contactShadowsLength);
+    const auto thickness = defaultsStack.GetValue(Id::kContactShadowsThickness);
     ASSERT_TRUE(thickness.has_value());
-    EXPECT_DOUBLE_EQ(std::get<double>(*thickness), defaults.contactShadowsThicknessUVE);
-    const auto strength = defaultsStack.GetValueUVE(Id::kContactShadowsStrengthUVE);
+    EXPECT_DOUBLE_EQ(std::get<double>(*thickness), defaults.contactShadowsThickness);
+    const auto strength = defaultsStack.GetValue(Id::kContactShadowsStrength);
     ASSERT_TRUE(strength.has_value());
-    EXPECT_DOUBLE_EQ(std::get<double>(*strength), defaults.contactShadowsStrengthUVE);
-    const auto steps = defaultsStack.GetValueUVE(Id::kContactShadowsStepsUVE);
+    EXPECT_DOUBLE_EQ(std::get<double>(*strength), defaults.contactShadowsStrength);
+    const auto steps = defaultsStack.GetValue(Id::kContactShadowsSteps);
     ASSERT_TRUE(steps.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*steps), defaults.contactShadowsStepCountUVE);
+    EXPECT_EQ(std::get<std::int64_t>(*steps), defaults.contactShadowsStepCount);
 
     for (const std::string_view id :
-         {Id::kContactShadowsEnabledUVE, Id::kContactShadowsLengthUVE, Id::kContactShadowsStepsUVE,
-          Id::kContactShadowsThicknessUVE, Id::kContactShadowsStrengthUVE}) {
-        const Config::SettingDescriptorUVE* const descriptor = registry.FindUVE(id);
+         {Id::kContactShadowsEnabled, Id::kContactShadowsLength, Id::kContactShadowsSteps,
+          Id::kContactShadowsThickness, Id::kContactShadowsStrength}) {
+        const Config::SettingDescriptor* const descriptor = registry.Find(id);
         ASSERT_NE(descriptor, nullptr) << id;
-        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE)) << id;
-        EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE)) << id;
+        EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagPerPlatform)) << id;
+        EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagRestartRequired)) << id;
     }
 
-    const Config::SettingDescriptorUVE* const strengthDescriptor = registry.FindUVE(Id::kContactShadowsStrengthUVE);
+    const Config::SettingDescriptor* const strengthDescriptor = registry.Find(Id::kContactShadowsStrength);
     ASSERT_NE(strengthDescriptor, nullptr);
     ASSERT_TRUE(strengthDescriptor->minimum.has_value());
     ASSERT_TRUE(strengthDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*strengthDescriptor->minimum, 0.0);
     EXPECT_DOUBLE_EQ(*strengthDescriptor->maximum, 1.0);
 
-    const Config::SettingDescriptorUVE* const thicknessDescriptor = registry.FindUVE(Id::kContactShadowsThicknessUVE);
+    const Config::SettingDescriptor* const thicknessDescriptor = registry.Find(Id::kContactShadowsThickness);
     ASSERT_NE(thicknessDescriptor, nullptr);
     ASSERT_TRUE(thicknessDescriptor->minimum.has_value());
     EXPECT_DOUBLE_EQ(*thicknessDescriptor->minimum, 0.0);
 
-    // The upper bound is not a taste call: kContactShadowMaxStepCountUVE caps the pass's fixed
+    // The upper bound is not a taste call: kContactShadowMaxStepCount caps the pass's fixed
     // sample loop, and a setting that offered more would be silently clamped at render time with no
     // visible reason. The constant lives in the RHI layer this suite does not link, so the number is
     // spelled here; Test/RHI/RenderSystems/contact_shadows_uve_tests.cpp pins the constant itself.
-    const Config::SettingDescriptorUVE* const stepsDescriptor = registry.FindUVE(Id::kContactShadowsStepsUVE);
+    const Config::SettingDescriptor* const stepsDescriptor = registry.Find(Id::kContactShadowsSteps);
     ASSERT_NE(stepsDescriptor, nullptr);
     ASSERT_TRUE(stepsDescriptor->minimum.has_value());
     ASSERT_TRUE(stepsDescriptor->maximum.has_value());
     EXPECT_DOUBLE_EQ(*stepsDescriptor->minimum, 1.0);
     EXPECT_DOUBLE_EQ(*stepsDescriptor->maximum, 16.0);
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLineValues;
-    platform.SetBoolUVE(Id::kContactShadowsEnabledUVE, true);
-    CommandLine::CommandLineUVE commandLine({
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
+    platform.SetBool(Id::kContactShadowsEnabled, true);
+    CommandLine::CommandLine commandLine({
         "--rendering.shadows.contactShadowsEnabled", "true",
         "--rendering.shadows.contactShadowsLength", "0.4",
         "--rendering.shadows.contactShadowsThickness", "0.05",
         "--rendering.shadows.contactShadowsStrength", "0.9",
         "--rendering.shadows.contactShadowsSteps", "12",
     });
-    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    PopulateEngineCommandLineSettings(registry, commandLine, commandLineValues);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_TRUE(config.contactShadowsEnabledUVE);
-    EXPECT_DOUBLE_EQ(config.contactShadowsLengthUVE, 0.4);
-    EXPECT_DOUBLE_EQ(config.contactShadowsThicknessUVE, 0.05);
-    EXPECT_DOUBLE_EQ(config.contactShadowsStrengthUVE, 0.9);
-    EXPECT_EQ(config.contactShadowsStepCountUVE, 12);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_TRUE(config.contactShadowsEnabled);
+    EXPECT_DOUBLE_EQ(config.contactShadowsLength, 0.4);
+    EXPECT_DOUBLE_EQ(config.contactShadowsThickness, 0.05);
+    EXPECT_DOUBLE_EQ(config.contactShadowsStrength, 0.9);
+    EXPECT_EQ(config.contactShadowsStepCount, 12);
 }
 
-TEST(EngineSettingsLayeringUVETest, FrustumCullingModeSettingDefaultsEnabledAndOverridesPerPlatform) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    namespace Id = EngineProjectSettingIdUVE;
+TEST(EngineSettingsLayeringTest, FrustumCullingModeSettingDefaultsEnabledAndOverridesPerPlatform) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    namespace Id = EngineProjectSettingId;
 
-    Config::SettingsStackUVE defaults(registry);
-    const auto mode = defaults.GetValueUVE(Id::kFrustumCullingModeUVE);
+    Config::SettingsStack defaults(registry);
+    const auto mode = defaults.GetValue(Id::kFrustumCullingMode);
     ASSERT_TRUE(mode.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*mode), static_cast<std::int64_t>(FrustumCullingModeUVE::EnabledUVE))
+    EXPECT_EQ(std::get<std::int64_t>(*mode), static_cast<std::int64_t>(FrustumCullingMode::Enabled))
         << "culling must stay on unless someone deliberately turns it off";
 
-    const Config::SettingDescriptorUVE* const descriptor = registry.FindUVE(Id::kFrustumCullingModeUVE);
+    const Config::SettingDescriptor* const descriptor = registry.Find(Id::kFrustumCullingMode);
     ASSERT_NE(descriptor, nullptr);
-    EXPECT_EQ(descriptor->type, Config::SettingTypeUVE::Enum);
+    EXPECT_EQ(descriptor->type, Config::SettingType::Enum);
     EXPECT_EQ(descriptor->category, "Rendering/Culling");
     ASSERT_EQ(descriptor->enumEntries.size(), 2U);
     EXPECT_EQ(descriptor->enumEntries[0].label, "Enabled");
     EXPECT_EQ(descriptor->enumEntries[1].label, "Debug freeze (draw everything)");
-    EXPECT_EQ(descriptor->enumEntries[0].value, static_cast<std::int64_t>(FrustumCullingModeUVE::EnabledUVE));
-    EXPECT_EQ(descriptor->enumEntries[1].value, static_cast<std::int64_t>(FrustumCullingModeUVE::DebugFreezeUVE));
-    EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagPerPlatformUVE));
-    EXPECT_TRUE(descriptor->HasFlagUVE(Config::kSettingFlagRestartRequiredUVE));
-    EXPECT_TRUE(IsEngineConfigSettingIdUVE(Id::kFrustumCullingModeUVE));
+    EXPECT_EQ(descriptor->enumEntries[0].value, static_cast<std::int64_t>(FrustumCullingMode::Enabled));
+    EXPECT_EQ(descriptor->enumEntries[1].value, static_cast<std::int64_t>(FrustumCullingMode::DebugFreeze));
+    EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kFrustumCullingMode));
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLineValues;
-    project.SetIntUVE(Id::kFrustumCullingModeUVE, static_cast<std::int64_t>(FrustumCullingModeUVE::DebugFreezeUVE));
-    platform.SetIntUVE(Id::kFrustumCullingModeUVE, static_cast<std::int64_t>(FrustumCullingModeUVE::EnabledUVE));
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
+    project.SetInt(Id::kFrustumCullingMode, static_cast<std::int64_t>(FrustumCullingMode::DebugFreeze));
+    platform.SetInt(Id::kFrustumCullingMode, static_cast<std::int64_t>(FrustumCullingMode::Enabled));
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.frustumCullingModeUVE, FrustumCullingModeUVE::EnabledUVE);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.frustumCullingMode, FrustumCullingMode::Enabled);
 
-    ASSERT_TRUE(platform.RemoveKeyUVE(Id::kFrustumCullingModeUVE));
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.frustumCullingModeUVE, FrustumCullingModeUVE::DebugFreezeUVE);
+    ASSERT_TRUE(platform.RemoveKey(Id::kFrustumCullingMode));
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.frustumCullingMode, FrustumCullingMode::DebugFreeze);
 
     // The debug flag is reachable from the command line like every other enum: by label.
-    CommandLine::CommandLineUVE commandLine({
+    CommandLine::CommandLine commandLine({
         "--rendering.culling.frustumCulling", "Debug freeze (draw everything)",
     });
-    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
-    const auto cliMode = registry.GetStoredValueUVE(commandLineValues, Id::kFrustumCullingModeUVE);
+    PopulateEngineCommandLineSettings(registry, commandLine, commandLineValues);
+    const auto cliMode = registry.GetStoredValue(commandLineValues, Id::kFrustumCullingMode);
     ASSERT_TRUE(cliMode.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*cliMode), static_cast<std::int64_t>(FrustumCullingModeUVE::DebugFreezeUVE));
-    Config::SettingsStackUVE cliSettings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(cliSettings, project, user, platform, commandLineValues));
-    EngineConfigUVE cliConfig{};
-    ApplyEngineSettingsUVE(cliSettings, cliConfig);
-    EXPECT_EQ(cliConfig.frustumCullingModeUVE, FrustumCullingModeUVE::DebugFreezeUVE);
+    EXPECT_EQ(std::get<std::int64_t>(*cliMode), static_cast<std::int64_t>(FrustumCullingMode::DebugFreeze));
+    Config::SettingsStack cliSettings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(cliSettings, project, user, platform, commandLineValues));
+    EngineConfig cliConfig{};
+    ApplyEngineSettings(cliSettings, cliConfig);
+    EXPECT_EQ(cliConfig.frustumCullingMode, FrustumCullingMode::DebugFreeze);
 }
 
-TEST(EngineSettingsLayeringUVETest, ConvertsTypedCommandLineFlagsAndUsesThemAsTopLayer) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+TEST(EngineSettingsLayeringTest, ConvertsTypedCommandLineFlagsAndUsesThemAsTopLayer) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
 
-    CommandLine::CommandLineUVE commandLine({
+    CommandLine::CommandLine commandLine({
         "--physics.common.ticksPerSecond", "120",
         "--physics.common.maxFrameTime", "0.25",
         "--physics.common.maxStepsPerFrame", "12",
@@ -703,97 +703,97 @@ TEST(EngineSettingsLayeringUVETest, ConvertsTypedCommandLineFlagsAndUsesThemAsTo
         "--headless",
         "--layers.physics.1", "CLI must not register project layer names",
     });
-    ConfigManagerUVE commandLineValues;
-    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
+    ConfigManager commandLineValues;
+    PopulateEngineCommandLineSettings(registry, commandLine, commandLineValues);
 
-    namespace Id = EngineProjectSettingIdUVE;
-    const auto ticksValue = registry.GetStoredValueUVE(commandLineValues, Id::kPhysicsTicksPerSecondUVE);
+    namespace Id = EngineProjectSettingId;
+    const auto ticksValue = registry.GetStoredValue(commandLineValues, Id::kPhysicsTicksPerSecond);
     ASSERT_TRUE(ticksValue.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*ticksValue), 120.0);
 
-    const auto maxFrameTime = registry.GetStoredValueUVE(commandLineValues, Id::kPhysicsMaxFrameTimeUVE);
+    const auto maxFrameTime = registry.GetStoredValue(commandLineValues, Id::kPhysicsMaxFrameTime);
     ASSERT_TRUE(maxFrameTime.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*maxFrameTime), 0.25);
 
-    const auto maxSteps = registry.GetStoredValueUVE(commandLineValues, Id::kPhysicsMaxStepsPerFrameUVE);
+    const auto maxSteps = registry.GetStoredValue(commandLineValues, Id::kPhysicsMaxStepsPerFrame);
     ASSERT_TRUE(maxSteps.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*maxSteps), 12);
 
-    const auto gravity = registry.GetStoredValueUVE(commandLineValues, Id::kPhysicsGravityUVE);
+    const auto gravity = registry.GetStoredValue(commandLineValues, Id::kPhysicsGravity);
     ASSERT_TRUE(gravity.has_value());
-    EXPECT_EQ(std::get<Config::SettingVector3UVE>(*gravity), (Config::SettingVector3UVE{1.0, -9.81, 2.0}));
+    EXPECT_EQ(std::get<Config::SettingVector3>(*gravity), (Config::SettingVector3{1.0, -9.81, 2.0}));
 
-    const auto shadowFilter = registry.GetStoredValueUVE(commandLineValues, Id::kShadowFilterUVE);
+    const auto shadowFilter = registry.GetStoredValue(commandLineValues, Id::kShadowFilter);
     ASSERT_TRUE(shadowFilter.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*shadowFilter), 2);
-    const auto shadowSplitBlend = registry.GetStoredValueUVE(commandLineValues, Id::kShadowCascadeSplitBlendUVE);
+    const auto shadowSplitBlend = registry.GetStoredValue(commandLineValues, Id::kShadowCascadeSplitBlend);
     ASSERT_TRUE(shadowSplitBlend.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowSplitBlend), 0.25);
-    const auto shadowBiasDefault = registry.GetStoredValueUVE(commandLineValues, Id::kShadowBiasDefaultUVE);
+    const auto shadowBiasDefault = registry.GetStoredValue(commandLineValues, Id::kShadowBiasDefault);
     ASSERT_TRUE(shadowBiasDefault.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowBiasDefault), 0.35);
     const auto shadowNormalBiasDefault =
-        registry.GetStoredValueUVE(commandLineValues, Id::kShadowNormalBiasDefaultUVE);
+        registry.GetStoredValue(commandLineValues, Id::kShadowNormalBiasDefault);
     ASSERT_TRUE(shadowNormalBiasDefault.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*shadowNormalBiasDefault), 1.75);
 
-    const auto shaderCachePath = registry.GetStoredValueUVE(commandLineValues, Id::kShaderProgramCacheDirectoryUVE);
+    const auto shaderCachePath = registry.GetStoredValue(commandLineValues, Id::kShaderProgramCacheDirectory);
     ASSERT_TRUE(shaderCachePath.has_value());
     EXPECT_EQ(std::get<std::string>(*shaderCachePath), "shader_cache/cli");
     const auto shaderCompilationMode =
-        registry.GetStoredValueUVE(commandLineValues, Id::kShaderCompilationModeUVE);
+        registry.GetStoredValue(commandLineValues, Id::kShaderCompilationMode);
     ASSERT_TRUE(shaderCompilationMode.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*shaderCompilationMode),
-              static_cast<std::int64_t>(ShaderCompilationModeUVE::SynchronousOnDemandUVE));
-    const auto upscalingMethod = registry.GetStoredValueUVE(commandLineValues, Id::kSpatialUpscalingMethodUVE);
+              static_cast<std::int64_t>(ShaderCompilationMode::SynchronousOnDemand));
+    const auto upscalingMethod = registry.GetStoredValue(commandLineValues, Id::kSpatialUpscalingMethod);
     ASSERT_TRUE(upscalingMethod.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*upscalingMethod),
-              static_cast<std::int64_t>(SpatialUpscalingMethodUVE::NearestUVE));
-    const auto toneMappingMethod = registry.GetStoredValueUVE(commandLineValues, Id::kToneMappingMethodUVE);
+              static_cast<std::int64_t>(SpatialUpscalingMethod::Nearest));
+    const auto toneMappingMethod = registry.GetStoredValue(commandLineValues, Id::kToneMappingMethod);
     ASSERT_TRUE(toneMappingMethod.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*toneMappingMethod),
-              static_cast<std::int64_t>(ToneMappingMethodUVE::LinearClampUVE));
-    const auto sharpeningAmount = registry.GetStoredValueUVE(commandLineValues, Id::kSharpeningAmountUVE);
+              static_cast<std::int64_t>(ToneMappingMethod::LinearClamp));
+    const auto sharpeningAmount = registry.GetStoredValue(commandLineValues, Id::kSharpeningAmount);
     ASSERT_TRUE(sharpeningAmount.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*sharpeningAmount), 0.75);
-    const auto ditheringEnabled = registry.GetStoredValueUVE(commandLineValues, Id::kDitheringEnabledUVE);
+    const auto ditheringEnabled = registry.GetStoredValue(commandLineValues, Id::kDitheringEnabled);
     ASSERT_TRUE(ditheringEnabled.has_value());
     EXPECT_FALSE(std::get<bool>(*ditheringEnabled));
-    const auto aaMethod = registry.GetStoredValueUVE(commandLineValues, Id::kPostProcessAAMethodUVE);
+    const auto aaMethod = registry.GetStoredValue(commandLineValues, Id::kPostProcessAAMethod);
     ASSERT_TRUE(aaMethod.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*aaMethod),
-              static_cast<std::int64_t>(PostProcessAAMethodUVE::FastApproximateUVE));
-    const auto aaQuality = registry.GetStoredValueUVE(commandLineValues, Id::kScreenSpaceAAQualityUVE);
+              static_cast<std::int64_t>(PostProcessAAMethod::FastApproximate));
+    const auto aaQuality = registry.GetStoredValue(commandLineValues, Id::kScreenSpaceAAQuality);
     ASSERT_TRUE(aaQuality.has_value());
     EXPECT_EQ(std::get<std::int64_t>(*aaQuality), 2);
 
-    const auto headless = registry.GetStoredValueUVE(commandLineValues, Id::kHeadlessUVE);
+    const auto headless = registry.GetStoredValue(commandLineValues, Id::kHeadless);
     ASSERT_TRUE(headless.has_value());
     EXPECT_TRUE(std::get<bool>(*headless));
     const auto quitOnLastWindowClosed =
-        registry.GetStoredValueUVE(commandLineValues, Id::kQuitOnLastWindowClosedUVE);
+        registry.GetStoredValue(commandLineValues, Id::kQuitOnLastWindowClosed);
     ASSERT_TRUE(quitOnLastWindowClosed.has_value());
     EXPECT_FALSE(std::get<bool>(*quitOnLastWindowClosed));
-    const auto bootBackground = registry.GetStoredValueUVE(commandLineValues, Id::kBootBackgroundColorUVE);
+    const auto bootBackground = registry.GetStoredValue(commandLineValues, Id::kBootBackgroundColor);
     ASSERT_TRUE(bootBackground.has_value());
-    EXPECT_EQ(std::get<Config::SettingColorUVE>(*bootBackground),
-              (Config::SettingColorUVE{0.1F, 0.2F, 0.3F, 0.4F}));
-    EXPECT_FALSE(registry.GetStoredValueUVE(commandLineValues, "layers.physics.1").has_value());
+    EXPECT_EQ(std::get<Config::SettingColor>(*bootBackground),
+              (Config::SettingColor{0.1F, 0.2F, 0.3F, 0.4F}));
+    EXPECT_FALSE(registry.GetStoredValue(commandLineValues, "layers.physics.1").has_value());
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    project.SetDoubleUVE(Id::kPhysicsTicksPerSecondUVE, 30.0);
-    user.SetDoubleUVE(Id::kPhysicsTicksPerSecondUVE, 60.0);
-    platform.SetIntUVE(Id::kShadowMapResolutionUVE, 1024);
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    project.SetDouble(Id::kPhysicsTicksPerSecond, 30.0);
+    user.SetDouble(Id::kPhysicsTicksPerSecond, 60.0);
+    platform.SetInt(Id::kShadowMapResolution, 1024);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    const auto resolution = settings.ResolveUVE(Id::kPhysicsTicksPerSecondUVE);
+    const auto resolution = settings.Resolve(Id::kPhysicsTicksPerSecond);
     ASSERT_TRUE(resolution.has_value());
-    EXPECT_EQ(resolution->source, SettingValueSourceUVE::CommandLine);
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
+    EXPECT_EQ(resolution->source, SettingValueSource::CommandLine);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
     EXPECT_DOUBLE_EQ(config.fixedUpdateFps, 120.0);
     EXPECT_DOUBLE_EQ(config.maxDeltaTimeSeconds, 0.25);
     EXPECT_EQ(config.maxFixedStepsPerFrame, 12);
@@ -802,138 +802,138 @@ TEST(EngineSettingsLayeringUVETest, ConvertsTypedCommandLineFlagsAndUsesThemAsTo
     EXPECT_FLOAT_EQ(config.gravity.z, 2.0F);
     EXPECT_EQ(config.shadowPcfKernelRadius, 2U);
     EXPECT_FLOAT_EQ(config.shadowCascadeSplitLambda, 0.25F);
-    EXPECT_FLOAT_EQ(config.shadowBiasDefaultUVE, 0.35F);
-    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefaultUVE, 1.75F);
+    EXPECT_FLOAT_EQ(config.shadowBiasDefault, 0.35F);
+    EXPECT_FLOAT_EQ(config.shadowNormalBiasDefault, 1.75F);
     EXPECT_EQ(config.shaderCachePath, std::filesystem::path("shader_cache/cli"));
-    EXPECT_EQ(config.shaderCompilationModeUVE, ShaderCompilationModeUVE::SynchronousOnDemandUVE);
-    EXPECT_EQ(config.spatialUpscalingMethodUVE, SpatialUpscalingMethodUVE::NearestUVE);
-    EXPECT_EQ(config.toneMappingMethodUVE, ToneMappingMethodUVE::LinearClampUVE);
-    EXPECT_FLOAT_EQ(config.sharpeningAmountUVE, 0.75F);
-    EXPECT_FALSE(config.ditheringEnabledUVE);
-    EXPECT_EQ(config.postProcessAAMethodUVE, PostProcessAAMethodUVE::FastApproximateUVE);
-    EXPECT_EQ(config.screenSpaceAAQualityUVE, 2U);
-    EXPECT_TRUE(config.headlessUVE);
-    EXPECT_FALSE(config.quitOnLastWindowClosedUVE);
-    EXPECT_FLOAT_EQ(config.backgroundColorUVE[0U], 0.1F);
-    EXPECT_FLOAT_EQ(config.backgroundColorUVE[1U], 0.2F);
-    EXPECT_FLOAT_EQ(config.backgroundColorUVE[2U], 0.3F);
-    EXPECT_FLOAT_EQ(config.backgroundColorUVE[3U], 0.4F);
-    EXPECT_DOUBLE_EQ(config.splashMinimumDisplaySecondsUVE, 2.5);
-    EXPECT_FALSE(config.splashSkippableUVE);
-    EXPECT_FALSE(config.crashHandlerEnabledUVE);
+    EXPECT_EQ(config.shaderCompilationMode, ShaderCompilationMode::SynchronousOnDemand);
+    EXPECT_EQ(config.spatialUpscalingMethod, SpatialUpscalingMethod::Nearest);
+    EXPECT_EQ(config.toneMappingMethod, ToneMappingMethod::LinearClamp);
+    EXPECT_FLOAT_EQ(config.sharpeningAmount, 0.75F);
+    EXPECT_FALSE(config.ditheringEnabled);
+    EXPECT_EQ(config.postProcessAAMethod, PostProcessAAMethod::FastApproximate);
+    EXPECT_EQ(config.screenSpaceAAQuality, 2U);
+    EXPECT_TRUE(config.headless);
+    EXPECT_FALSE(config.quitOnLastWindowClosed);
+    EXPECT_FLOAT_EQ(config.backgroundColor[0U], 0.1F);
+    EXPECT_FLOAT_EQ(config.backgroundColor[1U], 0.2F);
+    EXPECT_FLOAT_EQ(config.backgroundColor[2U], 0.3F);
+    EXPECT_FLOAT_EQ(config.backgroundColor[3U], 0.4F);
+    EXPECT_DOUBLE_EQ(config.splashMinimumDisplaySeconds, 2.5);
+    EXPECT_FALSE(config.splashSkippable);
+    EXPECT_FALSE(config.crashHandlerEnabled);
 }
 
-TEST(EngineSettingsLayeringUVETest, RejectsInvalidTypedCliValueAndPreservesPlatformFallback) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+TEST(EngineSettingsLayeringTest, RejectsInvalidTypedCliValueAndPreservesPlatformFallback) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
 
-    CommandLine::CommandLineUVE commandLine({"--rendering.shadows.mapResolution", "1536"});
-    ConfigManagerUVE commandLineValues;
-    PopulateEngineCommandLineSettingsUVE(registry, commandLine, commandLineValues);
-    EXPECT_FALSE(registry.GetStoredValueUVE(commandLineValues, EngineProjectSettingIdUVE::kShadowMapResolutionUVE)
+    CommandLine::CommandLine commandLine({"--rendering.shadows.mapResolution", "1536"});
+    ConfigManager commandLineValues;
+    PopulateEngineCommandLineSettings(registry, commandLine, commandLineValues);
+    EXPECT_FALSE(registry.GetStoredValue(commandLineValues, EngineProjectSettingId::kShadowMapResolution)
                      .has_value());
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    project.SetIntUVE(EngineProjectSettingIdUVE::kShadowMapResolutionUVE, 4096);
-    user.SetIntUVE(EngineProjectSettingIdUVE::kShadowMapResolutionUVE, 2048);
-    platform.SetIntUVE(EngineProjectSettingIdUVE::kShadowMapResolutionUVE, 1024);
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    project.SetInt(EngineProjectSettingId::kShadowMapResolution, 4096);
+    user.SetInt(EngineProjectSettingId::kShadowMapResolution, 2048);
+    platform.SetInt(EngineProjectSettingId::kShadowMapResolution, 1024);
 
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
-    const auto resolution = settings.ResolveUVE(EngineProjectSettingIdUVE::kShadowMapResolutionUVE);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
+    const auto resolution = settings.Resolve(EngineProjectSettingId::kShadowMapResolution);
     ASSERT_TRUE(resolution.has_value());
-    EXPECT_EQ(resolution->source, SettingValueSourceUVE::Platform);
+    EXPECT_EQ(resolution->source, SettingValueSource::Platform);
     EXPECT_EQ(std::get<std::int64_t>(resolution->value), 1024);
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
     EXPECT_EQ(config.shadowMapResolution, 1024U);
 }
 
-TEST(EngineSettingsLayeringUVETest, ResolvesPlatformSettingsPathAndHonorsExplicitOverride) {
-    EngineConfigUVE config{};
+TEST(EngineSettingsLayeringTest, ResolvesPlatformSettingsPathAndHonorsExplicitOverride) {
+    EngineConfig config{};
     config.settingsFilePath = std::filesystem::path{"User"} / "settings.uvsettings";
 
-    const std::filesystem::path generatedPath = GetPlatformSettingsFilePathUVE(config);
+    const std::filesystem::path generatedPath = GetPlatformSettingsFilePath(config);
     EXPECT_EQ(generatedPath.filename(), config.settingsFilePath.filename());
     EXPECT_EQ(generatedPath.parent_path().parent_path().filename(), "platforms");
     EXPECT_EQ(generatedPath.parent_path().parent_path().parent_path(), config.settingsFilePath.parent_path());
 
     config.platformSettingsFilePath = std::filesystem::path{"Overrides"} / "desktop.uvsettings";
-    EXPECT_EQ(GetPlatformSettingsFilePathUVE(config), config.platformSettingsFilePath);
+    EXPECT_EQ(GetPlatformSettingsFilePath(config), config.platformSettingsFilePath);
 }
 
-TEST(EngineSettingsLayeringUVETest,
+TEST(EngineSettingsLayeringTest,
      RegistersAndAppliesPart1PhysicsInputAudioAnimNavNetworkLocalisationLayersAndQualitySettings) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
 
-    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Navigation, 5U), "layers.navigation.6");
-    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Avoidance, 31U), "layers.avoidance.32");
-    EXPECT_NE(registry.FindUVE("layers.navigation.6"), nullptr);
-    EXPECT_NE(registry.FindUVE("layers.avoidance.32"), nullptr);
+    EXPECT_EQ(GetLayerNameSettingId(LayerSet::Navigation, 5U), "layers.navigation.6");
+    EXPECT_EQ(GetLayerNameSettingId(LayerSet::Avoidance, 31U), "layers.avoidance.32");
+    EXPECT_NE(registry.Find("layers.navigation.6"), nullptr);
+    EXPECT_NE(registry.Find("layers.avoidance.32"), nullptr);
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLineValues;
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
     ASSERT_TRUE(
-        registry.SetValueUVE(project, "physics.layers.defaultCollisionMask", std::int64_t{0x0FLL}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "audio.output.sampleRate", std::int64_t{44100}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "network.transport.defaultPort", std::int64_t{9000}));
-    ASSERT_TRUE(registry.SetValueUVE(platform, "quality.activePreset", std::int64_t{3}));
+        registry.SetValue(project, "physics.layers.defaultCollisionMask", std::int64_t{0x0FLL}));
+    ASSERT_TRUE(registry.SetValue(project, "audio.output.sampleRate", std::int64_t{44100}));
+    ASSERT_TRUE(registry.SetValue(project, "network.transport.defaultPort", std::int64_t{9000}));
+    ASSERT_TRUE(registry.SetValue(platform, "quality.activePreset", std::int64_t{3}));
 
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_EQ(config.defaultCollisionMaskUVE, 0x0FU);
-    EXPECT_EQ(config.audioSampleRateUVE, 44100);
-    EXPECT_EQ(config.networkDefaultPortUVE, 9000);
-    EXPECT_EQ(config.activeQualityTierUVE, 3);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_EQ(config.defaultCollisionMask, 0x0FU);
+    EXPECT_EQ(config.audioSampleRate, 44100);
+    EXPECT_EQ(config.networkDefaultPort, 9000);
+    EXPECT_EQ(config.activeQualityTier, 3);
 }
 
-TEST(EngineSettingsLayeringUVETest,
+TEST(EngineSettingsLayeringTest,
      RegistersAndAppliesExtendedRenderingAccessibilityAndTelemetrySettings) {
-    Config::SettingsRegistryUVE registry;
-    ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
 
-    ConfigManagerUVE project;
-    ConfigManagerUVE user;
-    ConfigManagerUVE platform;
-    ConfigManagerUVE commandLineValues;
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.hdr.enabled", true));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.antialiasing.msaa3dSamples", std::int64_t{4}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.shadows.atlasSize", std::int64_t{8192}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.gi.ssrEnabled", true));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.postProcessing.colorGradingLutAsset",
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
+    ASSERT_TRUE(registry.SetValue(project, "rendering.hdr.enabled", true));
+    ASSERT_TRUE(registry.SetValue(project, "rendering.antialiasing.msaa3dSamples", std::int64_t{4}));
+    ASSERT_TRUE(registry.SetValue(project, "rendering.shadows.atlasSize", std::int64_t{8192}));
+    ASSERT_TRUE(registry.SetValue(project, "rendering.gi.ssrEnabled", true));
+    ASSERT_TRUE(registry.SetValue(project, "rendering.postProcessing.colorGradingLutAsset",
                                      std::string{"Content/LUTs/film.uvtex"}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.textures.defaultAnisotropy", std::int64_t{16}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.environment.defaultWorldEnvironmentAsset",
+    ASSERT_TRUE(registry.SetValue(project, "rendering.textures.defaultAnisotropy", std::int64_t{16}));
+    ASSERT_TRUE(registry.SetValue(project, "rendering.environment.defaultWorldEnvironmentAsset",
                                      std::string{"Content/Env/default.uvenv"}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "physics.materials.defaultAsset",
+    ASSERT_TRUE(registry.SetValue(project, "physics.materials.defaultAsset",
                                      std::string{"Content/Physics/default.uvphysmat"}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "accessibility.runtime.uiScale", 1.5));
-    ASSERT_TRUE(registry.SetValueUVE(project, "privacy.telemetry.crashReportPolicy", std::int64_t{2}));
+    ASSERT_TRUE(registry.SetValue(project, "accessibility.runtime.uiScale", 1.5));
+    ASSERT_TRUE(registry.SetValue(project, "privacy.telemetry.crashReportPolicy", std::int64_t{2}));
 
-    Config::SettingsStackUVE settings(registry);
-    ASSERT_TRUE(AttachEngineSettingsLayersUVE(settings, project, user, platform, commandLineValues));
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
 
-    EngineConfigUVE config{};
-    ApplyEngineSettingsUVE(settings, config);
-    EXPECT_TRUE(config.hdrRenderingEnabledUVE);
-    EXPECT_EQ(config.msaa3dSamplesUVE, 4);
-    EXPECT_EQ(config.shadowAtlasSizeUVE, 8192);
-    EXPECT_TRUE(config.ssrEnabledUVE);
-    EXPECT_EQ(config.colorGradingLutAssetUVE, "Content/LUTs/film.uvtex");
-    EXPECT_EQ(config.defaultAnisotropyLevelUVE, 16);
-    EXPECT_EQ(config.defaultWorldEnvironmentAssetUVE, "Content/Env/default.uvenv");
-    EXPECT_EQ(config.defaultPhysicsMaterialAssetUVE, "Content/Physics/default.uvphysmat");
-    EXPECT_DOUBLE_EQ(config.runtimeUiScaleUVE, 1.5);
-    EXPECT_EQ(config.crashReportSubmissionPolicyUVE, 2);
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_TRUE(config.hdrRenderingEnabled);
+    EXPECT_EQ(config.msaa3dSamples, 4);
+    EXPECT_EQ(config.shadowAtlasSize, 8192);
+    EXPECT_TRUE(config.ssrEnabled);
+    EXPECT_EQ(config.colorGradingLutAsset, "Content/LUTs/film.uvtex");
+    EXPECT_EQ(config.defaultAnisotropyLevel, 16);
+    EXPECT_EQ(config.defaultWorldEnvironmentAsset, "Content/Env/default.uvenv");
+    EXPECT_EQ(config.defaultPhysicsMaterialAsset, "Content/Physics/default.uvphysmat");
+    EXPECT_DOUBLE_EQ(config.runtimeUiScale, 1.5);
+    EXPECT_EQ(config.crashReportSubmissionPolicy, 2);
 }
 
 } // namespace

@@ -10,7 +10,7 @@
 
 namespace UVE::Asset {
 
-enum class MaterialPinTypeUVE : std::uint8_t {
+enum class MaterialPinType : std::uint8_t {
     Float = 0,
     Vec2 = 1,
     Vec3 = 2,
@@ -18,7 +18,7 @@ enum class MaterialPinTypeUVE : std::uint8_t {
     Texture2D = 4,
 };
 
-enum class MaterialGraphNodeKindUVE : std::uint8_t {
+enum class MaterialGraphNodeKind : std::uint8_t {
     PbrOutput = 0,
     ConstantFloat = 1,
     ConstantVec3 = 2,
@@ -37,9 +37,9 @@ enum class MaterialGraphNodeKindUVE : std::uint8_t {
     SimplexNoise = 15,
 };
 
-struct MaterialGraphNodeUVE final {
+struct MaterialGraphNode final {
     std::uint32_t id = 0U;
-    MaterialGraphNodeKindUVE kind = MaterialGraphNodeKindUVE::ConstantFloat;
+    MaterialGraphNodeKind kind = MaterialGraphNodeKind::ConstantFloat;
     std::string label;
     float posX = 0.0F;
     float posY = 0.0F;
@@ -47,7 +47,7 @@ struct MaterialGraphNodeUVE final {
     std::string textureSlotName;
 };
 
-struct MaterialGraphLinkUVE final {
+struct MaterialGraphLink final {
     std::uint32_t fromNodeId = 0U;
     std::uint32_t fromOutputIndex = 0U;
     std::uint32_t toNodeId = 0U;
@@ -56,32 +56,32 @@ struct MaterialGraphLinkUVE final {
 
 /// Visual Material / Shader Graph asset (`.uvmatgraph`) storing nodes and typed links
 /// compiled into a PBR surface shader.
-struct MaterialGraphAssetUVE final {
+struct MaterialGraphAsset final {
     std::string name = "NewMaterialGraph";
-    std::vector<MaterialGraphNodeUVE> nodes;
-    std::vector<MaterialGraphLinkUVE> links;
+    std::vector<MaterialGraphNode> nodes;
+    std::vector<MaterialGraphLink> links;
 };
 
-struct MaterialGraphCompileResultUVE final {
+struct MaterialGraphCompileResult final {
     bool ok = false;
     std::string glslSource;
     std::vector<std::string> errors;
 };
 
 /// Creates a default PBR Material Graph with a Color constant wired into PbrOutput BaseColor.
-[[nodiscard]] MaterialGraphAssetUVE CreateDefaultPbrMaterialGraphUVE();
+[[nodiscard]] MaterialGraphAsset CreateDefaultPbrMaterialGraph();
 
 /// Returns a display name for `kind`.
-[[nodiscard]] const char* MaterialGraphNodeKindNameUVE(MaterialGraphNodeKindUVE kind) noexcept;
+[[nodiscard]] const char* MaterialGraphNodeKindName(MaterialGraphNodeKind kind) noexcept;
 
 /// Compiles `graph` via cycle-checked topological sort into a complete GLSL PBR surface shader.
-[[nodiscard]] MaterialGraphCompileResultUVE CompileMaterialGraphToGlslUVE(
-    const MaterialGraphAssetUVE& graph);
+[[nodiscard]] MaterialGraphCompileResult CompileMaterialGraphToGlsl(
+    const MaterialGraphAsset& graph);
 
 /// Serializes / deserializes `.uvmatgraph` in a human-readable, VCS-diffable text format.
-[[nodiscard]] bool SaveMaterialGraphAssetUVE(const MaterialGraphAssetUVE& graph,
+[[nodiscard]] bool SaveMaterialGraphAsset(const MaterialGraphAsset& graph,
                                              const std::filesystem::path& path);
-[[nodiscard]] bool LoadMaterialGraphAssetUVE(const std::filesystem::path& path,
-                                             MaterialGraphAssetUVE& outGraph);
+[[nodiscard]] bool LoadMaterialGraphAsset(const std::filesystem::path& path,
+                                             MaterialGraphAsset& outGraph);
 
 } // namespace UVE::Asset

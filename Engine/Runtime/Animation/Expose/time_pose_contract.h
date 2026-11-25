@@ -12,7 +12,7 @@
 
 namespace UVE::Core {
 
-struct UnifiedTimeStateUVE final {
+struct UnifiedTimeState final {
     std::uint64_t frameNumber = 0U;
     double realTimeSeconds = 0.0;
     double gameTimeSeconds = 0.0;
@@ -24,10 +24,10 @@ struct UnifiedTimeStateUVE final {
     double animationDeltaSeconds = 0.0;
     bool paused = false;
 
-    [[nodiscard]] bool operator==(const UnifiedTimeStateUVE&) const = default;
+    [[nodiscard]] bool operator==(const UnifiedTimeState&) const = default;
 };
 
-struct UnifiedTimeAdvanceInputUVE final {
+struct UnifiedTimeAdvanceInput final {
     double realDeltaSeconds = 0.0;
     double gameTimeScale = 1.0;
     double animationTimeScale = 1.0;
@@ -36,12 +36,12 @@ struct UnifiedTimeAdvanceInputUVE final {
     bool paused = false;
 };
 
-struct UnifiedTimeAdvanceResultUVE final {
-    UnifiedTimeStateUVE state;
+struct UnifiedTimeAdvanceResult final {
+    UnifiedTimeState state;
     std::size_t fixedSteps = 0U;
     bool inputClamped = false;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
+    [[nodiscard]] bool IsAccepted() const noexcept {
         return state.realDeltaSeconds >= 0.0 && state.gameDeltaSeconds >= 0.0 &&
                state.animationDeltaSeconds >= 0.0;
     }
@@ -49,65 +49,65 @@ struct UnifiedTimeAdvanceResultUVE final {
 
 // Shared time-domain state is a pure transition contract. The engine timer remains responsible
 // for wall-clock sampling; this contract only advances copied values for game/fixed/animation users.
-class UnifiedTimeContractUVE final {
+class UnifiedTimeContract final {
 public:
-    static constexpr double kMaximumFrameDeltaSecondsUVE = 0.25;
-    static constexpr std::size_t kMaximumFixedStepsPerAdvanceUVE = 8U;
+    static constexpr double kMaximumFrameDeltaSeconds = 0.25;
+    static constexpr std::size_t kMaximumFixedStepsPerAdvance = 8U;
 
-    [[nodiscard]] static UnifiedTimeStateUVE AdvanceUVE(
-        const UnifiedTimeStateUVE& previous, UnifiedTimeAdvanceInputUVE input,
+    [[nodiscard]] static UnifiedTimeState Advance(
+        const UnifiedTimeState& previous, UnifiedTimeAdvanceInput input,
         std::size_t& outFixedSteps, bool& outInputClamped) noexcept;
 };
 
-struct TransformPoseUVE final {
-    Math::Vector3UVE position;
-    Math::QuaternionUVE rotation;
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+struct TransformPose final {
+    Math::Vector3 position;
+    Math::Quaternion rotation;
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
 
-    [[nodiscard]] bool operator==(const TransformPoseUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const TransformPose&) const noexcept = default;
 };
 
-inline constexpr std::size_t kMaximumSkeletonJointsUVE = 256U;
+inline constexpr std::size_t kMaximumSkeletonJoints = 256U;
 /// Maximum byte length for skeleton/joint identifiers; accepted identifiers are non-empty where
 /// required and never contain embedded NUL bytes.
-inline constexpr std::size_t kMaximumAnimationIdentifierBytesUVE = 128U;
+inline constexpr std::size_t kMaximumAnimationIdentifierBytes = 128U;
 
-struct SkeletonJointUVE final {
+struct SkeletonJoint final {
     std::string jointId;
     std::string parentJointId;
 
-    [[nodiscard]] bool operator==(const SkeletonJointUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const SkeletonJoint&) const noexcept = default;
 };
 
-struct SkeletonDefinitionUVE final {
+struct SkeletonDefinition final {
     std::string skeletonId;
-    std::vector<SkeletonJointUVE> joints;
+    std::vector<SkeletonJoint> joints;
 
-    [[nodiscard]] bool operator==(const SkeletonDefinitionUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const SkeletonDefinition&) const noexcept = default;
 };
 
-struct SkeletonRetargetMapEntryUVE final {
+struct SkeletonRetargetMapEntry final {
     std::string sourceJointId;
     std::string targetJointId;
 
-    [[nodiscard]] bool operator==(const SkeletonRetargetMapEntryUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const SkeletonRetargetMapEntry&) const noexcept = default;
 };
 
-struct PoseBufferUVE final {
+struct PoseBuffer final {
     std::string skeletonId;
-    std::vector<TransformPoseUVE> localJoints;
+    std::vector<TransformPose> localJoints;
 
-    [[nodiscard]] bool operator==(const PoseBufferUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PoseBuffer&) const noexcept = default;
 };
 
-struct AnimationEvaluationContextUVE final {
-    UnifiedTimeStateUVE time;
+struct AnimationEvaluationContext final {
+    UnifiedTimeState time;
     double sampleTimeSeconds = 0.0;
 
-    [[nodiscard]] bool operator==(const AnimationEvaluationContextUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AnimationEvaluationContext&) const noexcept = default;
 };
 
-enum class AnimationContractValidationCodeUVE : std::uint8_t {
+enum class AnimationContractValidationCode : std::uint8_t {
     Valid = 0,
     InvalidIdentifier,
     CapacityExceeded,
@@ -118,35 +118,35 @@ enum class AnimationContractValidationCodeUVE : std::uint8_t {
     InvalidTime,
 };
 
-struct AnimationContractValidationResultUVE final {
-    AnimationContractValidationCodeUVE code = AnimationContractValidationCodeUVE::Valid;
+struct AnimationContractValidationResult final {
+    AnimationContractValidationCode code = AnimationContractValidationCode::Valid;
     std::size_t index = 0U;
     std::string message;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
-        return code == AnimationContractValidationCodeUVE::Valid;
+    [[nodiscard]] bool IsValid() const noexcept {
+        return code == AnimationContractValidationCode::Valid;
     }
 };
 
-struct PoseSampleUVE final {
+struct PoseSample final {
     double timeSeconds = 0.0;
-    TransformPoseUVE pose;
+    TransformPose pose;
 
-    [[nodiscard]] bool operator==(const PoseSampleUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PoseSample&) const noexcept = default;
 };
 
-[[nodiscard]] AnimationContractValidationResultUVE ValidateSkeletonDefinitionUVE(
-    const SkeletonDefinitionUVE& skeleton) noexcept;
-[[nodiscard]] AnimationContractValidationResultUVE ValidatePoseBufferUVE(
-    const PoseBufferUVE& pose, const SkeletonDefinitionUVE& skeleton) noexcept;
-[[nodiscard]] AnimationContractValidationResultUVE ValidateSkeletonRetargetMapUVE(
-    const SkeletonDefinitionUVE& sourceSkeleton, const SkeletonDefinitionUVE& targetSkeleton,
-    const std::vector<SkeletonRetargetMapEntryUVE>& map) noexcept;
-[[nodiscard]] AnimationContractValidationResultUVE ValidateAnimationEvaluationContextUVE(
-    const AnimationEvaluationContextUVE& context) noexcept;
+[[nodiscard]] AnimationContractValidationResult ValidateSkeletonDefinition(
+    const SkeletonDefinition& skeleton) noexcept;
+[[nodiscard]] AnimationContractValidationResult ValidatePoseBuffer(
+    const PoseBuffer& pose, const SkeletonDefinition& skeleton) noexcept;
+[[nodiscard]] AnimationContractValidationResult ValidateSkeletonRetargetMap(
+    const SkeletonDefinition& sourceSkeleton, const SkeletonDefinition& targetSkeleton,
+    const std::vector<SkeletonRetargetMapEntry>& map) noexcept;
+[[nodiscard]] AnimationContractValidationResult ValidateAnimationEvaluationContext(
+    const AnimationEvaluationContext& context) noexcept;
 
-[[nodiscard]] bool IsFiniteTransformPoseUVE(const TransformPoseUVE& pose) noexcept;
-[[nodiscard]] bool TryNormalizeTransformPoseUVE(const TransformPoseUVE& pose,
-                                                 TransformPoseUVE& outNormalized) noexcept;
+[[nodiscard]] bool IsFiniteTransformPose(const TransformPose& pose) noexcept;
+[[nodiscard]] bool TryNormalizeTransformPose(const TransformPose& pose,
+                                                 TransformPose& outNormalized) noexcept;
 
 } // namespace UVE::Core

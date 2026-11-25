@@ -7,12 +7,12 @@ namespace UVE::Input {
 
 /// A mouse button. Deliberately minimal — Left/Right/Middle covers every near-term gameplay
 /// need; extend (e.g. thumb buttons) when a real consumer needs it.
-enum class MouseButtonUVE {
+enum class MouseButton {
     Left,
     Right,
     Middle,
 
-    Count, // Sentinel — array-sizes InputSystemUVE's mouse-button-state storage. Not a real button.
+    Count, // Sentinel — array-sizes InputSystem's mouse-button-state storage. Not a real button.
 };
 
 } // namespace UVE::Input

@@ -83,7 +83,7 @@ constexpr std::array<float, 6> kFullscreenTriangle{-1.f, -1.f, 3.f, -1.f, -1.f, 
 constexpr std::array<float, 12> kFloorQuad{-1.f, -1.f, 1.f, -1.f, 1.f, 1.f, -1.f, -1.f, 1.f, 1.f, -1.f, 1.f};
 
 template <std::size_t N>
-void MakeBufferUVE(GLuint& vao, GLuint& vbo, const std::array<float, N>& vertices) {
+void MakeBuffer(GLuint& vao, GLuint& vbo, const std::array<float, N>& vertices) {
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glGenBuffers(1, &vbo);
@@ -142,8 +142,8 @@ std::optional<StudioBackdropRenderer> StudioBackdropRenderer::Create(std::string
     if (!floor.has_value()) return std::nullopt;
     studio.backdropProgram_ = std::move(*backdrop);
     studio.floorProgram_ = std::move(*floor);
-    MakeBufferUVE(studio.triangleVao_, studio.triangleVbo_, kFullscreenTriangle);
-    MakeBufferUVE(studio.floorVao_, studio.floorVbo_, kFloorQuad);
+    MakeBuffer(studio.triangleVao_, studio.triangleVbo_, kFullscreenTriangle);
+    MakeBuffer(studio.floorVao_, studio.floorVbo_, kFloorQuad);
     return studio;
 }
 

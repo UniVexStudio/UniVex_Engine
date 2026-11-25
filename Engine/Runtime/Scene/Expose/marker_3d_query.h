@@ -18,35 +18,35 @@ namespace UVE::Scene {
 /// heap allocation of its own, and overflow is reported rather than pretending extra markers do
 /// not exist. 32 is past any hand-authored scene's marker count; a caller that needs every marker
 /// past the bound asks again after handling this page rather than growing the list per frame.
-inline constexpr std::size_t kMaximumMarker3DQueryResultsUVE = 32U;
+inline constexpr std::size_t kMaximumMarker3DQueryResults = 32U;
 
 /// What one query looks for. `name` is matched exactly against the authored `markerName`; an empty
 /// name means every live marker. Duplicate names are legal - they all come back, in content order.
-struct Marker3DQueryUVE final {
+struct Marker3DQuery final {
     std::string name;
 };
 
 /// One marker as the query resolves it. `pose` is the object's WORLD pose composed with the
-/// authored local offset (Marker3DPoseUVE's contract), so a caller can look through it or place
+/// authored local offset (Marker3DPose's contract), so a caller can look through it or place
 /// something at it without reading LocalPosition/Rotation itself.
-struct Marker3DQueryResultUVE final {
-    EntityUVE entity = kInvalidEntityUVE;
+struct Marker3DQueryResult final {
+    Entity entity = kInvalidEntity;
     std::string name;
-    Marker3DPoseUVE pose{};
+    Marker3DPose pose{};
 };
 
 /// The bounded result list. Results are sorted by (entity.index, entity.generation) ascending -
 /// stable content order, never pool order - so a saved scene answers the same way on every
 /// machine, and `results[0]` is the deterministic pick when several markers share a name.
-struct Marker3DQueryResultsUVE final {
-    std::array<Marker3DQueryResultUVE, kMaximumMarker3DQueryResultsUVE> results{};
+struct Marker3DQueryResults final {
+    std::array<Marker3DQueryResult, kMaximumMarker3DQueryResults> results{};
     std::size_t count = 0U;
     bool overflowed = false;
 
-    [[nodiscard]] bool HasAnyUVE() const noexcept { return count != 0U; }
+    [[nodiscard]] bool HasAny() const noexcept { return count != 0U; }
 
     /// The first result in stable content order, or nullptr when the query found nothing.
-    [[nodiscard]] const Marker3DQueryResultUVE* FirstUVE() const noexcept {
+    [[nodiscard]] const Marker3DQueryResult* First() const noexcept {
         return count == 0U ? nullptr : &results[0];
     }
 };
@@ -58,12 +58,12 @@ struct Marker3DQueryResultsUVE final {
 /// finite pose. Everything else is skipped rather than approximated: a disabled marker is not a
 /// viewpoint, and a marker whose authored rotation is degenerate is not handed out as garbage.
 /// Skipping is per-marker, so one malformed marker never hides the rest of the scene's.
-[[nodiscard]] Marker3DQueryResultsUVE QueryMarkers3DUVE(IEntityManagerUVE& entityManager,
-                                                        const Marker3DQueryUVE& query);
+[[nodiscard]] Marker3DQueryResults QueryMarkers3D(IEntityManager& entityManager,
+                                                        const Marker3DQuery& query);
 
 /// The one-liner: the first live marker whose authored name is exactly `name`, in content order.
 /// An empty name, a name that matches nothing, and a scene with no live markers all yield no value.
-[[nodiscard]] std::optional<Marker3DQueryResultUVE> FindMarker3DUVE(IEntityManagerUVE& entityManager,
+[[nodiscard]] std::optional<Marker3DQueryResult> FindMarker3D(IEntityManager& entityManager,
                                                                     std::string_view name);
 
 } // namespace UVE::Scene

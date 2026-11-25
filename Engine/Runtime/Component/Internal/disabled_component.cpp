@@ -4,24 +4,24 @@
 
 namespace UVE::Scene {
 
-bool IsDisabledComponentValidUVE(const DisabledComponentUVE& /*component*/) noexcept {
+bool IsDisabledComponentValid(const DisabledComponent& /*component*/) noexcept {
     return true;
 }
 
-bool IsDisabledTagPresentUVE(const DisabledComponentUVE* const component) noexcept {
+bool IsDisabledTagPresent(const DisabledComponent* const component) noexcept {
     return component != nullptr;
 }
 
-bool ShouldSimulateEntityUVE(const DisabledComponentUVE* const component) noexcept {
-    return !IsDisabledTagPresentUVE(component);
+bool ShouldSimulateEntity(const DisabledComponent* const component) noexcept {
+    return !IsDisabledTagPresent(component);
 }
 
-bool ShouldSkipEntitySimulationUVE(const DisabledComponentUVE* const component) noexcept {
-    return IsDisabledTagPresentUVE(component);
+bool ShouldSkipEntitySimulation(const DisabledComponent* const component) noexcept {
+    return IsDisabledTagPresent(component);
 }
 
-bool ShouldPropagateTransformWhenDisabledUVE(
-    const DisabledComponentUVE* const /*component*/) noexcept {
+bool ShouldPropagateTransformWhenDisabled(
+    const DisabledComponent* const /*component*/) noexcept {
     return true;
 }
 

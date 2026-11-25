@@ -15,68 +15,68 @@
 namespace UVE::Core {
 namespace {
 
-FrameTaskDefinitionUVE MakeTaskUVE(FrameTaskIdUVE id, const char* name,
-                                  std::vector<FrameTaskIdUVE> dependencies,
+FrameTaskDefinition MakeTask(FrameTaskId id, const char* name,
+                                  std::vector<FrameTaskId> dependencies,
                                   std::function<void()> action) {
-    Containers::SmallVectorUVE<FrameTaskIdUVE, FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE> deps;
-    for (const FrameTaskIdUVE dependency : dependencies) {
-        deps.PushBackUVE(dependency);
+    Containers::SmallVector<FrameTaskId, FrameTaskGraph::kMaximumDependenciesPerTask> deps;
+    for (const FrameTaskId dependency : dependencies) {
+        deps.PushBack(dependency);
     }
-    return FrameTaskDefinitionUVE{id, FrameTaskDomainUVE::Animation, name, std::move(deps),
+    return FrameTaskDefinition{id, FrameTaskDomain::Animation, name, std::move(deps),
                                  std::move(action)};
 }
 
 } // namespace
 
-TEST(FrameTaskGraphUVETest, AddTaskUVE_RejectsDuplicateEdgesAndAcceptsCrossDomainTasks) {
-    FrameTaskGraphUVE graph;
-    EXPECT_TRUE(graph.AddTaskUVE(MakeTaskUVE(1U, "animation", {}, [] {})).IsAcceptedUVE());
-    EXPECT_TRUE(graph.AddTaskUVE(FrameTaskDefinitionUVE{
-        2U, FrameTaskDomainUVE::RenderPreparation, "render", {1U}, [] {}})
-                    .IsAcceptedUVE());
+TEST(FrameTaskGraphTest, AddTask_RejectsDuplicateEdgesAndAcceptsCrossDomainTasks) {
+    FrameTaskGraph graph;
+    EXPECT_TRUE(graph.AddTask(MakeTask(1U, "animation", {}, [] {})).IsAccepted());
+    EXPECT_TRUE(graph.AddTask(FrameTaskDefinition{
+        2U, FrameTaskDomain::RenderPreparation, "render", {1U}, [] {}})
+                    .IsAccepted());
 
-    const FrameTaskGraphMutationResultUVE duplicate = graph.AddTaskUVE(
-        MakeTaskUVE(3U, "duplicate-edge", {1U, 1U}, [] {}));
-    EXPECT_EQ(duplicate.code, FrameTaskGraphMutationCodeUVE::DuplicateDependency);
-    EXPECT_EQ(graph.GetTaskCountUVE(), 2U);
-    EXPECT_TRUE(graph.ValidateUVE().IsValidUVE());
+    const FrameTaskGraphMutationResult duplicate = graph.AddTask(
+        MakeTask(3U, "duplicate-edge", {1U, 1U}, [] {}));
+    EXPECT_EQ(duplicate.code, FrameTaskGraphMutationCode::DuplicateDependency);
+    EXPECT_EQ(graph.GetTaskCount(), 2U);
+    EXPECT_TRUE(graph.Validate().IsValid());
 }
 
-TEST(FrameTaskGraphUVETest, ValidateUVE_RejectsUnknownAndCyclicDependencies) {
-    FrameTaskGraphUVE unknown;
-    ASSERT_TRUE(unknown.AddTaskUVE(MakeTaskUVE(1U, "consumer", {99U}, [] {})).IsAcceptedUVE());
-    EXPECT_EQ(unknown.ValidateUVE().code, FrameTaskGraphValidationCodeUVE::UnknownDependency);
+TEST(FrameTaskGraphTest, Validate_RejectsUnknownAndCyclicDependencies) {
+    FrameTaskGraph unknown;
+    ASSERT_TRUE(unknown.AddTask(MakeTask(1U, "consumer", {99U}, [] {})).IsAccepted());
+    EXPECT_EQ(unknown.Validate().code, FrameTaskGraphValidationCode::UnknownDependency);
 
-    FrameTaskGraphUVE cyclic;
-    ASSERT_TRUE(cyclic.AddTaskUVE(MakeTaskUVE(1U, "first", {2U}, [] {})).IsAcceptedUVE());
-    ASSERT_TRUE(cyclic.AddTaskUVE(MakeTaskUVE(2U, "second", {1U}, [] {})).IsAcceptedUVE());
-    EXPECT_EQ(cyclic.ValidateUVE().code, FrameTaskGraphValidationCodeUVE::CyclicDependency);
+    FrameTaskGraph cyclic;
+    ASSERT_TRUE(cyclic.AddTask(MakeTask(1U, "first", {2U}, [] {})).IsAccepted());
+    ASSERT_TRUE(cyclic.AddTask(MakeTask(2U, "second", {1U}, [] {})).IsAccepted());
+    EXPECT_EQ(cyclic.Validate().code, FrameTaskGraphValidationCode::CyclicDependency);
 }
 
-TEST(FrameSchedulerUVETest, ExecuteUVE_RunsDependenciesBeforeDependentsAcrossDomains) {
-    FrameTaskGraphUVE graph;
+TEST(FrameSchedulerTest, Execute_RunsDependenciesBeforeDependentsAcrossDomains) {
+    FrameTaskGraph graph;
     std::mutex orderMutex;
-    std::vector<FrameTaskIdUVE> order;
-    const auto record = [&orderMutex, &order](FrameTaskIdUVE id) {
+    std::vector<FrameTaskId> order;
+    const auto record = [&orderMutex, &order](FrameTaskId id) {
         const std::lock_guard<std::mutex> lock(orderMutex);
         order.push_back(id);
     };
 
-    ASSERT_TRUE(graph.AddTaskUVE(FrameTaskDefinitionUVE{
-        1U, FrameTaskDomainUVE::Animation, "animation", {}, [&record] { record(1U); }})
-                    .IsAcceptedUVE());
-    ASSERT_TRUE(graph.AddTaskUVE(FrameTaskDefinitionUVE{
-        2U, FrameTaskDomainUVE::Physics, "physics", {1U}, [&record] { record(2U); }})
-                    .IsAcceptedUVE());
-    ASSERT_TRUE(graph.AddTaskUVE(FrameTaskDefinitionUVE{
-        3U, FrameTaskDomainUVE::RenderPreparation, "render", {1U, 2U},
+    ASSERT_TRUE(graph.AddTask(FrameTaskDefinition{
+        1U, FrameTaskDomain::Animation, "animation", {}, [&record] { record(1U); }})
+                    .IsAccepted());
+    ASSERT_TRUE(graph.AddTask(FrameTaskDefinition{
+        2U, FrameTaskDomain::Physics, "physics", {1U}, [&record] { record(2U); }})
+                    .IsAccepted());
+    ASSERT_TRUE(graph.AddTask(FrameTaskDefinition{
+        3U, FrameTaskDomain::RenderPreparation, "render", {1U, 2U},
         [&record] { record(3U); }})
-                    .IsAcceptedUVE());
+                    .IsAccepted());
 
-    Threading::ThreadPoolUVE pool(2U);
-    const FrameScheduleResultUVE result = FrameSchedulerUVE(pool).ExecuteUVE(graph);
+    Threading::ThreadPool pool(2U);
+    const FrameScheduleResult result = FrameScheduler(pool).Execute(graph);
 
-    ASSERT_TRUE(result.IsCompletedUVE());
+    ASSERT_TRUE(result.IsCompleted());
     EXPECT_EQ(result.completedTaskCount, 3U);
     EXPECT_EQ(result.taskCount, 3U);
     ASSERT_EQ(order.size(), 3U);
@@ -85,72 +85,72 @@ TEST(FrameSchedulerUVETest, ExecuteUVE_RunsDependenciesBeforeDependentsAcrossDom
     EXPECT_EQ(order[2], 3U);
 }
 
-TEST(FrameSchedulerUVETest, ExecuteUVE_ContainsTaskFailureAndDoesNotRunDependents) {
-    FrameTaskGraphUVE graph;
+TEST(FrameSchedulerTest, Execute_ContainsTaskFailureAndDoesNotRunDependents) {
+    FrameTaskGraph graph;
     bool dependentRan = false;
-    ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(1U, "failing", {}, [] {
+    ASSERT_TRUE(graph.AddTask(MakeTask(1U, "failing", {}, [] {
         throw std::runtime_error("synthetic task failure");
     }))
-                    .IsAcceptedUVE());
-    ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(2U, "dependent", {1U}, [&dependentRan] {
+                    .IsAccepted());
+    ASSERT_TRUE(graph.AddTask(MakeTask(2U, "dependent", {1U}, [&dependentRan] {
         dependentRan = true;
     }))
-                    .IsAcceptedUVE());
+                    .IsAccepted());
 
-    Threading::ThreadPoolUVE pool(2U);
-    const FrameScheduleResultUVE result = FrameSchedulerUVE(pool).ExecuteUVE(graph);
+    Threading::ThreadPool pool(2U);
+    const FrameScheduleResult result = FrameScheduler(pool).Execute(graph);
 
-    EXPECT_EQ(result.code, FrameScheduleResultCodeUVE::TaskFailed);
+    EXPECT_EQ(result.code, FrameScheduleResultCode::TaskFailed);
     EXPECT_EQ(result.completedTaskCount, 0U);
     EXPECT_EQ(result.taskCount, 2U);
     EXPECT_FALSE(dependentRan);
     EXPECT_EQ(result.message, "synthetic task failure");
 }
 
-TEST(FrameSchedulerUVETest, ExecuteUVE_RejectsEmptyGraphBeforeSubmittingWork) {
-    FrameTaskGraphUVE graph;
-    Threading::ThreadPoolUVE pool(1U);
+TEST(FrameSchedulerTest, Execute_RejectsEmptyGraphBeforeSubmittingWork) {
+    FrameTaskGraph graph;
+    Threading::ThreadPool pool(1U);
 
-    const FrameScheduleResultUVE result = FrameSchedulerUVE(pool).ExecuteUVE(graph);
+    const FrameScheduleResult result = FrameScheduler(pool).Execute(graph);
 
-    EXPECT_EQ(result.code, FrameScheduleResultCodeUVE::InvalidGraph);
+    EXPECT_EQ(result.code, FrameScheduleResultCode::InvalidGraph);
     EXPECT_EQ(result.completedTaskCount, 0U);
     EXPECT_EQ(result.taskCount, 0U);
 }
 
-TEST(FrameTaskGraphUVETest, AddTaskUVE_RejectsTaskBeyondCapacity) {
-    FrameTaskGraphUVE graph;
-    for (std::size_t index = 0U; index < FrameTaskGraphUVE::kMaximumTasksUVE; ++index) {
-        ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(static_cast<FrameTaskIdUVE>(index + 1U), "task", {}, [] {}))
-                        .IsAcceptedUVE())
+TEST(FrameTaskGraphTest, AddTask_RejectsTaskBeyondCapacity) {
+    FrameTaskGraph graph;
+    for (std::size_t index = 0U; index < FrameTaskGraph::kMaximumTasks; ++index) {
+        ASSERT_TRUE(graph.AddTask(MakeTask(static_cast<FrameTaskId>(index + 1U), "task", {}, [] {}))
+                        .IsAccepted())
             << "task index " << index;
     }
-    EXPECT_EQ(graph.GetTaskCountUVE(), FrameTaskGraphUVE::kMaximumTasksUVE);
+    EXPECT_EQ(graph.GetTaskCount(), FrameTaskGraph::kMaximumTasks);
 
-    const FrameTaskGraphMutationResultUVE overflow =
-        graph.AddTaskUVE(MakeTaskUVE(1000000U, "overflow", {}, [] {}));
-    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCodeUVE::CapacityExceeded);
-    EXPECT_EQ(graph.GetTaskCountUVE(), FrameTaskGraphUVE::kMaximumTasksUVE);
+    const FrameTaskGraphMutationResult overflow =
+        graph.AddTask(MakeTask(1000000U, "overflow", {}, [] {}));
+    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCode::CapacityExceeded);
+    EXPECT_EQ(graph.GetTaskCount(), FrameTaskGraph::kMaximumTasks);
 }
 
-TEST(FrameTaskGraphUVETest, Dependencies_LiveInlineAndOverCapIsRejected) {
-    FrameTaskGraphUVE graph;
-    std::vector<FrameTaskIdUVE> full;
-    for (FrameTaskIdUVE id = 2U; id <= FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE + 1U; ++id) {
+TEST(FrameTaskGraphTest, Dependencies_LiveInlineAndOverCapIsRejected) {
+    FrameTaskGraph graph;
+    std::vector<FrameTaskId> full;
+    for (FrameTaskId id = 2U; id <= FrameTaskGraph::kMaximumDependenciesPerTask + 1U; ++id) {
         full.push_back(id);
     }
-    ASSERT_TRUE(graph.AddTaskUVE(MakeTaskUVE(1U, "full", full, [] {})).IsAcceptedUVE());
-    ASSERT_EQ(graph.GetTaskCountUVE(), 1U);
-    const FrameTaskDefinitionUVE& stored = graph.GetTasksUVE()[0];
-    EXPECT_EQ(stored.dependencies.SizeUVE(), FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE);
+    ASSERT_TRUE(graph.AddTask(MakeTask(1U, "full", full, [] {})).IsAccepted());
+    ASSERT_EQ(graph.GetTaskCount(), 1U);
+    const FrameTaskDefinition& stored = graph.GetTasks()[0];
+    EXPECT_EQ(stored.dependencies.Size(), FrameTaskGraph::kMaximumDependenciesPerTask);
     // Inline capacity equals the cap: a full-but-accepted list never touched the heap.
-    EXPECT_EQ(stored.dependencies.CapacityUVE(), FrameTaskGraphUVE::kMaximumDependenciesPerTaskUVE);
+    EXPECT_EQ(stored.dependencies.Capacity(), FrameTaskGraph::kMaximumDependenciesPerTask);
 
     full.push_back(99U);
-    const FrameTaskGraphMutationResultUVE overflow =
-        graph.AddTaskUVE(MakeTaskUVE(2U, "overflow", full, [] {}));
-    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCodeUVE::TooManyDependencies);
-    EXPECT_EQ(graph.GetTaskCountUVE(), 1U);
+    const FrameTaskGraphMutationResult overflow =
+        graph.AddTask(MakeTask(2U, "overflow", full, [] {}));
+    EXPECT_EQ(overflow.code, FrameTaskGraphMutationCode::TooManyDependencies);
+    EXPECT_EQ(graph.GetTaskCount(), 1U);
 }
 
 } // namespace UVE::Core

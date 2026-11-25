@@ -5,27 +5,27 @@
 namespace UVE::Render::Vulkan {
 
 /// Instance-level validation tooling available from the current Vulkan loader.
-struct ValidationLayerPlanUVE final {
-    bool enableKhronosValidationUVE = false;
-    bool enableDebugUtilsUVE = false;
-    bool validationLayerUnavailableUVE = false;
-    bool debugUtilsUnavailableUVE = false;
+struct ValidationLayerPlan final {
+    bool enableKhronosValidation = false;
+    bool enableDebugUtils = false;
+    bool validationLayerUnavailable = false;
+    bool debugUtilsUnavailable = false;
 
-    [[nodiscard]] bool operator==(const ValidationLayerPlanUVE&) const = default;
+    [[nodiscard]] bool operator==(const ValidationLayerPlan&) const = default;
 };
 
 /// Resolve the optional debug-layer request without making validation tooling a backend
 /// requirement. The validation layer can still run without VK_EXT_debug_utils, but its
 /// messages will not be forwarded through the engine's debug callback in that case.
-[[nodiscard]] constexpr ValidationLayerPlanUVE ResolveValidationLayerPlanUVE(
+[[nodiscard]] constexpr ValidationLayerPlan ResolveValidationLayerPlan(
     bool requested, bool khronosValidationAvailable, bool debugUtilsAvailable) noexcept {
     if (!requested) {
         return {};
     }
     if (!khronosValidationAvailable) {
-        return ValidationLayerPlanUVE{false, false, true, false};
+        return ValidationLayerPlan{false, false, true, false};
     }
-    return ValidationLayerPlanUVE{true, debugUtilsAvailable, false, !debugUtilsAvailable};
+    return ValidationLayerPlan{true, debugUtilsAvailable, false, !debugUtilsAvailable};
 }
 
 } // namespace UVE::Render::Vulkan

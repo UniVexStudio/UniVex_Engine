@@ -30,13 +30,13 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] std::vector<std::byte> MakePayloadUVE(std::string_view text) {
+[[nodiscard]] std::vector<std::byte> MakePayload(std::string_view text) {
     const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
     return std::vector<std::byte>(bytes, bytes + text.size());
 }
 
-[[nodiscard]] bool LoadBlobUVE(const std::filesystem::path& path, BlobAssetUVE& outValue) {
-    auto result = ReadUveFileUVE(path);
+[[nodiscard]] bool LoadBlob(const std::filesystem::path& path, BlobAsset& outValue) {
+    auto result = ReadUveFile(path);
     if (!result.has_value()) {
         return false;
     }
@@ -45,9 +45,9 @@ namespace {
 }
 
 template <typename T>
-[[nodiscard]] bool WaitForTerminalStateUVE(const AssetHandleUVE<T>& handle, int maxIterations = 200000) {
+[[nodiscard]] bool WaitForTerminalState(const AssetHandle<T>& handle, int maxIterations = 200000) {
     for (int iteration = 0; iteration < maxIterations; ++iteration) {
-        if (handle.IsReadyUVE() || handle.HasFailedUVE()) {
+        if (handle.IsReady() || handle.HasFailed()) {
             return true;
         }
         std::this_thread::yield();
@@ -55,83 +55,83 @@ template <typename T>
     return false;
 }
 
-class HotReloadUVETest : public ::testing::Test {
+class HotReloadTest : public ::testing::Test {
 protected:
-    Threading::ThreadPoolUVE threadPool{2};
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE assetDatabase;
-    HotReloadUVE hotReload{eventSystem, 0.05};
-    AssetManagerUVE assetManager{threadPool, eventSystem, &hotReload};
+    Threading::ThreadPool threadPool{2};
+    Events::EventSystem eventSystem;
+    AssetDatabase assetDatabase;
+    HotReload hotReload{eventSystem, 0.05};
+    AssetManager assetManager{threadPool, eventSystem, &hotReload};
 
-    void SetUp() override { assetManager.RegisterLoaderUVE<BlobAssetUVE>(LoadBlobUVE); }
+    void SetUp() override { assetManager.RegisterLoader<BlobAsset>(LoadBlob); }
 };
 
-TEST_F(HotReloadUVETest, ReadyIsPublishedOnlyAfterTrackingCompletes) {
-    struct GatedTracking final : IHotReloadUVE {
-        HotReloadUVE& delegate;
+TEST_F(HotReloadTest, ReadyIsPublishedOnlyAfterTrackingCompletes) {
+    struct GatedTracking final : IHotReload {
+        HotReload& delegate;
         std::latch entered{1};
         std::latch release{1};
         std::atomic<bool> tracked{false};
-        explicit GatedTracking(HotReloadUVE& value) : delegate(value) {}
-        void TrackUVE(AssetGuidUVE guid) override {
+        explicit GatedTracking(HotReload& value) : delegate(value) {}
+        void Track(AssetGuid guid) override {
             entered.count_down();
             release.wait();
-            delegate.TrackUVE(guid);
+            delegate.Track(guid);
             tracked.store(true);
         }
-        void UntrackUVE(AssetGuidUVE guid) override { delegate.UntrackUVE(guid); }
-        void PollUVE(IAssetManagerUVE& manager, IAssetDatabaseUVE& db, double delta) override {
-            delegate.PollUVE(manager,db,delta);
+        void Untrack(AssetGuid guid) override { delegate.Untrack(guid); }
+        void Poll(IAssetManager& manager, IAssetDatabase& db, double delta) override {
+            delegate.Poll(manager,db,delta);
         }
     } tracking(hotReload);
-    AssetManagerUVE manager(threadPool,eventSystem,&tracking);
-    manager.RegisterLoaderUVE<BlobAssetUVE>([](const auto&,auto& data) { data.resize(8); return true; });
-    auto handle=manager.LoadUVE<BlobAssetUVE>(assetDatabase.RegisterUVE("tracking-publication.uvblob"),assetDatabase);
+    AssetManager manager(threadPool,eventSystem,&tracking);
+    manager.RegisterLoader<BlobAsset>([](const auto&,auto& data) { data.resize(8); return true; });
+    auto handle=manager.Load<BlobAsset>(assetDatabase.Register("tracking-publication.uvblob"),assetDatabase);
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
     while(!tracking.entered.try_wait() && std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
     const bool entered=tracking.entered.try_wait();
     EXPECT_TRUE(entered);
-    if(entered) { EXPECT_FALSE(handle.IsReadyUVE()); }
+    if(entered) { EXPECT_FALSE(handle.IsReady()); }
     // Always release before any assertion can return; the manager must join this load job.
     tracking.release.count_down();
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    EXPECT_TRUE(handle.IsReadyUVE());
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    EXPECT_TRUE(handle.IsReady());
     EXPECT_TRUE(tracking.tracked.load());
 }
 
-TEST_F(HotReloadUVETest, PollUVE_DetectsOnDiskChange_ReloadsAssetAndPublishesEvent) {
+TEST_F(HotReloadTest, Poll_DetectsOnDiskChange_ReloadsAssetAndPublishesEvent) {
     const std::filesystem::path path = "uve_hot_reload_tests_change.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version1")));
+    const AssetGuid guid = assetDatabase.Register(path);
 
-    const AssetHandleUVE<BlobAssetUVE> handle = assetManager.LoadUVE<BlobAssetUVE>(guid, assetDatabase);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    ASSERT_TRUE(handle.IsReadyUVE());
+    const AssetHandle<BlobAsset> handle = assetManager.Load<BlobAsset>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    ASSERT_TRUE(handle.IsReady());
 
     // First poll (well over the 0.05s interval) merely establishes the tracked baseline mtime -
     // it must not itself be treated as a change.
-    hotReload.PollUVE(assetManager, assetDatabase, 10.0);
+    hotReload.Poll(assetManager, assetDatabase, 10.0);
 
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version2")));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version2")));
     const auto farFuture = std::filesystem::file_time_type::clock::now() + std::chrono::hours(1);
     std::filesystem::last_write_time(path, farFuture);
 
     std::atomic<bool> reloadEventReceived{false};
-    eventSystem.Subscribe<AssetReloadedEventUVE>([&reloadEventReceived, guid](const AssetReloadedEventUVE& event) {
+    eventSystem.Subscribe<AssetReloadedEvent>([&reloadEventReceived, guid](const AssetReloadedEvent& event) {
         if (event.guid == guid) {
             reloadEventReceived = true;
         }
     });
 
-    hotReload.PollUVE(assetManager, assetDatabase, 10.0);
+    hotReload.Poll(assetManager, assetDatabase, 10.0);
     const auto reloadDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
     bool contentReloaded = false;
     while (std::chrono::steady_clock::now() < reloadDeadline &&
            (!reloadEventReceived.load() || !contentReloaded)) {
-        eventSystem.DispatchQueuedUVE();
-        if (handle.IsReadyUVE()) {
-            const BlobAssetUVE* const blob = handle.TryGetUVE();
+        eventSystem.DispatchQueued();
+        if (handle.IsReady()) {
+            const BlobAsset* const blob = handle.TryGet();
             if (blob != nullptr) {
                 const std::string content(reinterpret_cast<const char*>(blob->data()), blob->size());
                 contentReloaded = content == "version2";
@@ -145,36 +145,36 @@ TEST_F(HotReloadUVETest, PollUVE_DetectsOnDiskChange_ReloadsAssetAndPublishesEve
     std::filesystem::remove(path);
 }
 
-TEST_F(HotReloadUVETest, PollUVE_InvalidDeltaTimes_DoNotMutateAccumulatorOrTriggerReload) {
+TEST_F(HotReloadTest, Poll_InvalidDeltaTimes_DoNotMutateAccumulatorOrTriggerReload) {
     const std::filesystem::path path = "uve_hot_reload_tests_invalid_delta.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version1")));
+    const AssetGuid guid = assetDatabase.Register(path);
 
-    const AssetHandleUVE<BlobAssetUVE> handle = assetManager.LoadUVE<BlobAssetUVE>(guid, assetDatabase);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    ASSERT_TRUE(handle.IsReadyUVE());
-    hotReload.PollUVE(assetManager, assetDatabase, 10.0); // establish the baseline mtime
+    const AssetHandle<BlobAsset> handle = assetManager.Load<BlobAsset>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    ASSERT_TRUE(handle.IsReady());
+    hotReload.Poll(assetManager, assetDatabase, 10.0); // establish the baseline mtime
 
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version2")));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version2")));
     const auto farFuture = std::filesystem::file_time_type::clock::now() + std::chrono::hours(1);
     std::filesystem::last_write_time(path, farFuture);
 
     std::atomic<bool> reloadEventReceived{false};
-    eventSystem.Subscribe<AssetReloadedEventUVE>([&reloadEventReceived, guid](const AssetReloadedEventUVE& event) {
+    eventSystem.Subscribe<AssetReloadedEvent>([&reloadEventReceived, guid](const AssetReloadedEvent& event) {
         if (event.guid == guid) {
             reloadEventReceived = true;
         }
     });
 
-    hotReload.PollUVE(assetManager, assetDatabase, -1.0);
-    hotReload.PollUVE(assetManager, assetDatabase, std::numeric_limits<double>::quiet_NaN());
-    hotReload.PollUVE(assetManager, assetDatabase, 0.04); // below the 0.05s interval if invalid deltas were ignored
-    eventSystem.DispatchQueuedUVE();
+    hotReload.Poll(assetManager, assetDatabase, -1.0);
+    hotReload.Poll(assetManager, assetDatabase, std::numeric_limits<double>::quiet_NaN());
+    hotReload.Poll(assetManager, assetDatabase, 0.04); // below the 0.05s interval if invalid deltas were ignored
+    eventSystem.DispatchQueued();
 
     EXPECT_FALSE(reloadEventReceived.load());
-    EXPECT_TRUE(handle.IsReadyUVE());
-    const BlobAssetUVE* const blob = handle.TryGetUVE();
+    EXPECT_TRUE(handle.IsReady());
+    const BlobAsset* const blob = handle.TryGet();
     if (blob != nullptr) {
         const std::string content(reinterpret_cast<const char*>(blob->data()), blob->size());
         EXPECT_EQ(content, "version1");
@@ -183,26 +183,26 @@ TEST_F(HotReloadUVETest, PollUVE_InvalidDeltaTimes_DoNotMutateAccumulatorOrTrigg
     std::filesystem::remove(path);
 }
 
-TEST_F(HotReloadUVETest, PollUVE_BelowConfiguredInterval_NeverReloads) {
-    HotReloadUVE localHotReload(eventSystem, 1000.0);
-    AssetManagerUVE localAssetManager(threadPool, eventSystem, &localHotReload);
-    localAssetManager.RegisterLoaderUVE<BlobAssetUVE>(LoadBlobUVE);
+TEST_F(HotReloadTest, Poll_BelowConfiguredInterval_NeverReloads) {
+    HotReload localHotReload(eventSystem, 1000.0);
+    AssetManager localAssetManager(threadPool, eventSystem, &localHotReload);
+    localAssetManager.RegisterLoader<BlobAsset>(LoadBlob);
 
     const std::filesystem::path path = "uve_hot_reload_tests_below_interval.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version1")));
+    const AssetGuid guid = assetDatabase.Register(path);
 
-    const AssetHandleUVE<BlobAssetUVE> handle = localAssetManager.LoadUVE<BlobAssetUVE>(guid, assetDatabase);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
+    const AssetHandle<BlobAsset> handle = localAssetManager.Load<BlobAsset>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalState(handle));
 
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version2")));
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version2")));
     const auto farFuture = std::filesystem::file_time_type::clock::now() + std::chrono::hours(1);
     std::filesystem::last_write_time(path, farFuture);
 
-    localHotReload.PollUVE(localAssetManager, assetDatabase, 1.0); // far below the 1000s interval
+    localHotReload.Poll(localAssetManager, assetDatabase, 1.0); // far below the 1000s interval
 
-    const BlobAssetUVE* const blob = handle.TryGetUVE();
+    const BlobAsset* const blob = handle.TryGet();
     ASSERT_NE(blob, nullptr);
     const std::string content(reinterpret_cast<const char*>(blob->data()), blob->size());
     EXPECT_EQ(content, "version1");
@@ -210,28 +210,28 @@ TEST_F(HotReloadUVETest, PollUVE_BelowConfiguredInterval_NeverReloads) {
     std::filesystem::remove(path);
 }
 
-TEST_F(HotReloadUVETest, PollUVE_TrackedFileDeleted_LogsWarningAndDoesNotCrash) {
+TEST_F(HotReloadTest, Poll_TrackedFileDeleted_LogsWarningAndDoesNotCrash) {
     const std::filesystem::path path = "uve_hot_reload_tests_deleted.uvblob";
     std::filesystem::remove(path);
-    ASSERT_TRUE(WriteUveFileUVE(path, AssetKindUVE::Blob, MakePayloadUVE("version1")));
-    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+    ASSERT_TRUE(WriteUveFile(path, AssetKind::Blob, MakePayload("version1")));
+    const AssetGuid guid = assetDatabase.Register(path);
 
-    const AssetHandleUVE<BlobAssetUVE> handle = assetManager.LoadUVE<BlobAssetUVE>(guid, assetDatabase);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
+    const AssetHandle<BlobAsset> handle = assetManager.Load<BlobAsset>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalState(handle));
     std::filesystem::remove(path);
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    hotReload.PollUVE(assetManager, assetDatabase, 10.0);
+    hotReload.Poll(assetManager, assetDatabase, 10.0);
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundWarning =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Warning &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Warning &&
                    message.message.contains("missing");
         });
     EXPECT_TRUE(foundWarning);

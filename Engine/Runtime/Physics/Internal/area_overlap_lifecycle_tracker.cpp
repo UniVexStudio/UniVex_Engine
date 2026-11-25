@@ -10,7 +10,7 @@ namespace UVE::Physics {
 
 namespace {
 
-[[nodiscard]] bool PairLessUVE(const AreaOverlapPairUVE& lhs, const AreaOverlapPairUVE& rhs) noexcept {
+[[nodiscard]] bool PairLess(const AreaOverlapPair& lhs, const AreaOverlapPair& rhs) noexcept {
     if (lhs.area.index != rhs.area.index) {
         return lhs.area.index < rhs.area.index;
     }
@@ -23,56 +23,56 @@ namespace {
     return lhs.other.generation < rhs.other.generation;
 }
 
-[[nodiscard]] bool PairIdentityEqualUVE(const AreaOverlapPairUVE& lhs,
-                                        const AreaOverlapPairUVE& rhs) noexcept {
+[[nodiscard]] bool PairIdentityEqual(const AreaOverlapPair& lhs,
+                                        const AreaOverlapPair& rhs) noexcept {
     return lhs.area == rhs.area && lhs.other == rhs.other;
 }
 
 } // namespace
 
-AreaOverlapLifecycleReportUVE AreaOverlapLifecycleTrackerUVE::UpdateUVE(
-    const AreaOverlapQueryResultUVE& snapshot, const std::size_t maximumTransitions) {
-    AreaOverlapLifecycleReportUVE report;
+AreaOverlapLifecycleReport AreaOverlapLifecycleTracker::Update(
+    const AreaOverlapQueryResult& snapshot, const std::size_t maximumTransitions) {
+    AreaOverlapLifecycleReport report;
     report.previousActiveCount = m_activePairs.size();
-    report.inputSnapshotTruncated = snapshot.truncated || snapshot.overlaps.size() > kMaximumAreaOverlapResultsUVE;
+    report.inputSnapshotTruncated = snapshot.truncated || snapshot.overlaps.size() > kMaximumAreaOverlapResults;
     if (report.inputSnapshotTruncated) {
         report.currentActiveCount = m_activePairs.size();
         return report;
     }
 
-    std::vector<AreaOverlapPairUVE> currentPairs = snapshot.overlaps;
-    std::sort(currentPairs.begin(), currentPairs.end(), PairLessUVE);
-    currentPairs.erase(std::unique(currentPairs.begin(), currentPairs.end(), PairIdentityEqualUVE), currentPairs.end());
+    std::vector<AreaOverlapPair> currentPairs = snapshot.overlaps;
+    std::sort(currentPairs.begin(), currentPairs.end(), PairLess);
+    currentPairs.erase(std::unique(currentPairs.begin(), currentPairs.end(), PairIdentityEqual), currentPairs.end());
 
     report.currentActiveCount = currentPairs.size();
-    const std::size_t transitionCap = std::min(maximumTransitions, kMaximumAreaOverlapResultsUVE);
+    const std::size_t transitionCap = std::min(maximumTransitions, kMaximumAreaOverlapResults);
     report.transitions.reserve(std::min(transitionCap, m_activePairs.size() + currentPairs.size()));
 
-    for (const AreaOverlapPairUVE& previous : m_activePairs) {
-        if (!std::binary_search(currentPairs.begin(), currentPairs.end(), previous, PairLessUVE)) {
+    for (const AreaOverlapPair& previous : m_activePairs) {
+        if (!std::binary_search(currentPairs.begin(), currentPairs.end(), previous, PairLess)) {
             if (report.transitions.size() >= transitionCap) {
                 report.transitionsTruncated = true;
                 continue;
             }
-            report.transitions.push_back({AreaOverlapTransitionKindUVE::Exited, previous});
+            report.transitions.push_back({AreaOverlapTransitionKind::Exited, previous});
         }
     }
-    for (const AreaOverlapPairUVE& current : currentPairs) {
-        if (!std::binary_search(m_activePairs.begin(), m_activePairs.end(), current, PairLessUVE)) {
+    for (const AreaOverlapPair& current : currentPairs) {
+        if (!std::binary_search(m_activePairs.begin(), m_activePairs.end(), current, PairLess)) {
             if (report.transitions.size() >= transitionCap) {
                 report.transitionsTruncated = true;
                 continue;
             }
-            report.transitions.push_back({AreaOverlapTransitionKindUVE::Entered, current});
+            report.transitions.push_back({AreaOverlapTransitionKind::Entered, current});
         }
     }
 
-    std::sort(report.transitions.begin(), report.transitions.end(), [](const AreaOverlapTransitionUVE& lhs,
-                                                                        const AreaOverlapTransitionUVE& rhs) {
-        if (PairLessUVE(lhs.pair, rhs.pair)) {
+    std::sort(report.transitions.begin(), report.transitions.end(), [](const AreaOverlapTransition& lhs,
+                                                                        const AreaOverlapTransition& rhs) {
+        if (PairLess(lhs.pair, rhs.pair)) {
             return true;
         }
-        if (PairLessUVE(rhs.pair, lhs.pair)) {
+        if (PairLess(rhs.pair, lhs.pair)) {
             return false;
         }
         return lhs.kind < rhs.kind;
@@ -81,6 +81,6 @@ AreaOverlapLifecycleReportUVE AreaOverlapLifecycleTrackerUVE::UpdateUVE(
     return report;
 }
 
-void AreaOverlapLifecycleTrackerUVE::ResetUVE() noexcept { m_activePairs.clear(); }
+void AreaOverlapLifecycleTracker::Reset() noexcept { m_activePairs.clear(); }
 
 } // namespace UVE::Physics

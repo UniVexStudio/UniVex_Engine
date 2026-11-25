@@ -18,62 +18,62 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-std::filesystem::path TestPathUVE(const char* const name) {
-    return ::UVE::Tests::ScratchRootUVE() / name;
+std::filesystem::path TestPath(const char* const name) {
+    return ::UVE::Tests::ScratchRoot() / name;
 }
 
-SkeletonAssetUVE MakeValidSkeletonUVE() {
-    SkeletonAssetUVE skeleton;
+SkeletonAsset MakeValidSkeleton() {
+    SkeletonAsset skeleton;
     skeleton.skeletonId = "humanoid";
-    SkeletonJointUVE root;
+    SkeletonJoint root;
     root.name = "Hips";
     root.parent = -1;
-    root.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    SkeletonJointUVE child;
+    root.position = Math::Vector3{0.0F, 1.0F, 0.0F};
+    SkeletonJoint child;
     child.name = "Spine";
     child.parent = 0;
-    child.position = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
-    child.rotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 2.0F}; // normalizable, not normalized
-    SkeletonJointUVE grandchild;
+    child.position = Math::Vector3{0.0F, 0.5F, 0.0F};
+    child.rotation = Math::Quaternion{0.0F, 0.0F, 0.0F, 2.0F}; // normalizable, not normalized
+    SkeletonJoint grandchild;
     grandchild.name = "Head";
     grandchild.parent = 1;
-    grandchild.position = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
-    grandchild.scale = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+    grandchild.position = Math::Vector3{0.0F, 0.5F, 0.0F};
+    grandchild.scale = Math::Vector3{2.0F, 2.0F, 2.0F};
     skeleton.joints = {root, child, grandchild};
     return skeleton;
 }
 
 } // namespace
 
-TEST(SkeletonAssetUVETest, ValidationAcceptsMinimalSingleJoint) {
-    SkeletonAssetUVE skeleton;
+TEST(SkeletonAssetTest, ValidationAcceptsMinimalSingleJoint) {
+    SkeletonAsset skeleton;
     skeleton.skeletonId = "prop";
-    SkeletonJointUVE joint;
+    SkeletonJoint joint;
     joint.name = "Root";
     skeleton.joints = {joint};
-    EXPECT_TRUE(IsSkeletonAssetValidUVE(skeleton));
-    EXPECT_TRUE(IsSkeletonAssetValidUVE(MakeValidSkeletonUVE()));
+    EXPECT_TRUE(IsSkeletonAssetValid(skeleton));
+    EXPECT_TRUE(IsSkeletonAssetValid(MakeValidSkeleton()));
 }
 
-TEST(SkeletonAssetUVETest, AModelSkeletonBecomesAStandaloneSkeletonUnchanged) {
+TEST(SkeletonAssetTest, AModelSkeletonBecomesAStandaloneSkeletonUnchanged) {
     // What a model file reads as a skeleton and what the engine persists as one are two shapes, and
     // the bridge between them is the only place the mapping is decided. A bone that comes back
     // re-oriented, re-scaled or re-parented would move every character already standing up.
-    GltfSkeletonUVE source;
+    GltfSkeleton source;
     source.skinCount = 2U;
-    GltfJointUVE hips;
+    GltfJoint hips;
     hips.name = "Hips";
     hips.parentIndex = -1;
-    hips.translation = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-    GltfJointUVE spine;
+    hips.translation = Math::Vector3{0.0F, 1.0F, 0.0F};
+    GltfJoint spine;
     spine.name = "Spine";
     spine.parentIndex = 0;
-    spine.translation = Math::Vector3UVE{0.0F, 0.25F, 0.0F};
-    spine.rotation = Math::QuaternionUVE{0.0F, 0.0F, 0.7071068F, 0.7071068F};
-    spine.scale = Math::Vector3UVE{1.5F, 1.5F, 1.5F};
+    spine.translation = Math::Vector3{0.0F, 0.25F, 0.0F};
+    spine.rotation = Math::Quaternion{0.0F, 0.0F, 0.7071068F, 0.7071068F};
+    spine.scale = Math::Vector3{1.5F, 1.5F, 1.5F};
     source.joints = {hips, spine};
 
-    const SkeletonAssetUVE asset = MakeSkeletonAssetUVE(source, "mixamo_hero");
+    const SkeletonAsset asset = MakeSkeletonAsset(source, "mixamo_hero");
     EXPECT_EQ(asset.skeletonId, "mixamo_hero");
     ASSERT_EQ(asset.joints.size(), source.joints.size());
     for (std::size_t index = 0U; index < source.joints.size(); ++index) {
@@ -85,22 +85,22 @@ TEST(SkeletonAssetUVETest, AModelSkeletonBecomesAStandaloneSkeletonUnchanged) {
     }
     // Same numbers, and a descriptor the engine will accept for persistence - a bridge that mapped
     // the fields right but produced something unwritable would be no use to an importer.
-    EXPECT_TRUE(IsSkeletonAssetValidUVE(asset));
+    EXPECT_TRUE(IsSkeletonAssetValid(asset));
 
     // A skeleton with nothing in it maps to nothing, and validation is what refuses to write it.
-    const SkeletonAssetUVE empty = MakeSkeletonAssetUVE(GltfSkeletonUVE{}, "empty");
+    const SkeletonAsset empty = MakeSkeletonAsset(GltfSkeleton{}, "empty");
     EXPECT_TRUE(empty.joints.empty());
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(empty));
+    EXPECT_FALSE(IsSkeletonAssetValid(empty));
 }
 
-TEST(SkeletonAssetUVETest, SaveThenLoad_RoundTripsJointsVerbatim) {
-    const std::filesystem::path path = TestPathUVE("uve_skeleton_asset_round_trip.uvskel");
+TEST(SkeletonAssetTest, SaveThenLoad_RoundTripsJointsVerbatim) {
+    const std::filesystem::path path = TestPath("uve_skeleton_asset_round_trip.uvskel");
     std::filesystem::remove(path);
-    const SkeletonAssetUVE original = MakeValidSkeletonUVE();
-    ASSERT_TRUE(SaveSkeletonAssetUVE(original, path));
+    const SkeletonAsset original = MakeValidSkeleton();
+    ASSERT_TRUE(SaveSkeletonAsset(original, path));
 
-    SkeletonAssetUVE loaded;
-    ASSERT_TRUE(LoadSkeletonAssetUVE(path, loaded));
+    SkeletonAsset loaded;
+    ASSERT_TRUE(LoadSkeletonAsset(path, loaded));
     EXPECT_EQ(loaded.skeletonId, original.skeletonId);
     ASSERT_EQ(loaded.joints.size(), original.joints.size());
     EXPECT_EQ(loaded.joints[0], original.joints[0]);
@@ -108,121 +108,121 @@ TEST(SkeletonAssetUVETest, SaveThenLoad_RoundTripsJointsVerbatim) {
     // The middle joint's rotation normalizes on load (the clip asset's read contract).
     EXPECT_EQ(loaded.joints[1].name, original.joints[1].name);
     EXPECT_EQ(loaded.joints[1].parent, original.joints[1].parent);
-    EXPECT_EQ(loaded.joints[1].rotation, Math::QuaternionUVE{});
+    EXPECT_EQ(loaded.joints[1].rotation, Math::Quaternion{});
     std::filesystem::remove(path);
 }
 
-TEST(SkeletonAssetUVETest, SaveRejectsInvalidSkeletonWithoutPublishingDestination) {
-    const std::filesystem::path path = TestPathUVE("uve_skeleton_asset_invalid.uvskel");
+TEST(SkeletonAssetTest, SaveRejectsInvalidSkeletonWithoutPublishingDestination) {
+    const std::filesystem::path path = TestPath("uve_skeleton_asset_invalid.uvskel");
     std::filesystem::remove(path);
-    SkeletonAssetUVE skeleton = MakeValidSkeletonUVE();
+    SkeletonAsset skeleton = MakeValidSkeleton();
     skeleton.skeletonId.clear();
-    EXPECT_FALSE(SaveSkeletonAssetUVE(skeleton, path));
+    EXPECT_FALSE(SaveSkeletonAsset(skeleton, path));
     EXPECT_FALSE(std::filesystem::exists(path));
 }
 
-TEST(SkeletonAssetUVETest, ValidationRejects_BadIdentifiers) {
-    SkeletonAssetUVE emptyId = MakeValidSkeletonUVE();
+TEST(SkeletonAssetTest, ValidationRejects_BadIdentifiers) {
+    SkeletonAsset emptyId = MakeValidSkeleton();
     emptyId.skeletonId.clear();
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(emptyId));
+    EXPECT_FALSE(IsSkeletonAssetValid(emptyId));
 
-    SkeletonAssetUVE nulId = MakeValidSkeletonUVE();
+    SkeletonAsset nulId = MakeValidSkeleton();
     nulId.skeletonId = std::string("a\0b", 3U);
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(nulId));
+    EXPECT_FALSE(IsSkeletonAssetValid(nulId));
 
-    SkeletonAssetUVE longId = MakeValidSkeletonUVE();
-    longId.skeletonId = std::string(kMaximumSkeletonAssetIdentifierBytesUVE + 1U, 'x');
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(longId));
+    SkeletonAsset longId = MakeValidSkeleton();
+    longId.skeletonId = std::string(kMaximumSkeletonAssetIdentifierBytes + 1U, 'x');
+    EXPECT_FALSE(IsSkeletonAssetValid(longId));
 
-    SkeletonAssetUVE emptyName = MakeValidSkeletonUVE();
+    SkeletonAsset emptyName = MakeValidSkeleton();
     emptyName.joints[1].name.clear();
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(emptyName));
+    EXPECT_FALSE(IsSkeletonAssetValid(emptyName));
 
-    SkeletonAssetUVE duplicateName = MakeValidSkeletonUVE();
+    SkeletonAsset duplicateName = MakeValidSkeleton();
     duplicateName.joints[2].name = duplicateName.joints[0].name;
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(duplicateName));
+    EXPECT_FALSE(IsSkeletonAssetValid(duplicateName));
 
-    SkeletonAssetUVE nulName = MakeValidSkeletonUVE();
+    SkeletonAsset nulName = MakeValidSkeleton();
     nulName.joints[0].name = std::string("H\0ips", 5U);
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(nulName));
+    EXPECT_FALSE(IsSkeletonAssetValid(nulName));
 }
 
-TEST(SkeletonAssetUVETest, ValidationRejects_BadHierarchy) {
-    SkeletonAssetUVE noJoints = MakeValidSkeletonUVE();
+TEST(SkeletonAssetTest, ValidationRejects_BadHierarchy) {
+    SkeletonAsset noJoints = MakeValidSkeleton();
     noJoints.joints.clear();
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(noJoints));
+    EXPECT_FALSE(IsSkeletonAssetValid(noJoints));
 
-    SkeletonAssetUVE selfParent = MakeValidSkeletonUVE();
+    SkeletonAsset selfParent = MakeValidSkeleton();
     selfParent.joints[1].parent = 1;
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(selfParent));
+    EXPECT_FALSE(IsSkeletonAssetValid(selfParent));
 
-    SkeletonAssetUVE forwardParent = MakeValidSkeletonUVE();
+    SkeletonAsset forwardParent = MakeValidSkeleton();
     forwardParent.joints[0].parent = 2; // parents must precede children
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(forwardParent));
+    EXPECT_FALSE(IsSkeletonAssetValid(forwardParent));
 
-    SkeletonAssetUVE negativeParent = MakeValidSkeletonUVE();
+    SkeletonAsset negativeParent = MakeValidSkeleton();
     negativeParent.joints[2].parent = -2;
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(negativeParent));
+    EXPECT_FALSE(IsSkeletonAssetValid(negativeParent));
 
-    SkeletonAssetUVE tooMany;
+    SkeletonAsset tooMany;
     tooMany.skeletonId = "crowd";
-    tooMany.joints.resize(kMaximumSkeletonAssetJointsUVE + 1U);
+    tooMany.joints.resize(kMaximumSkeletonAssetJoints + 1U);
     for (std::size_t index = 0U; index < tooMany.joints.size(); ++index) {
         tooMany.joints[index].name = "joint" + std::to_string(index);
         tooMany.joints[index].parent = index == 0U ? -1 : 0;
     }
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(tooMany));
+    EXPECT_FALSE(IsSkeletonAssetValid(tooMany));
 }
 
-TEST(SkeletonAssetUVETest, ValidationRejects_BadPoses) {
-    SkeletonAssetUVE badPosition = MakeValidSkeletonUVE();
+TEST(SkeletonAssetTest, ValidationRejects_BadPoses) {
+    SkeletonAsset badPosition = MakeValidSkeleton();
     badPosition.joints[0].position.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(badPosition));
+    EXPECT_FALSE(IsSkeletonAssetValid(badPosition));
 
-    SkeletonAssetUVE zeroRotation = MakeValidSkeletonUVE();
-    zeroRotation.joints[0].rotation = Math::QuaternionUVE{0.0F, 0.0F, 0.0F, 0.0F};
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(zeroRotation));
+    SkeletonAsset zeroRotation = MakeValidSkeleton();
+    zeroRotation.joints[0].rotation = Math::Quaternion{0.0F, 0.0F, 0.0F, 0.0F};
+    EXPECT_FALSE(IsSkeletonAssetValid(zeroRotation));
 
-    SkeletonAssetUVE badScale = MakeValidSkeletonUVE();
+    SkeletonAsset badScale = MakeValidSkeleton();
     badScale.joints[0].scale.y = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(IsSkeletonAssetValidUVE(badScale));
+    EXPECT_FALSE(IsSkeletonAssetValid(badScale));
 }
 
-TEST(SkeletonAssetUVETest, LoadRejects_WrongKindEnvelope) {
+TEST(SkeletonAssetTest, LoadRejects_WrongKindEnvelope) {
     // A clip envelope is structurally a valid .uve file but the wrong kind — and saving it
     // proves the Animation path is undisturbed by the new Skeleton kind beside it.
-    const std::filesystem::path path = TestPathUVE("uve_skeleton_asset_wrong_kind.uvanim");
+    const std::filesystem::path path = TestPath("uve_skeleton_asset_wrong_kind.uvanim");
     std::filesystem::remove(path);
-    AnimationClipAssetUVE clip;
+    AnimationClipAsset clip;
     clip.clipId = "walk";
     clip.durationSeconds = 1.0;
-    clip.samples = {AnimationAssetSampleUVE{0.0, AnimationAssetPoseUVE{}}};
-    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    clip.samples = {AnimationAssetSample{0.0, AnimationAssetPose{}}};
+    ASSERT_TRUE(SaveAnimationClipAsset(clip, path));
 
-    SkeletonAssetUVE skeleton;
-    EXPECT_FALSE(LoadSkeletonAssetUVE(path, skeleton));
+    SkeletonAsset skeleton;
+    EXPECT_FALSE(LoadSkeletonAsset(path, skeleton));
     std::filesystem::remove(path);
 }
 
-TEST(SkeletonAssetUVETest, LoadRejects_MalformedPayload) {
-    const std::filesystem::path garbage = TestPathUVE("uve_skeleton_asset_garbage.uvskel");
+TEST(SkeletonAssetTest, LoadRejects_MalformedPayload) {
+    const std::filesystem::path garbage = TestPath("uve_skeleton_asset_garbage.uvskel");
     std::filesystem::remove(garbage);
     {
         std::ofstream stream(garbage, std::ios::binary);
         stream << "not a uve file";
     }
-    SkeletonAssetUVE skeleton;
-    EXPECT_FALSE(LoadSkeletonAssetUVE(garbage, skeleton));
+    SkeletonAsset skeleton;
+    EXPECT_FALSE(LoadSkeletonAsset(garbage, skeleton));
 
     // Right kind, wrong bytes: proves Skeleton flows through the envelope bound (a stale
     // Animation-capped bound would reject the kind before the payload is even inspected).
-    const std::filesystem::path badJson = TestPathUVE("uve_skeleton_asset_bad_json.uvskel");
+    const std::filesystem::path badJson = TestPath("uve_skeleton_asset_bad_json.uvskel");
     std::filesystem::remove(badJson);
     const std::string payload = "{\"schema\":\"uve-skeleton-v1\"}"; // no skeletonId/joints
     const auto* const bytes = reinterpret_cast<const std::byte*>(payload.data());
     ASSERT_TRUE(
-        WriteUveFileUVE(badJson, AssetKindUVE::Skeleton, std::vector<std::byte>(bytes, bytes + payload.size())));
-    EXPECT_FALSE(LoadSkeletonAssetUVE(badJson, skeleton));
+        WriteUveFile(badJson, AssetKind::Skeleton, std::vector<std::byte>(bytes, bytes + payload.size())));
+    EXPECT_FALSE(LoadSkeletonAsset(badJson, skeleton));
 
     std::filesystem::remove(garbage);
     std::filesystem::remove(badJson);

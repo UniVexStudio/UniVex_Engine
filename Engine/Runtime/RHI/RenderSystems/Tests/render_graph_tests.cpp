@@ -15,91 +15,91 @@
 namespace UVE::Render::Tests {
 namespace {
 
-TEST(RenderGraphUVETest, ExecuteUVE_ImportedResourcePassesRunInStableInsertionOrder) {
-    NullRenderDeviceUVE renderDevice;
-    const TextureHandleUVE texture = renderDevice.CreateTextureUVE(TextureDescUVE{1, 1, TextureFormatUVE::RGBA8Unorm, 1});
-    ASSERT_NE(texture, kInvalidTextureHandleUVE);
+TEST(RenderGraphTest, Execute_ImportedResourcePassesRunInStableInsertionOrder) {
+    NullRenderDevice renderDevice;
+    const TextureHandle texture = renderDevice.CreateTexture(TextureDesc{1, 1, TextureFormat::RGBA8Unorm, 1});
+    ASSERT_NE(texture, kInvalidTextureHandle);
 
-    RenderGraphUVE graph;
-    const RenderGraphResourceHandleUVE resource = graph.ImportTextureUVE(texture, "TestColor");
+    RenderGraph graph;
+    const RenderGraphResourceHandle resource = graph.ImportTexture(texture, "TestColor");
     std::vector<std::string> executionOrder;
-    graph.AddPassUVE(RenderGraphPassDescUVE{"Write", {{resource, RenderGraphResourceAccessUVE::Write}},
-                                            [&executionOrder](ICommandBufferUVE&) { executionOrder.push_back("Write"); }});
-    graph.AddPassUVE(RenderGraphPassDescUVE{"Read", {{resource, RenderGraphResourceAccessUVE::Read}},
-                                            [&executionOrder](ICommandBufferUVE&) { executionOrder.push_back("Read"); }});
+    graph.AddPass(RenderGraphPassDesc{"Write", {{resource, RenderGraphResourceAccess::Write}},
+                                            [&executionOrder](ICommandBuffer&) { executionOrder.push_back("Write"); }});
+    graph.AddPass(RenderGraphPassDesc{"Read", {{resource, RenderGraphResourceAccess::Read}},
+                                            [&executionOrder](ICommandBuffer&) { executionOrder.push_back("Read"); }});
 
-    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice.CreateCommandBufferUVE();
+    std::unique_ptr<ICommandBuffer> commandBuffer = renderDevice.CreateCommandBuffer();
     ASSERT_NE(commandBuffer, nullptr);
-    EXPECT_TRUE(graph.ExecuteUVE(*commandBuffer));
+    EXPECT_TRUE(graph.Execute(*commandBuffer));
     EXPECT_EQ(executionOrder, (std::vector<std::string>{"Write", "Read"}));
-    EXPECT_EQ(graph.GetPassCountUVE(), 2U);
-    renderDevice.DestroyTextureUVE(texture);
+    EXPECT_EQ(graph.GetPassCount(), 2U);
+    renderDevice.DestroyTexture(texture);
 }
 
-TEST(RenderGraphUVETest, ExecuteUVE_UnknownResourceRejectsWithoutRecordingPasses) {
-    NullRenderDeviceUVE renderDevice;
-    RenderGraphUVE graph;
+TEST(RenderGraphTest, Execute_UnknownResourceRejectsWithoutRecordingPasses) {
+    NullRenderDevice renderDevice;
+    RenderGraph graph;
     bool recorded = false;
-    graph.AddPassUVE(RenderGraphPassDescUVE{"Invalid", {{RenderGraphResourceHandleUVE{0U}, RenderGraphResourceAccessUVE::Read}},
-                                            [&recorded](ICommandBufferUVE&) { recorded = true; }});
+    graph.AddPass(RenderGraphPassDesc{"Invalid", {{RenderGraphResourceHandle{0U}, RenderGraphResourceAccess::Read}},
+                                            [&recorded](ICommandBuffer&) { recorded = true; }});
 
-    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice.CreateCommandBufferUVE();
+    std::unique_ptr<ICommandBuffer> commandBuffer = renderDevice.CreateCommandBuffer();
     ASSERT_NE(commandBuffer, nullptr);
-    EXPECT_FALSE(graph.ExecuteUVE(*commandBuffer));
+    EXPECT_FALSE(graph.Execute(*commandBuffer));
     EXPECT_FALSE(recorded);
 }
 
-TEST(RenderGraphUVETest, ClearUVE_RebuildsSmallerGraphWithoutExecutingStaleSlots) {
-    NullRenderDeviceUVE renderDevice;
-    const TextureHandleUVE firstTexture =
-        renderDevice.CreateTextureUVE(TextureDescUVE{1, 1, TextureFormatUVE::RGBA8Unorm, 1});
-    const TextureHandleUVE secondTexture =
-        renderDevice.CreateTextureUVE(TextureDescUVE{1, 1, TextureFormatUVE::RGBA8Unorm, 1});
-    ASSERT_NE(firstTexture, kInvalidTextureHandleUVE);
-    ASSERT_NE(secondTexture, kInvalidTextureHandleUVE);
+TEST(RenderGraphTest, Clear_RebuildsSmallerGraphWithoutExecutingStaleSlots) {
+    NullRenderDevice renderDevice;
+    const TextureHandle firstTexture =
+        renderDevice.CreateTexture(TextureDesc{1, 1, TextureFormat::RGBA8Unorm, 1});
+    const TextureHandle secondTexture =
+        renderDevice.CreateTexture(TextureDesc{1, 1, TextureFormat::RGBA8Unorm, 1});
+    ASSERT_NE(firstTexture, kInvalidTextureHandle);
+    ASSERT_NE(secondTexture, kInvalidTextureHandle);
 
-    RenderGraphUVE graph;
-    graph.ReserveUVE(2U, 2U);
-    const RenderGraphResourceHandleUVE firstResource = graph.ImportTextureUVE(firstTexture, "First");
-    const RenderGraphResourceHandleUVE secondResource = graph.ImportTextureUVE(secondTexture, "Second");
+    RenderGraph graph;
+    graph.Reserve(2U, 2U);
+    const RenderGraphResourceHandle firstResource = graph.ImportTexture(firstTexture, "First");
+    const RenderGraphResourceHandle secondResource = graph.ImportTexture(secondTexture, "Second");
     std::vector<std::string> executionOrder;
-    graph.AddPassUVE(RenderGraphPassDescUVE{"FirstPass", {{firstResource, RenderGraphResourceAccessUVE::Write}},
-                                            [&executionOrder](ICommandBufferUVE&) {
+    graph.AddPass(RenderGraphPassDesc{"FirstPass", {{firstResource, RenderGraphResourceAccess::Write}},
+                                            [&executionOrder](ICommandBuffer&) {
                                                 executionOrder.push_back("FirstPass");
                                             }});
-    graph.AddPassUVE(RenderGraphPassDescUVE{"SecondPass", {{secondResource, RenderGraphResourceAccessUVE::Write}},
-                                            [&executionOrder](ICommandBufferUVE&) {
+    graph.AddPass(RenderGraphPassDesc{"SecondPass", {{secondResource, RenderGraphResourceAccess::Write}},
+                                            [&executionOrder](ICommandBuffer&) {
                                                 executionOrder.push_back("SecondPass");
                                             }});
 
-    std::unique_ptr<ICommandBufferUVE> commandBuffer = renderDevice.CreateCommandBufferUVE();
+    std::unique_ptr<ICommandBuffer> commandBuffer = renderDevice.CreateCommandBuffer();
     ASSERT_NE(commandBuffer, nullptr);
-    ASSERT_TRUE(graph.ExecuteUVE(*commandBuffer));
-    ASSERT_EQ(graph.GetPassCountUVE(), 2U);
+    ASSERT_TRUE(graph.Execute(*commandBuffer));
+    ASSERT_EQ(graph.GetPassCount(), 2U);
 
-    graph.ClearUVE();
-    EXPECT_EQ(graph.GetPassCountUVE(), 0U);
+    graph.Clear();
+    EXPECT_EQ(graph.GetPassCount(), 0U);
     executionOrder.clear();
 
-    graph.AddPassUVE(RenderGraphPassDescUVE{"StalePass", {{firstResource, RenderGraphResourceAccessUVE::Read}},
-                                            [&executionOrder](ICommandBufferUVE&) {
+    graph.AddPass(RenderGraphPassDesc{"StalePass", {{firstResource, RenderGraphResourceAccess::Read}},
+                                            [&executionOrder](ICommandBuffer&) {
                                                 executionOrder.push_back("StalePass");
                                             }});
-    EXPECT_FALSE(graph.ExecuteUVE(*commandBuffer));
+    EXPECT_FALSE(graph.Execute(*commandBuffer));
     EXPECT_TRUE(executionOrder.empty());
-    graph.ClearUVE();
+    graph.Clear();
 
-    const RenderGraphResourceHandleUVE rebuiltResource = graph.ImportTextureUVE(firstTexture, "Rebuilt");
-    graph.AddPassUVE(RenderGraphPassDescUVE{"RebuiltPass", {{rebuiltResource, RenderGraphResourceAccessUVE::Read}},
-                                            [&executionOrder](ICommandBufferUVE&) {
+    const RenderGraphResourceHandle rebuiltResource = graph.ImportTexture(firstTexture, "Rebuilt");
+    graph.AddPass(RenderGraphPassDesc{"RebuiltPass", {{rebuiltResource, RenderGraphResourceAccess::Read}},
+                                            [&executionOrder](ICommandBuffer&) {
                                                 executionOrder.push_back("RebuiltPass");
                                             }});
 
-    ASSERT_TRUE(graph.ExecuteUVE(*commandBuffer));
+    ASSERT_TRUE(graph.Execute(*commandBuffer));
     EXPECT_EQ(executionOrder, (std::vector<std::string>{"RebuiltPass"}));
-    EXPECT_EQ(graph.GetPassCountUVE(), 1U);
-    renderDevice.DestroyTextureUVE(firstTexture);
-    renderDevice.DestroyTextureUVE(secondTexture);
+    EXPECT_EQ(graph.GetPassCount(), 1U);
+    renderDevice.DestroyTexture(firstTexture);
+    renderDevice.DestroyTexture(secondTexture);
 }
 
 } // namespace

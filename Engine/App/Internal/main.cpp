@@ -44,7 +44,7 @@
 
 namespace {
 
-[[nodiscard]] std::string BuildRuntimeCommandLineHelpUVE() {
+[[nodiscard]] std::string BuildRuntimeCommandLineHelp() {
     std::ostringstream output;
     output << "UniVex Runtime\n\n"
               "Usage:\n"
@@ -55,17 +55,17 @@ namespace {
               "  --help, -h        Show this command-line reference.\n\n"
               "Engine settings (bool values may be omitted to mean true):\n";
 
-    UVE::Config::SettingsRegistryUVE registry;
-    if (!UVE::Core::RegisterEngineProjectSettingsUVE(registry)) {
+    UVE::Config::SettingsRegistry registry;
+    if (!UVE::Core::RegisterEngineProjectSettings(registry)) {
         output << "  (engine command-line settings could not be registered)\n";
         return output.str();
     }
-    for (const UVE::Config::SettingDescriptorUVE* const descriptor : registry.GetAllUVE()) {
-        if (descriptor == nullptr || !UVE::Core::IsEngineConfigSettingIdUVE(descriptor->id)) {
+    for (const UVE::Config::SettingDescriptor* const descriptor : registry.GetAll()) {
+        if (descriptor == nullptr || !UVE::Core::IsEngineConfigSettingId(descriptor->id)) {
             continue;
         }
         output << "  --" << descriptor->id;
-        if (descriptor->type == UVE::Config::SettingTypeUVE::Bool) {
+        if (descriptor->type == UVE::Config::SettingType::Bool) {
             output << " [true|false]";
         } else {
             output << " <value>";
@@ -79,7 +79,7 @@ namespace {
     return output.str();
 }
 
-[[nodiscard]] bool IsContainedExistingResourceUVE(const std::filesystem::path& contentRoot,
+[[nodiscard]] bool IsContainedExistingResource(const std::filesystem::path& contentRoot,
                                                     const std::filesystem::path& resourcePath,
                                                     std::filesystem::path& canonicalResource) {
     std::error_code error;
@@ -98,7 +98,7 @@ namespace {
     return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
 }
 
-[[nodiscard]] bool HasRawArgumentUVE(const int argc, char** argv, const std::string_view argument) {
+[[nodiscard]] bool HasRawArgument(const int argc, char** argv, const std::string_view argument) {
     for (int index = 1; index < argc; ++index) {
         if (argv[index] != nullptr && argument == argv[index]) {
             return true;
@@ -107,46 +107,46 @@ namespace {
     return false;
 }
 
-struct ProjectBootSplashOverlayUVE final {
-    UVE::Core::EngineCoreUVE* engine = nullptr;
-    UVE::Scene::EntityUVE previousCamera = UVE::Scene::kInvalidEntityUVE;
-    UVE::Scene::EntityUVE temporaryCamera = UVE::Scene::kInvalidEntityUVE;
-    UVE::Scene::EntityUVE backgroundEntity = UVE::Scene::kInvalidEntityUVE;
-    UVE::Scene::EntityUVE imageEntity = UVE::Scene::kInvalidEntityUVE;
-    std::optional<UVE::Asset::AssetHandleUVE<UVE::Asset::TextureAssetUVE>> textureHandle;
+struct ProjectBootSplashOverlay final {
+    UVE::Core::EngineCore* engine = nullptr;
+    UVE::Scene::Entity previousCamera = UVE::Scene::kInvalidEntity;
+    UVE::Scene::Entity temporaryCamera = UVE::Scene::kInvalidEntity;
+    UVE::Scene::Entity backgroundEntity = UVE::Scene::kInvalidEntity;
+    UVE::Scene::Entity imageEntity = UVE::Scene::kInvalidEntity;
+    std::optional<UVE::Asset::AssetHandle<UVE::Asset::TextureAsset>> textureHandle;
     std::uint32_t surfaceWidth = 0U;
     std::uint32_t surfaceHeight = 0U;
     std::array<float, 4U> backgroundColor{0.0F, 0.0F, 0.0F, 1.0F};
 
-    ProjectBootSplashOverlayUVE() = default;
-    ProjectBootSplashOverlayUVE(const ProjectBootSplashOverlayUVE&) = delete;
-    ProjectBootSplashOverlayUVE& operator=(const ProjectBootSplashOverlayUVE&) = delete;
+    ProjectBootSplashOverlay() = default;
+    ProjectBootSplashOverlay(const ProjectBootSplashOverlay&) = delete;
+    ProjectBootSplashOverlay& operator=(const ProjectBootSplashOverlay&) = delete;
 
-    ~ProjectBootSplashOverlayUVE() { CleanupUVE(); }
+    ~ProjectBootSplashOverlay() { Cleanup(); }
 
-    void CleanupUVE() noexcept {
-        if (engine == nullptr || engine->GetStateUVE() != UVE::Core::EngineStateUVE::Running) {
+    void Cleanup() noexcept {
+        if (engine == nullptr || engine->GetState() != UVE::Core::EngineState::Running) {
             return;
         }
         try {
-            UVE::Core::EngineServicesUVE& services = engine->GetServicesUVE();
-            UVE::Scene::IEntityManagerUVE& entities = services.GetEntityManagerUVE();
-            if (temporaryCamera != UVE::Scene::kInvalidEntityUVE) {
-                engine->SetActiveCameraUVE(previousCamera);
+            UVE::Core::EngineServices& services = engine->GetServices();
+            UVE::Scene::IEntityManager& entities = services.GetEntityManager();
+            if (temporaryCamera != UVE::Scene::kInvalidEntity) {
+                engine->SetActiveCamera(previousCamera);
             }
-            if (imageEntity != UVE::Scene::kInvalidEntityUVE) {
-                static_cast<void>(entities.DestroyEntityUVE(imageEntity));
-                imageEntity = UVE::Scene::kInvalidEntityUVE;
+            if (imageEntity != UVE::Scene::kInvalidEntity) {
+                static_cast<void>(entities.DestroyEntity(imageEntity));
+                imageEntity = UVE::Scene::kInvalidEntity;
             }
-            if (backgroundEntity != UVE::Scene::kInvalidEntityUVE) {
-                static_cast<void>(entities.DestroyEntityUVE(backgroundEntity));
-                backgroundEntity = UVE::Scene::kInvalidEntityUVE;
+            if (backgroundEntity != UVE::Scene::kInvalidEntity) {
+                static_cast<void>(entities.DestroyEntity(backgroundEntity));
+                backgroundEntity = UVE::Scene::kInvalidEntity;
             }
-            if (temporaryCamera != UVE::Scene::kInvalidEntityUVE) {
-                static_cast<void>(entities.DestroyEntityUVE(temporaryCamera));
-                temporaryCamera = UVE::Scene::kInvalidEntityUVE;
+            if (temporaryCamera != UVE::Scene::kInvalidEntity) {
+                static_cast<void>(entities.DestroyEntity(temporaryCamera));
+                temporaryCamera = UVE::Scene::kInvalidEntity;
             }
-            static_cast<void>(engine->SetApplicationBackgroundColorUVE(backgroundColor));
+            static_cast<void>(engine->SetApplicationBackgroundColor(backgroundColor));
         } catch (...) {
             // Splash cleanup is best-effort during exception unwinding; EngineCore still owns the
             // authoritative scene and renderer teardown immediately afterward.
@@ -155,24 +155,24 @@ struct ProjectBootSplashOverlayUVE final {
         engine = nullptr;
     }
 
-    void SetVisibilityUVE(const float visibility) {
-        if (engine == nullptr || backgroundEntity == UVE::Scene::kInvalidEntityUVE) {
+    void SetVisibility(const float visibility) {
+        if (engine == nullptr || backgroundEntity == UVE::Scene::kInvalidEntity) {
             return;
         }
-        UVE::Scene::IEntityManagerUVE& entities = engine->GetServicesUVE().GetEntityManagerUVE();
-        UVE::Scene::UIImageComponentUVE& background =
-            entities.GetComponentUVE<UVE::Scene::UIImageComponentUVE>(backgroundEntity);
-        background.tintColor = UVE::Math::Vector3UVE{backgroundColor[0] * visibility,
+        UVE::Scene::IEntityManager& entities = engine->GetServices().GetEntityManager();
+        UVE::Scene::UIImageComponent& background =
+            entities.GetComponent<UVE::Scene::UIImageComponent>(backgroundEntity);
+        background.tintColor = UVE::Math::Vector3{backgroundColor[0] * visibility,
                                                       backgroundColor[1] * visibility,
                                                       backgroundColor[2] * visibility};
         background.alpha = backgroundColor[3] * visibility;
-        if (imageEntity != UVE::Scene::kInvalidEntityUVE) {
-            UVE::Scene::UIImageComponentUVE& image =
-                entities.GetComponentUVE<UVE::Scene::UIImageComponentUVE>(imageEntity);
+        if (imageEntity != UVE::Scene::kInvalidEntity) {
+            UVE::Scene::UIImageComponent& image =
+                entities.GetComponent<UVE::Scene::UIImageComponent>(imageEntity);
             image.alpha = visibility;
             float aspectRatio = 1.6F;
-            if (textureHandle.has_value() && textureHandle->IsReadyUVE()) {
-                const UVE::Asset::TextureAssetUVE* const texture = textureHandle->TryGetUVE();
+            if (textureHandle.has_value() && textureHandle->IsReady()) {
+                const UVE::Asset::TextureAsset* const texture = textureHandle->TryGet();
                 if (texture != nullptr && texture->width > 0U && texture->height > 0U) {
                     aspectRatio = static_cast<float>(texture->width) / static_cast<float>(texture->height);
                 }
@@ -185,30 +185,30 @@ struct ProjectBootSplashOverlayUVE final {
                 imageHeight = maxHeight;
                 imageWidth = maxHeight * aspectRatio;
             }
-            image.rect.size = UVE::Math::Vector2UVE{imageWidth, imageHeight};
-            image.rect.position = UVE::Math::Vector2UVE{
+            image.rect.size = UVE::Math::Vector2{imageWidth, imageHeight};
+            image.rect.position = UVE::Math::Vector2{
                 (static_cast<float>(surfaceWidth) - imageWidth) * 0.5F,
                 (static_cast<float>(surfaceHeight) - imageHeight) * 0.5F};
         }
     }
 };
 
-[[nodiscard]] bool InitializeProjectBootSplashOverlayUVE(UVE::Core::EngineCoreUVE& engine,
-                                                           const UVE::Pack::ProjectRuntimeSetupUVE& setup,
-                                                           ProjectBootSplashOverlayUVE& overlay) {
-    UVE::Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    UVE::Window::IWindowManagerUVE& window = services.GetWindowManagerUVE();
-    if (!window.IsValidUVE() || window.GetWidthUVE() == 0U || window.GetHeightUVE() == 0U) {
+[[nodiscard]] bool InitializeProjectBootSplashOverlay(UVE::Core::EngineCore& engine,
+                                                           const UVE::Pack::ProjectRuntimeSetup& setup,
+                                                           ProjectBootSplashOverlay& overlay) {
+    UVE::Core::EngineServices& services = engine.GetServices();
+    UVE::Window::IWindowManager& window = services.GetWindowManager();
+    if (!window.IsValid() || window.GetWidth() == 0U || window.GetHeight() == 0U) {
         return false;
     }
     overlay.engine = &engine;
-    overlay.previousCamera = engine.GetActiveCameraUVE();
-    overlay.surfaceWidth = window.GetWidthUVE();
-    overlay.surfaceHeight = window.GetHeightUVE();
-    overlay.backgroundColor = engine.GetConfigUVE().backgroundColorUVE;
+    overlay.previousCamera = engine.GetActiveCamera();
+    overlay.surfaceWidth = window.GetWidth();
+    overlay.surfaceHeight = window.GetHeight();
+    overlay.backgroundColor = engine.GetConfig().backgroundColor;
 
-    UVE::Asset::AssetGuidUVE splashTextureGuid = UVE::Asset::kInvalidAssetGuidUVE;
-    std::filesystem::path splashImagePath = engine.GetConfigUVE().bootSplashImagePathUVE;
+    UVE::Asset::AssetGuid splashTextureGuid = UVE::Asset::kInvalidAssetGuid;
+    std::filesystem::path splashImagePath = engine.GetConfig().bootSplashImagePath;
     if (splashImagePath.is_relative()) {
         // Project setting overrides use paths relative to the content directory, just like the
         // package's splashImagePath. Resolve before importing so process CWD never affects startup.
@@ -216,7 +216,7 @@ struct ProjectBootSplashOverlayUVE final {
     }
     if (!splashImagePath.empty()) {
         std::filesystem::path canonicalSplashImagePath;
-        if (!IsContainedExistingResourceUVE(setup.contentRoot, splashImagePath, canonicalSplashImagePath)) {
+        if (!IsContainedExistingResource(setup.contentRoot, splashImagePath, canonicalSplashImagePath)) {
             std::cerr << "uve_runtime: warning: the configured boot image must be a regular file under the project content root; "
                          "showing the background color only\n";
             splashImagePath.clear();
@@ -230,7 +230,7 @@ struct ProjectBootSplashOverlayUVE final {
             return static_cast<char>(std::tolower(value));
         });
         if (extension == ".uvtex") {
-            splashTextureGuid = services.GetAssetDatabaseUVE().RegisterUVE(splashImagePath);
+            splashTextureGuid = services.GetAssetDatabase().Register(splashImagePath);
         } else {
             std::error_code error;
             const std::filesystem::path derivedDirectory =
@@ -244,98 +244,98 @@ struct ProjectBootSplashOverlayUVE final {
 #endif
                 const std::filesystem::path derivedTexturePath =
                     derivedDirectory / ("boot_splash_" + std::to_string(processId) + ".uvtex");
-                splashTextureGuid = services.GetAssetImporterUVE().ImportUVE(
-                    splashImagePath, derivedTexturePath, services.GetAssetDatabaseUVE());
+                splashTextureGuid = services.GetAssetImporter().Import(
+                    splashImagePath, derivedTexturePath, services.GetAssetDatabase());
             }
         }
-        if (splashTextureGuid != UVE::Asset::kInvalidAssetGuidUVE) {
-            overlay.textureHandle.emplace(services.GetAssetManagerUVE().LoadUVE<UVE::Asset::TextureAssetUVE>(
-                splashTextureGuid, services.GetAssetDatabaseUVE()));
+        if (splashTextureGuid != UVE::Asset::kInvalidAssetGuid) {
+            overlay.textureHandle.emplace(services.GetAssetManager().Load<UVE::Asset::TextureAsset>(
+                splashTextureGuid, services.GetAssetDatabase()));
         } else {
             std::cerr << "uve_runtime: warning: the configured boot image could not be imported; "
                          "showing the background color only\n";
         }
     }
 
-    UVE::Scene::IEntityManagerUVE& entities = services.GetEntityManagerUVE();
-    UVE::Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
-    if (overlay.previousCamera == UVE::Scene::kInvalidEntityUVE) {
-        overlay.temporaryCamera = entities.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entities, overlay.temporaryCamera, UVE::Scene::TransformComponentUVE{});
-        entities.AddComponentUVE<UVE::Scene::CameraComponentUVE>(overlay.temporaryCamera);
-        sceneGraph.UpdateUVE(entities);
-        engine.SetActiveCameraUVE(overlay.temporaryCamera);
+    UVE::Scene::IEntityManager& entities = services.GetEntityManager();
+    UVE::Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
+    if (overlay.previousCamera == UVE::Scene::kInvalidEntity) {
+        overlay.temporaryCamera = entities.CreateEntity();
+        sceneGraph.AttachTransform(entities, overlay.temporaryCamera, UVE::Scene::TransformComponent{});
+        entities.AddComponent<UVE::Scene::CameraComponent>(overlay.temporaryCamera);
+        sceneGraph.Update(entities);
+        engine.SetActiveCamera(overlay.temporaryCamera);
     }
 
-    overlay.backgroundEntity = entities.CreateEntityUVE();
-    UVE::Scene::UIImageComponentUVE background;
-    background.rect.position = UVE::Math::Vector2UVE{0.0F, 0.0F};
-    background.rect.size = UVE::Math::Vector2UVE{static_cast<float>(overlay.surfaceWidth),
+    overlay.backgroundEntity = entities.CreateEntity();
+    UVE::Scene::UIImageComponent background;
+    background.rect.position = UVE::Math::Vector2{0.0F, 0.0F};
+    background.rect.size = UVE::Math::Vector2{static_cast<float>(overlay.surfaceWidth),
                                                   static_cast<float>(overlay.surfaceHeight)};
-    background.tintColor = UVE::Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    background.tintColor = UVE::Math::Vector3{0.0F, 0.0F, 0.0F};
     background.alpha = 1.0F;
-    entities.AddComponentUVE<UVE::Scene::UIImageComponentUVE>(overlay.backgroundEntity, background);
+    entities.AddComponent<UVE::Scene::UIImageComponent>(overlay.backgroundEntity, background);
 
-    if (splashTextureGuid != UVE::Asset::kInvalidAssetGuidUVE) {
-        overlay.imageEntity = entities.CreateEntityUVE();
-        UVE::Scene::UIImageComponentUVE image;
+    if (splashTextureGuid != UVE::Asset::kInvalidAssetGuid) {
+        overlay.imageEntity = entities.CreateEntity();
+        UVE::Scene::UIImageComponent image;
         image.textureAssetGuid = splashTextureGuid;
-        image.rect.size = UVE::Math::Vector2UVE{1.0F, 1.0F};
-        image.tintColor = UVE::Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        image.rect.size = UVE::Math::Vector2{1.0F, 1.0F};
+        image.tintColor = UVE::Math::Vector3{1.0F, 1.0F, 1.0F};
         image.alpha = 0.0F;
-        entities.AddComponentUVE<UVE::Scene::UIImageComponentUVE>(overlay.imageEntity, image);
+        entities.AddComponent<UVE::Scene::UIImageComponent>(overlay.imageEntity, image);
     }
     return true;
 }
 
-void RunProjectBootSplashUVE(UVE::Core::EngineCoreUVE& engine,
-                             const UVE::Pack::ProjectRuntimeSetupUVE& setup) {
-    const UVE::Core::EngineConfigUVE& config = engine.GetConfigUVE();
-    if (config.headlessUVE || !engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+void RunProjectBootSplash(UVE::Core::EngineCore& engine,
+                             const UVE::Pack::ProjectRuntimeSetup& setup) {
+    const UVE::Core::EngineConfig& config = engine.GetConfig();
+    if (config.headless || !engine.GetServices().GetWindowManager().IsValid()) {
         return; // A headless run has no surface to display or wait for.
     }
-    const auto fadeDuration = std::chrono::duration<double>(config.splashFadeSecondsUVE);
-    const auto minimumDuration = std::chrono::duration<double>(config.splashMinimumDisplaySecondsUVE);
+    const auto fadeDuration = std::chrono::duration<double>(config.splashFadeSeconds);
+    const auto minimumDuration = std::chrono::duration<double>(config.splashMinimumDisplaySeconds);
     const auto holdEnd = std::max(fadeDuration, minimumDuration);
     const auto bootStart = std::chrono::steady_clock::now();
-    const UVE::Core::SimulationExecutionModeUVE previousSimulationMode = engine.GetSimulationExecutionModeUVE();
-    static_cast<void>(engine.SetSimulationExecutionModeUVE(UVE::Core::SimulationExecutionModeUVE::Paused));
+    const UVE::Core::SimulationExecutionMode previousSimulationMode = engine.GetSimulationExecutionMode();
+    static_cast<void>(engine.SetSimulationExecutionMode(UVE::Core::SimulationExecutionMode::Paused));
 
-    ProjectBootSplashOverlayUVE overlay;
-    if (!InitializeProjectBootSplashOverlayUVE(engine, setup, overlay)) {
-        static_cast<void>(engine.SetSimulationExecutionModeUVE(previousSimulationMode));
+    ProjectBootSplashOverlay overlay;
+    if (!InitializeProjectBootSplashOverlay(engine, setup, overlay)) {
+        static_cast<void>(engine.SetSimulationExecutionMode(previousSimulationMode));
         return;
     }
     const auto tickAndPace = [&engine] {
-        engine.TickFrameUVE();
+        engine.TickFrame();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     };
     bool skipRequested = false;
-    while (!engine.IsQuitRequestedUVE() && std::chrono::steady_clock::now() - bootStart < holdEnd) {
+    while (!engine.IsQuitRequested() && std::chrono::steady_clock::now() - bootStart < holdEnd) {
         const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - bootStart).count();
         const float visibility = fadeDuration.count() > 0.0
                                      ? static_cast<float>(std::clamp(elapsed / fadeDuration.count(), 0.0, 1.0))
                                      : 1.0F;
-        overlay.SetVisibilityUVE(visibility);
+        overlay.SetVisibility(visibility);
         tickAndPace();
         skipRequested = skipRequested ||
-                        (config.splashSkippableUVE &&
-                         engine.GetServicesUVE().GetInputSystemUVE().WasKeyPressedThisFrameUVE(
-                             UVE::Input::KeyCodeUVE::Escape));
+                        (config.splashSkippable &&
+                         engine.GetServices().GetInputSystem().WasKeyPressedThisFrame(
+                             UVE::Input::KeyCode::Escape));
     }
 
     const auto fadeOutStart = std::chrono::steady_clock::now();
-    while (!engine.IsQuitRequestedUVE() && !skipRequested && fadeDuration.count() > 0.0 &&
+    while (!engine.IsQuitRequested() && !skipRequested && fadeDuration.count() > 0.0 &&
            std::chrono::steady_clock::now() - fadeOutStart < fadeDuration) {
         const double progress =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - fadeOutStart).count() /
             fadeDuration.count();
-        overlay.SetVisibilityUVE(static_cast<float>(1.0 - std::clamp(progress, 0.0, 1.0)));
+        overlay.SetVisibility(static_cast<float>(1.0 - std::clamp(progress, 0.0, 1.0)));
         tickAndPace();
-        skipRequested = config.splashSkippableUVE &&
-                        engine.GetServicesUVE().GetInputSystemUVE().IsKeyDownUVE(UVE::Input::KeyCodeUVE::Escape);
+        skipRequested = config.splashSkippable &&
+                        engine.GetServices().GetInputSystem().IsKeyDown(UVE::Input::KeyCode::Escape);
     }
-    static_cast<void>(engine.SetSimulationExecutionModeUVE(previousSimulationMode));
+    static_cast<void>(engine.SetSimulationExecutionMode(previousSimulationMode));
 }
 
 /// Phase U3a diagnostic-only fixture: authors a camera plus one UIImage/UIButton/UIText entity and
@@ -343,68 +343,68 @@ void RunProjectBootSplashUVE(UVE::Core::EngineCoreUVE& engine,
 /// click-test against a live window - this is not a general scene-loading feature (that is
 /// roadmap item #7's own, separate, future scope), just the smallest real content this diagnostic
 /// flag needs.
-void AuthorUIOverlayDemoFixtureUVE(UVE::Core::EngineCoreUVE& engine) {
-    UVE::Core::EngineServicesUVE& services = engine.GetServicesUVE();
-    UVE::Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-    UVE::Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+void AuthorUIOverlayDemoFixture(UVE::Core::EngineCore& engine) {
+    UVE::Core::EngineServices& services = engine.GetServices();
+    UVE::Scene::IEntityManager& entityManager = services.GetEntityManager();
+    UVE::Scene::ISceneGraph& sceneGraph = services.GetSceneGraph();
 
-    const UVE::Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, camera, UVE::Scene::TransformComponentUVE{});
-    entityManager.AddComponentUVE<UVE::Scene::CameraComponentUVE>(camera);
-    engine.SetActiveCameraUVE(camera);
+    const UVE::Scene::Entity camera = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, camera, UVE::Scene::TransformComponent{});
+    entityManager.AddComponent<UVE::Scene::CameraComponent>(camera);
+    engine.SetActiveCamera(camera);
 
-    const UVE::Scene::EntityUVE imageEntity = entityManager.CreateEntityUVE();
-    UVE::Scene::UIImageComponentUVE image{};
-    image.rect.position = UVE::Math::Vector2UVE{40.0F, 40.0F};
-    image.rect.size = UVE::Math::Vector2UVE{120.0F, 120.0F};
-    image.tintColor = UVE::Math::Vector3UVE{0.85F, 0.20F, 0.20F};
-    entityManager.AddComponentUVE<UVE::Scene::UIImageComponentUVE>(imageEntity, image);
+    const UVE::Scene::Entity imageEntity = entityManager.CreateEntity();
+    UVE::Scene::UIImageComponent image{};
+    image.rect.position = UVE::Math::Vector2{40.0F, 40.0F};
+    image.rect.size = UVE::Math::Vector2{120.0F, 120.0F};
+    image.tintColor = UVE::Math::Vector3{0.85F, 0.20F, 0.20F};
+    entityManager.AddComponent<UVE::Scene::UIImageComponent>(imageEntity, image);
 
-    const UVE::Scene::EntityUVE buttonEntity = entityManager.CreateEntityUVE();
-    UVE::Scene::UIButtonComponentUVE button{};
-    button.rect.position = UVE::Math::Vector2UVE{220.0F, 60.0F};
-    button.rect.size = UVE::Math::Vector2UVE{160.0F, 48.0F};
-    button.normalColor = UVE::Math::Vector3UVE{0.15F, 0.55F, 0.20F};
-    button.hoverColor = UVE::Math::Vector3UVE{0.20F, 0.70F, 0.28F};
-    button.pressedColor = UVE::Math::Vector3UVE{0.85F, 0.75F, 0.15F};
-    entityManager.AddComponentUVE<UVE::Scene::UIButtonComponentUVE>(buttonEntity, button);
+    const UVE::Scene::Entity buttonEntity = entityManager.CreateEntity();
+    UVE::Scene::UIButtonComponent button{};
+    button.rect.position = UVE::Math::Vector2{220.0F, 60.0F};
+    button.rect.size = UVE::Math::Vector2{160.0F, 48.0F};
+    button.normalColor = UVE::Math::Vector3{0.15F, 0.55F, 0.20F};
+    button.hoverColor = UVE::Math::Vector3{0.20F, 0.70F, 0.28F};
+    button.pressedColor = UVE::Math::Vector3{0.85F, 0.75F, 0.15F};
+    entityManager.AddComponent<UVE::Scene::UIButtonComponent>(buttonEntity, button);
 
-    const UVE::Scene::EntityUVE textEntity = entityManager.CreateEntityUVE();
-    UVE::Scene::UITextComponentUVE text{};
+    const UVE::Scene::Entity textEntity = entityManager.CreateEntity();
+    UVE::Scene::UITextComponent text{};
     text.text = "Phase U3a UI Overlay Demo - click the button";
-    text.positionPixels = UVE::Math::Vector2UVE{40.0F, 200.0F};
+    text.positionPixels = UVE::Math::Vector2{40.0F, 200.0F};
     text.fontSize = 22.0F;
-    text.color = UVE::Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-    entityManager.AddComponentUVE<UVE::Scene::UITextComponentUVE>(textEntity, text);
+    text.color = UVE::Math::Vector3{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponent<UVE::Scene::UITextComponent>(textEntity, text);
 }
 
 } // namespace
 
 /// Proof-of-life entry point for the UniVex Engine. By default opens a real GLFW3 window with an
 /// OpenGL 4.6 Core render device (Increment 20) and drives a full Init -> Load -> N x
-/// (BeginFrame/Update/LateUpdate/Render/EndFrame) -> Shutdown cycle through EngineCoreUVE,
+/// (BeginFrame/Update/LateUpdate/Render/EndFrame) -> Shutdown cycle through EngineCore,
 /// exiting 0 — the demo triangle Render() draws each frame is the "initializes the engine and
-/// renders a frame" proof-of-life. Pass `--headless` to fall back to NullWindowManagerUVE/
-/// NullRenderDeviceUVE instead (no display required — the mode CI and this project's own test
+/// renders a frame" proof-of-life. Pass `--headless` to fall back to NullWindowManager/
+/// NullRenderDevice instead (no display required — the mode CI and this project's own test
 /// suite use). `argv[1..argc)` (the program path at argv[0] excluded) is forwarded to
-/// EngineConfigUVE::commandLineArgs. `--help` prints the runtime's supported options and registered
+/// EngineConfig::commandLineArgs. `--help` prints the runtime's supported options and registered
 /// engine-setting overrides; `--project <path>` loads a packaged project before engine startup.
 ///
 /// `--ui-overlay-demo [frameCount]` is a Phase U3a diagnostic-only path (not part of the above
-/// contract): it drives EngineCoreUVE's lifecycle by hand instead of RunUVE(), authors the small
+/// contract): it drives EngineCore's lifecycle by hand instead of Run(), authors the small
 /// fixture above, and runs for `frameCount` frames (default 3000, ~ a minute at 60 Hz) so a real
 /// windowed run under Xvfb stays open long enough for an external xdotool screenshot/click pass.
 int main(int argc, char** argv) {
-    if (HasRawArgumentUVE(argc, argv, "--help") || HasRawArgumentUVE(argc, argv, "-h") ||
-        HasRawArgumentUVE(argc, argv, "--headless")) {
-        UVE::Platform::AttachParentConsoleForCliUVE();
+    if (HasRawArgument(argc, argv, "--help") || HasRawArgument(argc, argv, "-h") ||
+        HasRawArgument(argc, argv, "--headless")) {
+        UVE::Platform::AttachParentConsoleForCli();
     }
-    if (HasRawArgumentUVE(argc, argv, "--help") || HasRawArgumentUVE(argc, argv, "-h")) {
-        std::cout << BuildRuntimeCommandLineHelpUVE();
+    if (HasRawArgument(argc, argv, "--help") || HasRawArgument(argc, argv, "-h")) {
+        std::cout << BuildRuntimeCommandLineHelp();
         return 0;
     }
 
-    UVE::Core::EngineConfigUVE config{};
+    UVE::Core::EngineConfig config{};
     config.logFilePath = "uve_engine.log";
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
 
@@ -439,37 +439,37 @@ int main(int argc, char** argv) {
             config.commandLineArgs.erase(frames,std::next(value));
         }
 
-        const UVE::Pack::ProjectRuntimeSetupResultUVE setupResult =
-            UVE::Pack::PrepareProjectRuntimeUVE(projectPath, config);
-        if (!setupResult.IsReadyUVE()) {
+        const UVE::Pack::ProjectRuntimeSetupResult setupResult =
+            UVE::Pack::PrepareProjectRuntime(projectPath, config);
+        if (!setupResult.IsReady()) {
             std::cerr << "uve_runtime: " << setupResult.message << '\n';
             return 1;
         }
 
-        UVE::Platform::SingleInstanceLockUVE instanceLock;
-        if (config.enforceSingleInstanceUVE) {
-            const UVE::Platform::SingleInstanceLockResultUVE lockResult =
-                instanceLock.AcquireUVE(config.applicationIdentifierUVE, config.userDataDirectoryPathUVE);
-            if (lockResult.code == UVE::Platform::SingleInstanceLockCodeUVE::AlreadyRunning) {
+        UVE::Platform::SingleInstanceLock instanceLock;
+        if (config.enforceSingleInstance) {
+            const UVE::Platform::SingleInstanceLockResult lockResult =
+                instanceLock.Acquire(config.applicationIdentifier, config.userDataDirectoryPath);
+            if (lockResult.code == UVE::Platform::SingleInstanceLockCode::AlreadyRunning) {
                 std::cerr << "uve_runtime: " << lockResult.message << '\n';
                 return 2;
             }
-            if (lockResult.code == UVE::Platform::SingleInstanceLockCodeUVE::Failed) {
+            if (lockResult.code == UVE::Platform::SingleInstanceLockCode::Failed) {
                 std::cerr << "uve_runtime: " << lockResult.message << '\n';
                 return 1;
             }
-            if (lockResult.code == UVE::Platform::SingleInstanceLockCodeUVE::Unsupported) {
+            if (lockResult.code == UVE::Platform::SingleInstanceLockCode::Unsupported) {
                 std::cerr << "uve_runtime: warning: " << lockResult.message << '\n';
             }
         }
 
-        UVE::Core::EngineCoreUVE engine(config);
-        UVE::Platform::CrashReporterUVE crashReporter;
+        UVE::Core::EngineCore engine(config);
+        UVE::Platform::CrashReporter crashReporter;
         try {
             engine.Init();
-            const UVE::Core::EngineConfigUVE& effectiveConfig = engine.GetConfigUVE();
-            if (effectiveConfig.crashHandlerEnabledUVE) {
-                std::filesystem::path crashDirectory = effectiveConfig.crashDumpDirectoryUVE;
+            const UVE::Core::EngineConfig& effectiveConfig = engine.GetConfig();
+            if (effectiveConfig.crashHandlerEnabled) {
+                std::filesystem::path crashDirectory = effectiveConfig.crashDumpDirectory;
                 if (crashDirectory.is_relative()) {
                     const bool escapesUserData = std::any_of(
                         crashDirectory.begin(), crashDirectory.end(),
@@ -477,13 +477,13 @@ int main(int argc, char** argv) {
                     if (escapesUserData) {
                         std::cerr << "uve_runtime: warning: crash dump path escapes user data; handler not installed\n";
                     } else {
-                        crashDirectory = effectiveConfig.userDataDirectoryPathUVE / crashDirectory;
+                        crashDirectory = effectiveConfig.userDataDirectoryPath / crashDirectory;
                     }
                 }
                 if (crashDirectory.is_absolute()) {
-                    const UVE::Platform::CrashReporterResultUVE crashResult =
-                        crashReporter.InstallUVE(crashDirectory, effectiveConfig.applicationIdentifierUVE);
-                    if (!crashResult.IsInstalledUVE()) {
+                    const UVE::Platform::CrashReporterResult crashResult =
+                        crashReporter.Install(crashDirectory, effectiveConfig.applicationIdentifier);
+                    if (!crashResult.IsInstalled()) {
                         std::cerr << "uve_runtime: warning: " << crashResult.message << '\n';
                     }
                 }
@@ -493,16 +493,16 @@ int main(int argc, char** argv) {
                 return 1;
             }
 
-            const UVE::Pack::ProjectLaunchResultUVE launchResult =
-                UVE::Pack::LoadAndActivateProjectSceneUVE(engine, *setupResult.setup);
-            if (!launchResult.IsAcceptedUVE()) {
+            const UVE::Pack::ProjectLaunchResult launchResult =
+                UVE::Pack::LoadAndActivateProjectScene(engine, *setupResult.setup);
+            if (!launchResult.IsAccepted()) {
                 std::cerr << "uve_runtime: " << launchResult.message << '\n';
                 engine.Shutdown();
                 return 1;
             }
 
-            RunProjectBootSplashUVE(engine, *setupResult.setup);
-            if (engine.IsQuitRequestedUVE()) {
+            RunProjectBootSplash(engine, *setupResult.setup);
+            if (engine.IsQuitRequested()) {
                 engine.Shutdown();
                 return 0;
             }
@@ -510,13 +510,13 @@ int main(int argc, char** argv) {
             // A CPU-only build can have a Null window manager even when --headless was not passed;
             // treat either case as headless so a packaged run never waits forever for a close event
             // that cannot exist. Bound and pace those runs at a nominal 60 Hz.
-            const bool headlessRun = engine.GetConfigUVE().headlessUVE ||
-                                     !engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE();
-            constexpr int kMaximumHeadlessFramesUVE = 216000; // one hour at 60 Hz
+            const bool headlessRun = engine.GetConfig().headless ||
+                                     !engine.GetServices().GetWindowManager().IsValid();
+            constexpr int kMaximumHeadlessFrames = 216000; // one hour at 60 Hz
             int frame = 0;
-            while (!engine.IsQuitRequestedUVE() && (!headlessRun || frame < kMaximumHeadlessFramesUVE) &&
+            while (!engine.IsQuitRequested() && (!headlessRun || frame < kMaximumHeadlessFrames) &&
                    (frameLimit == 0 || frame < frameLimit)) {
-                engine.TickFrameUVE();
+                engine.TickFrame();
                 ++frame;
                 if (headlessRun) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -529,14 +529,14 @@ int main(int argc, char** argv) {
         } catch (...) {
             std::cerr << "uve_runtime: unhandled non-standard exception\n";
         }
-        if (engine.GetStateUVE() == UVE::Core::EngineStateUVE::Running) {
+        if (engine.GetState() == UVE::Core::EngineState::Running) {
             try {
                 engine.Shutdown();
             } catch (...) {
                 std::cerr << "uve_runtime: shutdown also failed while recovering from an exception\n";
             }
         }
-        return UVE::Core::EngineCoreUVE::kUnhandledExceptionExitCodeUVE;
+        return UVE::Core::EngineCore::kUnhandledExceptionExitCode;
     }
 
     const auto demoFlagIt = std::find(config.commandLineArgs.begin(), config.commandLineArgs.end(),
@@ -551,22 +551,22 @@ int main(int argc, char** argv) {
         config.windowGlVersionMajor = 4U;
         config.windowGlVersionMinor = 5U;
 
-        UVE::Core::EngineCoreUVE engine(config);
+        UVE::Core::EngineCore engine(config);
         engine.Init();
         if (!engine.Load()) {
             engine.Shutdown();
             return 1;
         }
-        AuthorUIOverlayDemoFixtureUVE(engine);
+        AuthorUIOverlayDemoFixture(engine);
         for (int frame = 0; frame < frameCount; ++frame) {
-            engine.TickFrameUVE();
+            engine.TickFrame();
         }
         engine.Shutdown();
         return 0;
     }
 
-    UVE::Core::EngineCoreUVE engine(config);
+    UVE::Core::EngineCore engine(config);
 
     constexpr int kFrameCount = 60; // ~1 second of frames at nominal 60 Hz
-    return engine.RunUVE(kFrameCount);
+    return engine.Run(kFrameCount);
 }

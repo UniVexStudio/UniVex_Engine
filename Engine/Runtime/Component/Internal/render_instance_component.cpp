@@ -6,35 +6,35 @@
 
 namespace UVE::Scene {
 
-bool IsRenderInstanceComponentValidUVE(const RenderInstanceComponentUVE& component) noexcept {
+bool IsRenderInstanceComponentValid(const RenderInstanceComponent& component) noexcept {
     return std::isfinite(component.sortingOffset);
 }
 
-RenderInstanceComponentUVE SanitizeRenderInstanceComponentUVE(
-    const RenderInstanceComponentUVE& component) noexcept {
-    return RenderInstanceComponentUVE{
+RenderInstanceComponent SanitizeRenderInstanceComponent(
+    const RenderInstanceComponent& component) noexcept {
+    return RenderInstanceComponent{
         .renderLayers = component.renderLayers,
         .sortingOffset = std::isfinite(component.sortingOffset) ? component.sortingOffset : 0.0F,
         .sortingUseAabbCenter = component.sortingUseAabbCenter,
     };
 }
 
-bool MatchesRenderInstanceLayerMaskUVE(const RenderInstanceComponentUVE& component,
+bool MatchesRenderInstanceLayerMask(const RenderInstanceComponent& component,
                                        const std::uint32_t cameraLayerMask) noexcept {
     return (component.renderLayers & cameraLayerMask) != 0U;
 }
 
-bool IsRenderInstanceOnLayerUVE(const RenderInstanceComponentUVE& component,
+bool IsRenderInstanceOnLayer(const RenderInstanceComponent& component,
                                 const std::uint32_t layerIndex) noexcept {
-    if (layerIndex > kMaximumRenderInstanceLayerIndexUVE) {
+    if (layerIndex > kMaximumRenderInstanceLayerIndex) {
         return false;
     }
     return (component.renderLayers & (1U << layerIndex)) != 0U;
 }
 
-void SetRenderInstanceLayerBitUVE(RenderInstanceComponentUVE& component,
+void SetRenderInstanceLayerBit(RenderInstanceComponent& component,
                                   const std::uint32_t layerIndex, const bool enabled) noexcept {
-    if (layerIndex > kMaximumRenderInstanceLayerIndexUVE) {
+    if (layerIndex > kMaximumRenderInstanceLayerIndex) {
         return;
     }
     const std::uint32_t bit = (1U << layerIndex);
@@ -45,13 +45,13 @@ void SetRenderInstanceLayerBitUVE(RenderInstanceComponentUVE& component,
     }
 }
 
-Math::Vector3UVE ResolveRenderInstanceSortAnchorUVE(
-    const RenderInstanceComponentUVE& component, const Math::Vector3UVE& worldOrigin,
-    const Math::Vector3UVE& worldAabbCenter) noexcept {
+Math::Vector3 ResolveRenderInstanceSortAnchor(
+    const RenderInstanceComponent& component, const Math::Vector3& worldOrigin,
+    const Math::Vector3& worldAabbCenter) noexcept {
     return component.sortingUseAabbCenter ? worldAabbCenter : worldOrigin;
 }
 
-float ComputeRenderInstanceSortDepthUVE(const RenderInstanceComponentUVE& component,
+float ComputeRenderInstanceSortDepth(const RenderInstanceComponent& component,
                                         const float baseCameraDistance) noexcept {
     const float safeDistance = std::isfinite(baseCameraDistance) ? baseCameraDistance : 0.0F;
     const float safeOffset = std::isfinite(component.sortingOffset) ? component.sortingOffset : 0.0F;

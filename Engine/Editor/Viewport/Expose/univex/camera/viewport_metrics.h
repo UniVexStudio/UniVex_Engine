@@ -33,11 +33,11 @@ using univex::math::Vec3;
 /// floored at the near plane so a point level with or behind the eye cannot produce a zero or
 /// negative scale. Under orthographic the view volume does not converge, so the point is
 /// irrelevant and the answer is constant.
-[[nodiscard]] float WorldPerPixelAtPointUVE(const OrbitCamera& camera, int framebufferHeight,
+[[nodiscard]] float WorldPerPixelAtPoint(const OrbitCamera& camera, int framebufferHeight,
                                             const Vec3& worldPoint);
 
 /// The same metric at the camera's own orbit target - what a HUD readout about "the middle of the
 /// screen" means, as opposed to what a gizmo at some other pivot means.
-[[nodiscard]] float WorldPerPixelAtOrbitTargetUVE(const OrbitCamera& camera, int framebufferHeight);
+[[nodiscard]] float WorldPerPixelAtOrbitTarget(const OrbitCamera& camera, int framebufferHeight);
 
 } // namespace univex::camera

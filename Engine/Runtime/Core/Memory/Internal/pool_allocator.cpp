@@ -16,7 +16,7 @@ namespace UVE::Memory {
 
 namespace {
 
-constexpr std::size_t RoundUpUVE(std::size_t value, std::size_t alignment) {
+constexpr std::size_t RoundUp(std::size_t value, std::size_t alignment) {
     if (alignment == 0U || value > std::numeric_limits<std::size_t>::max() - (alignment - 1U)) {
         throw std::bad_alloc{};
     }
@@ -27,11 +27,11 @@ constexpr std::size_t RoundUpUVE(std::size_t value, std::size_t alignment) {
 // free block. Reading/writing through std::memcpy (rather than reinterpret_cast'ing the byte
 // pointer to void**) avoids both a -Wcast-align violation (std::byte* has alignof 1; void**
 // does not) and the strict-aliasing UB of treating raw storage as a different type in place.
-void WriteNextPointerUVE(void* block, void* nextPointer) noexcept {
+void WriteNextPointer(void* block, void* nextPointer) noexcept {
     std::memcpy(block, &nextPointer, sizeof(void*));
 }
 
-void* ReadNextPointerUVE(void* block) noexcept {
+void* ReadNextPointer(void* block) noexcept {
     void* nextPointer = nullptr;
     std::memcpy(&nextPointer, block, sizeof(void*));
     return nextPointer;
@@ -39,18 +39,18 @@ void* ReadNextPointerUVE(void* block) noexcept {
 
 } // namespace
 
-PoolAllocatorUVE::PoolAllocatorUVE(std::size_t blockSizeBytes, std::size_t blockAlignment,
-                                    std::size_t blockCount, IMemoryTrackerUVE* tracker,
+PoolAllocator::PoolAllocator(std::size_t blockSizeBytes, std::size_t blockAlignment,
+                                    std::size_t blockCount, IMemoryTracker* tracker,
                                     std::string_view allocatorTag)
     : m_blockSizeBytes(blockSizeBytes),
       m_blockAlignment(blockAlignment),
-      m_blockStride(RoundUpUVE(std::max(blockSizeBytes, sizeof(void*)), blockAlignment)),
+      m_blockStride(RoundUp(std::max(blockSizeBytes, sizeof(void*)), blockAlignment)),
       m_blockCount(blockCount),
       m_buffer(nullptr),
       m_freeListHead(nullptr),
       m_tracker(tracker),
       m_allocatorTag(allocatorTag) {
-    UVE_ASSERT(IsValidAlignmentUVE(blockAlignment));
+    UVE_ASSERT(IsValidAlignment(blockAlignment));
     UVE_ASSERT(blockSizeBytes > 0);
     UVE_ASSERT(blockCount > 0);
     if (m_blockCount == 0U || m_blockStride > std::numeric_limits<std::size_t>::max() / m_blockCount) {
@@ -61,82 +61,82 @@ PoolAllocatorUVE::PoolAllocatorUVE(std::size_t blockSizeBytes, std::size_t block
 
     // Thread the intrusive free list through every block, in ascending address order.
     for (std::size_t blockIndex = 0; blockIndex < m_blockCount; ++blockIndex) {
-        void* const block = BufferBytesUVE() + (blockIndex * m_blockStride);
+        void* const block = BufferBytes() + (blockIndex * m_blockStride);
         void* const nextBlock =
-            (blockIndex + 1 < m_blockCount) ? (BufferBytesUVE() + ((blockIndex + 1) * m_blockStride))
+            (blockIndex + 1 < m_blockCount) ? (BufferBytes() + ((blockIndex + 1) * m_blockStride))
                                              : nullptr;
-        WriteNextPointerUVE(block, nextBlock);
+        WriteNextPointer(block, nextBlock);
     }
     m_freeListHead = m_buffer;
 }
 
-PoolAllocatorUVE::~PoolAllocatorUVE() {
+PoolAllocator::~PoolAllocator() {
     ::operator delete(m_buffer, std::align_val_t{m_blockAlignment});
 }
 
-void* PoolAllocatorUVE::AllocateUVE(std::size_t sizeBytes, std::size_t alignment,
+void* PoolAllocator::Allocate(std::size_t sizeBytes, std::size_t alignment,
                                      const char* sourceFile, int sourceLine) {
-    UVE_ASSERT(IsValidAlignmentUVE(alignment));
+    UVE_ASSERT(IsValidAlignment(alignment));
     UVE_ASSERT(sizeBytes <= m_blockSizeBytes);
     UVE_ASSERT(alignment <= m_blockAlignment);
     UVE_ASSERT(m_freeListHead != nullptr);
     if (sizeBytes > m_blockSizeBytes || alignment > m_blockAlignment) {
-        UVE_ERROR("PoolAllocatorUVE: request (size={}, align={}) exceeds this pool's block contract (size={}, align={})",
+        UVE_ERROR("PoolAllocator: request (size={}, align={}) exceeds this pool's block contract (size={}, align={})",
                    sizeBytes, alignment, m_blockSizeBytes, m_blockAlignment);
-        throw std::invalid_argument("PoolAllocatorUVE::AllocateUVE: request exceeds block contract");
+        throw std::invalid_argument("PoolAllocator::Allocate: request exceeds block contract");
     }
     if (m_freeListHead == nullptr) {
-        UVE_ERROR("PoolAllocatorUVE: pool exhausted ({} of {} blocks in use)", m_usedBlockCount, m_blockCount);
+        UVE_ERROR("PoolAllocator: pool exhausted ({} of {} blocks in use)", m_usedBlockCount, m_blockCount);
         throw std::bad_alloc{};
     }
 
     void* const block = m_freeListHead;
-    m_freeListHead = ReadNextPointerUVE(block);
+    m_freeListHead = ReadNextPointer(block);
     ++m_usedBlockCount;
 
     if (m_tracker != nullptr) {
-        m_tracker->RecordAllocationUVE(block, sizeBytes, alignment, m_allocatorTag, sourceFile,
+        m_tracker->RecordAllocation(block, sizeBytes, alignment, m_allocatorTag, sourceFile,
                                         sourceLine);
     }
     return block;
 }
 
-void PoolAllocatorUVE::DeallocateUVE(void* pointer) {
+void PoolAllocator::Deallocate(void* pointer) {
     if (pointer == nullptr) {
         return;
     }
-    UVE_ASSERT(OwnsPointerUVE(pointer));
+    UVE_ASSERT(OwnsPointer(pointer));
 
-    WriteNextPointerUVE(pointer, m_freeListHead);
+    WriteNextPointer(pointer, m_freeListHead);
     m_freeListHead = pointer;
     --m_usedBlockCount;
 
     if (m_tracker != nullptr) {
-        m_tracker->RecordDeallocationUVE(pointer);
+        m_tracker->RecordDeallocation(pointer);
     }
 }
 
-std::size_t PoolAllocatorUVE::GetAllocatedBytesUVE() const {
+std::size_t PoolAllocator::GetAllocatedBytes() const {
     return m_usedBlockCount * m_blockStride;
 }
 
-std::size_t PoolAllocatorUVE::GetUsedBlocksUVE() const noexcept {
+std::size_t PoolAllocator::GetUsedBlocks() const noexcept {
     return m_usedBlockCount;
 }
 
-std::size_t PoolAllocatorUVE::GetFreeBlocksUVE() const noexcept {
+std::size_t PoolAllocator::GetFreeBlocks() const noexcept {
     return m_blockCount - m_usedBlockCount;
 }
 
-std::size_t PoolAllocatorUVE::GetCapacityBlocksUVE() const noexcept {
+std::size_t PoolAllocator::GetCapacityBlocks() const noexcept {
     return m_blockCount;
 }
 
-std::byte* PoolAllocatorUVE::BufferBytesUVE() const noexcept {
+std::byte* PoolAllocator::BufferBytes() const noexcept {
     return static_cast<std::byte*>(m_buffer);
 }
 
-bool PoolAllocatorUVE::OwnsPointerUVE(const void* pointer) const noexcept {
+bool PoolAllocator::OwnsPointer(const void* pointer) const noexcept {
     const auto* const bufferStart = static_cast<const std::byte*>(m_buffer);
     const auto* const candidate = static_cast<const std::byte*>(pointer);
     if (candidate < bufferStart) {

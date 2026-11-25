@@ -10,26 +10,26 @@
 namespace UVE::Threading::Tests {
 namespace {
 
-TEST(ThreadIdUVETest, Current_IsStableWithinAThreadAndDistinctAcrossThreads) {
-    EXPECT_EQ(ThreadIdUVE::CurrentUVE(), ThreadIdUVE::CurrentUVE());
-    EXPECT_NE(ThreadIdUVE::CurrentUVE().ValueUVE(), 0U);
-    ThreadIdUVE other{};
-    std::thread worker([&other] { other = ThreadIdUVE::CurrentUVE(); });
+TEST(ThreadIdTest, Current_IsStableWithinAThreadAndDistinctAcrossThreads) {
+    EXPECT_EQ(ThreadId::Current(), ThreadId::Current());
+    EXPECT_NE(ThreadId::Current().Value(), 0U);
+    ThreadId other{};
+    std::thread worker([&other] { other = ThreadId::Current(); });
     worker.join();
-    EXPECT_NE(other, ThreadIdUVE::CurrentUVE());
+    EXPECT_NE(other, ThreadId::Current());
 }
 
-TEST(ThreadIdUVETest, FromNative_RoundTripsThroughValue) {
-    const ThreadIdUVE id = ThreadIdUVE::FromNativeUVE(std::this_thread::get_id());
-    EXPECT_EQ(id, ThreadIdUVE::CurrentUVE());
-    const ThreadIdUVE rebuilt{id.ValueUVE()};
+TEST(ThreadIdTest, FromNative_RoundTripsThroughValue) {
+    const ThreadId id = ThreadId::FromNative(std::this_thread::get_id());
+    EXPECT_EQ(id, ThreadId::Current());
+    const ThreadId rebuilt{id.Value()};
     EXPECT_EQ(rebuilt, id);
 }
 
-TEST(ThreadIdUVETest, Hash_SupportsUnorderedMaps) {
-    std::unordered_map<ThreadIdUVE, int> perThread;
-    perThread[ThreadIdUVE::CurrentUVE()] = 11;
-    EXPECT_EQ(perThread[ThreadIdUVE::CurrentUVE()], 11);
+TEST(ThreadIdTest, Hash_SupportsUnorderedMaps) {
+    std::unordered_map<ThreadId, int> perThread;
+    perThread[ThreadId::Current()] = 11;
+    EXPECT_EQ(perThread[ThreadId::Current()], 11);
 }
 
 } // namespace

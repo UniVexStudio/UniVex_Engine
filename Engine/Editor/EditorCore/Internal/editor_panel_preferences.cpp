@@ -1,32 +1,32 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // Opening the Editor Preferences and Project Settings windows (drawn by the PRISM shell's
-// EditorSettingsWindowUVE) and saving the project's settings.
+// EditorSettingsWindow) and saving the project's settings.
 
 #include "editor.h"
 #include "engine_project_settings.h"
 
 namespace UVE::Editor {
 
-void EditorUVE::OpenEditorPreferencesUVE() noexcept {
+void Editor::OpenEditorPreferences() noexcept {
     m_preferencesWindow.visible = true;
     m_preferencesWindow.focusSearch = true;
     m_preferencesWindow.focusPending = true;
 }
 
-void EditorUVE::OpenProjectSettingsUVE() noexcept {
+void Editor::OpenProjectSettings() noexcept {
     m_projectSettingsWindow.visible = true;
     m_projectSettingsWindow.focusSearch = true;
     m_projectSettingsWindow.focusPending = true;
 }
 
-bool EditorUVE::SaveProjectSettingsUVE() {
-    Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
-    const bool saved = !project.IsDirtyUVE() || project.SaveUVE();
+bool Editor::SaveProjectSettings() {
+    Config::SettingsDocument& project = m_services->GetProjectSettings();
+    const bool saved = !project.IsDirty() || project.Save();
     if (saved) {
-        Core::EngineConfigUVE resolvedConfig{};
-        Core::ApplyEngineProjectSettingsUVE(project, resolvedConfig);
-        Core::ApplyEngineConfigToRenderer3DUVE(resolvedConfig, m_services->GetRenderer3DUVE());
+        Core::EngineConfig resolvedConfig{};
+        Core::ApplyEngineProjectSettings(project, resolvedConfig);
+        Core::ApplyEngineConfigToRenderer3D(resolvedConfig, m_services->GetRenderer3D());
     }
     return saved;
 }

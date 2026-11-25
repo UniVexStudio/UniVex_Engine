@@ -24,9 +24,9 @@ namespace UVE::Editor {
 /// notify state (or its ends) or a curve key to move it; right-click for Add / Rename / Delete;
 /// the wheel zooms (Shift pans); Delete removes what is picked. A clip dropped from the Content
 /// Browser lands where it is dropped.
-class MontageTimelineUVE final : public prism::Widget {
+class MontageTimeline final : public prism::Widget {
 public:
-    explicit MontageTimelineUVE(EditorMontageEditorUVE& window) : m_window(window) {}
+    explicit MontageTimeline(EditorMontageEditor& window) : m_window(window) {}
 
     prism::Vec2 measure(prism::Vec2 avail) override;
     void paint(prism::Canvas& c) override;
@@ -42,30 +42,30 @@ public:
     bool onDrop(const prism::DragDropEvent& e) override;
 
 private:
-    enum class RowUVE : std::uint8_t { Ruler, Sections, Slot, Notify, Curves, None };
-    struct HitUVE final {
-        RowUVE row = RowUVE::None;
+    enum class Row : std::uint8_t { Ruler, Sections, Slot, Notify, Curves, None };
+    struct Hit final {
+        Row row = Row::None;
         std::size_t track = 0U;   ///< Notify: which notify track
-        EditorMontageEditorUVE::SelectionUVE item;
+        EditorMontageEditor::Selection item;
         int edge = 0;             ///< State: -1 begin, 1 end, 0 body
     };
-    [[nodiscard]] float XOfUVE(double time) const noexcept;
-    [[nodiscard]] double TimeAtUVE(float x) const noexcept;
-    [[nodiscard]] prism::Rect RowRectUVE(RowUVE row, std::size_t track = 0U) const noexcept;
-    [[nodiscard]] HitUVE HitTestUVE(prism::Vec2 p) const;
-    [[nodiscard]] std::size_t NotifyTracksUVE() const noexcept;
-    void ShowContextMenuUVE(const HitUVE& hit, prism::Vec2 at);
-    void ShowHeaderMenuUVE(const HitUVE& hit, prism::Vec2 at);
+    [[nodiscard]] float XOf(double time) const noexcept;
+    [[nodiscard]] double TimeAt(float x) const noexcept;
+    [[nodiscard]] prism::Rect RowRect(Row row, std::size_t track = 0U) const noexcept;
+    [[nodiscard]] Hit HitTest(prism::Vec2 p) const;
+    [[nodiscard]] std::size_t NotifyTracks() const noexcept;
+    void ShowContextMenu(const Hit& hit, prism::Vec2 at);
+    void ShowHeaderMenu(const Hit& hit, prism::Vec2 at);
     /// The notify track under window height `y`, if any.
-    [[nodiscard]] std::optional<std::uint32_t> TrackAtUVE(float y) const noexcept;
-    void DeleteSelectionUVE();
-    void CommitDragUVE(prism::Vec2 p);
+    [[nodiscard]] std::optional<std::uint32_t> TrackAt(float y) const noexcept;
+    void DeleteSelection();
+    void CommitDrag(prism::Vec2 p);
 
-    EditorMontageEditorUVE& m_window;
+    EditorMontageEditor& m_window;
     double m_scroll = 0.0;          ///< seconds at the left edge
     float m_pixelsPerSecond = 220.0F;
     bool m_scrubbing = false;
-    std::optional<HitUVE> m_drag;   ///< what is being dragged
+    std::optional<Hit> m_drag;   ///< what is being dragged
     prism::Vec2 m_dragFrom{};
     prism::Vec2 m_mouse{};
     bool m_dropHot = false;

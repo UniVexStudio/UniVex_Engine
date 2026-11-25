@@ -11,84 +11,84 @@
 
 namespace UVE::Audio {
 
-/// AudioSystemUVE is the concrete, engine-standard implementation of IAudioSystemUVE. Takes its
-/// IAudioDeviceUVE& by dependency injection (same shape as Render::RenderSystemUVE's
-/// IRenderDeviceUVE&, Input::InputSystemUVE's IEventSystemUVE&) — it never constructs or owns an
-/// audio device itself, so tests and future backend swaps can pass in whichever IAudioDeviceUVE&
+/// AudioSystem is the concrete, engine-standard implementation of IAudioSystem. Takes its
+/// IAudioDevice& by dependency injection (same shape as Render::RenderSystem's
+/// IRenderDevice&, Input::InputSystem's IEventSystem&) — it never constructs or owns an
+/// audio device itself, so tests and future backend swaps can pass in whichever IAudioDevice&
 /// they need.
-class AudioSystemUVE final : public IAudioSystemUVE {
+class AudioSystem final : public IAudioSystem {
 public:
-    explicit AudioSystemUVE(IAudioDeviceUVE& audioDevice,
-                            IAudioClipResolverUVE* clipResolver = nullptr);
-    ~AudioSystemUVE() override;
+    explicit AudioSystem(IAudioDevice& audioDevice,
+                            IAudioClipResolver* clipResolver = nullptr);
+    ~AudioSystem() override;
 
-    AudioSystemUVE(const AudioSystemUVE&) = delete;
-    AudioSystemUVE& operator=(const AudioSystemUVE&) = delete;
+    AudioSystem(const AudioSystem&) = delete;
+    AudioSystem& operator=(const AudioSystem&) = delete;
 
-    void SetListenerPositionUVE(Math::Vector3UVE position) override;
-    void SetListenerOrientationUVE(Math::Vector3UVE forward, Math::Vector3UVE up) override;
-    [[nodiscard]] Math::Vector3UVE GetListenerPositionUVE() const noexcept override;
+    void SetListenerPosition(Math::Vector3 position) override;
+    void SetListenerOrientation(Math::Vector3 forward, Math::Vector3 up) override;
+    [[nodiscard]] Math::Vector3 GetListenerPosition() const noexcept override;
 
-    [[nodiscard]] VoiceHandleUVE CreateSourceUVE(const AudioSourceDescUVE& desc) override;
-    void DestroySourceUVE(VoiceHandleUVE source) override;
-    [[nodiscard]] bool PlayUVE(VoiceHandleUVE source) override;
-    [[nodiscard]] bool StopUVE(VoiceHandleUVE source) override;
-    [[nodiscard]] VoicePlaybackStateUVE GetSourceStateUVE(VoiceHandleUVE source) const override;
+    [[nodiscard]] VoiceHandle CreateSource(const AudioSourceDesc& desc) override;
+    void DestroySource(VoiceHandle source) override;
+    [[nodiscard]] bool Play(VoiceHandle source) override;
+    [[nodiscard]] bool Stop(VoiceHandle source) override;
+    [[nodiscard]] VoicePlaybackState GetSourceState(VoiceHandle source) const override;
 
-    void SetSourcePositionUVE(VoiceHandleUVE source, Math::Vector3UVE position) override;
-    void SetSourceVolumeUVE(VoiceHandleUVE source, float volume) override;
-    void SetSourcePitchUVE(VoiceHandleUVE source, float pitch) override;
+    void SetSourcePosition(VoiceHandle source, Math::Vector3 position) override;
+    void SetSourceVolume(VoiceHandle source, float volume) override;
+    void SetSourcePitch(VoiceHandle source, float pitch) override;
 
-    bool RegisterMixerGroupUVE(std::string_view name, std::string_view parentName,
+    bool RegisterMixerGroup(std::string_view name, std::string_view parentName,
                                float volumeMultiplier = 1.0F, float pitchMultiplier = 1.0F) override;
-    bool RegisterMixerGroupUVE(std::string_view name, float volumeMultiplier = 1.0F,
+    bool RegisterMixerGroup(std::string_view name, float volumeMultiplier = 1.0F,
                                float pitchMultiplier = 1.0F) override;
-    bool RemoveMixerGroupUVE(std::string_view name) override;
-    bool SetMixerGroupParentUVE(std::string_view name, std::string_view parentName) override;
-    bool SetMixerGroupVolumeUVE(std::string_view name, float volumeMultiplier) override;
-    bool SetMixerGroupPitchUVE(std::string_view name, float pitchMultiplier) override;
-    bool SetMixerGroupMutedUVE(std::string_view name, bool muted) override;
-    bool SetMixerGroupSoloedUVE(std::string_view name, bool soloed) override;
-    bool SetMixerInsertUVE(std::string_view name, std::size_t slot,
-                           const AudioInsertDescUVE& desc) override;
-    bool ClearMixerInsertUVE(std::string_view name, std::size_t slot) override;
-    bool SetMixerSampleRateUVE(float sampleRateHz) override;
-    bool SetSourceMixerGroupUVE(VoiceHandleUVE source, std::string_view name) override;
-    [[nodiscard]] AudioMixerDiagnosticsUVE GetMixerDiagnosticsUVE(
-        std::size_t maximumGroups = kMaximumAudioMixerGroupsUVE) const override;
+    bool RemoveMixerGroup(std::string_view name) override;
+    bool SetMixerGroupParent(std::string_view name, std::string_view parentName) override;
+    bool SetMixerGroupVolume(std::string_view name, float volumeMultiplier) override;
+    bool SetMixerGroupPitch(std::string_view name, float pitchMultiplier) override;
+    bool SetMixerGroupMuted(std::string_view name, bool muted) override;
+    bool SetMixerGroupSoloed(std::string_view name, bool soloed) override;
+    bool SetMixerInsert(std::string_view name, std::size_t slot,
+                           const AudioInsertDesc& desc) override;
+    bool ClearMixerInsert(std::string_view name, std::size_t slot) override;
+    bool SetMixerSampleRate(float sampleRateHz) override;
+    bool SetSourceMixerGroup(VoiceHandle source, std::string_view name) override;
+    [[nodiscard]] AudioMixerDiagnostics GetMixerDiagnostics(
+        std::size_t maximumGroups = kMaximumAudioMixerGroups) const override;
 
-    [[nodiscard]] bool ResetSourceStreamUVE(
-        VoiceHandleUVE source, std::size_t totalSamples, bool loop, std::size_t cursorSample = 0U,
-        std::size_t maximumSamples = kMaximumWavPcm16SamplesUVE) override;
-    [[nodiscard]] bool ScheduleSourceStreamWindowUVE(VoiceHandleUVE source,
+    [[nodiscard]] bool ResetSourceStream(
+        VoiceHandle source, std::size_t totalSamples, bool loop, std::size_t cursorSample = 0U,
+        std::size_t maximumSamples = kMaximumWavPcm16Samples) override;
+    [[nodiscard]] bool ScheduleSourceStreamWindow(VoiceHandle source,
                                                        std::size_t requestedSamples) override;
-    [[nodiscard]] bool PopSourceStreamWindowUVE(VoiceHandleUVE source,
-                                                 Pcm16StreamWindowPlanUVE& outPlan) override;
-    [[nodiscard]] bool ScheduleSourcePcmGainWindowUVE(
-        VoiceHandleUVE source, const PcmGainEffectWindowUVE& window) override;
-    [[nodiscard]] bool ApplySourcePcmGainEffectsUVE(
-        VoiceHandleUVE source, const std::vector<float>& inputSamples,
+    [[nodiscard]] bool PopSourceStreamWindow(VoiceHandle source,
+                                                 Pcm16StreamWindowPlan& outPlan) override;
+    [[nodiscard]] bool ScheduleSourcePcmGainWindow(
+        VoiceHandle source, const PcmGainEffectWindow& window) override;
+    [[nodiscard]] bool ApplySourcePcmGainEffects(
+        VoiceHandle source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) override;
-    [[nodiscard]] bool ApplySourceBusChainUVE(
-        VoiceHandleUVE source, const std::vector<float>& inputSamples,
+    [[nodiscard]] bool ApplySourceBusChain(
+        VoiceHandle source, const std::vector<float>& inputSamples,
         std::vector<float>& outputSamples) override;
 
-    [[nodiscard]] VoiceHandleUVE CreateStreamingSourceUVE(const AudioSourceDescUVE& desc,
-                                                          IAudioStreamSourceUVE& source) override;
-    [[nodiscard]] std::size_t PumpStreamingSourceUVE(VoiceHandleUVE source) override;
-    [[nodiscard]] std::size_t GetStreamingSourceBufferedFramesUVE(VoiceHandleUVE source) const override;
+    [[nodiscard]] VoiceHandle CreateStreamingSource(const AudioSourceDesc& desc,
+                                                          IAudioStreamSource& source) override;
+    [[nodiscard]] std::size_t PumpStreamingSource(VoiceHandle source) override;
+    [[nodiscard]] std::size_t GetStreamingSourceBufferedFrames(VoiceHandle source) const override;
 
-    [[nodiscard]] AudioMeterReadingUVE GetSourceMeterUVE(VoiceHandleUVE source) const override;
-    [[nodiscard]] AudioMeterReadingUVE GetMixerGroupMeterUVE(std::string_view name) const override;
+    [[nodiscard]] AudioMeterReading GetSourceMeter(VoiceHandle source) const override;
+    [[nodiscard]] AudioMeterReading GetMixerGroupMeter(std::string_view name) const override;
 
 
-    void SetOcclusionProviderUVE(const IAudioOcclusionProviderUVE* provider) override;
+    void SetOcclusionProvider(const IAudioOcclusionProvider* provider) override;
 
-    void UpdateUVE(float deltaSeconds) override;
+    void Update(float deltaSeconds) override;
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Audio

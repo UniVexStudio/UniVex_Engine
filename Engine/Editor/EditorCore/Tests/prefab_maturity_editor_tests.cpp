@@ -15,76 +15,76 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-[[nodiscard]] Core::EngineConfigUVE MakePrefabEditorTestConfigUVE() {
-    Core::EngineConfigUVE config{};
-    config.headlessUVE = true;
+[[nodiscard]] Core::EngineConfig MakePrefabEditorTestConfig() {
+    Core::EngineConfig config{};
+    config.headless = true;
     config.logFilePath = "uve_prefab_editor_tests.log";
     config.settingsFilePath = "uve_prefab_editor_tests_settings.json";
     config.assetDatabaseFilePath = "uve_prefab_editor_tests_assets.json";
     config.saveDirectoryPath = "uve_prefab_editor_tests_saves";
     config.shaderCachePath = "uve_prefab_editor_tests_shader_cache";
-    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
-    config.shaderSourceMountPrefixUVE = "shaders";
+    config.shaderSourceRealDirectory = ::UVE::Tests::RepositoryRoot() / "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceMountPrefix = "shaders";
     return config;
 }
 
-TEST(PrefabMaturityEditorUVETest, SaveRefreshAndBridgeFactsUVE_AreRevisionAwareAndPlayGuarded) {
+TEST(PrefabMaturityEditorTest, SaveRefreshAndBridgeFacts_AreRevisionAwareAndPlayGuarded) {
     const std::filesystem::path prefabPath = "uve_prefab_editor_maturity.uvprefab";
     std::filesystem::remove(prefabPath);
 
-    Core::EngineCoreUVE engine(MakePrefabEditorTestConfigUVE());
+    Core::EngineCore engine(MakePrefabEditorTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_prefab_editor_maturity.uvscene", 100U, &engine);
-        editor.InitUVE();
-        EditorBridgeUVE bridge(editor);
-        Core::EngineServicesUVE& services = engine.GetServicesUVE();
-        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        Editor editor(engine.GetServices(), "uve_prefab_editor_maturity.uvscene", 100U, &engine);
+        editor.Init();
+        EditorBridge bridge(editor);
+        Core::EngineServices& services = engine.GetServices();
+        Scene::IEntityManager& entityManager = services.GetEntityManager();
 
-        const Scene::EntityUVE source = editor.CreateDocumentEntityUVE(EditorEntityKindUVE::Empty);
-        ASSERT_NE(source, Scene::kInvalidEntityUVE);
-        ASSERT_TRUE(editor.SaveSelectedPrefabUVE(prefabPath));
-        const Asset::AssetGuidUVE guid = entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(source)
-                                             ? Asset::kInvalidAssetGuidUVE
-                                             : services.GetAssetDatabaseUVE().RegisterUVE(prefabPath);
-        ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
+        const Scene::Entity source = editor.CreateDocumentEntity(EditorEntityKind::Empty);
+        ASSERT_NE(source, Scene::kInvalidEntity);
+        ASSERT_TRUE(editor.SaveSelectedPrefab(prefabPath));
+        const Asset::AssetGuid guid = entityManager.HasComponent<Scene::PrefabInstanceComponent>(source)
+                                             ? Asset::kInvalidAssetGuid
+                                             : services.GetAssetDatabase().Register(prefabPath);
+        ASSERT_NE(guid, Asset::kInvalidAssetGuid);
 
-        const Scene::EntityUVE instance = services.GetPrefabSystemUVE().InstantiateUVE(
-            entityManager, services.GetSceneGraphUVE(), services.GetAssetDatabaseUVE(), guid,
-            Scene::kInvalidEntityUVE);
-        ASSERT_NE(instance, Scene::kInvalidEntityUVE);
-        editor.SelectEntityUVE(instance);
+        const Scene::Entity instance = services.GetPrefabSystem().Instantiate(
+            entityManager, services.GetSceneGraph(), services.GetAssetDatabase(), guid,
+            Scene::kInvalidEntity);
+        ASSERT_NE(instance, Scene::kInvalidEntity);
+        editor.SelectEntity(instance);
 
-        const EditorBridgeSnapshotUVE currentSnapshot = bridge.GetSnapshotUVE();
+        const EditorBridgeSnapshot currentSnapshot = bridge.GetSnapshot();
         ASSERT_TRUE(currentSnapshot.inspector.prefab.has_value());
-        EXPECT_EQ(currentSnapshot.inspector.prefab->status, EditorBridgePrefabRevisionStatusUVE::Current);
+        EXPECT_EQ(currentSnapshot.inspector.prefab->status, EditorBridgePrefabRevisionStatus::Current);
         EXPECT_FALSE(currentSnapshot.inspector.prefab->canRefresh);
 
-        editor.SelectEntityUVE(source);
-        Scene::TransformComponentUVE changed = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(source);
+        editor.SelectEntity(source);
+        Scene::TransformComponent changed = entityManager.GetComponent<Scene::TransformComponent>(source);
         changed.localPosition.x = 3.0F;
-        ASSERT_TRUE(editor.SetSelectedLocalTransformUVE(changed));
-        ASSERT_TRUE(editor.SaveSelectedPrefabUVE(prefabPath));
+        ASSERT_TRUE(editor.SetSelectedLocalTransform(changed));
+        ASSERT_TRUE(editor.SaveSelectedPrefab(prefabPath));
 
-        editor.SelectEntityUVE(instance);
-        const EditorBridgeSnapshotUVE staleSnapshot = bridge.GetSnapshotUVE();
+        editor.SelectEntity(instance);
+        const EditorBridgeSnapshot staleSnapshot = bridge.GetSnapshot();
         ASSERT_TRUE(staleSnapshot.inspector.prefab.has_value());
-        EXPECT_EQ(staleSnapshot.inspector.prefab->status, EditorBridgePrefabRevisionStatusUVE::Stale);
+        EXPECT_EQ(staleSnapshot.inspector.prefab->status, EditorBridgePrefabRevisionStatus::Stale);
         EXPECT_TRUE(staleSnapshot.inspector.prefab->canRefresh);
 
-        ASSERT_TRUE(editor.RefreshSelectedPrefabUVE());
-        const Scene::EntityUVE refreshed = editor.GetSelectedEntityUVE();
+        ASSERT_TRUE(editor.RefreshSelectedPrefab());
+        const Scene::Entity refreshed = editor.GetSelectedEntity();
         EXPECT_NE(refreshed, instance);
-        EXPECT_FALSE(entityManager.IsAliveUVE(instance));
-        ASSERT_TRUE(entityManager.IsAliveUVE(refreshed));
-        EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::TransformComponentUVE>(refreshed).localPosition.x, 3.0F);
+        EXPECT_FALSE(entityManager.IsAlive(instance));
+        ASSERT_TRUE(entityManager.IsAlive(refreshed));
+        EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::TransformComponent>(refreshed).localPosition.x, 3.0F);
 
-        ASSERT_TRUE(editor.EnterPlayModeUVE());
-        EXPECT_FALSE(editor.RefreshSelectedPrefabUVE());
-        ASSERT_TRUE(editor.StopPlayModeUVE());
+        ASSERT_TRUE(editor.EnterPlayMode());
+        EXPECT_FALSE(editor.RefreshSelectedPrefab());
+        ASSERT_TRUE(editor.StopPlayMode());
 
-        editor.ShutdownUVE();
+        editor.Shutdown();
     }
     engine.Shutdown();
     std::filesystem::remove(prefabPath);

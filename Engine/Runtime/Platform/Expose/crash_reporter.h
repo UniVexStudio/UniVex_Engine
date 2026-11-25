@@ -8,19 +8,19 @@
 
 namespace UVE::Platform {
 
-enum class CrashReporterCodeUVE {
+enum class CrashReporterCode {
     Installed,
     AlreadyInstalled,
     Unsupported,
     Failed,
 };
 
-struct CrashReporterResultUVE final {
-    CrashReporterCodeUVE code = CrashReporterCodeUVE::Failed;
+struct CrashReporterResult final {
+    CrashReporterCode code = CrashReporterCode::Failed;
     std::filesystem::path reportPath;
     std::string message;
 
-    [[nodiscard]] bool IsInstalledUVE() const noexcept { return code == CrashReporterCodeUVE::Installed; }
+    [[nodiscard]] bool IsInstalled() const noexcept { return code == CrashReporterCode::Installed; }
 };
 
 /// Installs process-level unhandled-exception and fatal-signal reporting for a standalone runtime.
@@ -29,23 +29,23 @@ struct CrashReporterResultUVE final {
 /// shutdown, so a remaining file is evidence of an abnormal exit. The optional symbol endpoint is
 /// intentionally not contacted by this low-level handler; uploading requires a host-provided,
 /// consent-aware integration.
-class CrashReporterUVE final {
+class CrashReporter final {
 public:
-    CrashReporterUVE();
-    ~CrashReporterUVE();
+    CrashReporter();
+    ~CrashReporter();
 
-    CrashReporterUVE(const CrashReporterUVE&) = delete;
-    CrashReporterUVE& operator=(const CrashReporterUVE&) = delete;
-    CrashReporterUVE(CrashReporterUVE&&) = delete;
-    CrashReporterUVE& operator=(CrashReporterUVE&&) = delete;
+    CrashReporter(const CrashReporter&) = delete;
+    CrashReporter& operator=(const CrashReporter&) = delete;
+    CrashReporter(CrashReporter&&) = delete;
+    CrashReporter& operator=(CrashReporter&&) = delete;
 
-    [[nodiscard]] CrashReporterResultUVE InstallUVE(const std::filesystem::path& dumpDirectory,
+    [[nodiscard]] CrashReporterResult Install(const std::filesystem::path& dumpDirectory,
                                                      const std::string& applicationIdentifier);
-    [[nodiscard]] bool IsInstalledUVE() const noexcept;
+    [[nodiscard]] bool IsInstalled() const noexcept;
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Platform

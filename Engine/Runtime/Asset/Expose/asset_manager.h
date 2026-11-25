@@ -14,57 +14,57 @@
 
 namespace UVE::Asset {
 
-class IHotReloadUVE;
+class IHotReload;
 
-/// AssetManagerUVE is the concrete, engine-standard implementation of IAssetManagerUVE. Runs
-/// every load on `threadPool`, publishes AssetLoadCompletedEventUVE via `eventSystem` on
-/// completion (from whichever worker thread ran the load — IEventSystemUVE::QueueEvent()
+/// AssetManager is the concrete, engine-standard implementation of IAssetManager. Runs
+/// every load on `threadPool`, publishes AssetLoadCompletedEvent via `eventSystem` on
+/// completion (from whichever worker thread ran the load — IEventSystem::QueueEvent()
 /// documents this as safe), and — if `hotReload` is non-null — tells it which GUIDs are
 /// currently loaded so it knows what to poll.
 /// Thread-safety: thread-safe. Every method is guarded by an internal mutex, matching
-/// ConfigManagerUVE's/AssetDatabaseUVE's contract. The destructor blocks until every in-flight
+/// ConfigManager's/AssetDatabase's contract. The destructor blocks until every in-flight
 /// load job finishes before tearing down internal state, so a load job's captured `this` never
 /// outlives the object it points to.
-class AssetManagerUVE final : public IAssetManagerUVE {
+class AssetManager final : public IAssetManager {
 public:
-    /// `hotReload` may be null (hot reload disabled) — AssetManagerUVE works identically either
+    /// `hotReload` may be null (hot reload disabled) — AssetManager works identically either
     /// way, simply skipping the Track/Untrack calls when it's null.
-    AssetManagerUVE(Threading::IThreadPoolUVE& threadPool, Events::IEventSystemUVE& eventSystem,
-                    IHotReloadUVE* hotReload = nullptr);
-    ~AssetManagerUVE() override;
+    AssetManager(Threading::IThreadPool& threadPool, Events::IEventSystem& eventSystem,
+                    IHotReload* hotReload = nullptr);
+    ~AssetManager() override;
 
-    AssetManagerUVE(const AssetManagerUVE&) = delete;
-    AssetManagerUVE& operator=(const AssetManagerUVE&) = delete;
+    AssetManager(const AssetManager&) = delete;
+    AssetManager& operator=(const AssetManager&) = delete;
 
     /// Zero disables admission limits. Counts loader-reported CPU payload capacities only;
     /// excludes transient decoding, allocator overhead, renderer copies and GPU resources.
     /// Live handles pin data. Lowering the limit never invalidates them.
-    void SetResidentBudgetUVE(std::size_t bytes);
-    [[nodiscard]] std::size_t GetResidentBytesUVE() const;
-    [[nodiscard]] std::size_t GetPeakResidentBytesUVE() const;
-    void CollectGarbageUVE() override;
-    void ReloadUVE(AssetGuidUVE guid, IAssetDatabaseUVE& assetDatabase) override;
-    [[nodiscard]] std::size_t GetLoadedAssetCountUVE() const override;
+    void SetResidentBudget(std::size_t bytes);
+    [[nodiscard]] std::size_t GetResidentBytes() const;
+    [[nodiscard]] std::size_t GetPeakResidentBytes() const;
+    void CollectGarbage() override;
+    void Reload(AssetGuid guid, IAssetDatabase& assetDatabase) override;
+    [[nodiscard]] std::size_t GetLoadedAssetCount() const override;
 
 protected:
-    void RegisterLoaderErased(std::type_index type, AssetLoaderInfoUVE info) override;
-    void LoadErased(AssetGuidUVE guid, std::type_index type, IAssetDatabaseUVE& assetDatabase) override;
-    [[nodiscard]] AssetLoadStateUVE GetStateErased(AssetGuidUVE guid) const override;
-    [[nodiscard]] std::string GetFailureReasonErased(AssetGuidUVE guid) const override;
-    [[nodiscard]] void* TryGetErased(AssetGuidUVE guid) override;
-    void AddRefErased(AssetGuidUVE guid) override;
-    void ReleaseErased(AssetGuidUVE guid) override;
+    void RegisterLoaderErased(std::type_index type, AssetLoaderInfo info) override;
+    void LoadErased(AssetGuid guid, std::type_index type, IAssetDatabase& assetDatabase) override;
+    [[nodiscard]] AssetLoadState GetStateErased(AssetGuid guid) const override;
+    [[nodiscard]] std::string GetFailureReasonErased(AssetGuid guid) const override;
+    [[nodiscard]] void* TryGetErased(AssetGuid guid) override;
+    void AddRefErased(AssetGuid guid) override;
+    void ReleaseErased(AssetGuid guid) override;
 
 private:
-    /// Shared by LoadErased()'s and ReloadUVE()'s submitted job: runs the registered loader for
+    /// Shared by LoadErased()'s and Reload()'s submitted job: runs the registered loader for
     /// `type` against `path`, updates the record (destroying any previously-loaded data on a
-    /// successful reload), tracks/untracks with HotReloadUVE as appropriate, and queues
-    /// AssetLoadCompletedEventUVE. Runs on a IThreadPoolUVE worker thread.
-    void ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, std::filesystem::path path);
-    void FailResolutionUVE(AssetGuidUVE guid, std::string failureReason);
+    /// successful reload), tracks/untracks with HotReload as appropriate, and queues
+    /// AssetLoadCompletedEvent. Runs on a IThreadPool worker thread.
+    void ExecuteLoad(AssetGuid guid, std::type_index type, std::filesystem::path path);
+    void FailResolution(AssetGuid guid, std::string failureReason);
 
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Asset

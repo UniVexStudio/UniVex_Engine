@@ -10,27 +10,27 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Abstract physics bases between Object3D and concrete 3D physics objects. These are never created
 /// directly; concrete objects apply them so the authored component hierarchy stays consistent:
 ///
 ///   Object3D
-///   +- PhysicsObject3D       takes part in collision       (PhysicsObjectComponentUVE)
-///      +- SolidBody3D        is stopped by what it hits    (SolidBodyComponentUVE)
-struct PhysicsObject3DObjectDefinitionUVE final {
+///   +- PhysicsObject3D       takes part in collision       (PhysicsObjectComponent)
+///      +- SolidBody3D        is stopped by what it hits    (SolidBodyComponent)
+struct PhysicsObject3DObjectDefinition final {
     static constexpr std::string_view typeName = "PhysicsObject3D";
 };
 
-struct SolidBody3DObjectDefinitionUVE final {
+struct SolidBody3DObjectDefinition final {
     static constexpr std::string_view typeName = "SolidBody3D";
 };
 
 /// Applies Object3D and the PhysicsObject3D base component if they are missing.
-void ApplyPhysicsObject3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+void ApplyPhysicsObject3DBase(IEntityManager& entityManager, Entity entity,
                                  std::string_view nameFallback);
 /// Applies PhysicsObject3D, then the SolidBody3D component if it is missing.
-void ApplySolidBody3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+void ApplySolidBody3DBase(IEntityManager& entityManager, Entity entity,
                              std::string_view nameFallback);
 
 // =================================================================================================
@@ -43,7 +43,7 @@ void ApplySolidBody3DBaseUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
 // =================================================================================================
 
 /// How much of the physics world a physics object is part of right now.
-enum class PhysicsObjectParticipationUVE : std::uint8_t {
+enum class PhysicsObjectParticipation : std::uint8_t {
     /// Collides, is hit by queries, and the simulation moves it. The answer for everything that is
     /// running, and for entities that are not physics objects at all.
     Active = 0,
@@ -58,29 +58,29 @@ enum class PhysicsObjectParticipationUVE : std::uint8_t {
 /// The object's participation. `simulationPaused` is how the caller's own schedule sees the pause
 /// state: the fixed step always asks with false, because it does not run while paused in the first
 /// place, and a frame-time consumer passes whatever the running/paused answer is.
-[[nodiscard]] PhysicsObjectParticipationUVE ResolvePhysicsObjectParticipationUVE(
-    const IEntityManagerUVE& entityManager, EntityUVE entity, bool simulationPaused) noexcept;
+[[nodiscard]] PhysicsObjectParticipation ResolvePhysicsObjectParticipation(
+    const IEntityManager& entityManager, Entity entity, bool simulationPaused) noexcept;
 
 /// Whether the object takes part in collision and queries at all - true for everything except an
 /// object whose disable mode says Remove while it is not running.
-[[nodiscard]] bool IsPhysicsObjectInWorldUVE(const IEntityManagerUVE& entityManager,
-                                             EntityUVE entity) noexcept;
+[[nodiscard]] bool IsPhysicsObjectInWorld(const IEntityManager& entityManager,
+                                             Entity entity) noexcept;
 
 /// Whether the simulation may move this object. False for a removed object and for one kept as a
 /// static obstacle, so the same question answers "may it be integrated" and "may it be pushed".
-[[nodiscard]] bool IsPhysicsObjectSimulatedUVE(const IEntityManagerUVE& entityManager,
-                                               EntityUVE entity) noexcept;
+[[nodiscard]] bool IsPhysicsObjectSimulated(const IEntityManager& entityManager,
+                                               Entity entity) noexcept;
 
 /// The authored collision priority, or 1 for an entity that is not a physics object. 0 is legal and
-/// means "never yields" - see GetPhysicsObjectYieldWeightUVE.
-[[nodiscard]] float GetPhysicsObjectCollisionPriorityUVE(const IEntityManagerUVE& entityManager,
-                                                         EntityUVE entity) noexcept;
+/// means "never yields" - see GetPhysicsObjectYieldWeight.
+[[nodiscard]] float GetPhysicsObjectCollisionPriority(const IEntityManager& entityManager,
+                                                         Entity entity) noexcept;
 
 /// How much of an overlap this object gives way to: `inverseMass` divided by its collision
 /// priority, so heavier bodies and higher priorities yield less. Only the ratio between the two
 /// sides of a contact matters, and a priority of 0 - or no mass to give way with - weighs nothing,
 /// which makes the object immovable in that contact without a second code path for "static".
-[[nodiscard]] float GetPhysicsObjectYieldWeightUVE(const IEntityManagerUVE& entityManager,
-                                                   EntityUVE entity, float inverseMass) noexcept;
+[[nodiscard]] float GetPhysicsObjectYieldWeight(const IEntityManager& entityManager,
+                                                   Entity entity, float inverseMass) noexcept;
 
 } // namespace UVE::Scene

@@ -17,29 +17,29 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumFullBodyIKEffectorsUVE = 16U;
-inline constexpr std::size_t kMaximumFullBodyIKJointsUVE = 512U;
-inline constexpr std::uint32_t kMinimumFullBodyIKIterationsUVE = 1U;
-inline constexpr std::uint32_t kMaximumFullBodyIKIterationsUVE = 64U;
-inline constexpr float kMinimumFullBodyIKToleranceMetresUVE = 1.0e-6F;
-inline constexpr float kMaximumFullBodyIKToleranceMetresUVE = 1.0F;
-inline constexpr float kMinimumFullBodyIKStepRadiansUVE = 0.017453292519943295F; // one degree
-inline constexpr float kMaximumFullBodyIKStepRadiansUVE = 3.14159265358979323846F;
+inline constexpr std::size_t kMaximumFullBodyIKEffectors = 16U;
+inline constexpr std::size_t kMaximumFullBodyIKJoints = 512U;
+inline constexpr std::uint32_t kMinimumFullBodyIKIterations = 1U;
+inline constexpr std::uint32_t kMaximumFullBodyIKIterations = 64U;
+inline constexpr float kMinimumFullBodyIKToleranceMetres = 1.0e-6F;
+inline constexpr float kMaximumFullBodyIKToleranceMetres = 1.0F;
+inline constexpr float kMinimumFullBodyIKStepRadians = 0.017453292519943295F; // one degree
+inline constexpr float kMaximumFullBodyIKStepRadians = 3.14159265358979323846F;
 
 /// One limb's pull on the solve: a bone to move, where it should end up, and how hard it pulls.
-struct FullBodyIKEffectorUVE final {
+struct FullBodyIKEffector final {
     /// The bone whose ORIGIN is the point that reaches the target - the wrist, the ankle. Index
     /// first, then the name; the sentinel means "ask the name instead", matching every other bone
     /// reference in the engine.
-    std::uint32_t boneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t boneIndex = kInvalidSkeletonBoneIndex;
     std::string boneName;
 
     /// Where the effector should go: another object's world position, which is how a hand is placed
     /// on a moving prop. When it names nothing, `targetPosition` is used instead.
-    EntityUVE target = kInvalidEntityUVE;
+    Entity target = kInvalidEntity;
     /// A point in the SKELETON's own space, scaled and rotated with it. Ignored while `target` names
     /// a live object.
-    Math::Vector3UVE targetPosition{};
+    Math::Vector3 targetPosition{};
 
     /// How much this effector pulls the solve, in [0, 1]. The pull stops at a fixed point part-way
     /// from where the pose put the effector toward its target: a foot at 1 plants on the stair, the
@@ -52,7 +52,7 @@ struct FullBodyIKEffectorUVE final {
     /// The bone this effector actually bound to this pass: `boneIndex` when it named a real bone,
     /// else the index the matching name resolved to, else the sentinel. A renamed bone stops the
     /// effector binding instead of silently driving a different limb.
-    std::uint32_t resolvedBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t resolvedBoneIndex = kInvalidSkeletonBoneIndex;
     /// True when the effector landed inside `toleranceMetres`. False means the target was out of
     /// reach even with the root moving - the pose is the honest stretch toward it.
     bool reached = false;
@@ -60,7 +60,7 @@ struct FullBodyIKEffectorUVE final {
     float distanceMetres = 0.0F;
 
     /// Authored data only.
-    [[nodiscard]] bool operator==(const FullBodyIKEffectorUVE& other) const {
+    [[nodiscard]] bool operator==(const FullBodyIKEffector& other) const {
         return boneIndex == other.boneIndex && boneName == other.boneName &&
                target == other.target && targetPosition == other.targetPosition &&
                positionWeight == other.positionWeight;
@@ -84,23 +84,23 @@ struct FullBodyIKEffectorUVE final {
 /// budget (`maxIterations`), a per-sweep rotation limit (`maxJointStepRadians`) and a distance
 /// tolerance, all of which bound what a frame can change by and make the same inputs produce the
 /// same pose every time.
-struct FullBodyIK3DComponentUVE final {
+struct FullBodyIK3DComponent final {
     /// The skeleton this solve poses, as a real entity reference, serialized as the file-local id
     /// under the `skeletonLocalId` key and remapped back on load - the same reference every other
     /// skeleton-shaped object carries.
-    EntityUVE skeleton = kInvalidEntityUVE;
+    Entity skeleton = kInvalidEntity;
 
     /// The joint the solve pivots around and may translate - the hips. Every effector chain runs
     /// from this bone out to its effector, so an effector outside this bone's subtree is refused
     /// rather than solved against some other root. Index first (it is the reference that cannot go
     /// stale), then the name; the sentinel means "ask the name instead".
-    std::uint32_t rootBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t rootBoneIndex = kInvalidSkeletonBoneIndex;
     std::string rootBoneName;
 
     /// Where each limb should end up. Order matters: sweeps run in array order, so a later effector
     /// is solved against what earlier ones already did - the author's own priority, stored in the
     /// file, is what decides.
-    std::vector<FullBodyIKEffectorUVE> effectors;
+    std::vector<FullBodyIKEffector> effectors;
 
     /// How many full sweeps over every effector the solve may run before it stops either way.
     /// More iterations trade cost for tighter placement; the cap is what makes the frame bounded.
@@ -139,7 +139,7 @@ struct FullBodyIK3DComponentUVE final {
     std::uint32_t iterationsUsed = 0U;
 
     /// Authored data only: a solve that has not run equals its saved self.
-    [[nodiscard]] bool operator==(const FullBodyIK3DComponentUVE& other) const {
+    [[nodiscard]] bool operator==(const FullBodyIK3DComponent& other) const {
         return skeleton == other.skeleton && rootBoneIndex == other.rootBoneIndex &&
                rootBoneName == other.rootBoneName && effectors == other.effectors &&
                maxIterations == other.maxIterations && toleranceMetres == other.toleranceMetres &&
@@ -149,23 +149,23 @@ struct FullBodyIK3DComponentUVE final {
 };
 
 /// Names and vectors must be finite and bounded; weights must be finite; at least one effector.
-[[nodiscard]] bool IsFullBodyIK3DObjectComponentValidUVE(const FullBodyIK3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsFullBodyIK3DObjectComponentValid(const FullBodyIK3DComponent& value) noexcept;
 
 /// Whether a solve has enough to be worth running: enabled, pointed at a skeleton, naming the root
 /// bone by index or by name, and carrying at least one effector that names a bone. A default object
 /// is valid scene data and stays inert until this is true.
-[[nodiscard]] inline bool IsFullBodyIK3DObjectComponentResolvableUVE(
-    const FullBodyIK3DComponentUVE& value) noexcept {
-    if (!value.enabled || value.skeleton == kInvalidEntityUVE) {
+[[nodiscard]] inline bool IsFullBodyIK3DObjectComponentResolvable(
+    const FullBodyIK3DComponent& value) noexcept {
+    if (!value.enabled || value.skeleton == kInvalidEntity) {
         return false;
     }
     const bool hasRoot =
-        value.rootBoneIndex != kInvalidSkeletonBoneIndexUVE || !value.rootBoneName.empty();
+        value.rootBoneIndex != kInvalidSkeletonBoneIndex || !value.rootBoneName.empty();
     if (!hasRoot || value.effectors.empty()) {
         return false;
     }
-    for (const FullBodyIKEffectorUVE& effector : value.effectors) {
-        if (effector.boneIndex != kInvalidSkeletonBoneIndexUVE || !effector.boneName.empty()) {
+    for (const FullBodyIKEffector& effector : value.effectors) {
+        if (effector.boneIndex != kInvalidSkeletonBoneIndex || !effector.boneName.empty()) {
             return true;
         }
     }
@@ -180,23 +180,23 @@ struct FullBodyIK3DComponentUVE final {
 /// frame the limbs meet in - and `localOffset` is where the joint sits in its PARENT's frame, which
 /// is what the forward kinematics recompute after every rotation. Joints are listed in hierarchy
 /// order: a joint's parent always appears before it.
-struct FullBodyIKJointUVE final {
+struct FullBodyIKJoint final {
     std::int32_t parent = -1;
-    Math::Vector3UVE worldPosition{};
-    Math::QuaternionUVE worldRotation{};
-    Math::Vector3UVE localOffset{};
+    Math::Vector3 worldPosition{};
+    Math::Quaternion worldRotation{};
+    Math::Vector3 localOffset{};
 };
 
 /// The whole posed problem: the rig and every pull on it. `effectorJoints`, `effectorTargets` and
 /// `effectorWeights` are parallel arrays - one effector per index, all three sizes equal.
-struct FullBodyIKProblemUVE final {
-    std::vector<FullBodyIKJointUVE> joints;
+struct FullBodyIKProblem final {
+    std::vector<FullBodyIKJoint> joints;
     std::vector<std::size_t> effectorJoints;
-    std::vector<Math::Vector3UVE> effectorTargets;
+    std::vector<Math::Vector3> effectorTargets;
     std::vector<float> effectorWeights;
 };
 
-struct FullBodyIKSolverSettingsUVE final {
+struct FullBodyIKSolverSettings final {
     /// The joint the solve pivots around and may translate - the hips. Every effector must sit in
     /// this joint's subtree; the chains the solver sweeps are the paths from here to each effector.
     std::size_t rootJoint = 0U;
@@ -207,14 +207,14 @@ struct FullBodyIKSolverSettingsUVE final {
 };
 
 /// What one solve did: the pose it reached, per-effector outcomes, and what the budget cost.
-struct FullBodyIKSolverReportUVE final {
+struct FullBodyIKSolverReport final {
     /// Every joint's solved WORLD position - already including `rootTranslation`.
-    std::vector<Math::Vector3UVE> solvedPositions;
+    std::vector<Math::Vector3> solvedPositions;
     /// Every joint's solved WORLD rotation. Local rotations are the caller's to compose: each
     /// joint's world rotation against its parent's solved world rotation.
-    std::vector<Math::QuaternionUVE> solvedRotations;
+    std::vector<Math::Quaternion> solvedRotations;
     /// How far the root was moved in world space, as one rigid shift applied before any rotation.
-    Math::Vector3UVE rootTranslation{};
+    Math::Vector3 rootTranslation{};
     /// Per effector: the distance its bone ended from its target, in metres.
     std::vector<float> distances;
     /// Per effector: whether that distance landed inside the tolerance.
@@ -238,16 +238,16 @@ struct FullBodyIKSolverReportUVE final {
 /// one means the data or the caller is wrong. A target too far away is NOT one of them - a
 /// straight, stretched-looking chain aimed at it (with `reached` false) is the pose an animator
 /// would key, and a thing gameplay can see.
-[[nodiscard]] std::optional<FullBodyIKSolverReportUVE> SolveFullBodyIKUVE(
-    const FullBodyIKProblemUVE& problem, const FullBodyIKSolverSettingsUVE& settings) noexcept;
+[[nodiscard]] std::optional<FullBodyIKSolverReport> SolveFullBodyIK(
+    const FullBodyIKProblem& problem, const FullBodyIKSolverSettings& settings) noexcept;
 
-struct FullBodyIK3DObjectDefinitionUVE final {
+struct FullBodyIK3DObjectDefinition final {
     static constexpr std::string_view defaultName = "FullBodyIK3D";
 };
 
 /// Applies the Object3D recipe and the BoneModifier component every modifier carries, then this
 /// solve's own component.
-void ApplyFullBodyIK3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                          const FullBodyIK3DObjectDefinitionUVE& value);
+void ApplyFullBodyIK3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                          const FullBodyIK3DObjectDefinition& value);
 
 } // namespace UVE::Scene

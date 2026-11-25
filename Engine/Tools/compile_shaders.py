@@ -142,8 +142,8 @@ def emit_cpp_header(spv_entries: Dict[str, bytes], header_path: Path) -> None:
     ]
     for symbol, data in sorted(spv_entries.items()):
         escaped = "".join(f"\\x{b:02x}" for b in data)
-        lines.append(f'inline const char k{symbol}SpirvBytesUVE[] = "{escaped}";')
-        lines.append(f"inline constexpr std::size_t k{symbol}SpirvSizeUVE = {len(data)}U;")
+        lines.append(f'inline const char k{symbol}SpirvBytes[] = "{escaped}";')
+        lines.append(f"inline constexpr std::size_t k{symbol}SpirvSize = {len(data)}U;")
     lines.append("} // namespace UVE::Render::GeneratedSpirv")
     header_path.parent.mkdir(parents=True, exist_ok=True)
     header_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

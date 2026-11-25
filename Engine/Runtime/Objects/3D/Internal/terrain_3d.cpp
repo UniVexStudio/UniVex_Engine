@@ -10,11 +10,11 @@
 
 namespace UVE::Scene {
 
-bool IsTerrain3DComponentValidUVE(const Terrain3DComponentUVE& value) noexcept {
-    if (value.resolution < kMinimumTerrainResolutionUVE || value.resolution > kMaximumTerrainResolutionUVE) {
+bool IsTerrain3DComponentValid(const Terrain3DComponent& value) noexcept {
+    if (value.resolution < kMinimumTerrainResolution || value.resolution > kMaximumTerrainResolution) {
         return false;
     }
-    if (!Math::IsFiniteUVE(value.size) || value.size.x <= 0.0F || value.size.y <= 0.0F) {
+    if (!Math::IsFinite(value.size) || value.size.x <= 0.0F || value.size.y <= 0.0F) {
         return false;
     }
     if (!std::isfinite(value.heightScale) || value.heightScale < 0.0F) {
@@ -30,11 +30,11 @@ bool IsTerrain3DComponentValidUVE(const Terrain3DComponentUVE& value) noexcept {
     return true;
 }
 
-Terrain3DComponentUVE SanitizeTerrain3DComponentUVE(const Terrain3DComponentUVE& value) noexcept {
-    Terrain3DComponentUVE sanitized = value;
-    sanitized.resolution = std::clamp(value.resolution, kMinimumTerrainResolutionUVE, kMaximumTerrainResolutionUVE);
-    if (!Math::IsFiniteUVE(value.size) || value.size.x <= 0.0F || value.size.y <= 0.0F) {
-        sanitized.size = Math::Vector2UVE{64.0F, 64.0F};
+Terrain3DComponent SanitizeTerrain3DComponent(const Terrain3DComponent& value) noexcept {
+    Terrain3DComponent sanitized = value;
+    sanitized.resolution = std::clamp(value.resolution, kMinimumTerrainResolution, kMaximumTerrainResolution);
+    if (!Math::IsFinite(value.size) || value.size.x <= 0.0F || value.size.y <= 0.0F) {
+        sanitized.size = Math::Vector2{64.0F, 64.0F};
     }
     if (!std::isfinite(value.heightScale) || value.heightScale < 0.0F) {
         sanitized.heightScale = 10.0F;
@@ -52,21 +52,21 @@ Terrain3DComponentUVE SanitizeTerrain3DComponentUVE(const Terrain3DComponentUVE&
     return sanitized;
 }
 
-bool IsTerrain3DObjectDefinitionValidUVE(const Terrain3DObjectDefinitionUVE& value) noexcept {
-    return IsTerrain3DComponentValidUVE(value.terrain);
+bool IsTerrain3DObjectDefinitionValid(const Terrain3DObjectDefinition& value) noexcept {
+    return IsTerrain3DComponentValid(value.terrain);
 }
 
-void ApplyTerrain3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const Terrain3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, Terrain3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<Terrain3DComponentUVE>(entity, value.terrain);
+void ApplyTerrain3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                       const Terrain3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, Terrain3DObjectDefinition::defaultName);
+    entityManager.AddComponent<Terrain3DComponent>(entity, value.terrain);
 }
 
-void Terrain3DUVE::InitializeHeightDataUVE(Terrain3DComponentUVE& terrain) {
-    terrain = SanitizeTerrain3DComponentUVE(terrain);
+void Terrain3D::InitializeHeightData(Terrain3DComponent& terrain) {
+    terrain = SanitizeTerrain3DComponent(terrain);
 }
 
-float Terrain3DUVE::SampleHeightLocalUVE(const Terrain3DComponentUVE& terrain,
+float Terrain3D::SampleHeightLocal(const Terrain3DComponent& terrain,
                                          const float localX, const float localZ) noexcept {
     if (terrain.heightData.empty() || terrain.resolution < 2U || terrain.size.x <= 0.0F || terrain.size.y <= 0.0F) {
         return 0.0F;
@@ -102,15 +102,15 @@ float Terrain3DUVE::SampleHeightLocalUVE(const Terrain3DComponentUVE& terrain,
     return (h0 * (1.0F - fz) + h1 * fz) * terrain.heightScale;
 }
 
-Math::Vector3UVE Terrain3DUVE::SampleNormalLocalUVE(const Terrain3DComponentUVE& terrain,
+Math::Vector3 Terrain3D::SampleNormalLocal(const Terrain3DComponent& terrain,
                                                    const float localX, const float localZ) noexcept {
     const float stepX = terrain.size.x / static_cast<float>(std::max(terrain.resolution - 1U, 1U));
     const float stepZ = terrain.size.y / static_cast<float>(std::max(terrain.resolution - 1U, 1U));
 
-    const float hL = SampleHeightLocalUVE(terrain, localX - stepX, localZ);
-    const float hR = SampleHeightLocalUVE(terrain, localX + stepX, localZ);
-    const float hD = SampleHeightLocalUVE(terrain, localX, localZ - stepZ);
-    const float hU = SampleHeightLocalUVE(terrain, localX, localZ + stepZ);
+    const float hL = SampleHeightLocal(terrain, localX - stepX, localZ);
+    const float hR = SampleHeightLocal(terrain, localX + stepX, localZ);
+    const float hD = SampleHeightLocal(terrain, localX, localZ - stepZ);
+    const float hU = SampleHeightLocal(terrain, localX, localZ + stepZ);
 
     const float nx = (hL - hR) / (2.0F * stepX);
     const float ny = 1.0F;
@@ -119,14 +119,14 @@ Math::Vector3UVE Terrain3DUVE::SampleNormalLocalUVE(const Terrain3DComponentUVE&
     const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
     if (len > 1.0e-6F) {
         const float invLen = 1.0F / len;
-        return Math::Vector3UVE{nx * invLen, ny * invLen, nz * invLen};
+        return Math::Vector3{nx * invLen, ny * invLen, nz * invLen};
     }
-    return Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    return Math::Vector3{0.0F, 1.0F, 0.0F};
 }
 
-bool Terrain3DUVE::GenerateMeshUVE(const Terrain3DComponentUVE& terrain,
-                                   const std::uint32_t lodLevel, Asset::MeshAssetUVE& outMesh) {
-    if (!IsTerrain3DComponentValidUVE(terrain)) {
+bool Terrain3D::GenerateMesh(const Terrain3DComponent& terrain,
+                                   const std::uint32_t lodLevel, Asset::MeshAsset& outMesh) {
+    if (!IsTerrain3DComponentValid(terrain)) {
         return false;
     }
 
@@ -153,15 +153,15 @@ bool Terrain3DUVE::GenerateMeshUVE(const Terrain3DComponentUVE& terrain,
             const float u = static_cast<float>(srcX) / static_cast<float>(terrain.resolution - 1U);
             const float posX = (u - 0.5F) * terrain.size.x;
 
-            const float posY = SampleHeightLocalUVE(terrain, posX, posZ);
-            const Math::Vector3UVE normal = SampleNormalLocalUVE(terrain, posX, posZ);
+            const float posY = SampleHeightLocal(terrain, posX, posZ);
+            const Math::Vector3 normal = SampleNormalLocal(terrain, posX, posZ);
 
-            Asset::MeshVertexUVE vert{};
-            vert.position = Math::Vector3UVE{posX, posY, posZ};
+            Asset::MeshVertex vert{};
+            vert.position = Math::Vector3{posX, posY, posZ};
             vert.normal = normal;
             vert.u = u;
             vert.v = v;
-            vert.tangent = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+            vert.tangent = Math::Vector3{1.0F, 0.0F, 0.0F};
             vert.tangentHandedness = 1.0F;
 
             outMesh.vertices.push_back(vert);
@@ -187,11 +187,11 @@ bool Terrain3DUVE::GenerateMeshUVE(const Terrain3DComponentUVE& terrain,
         }
     }
 
-    outMesh.localBounds = LocalBoundsUVE(terrain);
+    outMesh.localBounds = LocalBounds(terrain);
     return true;
 }
 
-void Terrain3DUVE::SculptUVE(Terrain3DComponentUVE& terrain, const float localCenterX, const float localCenterZ,
+void Terrain3D::Sculpt(Terrain3DComponent& terrain, const float localCenterX, const float localCenterZ,
                              const float radius, const float deltaHeight, const bool flatten, const float targetHeight) {
     if (radius <= 0.0F || terrain.heightData.empty() || terrain.resolution < 2U) {
         return;
@@ -229,7 +229,7 @@ void Terrain3DUVE::SculptUVE(Terrain3DComponentUVE& terrain, const float localCe
     }
 }
 
-void Terrain3DUVE::PaintSplatUVE(Terrain3DComponentUVE& terrain, const float localCenterX, const float localCenterZ,
+void Terrain3D::PaintSplat(Terrain3DComponent& terrain, const float localCenterX, const float localCenterZ,
                                  const float radius, const std::uint8_t layerIndex, const float weight) {
     if (radius <= 0.0F || terrain.splatWeights.empty() || layerIndex >= 4U || weight <= 0.0F) {
         return;
@@ -262,14 +262,14 @@ void Terrain3DUVE::PaintSplatUVE(Terrain3DComponentUVE& terrain, const float loc
     }
 }
 
-Math::AabbUVE Terrain3DUVE::LocalBoundsUVE(const Terrain3DComponentUVE& terrain) noexcept {
+Math::Aabb Terrain3D::LocalBounds(const Terrain3DComponent& terrain) noexcept {
     const float halfX = std::max(terrain.size.x * 0.5F, 0.5F);
     const float halfZ = std::max(terrain.size.y * 0.5F, 0.5F);
     const float halfH = std::max(terrain.heightScale * 0.5F, 0.5F);
 
-    return Math::AabbUVE::FromCenterExtentsUVE(
-        Math::Vector3UVE{0.0F, halfH, 0.0F},
-        Math::Vector3UVE{halfX, halfH, halfZ}
+    return Math::Aabb::FromCenterExtents(
+        Math::Vector3{0.0F, halfH, 0.0F},
+        Math::Vector3{halfX, halfH, halfZ}
     );
 }
 

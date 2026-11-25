@@ -30,28 +30,28 @@ namespace UVE::Editor {
 namespace {
 
 /// A colour with alpha, 0..1.
-struct InkUVE {
+struct Ink {
     float r = 1.0F, g = 1.0F, b = 1.0F, a = 1.0F;
 };
 
-constexpr InkUVE kWhiteUVE{0.93F, 0.95F, 0.98F, 1.0F};
-constexpr InkUVE kDimUVE{0.62F, 0.66F, 0.72F, 1.0F};
-constexpr InkUVE kDarkUVE{0.13F, 0.14F, 0.17F, 1.0F};
-constexpr InkUVE kBlueUVE{0.24F, 0.52F, 0.96F, 1.0F};
-constexpr InkUVE kGreenUVE{0.34F, 0.78F, 0.45F, 1.0F};
-constexpr InkUVE kTealUVE{0.20F, 0.76F, 0.74F, 1.0F};
-constexpr InkUVE kOrangeUVE{0.97F, 0.62F, 0.22F, 1.0F};
-constexpr InkUVE kPurpleUVE{0.66F, 0.48F, 0.96F, 1.0F};
-constexpr InkUVE kYellowUVE{0.98F, 0.82F, 0.30F, 1.0F};
-constexpr InkUVE kGoldUVE{0.82F, 0.66F, 0.40F, 1.0F};
+constexpr Ink kWhite{0.93F, 0.95F, 0.98F, 1.0F};
+constexpr Ink kDim{0.62F, 0.66F, 0.72F, 1.0F};
+constexpr Ink kDark{0.13F, 0.14F, 0.17F, 1.0F};
+constexpr Ink kBlue{0.24F, 0.52F, 0.96F, 1.0F};
+constexpr Ink kGreen{0.34F, 0.78F, 0.45F, 1.0F};
+constexpr Ink kTeal{0.20F, 0.76F, 0.74F, 1.0F};
+constexpr Ink kOrange{0.97F, 0.62F, 0.22F, 1.0F};
+constexpr Ink kPurple{0.66F, 0.48F, 0.96F, 1.0F};
+constexpr Ink kYellow{0.98F, 0.82F, 0.30F, 1.0F};
+constexpr Ink kGold{0.82F, 0.66F, 0.40F, 1.0F};
 
 /// A 16-unit design square painted at any size: each shape is a coverage test, sampled 4x4 per
 /// pixel, laid over what is there.
-class IconPainterUVE final {
+class IconPainter final {
 public:
-    explicit IconPainterUVE(const int size) : m_size(size), m_pixels(static_cast<std::size_t>(size * size), InkUVE{0, 0, 0, 0}) {}
+    explicit IconPainter(const int size) : m_size(size), m_pixels(static_cast<std::size_t>(size * size), Ink{0, 0, 0, 0}) {}
 
-    void ShapeUVE(const std::function<bool(float, float)>& inside, const InkUVE ink) {
+    void Shape(const std::function<bool(float, float)>& inside, const Ink ink) {
         const float unit = 16.0F / static_cast<float>(m_size);
         for (int y = 0; y < m_size; ++y) {
             for (int x = 0; x < m_size; ++x) {
@@ -67,7 +67,7 @@ public:
                     continue;
                 }
                 const float a = ink.a * static_cast<float>(hits) / 16.0F;
-                InkUVE& dst = m_pixels[static_cast<std::size_t>(y * m_size + x)];
+                Ink& dst = m_pixels[static_cast<std::size_t>(y * m_size + x)];
                 const float outA = a + dst.a * (1.0F - a);
                 if (outA <= 0.0F) {
                     continue;
@@ -80,20 +80,20 @@ public:
         }
     }
 
-    void RoundRectUVE(const float x, const float y, const float w, const float h, const float r, const InkUVE ink) {
-        ShapeUVE([=](const float u, const float v) { return InRoundRectUVE(u, v, x, y, w, h, r); }, ink);
+    void RoundRect(const float x, const float y, const float w, const float h, const float r, const Ink ink) {
+        Shape([=](const float u, const float v) { return InRoundRect(u, v, x, y, w, h, r); }, ink);
     }
     /// An outline `t` units thick.
-    void FrameUVE(const float x, const float y, const float w, const float h, const float r, const float t, const InkUVE ink) {
-        ShapeUVE([=](const float u, const float v) {
-            return InRoundRectUVE(u, v, x, y, w, h, r) && !InRoundRectUVE(u, v, x + t, y + t, w - 2.0F * t, h - 2.0F * t, std::max(0.0F, r - t));
+    void Frame(const float x, const float y, const float w, const float h, const float r, const float t, const Ink ink) {
+        Shape([=](const float u, const float v) {
+            return InRoundRect(u, v, x, y, w, h, r) && !InRoundRect(u, v, x + t, y + t, w - 2.0F * t, h - 2.0F * t, std::max(0.0F, r - t));
         }, ink);
     }
-    void CircleUVE(const float cx, const float cy, const float r, const InkUVE ink) {
-        ShapeUVE([=](const float u, const float v) { return (u - cx) * (u - cx) + (v - cy) * (v - cy) <= r * r; }, ink);
+    void Circle(const float cx, const float cy, const float r, const Ink ink) {
+        Shape([=](const float u, const float v) { return (u - cx) * (u - cx) + (v - cy) * (v - cy) <= r * r; }, ink);
     }
-    void LineUVE(const float x0, const float y0, const float x1, const float y1, const float width, const InkUVE ink) {
-        ShapeUVE([=](const float u, const float v) {
+    void Line(const float x0, const float y0, const float x1, const float y1, const float width, const Ink ink) {
+        Shape([=](const float u, const float v) {
             const float dx = x1 - x0;
             const float dy = y1 - y0;
             const float len2 = dx * dx + dy * dy;
@@ -103,8 +103,8 @@ public:
             return px * px + py * py <= width * width * 0.25F;
         }, ink);
     }
-    void TriangleUVE(const float ax, const float ay, const float bx, const float by, const float cx, const float cy, const InkUVE ink) {
-        ShapeUVE([=](const float u, const float v) {
+    void Triangle(const float ax, const float ay, const float bx, const float by, const float cx, const float cy, const Ink ink) {
+        Shape([=](const float u, const float v) {
             const auto side = [&](const float x0, const float y0, const float x1, const float y1) {
                 return (x1 - x0) * (v - y0) - (y1 - y0) * (u - x0);
             };
@@ -115,10 +115,10 @@ public:
         }, ink);
     }
 
-    [[nodiscard]] std::vector<std::uint32_t> PixelsUVE() const {
+    [[nodiscard]] std::vector<std::uint32_t> Pixels() const {
         std::vector<std::uint32_t> out(m_pixels.size());
         for (std::size_t i = 0; i < m_pixels.size(); ++i) {
-            const InkUVE& p = m_pixels[i];
+            const Ink& p = m_pixels[i];
             const auto byte = [](const float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0F, 1.0F) * 255.0F)); };
             out[i] = (byte(p.a) << 24U) | (byte(p.r) << 16U) | (byte(p.g) << 8U) | byte(p.b);
         }
@@ -126,7 +126,7 @@ public:
     }
 
 private:
-    static bool InRoundRectUVE(const float u, const float v, const float x, const float y, const float w, const float h, const float r) {
+    static bool InRoundRect(const float u, const float v, const float x, const float y, const float w, const float h, const float r) {
         if (w <= 0.0F || h <= 0.0F || u < x || v < y || u > x + w || v > y + h) {
             return false;
         }
@@ -136,211 +136,211 @@ private:
     }
 
     int m_size = 16;
-    std::vector<InkUVE> m_pixels;
+    std::vector<Ink> m_pixels;
 };
 
-void PaintUVE(IconPainterUVE& p, const WidgetKindUVE kind) {
+void Paint(IconPainter& p, const WidgetKind kind) {
     switch (kind) {
-        case WidgetKindUVE::Canvas:
-            p.FrameUVE(1.5F, 2.5F, 13.0F, 11.0F, 1.5F, 1.3F, kTealUVE);
-            p.RoundRectUVE(3.5F, 4.5F, 4.0F, 2.0F, 0.6F, kWhiteUVE);
-            p.RoundRectUVE(3.5F, 8.0F, 6.5F, 3.0F, 0.8F, kBlueUVE);
+        case WidgetKind::Canvas:
+            p.Frame(1.5F, 2.5F, 13.0F, 11.0F, 1.5F, 1.3F, kTeal);
+            p.RoundRect(3.5F, 4.5F, 4.0F, 2.0F, 0.6F, kWhite);
+            p.RoundRect(3.5F, 8.0F, 6.5F, 3.0F, 0.8F, kBlue);
             break;
-        case WidgetKindUVE::Text:
-            p.RoundRectUVE(2.5F, 2.5F, 11.0F, 2.6F, 0.6F, kWhiteUVE);
-            p.RoundRectUVE(6.7F, 2.5F, 2.6F, 11.0F, 0.6F, kWhiteUVE);
-            p.RoundRectUVE(5.2F, 12.0F, 5.6F, 1.5F, 0.5F, kDimUVE);
+        case WidgetKind::Text:
+            p.RoundRect(2.5F, 2.5F, 11.0F, 2.6F, 0.6F, kWhite);
+            p.RoundRect(6.7F, 2.5F, 2.6F, 11.0F, 0.6F, kWhite);
+            p.RoundRect(5.2F, 12.0F, 5.6F, 1.5F, 0.5F, kDim);
             break;
-        case WidgetKindUVE::Button:
-            p.RoundRectUVE(1.0F, 4.0F, 14.0F, 8.5F, 2.2F, kBlueUVE);
-            p.RoundRectUVE(1.0F, 4.0F, 14.0F, 3.6F, 2.2F, InkUVE{1.0F, 1.0F, 1.0F, 0.18F});
-            p.RoundRectUVE(4.5F, 7.6F, 7.0F, 1.6F, 0.8F, kWhiteUVE);
-            p.TriangleUVE(10.5F, 9.5F, 14.5F, 13.0F, 11.6F, 13.8F, kWhiteUVE);
+        case WidgetKind::Button:
+            p.RoundRect(1.0F, 4.0F, 14.0F, 8.5F, 2.2F, kBlue);
+            p.RoundRect(1.0F, 4.0F, 14.0F, 3.6F, 2.2F, Ink{1.0F, 1.0F, 1.0F, 0.18F});
+            p.RoundRect(4.5F, 7.6F, 7.0F, 1.6F, 0.8F, kWhite);
+            p.Triangle(10.5F, 9.5F, 14.5F, 13.0F, 11.6F, 13.8F, kWhite);
             break;
-        case WidgetKindUVE::Image:
-            p.FrameUVE(1.5F, 2.5F, 13.0F, 11.0F, 1.5F, 1.2F, kDimUVE);
-            p.TriangleUVE(3.0F, 12.0F, 7.0F, 6.5F, 10.5F, 12.0F, kGreenUVE);
-            p.TriangleUVE(7.5F, 12.0F, 10.5F, 8.5F, 13.0F, 12.0F, InkUVE{0.24F, 0.62F, 0.36F, 1.0F});
-            p.CircleUVE(11.2F, 5.6F, 1.5F, kYellowUVE);
+        case WidgetKind::Image:
+            p.Frame(1.5F, 2.5F, 13.0F, 11.0F, 1.5F, 1.2F, kDim);
+            p.Triangle(3.0F, 12.0F, 7.0F, 6.5F, 10.5F, 12.0F, kGreen);
+            p.Triangle(7.5F, 12.0F, 10.5F, 8.5F, 13.0F, 12.0F, Ink{0.24F, 0.62F, 0.36F, 1.0F});
+            p.Circle(11.2F, 5.6F, 1.5F, kYellow);
             break;
-        case WidgetKindUVE::ProgressBar:
-            p.RoundRectUVE(1.0F, 6.0F, 14.0F, 4.5F, 2.0F, kDarkUVE);
-            p.FrameUVE(1.0F, 6.0F, 14.0F, 4.5F, 2.0F, 0.8F, kDimUVE);
-            p.RoundRectUVE(1.8F, 6.8F, 7.6F, 2.9F, 1.4F, kGreenUVE);
+        case WidgetKind::ProgressBar:
+            p.RoundRect(1.0F, 6.0F, 14.0F, 4.5F, 2.0F, kDark);
+            p.Frame(1.0F, 6.0F, 14.0F, 4.5F, 2.0F, 0.8F, kDim);
+            p.RoundRect(1.8F, 6.8F, 7.6F, 2.9F, 1.4F, kGreen);
             break;
-        case WidgetKindUVE::Slider:
-            p.LineUVE(1.5F, 8.0F, 14.5F, 8.0F, 1.6F, kDimUVE);
-            p.LineUVE(1.5F, 8.0F, 9.0F, 8.0F, 1.6F, kBlueUVE);
-            p.CircleUVE(9.0F, 8.0F, 3.0F, kWhiteUVE);
-            p.CircleUVE(9.0F, 8.0F, 1.4F, kBlueUVE);
+        case WidgetKind::Slider:
+            p.Line(1.5F, 8.0F, 14.5F, 8.0F, 1.6F, kDim);
+            p.Line(1.5F, 8.0F, 9.0F, 8.0F, 1.6F, kBlue);
+            p.Circle(9.0F, 8.0F, 3.0F, kWhite);
+            p.Circle(9.0F, 8.0F, 1.4F, kBlue);
             break;
-        case WidgetKindUVE::CheckBox:
-            p.RoundRectUVE(2.0F, 2.0F, 12.0F, 12.0F, 2.4F, kGreenUVE);
-            p.LineUVE(4.6F, 8.2F, 7.0F, 10.8F, 1.9F, kWhiteUVE);
-            p.LineUVE(7.0F, 10.8F, 11.6F, 5.0F, 1.9F, kWhiteUVE);
+        case WidgetKind::CheckBox:
+            p.RoundRect(2.0F, 2.0F, 12.0F, 12.0F, 2.4F, kGreen);
+            p.Line(4.6F, 8.2F, 7.0F, 10.8F, 1.9F, kWhite);
+            p.Line(7.0F, 10.8F, 11.6F, 5.0F, 1.9F, kWhite);
             break;
-        case WidgetKindUVE::TextBox:
-            p.RoundRectUVE(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, kDarkUVE);
-            p.FrameUVE(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, 1.0F, kBlueUVE);
-            p.RoundRectUVE(3.0F, 7.2F, 5.5F, 1.6F, 0.6F, kDimUVE);
-            p.LineUVE(10.2F, 5.8F, 10.2F, 10.2F, 1.2F, kWhiteUVE);
+        case WidgetKind::TextBox:
+            p.RoundRect(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, kDark);
+            p.Frame(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, 1.0F, kBlue);
+            p.RoundRect(3.0F, 7.2F, 5.5F, 1.6F, 0.6F, kDim);
+            p.Line(10.2F, 5.8F, 10.2F, 10.2F, 1.2F, kWhite);
             break;
-        case WidgetKindUVE::ComboBox:
-            p.RoundRectUVE(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, kDarkUVE);
-            p.FrameUVE(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, 1.0F, kPurpleUVE);
-            p.RoundRectUVE(2.8F, 7.2F, 5.5F, 1.6F, 0.6F, kWhiteUVE);
-            p.RoundRectUVE(9.8F, 4.6F, 4.8F, 6.8F, 1.2F, kPurpleUVE);
-            p.TriangleUVE(10.7F, 7.0F, 13.7F, 7.0F, 12.2F, 9.2F, kWhiteUVE);
+        case WidgetKind::ComboBox:
+            p.RoundRect(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, kDark);
+            p.Frame(0.8F, 4.0F, 14.4F, 8.0F, 1.6F, 1.0F, kPurple);
+            p.RoundRect(2.8F, 7.2F, 5.5F, 1.6F, 0.6F, kWhite);
+            p.RoundRect(9.8F, 4.6F, 4.8F, 6.8F, 1.2F, kPurple);
+            p.Triangle(10.7F, 7.0F, 13.7F, 7.0F, 12.2F, 9.2F, kWhite);
             break;
-        case WidgetKindUVE::VerticalBox:
-            p.FrameUVE(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrangeUVE);
+        case WidgetKind::VerticalBox:
+            p.Frame(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrange);
             for (int i = 0; i < 3; ++i) {
-                p.RoundRectUVE(3.6F, 3.6F + static_cast<float>(i) * 3.2F, 8.8F, 2.3F, 0.7F, kWhiteUVE);
+                p.RoundRect(3.6F, 3.6F + static_cast<float>(i) * 3.2F, 8.8F, 2.3F, 0.7F, kWhite);
             }
             break;
-        case WidgetKindUVE::HorizontalBox:
-            p.FrameUVE(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrangeUVE);
+        case WidgetKind::HorizontalBox:
+            p.Frame(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrange);
             for (int i = 0; i < 3; ++i) {
-                p.RoundRectUVE(3.6F + static_cast<float>(i) * 3.2F, 3.6F, 2.3F, 8.8F, 0.7F, kWhiteUVE);
+                p.RoundRect(3.6F + static_cast<float>(i) * 3.2F, 3.6F, 2.3F, 8.8F, 0.7F, kWhite);
             }
             break;
-        case WidgetKindUVE::WrapBox:
-            p.FrameUVE(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrangeUVE);
-            p.RoundRectUVE(3.6F, 3.6F, 3.8F, 3.8F, 0.7F, kWhiteUVE);
-            p.RoundRectUVE(8.6F, 3.6F, 3.8F, 3.8F, 0.7F, kWhiteUVE);
-            p.RoundRectUVE(3.6F, 8.6F, 3.8F, 3.8F, 0.7F, kWhiteUVE);
-            p.LineUVE(9.2F, 10.5F, 12.0F, 10.5F, 1.0F, kOrangeUVE);
-            p.TriangleUVE(8.4F, 10.5F, 10.0F, 9.2F, 10.0F, 11.8F, kOrangeUVE);
+        case WidgetKind::WrapBox:
+            p.Frame(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kOrange);
+            p.RoundRect(3.6F, 3.6F, 3.8F, 3.8F, 0.7F, kWhite);
+            p.RoundRect(8.6F, 3.6F, 3.8F, 3.8F, 0.7F, kWhite);
+            p.RoundRect(3.6F, 8.6F, 3.8F, 3.8F, 0.7F, kWhite);
+            p.Line(9.2F, 10.5F, 12.0F, 10.5F, 1.0F, kOrange);
+            p.Triangle(8.4F, 10.5F, 10.0F, 9.2F, 10.0F, 11.8F, kOrange);
             break;
-        case WidgetKindUVE::ScrollBox:
-            p.FrameUVE(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kTealUVE);
+        case WidgetKind::ScrollBox:
+            p.Frame(1.5F, 1.5F, 13.0F, 13.0F, 1.6F, 1.1F, kTeal);
             for (int i = 0; i < 3; ++i) {
-                p.RoundRectUVE(3.4F, 3.8F + static_cast<float>(i) * 3.1F, 6.6F, 1.8F, 0.6F, kDimUVE);
+                p.RoundRect(3.4F, 3.8F + static_cast<float>(i) * 3.1F, 6.6F, 1.8F, 0.6F, kDim);
             }
-            p.RoundRectUVE(11.2F, 3.2F, 2.0F, 9.6F, 1.0F, kDarkUVE);
-            p.RoundRectUVE(11.2F, 4.0F, 2.0F, 4.0F, 1.0F, kTealUVE);
+            p.RoundRect(11.2F, 3.2F, 2.0F, 9.6F, 1.0F, kDark);
+            p.RoundRect(11.2F, 4.0F, 2.0F, 4.0F, 1.0F, kTeal);
             break;
-        case WidgetKindUVE::Border:
-            p.FrameUVE(1.2F, 1.2F, 13.6F, 13.6F, 3.0F, 2.4F, kGoldUVE);
-            p.RoundRectUVE(4.6F, 4.6F, 6.8F, 6.8F, 1.0F, InkUVE{0.82F, 0.66F, 0.40F, 0.35F});
+        case WidgetKind::Border:
+            p.Frame(1.2F, 1.2F, 13.6F, 13.6F, 3.0F, 2.4F, kGold);
+            p.RoundRect(4.6F, 4.6F, 6.8F, 6.8F, 1.0F, Ink{0.82F, 0.66F, 0.40F, 0.35F});
             break;
-        case WidgetKindUVE::View3D: {
+        case WidgetKind::View3D: {
             // A cube in the round, an orbit around it.
-            const InkUVE top{0.55F, 0.80F, 1.0F, 1.0F};
-            const InkUVE left{0.24F, 0.52F, 0.96F, 1.0F};
-            const InkUVE right{0.15F, 0.34F, 0.70F, 1.0F};
-            p.TriangleUVE(8.0F, 2.6F, 12.6F, 5.2F, 8.0F, 7.8F, top);
-            p.TriangleUVE(8.0F, 2.6F, 3.4F, 5.2F, 8.0F, 7.8F, top);
-            p.TriangleUVE(3.4F, 5.2F, 8.0F, 7.8F, 3.4F, 10.6F, left);
-            p.TriangleUVE(8.0F, 7.8F, 8.0F, 13.2F, 3.4F, 10.6F, left);
-            p.TriangleUVE(12.6F, 5.2F, 8.0F, 7.8F, 12.6F, 10.6F, right);
-            p.TriangleUVE(8.0F, 7.8F, 8.0F, 13.2F, 12.6F, 10.6F, right);
-            p.ShapeUVE([](const float u, const float v) {
+            const Ink top{0.55F, 0.80F, 1.0F, 1.0F};
+            const Ink left{0.24F, 0.52F, 0.96F, 1.0F};
+            const Ink right{0.15F, 0.34F, 0.70F, 1.0F};
+            p.Triangle(8.0F, 2.6F, 12.6F, 5.2F, 8.0F, 7.8F, top);
+            p.Triangle(8.0F, 2.6F, 3.4F, 5.2F, 8.0F, 7.8F, top);
+            p.Triangle(3.4F, 5.2F, 8.0F, 7.8F, 3.4F, 10.6F, left);
+            p.Triangle(8.0F, 7.8F, 8.0F, 13.2F, 3.4F, 10.6F, left);
+            p.Triangle(12.6F, 5.2F, 8.0F, 7.8F, 12.6F, 10.6F, right);
+            p.Triangle(8.0F, 7.8F, 8.0F, 13.2F, 12.6F, 10.6F, right);
+            p.Shape([](const float u, const float v) {
                 const float dx = (u - 8.0F) / 7.2F;
                 const float dy = (v - 11.0F) / 2.6F;
                 const float r = dx * dx + dy * dy;
                 return r <= 1.0F && r >= 0.62F && v > 11.0F;
-            }, kYellowUVE);
-            p.TriangleUVE(14.6F, 10.0F, 15.6F, 12.6F, 12.8F, 12.2F, kYellowUVE);
+            }, kYellow);
+            p.Triangle(14.6F, 10.0F, 15.6F, 12.6F, 12.8F, 12.2F, kYellow);
             break;
         }
-        case WidgetKindUVE::Spacer:
-            p.LineUVE(2.0F, 4.0F, 2.0F, 12.0F, 1.2F, kDimUVE);
-            p.LineUVE(14.0F, 4.0F, 14.0F, 12.0F, 1.2F, kDimUVE);
-            p.LineUVE(4.0F, 8.0F, 12.0F, 8.0F, 1.2F, kWhiteUVE);
-            p.TriangleUVE(3.2F, 8.0F, 5.6F, 6.2F, 5.6F, 9.8F, kWhiteUVE);
-            p.TriangleUVE(12.8F, 8.0F, 10.4F, 6.2F, 10.4F, 9.8F, kWhiteUVE);
+        case WidgetKind::Spacer:
+            p.Line(2.0F, 4.0F, 2.0F, 12.0F, 1.2F, kDim);
+            p.Line(14.0F, 4.0F, 14.0F, 12.0F, 1.2F, kDim);
+            p.Line(4.0F, 8.0F, 12.0F, 8.0F, 1.2F, kWhite);
+            p.Triangle(3.2F, 8.0F, 5.6F, 6.2F, 5.6F, 9.8F, kWhite);
+            p.Triangle(12.8F, 8.0F, 10.4F, 6.2F, 10.4F, 9.8F, kWhite);
             break;
     }
 }
 
 } // namespace
 
-const char* WidgetKindLabelUVE(const WidgetKindUVE kind) noexcept {
+const char* WidgetKindLabel(const WidgetKind kind) noexcept {
     switch (kind) {
-        case WidgetKindUVE::Canvas: return "Screen";
-        case WidgetKindUVE::Text: return "Text";
-        case WidgetKindUVE::Button: return "Button";
-        case WidgetKindUVE::Image: return "Image";
-        case WidgetKindUVE::ProgressBar: return "Progress Bar";
-        case WidgetKindUVE::Slider: return "Slider";
-        case WidgetKindUVE::CheckBox: return "Check Box";
-        case WidgetKindUVE::TextBox: return "Text Box";
-        case WidgetKindUVE::ComboBox: return "Combo Box";
-        case WidgetKindUVE::VerticalBox: return "Vertical Box";
-        case WidgetKindUVE::HorizontalBox: return "Horizontal Box";
-        case WidgetKindUVE::WrapBox: return "Wrap Box";
-        case WidgetKindUVE::ScrollBox: return "Scroll Box";
-        case WidgetKindUVE::Border: return "Border";
-        case WidgetKindUVE::Spacer: return "Spacer";
-        case WidgetKindUVE::View3D: return "3D View";
+        case WidgetKind::Canvas: return "Screen";
+        case WidgetKind::Text: return "Text";
+        case WidgetKind::Button: return "Button";
+        case WidgetKind::Image: return "Image";
+        case WidgetKind::ProgressBar: return "Progress Bar";
+        case WidgetKind::Slider: return "Slider";
+        case WidgetKind::CheckBox: return "Check Box";
+        case WidgetKind::TextBox: return "Text Box";
+        case WidgetKind::ComboBox: return "Combo Box";
+        case WidgetKind::VerticalBox: return "Vertical Box";
+        case WidgetKind::HorizontalBox: return "Horizontal Box";
+        case WidgetKind::WrapBox: return "Wrap Box";
+        case WidgetKind::ScrollBox: return "Scroll Box";
+        case WidgetKind::Border: return "Border";
+        case WidgetKind::Spacer: return "Spacer";
+        case WidgetKind::View3D: return "3D View";
     }
     return "Widget";
 }
 
-std::optional<WidgetKindUVE> ClassifyWidgetUVE(const Scene::IEntityManagerUVE& constEm, const Scene::EntityUVE entity) {
-    auto& em = const_cast<Scene::IEntityManagerUVE&>(constEm);
-    if (!em.IsAliveUVE(entity)) {
+std::optional<WidgetKind> ClassifyWidget(const Scene::IEntityManager& constEm, const Scene::Entity entity) {
+    auto& em = const_cast<Scene::IEntityManager&>(constEm);
+    if (!em.IsAlive(entity)) {
         return std::nullopt;
     }
-    if (em.HasComponentUVE<Scene::UIView3DComponentUVE>(entity)) {
-        return WidgetKindUVE::View3D;
+    if (em.HasComponent<Scene::UIView3DComponent>(entity)) {
+        return WidgetKind::View3D;
     }
-    if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) {
-        return WidgetKindUVE::Button;
+    if (em.HasComponent<Scene::UIButtonComponent>(entity)) {
+        return WidgetKind::Button;
     }
-    if (em.HasComponentUVE<Scene::UIDropdownComponentUVE>(entity)) {
-        return WidgetKindUVE::ComboBox;
+    if (em.HasComponent<Scene::UIDropdownComponent>(entity)) {
+        return WidgetKind::ComboBox;
     }
-    if (em.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(entity)) {
-        return WidgetKindUVE::ScrollBox;
+    if (em.HasComponent<Scene::UIScrollContainerComponent>(entity)) {
+        return WidgetKind::ScrollBox;
     }
-    if (em.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(entity)) {
-        const auto& layout = em.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(entity);
+    if (em.HasComponent<Scene::UILayoutContainerComponent>(entity)) {
+        const auto& layout = em.GetComponent<Scene::UILayoutContainerComponent>(entity);
         if (layout.wrapAfter > 0U) {
-            return WidgetKindUVE::WrapBox;
+            return WidgetKind::WrapBox;
         }
-        return layout.direction == Scene::UILayoutDirectionUVE::Horizontal ? WidgetKindUVE::HorizontalBox : WidgetKindUVE::VerticalBox;
+        return layout.direction == Scene::UILayoutDirection::Horizontal ? WidgetKind::HorizontalBox : WidgetKind::VerticalBox;
     }
-    if (em.HasComponentUVE<Scene::UIProgressBarComponentUVE>(entity)) {
-        return WidgetKindUVE::ProgressBar;
+    if (em.HasComponent<Scene::UIProgressBarComponent>(entity)) {
+        return WidgetKind::ProgressBar;
     }
-    if (em.HasComponentUVE<Scene::UISliderComponentUVE>(entity)) {
-        return WidgetKindUVE::Slider;
+    if (em.HasComponent<Scene::UISliderComponent>(entity)) {
+        return WidgetKind::Slider;
     }
-    if (em.HasComponentUVE<Scene::UICheckboxComponentUVE>(entity)) {
-        return WidgetKindUVE::CheckBox;
+    if (em.HasComponent<Scene::UICheckboxComponent>(entity)) {
+        return WidgetKind::CheckBox;
     }
-    if (em.HasComponentUVE<Scene::UITextInputComponentUVE>(entity)) {
-        return WidgetKindUVE::TextBox;
+    if (em.HasComponent<Scene::UITextInputComponent>(entity)) {
+        return WidgetKind::TextBox;
     }
-    if (em.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
-        const auto& image = em.GetComponentUVE<Scene::UIImageComponentUVE>(entity);
+    if (em.HasComponent<Scene::UIImageComponent>(entity)) {
+        const auto& image = em.GetComponent<Scene::UIImageComponent>(entity);
         if (image.alpha <= 0.0F) {
-            return WidgetKindUVE::Spacer;
+            return WidgetKind::Spacer;
         }
-        return image.nineSliceEnabled ? WidgetKindUVE::Border : WidgetKindUVE::Image;
+        return image.nineSliceEnabled ? WidgetKind::Border : WidgetKind::Image;
     }
-    if (em.HasComponentUVE<Scene::UITextComponentUVE>(entity)) {
-        return WidgetKindUVE::Text;
+    if (em.HasComponent<Scene::UITextComponent>(entity)) {
+        return WidgetKind::Text;
     }
-    if (em.HasComponentUVE<Scene::CanvasComponentUVE>(entity)) {
-        return WidgetKindUVE::Canvas;
+    if (em.HasComponent<Scene::CanvasComponent>(entity)) {
+        return WidgetKind::Canvas;
     }
     return std::nullopt;
 }
 
-EditorIconsUVE::ImageUVE WidgetIconUVE(const WidgetKindUVE kind, const int size) {
+EditorIcons::Image WidgetIcon(const WidgetKind kind, const int size) {
     static std::map<std::pair<int, int>, std::vector<std::uint32_t>> cache;
     const int px = std::clamp(size, 8, 128);
     const auto key = std::make_pair(static_cast<int>(kind), px);
     auto it = cache.find(key);
     if (it == cache.end()) {
-        IconPainterUVE painter(px);
-        PaintUVE(painter, kind);
-        it = cache.emplace(key, painter.PixelsUVE()).first;
+        IconPainter painter(px);
+        Paint(painter, kind);
+        it = cache.emplace(key, painter.Pixels()).first;
     }
-    return EditorIconsUVE::ImageUVE{it->second.data(), px};
+    return EditorIcons::Image{it->second.data(), px};
 }
 
 } // namespace UVE::Editor

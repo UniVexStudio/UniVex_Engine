@@ -42,21 +42,26 @@ SKIP_DIRS = {".git", "build", "node_modules", ".vs", "out", "_deps"}
 # the same commit that performs a rename - that is the whole mechanism.
 RETIRED = {
     # The scene-object pass: the word "Node" left the engine's own types, files and labels.
-    "SceneNodeKindUVE": "SceneObjectKindUVE",
-    "NodeMetadataComponentUVE": "ObjectMetadataComponentUVE",
-    "SceneNodeTypeComponentUVE": "SceneObjectTypeComponentUVE",
-    # The Godot-derived enum names (GODOT_STYLE_AUDIT.md Finding A). Persisted by number, so the
-    # rename is source-only - which is exactly why nothing on disk stops a reintroduction.
-    "ProcessModeUVE": "TickModeUVE",
-    "AutoTranslateModeUVE": "LocalizeModeUVE",
-    "PhysicsInterpolationModeUVE": "PoseSmoothingUVE",
-    "IsProcessingUVE": "IsTickingUVE",
-    "ResolveProcessModeUVE": "ResolveTickModeUVE",
-    "ResolveAutoTranslateModeUVE": "ResolveLocalizeModeUVE",
-    # The variant pass (GODOT_STYLE_AUDIT.md Finding C). "Packed*Array" is another engine's family
-    # verbatim - all nine members, same order, minus one - and "StringName" is its name for an
-    # interned string. Variant types are persisted BY NAME, so each of these is a load-time alias
-    # in TryParseVariantTypeNameUVE, never a silent break.
+    "SceneNodeKind": "SceneObjectKind",
+    "NodeMetadataComponent": "ObjectMetadataComponent",
+    "SceneNodeTypeComponent": "SceneObjectTypeComponent",
+    "SceneNodeKindUVE": "SceneObjectKind",
+    "NodeMetadataComponentUVE": "ObjectMetadataComponent",
+    "SceneNodeTypeComponentUVE": "SceneObjectTypeComponent",
+    # Enum renames persisted by number, so source-only ratification prevents reintroduction.
+    "ProcessMode": "TickMode",
+    "AutoTranslateMode": "LocalizeMode",
+    "PhysicsInterpolationMode": "PoseSmoothing",
+    "IsProcessing": "IsTicking",
+    "ResolveProcessMode": "ResolveTickMode",
+    "ResolveAutoTranslateMode": "ResolveLocalizeMode",
+    "ProcessModeUVE": "TickMode",
+    "AutoTranslateModeUVE": "LocalizeMode",
+    "PhysicsInterpolationModeUVE": "PoseSmoothing",
+    "IsProcessingUVE": "IsTicking",
+    "ResolveProcessModeUVE": "ResolveTickMode",
+    "ResolveAutoTranslateModeUVE": "ResolveLocalizeMode",
+    # Variant types persisted by name (load-time aliases live in TryParseVariantTypeName).
     "PackedByteArray": "ByteArray",
     "PackedInt32Array": "Int32Array",
     "PackedInt64Array": "Int64Array",
@@ -67,44 +72,51 @@ RETIRED = {
     "PackedVector3Array": "Vector3Array",
     "PackedColorArray": "ColorArray",
     "StringName": "InternedString",
-    # The pose-graph pass (Phase 11). Engine/Runtime/Animation held a second, older animation library
-    # in UVE::Core whose AnimationGraph* types shared their names with UVE::Scene's live
-    # AnimationGraphComponentUVE family - two different types, same name, different namespace. The
-    # Core one is now PoseGraph*. These eight are Core-only: UVE::Scene has no type of the same name,
-    # so retiring them cannot collide with the live AnimationGraph* vocabulary.
-    "AnimationGraphEvaluationResultUVE": "PoseGraphEvaluationResultUVE",
-    "AnimationGraphValidationCodeUVE": "PoseGraphValidationCodeUVE",
-    "AnimationGraphValidationResultUVE": "PoseGraphValidationResultUVE",
-    "AnimationGraphParameterUVE": "PoseGraphParameterUVE",
-    "AnimationGraphCacheKeyUVE": "PoseGraphCacheKeyUVE",
-    "AnimationGraphCacheKeyHashUVE": "PoseGraphCacheKeyHashUVE",
-    "ValidateAnimationGraphUVE": "ValidatePoseGraphUVE",
-    "EvaluateAnimationGraphUVE": "EvaluatePoseGraphUVE",
-    # The navigation pass (GODOT_STYLE_AUDIT.md Finding D). These two kinds carried another engine's
-    # own navigation class names verbatim. Entries, not stems: bare "Navigation" is legitimate
-    # elsewhere in the tree - ContentNavigationHistoryUVE and
-    # DeveloperConsoleHistoryNavigationCodeUVE are editor history, not pathfinding.
+    # The pose-graph pass (Phase 11).
+    "AnimationGraphEvaluationResult": "PoseGraphEvaluationResult",
+    "AnimationGraphValidationCode": "PoseGraphValidationCode",
+    "AnimationGraphValidationResult": "PoseGraphValidationResult",
+    "AnimationGraphParameter": "PoseGraphParameter",
+    "AnimationGraphCacheKey": "PoseGraphCacheKey",
+    "AnimationGraphCacheKeyHash": "PoseGraphCacheKeyHash",
+    "ValidateAnimationGraph": "ValidatePoseGraph",
+    "EvaluateAnimationGraph": "EvaluatePoseGraph",
+    "AnimationGraphEvaluationResultUVE": "PoseGraphEvaluationResult",
+    "AnimationGraphValidationCodeUVE": "PoseGraphValidationCode",
+    "AnimationGraphValidationResultUVE": "PoseGraphValidationResult",
+    "AnimationGraphParameterUVE": "PoseGraphParameter",
+    "AnimationGraphCacheKeyUVE": "PoseGraphCacheKey",
+    "AnimationGraphCacheKeyHashUVE": "PoseGraphCacheKeyHash",
+    "ValidateAnimationGraphUVE": "ValidatePoseGraph",
+    "EvaluateAnimationGraphUVE": "EvaluatePoseGraph",
+    # The navigation pass.
     "NavigationRegion3D": "NavMeshVolume3D",
     "NavigationAgent3D": "NavSeeker3D",
-    # Graph elements are nodes, not objects - and the serialized field has said "nodes" all along
-    # (scene_serializer_uve.cpp writes {"nodes", ...}), so the C++ was out of step with its own file
-    # format. Word-boundary entries, so AnimationGraphObjectDefinitionUVE - the ObjectDefinition for
-    # the AnimationGraph KIND, which follows the <Kind>ObjectDefinitionUVE pattern - is not caught.
-    "AnimationGraphObjectUVE": "AnimationGraphNodeUVE",
-    "AnimationGraphObjectKindUVE": "AnimationGraphNodeKindUVE",
-    "AnimationGraphObjectStateUVE": "AnimationGraphNodeStateUVE",
-    "AnimationGraphObjectsUVE": "AnimationGraphNodesUVE",
-    "AnimationGraphObjectIdUVE": "AnimationGraphNodeIdUVE",
-    "PoseGraphObjectUVE": "PoseGraphNodeUVE",
-    "PoseGraphObjectKindUVE": "PoseGraphNodeKindUVE",
-    # The Godot class name used as a folder and library name (Finding F).
+    # Graph elements are nodes, not objects.
+    "AnimationGraphObject": "AnimationGraphNode",
+    "AnimationGraphObjectKind": "AnimationGraphNodeKind",
+    "AnimationGraphObjectState": "AnimationGraphNodeState",
+    "AnimationGraphObjects": "AnimationGraphNodes",
+    "AnimationGraphObjectId": "AnimationGraphNodeId",
+    "PoseGraphObject": "PoseGraphNode",
+    "PoseGraphObjectKind": "PoseGraphNodeKind",
+    "AnimationGraphObjectUVE": "AnimationGraphNode",
+    "AnimationGraphObjectKindUVE": "AnimationGraphNodeKind",
+    "AnimationGraphObjectStateUVE": "AnimationGraphNodeState",
+    "AnimationGraphObjectsUVE": "AnimationGraphNodes",
+    "AnimationGraphObjectIdUVE": "AnimationGraphNodeId",
+    "PoseGraphObjectUVE": "PoseGraphNode",
+    "PoseGraphObjectKindUVE": "PoseGraphNodeKind",
+    # Folder and library renames.
     "CanvasLayer": "Canvas (folder Engine/Runtime/Objects/UI/Expose/uve/objects/canvas)",
     "all_objects_canvas_layer_uve.h": "all_objects_canvas_uve.h",
     "uve_nodes_canvas_layer": "uve_objects_canvas",
     "uve_nodes_3d": "uve_objects_3d",
-    # Godot's event vocabulary in the editor chrome (Finding G).
-    "EntityEditorTabUVE::Signals": "EntityEditorTabUVE::Events",
-    "EditorRightPanelTabUVE::Signals": "EditorRightPanelTabUVE::Events",
+    # Event vocabulary in the editor chrome.
+    "EntityEditorTab::Signals": "EntityEditorTab::Events",
+    "EditorRightPanelTab::Signals": "EditorRightPanelTab::Events",
+    "EntityEditorTabUVE::Signals": "EntityEditorTab::Events",
+    "EditorRightPanelTabUVE::Signals": "EditorRightPanelTab::Events",
 }
 
 # Whole families retired at once (GODOT_STYLE_AUDIT.md Finding B). Listing every derived symbol -

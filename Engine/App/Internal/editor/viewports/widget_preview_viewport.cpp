@@ -9,55 +9,55 @@
 
 namespace UVE::App::Viewports {
 
-WidgetPreviewViewportUVE::WidgetPreviewViewportUVE(Editor::EditorUVE& editor,
-                                                   Core::EngineServicesUVE& services)
+WidgetPreviewViewport::WidgetPreviewViewport(Editor::Editor& editor,
+                                                   Core::EngineServices& services)
     : m_editor(editor), m_surface(services) {}
 
-std::uint64_t WidgetPreviewViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize,
-                                                  Math::Vector2UVE& outUsedSize,
-                                                  const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+std::uint64_t WidgetPreviewViewport::Render(const Math::Vector2& availableSize,
+                                                  Math::Vector2& outUsedSize,
+                                                  const Editor::Editor::ViewportOverlayState& overlayState) {
     const int width = std::max(1, static_cast<int>(availableSize.x));
     const int height = std::max(1, static_cast<int>(availableSize.y));
-    if (!m_surface.PrepareFrameUVE(width, height)) {
+    if (!m_surface.PrepareFrame(width, height)) {
         return 0U;
     }
 
     const bool useStudio = overlayState.studioView;
-    std::optional<Scene::EntityUVE> lookThroughCamera;
+    std::optional<Scene::Entity> lookThroughCamera;
     if (useStudio) {
-        m_studioCamera.ApplyStudioFramingUVE(overlayState);
-        m_studioCamera.CameraUVE().Update(overlayState.input.deltaTime);
+        m_studioCamera.ApplyStudioFraming(overlayState);
+        m_studioCamera.Camera().Update(overlayState.input.deltaTime);
     } else {
-        const Scene::EntityUVE stageCamera = m_editor.GetPreviewCameraUVE();
-        if (stageCamera != Scene::kInvalidEntityUVE) {
+        const Scene::Entity stageCamera = m_editor.GetPreviewCamera();
+        if (stageCamera != Scene::kInvalidEntity) {
             lookThroughCamera = stageCamera;
         }
     }
 
-    m_surface.SetShadingModeUVE(overlayState.shadingMode);
-    m_surface.RenderPassUVE().Settings().viewEnvironment = !useStudio;
-    m_surface.RenderPassUVE().Settings().viewGrid = false;
-    m_surface.ApplyPreviewLightingUVE(overlayState, true);
+    m_surface.SetShadingMode(overlayState.shadingMode);
+    m_surface.RenderPass().Settings().viewEnvironment = !useStudio;
+    m_surface.RenderPass().Settings().viewGrid = false;
+    m_surface.ApplyPreviewLighting(overlayState, true);
 
-    const univex::integration::EditorMeshLayerResultUVE meshResult =
-        m_surface.RenderSceneMeshLayerUVE(m_studioCamera.CameraUVE(), width, height, lookThroughCamera);
+    const univex::integration::EditorMeshLayerResult meshResult =
+        m_surface.RenderSceneMeshLayer(m_studioCamera.Camera(), width, height, lookThroughCamera);
 
-    m_studioCamera.ExportCameraForHostUVE(overlayState, width, height);
-    outUsedSize = Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
+    m_studioCamera.ExportCameraForHost(overlayState, width, height);
+    outUsedSize = Math::Vector2{static_cast<float>(width), static_cast<float>(height)};
 
-    const GLint previousFbo = m_surface.BeginPassUVE(width, height);
-    const univex::render::StudioBackdropRenderer* const studio = useStudio ? m_surface.StudioBackdropUVE() : nullptr;
+    const GLint previousFbo = m_surface.BeginPass(width, height);
+    const univex::render::StudioBackdropRenderer* const studio = useStudio ? m_surface.StudioBackdrop() : nullptr;
     if (studio != nullptr) {
-        studio->DrawBackdrop(m_studioCamera.CameraUVE(), width, height);
+        studio->DrawBackdrop(m_studioCamera.Camera(), width, height);
     } else {
-        const bool neutralFallback = !m_surface.HasActiveWorldEnvironmentUVE();
-        m_surface.RenderPassUVE().RenderBackgroundUVE(neutralFallback);
+        const bool neutralFallback = !m_surface.HasActiveWorldEnvironment();
+        m_surface.RenderPass().RenderBackground(neutralFallback);
     }
-    m_surface.BlitMeshLayerUVE(meshResult, m_studioCamera.CameraUVE(), width, height);
+    m_surface.BlitMeshLayer(meshResult, m_studioCamera.Camera(), width, height);
     if (studio != nullptr) {
-        studio->DrawFloor(m_studioCamera.CameraUVE(), width, height);
+        studio->DrawFloor(m_studioCamera.Camera(), width, height);
     }
-    return m_surface.EndPassAndResolveUVE(width, height, previousFbo);
+    return m_surface.EndPassAndResolve(width, height, previousFbo);
 }
 
 } // namespace UVE::App::Viewports

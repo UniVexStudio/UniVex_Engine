@@ -11,19 +11,19 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] bool RequireInsideRenderPassUVE(bool insideRenderPass, std::string_view operation) noexcept {
+[[nodiscard]] bool RequireInsideRenderPass(bool insideRenderPass, std::string_view operation) noexcept {
     UVE_ASSERT(insideRenderPass);
     if (!insideRenderPass) {
-        UVE_ERROR("NullCommandBufferUVE: {} must be called inside a render pass", operation);
+        UVE_ERROR("NullCommandBuffer: {} must be called inside a render pass", operation);
         return false;
     }
     return true;
 }
 
-[[nodiscard]] bool RequireOutsideRenderPassUVE(bool insideRenderPass) noexcept {
+[[nodiscard]] bool RequireOutsideRenderPass(bool insideRenderPass) noexcept {
     UVE_ASSERT(!insideRenderPass);
     if (insideRenderPass) {
-        UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE does not support nested render passes");
+        UVE_ERROR("NullCommandBuffer: BeginRenderPass does not support nested render passes");
         return false;
     }
     return true;
@@ -31,36 +31,36 @@ namespace {
 
 } // namespace
 
-void NullCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPassDesc) {
-    if (!RequireOutsideRenderPassUVE(m_insideRenderPass)) {
+void NullCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
+    if (!RequireOutsideRenderPass(m_insideRenderPass)) {
         return;
     }
-    if (!IsLoadOpValidUVE(renderPassDesc.colorLoadOp) || !IsLoadOpValidUVE(renderPassDesc.depthLoadOp)) {
-        UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown load operation");
+    if (!IsLoadOpValid(renderPassDesc.colorLoadOp) || !IsLoadOpValid(renderPassDesc.depthLoadOp)) {
+        UVE_ERROR("NullCommandBuffer: BeginRenderPass received an unknown load operation");
         return;
     }
     // Tier 2.5: store ops validate like load ops (Null records opaquely, but a garbage enum is
     // still a malformed pass on every backend).
-    if (!IsStoreOpValidUVE(renderPassDesc.colorStoreOp) || !IsStoreOpValidUVE(renderPassDesc.depthStoreOp)) {
-        UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown store operation");
+    if (!IsStoreOpValid(renderPassDesc.colorStoreOp) || !IsStoreOpValid(renderPassDesc.depthStoreOp)) {
+        UVE_ERROR("NullCommandBuffer: BeginRenderPass received an unknown store operation");
         return;
     }
     // Tier 2.4: the extras prefix rule is structural (no handle lookups — Null never resolves
     // handles), so it enforces here: contiguous prefix, valid per-slot ops.
     {
         bool gapSeen = false;
-        for (const ColorAttachmentUVE& slot : renderPassDesc.extraColorAttachments) {
-            if (slot.target == kInvalidTextureHandleUVE) {
+        for (const ColorAttachment& slot : renderPassDesc.extraColorAttachments) {
+            if (slot.target == kInvalidTextureHandle) {
                 gapSeen = true;
                 continue;
             }
             if (gapSeen) {
-                UVE_ERROR("NullCommandBufferUVE: extra color attachments must be a contiguous "
+                UVE_ERROR("NullCommandBuffer: extra color attachments must be a contiguous "
                           "prefix (a gap is malformed)");
                 return;
             }
-            if (!IsLoadOpValidUVE(slot.loadOp) || !IsStoreOpValidUVE(slot.storeOp)) {
-                UVE_ERROR("NullCommandBufferUVE: BeginRenderPassUVE received an unknown extra "
+            if (!IsLoadOpValid(slot.loadOp) || !IsStoreOpValid(slot.storeOp)) {
+                UVE_ERROR("NullCommandBuffer: BeginRenderPass received an unknown extra "
                           "attachment load or store operation");
                 return;
             }
@@ -68,169 +68,169 @@ void NullCommandBufferUVE::BeginRenderPassUVE(const RenderPassDescUVE& renderPas
     }
     m_insideRenderPass = true;
     ++m_passEpoch;
-    m_commands.emplace_back(BeginRenderPassCommandUVE{renderPassDesc});
+    m_commands.emplace_back(BeginRenderPassCommand{renderPassDesc});
 }
 
-void NullCommandBufferUVE::EndRenderPassUVE() {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "EndRenderPassUVE")) {
+void NullCommandBuffer::EndRenderPass() {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "EndRenderPass")) {
         return;
     }
     if (m_activeQuery != 0U) {
         // A bracket may not span the pass boundary: close it here (loudly) so the recorded
-        // sequence stays valid, and let the caller's late EndQueryUVE report InvalidState.
-        UVE_ERROR("NullCommandBufferUVE: EndRenderPassUVE closed an occlusion query that was still open");
-        m_commands.emplace_back(EndQueryCommandUVE{QueryHandleUVE{m_activeQuery}});
+        // sequence stays valid, and let the caller's late EndQuery report InvalidState.
+        UVE_ERROR("NullCommandBuffer: EndRenderPass closed an occlusion query that was still open");
+        m_commands.emplace_back(EndQueryCommand{QueryHandle{m_activeQuery}});
         m_activeQuery = 0U;
     }
     m_insideRenderPass = false;
     ++m_passEpoch;
-    m_commands.emplace_back(EndRenderPassCommandUVE{});
+    m_commands.emplace_back(EndRenderPassCommand{});
 }
 
-void NullCommandBufferUVE::BindPipelineUVE(PipelineHandleUVE pipeline) {
+void NullCommandBuffer::BindPipeline(PipelineHandle pipeline) {
     // M5a: no inside-pass gate anymore — compute pipelines MUST bind outside render-pass markers
     // (Vulkan forbids binding a COMPUTE pipeline inside a pass instance), and Null only records.
-    // The structural gates live on the consuming commands: DrawUVE (inside) and DispatchUVE
-    // (outside). Kept identical to GlCommandBufferUVE so one portable stream records everywhere.
-    m_commands.emplace_back(BindPipelineCommandUVE{pipeline});
+    // The structural gates live on the consuming commands: Draw (inside) and Dispatch
+    // (outside). Kept identical to GlCommandBuffer so one portable stream records everywhere.
+    m_commands.emplace_back(BindPipelineCommand{pipeline});
 }
 
-void NullCommandBufferUVE::BindVertexBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindVertexBufferUVE")) {
+void NullCommandBuffer::BindVertexBuffer(BufferHandle buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindVertexBuffer")) {
         return;
     }
-    m_commands.emplace_back(BindVertexBufferCommandUVE{buffer, slot});
+    m_commands.emplace_back(BindVertexBufferCommand{buffer, slot});
 }
 
-void NullCommandBufferUVE::BindIndexBufferUVE(BufferHandleUVE buffer) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindIndexBufferUVE")) {
+void NullCommandBuffer::BindIndexBuffer(BufferHandle buffer) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindIndexBuffer")) {
         return;
     }
-    m_commands.emplace_back(BindIndexBufferCommandUVE{buffer});
+    m_commands.emplace_back(BindIndexBufferCommand{buffer});
 }
 
-void NullCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t slot) {
-    // M5b: texture binds no longer gate on pass state. Since M5b, BindTextureUVE feeds
+void NullCommandBuffer::BindTexture(TextureHandle texture, std::uint32_t slot) {
+    // M5b: texture binds no longer gate on pass state. Since M5b, BindTexture feeds
     // STORAGE_IMAGE descriptors as well (unified texture slot space), and the compute flow
-    // lives entirely OUTSIDE pass markers. NullCommandBufferUVE holds no device back-reference
+    // lives entirely OUTSIDE pass markers. NullCommandBuffer holds no device back-reference
     // to tell a compute handle from a graphics one — so Null records ungated exactly like
-    // the Vulkan record side does (and like BindStorageBufferUVE does), and the executing
+    // the Vulkan record side does (and like BindStorageBuffer does), and the executing
     // backends keep the real kind-aware rules.
-    m_commands.emplace_back(BindTextureCommandUVE{texture, slot});
+    m_commands.emplace_back(BindTextureCommand{texture, slot});
 }
 
-void NullCommandBufferUVE::BindSamplerUVE(SamplerHandleUVE sampler, std::uint32_t slot) {
-    // Ungated exactly like BindTextureUVE above: sampler binds pair with texture binds, and
+void NullCommandBuffer::BindSampler(SamplerHandle sampler, std::uint32_t slot) {
+    // Ungated exactly like BindTexture above: sampler binds pair with texture binds, and
     // the executing backends keep the real kind-aware rules.
-    m_commands.emplace_back(BindSamplerCommandUVE{sampler, slot});
+    m_commands.emplace_back(BindSamplerCommand{sampler, slot});
 }
 
-void NullCommandBufferUVE::BindUniformBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "BindUniformBufferUVE")) {
+void NullCommandBuffer::BindUniformBuffer(BufferHandle buffer, std::uint32_t slot) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "BindUniformBuffer")) {
         return;
     }
-    m_commands.emplace_back(BindUniformBufferCommandUVE{buffer, slot});
+    m_commands.emplace_back(BindUniformBufferCommand{buffer, slot});
 }
 
-void NullCommandBufferUVE::BindStorageBufferUVE(BufferHandleUVE buffer, std::uint32_t slot) {
+void NullCommandBuffer::BindStorageBuffer(BufferHandle buffer, std::uint32_t slot) {
     // M5a: storage binds and the SetUniform* family below no longer gate on pass state. The
     // compute flow (bind compute pipeline, bind its SSBOs/uniforms, dispatch) lives entirely
-    // OUTSIDE pass markers, and NullCommandBufferUVE holds no device back-reference to tell a
+    // OUTSIDE pass markers, and NullCommandBuffer holds no device back-reference to tell a
     // compute handle from a graphics one — so Null records ungated exactly like the Vulkan
     // record side does, and the executing backends keep the real kind-aware rules.
-    m_commands.emplace_back(BindStorageBufferCommandUVE{buffer, slot});
+    m_commands.emplace_back(BindStorageBufferCommand{buffer, slot});
 }
 
-void NullCommandBufferUVE::SetUniformFloatUVE(std::string_view name, float value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformFloatCommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformFloat(std::string_view name, float value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformFloatCommand{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformIntUVE(std::string_view name, std::int32_t value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformIntCommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformInt(std::string_view name, std::int32_t value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformIntCommand{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformBoolUVE(std::string_view name, bool value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformBoolCommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformBool(std::string_view name, bool value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformBoolCommand{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformVector2UVE(std::string_view name, const Math::Vector2UVE& value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformVector2CommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformVector2(std::string_view name, const Math::Vector2& value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformVector2Command{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformVector3UVE(std::string_view name, const Math::Vector3UVE& value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformVector3CommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformVector3(std::string_view name, const Math::Vector3& value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformVector3Command{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformVector4UVE(std::string_view name, const Math::Vector4UVE& value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformVector4CommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformVector4(std::string_view name, const Math::Vector4& value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformVector4Command{std::string(name), value});
 }
 
-void NullCommandBufferUVE::SetUniformMatrix4x4UVE(std::string_view name, const Math::Matrix4x4UVE& value) {
-    // M5a: ungated — see the comment at BindStorageBufferUVE.
-    m_commands.emplace_back(SetUniformMatrix4x4CommandUVE{std::string(name), value});
+void NullCommandBuffer::SetUniformMatrix4x4(std::string_view name, const Math::Matrix4x4& value) {
+    // M5a: ungated — see the comment at BindStorageBuffer.
+    m_commands.emplace_back(SetUniformMatrix4x4Command{std::string(name), value});
 }
 
-void NullCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t instanceCount,
+void NullCommandBuffer::DrawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount,
                                           std::uint32_t firstIndex) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedUVE")) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "DrawIndexed")) {
         return;
     }
-    m_commands.emplace_back(DrawIndexedCommandUVE{indexCount, instanceCount, firstIndex});
+    m_commands.emplace_back(DrawIndexedCommand{indexCount, instanceCount, firstIndex});
 }
 
-void NullCommandBufferUVE::DrawIndexedIndirectUVE(const BufferHandleUVE buffer,
+void NullCommandBuffer::DrawIndexedIndirect(const BufferHandle buffer,
                                                   const std::uint64_t offsetBytes) {
-    // Same inside-pass gate as DrawIndexedUVE: the indirection changes where the PARAMETERS come
+    // Same inside-pass gate as DrawIndexed: the indirection changes where the PARAMETERS come
     // from, not when a draw is legal. Handle validity is the device's to judge at replay - this
     // backend records faithfully and executes nothing.
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawIndexedIndirectUVE")) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "DrawIndexedIndirect")) {
         return;
     }
-    m_commands.emplace_back(DrawIndexedIndirectCommandRecordUVE{buffer, offsetBytes});
+    m_commands.emplace_back(DrawIndexedIndirectCommandRecord{buffer, offsetBytes});
 }
 
-void NullCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) {
-    if (!RequireInsideRenderPassUVE(m_insideRenderPass, "DrawUVE")) {
+void NullCommandBuffer::Draw(std::uint32_t vertexCount, std::uint32_t instanceCount) {
+    if (!RequireInsideRenderPass(m_insideRenderPass, "Draw")) {
         return;
     }
-    m_commands.emplace_back(DrawCommandUVE{vertexCount, instanceCount});
+    m_commands.emplace_back(DrawCommand{vertexCount, instanceCount});
 }
 
-void NullCommandBufferUVE::DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
+void NullCommandBuffer::Dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,
                                        std::uint32_t groupCountZ) {
-    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of DrawUVE's
+    // M5a: dispatch belongs OUTSIDE render-pass markers — the mirror image of Draw's
     // inside-pass gate (Vulkan compute is illegal inside a render-pass instance).
     UVE_ASSERT(!m_insideRenderPass);
     if (m_insideRenderPass) {
-        UVE_ERROR("NullCommandBufferUVE: DispatchUVE must be called outside a render pass");
+        UVE_ERROR("NullCommandBuffer: Dispatch must be called outside a render pass");
         return;
     }
-    m_commands.emplace_back(DispatchCommandUVE{groupCountX, groupCountY, groupCountZ});
+    m_commands.emplace_back(DispatchCommand{groupCountX, groupCountY, groupCountZ});
 }
 
-const std::vector<RecordedCommandUVE>& NullCommandBufferUVE::GetRecordedCommandsUVE() const noexcept {
+const std::vector<RecordedCommand>& NullCommandBuffer::GetRecordedCommands() const noexcept {
     return m_commands;
 }
 
 } // namespace UVE::Render
 
 namespace UVE::Render {
-RenderOperationResultUVE NullCommandBufferUVE::MemoryBarrierUVE(MemoryBarrierMaskUVE mask) {
-    if (!IsMemoryBarrierMaskValidUVE(mask))
-        return RenderOperationResultUVE::InvalidArgument;
+RenderOperationResult NullCommandBuffer::MemoryBarrier(MemoryBarrierMask mask) {
+    if (!IsMemoryBarrierMaskValid(mask))
+        return RenderOperationResult::InvalidArgument;
     if (m_insideRenderPass)
-        return RenderOperationResultUVE::InvalidState;
-    m_commands.emplace_back(MemoryBarrierCommandUVE{mask});
-    return RenderOperationResultUVE::Recorded;
+        return RenderOperationResult::InvalidState;
+    m_commands.emplace_back(MemoryBarrierCommand{mask});
+    return RenderOperationResult::Recorded;
 }
 
-std::optional<RenderQueryKindUVE> NullCommandBufferUVE::LookupQueryKindUVE(const QueryHandleUVE query) const {
+std::optional<RenderQueryKind> NullCommandBuffer::LookupQueryKind(const QueryHandle query) const {
     if (query.value == 0U)
         return std::nullopt;
     if (!m_queryKindLookup)
@@ -238,47 +238,47 @@ std::optional<RenderQueryKindUVE> NullCommandBufferUVE::LookupQueryKindUVE(const
     return m_queryKindLookup(query);
 }
 
-RenderOperationResultUVE NullCommandBufferUVE::BeginQueryUVE(const QueryHandleUVE query) {
+RenderOperationResult NullCommandBuffer::BeginQuery(const QueryHandle query) {
     if (query.value == 0U)
-        return RenderOperationResultUVE::InvalidHandle;
+        return RenderOperationResult::InvalidHandle;
     if (m_queryKindLookup) {
-        const auto kind = LookupQueryKindUVE(query);
+        const auto kind = LookupQueryKind(query);
         if (!kind.has_value())
-            return RenderOperationResultUVE::InvalidHandle;
-        if (*kind != RenderQueryKindUVE::AnySamplesPassed)
-            return RenderOperationResultUVE::InvalidArgument;
+            return RenderOperationResult::InvalidHandle;
+        if (*kind != RenderQueryKind::AnySamplesPassed)
+            return RenderOperationResult::InvalidArgument;
     }
     if (m_activeQuery != 0U)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     m_activeQuery = query.value;
     m_activeQueryPassEpoch = m_passEpoch;
-    m_commands.emplace_back(BeginQueryCommandUVE{query});
-    return RenderOperationResultUVE::Recorded;
+    m_commands.emplace_back(BeginQueryCommand{query});
+    return RenderOperationResult::Recorded;
 }
 
-RenderOperationResultUVE NullCommandBufferUVE::EndQueryUVE(const QueryHandleUVE query) {
+RenderOperationResult NullCommandBuffer::EndQuery(const QueryHandle query) {
     if (query.value == 0U)
-        return RenderOperationResultUVE::InvalidHandle;
+        return RenderOperationResult::InvalidHandle;
     if (m_activeQuery != query.value)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     if (m_activeQueryPassEpoch != m_passEpoch)
-        return RenderOperationResultUVE::InvalidState;
+        return RenderOperationResult::InvalidState;
     m_activeQuery = 0U;
-    m_commands.emplace_back(EndQueryCommandUVE{query});
-    return RenderOperationResultUVE::Recorded;
+    m_commands.emplace_back(EndQueryCommand{query});
+    return RenderOperationResult::Recorded;
 }
 
-RenderOperationResultUVE NullCommandBufferUVE::WriteTimestampUVE(const QueryHandleUVE query) {
+RenderOperationResult NullCommandBuffer::WriteTimestamp(const QueryHandle query) {
     if (query.value == 0U)
-        return RenderOperationResultUVE::InvalidHandle;
+        return RenderOperationResult::InvalidHandle;
     if (m_queryKindLookup) {
-        const auto kind = LookupQueryKindUVE(query);
+        const auto kind = LookupQueryKind(query);
         if (!kind.has_value())
-            return RenderOperationResultUVE::InvalidHandle;
-        if (*kind != RenderQueryKindUVE::Timestamp)
-            return RenderOperationResultUVE::InvalidArgument;
+            return RenderOperationResult::InvalidHandle;
+        if (*kind != RenderQueryKind::Timestamp)
+            return RenderOperationResult::InvalidArgument;
     }
-    m_commands.emplace_back(WriteTimestampCommandUVE{query});
-    return RenderOperationResultUVE::Recorded;
+    m_commands.emplace_back(WriteTimestampCommand{query});
+    return RenderOperationResult::Recorded;
 }
 } // namespace UVE::Render

@@ -16,38 +16,38 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class AiSerializationUVETest : public ::testing::Test {
+class AiSerializationTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneSerializerUVE serializer;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneSerializer serializer;
 };
 
 } // namespace
 
-TEST_F(AiSerializationUVETest, Brain_RoundTripResetsSelectionState) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    AiBrainComponentUVE brain;
+TEST_F(AiSerializationTest, Brain_RoundTripResetsSelectionState) {
+    const Entity source = entityManager.CreateEntity();
+    AiBrainComponent brain;
     brain.hysteresis = 0.2F;
-    AiActionUVE flee;
+    AiAction flee;
     flee.actionId = "flee";
     flee.baseScore = 0.9F;
     flee.considerations.push_back(
-        AiConsiderationUVE{"health", AiResponseCurveUVE::InverseQuadratic, 2.0F});
+        AiConsideration{"health", AiResponseCurve::InverseQuadratic, 2.0F});
     brain.actions.push_back(std::move(flee));
-    brain.actions.push_back(AiActionUVE{"patrol", 0.4F, {}});
+    brain.actions.push_back(AiAction{"patrol", 0.4F, {}});
     brain.currentAction = "flee";
     brain.currentScore = 0.8F;
-    entityManager.AddComponentUVE<AiBrainComponentUVE>(source, brain);
+    entityManager.AddComponent<AiBrainComponent>(source, brain);
 
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {source}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    const AiBrainComponentUVE& revived =
-        entityManager.GetComponentUVE<AiBrainComponentUVE>(restored.front());
+    const AiBrainComponent& revived =
+        entityManager.GetComponent<AiBrainComponent>(restored.front());
     EXPECT_FLOAT_EQ(revived.hysteresis, 0.2F);
     ASSERT_EQ(revived.actions.size(), 2U);
     EXPECT_EQ(revived.actions, brain.actions);
@@ -55,75 +55,75 @@ TEST_F(AiSerializationUVETest, Brain_RoundTripResetsSelectionState) {
     EXPECT_FLOAT_EQ(revived.currentScore, 0.0F);
 }
 
-TEST_F(AiSerializationUVETest, Perception_RoundTripThroughCaptureRestore) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    PerceptionComponentUVE sensor;
+TEST_F(AiSerializationTest, Perception_RoundTripThroughCaptureRestore) {
+    const Entity source = entityManager.CreateEntity();
+    PerceptionComponent sensor;
     sensor.watchedTag = "enemy";
     sensor.sightRangeMetres = 30.0F;
     sensor.sightFieldOfViewDegrees = 120.0F;
     sensor.hearingRadiusMetres = 12.0F;
     sensor.requiresLineOfSight = false;
-    entityManager.AddComponentUVE<PerceptionComponentUVE>(source, sensor);
+    entityManager.AddComponent<PerceptionComponent>(source, sensor);
 
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {source}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    const PerceptionComponentUVE& revived =
-        entityManager.GetComponentUVE<PerceptionComponentUVE>(restored.front());
+    const PerceptionComponent& revived =
+        entityManager.GetComponent<PerceptionComponent>(restored.front());
     EXPECT_EQ(revived, sensor);
 }
 
-TEST_F(AiSerializationUVETest, NoiseEmitter_RoundTripThroughCaptureRestore) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    NoiseEmitterComponentUVE emitter;
+TEST_F(AiSerializationTest, NoiseEmitter_RoundTripThroughCaptureRestore) {
+    const Entity source = entityManager.CreateEntity();
+    NoiseEmitterComponent emitter;
     emitter.loudness = 0.6F;
     emitter.decayPerSecond = 0.2F;
-    entityManager.AddComponentUVE<NoiseEmitterComponentUVE>(source, emitter);
+    entityManager.AddComponent<NoiseEmitterComponent>(source, emitter);
 
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {source}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    const NoiseEmitterComponentUVE& revived =
-        entityManager.GetComponentUVE<NoiseEmitterComponentUVE>(restored.front());
+    const NoiseEmitterComponent& revived =
+        entityManager.GetComponent<NoiseEmitterComponent>(restored.front());
     EXPECT_EQ(revived, emitter);
 }
 
-TEST_F(AiSerializationUVETest, BlackboardWithVectors_RoundTripThroughCaptureRestore) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    BlackboardComponentUVE board;
-    ASSERT_TRUE(SetBlackboardValueUVE(board, "sight.enemy.visible", 1.0F));
+TEST_F(AiSerializationTest, BlackboardWithVectors_RoundTripThroughCaptureRestore) {
+    const Entity source = entityManager.CreateEntity();
+    BlackboardComponent board;
+    ASSERT_TRUE(SetBlackboardValue(board, "sight.enemy.visible", 1.0F));
     ASSERT_TRUE(
-        SetBlackboardVectorUVE(board, "sight.enemy.position", Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    entityManager.AddComponentUVE<BlackboardComponentUVE>(source, board);
+        SetBlackboardVector(board, "sight.enemy.position", Math::Vector3{1.0F, 2.0F, 3.0F}));
+    entityManager.AddComponent<BlackboardComponent>(source, board);
 
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {source}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    const BlackboardComponentUVE& revived =
-        entityManager.GetComponentUVE<BlackboardComponentUVE>(restored.front());
+    const BlackboardComponent& revived =
+        entityManager.GetComponent<BlackboardComponent>(restored.front());
     EXPECT_EQ(revived, board);
 }
 
-TEST_F(AiSerializationUVETest, Blackboard_RoundTripThroughCaptureRestore) {
-    const EntityUVE source = entityManager.CreateEntityUVE();
-    BlackboardComponentUVE board;
-    ASSERT_TRUE(SetBlackboardValueUVE(board, "health", 0.25F));
-    ASSERT_TRUE(SetBlackboardValueUVE(board, "enemyNear", 1.0F));
-    entityManager.AddComponentUVE<BlackboardComponentUVE>(source, board);
+TEST_F(AiSerializationTest, Blackboard_RoundTripThroughCaptureRestore) {
+    const Entity source = entityManager.CreateEntity();
+    BlackboardComponent board;
+    ASSERT_TRUE(SetBlackboardValue(board, "health", 0.25F));
+    ASSERT_TRUE(SetBlackboardValue(board, "enemyNear", 1.0F));
+    entityManager.AddComponent<BlackboardComponent>(source, board);
 
-    const std::optional<SceneSnapshotUVE> snapshot =
-        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {source}, SceneAssetType::Scene);
     ASSERT_TRUE(snapshot.has_value());
-    const std::vector<EntityUVE> restored = serializer.RestoreUVE(entityManager, *snapshot);
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
     ASSERT_EQ(restored.size(), 1U);
-    const BlackboardComponentUVE& revived =
-        entityManager.GetComponentUVE<BlackboardComponentUVE>(restored.front());
+    const BlackboardComponent& revived =
+        entityManager.GetComponent<BlackboardComponent>(restored.front());
     EXPECT_EQ(revived, board);
 }
 

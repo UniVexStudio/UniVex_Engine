@@ -19,22 +19,22 @@
 namespace UVE::Scene {
 namespace {
 
-void DestroySubtreeUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph, const EntityUVE root) {
-    if (!entityManager.IsAliveUVE(root)) {
+void DestroySubtree(IEntityManager& entityManager, ISceneGraph& sceneGraph, const Entity root) {
+    if (!entityManager.IsAlive(root)) {
         return;
     }
-    const std::vector<EntityUVE> children = sceneGraph.GetChildrenUVE(entityManager, root);
-    for (const EntityUVE child : children) {
-        DestroySubtreeUVE(entityManager, sceneGraph, child);
+    const std::vector<Entity> children = sceneGraph.GetChildren(entityManager, root);
+    for (const Entity child : children) {
+        DestroySubtree(entityManager, sceneGraph, child);
     }
-    entityManager.DestroyEntityUVE(root);
+    entityManager.DestroyEntity(root);
 }
 
 } // namespace
 
-std::optional<std::uint64_t> ComputePrefabSourceRevisionUVE(const std::filesystem::path& path) {
-    const std::optional<Asset::AssetContentFingerprintUVE> fingerprint =
-        Asset::ComputeAssetContentFingerprintUVE(path);
+std::optional<std::uint64_t> ComputePrefabSourceRevision(const std::filesystem::path& path) {
+    const std::optional<Asset::AssetContentFingerprint> fingerprint =
+        Asset::ComputeAssetContentFingerprint(path);
     if (!fingerprint.has_value() || fingerprint->byteCount == 0U) {
         return std::nullopt;
     }
@@ -45,192 +45,192 @@ std::optional<std::uint64_t> ComputePrefabSourceRevisionUVE(const std::filesyste
     return revision == 0U ? std::optional<std::uint64_t>{1U} : std::optional<std::uint64_t>{revision};
 }
 
-Asset::AssetGuidUVE PrefabSystemUVE::SavePrefabUVE(IEntityManagerUVE& entityManager,
-                                                    Asset::IAssetDatabaseUVE& assetDatabase,
-                                                    EntityUVE rootEntity, const std::filesystem::path& path) {
+Asset::AssetGuid PrefabSystem::SavePrefab(IEntityManager& entityManager,
+                                                    Asset::IAssetDatabase& assetDatabase,
+                                                    Entity rootEntity, const std::filesystem::path& path) {
     // A `.uventity` is the same envelope; the extension only tells the editor it is an entity asset.
     // A `.uvwbp` (Widget Blueprint) is one too, its graph kept beside the widgets in the payload.
     if (path.empty() ||
         (path.extension() != ".uvprefab" && path.extension() != ".uventity" && path.extension() != ".uvwbp")) {
-        UVE_ERROR("PrefabSystemUVE: prefab path must use the .uvprefab, .uventity or .uvwbp extension");
-        return Asset::kInvalidAssetGuidUVE;
+        UVE_ERROR("PrefabSystem: prefab path must use the .uvprefab, .uventity or .uvwbp extension");
+        return Asset::kInvalidAssetGuid;
     }
     const bool saved =
-        m_sceneSerializer.SaveUVE(entityManager, {rootEntity}, path, SceneAssetTypeUVE::Prefab);
+        m_sceneSerializer.Save(entityManager, {rootEntity}, path, SceneAssetType::Prefab);
     if (!saved) {
-        UVE_ERROR("PrefabSystemUVE: failed to save prefab to \"{}\"", path.string());
-        return Asset::kInvalidAssetGuidUVE;
+        UVE_ERROR("PrefabSystem: failed to save prefab to \"{}\"", path.string());
+        return Asset::kInvalidAssetGuid;
     }
 
-    Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
+    Asset::AssetGuid guid = Asset::kInvalidAssetGuid;
     try {
-        guid = assetDatabase.RegisterUVE(path);
-        if (guid == Asset::kInvalidAssetGuidUVE) {
-            UVE_ERROR("PrefabSystemUVE: asset database rejected prefab registration for \"{}\"", path.string());
-            return Asset::kInvalidAssetGuidUVE;
+        guid = assetDatabase.Register(path);
+        if (guid == Asset::kInvalidAssetGuid) {
+            UVE_ERROR("PrefabSystem: asset database rejected prefab registration for \"{}\"", path.string());
+            return Asset::kInvalidAssetGuid;
         }
-        static_cast<void>(assetDatabase.SaveUVE());
+        static_cast<void>(assetDatabase.Save());
     } catch (const std::exception& exception) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw while registering prefab \"{}\": {}", path.string(),
+        UVE_ERROR("PrefabSystem: asset database threw while registering prefab \"{}\": {}", path.string(),
                   exception.what());
-        return Asset::kInvalidAssetGuidUVE;
+        return Asset::kInvalidAssetGuid;
     } catch (...) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw an unknown exception while registering prefab \"{}\"",
+        UVE_ERROR("PrefabSystem: asset database threw an unknown exception while registering prefab \"{}\"",
                   path.string());
-        return Asset::kInvalidAssetGuidUVE;
+        return Asset::kInvalidAssetGuid;
     }
     return guid;
 }
 
-EntityUVE PrefabSystemUVE::InstantiateUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                                           Asset::IAssetDatabaseUVE& assetDatabase,
-                                           Asset::AssetGuidUVE prefabGuid, EntityUVE parent) {
+Entity PrefabSystem::Instantiate(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                                           Asset::IAssetDatabase& assetDatabase,
+                                           Asset::AssetGuid prefabGuid, Entity parent) {
     std::filesystem::path path;
     try {
-        path = assetDatabase.ResolveUVE(prefabGuid);
+        path = assetDatabase.Resolve(prefabGuid);
     } catch (const std::exception& exception) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw while resolving prefab GUID {}: {}", prefabGuid.value,
+        UVE_ERROR("PrefabSystem: asset database threw while resolving prefab GUID {}: {}", prefabGuid.value,
                   exception.what());
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     } catch (...) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw an unknown exception while resolving prefab GUID {}",
+        UVE_ERROR("PrefabSystem: asset database threw an unknown exception while resolving prefab GUID {}",
                   prefabGuid.value);
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     }
     if (path.empty()) {
-        UVE_ERROR("PrefabSystemUVE: unknown prefab GUID {}", prefabGuid.value);
-        return kInvalidEntityUVE;
+        UVE_ERROR("PrefabSystem: unknown prefab GUID {}", prefabGuid.value);
+        return kInvalidEntity;
     }
-    const std::optional<std::uint64_t> sourceRevision = ComputePrefabSourceRevisionUVE(path);
+    const std::optional<std::uint64_t> sourceRevision = ComputePrefabSourceRevision(path);
     if (!sourceRevision.has_value()) {
-        UVE_ERROR("PrefabSystemUVE: could not compute source revision for prefab GUID {}", prefabGuid.value);
-        return kInvalidEntityUVE;
+        UVE_ERROR("PrefabSystem: could not compute source revision for prefab GUID {}", prefabGuid.value);
+        return kInvalidEntity;
     }
-    return InstantiateWithRevisionUVE(entityManager, sceneGraph, assetDatabase, prefabGuid, parent, *sourceRevision);
+    return InstantiateWithRevision(entityManager, sceneGraph, assetDatabase, prefabGuid, parent, *sourceRevision);
 }
 
-EntityUVE PrefabSystemUVE::InstantiateWithRevisionUVE(
-    IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph, Asset::IAssetDatabaseUVE& assetDatabase,
-    Asset::AssetGuidUVE prefabGuid, EntityUVE parent, const std::uint64_t sourceRevision) {
+Entity PrefabSystem::InstantiateWithRevision(
+    IEntityManager& entityManager, ISceneGraph& sceneGraph, Asset::IAssetDatabase& assetDatabase,
+    Asset::AssetGuid prefabGuid, Entity parent, const std::uint64_t sourceRevision) {
     if (sourceRevision == 0U) {
-        UVE_ERROR("PrefabSystemUVE: source revision must be nonzero for prefab GUID {}", prefabGuid.value);
-        return kInvalidEntityUVE;
+        UVE_ERROR("PrefabSystem: source revision must be nonzero for prefab GUID {}", prefabGuid.value);
+        return kInvalidEntity;
     }
-    if (parent != kInvalidEntityUVE && !entityManager.IsAliveUVE(parent)) {
-        UVE_ERROR("PrefabSystemUVE: cannot instantiate prefab GUID {} under an invalid parent ({}, {})",
+    if (parent != kInvalidEntity && !entityManager.IsAlive(parent)) {
+        UVE_ERROR("PrefabSystem: cannot instantiate prefab GUID {} under an invalid parent ({}, {})",
                   prefabGuid.value, parent.index, parent.generation);
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     }
     std::filesystem::path path;
     try {
-        path = assetDatabase.ResolveUVE(prefabGuid);
+        path = assetDatabase.Resolve(prefabGuid);
     } catch (const std::exception& exception) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw while resolving prefab GUID {}: {}", prefabGuid.value,
+        UVE_ERROR("PrefabSystem: asset database threw while resolving prefab GUID {}: {}", prefabGuid.value,
                   exception.what());
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     } catch (...) {
-        UVE_ERROR("PrefabSystemUVE: asset database threw an unknown exception while resolving prefab GUID {}",
+        UVE_ERROR("PrefabSystem: asset database threw an unknown exception while resolving prefab GUID {}",
                   prefabGuid.value);
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     }
     if (path.empty()) {
-        UVE_ERROR("PrefabSystemUVE: unknown prefab GUID {}", prefabGuid.value);
-        return kInvalidEntityUVE;
+        UVE_ERROR("PrefabSystem: unknown prefab GUID {}", prefabGuid.value);
+        return kInvalidEntity;
     }
 
-    const std::vector<EntityUVE> roots = m_sceneSerializer.LoadUVE(entityManager, path);
+    const std::vector<Entity> roots = m_sceneSerializer.Load(entityManager, path);
     if (roots.empty()) {
-        UVE_ERROR("PrefabSystemUVE: failed to instantiate prefab \"{}\" (GUID {})", path.string(),
+        UVE_ERROR("PrefabSystem: failed to instantiate prefab \"{}\" (GUID {})", path.string(),
                   prefabGuid.value);
-        return kInvalidEntityUVE;
+        return kInvalidEntity;
     }
 
-    // A prefab file always has exactly one root (SavePrefabUVE only ever serializes one entity).
-    const EntityUVE root = roots.front();
+    // A prefab file always has exactly one root (SavePrefab only ever serializes one entity).
+    const Entity root = roots.front();
 
-    // The loaded root may already carry a PrefabInstanceComponentUVE (e.g. it was itself an
+    // The loaded root may already carry a PrefabInstanceComponent (e.g. it was itself an
     // instance of a different prefab when this one was saved) — overwrite it so the tag always
     // names the prefab this entity was *directly* instantiated from.
-    if (entityManager.HasComponentUVE<PrefabInstanceComponentUVE>(root)) {
-        entityManager.RemoveComponentUVE<PrefabInstanceComponentUVE>(root);
+    if (entityManager.HasComponent<PrefabInstanceComponent>(root)) {
+        entityManager.RemoveComponent<PrefabInstanceComponent>(root);
     }
-    entityManager.AddComponentUVE<PrefabInstanceComponentUVE>(
-        root, PrefabInstanceComponentUVE{prefabGuid, {}, sourceRevision, sourceRevision});
+    entityManager.AddComponent<PrefabInstanceComponent>(
+        root, PrefabInstanceComponent{prefabGuid, {}, sourceRevision, sourceRevision});
 
-    if (parent != kInvalidEntityUVE) {
-        const bool hasTransform = entityManager.HasComponentUVE<TransformComponentUVE>(root);
-        const bool hasWorldTransform = entityManager.HasComponentUVE<WorldTransformComponentUVE>(root);
-        const bool hasHierarchy = entityManager.HasComponentUVE<HierarchyComponentUVE>(root);
+    if (parent != kInvalidEntity) {
+        const bool hasTransform = entityManager.HasComponent<TransformComponent>(root);
+        const bool hasWorldTransform = entityManager.HasComponent<WorldTransformComponent>(root);
+        const bool hasHierarchy = entityManager.HasComponent<HierarchyComponent>(root);
         if (!hasTransform && !hasWorldTransform && !hasHierarchy) {
             // A parented prefab must participate in the scene graph even when its authored root
             // had no transform components; preserve transform-less roots only for unparented use.
-            sceneGraph.AttachTransformUVE(entityManager, root, TransformComponentUVE{});
+            sceneGraph.AttachTransform(entityManager, root, TransformComponent{});
         }
-        sceneGraph.SetParentUVE(entityManager, root, parent);
+        sceneGraph.SetParent(entityManager, root, parent);
     }
 
     return root;
 }
 
-PrefabRefreshResultUVE PrefabSystemUVE::RefreshInstanceUVE(
-    IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-    Asset::IAssetDatabaseUVE& assetDatabase, const EntityUVE instanceRoot, const bool forceRefresh) {
-    if (!entityManager.IsAliveUVE(instanceRoot) ||
-        !entityManager.HasComponentUVE<PrefabInstanceComponentUVE>(instanceRoot)) {
-        return {PrefabRefreshCodeUVE::InvalidInstance, instanceRoot, 0U,
+PrefabRefreshResult PrefabSystem::RefreshInstance(
+    IEntityManager& entityManager, ISceneGraph& sceneGraph,
+    Asset::IAssetDatabase& assetDatabase, const Entity instanceRoot, const bool forceRefresh) {
+    if (!entityManager.IsAlive(instanceRoot) ||
+        !entityManager.HasComponent<PrefabInstanceComponent>(instanceRoot)) {
+        return {PrefabRefreshCode::InvalidInstance, instanceRoot, 0U,
                 "Prefab refresh requires a live entity with a prefab instance component."};
     }
 
-    const PrefabInstanceComponentUVE instance =
-        entityManager.GetComponentUVE<PrefabInstanceComponentUVE>(instanceRoot);
+    const PrefabInstanceComponent instance =
+        entityManager.GetComponent<PrefabInstanceComponent>(instanceRoot);
     std::filesystem::path path;
     try {
-        path = assetDatabase.ResolveUVE(instance.sourcePrefabGuid);
+        path = assetDatabase.Resolve(instance.sourcePrefabGuid);
     } catch (const std::exception&) {
-        return {PrefabRefreshCodeUVE::SourceUnavailable, instanceRoot, 0U,
+        return {PrefabRefreshCode::SourceUnavailable, instanceRoot, 0U,
                 "Prefab refresh could not resolve the source asset."};
     } catch (...) {
-        return {PrefabRefreshCodeUVE::SourceUnavailable, instanceRoot, 0U,
+        return {PrefabRefreshCode::SourceUnavailable, instanceRoot, 0U,
                 "Prefab refresh could not resolve the source asset."};
     }
-    const std::optional<std::uint64_t> observedRevision = ComputePrefabSourceRevisionUVE(path);
+    const std::optional<std::uint64_t> observedRevision = ComputePrefabSourceRevision(path);
     if (path.empty() || !observedRevision.has_value()) {
-        return {PrefabRefreshCodeUVE::SourceUnavailable, instanceRoot, 0U,
+        return {PrefabRefreshCode::SourceUnavailable, instanceRoot, 0U,
                 "Prefab refresh could not resolve or fingerprint the source asset."};
     }
 
-    const PrefabRevisionRefreshDecisionUVE decision =
+    const PrefabRevisionRefreshDecision decision =
         *observedRevision == instance.instanceRevision
-            ? PrefabRevisionRefreshDecisionUVE::NoOp
-            : (instance.overrides.empty() ? PrefabRevisionRefreshDecisionUVE::Refresh
-                                           : PrefabRevisionRefreshDecisionUVE::MergeRequired);
-    if (decision == PrefabRevisionRefreshDecisionUVE::NoOp) {
-        return {PrefabRefreshCodeUVE::NoOp, instanceRoot, *observedRevision,
+            ? PrefabRevisionRefreshDecision::NoOp
+            : (instance.overrides.empty() ? PrefabRevisionRefreshDecision::Refresh
+                                           : PrefabRevisionRefreshDecision::MergeRequired);
+    if (decision == PrefabRevisionRefreshDecision::NoOp) {
+        return {PrefabRefreshCode::NoOp, instanceRoot, *observedRevision,
                 "Prefab instance already matches its source revision."};
     }
-    if (decision == PrefabRevisionRefreshDecisionUVE::MergeRequired && !forceRefresh) {
-        return {PrefabRefreshCodeUVE::MergeRequired, instanceRoot, *observedRevision,
+    if (decision == PrefabRevisionRefreshDecision::MergeRequired && !forceRefresh) {
+        return {PrefabRefreshCode::MergeRequired, instanceRoot, *observedRevision,
                 "Prefab source changed while local overrides are present; merge is required."};
     }
-    if (decision != PrefabRevisionRefreshDecisionUVE::Refresh &&
-        !(forceRefresh && decision == PrefabRevisionRefreshDecisionUVE::MergeRequired)) {
-        return {PrefabRefreshCodeUVE::SourceRevisionInvalid, instanceRoot, *observedRevision,
+    if (decision != PrefabRevisionRefreshDecision::Refresh &&
+        !(forceRefresh && decision == PrefabRevisionRefreshDecision::MergeRequired)) {
+        return {PrefabRefreshCode::SourceRevisionInvalid, instanceRoot, *observedRevision,
                 "Prefab source revision cannot safely refresh this instance."};
     }
 
-    EntityUVE parent = kInvalidEntityUVE;
-    if (entityManager.HasComponentUVE<HierarchyComponentUVE>(instanceRoot)) {
-        parent = entityManager.GetComponentUVE<HierarchyComponentUVE>(instanceRoot).parent;
+    Entity parent = kInvalidEntity;
+    if (entityManager.HasComponent<HierarchyComponent>(instanceRoot)) {
+        parent = entityManager.GetComponent<HierarchyComponent>(instanceRoot).parent;
     }
-    const EntityUVE replacement = InstantiateWithRevisionUVE(
+    const Entity replacement = InstantiateWithRevision(
         entityManager, sceneGraph, assetDatabase, instance.sourcePrefabGuid, parent, *observedRevision);
-    if (replacement == kInvalidEntityUVE) {
-        return {PrefabRefreshCodeUVE::SourceUnavailable, instanceRoot, *observedRevision,
+    if (replacement == kInvalidEntity) {
+        return {PrefabRefreshCode::SourceUnavailable, instanceRoot, *observedRevision,
                 "Prefab refresh could not load a replacement source subtree."};
     }
 
-    DestroySubtreeUVE(entityManager, sceneGraph, instanceRoot);
-    return {PrefabRefreshCodeUVE::Refreshed, replacement, *observedRevision,
+    DestroySubtree(entityManager, sceneGraph, instanceRoot);
+    return {PrefabRefreshCode::Refreshed, replacement, *observedRevision,
             "Prefab instance refreshed from its current source revision."};
 }
 

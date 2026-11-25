@@ -4,7 +4,7 @@
 
 namespace UVE::Platform {
 
-MockXrRuntimeUVE::MockXrRuntimeUVE(const float ipdMetres) noexcept
+MockXrRuntime::MockXrRuntime(const float ipdMetres) noexcept
     : m_ipdMetres(ipdMetres > 0.0F ? ipdMetres : 0.064F) {
     m_headPose.tracked = true;
     m_controllers[0].pose.position = {-0.3F, 1.2F, -0.4F};
@@ -13,27 +13,27 @@ MockXrRuntimeUVE::MockXrRuntimeUVE(const float ipdMetres) noexcept
     m_controllers[1].pose.tracked = true;
 }
 
-bool MockXrRuntimeUVE::BeginFrameUVE() {
+bool MockXrRuntime::BeginFrame() {
     return m_active;
 }
 
-void MockXrRuntimeUVE::EndFrameUVE() {}
+void MockXrRuntime::EndFrame() {}
 
-void MockXrRuntimeUVE::SetControllerStateUVE(const XrHandUVE hand,
-                                             const XrControllerStateUVE& state) noexcept {
-    m_controllers[hand == XrHandUVE::Left ? 0U : 1U] = state;
+void MockXrRuntime::SetControllerState(const XrHand hand,
+                                             const XrControllerState& state) noexcept {
+    m_controllers[hand == XrHand::Left ? 0U : 1U] = state;
 }
 
-XrEyeViewUVE MockXrRuntimeUVE::GetEyeViewUVE(const XrEyeUVE eye) const noexcept {
-    XrEyeViewUVE view{};
+XrEyeView MockXrRuntime::GetEyeView(const XrEye eye) const noexcept {
+    XrEyeView view{};
     view.pose = m_headPose;
     const float halfIpd = 0.5F * m_ipdMetres;
-    view.pose.position[0] += (eye == XrEyeUVE::Left ? -halfIpd : halfIpd);
+    view.pose.position[0] += (eye == XrEye::Left ? -halfIpd : halfIpd);
     return view;
 }
 
-XrControllerStateUVE MockXrRuntimeUVE::GetControllerStateUVE(const XrHandUVE hand) const noexcept {
-    return m_controllers[hand == XrHandUVE::Left ? 0U : 1U];
+XrControllerState MockXrRuntime::GetControllerState(const XrHand hand) const noexcept {
+    return m_controllers[hand == XrHand::Left ? 0U : 1U];
 }
 
 } // namespace UVE::Platform

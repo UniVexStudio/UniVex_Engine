@@ -12,14 +12,14 @@
 namespace UVE::Retarget {
 namespace {
 
-[[nodiscard]] bool IsUpperUVE(const char c) noexcept { return std::isupper(static_cast<unsigned char>(c)) != 0; }
-[[nodiscard]] bool IsLowerUVE(const char c) noexcept { return std::islower(static_cast<unsigned char>(c)) != 0; }
-[[nodiscard]] bool IsDigitUVE(const char c) noexcept { return std::isdigit(static_cast<unsigned char>(c)) != 0; }
-[[nodiscard]] bool IsAlnumUVE(const char c) noexcept { return std::isalnum(static_cast<unsigned char>(c)) != 0; }
+[[nodiscard]] bool IsUpper(const char c) noexcept { return std::isupper(static_cast<unsigned char>(c)) != 0; }
+[[nodiscard]] bool IsLower(const char c) noexcept { return std::islower(static_cast<unsigned char>(c)) != 0; }
+[[nodiscard]] bool IsDigit(const char c) noexcept { return std::isdigit(static_cast<unsigned char>(c)) != 0; }
+[[nodiscard]] bool IsAlnum(const char c) noexcept { return std::isalnum(static_cast<unsigned char>(c)) != 0; }
 
 /// Splits on punctuation, lower-to-upper case changes ("upperArm"), the end of a capital run
 /// before a lowercase letter ("IKFoot" -> "IK", "Foot") and letter/digit changes ("Spine01").
-[[nodiscard]] std::vector<std::string> SplitWordsUVE(const std::string_view name) {
+[[nodiscard]] std::vector<std::string> SplitWords(const std::string_view name) {
     std::vector<std::string> words;
     std::string current;
     const auto flush = [&]() {
@@ -30,16 +30,16 @@ namespace {
     };
     for (std::size_t i = 0U; i < name.size(); ++i) {
         const char c = name[i];
-        if (!IsAlnumUVE(c)) {
+        if (!IsAlnum(c)) {
             flush();
             continue;
         }
         if (!current.empty()) {
             const char previous = current.back();
-            const bool caseStep = IsLowerUVE(previous) && IsUpperUVE(c);
+            const bool caseStep = IsLower(previous) && IsUpper(c);
             const bool capitalRunEnds =
-                IsUpperUVE(previous) && IsUpperUVE(c) && i + 1U < name.size() && IsLowerUVE(name[i + 1U]);
-            const bool digitStep = IsDigitUVE(previous) != IsDigitUVE(c);
+                IsUpper(previous) && IsUpper(c) && i + 1U < name.size() && IsLower(name[i + 1U]);
+            const bool digitStep = IsDigit(previous) != IsDigit(c);
             if (caseStep || capitalRunEnds || digitStep) {
                 flush();
             }
@@ -49,7 +49,7 @@ namespace {
     flush();
     for (std::string& word : words) {
         std::ranges::transform(word, word.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (IsDigitUVE(word.front())) {
+        if (IsDigit(word.front())) {
             // "01" and "1" are the same bone number.
             const auto first = word.find_first_not_of('0');
             word = first == std::string::npos ? std::string{"0"} : word.substr(first);
@@ -59,7 +59,7 @@ namespace {
 }
 
 /// Words that name one thing several ways, folded to one.
-[[nodiscard]] std::string CanonicalWordUVE(const std::string& word) {
+[[nodiscard]] std::string CanonicalWord(const std::string& word) {
     static constexpr std::pair<const char*, const char*> kSynonyms[]{
         {"pelvis", "hips"},     {"hip", "hips"},          {"lowerarm", "forearm"}, {"arm", "upperarm"},
         {"calf", "shin"},       {"leg", "shin"},          {"lowerleg", "shin"},    {"upleg", "thigh"},
@@ -84,20 +84,20 @@ namespace {
 }
 
 /// Names a rig adds around the bone's own name: namespaces, "def_" and "jnt_" prefixes.
-[[nodiscard]] bool IsFillerUVE(const std::string& word) {
+[[nodiscard]] bool IsFiller(const std::string& word) {
     static const std::array<const char*, 7> kFiller{"mixamorig", "def", "jnt", "joint", "bip", "bone", "bend"};
     return std::ranges::find(kFiller, word) != kFiller.end();
 }
 
-[[nodiscard]] bool IsFingerUVE(const std::string& word) {
+[[nodiscard]] bool IsFinger(const std::string& word) {
     return word == "thumb" || word == "index" || word == "middle" || word == "ring" || word == "pinky";
 }
 
-[[nodiscard]] bool IsAllDigitsUVE(const std::string& word) {
-    return !word.empty() && std::ranges::all_of(word, [](const char c) { return IsDigitUVE(c); });
+[[nodiscard]] bool IsAllDigits(const std::string& word) {
+    return !word.empty() && std::ranges::all_of(word, [](const char c) { return IsDigit(c); });
 }
 
-[[nodiscard]] std::string LowerUVE(const std::string_view text) {
+[[nodiscard]] std::string Lower(const std::string_view text) {
     std::string out(text);
     std::ranges::transform(out, out.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return out;
@@ -105,7 +105,7 @@ namespace {
 
 /// Blender's Rigify names its deform bones "DEF-..." and numbers them ".001": the numbers mean
 /// different things than in other rigs, so they are read by their own rules.
-void ApplyRigifyRulesUVE(std::vector<std::string>& parts) {
+void ApplyRigifyRules(std::vector<std::string>& parts) {
     if (parts.empty()) {
         return;
     }
@@ -113,7 +113,7 @@ void ApplyRigifyRulesUVE(std::vector<std::string>& parts) {
         parts = {"hips"}; // DEF-spine sits at the hips; the numbered ones climb from there
         return;
     }
-    if (parts.size() == 2U && parts[0] == "spine" && IsAllDigitsUVE(parts[1])) {
+    if (parts.size() == 2U && parts[0] == "spine" && IsAllDigits(parts[1])) {
         const int number = std::stoi(parts[1]);
         if (number >= 4 && number <= 5) {
             parts = {"neck", std::to_string(number - 3)};
@@ -122,12 +122,12 @@ void ApplyRigifyRulesUVE(std::vector<std::string>& parts) {
         }
         return;
     }
-    if (parts.size() == 2U && IsAllDigitsUVE(parts[1]) &&
+    if (parts.size() == 2U && IsAllDigits(parts[1]) &&
         (parts[0] == "upperarm" || parts[0] == "forearm" || parts[0] == "thigh" || parts[0] == "shin")) {
         parts.insert(parts.begin() + 1, "twist"); // DEF-upper_arm.L.001 is the first twist bone
         return;
     }
-    if (parts.size() == 2U && parts[0] == "palm" && IsAllDigitsUVE(parts[1])) {
+    if (parts.size() == 2U && parts[0] == "palm" && IsAllDigits(parts[1])) {
         static const std::array<const char*, 4> kFingers{"index", "middle", "ring", "pinky"};
         if (const int number = std::stoi(parts[1]); number >= 1 && number <= 4) {
             parts = {kFingers[static_cast<std::size_t>(number - 1)], "metacarpal"};
@@ -137,25 +137,25 @@ void ApplyRigifyRulesUVE(std::vector<std::string>& parts) {
 
 } // namespace
 
-std::string MakeBoneKeyUVE(const std::string_view rawName) {
+std::string MakeBoneKey(const std::string_view rawName) {
     // A namespace ("rig:Hand", "Armature|Hand") belongs to the file, not the bone.
     std::string_view name = rawName;
     if (const auto cut = name.find_last_of(":|"); cut != std::string_view::npos) {
         name = name.substr(cut + 1U);
     }
-    const std::string lowered = LowerUVE(name);
+    const std::string lowered = Lower(name);
     // Xsens names its spine after the vertebra it sits at; "L5" is not a left "5".
     if (lowered == "l5" || lowered == "l3" || lowered == "t12" || lowered == "t8") {
         return "C|spine";
     }
     const bool rigify = lowered.starts_with("def-") || lowered.starts_with("def_");
     std::vector<std::string> words;
-    const std::vector<std::string> split = SplitWordsUVE(name);
+    const std::vector<std::string> split = SplitWords(name);
     for (std::size_t i = 0U; i < split.size(); ++i) {
         const std::string& word = split[i];
         // "Bip01", "Character1_", and "mixamorig1" are a rig's prefix, number included.
         if ((word == "bip" || word == "character" || word == "mixamorig") && i + 1U < split.size() &&
-            IsAllDigitsUVE(split[i + 1U])) {
+            IsAllDigits(split[i + 1U])) {
             ++i;
             continue;
         }
@@ -163,10 +163,10 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
         if (word == "0" && i > 0U && split[i - 1U] == "toe") {
             continue;
         }
-        if (word == "f" && i + 1U < split.size() && IsFingerUVE(CanonicalWordUVE(split[i + 1U]))) {
+        if (word == "f" && i + 1U < split.size() && IsFinger(CanonicalWord(split[i + 1U]))) {
             continue;
         }
-        if (!IsFillerUVE(word)) {
+        if (!IsFiller(word)) {
             words.push_back(word);
         }
     }
@@ -195,12 +195,12 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
         } else if (word == "center" && next == "of" && after == "mass") {
             merged.emplace_back("com");
             i += 2U;
-        } else if (word == "in" && next == "hand" && IsFingerUVE(CanonicalWordUVE(after))) {
+        } else if (word == "in" && next == "hand" && IsFinger(CanonicalWord(after))) {
             // Rokoko's "LeftInHandIndex" is the bone inside the hand: the metacarpal.
             merged.push_back(after);
             merged.emplace_back("metacarpal");
             i += 2U;
-        } else if (word == "hand" && IsFingerUVE(CanonicalWordUVE(next))) {
+        } else if (word == "hand" && IsFinger(CanonicalWord(next))) {
             // "HandIndex1": the finger, not the hand.
         } else {
             merged.push_back(word);
@@ -209,7 +209,7 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
     char side = 'C';
     std::vector<std::string> parts;
     for (const std::string& word : merged) {
-        const std::string canonical = CanonicalWordUVE(word);
+        const std::string canonical = CanonicalWord(word);
         if (canonical == "l" || canonical == "r") {
             side = canonical == "l" ? 'L' : 'R';
             continue;
@@ -217,7 +217,7 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
         parts.push_back(canonical);
     }
     if (rigify) {
-        ApplyRigifyRulesUVE(parts);
+        ApplyRigifyRules(parts);
     }
     std::string key;
     for (const std::string& part : parts) {
@@ -226,7 +226,7 @@ std::string MakeBoneKeyUVE(const std::string_view rawName) {
     return std::string{side} + "|" + key;
 }
 
-std::string MakeHumanoidBoneNameUVE(const std::string_view key) {
+std::string MakeHumanoidBoneName(const std::string_view key) {
     static const std::array<std::pair<const char*, const char*>, 13> kWords{{
         {"upperarm", "UpperArm"},
         {"forearm", "ForeArm"},

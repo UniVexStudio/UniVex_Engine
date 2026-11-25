@@ -22,18 +22,18 @@ namespace UVE::Scene {
 namespace {
 
 /// Below this a vector is too short to say anything about direction.
-constexpr float kMinimumNormalizableLengthUVE = 1.0e-12F;
+constexpr float kMinimumNormalizableLength = 1.0e-12F;
 
 /// How many contacts one step pushes the body out of. A body genuinely buried in geometry needs a
 /// teleport, not a fourth push - four is where "a few things overlapped at once" stops being a
 /// believable situation and starts being a broken scene, and pushing further would launch the body
 /// out of it at speed instead of telling the caller about it.
-constexpr std::size_t kMaximumDepenetrationPassesUVE = 4U;
+constexpr std::size_t kMaximumDepenetrationPasses = 4U;
 
 /// The margin a floor probe lifts the body by before sweeping down, as a multiple of Safe Margin.
 /// Two margins plus a hair: strictly more than the skin the body keeps, so the sweep starts clear
 /// of the surface rather than exactly on it - the one position a sweep has no well-defined answer.
-constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
+constexpr float kFloorProbeLiftMarginFactor = 2.0F;
 
 // =================================================================================================
 // Value helpers. Every one of these is deliberately small, total, and free of engine state: the
@@ -41,12 +41,12 @@ constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
 // deterministic and this file testable without a world.
 // =================================================================================================
 
-[[nodiscard]] bool IsUsableVectorUVE(const Math::Vector3UVE& value) noexcept {
-    return Math::IsFiniteUVE(value);
+[[nodiscard]] bool IsUsableVector(const Math::Vector3& value) noexcept {
+    return Math::IsFinite(value);
 }
 
-[[nodiscard]] float VectorLengthUVE(const Math::Vector3UVE& value) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(value);
+[[nodiscard]] float VectorLength(const Math::Vector3& value) noexcept {
+    const float lengthSquared = Math::LengthSquared(value);
     if (!std::isfinite(lengthSquared) || lengthSquared < 0.0F) {
         return 0.0F;
     }
@@ -54,29 +54,29 @@ constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
 }
 
 /// `value` scaled to unit length, or nothing when it is too short to have a direction.
-[[nodiscard]] std::optional<Math::Vector3UVE> TryNormalizeUVE(const Math::Vector3UVE& value) noexcept {
-    const float lengthSquared = Math::LengthSquaredUVE(value);
-    if (!IsUsableVectorUVE(value) || !std::isfinite(lengthSquared) ||
-        lengthSquared <= kMinimumNormalizableLengthUVE) {
+[[nodiscard]] std::optional<Math::Vector3> TryNormalize(const Math::Vector3& value) noexcept {
+    const float lengthSquared = Math::LengthSquared(value);
+    if (!IsUsableVector(value) || !std::isfinite(lengthSquared) ||
+        lengthSquared <= kMinimumNormalizableLength) {
         return std::nullopt;
     }
     const float inverseLength = 1.0F / std::sqrt(lengthSquared);
     return value * inverseLength;
 }
 
-[[nodiscard]] float FiniteOrZeroUVE(const float value) noexcept {
+[[nodiscard]] float FiniteOrZero(const float value) noexcept {
     return std::isfinite(value) ? value : 0.0F;
 }
 
 /// The component of `value` perpendicular to `axis`: what is left of a motion once the part that
 /// ran along `axis` is taken out. Used to measure horizontal speed without hardcoding a world up.
-[[nodiscard]] Math::Vector3UVE PerpendicularUVE(const Math::Vector3UVE& value,
-                                                const Math::Vector3UVE& axis) noexcept {
-    const float axisLengthSquared = Math::LengthSquaredUVE(axis);
+[[nodiscard]] Math::Vector3 Perpendicular(const Math::Vector3& value,
+                                                const Math::Vector3& axis) noexcept {
+    const float axisLengthSquared = Math::LengthSquared(axis);
     if (!std::isfinite(axisLengthSquared) || axisLengthSquared <= 0.0F) {
         return value;
     }
-    const float along = Math::DotUVE(value, axis) / axisLengthSquared;
+    const float along = Math::Dot(value, axis) / axisLengthSquared;
     if (!std::isfinite(along)) {
         return value;
     }
@@ -85,17 +85,17 @@ constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
 
 /// The signed length of `value` along a unit axis. Non-finite dots read as zero so a caller never
 /// has to special-case NaN on top of "no component along this".
-[[nodiscard]] float AlongUnitUVE(const Math::Vector3UVE& value, const Math::Vector3UVE& unitAxis) noexcept {
-    const float along = Math::DotUVE(value, unitAxis);
+[[nodiscard]] float AlongUnit(const Math::Vector3& value, const Math::Vector3& unitAxis) noexcept {
+    const float along = Math::Dot(value, unitAxis);
     return std::isfinite(along) ? along : 0.0F;
 }
 
-[[nodiscard]] bool IsFiniteStateUVE(const CharacterMotionStateUVE& state) noexcept {
-    return IsUsableVectorUVE(state.velocity) && IsUsableVectorUVE(state.floorNormal) &&
-           IsUsableVectorUVE(state.wallNormal) && IsUsableVectorUVE(state.ceilingNormal) &&
-           IsUsableVectorUVE(state.lastMotion) &&
-           IsUsableVectorUVE(state.realVelocity) && IsUsableVectorUVE(state.platformWorldPosition) &&
-           IsUsableVectorUVE(state.platformVelocity) && std::isfinite(state.timeSinceOnFloor) &&
+[[nodiscard]] bool IsFiniteState(const CharacterMotionState& state) noexcept {
+    return IsUsableVector(state.velocity) && IsUsableVector(state.floorNormal) &&
+           IsUsableVector(state.wallNormal) && IsUsableVector(state.ceilingNormal) &&
+           IsUsableVector(state.lastMotion) &&
+           IsUsableVector(state.realVelocity) && IsUsableVector(state.platformWorldPosition) &&
+           IsUsableVector(state.platformVelocity) && std::isfinite(state.timeSinceOnFloor) &&
            std::isfinite(state.jumpBufferRemaining);
 }
 
@@ -105,8 +105,8 @@ constexpr float kFloorProbeLiftMarginFactorUVE = 2.0F;
 // hand-edited number can make the mover misbehave - only behave like its nearest legal value.
 // =================================================================================================
 
-struct ResolvedConfigUVE final {
-    Math::Vector3UVE upDirection{0.0F, 1.0F, 0.0F};
+struct ResolvedConfig final {
+    Math::Vector3 upDirection{0.0F, 1.0F, 0.0F};
     float floorMaxAngleDegrees = 45.0F;
     float wallMinSlideAngleDegrees = 15.0F;
     float safeMargin = 0.001F;
@@ -120,13 +120,13 @@ struct ResolvedConfigUVE final {
     bool floorStopOnSlope = true;
     bool floorConstantSpeed = false;
     bool detectFloor = true;
-    CharacterPlatformLeaveModeUVE platformOnLeave = CharacterPlatformLeaveModeUVE::AddVelocity;
+    CharacterPlatformLeaveMode platformOnLeave = CharacterPlatformLeaveMode::AddVelocity;
     float maximumPlatformSpeed = 50.0F;
     bool jumpedThisStep = false;
     bool clamped = false;
 };
 
-[[nodiscard]] float ClampFiniteUVE(const float value, const float minimum, const float maximum,
+[[nodiscard]] float ClampFinite(const float value, const float minimum, const float maximum,
                                    const float fallback, bool& clamped) noexcept {
     if (!std::isfinite(value)) {
         clamped = true;
@@ -143,32 +143,32 @@ struct ResolvedConfigUVE final {
     return value;
 }
 
-[[nodiscard]] bool TryResolveConfigUVE(const CharacterMotionConfigUVE& config,
-                                       ResolvedConfigUVE& resolved) noexcept {
-    const std::optional<Math::Vector3UVE> up = TryNormalizeUVE(config.upDirection);
+[[nodiscard]] bool TryResolveConfig(const CharacterMotionConfig& config,
+                                       ResolvedConfig& resolved) noexcept {
+    const std::optional<Math::Vector3> up = TryNormalize(config.upDirection);
     if (!up.has_value()) {
         return false;
     }
     resolved.upDirection = *up;
 
     resolved.floorMaxAngleDegrees =
-        ClampFiniteUVE(config.floorMaxAngleDegrees, 0.0F, 90.0F, 45.0F, resolved.clamped);
+        ClampFinite(config.floorMaxAngleDegrees, 0.0F, 90.0F, 45.0F, resolved.clamped);
     resolved.wallMinSlideAngleDegrees =
-        ClampFiniteUVE(config.wallMinSlideAngleDegrees, 0.0F, 90.0F, 15.0F, resolved.clamped);
-    resolved.safeMargin = ClampFiniteUVE(config.safeMargin, 0.0F, 0.25F, 0.001F, resolved.clamped);
-    resolved.floorSnapLength = ClampFiniteUVE(config.floorSnapLength, 0.0F, 10.0F, 0.1F, resolved.clamped);
-    resolved.maxStepHeight = ClampFiniteUVE(config.maxStepHeight, 0.0F, 10.0F, 0.3F, resolved.clamped);
-    resolved.minStepWidth = ClampFiniteUVE(config.minStepWidth, 0.0F, 1.0F, 0.02F, resolved.clamped);
+        ClampFinite(config.wallMinSlideAngleDegrees, 0.0F, 90.0F, 15.0F, resolved.clamped);
+    resolved.safeMargin = ClampFinite(config.safeMargin, 0.0F, 0.25F, 0.001F, resolved.clamped);
+    resolved.floorSnapLength = ClampFinite(config.floorSnapLength, 0.0F, 10.0F, 0.1F, resolved.clamped);
+    resolved.maxStepHeight = ClampFinite(config.maxStepHeight, 0.0F, 10.0F, 0.3F, resolved.clamped);
+    resolved.minStepWidth = ClampFinite(config.minStepWidth, 0.0F, 1.0F, 0.02F, resolved.clamped);
     resolved.maximumPlatformSpeed =
-        ClampFiniteUVE(config.maximumPlatformSpeed, 0.0F, 10000.0F, 50.0F, resolved.clamped);
+        ClampFinite(config.maximumPlatformSpeed, 0.0F, 10000.0F, 50.0F, resolved.clamped);
 
     std::size_t maxSlides = config.maxSlides;
     if (maxSlides < 1U) {
         maxSlides = 1U;
         resolved.clamped = true;
     }
-    if (maxSlides > Character3DUVE::kMaximumSlidesUVE) {
-        maxSlides = Character3DUVE::kMaximumSlidesUVE;
+    if (maxSlides > Character3D::kMaximumSlides) {
+        maxSlides = Character3D::kMaximumSlides;
         resolved.clamped = true;
     }
     resolved.maxSlides = maxSlides;
@@ -178,8 +178,8 @@ struct ResolvedConfigUVE final {
         maximumContacts = 1U;
         resolved.clamped = true;
     }
-    if (maximumContacts > Character3DUVE::kMaximumContactsUVE) {
-        maximumContacts = Character3DUVE::kMaximumContactsUVE;
+    if (maximumContacts > Character3D::kMaximumContacts) {
+        maximumContacts = Character3D::kMaximumContacts;
         resolved.clamped = true;
     }
     resolved.maximumContacts = maximumContacts;
@@ -190,8 +190,8 @@ struct ResolvedConfigUVE final {
     resolved.floorConstantSpeed = config.floorConstantSpeed;
     resolved.detectFloor = config.detectFloor;
     resolved.jumpedThisStep = config.jumpedThisStep;
-    if (config.platformOnLeave > CharacterPlatformLeaveModeUVE::AddUpwardVelocity) {
-        resolved.platformOnLeave = CharacterPlatformLeaveModeUVE::KeepVelocity;
+    if (config.platformOnLeave > CharacterPlatformLeaveMode::AddUpwardVelocity) {
+        resolved.platformOnLeave = CharacterPlatformLeaveMode::KeepVelocity;
         resolved.clamped = true;
     } else {
         resolved.platformOnLeave = config.platformOnLeave;
@@ -203,62 +203,62 @@ struct ResolvedConfigUVE final {
 // Surface classification.
 // =================================================================================================
 
-[[nodiscard]] CharacterSurfaceKindUVE ClassifyNormalUVE(const Math::Vector3UVE& unitUp,
-                                                        const ResolvedConfigUVE& config,
-                                                        const Math::Vector3UVE& surfaceNormal,
+[[nodiscard]] CharacterSurfaceKind ClassifyNormal(const Math::Vector3& unitUp,
+                                                        const ResolvedConfig& config,
+                                                        const Math::Vector3& surfaceNormal,
                                                         float& outAngleDegrees) noexcept {
-    const std::optional<Math::Vector3UVE> normal = TryNormalizeUVE(surfaceNormal);
+    const std::optional<Math::Vector3> normal = TryNormalize(surfaceNormal);
     if (!normal.has_value()) {
-        return CharacterSurfaceKindUVE::Invalid;
+        return CharacterSurfaceKind::Invalid;
     }
-    const float alignment = std::clamp(Math::DotUVE(*normal, unitUp), -1.0F, 1.0F);
-    const float angleDegrees = Math::RadToDegUVE(std::acos(alignment));
+    const float alignment = std::clamp(Math::Dot(*normal, unitUp), -1.0F, 1.0F);
+    const float angleDegrees = Math::RadToDeg(std::acos(alignment));
     outAngleDegrees = angleDegrees;
     if (angleDegrees <= config.floorMaxAngleDegrees) {
-        return config.detectFloor ? CharacterSurfaceKindUVE::Floor : CharacterSurfaceKindUVE::Wall;
+        return config.detectFloor ? CharacterSurfaceKind::Floor : CharacterSurfaceKind::Wall;
     }
     if (angleDegrees >= 180.0F - config.floorMaxAngleDegrees) {
-        return CharacterSurfaceKindUVE::Ceiling;
+        return CharacterSurfaceKind::Ceiling;
     }
-    return CharacterSurfaceKindUVE::Wall;
+    return CharacterSurfaceKind::Wall;
 }
 
 /// A wall is slid along only when it is steep enough to be a wall rather than a steep ramp. Inside
 /// the band between Floor Max Angle and Wall Min Slide Angle past it, the body stops: that band is
 /// the difference between "you may climb this" and "you may not creep up this", and it is the only
 /// reading of Wall Min Slide Angle that gives the setting a mechanical meaning.
-[[nodiscard]] bool WallSlidesUVE(const ResolvedConfigUVE& config, const float angleDegrees) noexcept {
+[[nodiscard]] bool WallSlides(const ResolvedConfig& config, const float angleDegrees) noexcept {
     return angleDegrees >= config.floorMaxAngleDegrees + config.wallMinSlideAngleDegrees;
 }
 
 // =================================================================================================
-// The move context: everything one step of MoveAndSlideUVE touches, in one place, so the helpers
+// The move context: everything one step of MoveAndSlide touches, in one place, so the helpers
 // below read as sentences about the body instead of parameter lists.
 // =================================================================================================
 
-struct MoveContextUVE final {
-    const ICharacterWorldQueryUVE* world = nullptr;
-    ResolvedConfigUVE config{};
-    CharacterMotionStateUVE moved{};
-    CharacterMotionResultUVE result{};
-    Math::Vector3UVE center{};
-    Math::Vector3UVE remaining{};
-    EntityUVE floorEntity = kInvalidEntityUVE;
+struct MoveContext final {
+    const ICharacterWorldQuery* world = nullptr;
+    ResolvedConfig config{};
+    CharacterMotionState moved{};
+    CharacterMotionResult result{};
+    Math::Vector3 center{};
+    Math::Vector3 remaining{};
+    Entity floorEntity = kInvalidEntity;
 };
 
-[[nodiscard]] float HorizontalSpeedUVE(const MoveContextUVE& context,
-                                       const Math::Vector3UVE& velocity) noexcept {
-    return VectorLengthUVE(PerpendicularUVE(velocity, context.config.upDirection));
+[[nodiscard]] float HorizontalSpeed(const MoveContext& context,
+                                       const Math::Vector3& velocity) noexcept {
+    return VectorLength(Perpendicular(velocity, context.config.upDirection));
 }
 
 /// Records a contact unless the caller's cap is already spent, in which case it counts the drop so
 /// the caller can tell "nothing hit" from "I stopped listening".
-void RecordCollisionUVE(MoveContextUVE& context, const CharacterSlideCollisionUVE& collision) {
+void RecordCollision(MoveContext& context, const CharacterSlideCollision& collision) {
     // An entity is one surface as far as a report is concerned: a body sliding along a wall touches
     // that wall once, not once per slide. Re-touching an entity already in the report updates what
     // is known about it - the closest approach, and the fact that a step-up happened on it - rather
     // than spending another contact slot and another place for a caller to have to look at.
-    for (CharacterSlideCollisionUVE& recorded : context.result.collisions) {
+    for (CharacterSlideCollision& recorded : context.result.collisions) {
         if (recorded.entity != collision.entity) {
             continue;
         }
@@ -268,7 +268,7 @@ void RecordCollisionUVE(MoveContextUVE& context, const CharacterSlideCollisionUV
         }
         recorded.depth = std::max(recorded.depth, collision.depth);
         recorded.steppedUp = recorded.steppedUp || collision.steppedUp;
-        if (collision.normal != Math::Vector3UVE{}) {
+        if (collision.normal != Math::Vector3{}) {
             recorded.normal = collision.normal;
         }
         return;
@@ -285,8 +285,8 @@ void RecordCollisionUVE(MoveContextUVE& context, const CharacterSlideCollisionUV
 /// Applies a displacement to the body being moved: one place that keeps `center`, `appliedMotion`
 /// and the per-source breakdown consistent, so no helper can move the body without the result
 /// accounting for it.
-void ApplyMotionUVE(MoveContextUVE& context, const Math::Vector3UVE& displacement,
-                    Math::Vector3UVE& accumulator) {
+void ApplyMotion(MoveContext& context, const Math::Vector3& displacement,
+                    Math::Vector3& accumulator) {
     context.center += displacement;
     context.result.appliedMotion += displacement;
     accumulator += displacement;
@@ -295,25 +295,25 @@ void ApplyMotionUVE(MoveContextUVE& context, const Math::Vector3UVE& displacemen
 /// Registers what a contact means for the body's surface state. Last contact wins, which is what a
 /// sliding body wants: the floor it ends a step standing on is the floor it reports, not the first
 /// one it brushed on the way there.
-void RegisterSurfaceUVE(MoveContextUVE& context, const Math::Vector3UVE& normal,
-                        const EntityUVE entity) {
+void RegisterSurface(MoveContext& context, const Math::Vector3& normal,
+                        const Entity entity) {
     float angleDegrees = 0.0F;
-    switch (ClassifyNormalUVE(context.config.upDirection, context.config, normal, angleDegrees)) {
-        case CharacterSurfaceKindUVE::Floor:
+    switch (ClassifyNormal(context.config.upDirection, context.config, normal, angleDegrees)) {
+        case CharacterSurfaceKind::Floor:
             context.result.onFloor = true;
             context.result.floorNormal = normal;
             context.result.floorAngleDegrees = angleDegrees;
             context.floorEntity = entity;
             break;
-        case CharacterSurfaceKindUVE::Wall:
+        case CharacterSurfaceKind::Wall:
             context.result.onWall = true;
             context.result.wallNormal = normal;
             break;
-        case CharacterSurfaceKindUVE::Ceiling:
+        case CharacterSurfaceKind::Ceiling:
             context.result.onCeiling = true;
             context.result.ceilingNormal = normal;
             break;
-        case CharacterSurfaceKindUVE::Invalid:
+        case CharacterSurfaceKind::Invalid:
         default:
             break;
     }
@@ -321,21 +321,21 @@ void RegisterSurfaceUVE(MoveContextUVE& context, const Math::Vector3UVE& normal,
 
 /// Leaves a contact where the caller can read it, filling in the surface's own velocity so a
 /// script standing on a moving platform sees how fast the thing under its feet is going.
-void RecordSurfaceContactUVE(MoveContextUVE& context, const CharacterSlideCollisionUVE& hit,
-                             const Math::Vector3UVE& motion, const Math::Vector3UVE& remainder,
+void RecordSurfaceContact(MoveContext& context, const CharacterSlideCollision& hit,
+                             const Math::Vector3& motion, const Math::Vector3& remainder,
                              const float travel, const float depth, const bool steppedUp) {
-    CharacterSlideCollisionUVE collision;
+    CharacterSlideCollision collision;
     collision.entity = hit.entity;
     collision.normal = hit.normal;
     collision.position = hit.position;
-    collision.colliderVelocity = context.world->GetSurfaceVelocityUVE(hit.entity);
+    collision.colliderVelocity = context.world->GetSurfaceVelocity(hit.entity);
     collision.motion = motion;
     collision.remainder = remainder;
     collision.travel = travel;
     collision.depth = depth;
     collision.steppedUp = steppedUp;
-    RegisterSurfaceUVE(context, hit.normal, hit.entity);
-    RecordCollisionUVE(context, collision);
+    RegisterSurface(context, hit.normal, hit.entity);
+    RecordCollision(context, collision);
 }
 
 // =================================================================================================
@@ -344,7 +344,7 @@ void RecordSurfaceContactUVE(MoveContextUVE& context, const CharacterSlideCollis
 // question about a body already past it.
 // =================================================================================================
 
-void DepenetrateUVE(MoveContextUVE& context) {
+void Depenetrate(MoveContext& context) {
     if (context.config.safeMargin <= 0.0F) {
         // Without a skin there is nothing to push out to, and pushing to exactly zero would make
         // the next query degenerate again - so a zero margin means "no depenetration", not
@@ -354,14 +354,14 @@ void DepenetrateUVE(MoveContextUVE& context) {
 
     // Each pass asks the world about the working center, pushes the deepest overlap there, and
     // asks again. Ghost contacts from the pose we just left cannot keep pushing: that is what
-    // GetOverlapsAtUVE is for, and why a snapshot of the start pose is not enough.
-    float remainingBudget = Character3DUVE::kMaximumSingleDepenetrationDistanceUVE;
-    for (std::size_t pass = 0U; pass < kMaximumDepenetrationPassesUVE; ++pass) {
-        if (remainingBudget <= Character3DUVE::kMinimumMotionDistanceUVE) {
+    // GetOverlapsAt is for, and why a snapshot of the start pose is not enough.
+    float remainingBudget = Character3D::kMaximumSingleDepenetrationDistance;
+    for (std::size_t pass = 0U; pass < kMaximumDepenetrationPasses; ++pass) {
+        if (remainingBudget <= Character3D::kMinimumMotionDistance) {
             break;
         }
-        const std::vector<CharacterSlideCollisionUVE> overlaps =
-            context.world->GetOverlapsAtUVE(context.center);
+        const std::vector<CharacterSlideCollision> overlaps =
+            context.world->GetOverlapsAt(context.center);
         if (overlaps.empty()) {
             break;
         }
@@ -381,12 +381,12 @@ void DepenetrateUVE(MoveContextUVE& context) {
 
         bool pushed = false;
         for (const std::size_t index : order) {
-            const CharacterSlideCollisionUVE& overlap = overlaps[index];
-            const std::optional<Math::Vector3UVE> direction = TryNormalizeUVE(overlap.normal);
+            const CharacterSlideCollision& overlap = overlaps[index];
+            const std::optional<Math::Vector3> direction = TryNormalize(overlap.normal);
             if (!direction.has_value() || !std::isfinite(overlap.depth) || overlap.depth <= 0.0F) {
                 continue;
             }
-            const Math::Vector3UVE remainder = context.result.depenetrationMotion;
+            const Math::Vector3 remainder = context.result.depenetrationMotion;
             if (!pushed) {
                 const float wanted = overlap.depth + context.config.safeMargin;
                 if (!std::isfinite(wanted) || wanted <= 0.0F) {
@@ -396,16 +396,16 @@ void DepenetrateUVE(MoveContextUVE& context) {
                 if (!std::isfinite(pushDistance) || pushDistance <= 0.0F) {
                     continue;
                 }
-                const Math::Vector3UVE push = *direction * pushDistance;
-                ApplyMotionUVE(context, push, context.result.depenetrationMotion);
+                const Math::Vector3 push = *direction * pushDistance;
+                ApplyMotion(context, push, context.result.depenetrationMotion);
                 remainingBudget -= pushDistance;
                 ++context.result.depenetrationPasses;
                 context.result.depenetrated = true;
-                RecordSurfaceContactUVE(context, overlap, push, remainder, 0.0F, overlap.depth,
+                RecordSurfaceContact(context, overlap, push, remainder, 0.0F, overlap.depth,
                                         false);
                 pushed = true;
             } else {
-                RecordSurfaceContactUVE(context, overlap, Math::Vector3UVE{}, remainder, 0.0F,
+                RecordSurfaceContact(context, overlap, Math::Vector3{}, remainder, 0.0F,
                                         overlap.depth, false);
             }
         }
@@ -421,27 +421,27 @@ void DepenetrateUVE(MoveContextUVE& context) {
 // center untouched, so a refused step costs a query and never a teleport.
 // =================================================================================================
 
-struct StepResultUVE final {
-    Math::Vector3UVE motion{};
-    Math::Vector3UVE center{};
-    CharacterSlideCollisionUVE landing{};
+struct StepResult final {
+    Math::Vector3 motion{};
+    Math::Vector3 center{};
+    CharacterSlideCollision landing{};
     /// Horizontal distance of the walk the step did not carry the body over - zero when it carried
     /// all of it, which is the usual case for a step squarely in the body's path.
     float leftoverHorizontal = 0.0F;
 };
 
-[[nodiscard]] std::optional<StepResultUVE> TryStepUpUVE(
-    const MoveContextUVE& context, const Math::Vector3UVE& horizontalMotion,
-    const CharacterSlideCollisionUVE& wallHit) {
-    const ResolvedConfigUVE& config = context.config;
-    const Math::Vector3UVE up = config.upDirection;
+[[nodiscard]] std::optional<StepResult> TryStepUp(
+    const MoveContext& context, const Math::Vector3& horizontalMotion,
+    const CharacterSlideCollision& wallHit) {
+    const ResolvedConfig& config = context.config;
+    const Math::Vector3 up = config.upDirection;
     const float stepHeight = config.maxStepHeight;
-    const float horizontalLength = VectorLengthUVE(horizontalMotion);
-    if (stepHeight <= Character3DUVE::kMinimumMotionDistanceUVE ||
-        horizontalLength <= Character3DUVE::kMinimumMotionDistanceUVE) {
+    const float horizontalLength = VectorLength(horizontalMotion);
+    if (stepHeight <= Character3D::kMinimumMotionDistance ||
+        horizontalLength <= Character3D::kMinimumMotionDistance) {
         return std::nullopt;
     }
-    const Math::Vector3UVE horizontalDirection = horizontalMotion * (1.0F / horizontalLength);
+    const Math::Vector3 horizontalDirection = horizontalMotion * (1.0F / horizontalLength);
 
     // 1. Is there room to stand the body up by a step? A sweep that stops short means something is
     // in the way of the lift itself - a low ceiling, a shelf - and the step is refused.
@@ -452,7 +452,7 @@ struct StepResultUVE final {
     // surface blocking the rise, which is the same distinction the skin makes everywhere else.
     // Anything that is genuinely overhead - a different surface, or this one's ledge - still stops
     // the lift, and a step too tall to clear is refused by the forward probe below.
-    const std::optional<CharacterSlideCollisionUVE> liftHit = context.world->SweepUVE(
+    const std::optional<CharacterSlideCollision> liftHit = context.world->Sweep(
         context.center, up * (stepHeight + config.safeMargin), config.safeMargin);
     if (liftHit.has_value()) {
         if (liftHit->entity != wallHit.entity) {
@@ -463,12 +463,12 @@ struct StepResultUVE final {
         // ceiling-class hit is that underside. Honouring it is what stops a step from standing
         // the body up through a roof that happens to share an entity with the stair.
         float liftAngleDegrees = 0.0F;
-        if (ClassifyNormalUVE(up, config, liftHit->normal, liftAngleDegrees) ==
-            CharacterSurfaceKindUVE::Ceiling) {
+        if (ClassifyNormal(up, config, liftHit->normal, liftAngleDegrees) ==
+            CharacterSurfaceKind::Ceiling) {
             return std::nullopt;
         }
     }
-    const Math::Vector3UVE liftedCenter = context.center + up * stepHeight;
+    const Math::Vector3 liftedCenter = context.center + up * stepHeight;
 
     // 2. Walk forward at the lifted height. The probe reaches past the body's own motion on purpose:
     // whether a surface ahead is a step worth climbing is a question about the *geometry* - is there
@@ -477,12 +477,12 @@ struct StepResultUVE final {
     // what is left of that walk would refuse every stair it exists to climb.
     const float probeDistance =
         std::max(horizontalLength + config.safeMargin, config.minStepWidth + config.safeMargin);
-    const std::optional<CharacterSlideCollisionUVE> forwardHit = context.world->SweepUVE(
+    const std::optional<CharacterSlideCollision> forwardHit = context.world->Sweep(
         liftedCenter, horizontalDirection * probeDistance, config.safeMargin);
     const float clearRun = forwardHit.has_value()
                                ? std::clamp(forwardHit->travel, 0.0F, probeDistance)
                                : probeDistance;
-    if (clearRun + Character3DUVE::kMinimumMotionDistanceUVE < config.minStepWidth) {
+    if (clearRun + Character3D::kMinimumMotionDistance < config.minStepWidth) {
         // Something immediately in front of the lifted body: a wall to stop against, or a ridge too
         // narrow to stand on - not a step.
         return std::nullopt;
@@ -490,24 +490,24 @@ struct StepResultUVE final {
     // How far the step actually carries the body: no further than it was walking, and no further
     // than the tread is clear.
     const float reach = std::min(horizontalLength, clearRun);
-    const Math::Vector3UVE forwardCenter = liftedCenter + horizontalDirection * reach;
+    const Math::Vector3 forwardCenter = liftedCenter + horizontalDirection * reach;
 
     // 3. Drop onto whatever is below the forward position. Nothing below within a step means a ledge
     // rather than a step, and walking off it is the walk's job, not the step's.
-    const float dropLength = stepHeight + config.safeMargin * kFloorProbeLiftMarginFactorUVE;
-    const std::optional<CharacterSlideCollisionUVE> dropHit =
-        context.world->SweepUVE(forwardCenter, -up * dropLength, config.safeMargin);
+    const float dropLength = stepHeight + config.safeMargin * kFloorProbeLiftMarginFactor;
+    const std::optional<CharacterSlideCollision> dropHit =
+        context.world->Sweep(forwardCenter, -up * dropLength, config.safeMargin);
     if (!dropHit.has_value()) {
         return std::nullopt;
     }
     float dropAngleDegrees = 0.0F;
-    if (ClassifyNormalUVE(up, config, dropHit->normal, dropAngleDegrees) !=
-        CharacterSurfaceKindUVE::Floor) {
+    if (ClassifyNormal(up, config, dropHit->normal, dropAngleDegrees) !=
+        CharacterSurfaceKind::Floor) {
         return std::nullopt;
     }
     const float dropDistance = std::clamp(dropHit->travel, 0.0F, dropLength);
 
-    StepResultUVE step;
+    StepResult step;
     step.center = forwardCenter - up * dropDistance;
     step.motion = step.center - context.center;
     step.landing = *dropHit;
@@ -522,27 +522,27 @@ struct StepResultUVE final {
 // rather than an assumption.
 // =================================================================================================
 
-[[nodiscard]] float FloorProbeLiftFromMarginUVE(const float safeMargin) noexcept {
-    const float margin = std::max(0.0F, FiniteOrZeroUVE(safeMargin));
-    return margin * kFloorProbeLiftMarginFactorUVE + Character3DUVE::kMinimumMotionDistanceUVE;
+[[nodiscard]] float FloorProbeLiftFromMargin(const float safeMargin) noexcept {
+    const float margin = std::max(0.0F, FiniteOrZero(safeMargin));
+    return margin * kFloorProbeLiftMarginFactor + Character3D::kMinimumMotionDistance;
 }
 
-[[nodiscard]] float FloorProbeLiftUVE(const ResolvedConfigUVE& config) noexcept {
-    return FloorProbeLiftFromMarginUVE(config.safeMargin);
+[[nodiscard]] float FloorProbeLift(const ResolvedConfig& config) noexcept {
+    return FloorProbeLiftFromMargin(config.safeMargin);
 }
 
-void SnapToFloorUVE(MoveContextUVE& context) {
-    const ResolvedConfigUVE& config = context.config;
+void SnapToFloor(MoveContext& context) {
+    const ResolvedConfig& config = context.config;
     if (context.result.onFloor || !config.detectFloor || !context.moved.grounded) {
         return;
     }
-    if (config.jumpedThisStep || AlongUnitUVE(context.moved.velocity, config.upDirection) > 0.0F) {
+    if (config.jumpedThisStep || AlongUnit(context.moved.velocity, config.upDirection) > 0.0F) {
         // A jump is a decision to leave the floor, and a body on its way up is already gone.
         return;
     }
 
-    const float probeDistance = std::max(config.floorSnapLength, Character3DUVE::kMinimumFloorProbeUVE);
-    const std::optional<CharacterSlideCollisionUVE> hit = Character3DUVE::ProbeFloorUVE(
+    const float probeDistance = std::max(config.floorSnapLength, Character3D::kMinimumFloorProbe);
+    const std::optional<CharacterSlideCollision> hit = Character3D::ProbeFloor(
         *context.world, context.center, config.upDirection, config.floorMaxAngleDegrees,
         probeDistance, config.safeMargin);
     if (!hit.has_value()) {
@@ -551,53 +551,53 @@ void SnapToFloorUVE(MoveContextUVE& context) {
     context.result.onFloor = true;
     context.result.floorNormal = hit->normal;
     context.result.floorAngleDegrees =
-        Character3DUVE::SlopeAngleDegreesUVE(hit->normal, config.upDirection);
+        Character3D::SlopeAngleDegrees(hit->normal, config.upDirection);
     context.floorEntity = hit->entity;
 
-    const float lift = FloorProbeLiftUVE(config);
+    const float lift = FloorProbeLift(config);
     const float gap = std::max(0.0F, hit->travel - lift);
-    Math::Vector3UVE snap{};
+    Math::Vector3 snap{};
     float snapDistance = 0.0F;
-    if (gap > Character3DUVE::kMinimumMotionDistanceUVE) {
+    if (gap > Character3D::kMinimumMotionDistance) {
         snapDistance = std::min(gap, probeDistance);
         snap = -config.upDirection * snapDistance;
-        ApplyMotionUVE(context, snap, context.result.snapMotion);
+        ApplyMotion(context, snap, context.result.snapMotion);
         context.result.snapUsed = true;
     }
     // The probe answered "this is the floor" whether or not there was a gap to close. A script
     // reading collisions after a follow-down has to see that floor, not an empty list that looks
     // like "nothing underfoot".
-    RecordSurfaceContactUVE(context, *hit, snap, context.remaining, snapDistance, 0.0F, false);
+    RecordSurfaceContact(context, *hit, snap, context.remaining, snapDistance, 0.0F, false);
 }
 
 /// The floor probe itself, shared by the snap above and by anything that just wants to ask "what is
 /// under me" - an AI deciding whether a ledge is walkable, a placement tool drawing a footprint.
-[[nodiscard]] std::optional<CharacterSlideCollisionUVE> ProbeFloorAtUVE(
-    const ICharacterWorldQueryUVE& world, const Math::Vector3UVE& center,
-    const Math::Vector3UVE& upDirection, const float floorMaxAngleDegrees, const float probeDistance,
+[[nodiscard]] std::optional<CharacterSlideCollision> ProbeFloorAt(
+    const ICharacterWorldQuery& world, const Math::Vector3& center,
+    const Math::Vector3& upDirection, const float floorMaxAngleDegrees, const float probeDistance,
     const float safeMargin) {
-    const std::optional<Math::Vector3UVE> up = TryNormalizeUVE(upDirection);
-    if (!up.has_value() || !IsUsableVectorUVE(center) || !std::isfinite(probeDistance) ||
+    const std::optional<Math::Vector3> up = TryNormalize(upDirection);
+    if (!up.has_value() || !IsUsableVector(center) || !std::isfinite(probeDistance) ||
         !std::isfinite(safeMargin) || probeDistance < 0.0F) {
         return std::nullopt;
     }
-    ResolvedConfigUVE probeConfig;
+    ResolvedConfig probeConfig;
     probeConfig.upDirection = *up;
-    probeConfig.floorMaxAngleDegrees = std::clamp(FiniteOrZeroUVE(floorMaxAngleDegrees), 0.0F, 90.0F);
+    probeConfig.floorMaxAngleDegrees = std::clamp(FiniteOrZero(floorMaxAngleDegrees), 0.0F, 90.0F);
 
-    const float lift = FloorProbeLiftFromMarginUVE(safeMargin);
+    const float lift = FloorProbeLiftFromMargin(safeMargin);
     const float sweepLength = probeDistance + lift;
-    if (sweepLength <= Character3DUVE::kMinimumMotionDistanceUVE) {
+    if (sweepLength <= Character3D::kMinimumMotionDistance) {
         return std::nullopt;
     }
-    const std::optional<CharacterSlideCollisionUVE> hit =
-        world.SweepUVE(center + *up * lift, -*up * sweepLength, std::max(safeMargin, 0.0F));
+    const std::optional<CharacterSlideCollision> hit =
+        world.Sweep(center + *up * lift, -*up * sweepLength, std::max(safeMargin, 0.0F));
     if (!hit.has_value()) {
         return std::nullopt;
     }
     float angleDegrees = 0.0F;
-    if (ClassifyNormalUVE(*up, probeConfig, hit->normal, angleDegrees) !=
-        CharacterSurfaceKindUVE::Floor) {
+    if (ClassifyNormal(*up, probeConfig, hit->normal, angleDegrees) !=
+        CharacterSurfaceKind::Floor) {
         // Something is below the body, but it is not a floor - a wall's shoulder, the ceiling of a
         // crawlspace. Snapping to it would stand the body on a surface it cannot stand on.
         return std::nullopt;
@@ -612,25 +612,25 @@ void SnapToFloorUVE(MoveContextUVE& context) {
 // and for animation-driven ones alike, and it cannot be wrong the way a hand-set number can.
 // =================================================================================================
 
-void MeasurePlatformVelocityUVE(MoveContextUVE& context, const float deltaTimeSeconds) {
-    context.moved.platformVelocity = Math::Vector3UVE{};
-    if (context.moved.platform == kInvalidEntityUVE || !context.moved.grounded) {
+void MeasurePlatformVelocity(MoveContext& context, const float deltaTimeSeconds) {
+    context.moved.platformVelocity = Math::Vector3{};
+    if (context.moved.platform == kInvalidEntity || !context.moved.grounded) {
         return;
     }
-    const std::optional<Math::Vector3UVE> platformCenter =
-        context.world->TryGetEntityCenterUVE(context.moved.platform);
+    const std::optional<Math::Vector3> platformCenter =
+        context.world->TryGetEntityCenter(context.moved.platform);
     if (!platformCenter.has_value()) {
         // Destroyed, or no longer a body: there is nothing to ride and nothing to be left by.
-        context.moved.platform = kInvalidEntityUVE;
-        context.moved.platformWorldPosition = Math::Vector3UVE{};
+        context.moved.platform = kInvalidEntity;
+        context.moved.platformWorldPosition = Math::Vector3{};
         context.moved.hasPlatformWorldPosition = false;
         return;
     }
     if (context.moved.hasPlatformWorldPosition &&
-        IsUsableVectorUVE(context.moved.platformWorldPosition)) {
-        const Math::Vector3UVE measured =
+        IsUsableVector(context.moved.platformWorldPosition)) {
+        const Math::Vector3 measured =
             (*platformCenter - context.moved.platformWorldPosition) * (1.0F / deltaTimeSeconds);
-        if (IsUsableVectorUVE(measured)) {
+        if (IsUsableVector(measured)) {
             context.moved.platformVelocity = measured;
         }
     }
@@ -644,13 +644,13 @@ void MeasurePlatformVelocityUVE(MoveContextUVE& context, const float deltaTimeSe
 /// The platform's motion, or nothing when it is not something the body should be carried by: a
 /// platform that teleported (a script writing a transform) must not fling its rider across the
 /// level, and a stationary one has nothing to add.
-[[nodiscard]] Math::Vector3UVE PlatformCarryVelocityUVE(const MoveContextUVE& context) {
-    if (!context.moved.grounded || context.moved.platformVelocity == Math::Vector3UVE{}) {
-        return Math::Vector3UVE{};
+[[nodiscard]] Math::Vector3 PlatformCarryVelocity(const MoveContext& context) {
+    if (!context.moved.grounded || context.moved.platformVelocity == Math::Vector3{}) {
+        return Math::Vector3{};
     }
-    const float speed = VectorLengthUVE(context.moved.platformVelocity);
+    const float speed = VectorLength(context.moved.platformVelocity);
     if (!std::isfinite(speed) || speed > context.config.maximumPlatformSpeed) {
-        return Math::Vector3UVE{};
+        return Math::Vector3{};
     }
     return context.moved.platformVelocity;
 }
@@ -659,16 +659,16 @@ void MeasurePlatformVelocityUVE(MoveContextUVE& context, const float deltaTimeSe
 /// goodwill is one-way on purpose: a rising platform may throw the body up, a falling one never
 /// throws it down, because "the lift went down and took my jump with it" is exactly the bug this
 /// setting exists to avoid.
-void ApplyPlatformLeaveUVE(MoveContextUVE& context, const Math::Vector3UVE& platformVelocity) {
-    if (context.config.platformOnLeave == CharacterPlatformLeaveModeUVE::KeepVelocity ||
-        platformVelocity == Math::Vector3UVE{}) {
+void ApplyPlatformLeave(MoveContext& context, const Math::Vector3& platformVelocity) {
+    if (context.config.platformOnLeave == CharacterPlatformLeaveMode::KeepVelocity ||
+        platformVelocity == Math::Vector3{}) {
         return;
     }
-    if (context.config.platformOnLeave == CharacterPlatformLeaveModeUVE::AddVelocity) {
+    if (context.config.platformOnLeave == CharacterPlatformLeaveMode::AddVelocity) {
         context.moved.velocity += platformVelocity;
         return;
     }
-    const float upwardSpeed = Math::DotUVE(platformVelocity, context.config.upDirection);
+    const float upwardSpeed = Math::Dot(platformVelocity, context.config.upDirection);
     if (std::isfinite(upwardSpeed) && upwardSpeed > 0.0F) {
         context.moved.velocity += context.config.upDirection * upwardSpeed;
     }
@@ -679,103 +679,103 @@ void ApplyPlatformLeaveUVE(MoveContextUVE& context, const Math::Vector3UVE& plat
 // stops, so the cap is a bound on work rather than a hope.
 // =================================================================================================
 
-void SlideUVE(MoveContextUVE& context) {
-    const ResolvedConfigUVE& config = context.config;
+void Slide(MoveContext& context) {
+    const ResolvedConfig& config = context.config;
     for (std::size_t slide = 0U; slide < config.maxSlides; ++slide) {
-        const float remainingLength = VectorLengthUVE(context.remaining);
-        if (remainingLength <= Character3DUVE::kMinimumMotionDistanceUVE) {
-            context.remaining = Math::Vector3UVE{};
+        const float remainingLength = VectorLength(context.remaining);
+        if (remainingLength <= Character3D::kMinimumMotionDistance) {
+            context.remaining = Math::Vector3{};
             return;
         }
-        const Math::Vector3UVE sweptMotion = context.remaining;
-        const Math::Vector3UVE direction = sweptMotion * (1.0F / remainingLength);
-        const std::optional<CharacterSlideCollisionUVE> hit =
-            context.world->SweepUVE(context.center, sweptMotion, config.safeMargin);
+        const Math::Vector3 sweptMotion = context.remaining;
+        const Math::Vector3 direction = sweptMotion * (1.0F / remainingLength);
+        const std::optional<CharacterSlideCollision> hit =
+            context.world->Sweep(context.center, sweptMotion, config.safeMargin);
         if (!hit.has_value()) {
             // Nothing in the way for the rest of the move: spend all of it and stop.
-            ApplyMotionUVE(context, context.remaining, context.result.slideMotion);
-            context.remaining = Math::Vector3UVE{};
+            ApplyMotion(context, context.remaining, context.result.slideMotion);
+            context.remaining = Math::Vector3{};
             return;
         }
 
         const float travel = std::clamp(hit->travel, 0.0F, remainingLength);
-        ApplyMotionUVE(context, direction * travel, context.result.slideMotion);
+        ApplyMotion(context, direction * travel, context.result.slideMotion);
         context.remaining -= direction * travel;
         ++context.result.slideCount;
 
         float angleDegrees = 0.0F;
-        const CharacterSurfaceKindUVE kind =
-            ClassifyNormalUVE(config.upDirection, config, hit->normal, angleDegrees);
+        const CharacterSurfaceKind kind =
+            ClassifyNormal(config.upDirection, config, hit->normal, angleDegrees);
 
         // A step is a walking convenience, not a second jump: only a body that was already standing,
         // was not jumping, and is not already moving up climbs one.
         //
         // What the step is asked to carry is what is left of this step's walk after the contact;
-        // whether the surface ahead is a step at all is decided by TryStepUpUVE from the geometry,
+        // whether the surface ahead is a step at all is decided by TryStepUp from the geometry,
         // not from how much of the walk survived the riser.
-        const Math::Vector3UVE stepReach = PerpendicularUVE(context.remaining, config.upDirection);
-        const bool canStep = kind == CharacterSurfaceKindUVE::Wall &&
-                             config.maxStepHeight > Character3DUVE::kMinimumMotionDistanceUVE &&
+        const Math::Vector3 stepReach = Perpendicular(context.remaining, config.upDirection);
+        const bool canStep = kind == CharacterSurfaceKind::Wall &&
+                             config.maxStepHeight > Character3D::kMinimumMotionDistance &&
                              context.moved.grounded && !config.jumpedThisStep &&
-                             AlongUnitUVE(context.moved.velocity, config.upDirection) <= 0.0F;
+                             AlongUnit(context.moved.velocity, config.upDirection) <= 0.0F;
         if (canStep) {
-            if (const std::optional<StepResultUVE> step = TryStepUpUVE(context, stepReach, *hit);
+            if (const std::optional<StepResult> step = TryStepUp(context, stepReach, *hit);
                 step.has_value()) {
                 context.center = step->center;
                 context.result.appliedMotion += step->motion;
                 context.result.stepMotion += step->motion;
                 context.result.stepUpUsed = true;
-                RecordSurfaceContactUVE(context, step->landing, sweptMotion,
-                                        PerpendicularUVE(step->motion, config.upDirection),
-                                        VectorLengthUVE(step->motion), 0.0F, true);
+                RecordSurfaceContact(context, step->landing, sweptMotion,
+                                        Perpendicular(step->motion, config.upDirection),
+                                        VectorLength(step->motion), 0.0F, true);
                 // Whatever the step did not carry the body over is still the body's to walk, and
                 // walking it from the tread is the next iteration's job - so a body that steps onto
                 // the edge of a platform with motion left keeps moving, and one that steps its whole
                 // distance stops on the tread instead of grinding into it.
                 const float leftover = step->leftoverHorizontal;
-                if (leftover <= Character3DUVE::kMinimumMotionDistanceUVE) {
-                    context.remaining = Math::Vector3UVE{};
+                if (leftover <= Character3D::kMinimumMotionDistance) {
+                    context.remaining = Math::Vector3{};
                     return;
                 }
-                const float reachLength = VectorLengthUVE(stepReach);
-                if (reachLength > Character3DUVE::kMinimumMotionDistanceUVE) {
+                const float reachLength = VectorLength(stepReach);
+                if (reachLength > Character3D::kMinimumMotionDistance) {
                     context.remaining = stepReach * (leftover / reachLength);
                 } else {
-                    context.remaining = Math::Vector3UVE{};
+                    context.remaining = Math::Vector3{};
                 }
                 continue;
             }
         }
 
-        RecordSurfaceContactUVE(context, *hit, sweptMotion, context.remaining, travel, hit->depth,
+        RecordSurfaceContact(context, *hit, sweptMotion, context.remaining, travel, hit->depth,
                                 false);
 
-        if (kind == CharacterSurfaceKindUVE::Ceiling && !config.slideOnCeiling) {
+        if (kind == CharacterSurfaceKind::Ceiling && !config.slideOnCeiling) {
             // Slide On Ceiling off means the ceiling is a wall in the only way that matters: the
             // move ends against it, horizontal motion included.
-            context.remaining = Math::Vector3UVE{};
+            context.remaining = Math::Vector3{};
             context.result.blocked = true;
             return;
         }
-        if (kind == CharacterSurfaceKindUVE::Wall) {
+        if (kind == CharacterSurfaceKind::Wall) {
             if (config.floorBlockOnWall && context.moved.grounded) {
-                context.remaining = Math::Vector3UVE{};
+                context.remaining = Math::Vector3{};
                 context.result.blocked = true;
                 return;
             }
-            if (!WallSlidesUVE(config, angleDegrees)) {
+            if (!WallSlides(config, angleDegrees)) {
                 // The steep-ramp band: the body stops against it instead of creeping up it.
-                context.remaining = Math::Vector3UVE{};
+                context.remaining = Math::Vector3{};
                 context.result.blocked = true;
                 return;
             }
         }
 
-        const float lengthBeforeProjection = VectorLengthUVE(context.remaining);
-        Math::Vector3UVE projected =
-            Character3DUVE::SlideMotionUVE(context.remaining, hit->normal);
+        const float lengthBeforeProjection = VectorLength(context.remaining);
+        Math::Vector3 projected =
+            Character3D::SlideMotion(context.remaining, hit->normal);
 
-        if (config.floorConstantSpeed && kind == CharacterSurfaceKindUVE::Floor) {
+        if (config.floorConstantSpeed && kind == CharacterSurfaceKind::Floor) {
             // Floor Constant Speed: this contact's remaining horizontal is restored after the
             // slope projects it, so a walk up a slope keeps the metres of the walk not yet spent
             // instead of slowing down, and a walk down one does not speed up. Restoring against
@@ -783,28 +783,28 @@ void SlideUVE(MoveContextUVE& context) {
             // here; restoring against this remaining is what keeps the whole step's horizontal
             // equal to the walk.
             const float horizontalBefore =
-                VectorLengthUVE(PerpendicularUVE(context.remaining, config.upDirection));
+                VectorLength(Perpendicular(context.remaining, config.upDirection));
             const float horizontalAfter =
-                VectorLengthUVE(PerpendicularUVE(projected, config.upDirection));
-            if (horizontalBefore > Character3DUVE::kMinimumMotionDistanceUVE &&
-                horizontalAfter > Character3DUVE::kMinimumMotionDistanceUVE &&
+                VectorLength(Perpendicular(projected, config.upDirection));
+            if (horizontalBefore > Character3D::kMinimumMotionDistance &&
+                horizontalAfter > Character3D::kMinimumMotionDistance &&
                 horizontalAfter < horizontalBefore) {
-                const Math::Vector3UVE horizontalPart = PerpendicularUVE(projected, config.upDirection);
-                const Math::Vector3UVE alongPart = projected - horizontalPart;
+                const Math::Vector3 horizontalPart = Perpendicular(projected, config.upDirection);
+                const Math::Vector3 alongPart = projected - horizontalPart;
                 projected = alongPart + horizontalPart * (horizontalBefore / horizontalAfter);
             }
         }
 
-        if (VectorLengthUVE(projected) < lengthBeforeProjection - Character3DUVE::kMinimumMotionDistanceUVE) {
+        if (VectorLength(projected) < lengthBeforeProjection - Character3D::kMinimumMotionDistance) {
             context.result.blocked = true;
         }
         context.remaining = projected;
     }
 
-    if (VectorLengthUVE(context.remaining) > Character3DUVE::kMinimumMotionDistanceUVE) {
+    if (VectorLength(context.remaining) > Character3D::kMinimumMotionDistance) {
         // Out of slides with motion left over. The body stops here rather than creeping the rest of
         // the way on the next step, and the caller can see it in `blocked`.
-        context.remaining = Math::Vector3UVE{};
+        context.remaining = Math::Vector3{};
         context.result.blocked = true;
     }
 }
@@ -815,22 +815,22 @@ void SlideUVE(MoveContextUVE& context) {
 // off it", and they are the mover's only writes to velocity - everything else is the intent step's.
 // =================================================================================================
 
-void ApplySurfaceVelocityRulesUVE(MoveContextUVE& context) {
-    const ResolvedConfigUVE& config = context.config;
+void ApplySurfaceVelocityRules(MoveContext& context) {
+    const ResolvedConfig& config = context.config;
     if (!context.result.onFloor) {
         return;
     }
-    const float standingSpeed = HorizontalSpeedUVE(context, context.moved.velocity);
+    const float standingSpeed = HorizontalSpeed(context, context.moved.velocity);
     if (!config.floorStopOnSlope || context.result.floorAngleDegrees <= 0.01F ||
-        standingSpeed > Character3DUVE::kStandingSpeedUVE ||
-        AlongUnitUVE(context.moved.velocity, config.upDirection) >
-            Character3DUVE::kMinimumMotionDistanceUVE) {
+        standingSpeed > Character3D::kStandingSpeed ||
+        AlongUnit(context.moved.velocity, config.upDirection) >
+            Character3D::kMinimumMotionDistance) {
         return;
     }
     // A body standing on a slope stays standing there. Its gravity is re-applied every step by the
     // intent step, and every step the mover takes the downhill part of it back out - which is what
     // "not sliding down a hill" means for a character that was not walking.
-    context.moved.velocity = Math::Vector3UVE{};
+    context.moved.velocity = Math::Vector3{};
 }
 
 // =================================================================================================
@@ -838,37 +838,37 @@ void ApplySurfaceVelocityRulesUVE(MoveContextUVE& context) {
 // was left behind by something that used to be.
 // =================================================================================================
 
-void FinishPlatformUVE(MoveContextUVE& context, const EntityUVE previousPlatform,
-                       const Math::Vector3UVE& previousPlatformVelocity, const bool wasOnFloor) {
-    if (context.result.onFloor && context.floorEntity != kInvalidEntityUVE) {
+void FinishPlatform(MoveContext& context, const Entity previousPlatform,
+                       const Math::Vector3& previousPlatformVelocity, const bool wasOnFloor) {
+    if (context.result.onFloor && context.floorEntity != kInvalidEntity) {
         // Standing on something: that thing is the platform, and the next step measures how far it
         // moved from where it is now.
         context.moved.platform = context.floorEntity;
-        const std::optional<Math::Vector3UVE> center =
-            context.world->TryGetEntityCenterUVE(context.floorEntity);
-        context.moved.platformWorldPosition = center.has_value() ? *center : Math::Vector3UVE{};
+        const std::optional<Math::Vector3> center =
+            context.world->TryGetEntityCenter(context.floorEntity);
+        context.moved.platformWorldPosition = center.has_value() ? *center : Math::Vector3{};
         context.moved.hasPlatformWorldPosition = center.has_value();
         context.result.platformVelocity = context.moved.platformVelocity;
         return;
     }
 
-    if (wasOnFloor && previousPlatform != kInvalidEntityUVE) {
+    if (wasOnFloor && previousPlatform != kInvalidEntity) {
         // Just left the platform behind. What it was doing when the body left is what it hands
         // over - that is the whole of platform_on_leave - and a platform that was teleported hands
         // over nothing, for the same reason it never carried the body in the first place: a script
         // writing a transform is not motion, and inheriting it would fling the jump across a level.
-        const float handedOverSpeed = VectorLengthUVE(previousPlatformVelocity);
-        const Math::Vector3UVE handedOverVelocity =
+        const float handedOverSpeed = VectorLength(previousPlatformVelocity);
+        const Math::Vector3 handedOverVelocity =
             std::isfinite(handedOverSpeed) && handedOverSpeed <= context.config.maximumPlatformSpeed
                 ? previousPlatformVelocity
-                : Math::Vector3UVE{};
-        ApplyPlatformLeaveUVE(context, handedOverVelocity);
+                : Math::Vector3{};
+        ApplyPlatformLeave(context, handedOverVelocity);
         context.result.platformVelocity = handedOverVelocity;
         context.result.leftPlatform = true;
     }
-    context.moved.platform = kInvalidEntityUVE;
-    context.moved.platformWorldPosition = Math::Vector3UVE{};
-    context.moved.platformVelocity = Math::Vector3UVE{};
+    context.moved.platform = kInvalidEntity;
+    context.moved.platformWorldPosition = Math::Vector3{};
+    context.moved.platformVelocity = Math::Vector3{};
     context.moved.hasPlatformWorldPosition = false;
 }
 
@@ -877,9 +877,9 @@ void FinishPlatformUVE(MoveContextUVE& context, const EntityUVE previousPlatform
 // half-updated - a caller reading `grounded` and `floorNormal` sees two fields of the same answer.
 // =================================================================================================
 
-void CommitStateUVE(MoveContextUVE& context, CharacterMotionStateUVE& state,
+void CommitState(MoveContext& context, CharacterMotionState& state,
                     const float deltaTimeSeconds) {
-    if (context.result.code != CharacterMoveCodeUVE::Moved) {
+    if (context.result.code != CharacterMoveCode::Moved) {
         return;
     }
     context.moved.grounded = context.result.onFloor;
@@ -887,9 +887,9 @@ void CommitStateUVE(MoveContextUVE& context, CharacterMotionStateUVE& state,
     context.moved.onCeiling = context.result.onCeiling;
     context.moved.floorNormal = context.result.onFloor ? context.result.floorNormal
                                                        : context.config.upDirection;
-    context.moved.wallNormal = context.result.onWall ? context.result.wallNormal : Math::Vector3UVE{};
+    context.moved.wallNormal = context.result.onWall ? context.result.wallNormal : Math::Vector3{};
     context.moved.ceilingNormal = context.result.onCeiling ? context.result.ceilingNormal
-                                                           : Math::Vector3UVE{};
+                                                           : Math::Vector3{};
     context.moved.lastMotion = context.result.appliedMotion;
     if (deltaTimeSeconds > 0.0F) {
         context.moved.realVelocity = context.result.appliedMotion * (1.0F / deltaTimeSeconds);
@@ -903,44 +903,44 @@ void CommitStateUVE(MoveContextUVE& context, CharacterMotionStateUVE& state,
 // Public surface.
 // =================================================================================================
 
-CharacterSurfaceKindUVE ClassifyCharacterSurfaceUVE(const Math::Vector3UVE& surfaceNormal,
-                                                   const Math::Vector3UVE& upDirection,
+CharacterSurfaceKind ClassifyCharacterSurface(const Math::Vector3& surfaceNormal,
+                                                   const Math::Vector3& upDirection,
                                                    const float floorMaxAngleDegrees,
                                                    float& outAngleDegrees) noexcept {
     // A caller that cannot be answered is still answered about the angle: "no surface here" reads as
     // zero degrees rather than as whatever the caller last passed in.
     outAngleDegrees = 0.0F;
-    const std::optional<Math::Vector3UVE> up = TryNormalizeUVE(upDirection);
+    const std::optional<Math::Vector3> up = TryNormalize(upDirection);
     if (!up.has_value()) {
-        return CharacterSurfaceKindUVE::Invalid;
+        return CharacterSurfaceKind::Invalid;
     }
-    ResolvedConfigUVE config;
+    ResolvedConfig config;
     config.upDirection = *up;
-    config.floorMaxAngleDegrees = std::clamp(FiniteOrZeroUVE(floorMaxAngleDegrees), 0.0F, 90.0F);
-    return ClassifyNormalUVE(*up, config, surfaceNormal, outAngleDegrees);
+    config.floorMaxAngleDegrees = std::clamp(FiniteOrZero(floorMaxAngleDegrees), 0.0F, 90.0F);
+    return ClassifyNormal(*up, config, surfaceNormal, outAngleDegrees);
 }
 
-float Character3DUVE::SlopeAngleDegreesUVE(const Math::Vector3UVE& normal,
-                                           const Math::Vector3UVE& upDirection) noexcept {
-    const std::optional<Math::Vector3UVE> up = TryNormalizeUVE(upDirection);
-    const std::optional<Math::Vector3UVE> unitNormal = TryNormalizeUVE(normal);
+float Character3D::SlopeAngleDegrees(const Math::Vector3& normal,
+                                           const Math::Vector3& upDirection) noexcept {
+    const std::optional<Math::Vector3> up = TryNormalize(upDirection);
+    const std::optional<Math::Vector3> unitNormal = TryNormalize(normal);
     if (!up.has_value() || !unitNormal.has_value()) {
         return 0.0F;
     }
-    const float alignment = std::clamp(Math::DotUVE(*unitNormal, *up), -1.0F, 1.0F);
-    return Math::RadToDegUVE(std::acos(alignment));
+    const float alignment = std::clamp(Math::Dot(*unitNormal, *up), -1.0F, 1.0F);
+    return Math::RadToDeg(std::acos(alignment));
 }
 
-Math::Vector3UVE Character3DUVE::SlideMotionUVE(const Math::Vector3UVE& motion,
-                                                const Math::Vector3UVE& normal) noexcept {
-    if (!IsUsableVectorUVE(motion) || !IsUsableVectorUVE(normal)) {
+Math::Vector3 Character3D::SlideMotion(const Math::Vector3& motion,
+                                                const Math::Vector3& normal) noexcept {
+    if (!IsUsableVector(motion) || !IsUsableVector(normal)) {
         return motion;
     }
-    const float normalLengthSquared = Math::LengthSquaredUVE(normal);
+    const float normalLengthSquared = Math::LengthSquared(normal);
     if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.0F) {
         return motion;
     }
-    const float intoSurface = Math::DotUVE(motion, normal);
+    const float intoSurface = Math::Dot(motion, normal);
     if (!std::isfinite(intoSurface) || intoSurface >= 0.0F) {
         // Already leaving, or running along: there is nothing to take out.
         return motion;
@@ -948,91 +948,91 @@ Math::Vector3UVE Character3DUVE::SlideMotionUVE(const Math::Vector3UVE& motion,
     return motion - normal * (intoSurface / normalLengthSquared);
 }
 
-std::optional<CharacterSlideCollisionUVE> Character3DUVE::TestMoveUVE(
-    const ICharacterWorldQueryUVE& world, const Math::Vector3UVE& motion, const float margin) {
-    if (!IsUsableVectorUVE(motion) || !std::isfinite(margin) || margin < 0.0F) {
+std::optional<CharacterSlideCollision> Character3D::TestMove(
+    const ICharacterWorldQuery& world, const Math::Vector3& motion, const float margin) {
+    if (!IsUsableVector(motion) || !std::isfinite(margin) || margin < 0.0F) {
         return std::nullopt;
     }
-    return world.SweepUVE(world.GetCenterUVE(), motion, std::min(margin, 0.25F));
+    return world.Sweep(world.GetCenter(), motion, std::min(margin, 0.25F));
 }
 
-std::optional<CharacterSlideCollisionUVE> Character3DUVE::ProbeFloorUVE(
-    const ICharacterWorldQueryUVE& world, const Math::Vector3UVE& center,
-    const Math::Vector3UVE& upDirection, const float floorMaxAngleDegrees, const float probeDistance,
+std::optional<CharacterSlideCollision> Character3D::ProbeFloor(
+    const ICharacterWorldQuery& world, const Math::Vector3& center,
+    const Math::Vector3& upDirection, const float floorMaxAngleDegrees, const float probeDistance,
     const float safeMargin) noexcept {
-    return ProbeFloorAtUVE(world, center, upDirection, floorMaxAngleDegrees, probeDistance, safeMargin);
+    return ProbeFloorAt(world, center, upDirection, floorMaxAngleDegrees, probeDistance, safeMargin);
 }
 
-CharacterMotionResultUVE Character3DUVE::MoveAndSlideUVE(const ICharacterWorldQueryUVE& world,
-                                                        const CharacterMotionConfigUVE& config,
-                                                        CharacterMotionStateUVE& state,
-                                                        const Math::Vector3UVE& desiredMotion,
+CharacterMotionResult Character3D::MoveAndSlide(const ICharacterWorldQuery& world,
+                                                        const CharacterMotionConfig& config,
+                                                        CharacterMotionState& state,
+                                                        const Math::Vector3& desiredMotion,
                                                         const float deltaTimeSeconds) {
-    MoveContextUVE context;
+    MoveContext context;
     context.world = &world;
     context.result.requestedMotion = desiredMotion;
-    context.result.code = CharacterMoveCodeUVE::InvalidConfig;
+    context.result.code = CharacterMoveCode::InvalidConfig;
 
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F ||
-        !IsUsableVectorUVE(desiredMotion)) {
+        !IsUsableVector(desiredMotion)) {
         return context.result;
     }
-    if (!TryResolveConfigUVE(config, context.config)) {
+    if (!TryResolveConfig(config, context.config)) {
         return context.result;
     }
-    if (!IsFiniteStateUVE(state)) {
-        context.result.code = CharacterMoveCodeUVE::InvalidState;
+    if (!IsFiniteState(state)) {
+        context.result.code = CharacterMoveCode::InvalidState;
         return context.result;
     }
     context.moved = state;
     context.result.configClamped = context.config.clamped;
 
-    const Math::Vector3UVE center = world.GetCenterUVE();
-    if (!IsUsableVectorUVE(center)) {
-        context.result.code = CharacterMoveCodeUVE::InvalidWorld;
+    const Math::Vector3 center = world.GetCenter();
+    if (!IsUsableVector(center)) {
+        context.result.code = CharacterMoveCode::InvalidWorld;
         return context.result;
     }
     context.center = center;
-    context.result.code = CharacterMoveCodeUVE::Moved;
+    context.result.code = CharacterMoveCode::Moved;
 
     const bool wasOnFloor = state.grounded;
-    const EntityUVE previousPlatform = state.platform;
+    const Entity previousPlatform = state.platform;
 
     // ---- What the platform underfoot did since the last step, and what that means for this one ---
-    MeasurePlatformVelocityUVE(context, deltaTimeSeconds);
-    const Math::Vector3UVE platformVelocity = context.moved.platformVelocity;
-    const Math::Vector3UVE carry = PlatformCarryVelocityUVE(context) * deltaTimeSeconds;
+    MeasurePlatformVelocity(context, deltaTimeSeconds);
+    const Math::Vector3 platformVelocity = context.moved.platformVelocity;
+    const Math::Vector3 carry = PlatformCarryVelocity(context) * deltaTimeSeconds;
     context.result.platformVelocity = platformVelocity;
-    if (carry != Math::Vector3UVE{}) {
+    if (carry != Math::Vector3{}) {
         context.result.carriedByPlatform = true;
     }
 
-    const Math::Vector3UVE motion = desiredMotion + carry;
+    const Math::Vector3 motion = desiredMotion + carry;
 
     // ---- Push out of anything the body started inside of, then walk it ---------------------------
-    DepenetrateUVE(context);
+    Depenetrate(context);
     context.remaining = motion;
-    SlideUVE(context);
-    SnapToFloorUVE(context);
+    Slide(context);
+    SnapToFloor(context);
     // Numerical overlap after a slide or a snap is the same question as the one at the start of
     // the step, asked of the pose we actually ended in - not of the pose we started in.
-    DepenetrateUVE(context);
-    ApplySurfaceVelocityRulesUVE(context);
-    FinishPlatformUVE(context, previousPlatform, platformVelocity, wasOnFloor);
+    Depenetrate(context);
+    ApplySurfaceVelocityRules(context);
+    FinishPlatform(context, previousPlatform, platformVelocity, wasOnFloor);
 
     context.result.finalCenter = context.center;
-    CommitStateUVE(context, state, deltaTimeSeconds);
+    CommitState(context, state, deltaTimeSeconds);
     return context.result;
 }
 
 // =================================================================================================
-// The component bridge. CharacterControllerComponentUVE is where the engine keeps a character's
-// runtime state; CharacterMotionStateUVE is the value the mover works on. These two functions are
+// The component bridge. CharacterControllerComponent is where the engine keeps a character's
+// runtime state; CharacterMotionState is the value the mover works on. These two functions are
 // the whole of that translation, kept in one place so the two can never disagree about a field.
 // =================================================================================================
 
-CharacterMotionStateUVE MakeCharacterMotionStateUVE(const CharacterControllerComponentUVE& controller) noexcept {
-    CharacterMotionStateUVE state;
+CharacterMotionState MakeCharacterMotionState(const CharacterControllerComponent& controller) noexcept {
+    CharacterMotionState state;
     state.velocity = controller.velocity;
     state.grounded = controller.grounded;
     state.onWall = controller.onWall;
@@ -1051,8 +1051,8 @@ CharacterMotionStateUVE MakeCharacterMotionStateUVE(const CharacterControllerCom
     return state;
 }
 
-void StoreCharacterMotionStateUVE(CharacterControllerComponentUVE& controller,
-                                  const CharacterMotionStateUVE& state) noexcept {
+void StoreCharacterMotionState(CharacterControllerComponent& controller,
+                                  const CharacterMotionState& state) noexcept {
     controller.velocity = state.velocity;
     controller.grounded = state.grounded;
     controller.onWall = state.onWall;
@@ -1070,9 +1070,9 @@ void StoreCharacterMotionStateUVE(CharacterControllerComponentUVE& controller,
     controller.hasPlatformWorldPosition = state.hasPlatformWorldPosition;
 }
 
-CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
-    const CharacterControllerComponentUVE& controller) noexcept {
-    CharacterMotionConfigUVE config;
+CharacterMotionConfig MakeCharacterMotionConfig(
+    const CharacterControllerComponent& controller) noexcept {
+    CharacterMotionConfig config;
     config.upDirection = controller.upDirection;
     config.floorMaxAngleDegrees = controller.floorMaxAngleDegrees;
     config.wallMinSlideAngleDegrees = controller.wallMinSlideAngleDegrees;
@@ -1090,7 +1090,7 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
     config.maximumPlatformSpeed = controller.maximumPlatformSpeed;
     // A floating body has no floor to stand on and no step to climb: that mode's whole contract is
     // that every surface is a wall it slides along.
-    const bool grounded = controller.motionMode != CharacterMotionModeUVE::Floating;
+    const bool grounded = controller.motionMode != CharacterMotionMode::Floating;
     config.detectFloor = grounded;
     if (!grounded) {
         config.floorSnapLength = 0.0F;
@@ -1105,63 +1105,63 @@ CharacterMotionConfigUVE MakeCharacterMotionConfigUVE(
 // the SolidBody3D base, then the body's collider and controller, each only where missing.
 // =================================================================================================
 
-bool IsLegacyCharacterCapsuleUVE(const ColliderComponentUVE& collider) noexcept {
+bool IsLegacyCharacterCapsule(const ColliderComponent& collider) noexcept {
     // Compared with a tolerance rather than ==: these numbers survive a round trip through the
     // scene file as text, and a value written as 1.8 can come back as the nearest float to it. The
     // tolerance is far below anything an author types (a millimetre), so a capsule they sized
     // themselves is not mistaken for this one.
-    constexpr float kToleranceUVE = 1.0e-3F;
-    return collider.shapeType == ColliderShapeTypeUVE::Capsule &&
-           std::fabs(collider.radius - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().radius) <=
-               kToleranceUVE &&
-           std::fabs(collider.height - Character3DObjectDefinitionUVE::MakeDefaultColliderUVE().height) <=
-               kToleranceUVE;
+    constexpr float kTolerance = 1.0e-3F;
+    return collider.shapeType == ColliderShapeType::Capsule &&
+           std::fabs(collider.radius - Character3DObjectDefinition::MakeDefaultCollider().radius) <=
+               kTolerance &&
+           std::fabs(collider.height - Character3DObjectDefinition::MakeDefaultCollider().height) <=
+               kTolerance;
 }
 
-bool IsCharacter3DObjectDefinitionValidUVE(const Character3DObjectDefinitionUVE& value) noexcept {
-    ControllerComponentUVE authoredController;
+bool IsCharacter3DObjectDefinitionValid(const Character3DObjectDefinition& value) noexcept {
+    ControllerComponent authoredController;
     authoredController.kind = value.controllerKind;
     // No collider is a valid character: it is a controller waiting for the author to give it a
     // body, which the Outliner flags. A collider that IS given must be a real one.
-    return (!value.collider.has_value() || IsColliderComponentValidUVE(*value.collider)) &&
-           IsCharacterControllerComponentValidUVE(value.controller) &&
-           IsControllerComponentValidUVE(authoredController);
+    return (!value.collider.has_value() || IsColliderComponentValid(*value.collider)) &&
+           IsCharacterControllerComponentValid(value.controller) &&
+           IsControllerComponentValid(authoredController);
 }
 
-void ApplyCharacter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                         const Character3DObjectDefinitionUVE& value) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyCharacter3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                         const Character3DObjectDefinition& value) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    ApplySolidBody3DBaseUVE(entityManager, entity, Character3DObjectDefinitionUVE::defaultName);
+    ApplySolidBody3DBase(entityManager, entity, Character3DObjectDefinition::defaultName);
     // Only a definition that names a shape gets one. The default names none, so a Character3D
     // authored from the object menu arrives with a controller and no body, and adding the
     // Collider3D the author wants is the first shape it ever has rather than a second one
     // overlapping a capsule it was born with.
-    if (value.collider.has_value() && !entityManager.HasComponentUVE<ColliderComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, *value.collider);
+    if (value.collider.has_value() && !entityManager.HasComponent<ColliderComponent>(entity)) {
+        entityManager.AddComponent<ColliderComponent>(entity, *value.collider);
     }
-    if (!entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, value.controller);
+    if (!entityManager.HasComponent<CharacterControllerComponent>(entity)) {
+        entityManager.AddComponent<CharacterControllerComponent>(entity, value.controller);
     }
-    if (!entityManager.HasComponentUVE<PawnComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<PawnComponentUVE>(entity, PawnComponentUVE{});
+    if (!entityManager.HasComponent<PawnComponent>(entity)) {
+        entityManager.AddComponent<PawnComponent>(entity, PawnComponent{});
     }
-    if (!entityManager.HasComponentUVE<ControllerComponentUVE>(entity)) {
-        ControllerComponentUVE possession;
+    if (!entityManager.HasComponent<ControllerComponent>(entity)) {
+        ControllerComponent possession;
         possession.kind = value.controllerKind;
-        entityManager.AddComponentUVE<ControllerComponentUVE>(entity, possession);
+        entityManager.AddComponent<ControllerComponent>(entity, possession);
     }
 }
 
-EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
-                                           ISceneGraphUVE& sceneGraph, const EntityUVE character) {
-    if (character == kInvalidEntityUVE || !entityManager.IsAliveUVE(character)) {
-        return kInvalidEntityUVE;
+Entity ResolveCharacterShapeEntity(IEntityManager& entityManager,
+                                           ISceneGraph& sceneGraph, const Entity character) {
+    if (character == kInvalidEntity || !entityManager.IsAlive(character)) {
+        return kInvalidEntity;
     }
     // A collider authored on the character itself is the body. Checked first, so an author who
     // built the shape directly never has it replaced by something below it.
-    if (entityManager.HasComponentUVE<ColliderComponentUVE>(character)) {
+    if (entityManager.HasComponent<ColliderComponent>(character)) {
         return character;
     }
     // Otherwise the first child that is a shape and nothing else. "Nothing else" is the whole
@@ -1177,52 +1177,52 @@ EntityUVE ResolveCharacterShapeEntityUVE(IEntityManagerUVE& entityManager,
     // body by accident: a body with no Collider3D anywhere was held up by the shape of the model it
     // wears, with nothing in the Inspector to show for it. A shape a character is built from is a
     // Collider3D, which draws nothing.
-    for (const EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, character)) {
-        if (!entityManager.HasComponentUVE<ColliderComponentUVE>(child)) {
+    for (const Entity child : sceneGraph.GetChildren(entityManager, character)) {
+        if (!entityManager.HasComponent<ColliderComponent>(child)) {
             continue;
         }
-        if (entityManager.HasComponentUVE<SolidBodyComponentUVE>(child) ||
-            entityManager.HasComponentUVE<Rigid3DComponentUVE>(child) ||
-            entityManager.HasComponentUVE<CharacterControllerComponentUVE>(child)) {
+        if (entityManager.HasComponent<SolidBodyComponent>(child) ||
+            entityManager.HasComponent<Rigid3DComponent>(child) ||
+            entityManager.HasComponent<CharacterControllerComponent>(child)) {
             continue;
         }
-        if (entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(child) ||
-            entityManager.HasComponentUVE<MeshComponentUVE>(child)) {
+        if (entityManager.HasComponent<PrimitiveMeshComponent>(child) ||
+            entityManager.HasComponent<MeshComponent>(child)) {
             continue;
         }
         return child;
     }
-    return kInvalidEntityUVE;
+    return kInvalidEntity;
 }
 
-Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(IEntityManagerUVE& entityManager,
-                                                           const EntityUVE entity) {
-    Physics::CharacterMotionInputUVE motion{};
-    const EntityUVE driver = FindPawnControllerUVE(entityManager, entity);
-    if (driver != kInvalidEntityUVE) {
-        const PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(entity);
-        if (IsPawnComponentValidUVE(pawn)) {
+Physics::CharacterMotionInput ResolveCharacterMotion(IEntityManager& entityManager,
+                                                           const Entity entity) {
+    Physics::CharacterMotionInput motion{};
+    const Entity driver = FindPawnController(entityManager, entity);
+    if (driver != kInvalidEntity) {
+        const PawnComponent& pawn = entityManager.GetComponent<PawnComponent>(entity);
+        if (IsPawnComponentValid(pawn)) {
             motion.move = pawn.input.move;
             motion.rise = pawn.input.rise;
             motion.jumpPressed = pawn.input.jumpPressed;
-            if (entityManager.GetComponentUVE<ControllerComponentUVE>(driver).kind ==
-                    ControllerKindUVE::Player &&
-                entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
-                motion.move = FaceMoveFromLookUVE(
-                    entityManager.GetComponentUVE<TransformComponentUVE>(entity).localRotation,
+            if (entityManager.GetComponent<ControllerComponent>(driver).kind ==
+                    ControllerKind::Player &&
+                entityManager.HasComponent<TransformComponent>(entity)) {
+                motion.move = FaceMoveFromLook(
+                    entityManager.GetComponent<TransformComponent>(entity).localRotation,
                     pawn.input.move);
             }
         }
     }
     // A script's steering (Add Movement Input, Jump) adds to the player's, in world space.
-    if (entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
-        const CharacterControllerComponentUVE& body = entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity);
+    if (entityManager.HasComponent<CharacterControllerComponent>(entity)) {
+        const CharacterControllerComponent& body = entityManager.GetComponent<CharacterControllerComponent>(entity);
         if (std::isfinite(body.scriptMove.x) && std::isfinite(body.scriptMove.z) &&
             (body.scriptMove.x != 0.0F || body.scriptMove.z != 0.0F)) {
-            Math::Vector3UVE move{motion.move.x + body.scriptMove.x, 0.0F, motion.move.z + body.scriptMove.z};
+            Math::Vector3 move{motion.move.x + body.scriptMove.x, 0.0F, motion.move.z + body.scriptMove.z};
             const float length = std::sqrt(move.x * move.x + move.z * move.z);
             if (length > 1.0F) {
-                move = Math::Vector3UVE{move.x / length, 0.0F, move.z / length};
+                move = Math::Vector3{move.x / length, 0.0F, move.z / length};
             }
             motion.move = move;
         }

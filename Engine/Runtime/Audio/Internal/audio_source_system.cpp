@@ -15,35 +15,35 @@ namespace UVE::Audio {
 
 namespace {
 
-/// The Audio-namespaced counterpart of a Scene-namespaced AudioSourceComponentUVE's attenuation
-/// curve field — mirrors Physics::MaterialOfUVE()'s "component holds plain data, system converts
+/// The Audio-namespaced counterpart of a Scene-namespaced AudioSourceComponent's attenuation
+/// curve field — mirrors Physics::MaterialOf()'s "component holds plain data, system converts
 /// on demand" precedent, keeping engine/scene free of any engine/audio dependency.
-[[nodiscard]] AudioAttenuationModelUVE AttenuationModelOfUVE(Scene::AudioAttenuationCurveUVE curve) noexcept {
+[[nodiscard]] AudioAttenuationModel AttenuationModelOf(Scene::AudioAttenuationCurve curve) noexcept {
     switch (curve) {
-        case Scene::AudioAttenuationCurveUVE::InverseSquare:
-            return AudioAttenuationModelUVE::InverseSquare;
-        case Scene::AudioAttenuationCurveUVE::Linear:
+        case Scene::AudioAttenuationCurve::InverseSquare:
+            return AudioAttenuationModel::InverseSquare;
+        case Scene::AudioAttenuationCurve::Linear:
         default:
-            return AudioAttenuationModelUVE::Linear;
+            return AudioAttenuationModel::Linear;
     }
 }
 
-[[nodiscard]] AudioSourceDescUVE MakeAudioSourceDescUVE(
-    const Scene::EntityUVE entity, const Scene::AudioSourceComponentUVE& audioSource) {
-    AudioSourceDescUVE desc;
+[[nodiscard]] AudioSourceDesc MakeAudioSourceDesc(
+    const Scene::Entity entity, const Scene::AudioSourceComponent& audioSource) {
+    AudioSourceDesc desc;
     // Carried so the occlusion provider can exclude this emitter's own collider: a radio with a
     // collider must not be blocked by its own geometry.
     desc.ownerEntity = entity;
     desc.audioAssetPath = audioSource.audioAssetPath;
     desc.mixerGroup = std::string{
-        Scene::AudioSource3DUVE::ResolveEffectiveMixerGroupUVE(audioSource, kMasterAudioMixerGroupNameUVE)};
+        Scene::AudioSource3D::ResolveEffectiveMixerGroup(audioSource, kMasterAudioMixerGroupName)};
     desc.looping = audioSource.looping;
     desc.volume = audioSource.volume;
     desc.pitch = audioSource.pitch;
     desc.spatial = audioSource.spatial;
     desc.minDistance = audioSource.minDistance;
     desc.maxDistance = audioSource.maxDistance;
-    desc.attenuationModel = AttenuationModelOfUVE(audioSource.attenuationCurve);
+    desc.attenuationModel = AttenuationModelOf(audioSource.attenuationCurve);
     desc.occlusionEnabled = audioSource.occlusionEnabled;
     desc.occlusionGain = audioSource.occlusionGain;
     desc.occlusionLowPassHz = audioSource.occlusionLowPassHz;
@@ -51,8 +51,8 @@ namespace {
     return desc;
 }
 
-[[nodiscard]] bool RequiresVoiceReplacementUVE(const AudioSourceDescUVE& previous,
-                                                const AudioSourceDescUVE& current) noexcept {
+[[nodiscard]] bool RequiresVoiceReplacement(const AudioSourceDesc& previous,
+                                                const AudioSourceDesc& current) noexcept {
     // Everything the mixer bakes into a voice's descriptor at creation goes here. Occlusion settings
     // are in the list for the same reason min/max distance are: they shape how the source is heard,
     // and a runtime edit must reach the device rather than live only in the component.
@@ -67,131 +67,131 @@ namespace {
 
 } // namespace
 
-struct AudioSourceSystemUVE::ImplUVE {
-    struct SourceStateUVE final {
-        VoiceHandleUVE voice;
-        AudioSourceDescUVE descriptor;
+struct AudioSourceSystem::Impl {
+    struct SourceState final {
+        VoiceHandle voice;
+        AudioSourceDesc descriptor;
     };
 
-    std::unordered_map<Scene::EntityUVE, SourceStateUVE> entityToVoice;
+    std::unordered_map<Scene::Entity, SourceState> entityToVoice;
 };
 
-AudioSourceSystemUVE::AudioSourceSystemUVE() : m_impl(std::make_unique<ImplUVE>()) {}
+AudioSourceSystem::AudioSourceSystem() : m_impl(std::make_unique<Impl>()) {}
 
-AudioSourceSystemUVE::~AudioSourceSystemUVE() = default;
+AudioSourceSystem::~AudioSourceSystem() = default;
 
-AudioSourceSystemUVE::EnsuredVoiceUVE AudioSourceSystemUVE::EnsureVoiceUVE(
-    Scene::EntityUVE entity, const Scene::AudioSourceComponentUVE& source, IAudioSystemUVE& audioSystem) {
+AudioSourceSystem::EnsuredVoice AudioSourceSystem::EnsureVoice(
+    Scene::Entity entity, const Scene::AudioSourceComponent& source, IAudioSystem& audioSystem) {
     if (const auto existing = m_impl->entityToVoice.find(entity); existing != m_impl->entityToVoice.end()) {
         return {existing->second.voice, false};
     }
-    if (!Scene::IsAudioSourceComponentValidUVE(source)) {
-        return {kInvalidVoiceHandleUVE, false};
+    if (!Scene::IsAudioSourceComponentValid(source)) {
+        return {kInvalidVoiceHandle, false};
     }
-    const AudioSourceDescUVE descriptor = MakeAudioSourceDescUVE(entity, source);
-    const VoiceHandleUVE voice = audioSystem.CreateSourceUVE(descriptor);
-    if (voice == kInvalidVoiceHandleUVE) {
+    const AudioSourceDesc descriptor = MakeAudioSourceDesc(entity, source);
+    const VoiceHandle voice = audioSystem.CreateSource(descriptor);
+    if (voice == kInvalidVoiceHandle) {
         return {voice, false};
     }
-    m_impl->entityToVoice.emplace(entity, ImplUVE::SourceStateUVE{voice, descriptor});
+    m_impl->entityToVoice.emplace(entity, Impl::SourceState{voice, descriptor});
     return {voice, true};
 }
 
-bool AudioSourceSystemUVE::PlayEntityUVE(Scene::EntityUVE entity, Scene::IEntityManagerUVE& entityManager,
-                                         IAudioSystemUVE& audioSystem) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<Scene::AudioSourceComponentUVE>(entity)) {
+bool AudioSourceSystem::PlayEntity(Scene::Entity entity, Scene::IEntityManager& entityManager,
+                                         IAudioSystem& audioSystem) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<Scene::WorldTransformComponent>(entity) ||
+        !entityManager.HasComponent<Scene::AudioSourceComponent>(entity)) {
         return false;
     }
-    const Scene::AudioSourceComponentUVE& source =
-        entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(entity);
-    const EnsuredVoiceUVE ensured = EnsureVoiceUVE(entity, source, audioSystem);
-    if (ensured.voice == kInvalidVoiceHandleUVE) {
+    const Scene::AudioSourceComponent& source =
+        entityManager.GetComponent<Scene::AudioSourceComponent>(entity);
+    const EnsuredVoice ensured = EnsureVoice(entity, source, audioSystem);
+    if (ensured.voice == kInvalidVoiceHandle) {
         return false;
     }
     if (ensured.created) {
-        const Scene::WorldTransformComponentUVE& worldTransform =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-        audioSystem.SetSourcePositionUVE(ensured.voice, worldTransform.worldPosition);
-        audioSystem.SetSourceVolumeUVE(ensured.voice, source.volume);
-        audioSystem.SetSourcePitchUVE(ensured.voice, source.pitch);
+        const Scene::WorldTransformComponent& worldTransform =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+        audioSystem.SetSourcePosition(ensured.voice, worldTransform.worldPosition);
+        audioSystem.SetSourceVolume(ensured.voice, source.volume);
+        audioSystem.SetSourcePitch(ensured.voice, source.pitch);
     }
-    return audioSystem.PlayUVE(ensured.voice);
+    return audioSystem.Play(ensured.voice);
 }
 
-bool AudioSourceSystemUVE::StopEntityUVE(Scene::EntityUVE entity, IAudioSystemUVE& audioSystem) {
+bool AudioSourceSystem::StopEntity(Scene::Entity entity, IAudioSystem& audioSystem) {
     const auto iterator = m_impl->entityToVoice.find(entity);
     if (iterator == m_impl->entityToVoice.end()) {
         return false;
     }
-    return audioSystem.StopUVE(iterator->second.voice);
+    return audioSystem.Stop(iterator->second.voice);
 }
 
-bool AudioSourceSystemUVE::IsEntityPlayingUVE(Scene::EntityUVE entity,
-                                              const IAudioSystemUVE& audioSystem) const {
+bool AudioSourceSystem::IsEntityPlaying(Scene::Entity entity,
+                                              const IAudioSystem& audioSystem) const {
     const auto iterator = m_impl->entityToVoice.find(entity);
     if (iterator == m_impl->entityToVoice.end()) {
         return false;
     }
-    return audioSystem.GetSourceStateUVE(iterator->second.voice) == VoicePlaybackStateUVE::Playing;
+    return audioSystem.GetSourceState(iterator->second.voice) == VoicePlaybackState::Playing;
 }
 
-void AudioSourceSystemUVE::SyncUVE(Scene::IEntityManagerUVE& entityManager, IAudioSystemUVE& audioSystem) {
-    std::unordered_set<Scene::EntityUVE> seen;
+void AudioSourceSystem::Sync(Scene::IEntityManager& entityManager, IAudioSystem& audioSystem) {
+    std::unordered_set<Scene::Entity> seen;
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::AudioSourceComponentUVE>(
-        [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::AudioSourceComponentUVE& audioSource) {
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::AudioSourceComponent>(
+        [&](Scene::Entity entity, const Scene::WorldTransformComponent& worldTransform,
+            const Scene::AudioSourceComponent& audioSource) {
             seen.insert(entity);
-            if (!Scene::IsAudioSourceComponentValidUVE(audioSource)) {
-                UVE_ERROR("AudioSourceSystemUVE: ignoring invalid authored audio source on entity ({}, {})",
+            if (!Scene::IsAudioSourceComponentValid(audioSource)) {
+                UVE_ERROR("AudioSourceSystem: ignoring invalid authored audio source on entity ({}, {})",
                           entity.index, entity.generation);
                 return;
             }
 
-            const AudioSourceDescUVE desiredDesc = MakeAudioSourceDescUVE(entity, audioSource);
+            const AudioSourceDesc desiredDesc = MakeAudioSourceDesc(entity, audioSource);
             auto iterator = m_impl->entityToVoice.find(entity);
             if (iterator == m_impl->entityToVoice.end()) {
-                const EnsuredVoiceUVE ensured = EnsureVoiceUVE(entity, audioSource, audioSystem);
-                if (ensured.voice == kInvalidVoiceHandleUVE) {
+                const EnsuredVoice ensured = EnsureVoice(entity, audioSource, audioSystem);
+                if (ensured.voice == kInvalidVoiceHandle) {
                     return;
                 }
                 iterator = m_impl->entityToVoice.find(entity);
                 if (audioSource.playOnAwake) {
-                    static_cast<void>(audioSystem.PlayUVE(ensured.voice));
+                    static_cast<void>(audioSystem.Play(ensured.voice));
                 }
             } else {
-                ImplUVE::SourceStateUVE& state = iterator->second;
-                if (RequiresVoiceReplacementUVE(state.descriptor, desiredDesc)) {
-                    const VoicePlaybackStateUVE previousPlaybackState = audioSystem.GetSourceStateUVE(state.voice);
-                    const VoiceHandleUVE replacement = audioSystem.CreateSourceUVE(desiredDesc);
-                    if (replacement != kInvalidVoiceHandleUVE) {
-                        const bool wasPlaying = previousPlaybackState == VoicePlaybackStateUVE::Playing;
-                        if (!wasPlaying || audioSystem.PlayUVE(replacement)) {
-                            const VoiceHandleUVE previousVoice = state.voice;
+                Impl::SourceState& state = iterator->second;
+                if (RequiresVoiceReplacement(state.descriptor, desiredDesc)) {
+                    const VoicePlaybackState previousPlaybackState = audioSystem.GetSourceState(state.voice);
+                    const VoiceHandle replacement = audioSystem.CreateSource(desiredDesc);
+                    if (replacement != kInvalidVoiceHandle) {
+                        const bool wasPlaying = previousPlaybackState == VoicePlaybackState::Playing;
+                        if (!wasPlaying || audioSystem.Play(replacement)) {
+                            const VoiceHandle previousVoice = state.voice;
                             state.voice = replacement;
                             state.descriptor = desiredDesc;
-                            audioSystem.DestroySourceUVE(previousVoice);
+                            audioSystem.DestroySource(previousVoice);
                         } else {
-                            audioSystem.DestroySourceUVE(replacement);
+                            audioSystem.DestroySource(replacement);
                         }
                     }
                 }
             }
 
             if (iterator->second.descriptor.mixerGroup != desiredDesc.mixerGroup &&
-                audioSystem.SetSourceMixerGroupUVE(iterator->second.voice, desiredDesc.mixerGroup)) {
+                audioSystem.SetSourceMixerGroup(iterator->second.voice, desiredDesc.mixerGroup)) {
                 iterator->second.descriptor.mixerGroup = desiredDesc.mixerGroup;
             }
-            audioSystem.SetSourcePositionUVE(iterator->second.voice, worldTransform.worldPosition);
-            audioSystem.SetSourceVolumeUVE(iterator->second.voice, audioSource.volume);
-            audioSystem.SetSourcePitchUVE(iterator->second.voice, audioSource.pitch);
+            audioSystem.SetSourcePosition(iterator->second.voice, worldTransform.worldPosition);
+            audioSystem.SetSourceVolume(iterator->second.voice, audioSource.volume);
+            audioSystem.SetSourcePitch(iterator->second.voice, audioSource.pitch);
         });
 
     for (auto iterator = m_impl->entityToVoice.begin(); iterator != m_impl->entityToVoice.end();) {
         if (!seen.contains(iterator->first)) {
-            audioSystem.DestroySourceUVE(iterator->second.voice);
+            audioSystem.DestroySource(iterator->second.voice);
             iterator = m_impl->entityToVoice.erase(iterator);
         } else {
             ++iterator;

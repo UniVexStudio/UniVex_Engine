@@ -13,17 +13,17 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
+constexpr std::uint32_t kMaximumCount = 1'000'000U;
 
-[[nodiscard]] bool IncrementUVE(std::uint32_t& value, const std::uint32_t amount = 1U) noexcept {
-    if (amount > kMaximumCountUVE || value > kMaximumCountUVE - amount) {
+[[nodiscard]] bool Increment(std::uint32_t& value, const std::uint32_t amount = 1U) noexcept {
+    if (amount > kMaximumCount || value > kMaximumCount - amount) {
         return false;
     }
     value += amount;
     return true;
 }
 
-[[nodiscard]] std::string_view NextTokenUVE(std::string_view& rest) noexcept {
+[[nodiscard]] std::string_view NextToken(std::string_view& rest) noexcept {
     while (!rest.empty() && std::isspace(static_cast<unsigned char>(rest.front())) != 0) {
         rest.remove_prefix(1U);
     }
@@ -33,7 +33,7 @@ constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
     return token;
 }
 
-[[nodiscard]] bool IsFaceTokenUVE(const std::string_view token) noexcept {
+[[nodiscard]] bool IsFaceToken(const std::string_view token) noexcept {
     if (token.empty() || token.find_first_of("/\\") == 0U || token.find_last_of("/") == token.size() - 1U) {
         return false;
     }
@@ -45,7 +45,7 @@ constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
     return true;
 }
 
-[[nodiscard]] std::optional<std::int64_t> ParseSignedIntegerUVE(const std::string_view text) noexcept {
+[[nodiscard]] std::optional<std::int64_t> ParseSignedInteger(const std::string_view text) noexcept {
     if (text.empty()) {
         return std::nullopt;
     }
@@ -59,7 +59,7 @@ constexpr std::uint32_t kMaximumCountUVE = 1'000'000U;
 
 } // namespace
 
-bool ResolveObjIndexUVE(const std::int64_t rawIndex, const std::uint32_t attributeCount,
+bool ResolveObjIndex(const std::int64_t rawIndex, const std::uint32_t attributeCount,
                         std::uint32_t& outZeroBasedIndex) noexcept {
     if (attributeCount == 0U || rawIndex == 0) {
         return false;
@@ -83,9 +83,9 @@ bool ResolveObjIndexUVE(const std::int64_t rawIndex, const std::uint32_t attribu
     return true;
 }
 
-bool ResolveObjFaceVertexUVE(const std::string_view token, const std::uint32_t positionCount,
+bool ResolveObjFaceVertex(const std::string_view token, const std::uint32_t positionCount,
                               const std::uint32_t texcoordCount, const std::uint32_t normalCount,
-                              ObjFaceVertexUVE& outVertex) noexcept {
+                              ObjFaceVertex& outVertex) noexcept {
     if (token.empty()) {
         return false;
     }
@@ -99,12 +99,12 @@ bool ResolveObjFaceVertexUVE(const std::string_view token, const std::uint32_t p
     }
     const std::string_view positionText =
         token.substr(0U, firstSlash == std::string_view::npos ? token.size() : firstSlash);
-    const std::optional<std::int64_t> positionRaw = ParseSignedIntegerUVE(positionText);
+    const std::optional<std::int64_t> positionRaw = ParseSignedInteger(positionText);
     if (!positionRaw) {
         return false;
     }
-    ObjFaceVertexUVE candidate;
-    if (!ResolveObjIndexUVE(*positionRaw, positionCount, candidate.positionIndex)) {
+    ObjFaceVertex candidate;
+    if (!ResolveObjIndex(*positionRaw, positionCount, candidate.positionIndex)) {
         return false;
     }
     if (firstSlash == std::string_view::npos) {
@@ -117,12 +117,12 @@ bool ResolveObjFaceVertexUVE(const std::string_view token, const std::uint32_t p
         return false;
     }
     if (!texcoordText.empty()) {
-        const std::optional<std::int64_t> texcoordRaw = ParseSignedIntegerUVE(texcoordText);
+        const std::optional<std::int64_t> texcoordRaw = ParseSignedInteger(texcoordText);
         if (!texcoordRaw) {
             return false;
         }
         std::uint32_t texcoordIndex = 0U;
-        if (!ResolveObjIndexUVE(*texcoordRaw, texcoordCount, texcoordIndex)) {
+        if (!ResolveObjIndex(*texcoordRaw, texcoordCount, texcoordIndex)) {
             return false;
         }
         candidate.texcoordIndex = texcoordIndex;
@@ -132,12 +132,12 @@ bool ResolveObjFaceVertexUVE(const std::string_view token, const std::uint32_t p
         return true;
     }
     const std::string_view normalText = token.substr(secondSlash + 1U);
-    const std::optional<std::int64_t> normalRaw = ParseSignedIntegerUVE(normalText);
+    const std::optional<std::int64_t> normalRaw = ParseSignedInteger(normalText);
     if (!normalRaw) {
         return false;
     }
     std::uint32_t normalIndex = 0U;
-    if (!ResolveObjIndexUVE(*normalRaw, normalCount, normalIndex)) {
+    if (!ResolveObjIndex(*normalRaw, normalCount, normalIndex)) {
         return false;
     }
     candidate.normalIndex = normalIndex;
@@ -145,8 +145,8 @@ bool ResolveObjFaceVertexUVE(const std::string_view token, const std::uint32_t p
     return true;
 }
 
-std::optional<ObjMetadataUVE> ParseObjMetadataUVE(const std::string_view source) {
-    ObjMetadataUVE metadata;
+std::optional<ObjMetadata> ParseObjMetadata(const std::string_view source) {
+    ObjMetadata metadata;
     std::size_t lineStart = 0U;
     while (lineStart <= source.size()) {
         const std::size_t lineEnd = source.find('\n', lineStart);
@@ -161,11 +161,11 @@ std::optional<ObjMetadataUVE> ParseObjMetadataUVE(const std::string_view source)
         }
         if (!line.empty() && line.front() != '#') {
             std::string_view rest = line;
-            const std::string_view directive = NextTokenUVE(rest);
+            const std::string_view directive = NextToken(rest);
             if (directive == "v" || directive == "vt" || directive == "vn") {
-                const std::string_view first = NextTokenUVE(rest);
-                const std::string_view second = NextTokenUVE(rest);
-                const std::string_view third = NextTokenUVE(rest);
+                const std::string_view first = NextToken(rest);
+                const std::string_view second = NextToken(rest);
+                const std::string_view third = NextToken(rest);
                 if (first.empty() || second.empty() ||
                     ((directive == "v" || directive == "vn") && third.empty())) {
                     return std::nullopt;
@@ -173,37 +173,37 @@ std::optional<ObjMetadataUVE> ParseObjMetadataUVE(const std::string_view source)
                 std::uint32_t& count = directive == "v" ? metadata.positionCount
                                       : directive == "vt" ? metadata.texcoordCount
                                                             : metadata.normalCount;
-                if (!IncrementUVE(count)) {
+                if (!Increment(count)) {
                     return std::nullopt;
                 }
             } else if (directive == "f") {
                 std::uint32_t faceVertices = 0U;
                 while (true) {
-                    const std::string_view token = NextTokenUVE(rest);
+                    const std::string_view token = NextToken(rest);
                     if (token.empty()) {
                         break;
                     }
-                    if (!IsFaceTokenUVE(token) || !IncrementUVE(faceVertices)) {
+                    if (!IsFaceToken(token) || !Increment(faceVertices)) {
                         return std::nullopt;
                     }
                 }
-                if (faceVertices < 3U || !IncrementUVE(metadata.faceCount) ||
-                    !IncrementUVE(metadata.triangleCount, faceVertices - 2U)) {
+                if (faceVertices < 3U || !Increment(metadata.faceCount) ||
+                    !Increment(metadata.triangleCount, faceVertices - 2U)) {
                     return std::nullopt;
                 }
             } else if (directive == "g") {
-                if (NextTokenUVE(rest).empty() || !IncrementUVE(metadata.groupCount)) {
+                if (NextToken(rest).empty() || !Increment(metadata.groupCount)) {
                     return std::nullopt;
                 }
             } else if (directive == "usemtl") {
-                if (NextTokenUVE(rest).empty() || !IncrementUVE(metadata.materialUseCount)) {
+                if (NextToken(rest).empty() || !Increment(metadata.materialUseCount)) {
                     return std::nullopt;
                 }
             } else if (directive == "mtllib") {
-                if (NextTokenUVE(rest).empty() || !IncrementUVE(metadata.materialLibraryCount)) {
+                if (NextToken(rest).empty() || !Increment(metadata.materialLibraryCount)) {
                     return std::nullopt;
                 }
-            } else if (!IncrementUVE(metadata.ignoredStatementCount)) {
+            } else if (!Increment(metadata.ignoredStatementCount)) {
                 return std::nullopt;
             }
         }

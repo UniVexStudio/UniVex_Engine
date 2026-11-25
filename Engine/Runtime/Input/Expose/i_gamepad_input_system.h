@@ -9,12 +9,12 @@
 
 namespace UVE::Input {
 
-inline constexpr std::size_t kMaximumGamepadCountUVE = 4U;
-inline constexpr std::size_t kGamepadAxisCountUVE = 6U;
-inline constexpr std::size_t kGamepadButtonCountUVE = 16U;
+inline constexpr std::size_t kMaximumGamepadCount = 4U;
+inline constexpr std::size_t kGamepadAxisCount = 6U;
+inline constexpr std::size_t kGamepadButtonCount = 16U;
 
 /// Fixed cross-platform axis vocabulary. Backends map their native layout into this value type.
-enum class GamepadAxisUVE : std::uint8_t {
+enum class GamepadAxis : std::uint8_t {
     LeftX = 0,
     LeftY,
     RightX,
@@ -25,7 +25,7 @@ enum class GamepadAxisUVE : std::uint8_t {
 };
 
 /// Fixed cross-platform button vocabulary. Backends map their native layout into this value type.
-enum class GamepadButtonUVE : std::uint8_t {
+enum class GamepadButton : std::uint8_t {
     South = 0,
     East,
     West,
@@ -45,16 +45,16 @@ enum class GamepadButtonUVE : std::uint8_t {
     Count,
 };
 
-struct GamepadStateSnapshotUVE final {
+struct GamepadStateSnapshot final {
     bool connected = false;
-    std::array<float, kGamepadAxisCountUVE> axes{};
-    std::array<bool, kGamepadButtonCountUVE> buttons{};
+    std::array<float, kGamepadAxisCount> axes{};
+    std::array<bool, kGamepadButtonCount> buttons{};
     std::uint64_t frameNumber = 0U;
 
-    [[nodiscard]] bool operator==(const GamepadStateSnapshotUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const GamepadStateSnapshot&) const noexcept = default;
 };
 
-enum class GamepadConnectionTransitionUVE : std::uint8_t {
+enum class GamepadConnectionTransition : std::uint8_t {
     None = 0,
     Connected,
     Disconnected,
@@ -66,10 +66,10 @@ enum class GamepadConnectionTransitionUVE : std::uint8_t {
 /// feeds this helper one previous/current snapshot pair. No such adapter exists in this tree, so
 /// this helper currently has no Engine/ caller - that is a scope boundary, not an unfinished
 /// integration. See the matching mobile helpers in i_mobile_input_system_uve.h.
-[[nodiscard]] inline bool EvaluateGamepadConnectionTransitionUVE(
-    const GamepadStateSnapshotUVE& previous, const GamepadStateSnapshotUVE& current,
-    GamepadConnectionTransitionUVE& outTransition) noexcept {
-    const auto isValid = [](const GamepadStateSnapshotUVE& snapshot) noexcept {
+[[nodiscard]] inline bool EvaluateGamepadConnectionTransition(
+    const GamepadStateSnapshot& previous, const GamepadStateSnapshot& current,
+    GamepadConnectionTransition& outTransition) noexcept {
+    const auto isValid = [](const GamepadStateSnapshot& snapshot) noexcept {
         for (const float axis : snapshot.axes) {
             if (!std::isfinite(axis) || axis < -1.0F || axis > 1.0F) {
                 return false;
@@ -80,42 +80,42 @@ enum class GamepadConnectionTransitionUVE : std::uint8_t {
     if (!isValid(previous) || !isValid(current)) {
         return false;
     }
-    const GamepadConnectionTransitionUVE transition =
+    const GamepadConnectionTransition transition =
         !previous.connected && current.connected
-            ? GamepadConnectionTransitionUVE::Connected
+            ? GamepadConnectionTransition::Connected
             : (previous.connected && !current.connected
-                   ? GamepadConnectionTransitionUVE::Disconnected
-                   : GamepadConnectionTransitionUVE::None);
+                   ? GamepadConnectionTransition::Disconnected
+                   : GamepadConnectionTransition::None);
     outTransition = transition;
     return true;
 }
 
-/// Injectable, bounded gamepad state service. Set*StateUVE() methods update a live copy and are
-/// safe from any thread; UpdateUVE() commits one deterministic current/previous snapshot on the
+/// Injectable, bounded gamepad state service. Set*State() methods update a live copy and are
+/// safe from any thread; Update() commits one deterministic current/previous snapshot on the
 /// main thread. Axis values are clamped to [-1,1] and normalized through the configured symmetric
 /// dead zone. A disconnected pad commits a zeroed snapshot while preserving the frame counter.
-class IGamepadInputSystemUVE {
+class IGamepadInputSystem {
 public:
-    virtual ~IGamepadInputSystemUVE() = default;
+    virtual ~IGamepadInputSystem() = default;
 
-    virtual void SetConnectedUVE(std::size_t gamepadIndex, bool connected) = 0;
-    virtual void SetAxisStateUVE(std::size_t gamepadIndex, GamepadAxisUVE axis, float value) = 0;
-    virtual void SetButtonStateUVE(std::size_t gamepadIndex, GamepadButtonUVE button, bool isDown) = 0;
+    virtual void SetConnected(std::size_t gamepadIndex, bool connected) = 0;
+    virtual void SetAxisState(std::size_t gamepadIndex, GamepadAxis axis, float value) = 0;
+    virtual void SetButtonState(std::size_t gamepadIndex, GamepadButton button, bool isDown) = 0;
 
     /// Commits all live device state exactly once for the frame and increments its copied frame
     /// number. Must be called on the main thread.
-    virtual void UpdateUVE() = 0;
+    virtual void Update() = 0;
 
-    [[nodiscard]] virtual GamepadStateSnapshotUVE GetSnapshotUVE(std::size_t gamepadIndex) const = 0;
-    [[nodiscard]] virtual GamepadStateSnapshotUVE GetPreviousSnapshotUVE(std::size_t gamepadIndex) const = 0;
-    [[nodiscard]] virtual float GetAxisValueUVE(std::size_t gamepadIndex, GamepadAxisUVE axis) const = 0;
-    [[nodiscard]] virtual bool IsButtonDownUVE(std::size_t gamepadIndex, GamepadButtonUVE button) const = 0;
-    [[nodiscard]] virtual bool WasButtonPressedThisFrameUVE(std::size_t gamepadIndex,
-                                                             GamepadButtonUVE button) const = 0;
-    [[nodiscard]] virtual bool WasButtonReleasedThisFrameUVE(std::size_t gamepadIndex,
-                                                              GamepadButtonUVE button) const = 0;
-    [[nodiscard]] virtual float GetDeadZoneUVE() const noexcept = 0;
-    virtual void SetDeadZoneUVE(float deadZone) noexcept { static_cast<void>(deadZone); }
+    [[nodiscard]] virtual GamepadStateSnapshot GetSnapshot(std::size_t gamepadIndex) const = 0;
+    [[nodiscard]] virtual GamepadStateSnapshot GetPreviousSnapshot(std::size_t gamepadIndex) const = 0;
+    [[nodiscard]] virtual float GetAxisValue(std::size_t gamepadIndex, GamepadAxis axis) const = 0;
+    [[nodiscard]] virtual bool IsButtonDown(std::size_t gamepadIndex, GamepadButton button) const = 0;
+    [[nodiscard]] virtual bool WasButtonPressedThisFrame(std::size_t gamepadIndex,
+                                                             GamepadButton button) const = 0;
+    [[nodiscard]] virtual bool WasButtonReleasedThisFrame(std::size_t gamepadIndex,
+                                                              GamepadButton button) const = 0;
+    [[nodiscard]] virtual float GetDeadZone() const noexcept = 0;
+    virtual void SetDeadZone(float deadZone) noexcept { static_cast<void>(deadZone); }
 };
 
 } // namespace UVE::Input

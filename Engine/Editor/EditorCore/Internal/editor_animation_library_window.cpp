@@ -20,8 +20,8 @@ namespace {
 
 // The entry name the file keeps for `clipAbsolute`: the file's own stem, so the list reads like
 // Content. Overlong stems are cut to what the file format holds; names need not be unique.
-[[nodiscard]] std::string LibraryEntryNameUVE(const std::filesystem::path& clipAbsolute,
-                                              const Asset::AnimationClipAssetUVE& probe) {
+[[nodiscard]] std::string LibraryEntryName(const std::filesystem::path& clipAbsolute,
+                                              const Asset::AnimationClipAsset& probe) {
     std::string name = clipAbsolute.stem().generic_string();
     if (name.empty()) {
         name = probe.clipId;
@@ -29,45 +29,45 @@ namespace {
     if (name.empty()) {
         name = "clip";
     }
-    if (name.size() > Asset::kMaximumAnimationLibraryIdentifierBytesUVE) {
-        name.resize(Asset::kMaximumAnimationLibraryIdentifierBytesUVE);
+    if (name.size() > Asset::kMaximumAnimationLibraryIdentifierBytes) {
+        name.resize(Asset::kMaximumAnimationLibraryIdentifierBytes);
     }
     return name;
 }
 
-[[nodiscard]] bool LibraryHasGuidUVE(const Asset::AnimationLibraryAssetUVE& library, Asset::AssetGuidUVE guid) {
-    return std::ranges::any_of(library.entries, [guid](const Asset::AnimationLibraryEntryUVE& entry) {
+[[nodiscard]] bool LibraryHasGuid(const Asset::AnimationLibraryAsset& library, Asset::AssetGuid guid) {
+    return std::ranges::any_of(library.entries, [guid](const Asset::AnimationLibraryEntry& entry) {
         return entry.clip == guid;
     });
 }
 
 } // namespace
 
-bool EditorUVE::OpenAnimationLibraryUVE(const std::filesystem::path& assetPath) {
+bool Editor::OpenAnimationLibrary(const std::filesystem::path& assetPath) {
     // One window: opening another library switches to it, like Retarget. A file that does not
     // read as a library leaves whatever is open alone.
-    Asset::AnimationLibraryAssetUVE library;
-    if (!Asset::LoadAnimationLibraryAssetUVE(assetPath, library)) {
+    Asset::AnimationLibraryAsset library;
+    if (!Asset::LoadAnimationLibraryAsset(assetPath, library)) {
         return false;
     }
-    AnimationLibraryWindowStateUVE window;
+    AnimationLibraryWindowState window;
     window.assetPath = assetPath;
     window.library = std::move(library);
     m_animationLibraryWindow = std::move(window);
     return true;
 }
 
-void EditorUVE::CloseAnimationLibraryWindowUVE() {
+void Editor::CloseAnimationLibraryWindow() {
     m_animationLibraryWindow.reset();
 }
 
-void EditorUVE::RefreshAnimationLibraryWindowUVE(const std::filesystem::path& libraryAbsolute) {
+void Editor::RefreshAnimationLibraryWindow(const std::filesystem::path& libraryAbsolute) {
     if (!m_animationLibraryWindow.has_value() || m_animationLibraryWindow->assetPath != libraryAbsolute) {
         return;
     }
-    AnimationLibraryWindowStateUVE& window = *m_animationLibraryWindow;
-    Asset::AnimationLibraryAssetUVE fresh;
-    if (!Asset::LoadAnimationLibraryAssetUVE(libraryAbsolute, fresh)) {
+    AnimationLibraryWindowState& window = *m_animationLibraryWindow;
+    Asset::AnimationLibraryAsset fresh;
+    if (!Asset::LoadAnimationLibraryAsset(libraryAbsolute, fresh)) {
         window.status = "The file changed outside this window and no longer reads as a library.";
         window.statusIsError = true;
         return;
@@ -77,39 +77,39 @@ void EditorUVE::RefreshAnimationLibraryWindowUVE(const std::filesystem::path& li
     window.statusIsError = false;
 }
 
-std::size_t EditorUVE::AppendClipsToAnimationLibraryUVE(const std::filesystem::path& libraryAbsolute,
+std::size_t Editor::AppendClipsToAnimationLibrary(const std::filesystem::path& libraryAbsolute,
                                                         const std::vector<std::filesystem::path>& clipAbsolutePaths) {
     // The one funnel for drops: only `.uvanim` files that load, and whose GUIDs are not already
     // listed, are appended, and the file is written once. Anything else is skipped, never half
     // added.
-    Asset::AnimationLibraryAssetUVE library;
-    if (!Asset::LoadAnimationLibraryAssetUVE(libraryAbsolute, library)) {
+    Asset::AnimationLibraryAsset library;
+    if (!Asset::LoadAnimationLibraryAsset(libraryAbsolute, library)) {
         return 0U;
     }
-    Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+    Asset::IAssetDatabase& assetDatabase = m_services->GetAssetDatabase();
     std::size_t added = 0U;
     for (const std::filesystem::path& clipAbsolute : clipAbsolutePaths) {
         if (clipAbsolute.extension() != ".uvanim") {
             continue;
         }
-        Asset::AnimationClipAssetUVE probe;
-        if (!Asset::LoadAnimationClipAssetUVE(clipAbsolute, probe)) {
+        Asset::AnimationClipAsset probe;
+        if (!Asset::LoadAnimationClipAsset(clipAbsolute, probe)) {
             continue;
         }
-        const Asset::AssetGuidUVE guid = assetDatabase.RegisterUVE(clipAbsolute);
-        if (guid == Asset::kInvalidAssetGuidUVE || LibraryHasGuidUVE(library, guid)) {
+        const Asset::AssetGuid guid = assetDatabase.Register(clipAbsolute);
+        if (guid == Asset::kInvalidAssetGuid || LibraryHasGuid(library, guid)) {
             continue;
         }
-        if (library.entries.size() >= Asset::kMaximumAnimationLibraryEntriesUVE) {
+        if (library.entries.size() >= Asset::kMaximumAnimationLibraryEntries) {
             break;
         }
-        Asset::AnimationLibraryEntryUVE entry;
+        Asset::AnimationLibraryEntry entry;
         entry.clip = guid;
-        entry.name = LibraryEntryNameUVE(clipAbsolute, probe);
+        entry.name = LibraryEntryName(clipAbsolute, probe);
         library.entries.push_back(std::move(entry));
         ++added;
     }
-    if (added == 0U || !Asset::SaveAnimationLibraryAssetUVE(library, libraryAbsolute)) {
+    if (added == 0U || !Asset::SaveAnimationLibraryAsset(library, libraryAbsolute)) {
         return 0U;
     }
     return added;

@@ -18,76 +18,76 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class Occluder3DUVETest : public ::testing::Test {
+class Occluder3DTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 
-    EntityUVE PlaceOccluderUVE(Occluder3DComponentUVE config, const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Occluder3DComponentUVE>(entity, config);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlaceOccluder(Occluder3DComponent config, const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Occluder3DComponent>(entity, config);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 };
 
-TEST(Occluder3DAabbUVETest, ABoxWhollyBehindTheWallIsHiddenAndAPeekingBoxIsNot) {
-    Occluder3DComponentUVE wall;
-    wall.halfExtents = Math::Vector3UVE{2.0F, 1.0F, 2.0F};
-    const Math::Vector3UVE wallOrigin{};
-    const Math::Vector3UVE viewer{0.0F, 0.0F, 5.0F};
+TEST(Occluder3DAabbTest, ABoxWhollyBehindTheWallIsHiddenAndAPeekingBoxIsNot) {
+    Occluder3DComponent wall;
+    wall.halfExtents = Math::Vector3{2.0F, 1.0F, 2.0F};
+    const Math::Vector3 wallOrigin{};
+    const Math::Vector3 viewer{0.0F, 0.0F, 5.0F};
 
-    const Math::AabbUVE hidden =
-        Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, Math::Vector3UVE{0.5F, 0.5F, 0.5F});
-    EXPECT_TRUE(ResolveOccluder3DFullyHidesAabbUVE(wall, wallOrigin, viewer, hidden));
+    const Math::Aabb hidden =
+        Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, -5.0F}, Math::Vector3{0.5F, 0.5F, 0.5F});
+    EXPECT_TRUE(ResolveOccluder3DFullyHidesAabb(wall, wallOrigin, viewer, hidden));
 
-    const Math::AabbUVE peeking =
-        Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, -5.0F}, Math::Vector3UVE{8.0F, 0.5F, 0.5F});
-    EXPECT_FALSE(ResolveOccluder3DFullyHidesAabbUVE(wall, wallOrigin, viewer, peeking))
+    const Math::Aabb peeking =
+        Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, -5.0F}, Math::Vector3{8.0F, 0.5F, 0.5F});
+    EXPECT_FALSE(ResolveOccluder3DFullyHidesAabb(wall, wallOrigin, viewer, peeking))
         << "a corner that clears the wall must keep the whole drawable";
 
-    const Math::AabbUVE unordered{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{-1.0F, 0.0F, 0.0F}};
-    EXPECT_FALSE(ResolveOccluder3DFullyHidesAabbUVE(wall, wallOrigin, viewer, unordered));
+    const Math::Aabb unordered{Math::Vector3{1.0F, 0.0F, 0.0F}, Math::Vector3{-1.0F, 0.0F, 0.0F}};
+    EXPECT_FALSE(ResolveOccluder3DFullyHidesAabb(wall, wallOrigin, viewer, unordered));
 }
 
-TEST_F(Occluder3DUVETest, CollectSnapshotsSkipsDisabledInvalidAndEditorInternal) {
-    Occluder3DComponentUVE wall;
-    TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{0.0F, 0.0F, -5.0F};
-    PlaceOccluderUVE(wall, transform);
+TEST_F(Occluder3DTest, CollectSnapshotsSkipsDisabledInvalidAndEditorInternal) {
+    Occluder3DComponent wall;
+    TransformComponent transform{};
+    transform.localPosition = Math::Vector3{0.0F, 0.0F, -5.0F};
+    PlaceOccluder(wall, transform);
 
-    Occluder3DComponentUVE disabled = wall;
+    Occluder3DComponent disabled = wall;
     disabled.enabled = false;
-    TransformComponentUVE disabledTransform{};
-    disabledTransform.localPosition = Math::Vector3UVE{10.0F, 0.0F, -5.0F};
-    PlaceOccluderUVE(disabled, disabledTransform);
+    TransformComponent disabledTransform{};
+    disabledTransform.localPosition = Math::Vector3{10.0F, 0.0F, -5.0F};
+    PlaceOccluder(disabled, disabledTransform);
 
-    const EntityUVE hidden = PlaceOccluderUVE(wall);
-    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(hidden);
+    const Entity hidden = PlaceOccluder(wall);
+    entityManager.AddComponent<EditorInternalEntityComponent>(hidden);
 
-    std::vector<Occluder3DSnapshotUVE> snapshots;
-    CollectOccluder3DSnapshotsUVE(entityManager, snapshots);
+    std::vector<Occluder3DSnapshot> snapshots;
+    CollectOccluder3DSnapshots(entityManager, snapshots);
     ASSERT_EQ(snapshots.size(), 1U);
     EXPECT_NEAR(snapshots[0U].worldPosition.z, -5.0F, 1.0e-4F);
 
-    const Math::Vector3UVE viewer{};
-    const Math::Vector3UVE behind{0.0F, 0.0F, -9.0F};
-    EXPECT_TRUE(IsOccluder3DPointDrawHiddenUVE(snapshots, viewer, behind));
-    EXPECT_FALSE(IsOccluder3DPointDrawHiddenUVE(snapshots, viewer, Math::Vector3UVE{8.0F, 0.0F, -9.0F}));
+    const Math::Vector3 viewer{};
+    const Math::Vector3 behind{0.0F, 0.0F, -9.0F};
+    EXPECT_TRUE(IsOccluder3DPointDrawHidden(snapshots, viewer, behind));
+    EXPECT_FALSE(IsOccluder3DPointDrawHidden(snapshots, viewer, Math::Vector3{8.0F, 0.0F, -9.0F}));
 }
 
-TEST_F(Occluder3DUVETest, CollectGizmosWritesTheCenteredBox) {
-    Occluder3DComponentUVE wall;
-    wall.halfExtents = Math::Vector3UVE{2.0F, 3.0F, 4.0F};
-    TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    PlaceOccluderUVE(wall, transform);
+TEST_F(Occluder3DTest, CollectGizmosWritesTheCenteredBox) {
+    Occluder3DComponent wall;
+    wall.halfExtents = Math::Vector3{2.0F, 3.0F, 4.0F};
+    TransformComponent transform{};
+    transform.localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    PlaceOccluder(wall, transform);
 
-    std::vector<Occluder3DGizmoUVE> gizmos;
-    CollectOccluder3DGizmosUVE(entityManager, gizmos);
+    std::vector<Occluder3DGizmo> gizmos;
+    CollectOccluder3DGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 1U);
     EXPECT_NEAR(gizmos[0U].origin.x, 1.0F, 1.0e-4F);
     EXPECT_FLOAT_EQ(gizmos[0U].halfExtents.y, 3.0F);

@@ -9,12 +9,12 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
-class ISceneGraphUVE;
+class IEntityManager;
+class ISceneGraph;
 
 /// What one run of the two-bone IK pass did. Counts rather than a log: a caller that only wants the
 /// work done ignores them, and a test can pin them without reaching into the scene.
-struct TwoBoneIKPassReportUVE final {
+struct TwoBoneIKPassReport final {
     /// Ticking chains the pass looked at. An entity whose resolved process mode says it does not run
     /// is not looked at - and so is not counted - because nothing else about the scene moves for it
     /// either.
@@ -44,8 +44,8 @@ struct TwoBoneIKPassReportUVE final {
 ///
 /// Runs after the drivers that pose skeletons and before the pass that puts attachments on bones, so
 /// a weapon in a hand follows the hand the IK just moved, in the same frame.
-[[nodiscard]] TwoBoneIKPassReportUVE SyncTwoBoneIK3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                                              const ISceneGraphUVE& sceneGraph,
-                                                              std::span<const EntityUVE> posedSkeletons);
+[[nodiscard]] TwoBoneIKPassReport SyncTwoBoneIK3DObjects(IEntityManager& entityManager,
+                                                              const ISceneGraph& sceneGraph,
+                                                              std::span<const Entity> posedSkeletons);
 
 } // namespace UVE::Scene

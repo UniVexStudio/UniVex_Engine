@@ -7,47 +7,47 @@
 namespace UVE::Render::Vulkan::Tests {
 namespace {
 
-TEST(VulkanCompositeAlphaPolicyUVETest, OpaqueIsPreferredWhenTransparencyIsNotRequested) {
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(false, CompositeAlphaAvailabilityUVE{true, true, true, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::Opaque, CompositeAlphaFallbackUVE::None}));
+TEST(VulkanCompositeAlphaPolicyTest, OpaqueIsPreferredWhenTransparencyIsNotRequested) {
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(false, CompositeAlphaAvailability{true, true, true, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::Opaque, CompositeAlphaFallback::None}));
 }
 
-TEST(VulkanCompositeAlphaPolicyUVETest, TransparencyPrefersPremultipliedThenPostmultipliedThenInherit) {
-    const CompositeAlphaAvailabilityUVE allModes{true, true, true, true};
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(true, allModes),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::PreMultiplied,
-                                           CompositeAlphaFallbackUVE::None}));
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(true, CompositeAlphaAvailabilityUVE{true, false, true, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::PostMultiplied,
-                                           CompositeAlphaFallbackUVE::None}));
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(true, CompositeAlphaAvailabilityUVE{true, false, false, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::Inherit, CompositeAlphaFallbackUVE::None}));
+TEST(VulkanCompositeAlphaPolicyTest, TransparencyPrefersPremultipliedThenPostmultipliedThenInherit) {
+    const CompositeAlphaAvailability allModes{true, true, true, true};
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(true, allModes),
+              (CompositeAlphaResolution{CompositeAlphaMode::PreMultiplied,
+                                           CompositeAlphaFallback::None}));
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(true, CompositeAlphaAvailability{true, false, true, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::PostMultiplied,
+                                           CompositeAlphaFallback::None}));
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(true, CompositeAlphaAvailability{true, false, false, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::Inherit, CompositeAlphaFallback::None}));
 }
 
-TEST(VulkanCompositeAlphaPolicyUVETest, MissingTransparentModeFallsBackToOpaqueAndReportsIt) {
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(true, CompositeAlphaAvailabilityUVE{true, false, false, false}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::Opaque,
-                                           CompositeAlphaFallbackUVE::TransparencyUnavailable}));
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(true, CompositeAlphaAvailabilityUVE{}),
-              (CompositeAlphaResolutionUVE{std::nullopt,
-                                           CompositeAlphaFallbackUVE::TransparencyUnavailable}));
+TEST(VulkanCompositeAlphaPolicyTest, MissingTransparentModeFallsBackToOpaqueAndReportsIt) {
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(true, CompositeAlphaAvailability{true, false, false, false}),
+              (CompositeAlphaResolution{CompositeAlphaMode::Opaque,
+                                           CompositeAlphaFallback::TransparencyUnavailable}));
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(true, CompositeAlphaAvailability{}),
+              (CompositeAlphaResolution{std::nullopt,
+                                           CompositeAlphaFallback::TransparencyUnavailable}));
 }
 
-TEST(VulkanCompositeAlphaPolicyUVETest, MissingOpaqueModeUsesTheFirstSupportedFallback) {
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(false, CompositeAlphaAvailabilityUVE{false, true, true, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::PreMultiplied,
-                                           CompositeAlphaFallbackUVE::OpaqueUnavailable}));
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(false, CompositeAlphaAvailabilityUVE{false, false, true, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::PostMultiplied,
-                                           CompositeAlphaFallbackUVE::OpaqueUnavailable}));
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(false, CompositeAlphaAvailabilityUVE{false, false, false, true}),
-              (CompositeAlphaResolutionUVE{CompositeAlphaModeUVE::Inherit,
-                                           CompositeAlphaFallbackUVE::OpaqueUnavailable}));
+TEST(VulkanCompositeAlphaPolicyTest, MissingOpaqueModeUsesTheFirstSupportedFallback) {
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(false, CompositeAlphaAvailability{false, true, true, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::PreMultiplied,
+                                           CompositeAlphaFallback::OpaqueUnavailable}));
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(false, CompositeAlphaAvailability{false, false, true, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::PostMultiplied,
+                                           CompositeAlphaFallback::OpaqueUnavailable}));
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(false, CompositeAlphaAvailability{false, false, false, true}),
+              (CompositeAlphaResolution{CompositeAlphaMode::Inherit,
+                                           CompositeAlphaFallback::OpaqueUnavailable}));
 }
 
-TEST(VulkanCompositeAlphaPolicyUVETest, FailsWhenNoSurfaceAlphaModeIsSupported) {
-    EXPECT_EQ(ResolveVulkanCompositeAlphaUVE(false, CompositeAlphaAvailabilityUVE{}),
-              (CompositeAlphaResolutionUVE{std::nullopt, CompositeAlphaFallbackUVE::NoSupportedMode}));
+TEST(VulkanCompositeAlphaPolicyTest, FailsWhenNoSurfaceAlphaModeIsSupported) {
+    EXPECT_EQ(ResolveVulkanCompositeAlpha(false, CompositeAlphaAvailability{}),
+              (CompositeAlphaResolution{std::nullopt, CompositeAlphaFallback::NoSupportedMode}));
 }
 
 } // namespace

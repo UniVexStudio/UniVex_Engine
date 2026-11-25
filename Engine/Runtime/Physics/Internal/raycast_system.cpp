@@ -16,9 +16,9 @@ namespace {
 /// Whether the caller's exclusion list names this entity. Linear over a list that is bounded by
 /// the component that authored it (8), on a path that is already O(colliders); a hash set would
 /// cost a lookup per collider to save at most seven integer compares.
-[[nodiscard]] bool IsExcludedEntityUVE(const RaycastQueryUVE& query,
-                                       const Scene::EntityUVE entity) noexcept {
-    for (const Scene::EntityUVE excluded : query.excludedEntities) {
+[[nodiscard]] bool IsExcludedEntity(const RaycastQuery& query,
+                                       const Scene::Entity entity) noexcept {
+    for (const Scene::Entity excluded : query.excludedEntities) {
         if (excluded == entity) {
             return true;
         }
@@ -28,62 +28,62 @@ namespace {
 
 } // namespace
 
-std::optional<RaycastHitUVE> RaycastSystemUVE::RaycastUVE(Scene::IEntityManagerUVE& entityManager,
-                                                            const RaycastQueryUVE& query) const {
-    const std::vector<Detail::ColliderWorldAabbUVE> colliders = Detail::BuildColliderWorldAabbCacheUVE(entityManager);
+std::optional<RaycastHit> RaycastSystem::Raycast(Scene::IEntityManager& entityManager,
+                                                            const RaycastQuery& query) const {
+    const std::vector<Detail::ColliderWorldAabb> colliders = Detail::BuildColliderWorldAabbCache(entityManager);
 
-    std::optional<RaycastHitUVE> closestHit;
+    std::optional<RaycastHit> closestHit;
     float effectiveMaxDistance = query.maxDistance;
-    for (const Detail::ColliderWorldAabbUVE& collider : colliders) {
+    for (const Detail::ColliderWorldAabb& collider : colliders) {
         // Exclusions come first and win over every other filter: a caller that named this entity
         // does not want it back no matter which layer it is on or how close it is.
-        if (collider.entity == query.ignoreEntity || IsExcludedEntityUVE(query, collider.entity)) {
+        if (collider.entity == query.ignoreEntity || IsExcludedEntity(query, collider.entity)) {
             continue;
         }
         if ((collider.collisionLayer & query.layerMask) == 0) {
             continue;
         }
-        if (!Math::IntersectRayUVE(query.ray, collider.worldAabb, effectiveMaxDistance).has_value()) {
+        if (!Math::IntersectRay(query.ray, collider.worldAabb, effectiveMaxDistance).has_value()) {
             continue;
         }
 
-        std::optional<Math::RayHitUVE> hit;
+        std::optional<Math::RayHit> hit;
         switch (collider.shapeType) {
-        case Scene::ColliderShapeTypeUVE::Sphere:
-            hit = Detail::IntersectRaySphereUVE(
+        case Scene::ColliderShapeType::Sphere:
+            hit = Detail::IntersectRaySphere(
                 query.ray,
-                Math::SphereUVE{collider.worldAabb.GetCenterUVE(), collider.shapeRadius}, effectiveMaxDistance);
+                Math::Sphere{collider.worldAabb.GetCenter(), collider.shapeRadius}, effectiveMaxDistance);
             break;
-        case Scene::ColliderShapeTypeUVE::Capsule:
-            hit = Detail::IntersectRayCapsuleUVE(
+        case Scene::ColliderShapeType::Capsule:
+            hit = Detail::IntersectRayCapsule(
                 query.ray, collider.shapeSegmentStart, collider.shapeSegmentEnd, collider.shapeRadius,
                 effectiveMaxDistance);
             break;
-        case Scene::ColliderShapeTypeUVE::Box:
-            hit = Detail::IntersectRayOrientedBoxUVE(
+        case Scene::ColliderShapeType::Box:
+            hit = Detail::IntersectRayOrientedBox(
                 query.ray,
-                Math::OrientedBoxUVE{collider.worldAabb.GetCenterUVE(), collider.shapeHalfExtents,
+                Math::OrientedBox{collider.worldAabb.GetCenter(), collider.shapeHalfExtents,
                                      collider.shapeRotation},
                 effectiveMaxDistance);
             break;
         default:
-            hit = Math::IntersectRayUVE(query.ray, collider.worldAabb, effectiveMaxDistance);
+            hit = Math::IntersectRay(query.ray, collider.worldAabb, effectiveMaxDistance);
             break;
         }
         if (!hit.has_value()) {
             continue;
         }
         // Strict `<` (never `<=`): ties are broken deterministically by first-encountered-in-
-        // cache-order — i.e. ForEachUVE's own deterministic chunk-order iteration — matching the
-        // contract documented on IRaycastSystemUVE::RaycastUVE().
+        // cache-order — i.e. ForEach's own deterministic chunk-order iteration — matching the
+        // contract documented on IRaycastSystem::Raycast().
         if (closestHit.has_value() && hit->distance >= closestHit->distance) {
             continue;
         }
 
-        const Scene::ColliderComponentUVE& colliderComponent =
-            entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(collider.entity);
-        closestHit = RaycastHitUVE{collider.entity, query.ray.origin + query.ray.direction * hit->distance,
-                                    hit->normal, hit->distance, MaterialOfUVE(colliderComponent)};
+        const Scene::ColliderComponent& colliderComponent =
+            entityManager.GetComponent<Scene::ColliderComponent>(collider.entity);
+        closestHit = RaycastHit{collider.entity, query.ray.origin + query.ray.direction * hit->distance,
+                                    hit->normal, hit->distance, MaterialOf(colliderComponent)};
         effectiveMaxDistance = hit->distance;
     }
     return closestHit;

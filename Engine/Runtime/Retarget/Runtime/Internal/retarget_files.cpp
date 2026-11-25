@@ -32,9 +32,9 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr const char* kManifestNameUVE = "retarget-backup.json";
+constexpr const char* kManifestName = "retarget-backup.json";
 
-[[nodiscard]] std::string TimestampUVE() {
+[[nodiscard]] std::string Timestamp() {
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm parts{};
 #if defined(_WIN32)
@@ -47,11 +47,11 @@ constexpr const char* kManifestNameUVE = "retarget-backup.json";
     return text;
 }
 
-[[nodiscard]] RetargetSkeletonUVE RigFromClipUVE(const Asset::AnimationClipAssetUVE& clip) {
-    RetargetSkeletonUVE rig;
+[[nodiscard]] RetargetSkeleton RigFromClip(const Asset::AnimationClipAsset& clip) {
+    RetargetSkeleton rig;
     rig.bones.reserve(clip.rest.size());
-    for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
-        RetargetBoneUVE bone;
+    for (const Asset::AnimationAssetRestBone& rest : clip.rest) {
+        RetargetBone bone;
         bone.name = rest.bone;
         bone.parent = rest.parent;
         bone.position = rest.position;
@@ -62,17 +62,17 @@ constexpr const char* kManifestNameUVE = "retarget-backup.json";
     return rig;
 }
 
-[[nodiscard]] std::vector<Asset::AnimationAssetRestBoneUVE> RestFromSkeletonUVE(const RetargetSkeletonUVE& skeleton) {
-    std::vector<Asset::AnimationAssetRestBoneUVE> rest;
+[[nodiscard]] std::vector<Asset::AnimationAssetRestBone> RestFromSkeleton(const RetargetSkeleton& skeleton) {
+    std::vector<Asset::AnimationAssetRestBone> rest;
     rest.reserve(skeleton.bones.size());
-    for (const RetargetBoneUVE& bone : skeleton.bones) {
-        rest.push_back(Asset::AnimationAssetRestBoneUVE{bone.name, bone.parent, bone.position, bone.rotation,
-                                                        Math::Vector3UVE{1.0F, 1.0F, 1.0F}});
+    for (const RetargetBone& bone : skeleton.bones) {
+        rest.push_back(Asset::AnimationAssetRestBone{bone.name, bone.parent, bone.position, bone.rotation,
+                                                        Math::Vector3{1.0F, 1.0F, 1.0F}});
     }
     return rest;
 }
 
-[[nodiscard]] std::string RestRigCacheKeyUVE(const std::vector<Asset::AnimationAssetRestBoneUVE>& rest) {
+[[nodiscard]] std::string RestRigCacheKey(const std::vector<Asset::AnimationAssetRestBone>& rest) {
     // Bit-exact key over every rest bone so identical rigs (50 embedded takes or 1,000 Mixamo clips)
     // reuse one Rig Brain match + conformed skeleton without any numerical drift.
     std::string key;
@@ -88,7 +88,7 @@ constexpr const char* kManifestNameUVE = "retarget-backup.json";
     };
     const std::uint32_t count = static_cast<std::uint32_t>(rest.size());
     appendBytes(&count, sizeof(count));
-    for (const Asset::AnimationAssetRestBoneUVE& bone : rest) {
+    for (const Asset::AnimationAssetRestBone& bone : rest) {
         const std::uint32_t nameSize = static_cast<std::uint32_t>(bone.bone.size());
         appendBytes(&nameSize, sizeof(nameSize));
         key.append(bone.bone);
@@ -105,11 +105,11 @@ constexpr const char* kManifestNameUVE = "retarget-backup.json";
     return key;
 }
 
-[[nodiscard]] fs::path TemporaryPathUVE(const fs::path& file) {
+[[nodiscard]] fs::path TemporaryPath(const fs::path& file) {
     return fs::path{file.string() + ".retarget-tmp"};
 }
 
-[[nodiscard]] bool MoveIntoPlaceUVE(const fs::path& temporary, const fs::path& file) {
+[[nodiscard]] bool MoveIntoPlace(const fs::path& temporary, const fs::path& file) {
     std::error_code error;
     fs::rename(temporary, file, error);
     if (error) {
@@ -122,54 +122,54 @@ constexpr const char* kManifestNameUVE = "retarget-backup.json";
     return true;
 }
 
-[[nodiscard]] RetargetAnimationCheckUVE CheckSummaryUVE(const Asset::AnimationClipSummaryUVE& summary) {
+[[nodiscard]] RetargetAnimationCheck CheckSummary(const Asset::AnimationClipSummary& summary) {
     if (!summary.valid) {
-        return {RetargetAnimationStateUVE::Unreadable, "cannot read it"};
+        return {RetargetAnimationState::Unreadable, "cannot read it"};
     }
     if (summary.conformed) {
-        return {RetargetAnimationStateUVE::AlreadyConformed, "already conformed"};
+        return {RetargetAnimationState::AlreadyConformed, "already conformed"};
     }
     if (!summary.hasRest) {
-        return {RetargetAnimationStateUVE::NoSkeleton, "it has no skeleton, import the FBX again"};
+        return {RetargetAnimationState::NoSkeleton, "it has no skeleton, import the FBX again"};
     }
     if (!summary.hasBones) {
-        return {RetargetAnimationStateUVE::NoBones, "it moves no bones"};
+        return {RetargetAnimationState::NoBones, "it moves no bones"};
     }
-    return {RetargetAnimationStateUVE::Ready, {}};
+    return {RetargetAnimationState::Ready, {}};
 }
 
-[[nodiscard]] RetargetAnimationCheckUVE CheckClipUVE(const Asset::AnimationClipAssetUVE& clip) {
+[[nodiscard]] RetargetAnimationCheck CheckClip(const Asset::AnimationClipAsset& clip) {
     if (clip.conformed) {
-        return {RetargetAnimationStateUVE::AlreadyConformed, "already conformed"};
+        return {RetargetAnimationState::AlreadyConformed, "already conformed"};
     }
     if (clip.rest.empty()) {
-        return {RetargetAnimationStateUVE::NoSkeleton, "it has no skeleton, import the FBX again"};
+        return {RetargetAnimationState::NoSkeleton, "it has no skeleton, import the FBX again"};
     }
-    if (!clip.IsSkeletalUVE()) {
-        return {RetargetAnimationStateUVE::NoBones, "it moves no bones"};
+    if (!clip.IsSkeletal()) {
+        return {RetargetAnimationState::NoBones, "it moves no bones"};
     }
-    return {RetargetAnimationStateUVE::Ready, {}};
+    return {RetargetAnimationState::Ready, {}};
 }
 
 /// Lazily creates the run's backup directory and backs up each unique real on-disk file once before
-/// it is modified. Writing the manifest before RestoreRetargetBackupUVE guarantees atomic rollback
+/// it is modified. Writing the manifest before RestoreRetargetBackup guarantees atomic rollback
 /// while streaming 1,000+ loose clips in O(1) memory.
-class IncrementalBackupUVE final {
+class IncrementalBackup final {
 public:
-    explicit IncrementalBackupUVE(const fs::path& backupRoot) : m_backupRoot(backupRoot) {}
+    explicit IncrementalBackup(const fs::path& backupRoot) : m_backupRoot(backupRoot) {}
 
-    [[nodiscard]] bool BackupOnceUVE(const fs::path& realFile, std::string& error) {
+    [[nodiscard]] bool BackupOnce(const fs::path& realFile, std::string& error) {
         const fs::path normalized = realFile.lexically_normal();
         const std::string key = normalized.generic_string();
         if (!m_seen.insert(key).second) {
             return true;
         }
-        if (!EnsureDirUVE(error)) {
+        if (!EnsureDir(error)) {
             return false;
         }
         std::error_code existsError;
         if (!fs::exists(normalized, existsError)) {
-            m_entries.push_back(EntryUVE{true, {}, normalized});
+            m_entries.push_back(Entry{true, {}, normalized});
             return true;
         }
         const std::string name = std::to_string(m_entries.size()) + "_" + normalized.filename().string();
@@ -179,26 +179,26 @@ public:
             error = "cannot back up " + normalized.string() + ": " + copyError.message();
             return false;
         }
-        m_entries.push_back(EntryUVE{false, name, normalized});
+        m_entries.push_back(Entry{false, name, normalized});
         return true;
     }
 
-    [[nodiscard]] bool WriteManifestUVE(std::string& error) {
+    [[nodiscard]] bool WriteManifest(std::string& error) {
         if (m_entries.empty()) {
             return true;
         }
-        if (!EnsureDirUVE(error)) {
+        if (!EnsureDir(error)) {
             return false;
         }
         nlohmann::json manifest{{"version", 1}, {"files", nlohmann::json::array()}};
-        for (const EntryUVE& entry : m_entries) {
+        for (const Entry& entry : m_entries) {
             if (entry.created) {
                 manifest["files"].push_back({{"created", true}, {"original", entry.original.generic_string()}});
             } else {
                 manifest["files"].push_back({{"backup", entry.backupName}, {"original", entry.original.generic_string()}});
             }
         }
-        std::ofstream out(m_dir / kManifestNameUVE, std::ios::binary | std::ios::trunc);
+        std::ofstream out(m_dir / kManifestName, std::ios::binary | std::ios::trunc);
         out << manifest.dump(1, '\t') << '\n';
         if (!out) {
             error = "cannot write the backup manifest in " + m_dir.string();
@@ -207,33 +207,33 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool RollbackUVE(std::string& restoreError) {
+    [[nodiscard]] bool Rollback(std::string& restoreError) {
         if (m_entries.empty() || m_dir.empty()) {
             return true;
         }
         std::string manifestError;
-        if (!WriteManifestUVE(manifestError)) {
+        if (!WriteManifest(manifestError)) {
             restoreError = manifestError;
             return false;
         }
-        return RestoreRetargetBackupUVE(m_dir, &restoreError);
+        return RestoreRetargetBackup(m_dir, &restoreError);
     }
 
-    [[nodiscard]] bool HasBackupUVE() const noexcept { return !m_entries.empty() && !m_dir.empty(); }
-    [[nodiscard]] const fs::path& DirUVE() const noexcept { return m_dir; }
+    [[nodiscard]] bool HasBackup() const noexcept { return !m_entries.empty() && !m_dir.empty(); }
+    [[nodiscard]] const fs::path& Dir() const noexcept { return m_dir; }
 
 private:
-    struct EntryUVE final {
+    struct Entry final {
         bool created = false;
         std::string backupName;
         fs::path original;
     };
 
-    [[nodiscard]] bool EnsureDirUVE(std::string& error) {
+    [[nodiscard]] bool EnsureDir(std::string& error) {
         if (!m_dir.empty()) {
             return true;
         }
-        const std::string stamp = TimestampUVE();
+        const std::string stamp = Timestamp();
         fs::path candidate = m_backupRoot / stamp;
         for (int suffix = 1; fs::exists(candidate); ++suffix) {
             candidate = m_backupRoot / (stamp + "-" + std::to_string(suffix));
@@ -251,18 +251,18 @@ private:
     fs::path m_backupRoot;
     fs::path m_dir;
     std::unordered_set<std::string> m_seen;
-    std::vector<EntryUVE> m_entries;
+    std::vector<Entry> m_entries;
 };
 
 } // namespace
 
-RetargetAnimationCheckUVE CheckAnimationForRetargetUVE(const fs::path& file) {
-    return CheckSummaryUVE(Asset::InspectAnimationClipFileSummaryUVE(file));
+RetargetAnimationCheck CheckAnimationForRetarget(const fs::path& file) {
+    return CheckSummary(Asset::InspectAnimationClipFileSummary(file));
 }
 
-RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, const HumanoidReferenceUVE& reference,
-                                        const RetargetProgressUVE& progress) {
-    RetargetFilesResultUVE result;
+RetargetFilesResult RetargetFiles(const RetargetFilesRequest& request, const HumanoidReference& reference,
+                                        const RetargetProgress& progress) {
+    RetargetFilesResult result;
     const bool hasModel = !request.model.empty();
     // The mesh nodes of the character published beside it (`<model>.part-<node>.uvmodel`): each is a mesh of
     // its own that binds to the same skeleton, so it is conformed with the model or the scene would draw
@@ -294,45 +294,45 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     }
 
     // Names first; the Rig Brain for the bones they cannot place.
-    const RigBrainUVE* const brain = !request.useBrain ? nullptr : (request.brain != nullptr ? request.brain : &GetDefaultRigBrainUVE());
-    const auto matchOf = [&](const RetargetSkeletonUVE& rig) {
-        return brain != nullptr ? MatchHumanoidWithBrainUVE(rig, reference, *brain) : MatchHumanoidUVE(rig, reference);
+    const RigBrain* const brain = !request.useBrain ? nullptr : (request.brain != nullptr ? request.brain : &GetDefaultRigBrain());
+    const auto matchOf = [&](const RetargetSkeleton& rig) {
+        return brain != nullptr ? MatchHumanoidWithBrain(rig, reference, *brain) : MatchHumanoid(rig, reference);
     };
 
     // ---- 1. Validate & conform the character + parts in memory first (fail fast, zero disk changes) ---
-    Asset::MeshAssetUVE conformedModelMesh;
+    Asset::MeshAsset conformedModelMesh;
     std::string modelNote;
     fs::path skeletonFile;
-    Asset::SkeletonAssetUVE conformedSkeletonAsset;
-    std::vector<Asset::MeshAssetUVE> conformedPartMeshes;
+    Asset::SkeletonAsset conformedSkeletonAsset;
+    std::vector<Asset::MeshAsset> conformedPartMeshes;
     if (hasModel) {
         report(0U, request.model.filename().string());
         std::error_code exists;
-        if (!fs::is_regular_file(request.model, exists) || !Asset::LoadMeshAssetUVE(request.model, conformedModelMesh)) {
+        if (!fs::is_regular_file(request.model, exists) || !Asset::LoadMeshAsset(request.model, conformedModelMesh)) {
             result.error = "cannot read the character " + request.model.string();
             return result;
         }
         std::string error;
-        const std::optional<RetargetSkeletonUVE> rig = RigFromMeshUVE(conformedModelMesh, &error);
+        const std::optional<RetargetSkeleton> rig = RigFromMesh(conformedModelMesh, &error);
         if (!rig.has_value()) {
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
-        const HumanoidMatchUVE match = matchOf(*rig);
+        const HumanoidMatch match = matchOf(*rig);
         // An all-but-complete character is renamed, not rebuilt: body bones are added only when it
         // lacks many of them.
-        ConformOptionsUVE options;
+        ConformOptions options;
         options.addBodyBonesOnlyWhenLacking = true;
-        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error, options);
-        const Asset::MeshAssetUVE before = conformedModelMesh;
+        const std::optional<ConformedRig> conformed = ConformSkeleton(*rig, match, reference, &error, options);
+        const Asset::MeshAsset before = conformedModelMesh;
         // The character keeps its own rest pose: no vertex moves (the A-pose is where clips take it).
         if (!conformed.has_value() ||
-            !ConformMeshUVE(conformedModelMesh, *conformed, &error, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
+            !ConformMesh(conformedModelMesh, *conformed, &error, SkinBlend::DualQuaternion, ConformMeshMode::KeepRestPose)) {
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
         result.heightScale = conformed->heightScale;
-        result.meshDistortion = MeasureMeshDistortionUVE(before, conformedModelMesh);
+        result.meshDistortion = MeasureMeshDistortion(before, conformedModelMesh);
         char distortion[64];
         std::snprintf(distortion, sizeof(distortion), "; %.1f%% of edges changed by more than 10%%",
                       static_cast<double>(result.meshDistortion.fractionOverTenPercent) * 100.0);
@@ -348,17 +348,17 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         skeletonFile.replace_extension(".uvskel");
         conformedSkeletonAsset.skeletonId = request.model.stem().string();
         conformedSkeletonAsset.joints.reserve(conformed->skeleton.bones.size());
-        for (const RetargetBoneUVE& bone : conformed->skeleton.bones) {
-            conformedSkeletonAsset.joints.push_back(Asset::SkeletonJointUVE{
-                bone.name, bone.parent, bone.position, bone.rotation, Math::Vector3UVE{bone.scale, bone.scale, bone.scale}});
+        for (const RetargetBone& bone : conformed->skeleton.bones) {
+            conformedSkeletonAsset.joints.push_back(Asset::SkeletonJoint{
+                bone.name, bone.parent, bone.position, bone.rotation, Math::Vector3{bone.scale, bone.scale, bone.scale}});
         }
 
         conformedPartMeshes.reserve(partFiles.size());
         for (const fs::path& partFile : partFiles) {
-            Asset::MeshAssetUVE partMesh;
+            Asset::MeshAsset partMesh;
             std::string partError;
-            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) ||
-                !ConformMeshUVE(partMesh, *conformed, &partError, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
+            if (!Asset::LoadMeshAsset(partFile, partMesh) ||
+                !ConformMesh(partMesh, *conformed, &partError, SkinBlend::DualQuaternion, ConformMeshMode::KeepRestPose)) {
                 result.error = partFile.filename().string() + ": " + (partError.empty() ? "cannot read it" : partError);
                 return result;
             }
@@ -374,42 +374,42 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     }
 
     // Partition animations into embedded .uvmodel#take groups (1 read + 1 write per model) and loose .uvanim files.
-    struct EmbeddedReqUVE final {
+    struct EmbeddedReq final {
         std::size_t requestIndex = 0U;
         std::string take;
     };
-    std::map<fs::path, std::vector<EmbeddedReqUVE>> embeddedGroups;
+    std::map<fs::path, std::vector<EmbeddedReq>> embeddedGroups;
     std::vector<std::size_t> looseIndices;
     looseIndices.reserve(request.animations.size());
     for (std::size_t i = 0U; i < request.animations.size(); ++i) {
         fs::path backingModel;
         std::string take;
-        if (Asset::SplitEmbeddedClipPathUVE(request.animations[i], backingModel, take)) {
-            embeddedGroups[backingModel.lexically_normal()].push_back(EmbeddedReqUVE{i, std::move(take)});
+        if (Asset::SplitEmbeddedClipPath(request.animations[i], backingModel, take)) {
+            embeddedGroups[backingModel.lexically_normal()].push_back(EmbeddedReq{i, std::move(take)});
         } else {
             looseIndices.push_back(i);
         }
     }
 
     // Cache Rig Brain match + conformed rig by exact rest-bone layout: 1x solve across 1,000 clips of one rig.
-    struct CachedClipRigUVE final {
-        RetargetSkeletonUVE rig;
-        std::optional<ConformedRigUVE> conformed;
+    struct CachedClipRig final {
+        RetargetSkeleton rig;
+        std::optional<ConformedRig> conformed;
         std::string error;
     };
-    std::unordered_map<std::string, CachedClipRigUVE> clipRigCache;
-    const auto conformClip = [&](const Asset::AnimationClipAssetUVE& clip, std::string& outError)
-        -> std::optional<Asset::AnimationClipAssetUVE> {
-        const std::string rigKey = RestRigCacheKeyUVE(clip.rest);
+    std::unordered_map<std::string, CachedClipRig> clipRigCache;
+    const auto conformClip = [&](const Asset::AnimationClipAsset& clip, std::string& outError)
+        -> std::optional<Asset::AnimationClipAsset> {
+        const std::string rigKey = RestRigCacheKey(clip.rest);
         auto it = clipRigCache.find(rigKey);
         if (it == clipRigCache.end()) {
-            CachedClipRigUVE cached;
-            cached.rig = RigFromClipUVE(clip);
-            const HumanoidMatchUVE match = matchOf(cached.rig);
-            cached.conformed = ConformSkeletonUVE(cached.rig, match, reference, &cached.error);
+            CachedClipRig cached;
+            cached.rig = RigFromClip(clip);
+            const HumanoidMatch match = matchOf(cached.rig);
+            cached.conformed = ConformSkeleton(cached.rig, match, reference, &cached.error);
             it = clipRigCache.emplace(rigKey, std::move(cached)).first;
         }
-        const CachedClipRigUVE& cached = it->second;
+        const CachedClipRig& cached = it->second;
         if (!cached.conformed.has_value()) {
             outError = cached.error;
             return std::nullopt;
@@ -417,20 +417,20 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         if (!hasModel && result.heightScale == 1.0F) {
             result.heightScale = cached.conformed->heightScale;
         }
-        std::optional<Asset::AnimationClipAssetUVE> converted =
-            ConformClipUVE(clip, cached.rig, *cached.conformed, reference, &outError);
+        std::optional<Asset::AnimationClipAsset> converted =
+            ConformClip(clip, cached.rig, *cached.conformed, reference, &outError);
         if (converted.has_value()) {
-            converted->rest = RestFromSkeletonUVE(cached.conformed->skeleton);
+            converted->rest = RestFromSkeleton(cached.conformed->skeleton);
             converted->conformed = true;
         }
         return converted;
     };
 
     // ---- 2. Stream backups & atomic writes (all-or-nothing rollback on any error) ---------------------
-    IncrementalBackupUVE backup(request.backupRoot);
-    const auto failWithRollback = [&](const std::string& message) -> RetargetFilesResultUVE {
+    IncrementalBackup backup(request.backupRoot);
+    const auto failWithRollback = [&](const std::string& message) -> RetargetFilesResult {
         std::string restoreError;
-        const bool restored = backup.RollbackUVE(restoreError);
+        const bool restored = backup.Rollback(restoreError);
         result.error = message + (restored ? "; every file was put back" : "; putting the files back failed: " + restoreError);
         result.files.clear();
         result.backupDir.clear();
@@ -440,9 +440,9 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     // Write the character model (merging any embedded takes belonging to it in ONE atomic write).
     if (hasModel) {
         const fs::path normalizedModel = request.model.lexically_normal();
-        std::vector<Asset::AnimationClipAssetUVE> modelTakes;
+        std::vector<Asset::AnimationClipAsset> modelTakes;
         std::uint64_t modelTakeStamp = 0U;
-        const bool hasExistingTakes = Asset::LoadAllModelAnimationsUVE(request.model, modelTakes, &modelTakeStamp);
+        const bool hasExistingTakes = Asset::LoadAllModelAnimations(request.model, modelTakes, &modelTakeStamp);
 
         // If any requested embedded takes live inside request.model, conform them in memory right now.
         if (const auto groupIt = embeddedGroups.find(normalizedModel); groupIt != embeddedGroups.end()) {
@@ -451,22 +451,22 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             for (std::size_t ti = 0U; ti < modelTakes.size(); ++ti) {
                 takeIndex.emplace(modelTakes[ti].clipId, ti);
             }
-            for (const EmbeddedReqUVE& req : groupIt->second) {
-                report(++progressDone, Asset::AssetDisplayNameUVE(request.animations[req.requestIndex]));
-                RetargetFileReportUVE& slot = result.files[animReportBase + req.requestIndex];
+            for (const EmbeddedReq& req : groupIt->second) {
+                report(++progressDone, Asset::AssetDisplayName(request.animations[req.requestIndex]));
+                RetargetFileReport& slot = result.files[animReportBase + req.requestIndex];
                 const auto found = hasExistingTakes ? takeIndex.find(req.take) : takeIndex.end();
                 if (found == takeIndex.end()) {
                     slot.note = "left alone: cannot read it";
                     continue;
                 }
-                Asset::AnimationClipAssetUVE& existing = modelTakes[found->second];
-                const RetargetAnimationCheckUVE check = CheckClipUVE(existing);
-                if (check.state != RetargetAnimationStateUVE::Ready) {
+                Asset::AnimationClipAsset& existing = modelTakes[found->second];
+                const RetargetAnimationCheck check = CheckClip(existing);
+                if (check.state != RetargetAnimationState::Ready) {
                     slot.note = "left alone: " + check.note;
                     continue;
                 }
                 std::string clipError;
-                std::optional<Asset::AnimationClipAssetUVE> converted = conformClip(existing, clipError);
+                std::optional<Asset::AnimationClipAsset> converted = conformClip(existing, clipError);
                 if (!converted.has_value()) {
                     slot.note = "left alone: " + clipError;
                     continue;
@@ -480,77 +480,77 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         }
 
         std::string backupError;
-        if (!backup.BackupOnceUVE(request.model, backupError)) {
+        if (!backup.BackupOnce(request.model, backupError)) {
             return failWithRollback(backupError);
         }
-        const fs::path temporary = TemporaryPathUVE(request.model);
-        bool written = Asset::SaveMeshAssetUVE(conformedModelMesh, temporary);
+        const fs::path temporary = TemporaryPath(request.model);
+        bool written = Asset::SaveMeshAsset(conformedModelMesh, temporary);
         if (written && !modelTakes.empty()) {
-            written = Asset::SaveModelAnimationsUVE(temporary, modelTakes, modelTakeStamp);
+            written = Asset::SaveModelAnimations(temporary, modelTakes, modelTakeStamp);
         }
-        if (!written || !MoveIntoPlaceUVE(temporary, request.model)) {
+        if (!written || !MoveIntoPlace(temporary, request.model)) {
             std::error_code rmErr;
             fs::remove(temporary, rmErr);
             return failWithRollback("cannot write " + request.model.string());
         }
-        result.files[0] = RetargetFileReportUVE{request.model, true, modelNote};
+        result.files[0] = RetargetFileReport{request.model, true, modelNote};
         ++progressDone;
 
         // Write sibling .uvskel (A-pose rest skeleton).
-        if (!backup.BackupOnceUVE(skeletonFile, backupError)) {
+        if (!backup.BackupOnce(skeletonFile, backupError)) {
             return failWithRollback(backupError);
         }
-        const fs::path skelTemp = TemporaryPathUVE(skeletonFile);
-        if (!Asset::SaveSkeletonAssetUVE(conformedSkeletonAsset, skelTemp) || !MoveIntoPlaceUVE(skelTemp, skeletonFile)) {
+        const fs::path skelTemp = TemporaryPath(skeletonFile);
+        if (!Asset::SaveSkeletonAsset(conformedSkeletonAsset, skelTemp) || !MoveIntoPlace(skelTemp, skeletonFile)) {
             std::error_code rmErr;
             fs::remove(skelTemp, rmErr);
             return failWithRollback("cannot write " + skeletonFile.string());
         }
-        result.files[1] = RetargetFileReportUVE{skeletonFile, true, "the character's skeleton: the engine's bones, resting in the A-pose"};
+        result.files[1] = RetargetFileReport{skeletonFile, true, "the character's skeleton: the engine's bones, resting in the A-pose"};
 
         // Write mesh parts published beside the character.
         for (std::size_t p = 0U; p < partFiles.size(); ++p) {
             report(++progressDone, partFiles[p].filename().string());
-            if (!backup.BackupOnceUVE(partFiles[p], backupError)) {
+            if (!backup.BackupOnce(partFiles[p], backupError)) {
                 return failWithRollback(backupError);
             }
-            const fs::path partTemp = TemporaryPathUVE(partFiles[p]);
-            if (!Asset::SaveMeshAssetUVE(conformedPartMeshes[p], partTemp) || !MoveIntoPlaceUVE(partTemp, partFiles[p])) {
+            const fs::path partTemp = TemporaryPath(partFiles[p]);
+            if (!Asset::SaveMeshAsset(conformedPartMeshes[p], partTemp) || !MoveIntoPlace(partTemp, partFiles[p])) {
                 std::error_code rmErr;
                 fs::remove(partTemp, rmErr);
                 return failWithRollback("cannot write " + partFiles[p].string());
             }
-            result.files[2U + p] = RetargetFileReportUVE{partFiles[p], true, "conformed with the character"};
+            result.files[2U + p] = RetargetFileReport{partFiles[p], true, "conformed with the character"};
         }
     }
 
     // Batch-conform embedded takes inside any other .uvmodel (e.g. already-conformed model or folder of .uvmodels).
     for (const auto& [backingModel, reqs] : embeddedGroups) {
-        std::vector<Asset::AnimationClipAssetUVE> takes;
+        std::vector<Asset::AnimationClipAsset> takes;
         std::uint64_t stamp = 0U;
-        const bool loaded = Asset::LoadAllModelAnimationsUVE(backingModel, takes, &stamp);
+        const bool loaded = Asset::LoadAllModelAnimations(backingModel, takes, &stamp);
         std::unordered_map<std::string, std::size_t> takeIndex;
         takeIndex.reserve(takes.size());
         for (std::size_t ti = 0U; ti < takes.size(); ++ti) {
             takeIndex.emplace(takes[ti].clipId, ti);
         }
         bool anyTakeChanged = false;
-        for (const EmbeddedReqUVE& req : reqs) {
-            report(++progressDone, Asset::AssetDisplayNameUVE(request.animations[req.requestIndex]));
-            RetargetFileReportUVE& slot = result.files[animReportBase + req.requestIndex];
+        for (const EmbeddedReq& req : reqs) {
+            report(++progressDone, Asset::AssetDisplayName(request.animations[req.requestIndex]));
+            RetargetFileReport& slot = result.files[animReportBase + req.requestIndex];
             const auto found = loaded ? takeIndex.find(req.take) : takeIndex.end();
             if (found == takeIndex.end()) {
                 slot.note = "left alone: cannot read it";
                 continue;
             }
-            Asset::AnimationClipAssetUVE& existing = takes[found->second];
-            const RetargetAnimationCheckUVE check = CheckClipUVE(existing);
-            if (check.state != RetargetAnimationStateUVE::Ready) {
+            Asset::AnimationClipAsset& existing = takes[found->second];
+            const RetargetAnimationCheck check = CheckClip(existing);
+            if (check.state != RetargetAnimationState::Ready) {
                 slot.note = "left alone: " + check.note;
                 continue;
             }
             std::string clipError;
-            std::optional<Asset::AnimationClipAssetUVE> converted = conformClip(existing, clipError);
+            std::optional<Asset::AnimationClipAsset> converted = conformClip(existing, clipError);
             if (!converted.has_value()) {
                 slot.note = "left alone: " + clipError;
                 continue;
@@ -563,14 +563,14 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         }
         if (anyTakeChanged) {
             std::string backupError;
-            if (!backup.BackupOnceUVE(backingModel, backupError)) {
+            if (!backup.BackupOnce(backingModel, backupError)) {
                 return failWithRollback(backupError);
             }
             // Copy to a temporary file, update its takes section once, then move atomically into place.
-            const fs::path temporary = TemporaryPathUVE(backingModel);
+            const fs::path temporary = TemporaryPath(backingModel);
             std::error_code copyErr;
             fs::copy_file(backingModel, temporary, fs::copy_options::overwrite_existing, copyErr);
-            if (copyErr || !Asset::SaveModelAnimationsUVE(temporary, takes, stamp) || !MoveIntoPlaceUVE(temporary, backingModel)) {
+            if (copyErr || !Asset::SaveModelAnimations(temporary, takes, stamp) || !MoveIntoPlace(temporary, backingModel)) {
                 std::error_code rmErr;
                 fs::remove(temporary, rmErr);
                 return failWithRollback("cannot write " + backingModel.string());
@@ -582,35 +582,35 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     for (const std::size_t reqIndex : looseIndices) {
         const fs::path& path = request.animations[reqIndex];
         report(++progressDone, path.filename().string());
-        RetargetFileReportUVE& slot = result.files[animReportBase + reqIndex];
+        RetargetFileReport& slot = result.files[animReportBase + reqIndex];
         // Fast zero-DOM skip for clips that are already conformed, missing a rest skeleton, or non-skeletal.
-        const RetargetAnimationCheckUVE quickCheck = CheckAnimationForRetargetUVE(path);
-        if (quickCheck.state != RetargetAnimationStateUVE::Ready) {
+        const RetargetAnimationCheck quickCheck = CheckAnimationForRetarget(path);
+        if (quickCheck.state != RetargetAnimationState::Ready) {
             slot.note = "left alone: " + quickCheck.note;
             continue;
         }
-        Asset::AnimationClipAssetUVE clip;
-        if (!Asset::LoadAnimationClipAssetUVE(path, clip)) {
+        Asset::AnimationClipAsset clip;
+        if (!Asset::LoadAnimationClipAsset(path, clip)) {
             slot.note = "left alone: cannot read it";
             continue;
         }
-        const RetargetAnimationCheckUVE check = CheckClipUVE(clip);
-        if (check.state != RetargetAnimationStateUVE::Ready) {
+        const RetargetAnimationCheck check = CheckClip(clip);
+        if (check.state != RetargetAnimationState::Ready) {
             slot.note = "left alone: " + check.note;
             continue;
         }
         std::string clipError;
-        std::optional<Asset::AnimationClipAssetUVE> converted = conformClip(clip, clipError);
+        std::optional<Asset::AnimationClipAsset> converted = conformClip(clip, clipError);
         if (!converted.has_value()) {
             slot.note = "left alone: " + clipError;
             continue;
         }
         std::string backupError;
-        if (!backup.BackupOnceUVE(path, backupError)) {
+        if (!backup.BackupOnce(path, backupError)) {
             return failWithRollback(backupError);
         }
-        const fs::path temporary = TemporaryPathUVE(path);
-        if (!Asset::SaveAnimationClipAssetUVE(*converted, temporary) || !MoveIntoPlaceUVE(temporary, path)) {
+        const fs::path temporary = TemporaryPath(path);
+        if (!Asset::SaveAnimationClipAsset(*converted, temporary) || !MoveIntoPlace(temporary, path)) {
             std::error_code rmErr;
             fs::remove(temporary, rmErr);
             return failWithRollback("cannot write " + path.string());
@@ -620,25 +620,25 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     }
 
     std::string manifestError;
-    if (!backup.WriteManifestUVE(manifestError)) {
+    if (!backup.WriteManifest(manifestError)) {
         return failWithRollback(manifestError);
     }
-    if (backup.HasBackupUVE()) {
-        result.backupDir = backup.DirUVE();
+    if (backup.HasBackup()) {
+        result.backupDir = backup.Dir();
     }
     report(total, {});
     result.ok = true;
     return result;
 }
 
-bool RestoreRetargetBackupUVE(const fs::path& backupDir, std::string* error) {
+bool RestoreRetargetBackup(const fs::path& backupDir, std::string* error) {
     const auto fail = [error](std::string text) {
         if (error != nullptr) {
             *error = std::move(text);
         }
         return false;
     };
-    std::ifstream in(backupDir / kManifestNameUVE, std::ios::binary);
+    std::ifstream in(backupDir / kManifestName, std::ios::binary);
     if (!in) {
         return fail("no backup manifest in " + backupDir.string());
     }

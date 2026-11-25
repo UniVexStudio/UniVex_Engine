@@ -19,31 +19,31 @@
 namespace UVE::Online {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
-inline constexpr std::string_view kOctetStreamMediaTypeUVE = "application/octet-stream";
-inline constexpr std::string_view kDownloadSuffixUVE = ".download";
-inline constexpr std::string_view kExtractSuffixUVE = ".extract";
+inline constexpr std::string_view kOctetStreamMediaType = "application/octet-stream";
+inline constexpr std::string_view kDownloadSuffix = ".download";
+inline constexpr std::string_view kExtractSuffix = ".extract";
 
-[[nodiscard]] auto VersionKeyUVE(const Core::VersionUVE& version) {
+[[nodiscard]] auto VersionKey(const Core::Version& version) {
     return std::tie(version.major, version.minor, version.patch, version.build);
 }
 
-[[nodiscard]] Platform::EditorProjectVersionUVE ToProjectVersionUVE(const Core::VersionUVE& version) {
+[[nodiscard]] Platform::EditorProjectVersion ToProjectVersion(const Core::Version& version) {
     return {version.major, version.minor, version.patch, version.build};
 }
 
 /// A name unique to this attempt, so concurrent launchers never share scratch files.
-[[nodiscard]] std::string AttemptNameUVE(const std::string_view label) {
-    return std::string(label) + "-" + std::to_string(Asset::GenerateAssetGuidUVE().value);
+[[nodiscard]] std::string AttemptName(const std::string_view label) {
+    return std::string(label) + "-" + std::to_string(Asset::GenerateAssetGuid().value);
 }
 
 /// Scratch-file label for a package whose version is not known before it is unpacked.
-inline constexpr std::string_view kLocalPackageAttemptLabelUVE = "local";
-inline constexpr std::string_view kPreviousInstallSuffixUVE = ".previous";
+inline constexpr std::string_view kLocalPackageAttemptLabel = "local";
+inline constexpr std::string_view kPreviousInstallSuffix = ".previous";
 
 /// Restores owner write permissions on a directory tree so read-only binaries can be removed cleanly.
-void MakeTreeWritableForRemovalUVE(const std::filesystem::path& root) {
+void MakeTreeWritableForRemoval(const std::filesystem::path& root) {
     std::error_code error;
     if (!std::filesystem::exists(root, error)) {
         return;
@@ -59,8 +59,8 @@ void MakeTreeWritableForRemovalUVE(const std::filesystem::path& root) {
 }
 
 /// Removes a directory tree after ensuring read-only engine files are writable.
-bool RemoveEngineDirectoryUVE(const std::filesystem::path& directory) {
-    MakeTreeWritableForRemovalUVE(directory);
+bool RemoveEngineDirectory(const std::filesystem::path& directory) {
+    MakeTreeWritableForRemoval(directory);
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     return !error;
@@ -69,51 +69,51 @@ bool RemoveEngineDirectoryUVE(const std::filesystem::path& directory) {
 /// Unpacks an already-verified `archive` into staging and moves it into place under `enginesRoot`.
 /// When `expectedVersion` is set the package's manifest must name that version. When `replaceExisting`
 /// is true, an existing install of the same version is atomically replaced via swap-aside staging.
-[[nodiscard]] EngineInstallOutcomeUVE InstallVerifiedArchiveUVE(const std::filesystem::path& archive,
-                                                                const std::optional<Core::VersionUVE>& expectedVersion,
+[[nodiscard]] EngineInstallOutcome InstallVerifiedArchive(const std::filesystem::path& archive,
+                                                                const std::optional<Core::Version>& expectedVersion,
                                                                 const std::filesystem::path& enginesRoot,
                                                                 const bool replaceExisting) {
-    const std::string label = expectedVersion.has_value() ? expectedVersion->ToStringUVE()
-                                                          : std::string(kLocalPackageAttemptLabelUVE);
+    const std::string label = expectedVersion.has_value() ? expectedVersion->ToString()
+                                                          : std::string(kLocalPackageAttemptLabel);
     const std::filesystem::path extract =
-        enginesRoot / kEngineStagingDirectoryNameUVE / (AttemptNameUVE(label) + std::string(kExtractSuffixUVE));
+        enginesRoot / kEngineStagingDirectoryName / (AttemptName(label) + std::string(kExtractSuffix));
     std::error_code error;
     std::filesystem::create_directories(extract, error);
     if (error) {
         return {false, "Unable to prepare the engines folder: " + error.message(), {}};
     }
-    const auto discard = [&extract] { static_cast<void>(RemoveEngineDirectoryUVE(extract)); };
-    const ArchiveExtractResultUVE extracted = ExtractTarGzUVE(archive, extract);
+    const auto discard = [&extract] { static_cast<void>(RemoveEngineDirectory(extract)); };
+    const ArchiveExtractResult extracted = ExtractTarGz(archive, extract);
     if (!extracted.extracted) {
         discard();
         return {false, "The package could not be unpacked: " + extracted.message, {}};
     }
-    const std::optional<EngineManifestUVE> manifest = ReadEngineManifestUVE(extract);
-    if (!manifest.has_value() || !Platform::IsCompatibleEnginePackageTargetUVE(manifest->target) ||
+    const std::optional<EngineManifest> manifest = ReadEngineManifest(extract);
+    if (!manifest.has_value() || !Platform::IsCompatibleEnginePackageTarget(manifest->target) ||
         (expectedVersion.has_value() && manifest->version != *expectedVersion)) {
         const std::string wrongTarget = manifest.has_value() && !manifest->target.empty() ? manifest->target : std::string{};
         discard();
-        if (!wrongTarget.empty() && !Platform::IsCompatibleEnginePackageTargetUVE(wrongTarget)) {
+        if (!wrongTarget.empty() && !Platform::IsCompatibleEnginePackageTarget(wrongTarget)) {
             return {false,
                     "This package is for '" + wrongTarget + "', not '" +
-                        std::string(Platform::GetEnginePackageTargetUVE()) + "'.",
+                        std::string(Platform::GetEnginePackageTarget()) + "'.",
                     {}};
         }
         return {false,
                 expectedVersion.has_value()
-                    ? "The package is not engine " + expectedVersion->ToStringUVE() + " for this platform."
+                    ? "The package is not engine " + expectedVersion->ToString() + " for this platform."
                     : std::string("The file is not an engine package for this platform."),
                 {}};
     }
-    const std::string version = manifest->version.ToStringUVE();
+    const std::string version = manifest->version.ToString();
     const std::filesystem::path destination = enginesRoot / version;
     const bool alreadyExists = std::filesystem::exists(destination, error);
     if (alreadyExists && !replaceExisting) {
         discard();
         return {false, "Engine " + version + " is already installed.", destination, manifest->version};
     }
-    const Pack::EngineInstallResultUVE resolved = Pack::ResolveEngineInstallUVE(extract, manifest->version);
-    if (!resolved.IsFoundUVE()) {
+    const Pack::EngineInstallResult resolved = Pack::ResolveEngineInstall(extract, manifest->version);
+    if (!resolved.IsFound()) {
         discard();
         return {false, "The package has no editor in it.", {}, manifest->version};
     }
@@ -129,8 +129,8 @@ bool RemoveEngineDirectoryUVE(const std::filesystem::path& directory) {
 
     std::filesystem::path previous;
     if (alreadyExists) {
-        previous = enginesRoot / kEngineStagingDirectoryNameUVE /
-                   (AttemptNameUVE(version) + std::string(kPreviousInstallSuffixUVE));
+        previous = enginesRoot / kEngineStagingDirectoryName /
+                   (AttemptName(version) + std::string(kPreviousInstallSuffix));
         std::filesystem::rename(destination, previous, error);
         if (error) {
             discard();
@@ -148,7 +148,7 @@ bool RemoveEngineDirectoryUVE(const std::filesystem::path& directory) {
         return {false, "Unable to move the engine into place: " + error.message(), {}, manifest->version};
     }
     if (!previous.empty()) {
-        static_cast<void>(RemoveEngineDirectoryUVE(previous));
+        static_cast<void>(RemoveEngineDirectory(previous));
         return {true, "Updated engine " + version + ".", destination, manifest->version};
     }
     return {true, "Installed engine " + version + ".", destination, manifest->version};
@@ -156,104 +156,104 @@ bool RemoveEngineDirectoryUVE(const std::filesystem::path& directory) {
 
 } // namespace
 
-std::optional<EngineManifestUVE> ReadEngineManifestUVE(const std::filesystem::path& engineDirectory) {
-    std::ifstream input(engineDirectory / kEngineManifestFileNameUVE, std::ios::binary);
+std::optional<EngineManifest> ReadEngineManifest(const std::filesystem::path& engineDirectory) {
+    std::ifstream input(engineDirectory / kEngineManifestFileName, std::ios::binary);
     if (!input.is_open()) {
         return std::nullopt;
     }
     const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    const JsonUVE json = JsonUVE::parse(text, nullptr, false);
-    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kEngineManifestFormatUVE ||
-        json.value("schemaVersion", 0U) != kCurrentEngineManifestSchemaVersionUVE) {
+    const Json json = Json::parse(text, nullptr, false);
+    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kEngineManifestFormat ||
+        json.value("schemaVersion", 0U) != kCurrentEngineManifestSchemaVersion) {
         return std::nullopt;
     }
-    const std::optional<Core::VersionUVE> version = ParseEngineVersionTagUVE(json.value("version", std::string{}));
-    const std::optional<EngineChannelUVE> channel = ParseEngineChannelUVE(json.value("channel", std::string{}));
+    const std::optional<Core::Version> version = ParseEngineVersionTag(json.value("version", std::string{}));
+    const std::optional<EngineChannel> channel = ParseEngineChannel(json.value("channel", std::string{}));
     if (!version.has_value() || !channel.has_value()) {
         return std::nullopt;
     }
-    return EngineManifestUVE{*version, *channel, json.value("target", std::string{})};
+    return EngineManifest{*version, *channel, json.value("target", std::string{})};
 }
 
-bool WriteEngineManifestUVE(const std::filesystem::path& engineDirectory, const EngineManifestUVE& manifest) {
-    const JsonUVE json{{"format", kEngineManifestFormatUVE},
-                       {"schemaVersion", kCurrentEngineManifestSchemaVersionUVE},
-                       {"version", manifest.version.ToStringUVE()},
-                       {"channel", EngineChannelNameUVE(manifest.channel)},
+bool WriteEngineManifest(const std::filesystem::path& engineDirectory, const EngineManifest& manifest) {
+    const Json json{{"format", kEngineManifestFormat},
+                       {"schemaVersion", kCurrentEngineManifestSchemaVersion},
+                       {"version", manifest.version.ToString()},
+                       {"channel", EngineChannelName(manifest.channel)},
                        {"target", manifest.target}};
-    std::ofstream output(engineDirectory / kEngineManifestFileNameUVE, std::ios::binary | std::ios::trunc);
-    output << json.dump(Pack::kPackJsonIndentUVE);
+    std::ofstream output(engineDirectory / kEngineManifestFileName, std::ios::binary | std::ios::trunc);
+    output << json.dump(Pack::kPackJsonIndent);
     return static_cast<bool>(output);
 }
 
-std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(const std::filesystem::path& enginesRoot,
-                                                        const std::optional<InstalledEngineUVE>& localBuild) {
-    std::vector<InstalledEngineUVE> engines;
+std::vector<InstalledEngine> ListInstalledEngines(const std::filesystem::path& enginesRoot,
+                                                        const std::optional<InstalledEngine>& localBuild) {
+    std::vector<InstalledEngine> engines;
     std::error_code error;
     for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(enginesRoot, error)) {
         if (!entry.is_directory(error) || entry.path().filename().string().starts_with('.')) {
             continue;
         }
-        const std::optional<EngineManifestUVE> manifest = ReadEngineManifestUVE(entry.path());
+        const std::optional<EngineManifest> manifest = ReadEngineManifest(entry.path());
         if (!manifest.has_value() || (localBuild.has_value() && manifest->version == localBuild->install.version)) {
             continue;
         }
-        Pack::EngineInstallResultUVE resolved = Pack::ResolveEngineInstallUVE(entry.path(), manifest->version);
-        if (resolved.IsFoundUVE()) {
+        Pack::EngineInstallResult resolved = Pack::ResolveEngineInstall(entry.path(), manifest->version);
+        if (resolved.IsFound()) {
             engines.push_back({std::move(*resolved.install), manifest->channel, false});
         }
     }
     if (localBuild.has_value()) {
         engines.push_back(*localBuild);
     }
-    std::sort(engines.begin(), engines.end(), [](const InstalledEngineUVE& lhs, const InstalledEngineUVE& rhs) {
-        return VersionKeyUVE(lhs.install.version) > VersionKeyUVE(rhs.install.version);
+    std::sort(engines.begin(), engines.end(), [](const InstalledEngine& lhs, const InstalledEngine& rhs) {
+        return VersionKey(lhs.install.version) > VersionKey(rhs.install.version);
     });
     return engines;
 }
 
-const InstalledEngineUVE* ChooseEngineForProjectUVE(const std::vector<InstalledEngineUVE>& engines,
-                                                    const Platform::EditorProjectVersionUVE& projectVersion,
+const InstalledEngine* ChooseEngineForProject(const std::vector<InstalledEngine>& engines,
+                                                    const Platform::EditorProjectVersion& projectVersion,
                                                     const std::string_view choice) {
     if (!choice.empty()) {
-        for (const InstalledEngineUVE& engine : engines) {
-            if (engine.install.version.ToStringUVE() == choice) {
+        for (const InstalledEngine& engine : engines) {
+            if (engine.install.version.ToString() == choice) {
                 return &engine;
             }
         }
     }
-    for (const InstalledEngineUVE& engine : engines) {
-        if (ToProjectVersionUVE(engine.install.version) == projectVersion) {
+    for (const InstalledEngine& engine : engines) {
+        if (ToProjectVersion(engine.install.version) == projectVersion) {
             return &engine;
         }
     }
     // Newest first: the first engine that opens the project is the newest that can.
-    for (const InstalledEngineUVE& engine : engines) {
-        if (Pack::EvaluateProjectCompatibilityUVE(projectVersion, engine.install.version).CanOpenUVE()) {
+    for (const InstalledEngine& engine : engines) {
+        if (Pack::EvaluateProjectCompatibility(projectVersion, engine.install.version).CanOpen()) {
             return &engine;
         }
     }
     return nullptr;
 }
 
-EngineInstallOutcomeUVE InstallEnginePackageUVE(const std::filesystem::path& archive, const Sha256DigestUVE& expected,
-                                                const Core::VersionUVE& expectedVersion,
+EngineInstallOutcome InstallEnginePackage(const std::filesystem::path& archive, const Sha256Digest& expected,
+                                                const Core::Version& expectedVersion,
                                                 const std::filesystem::path& enginesRoot) {
-    const std::optional<Sha256DigestUVE> actual = HashFileSha256UVE(archive);
+    const std::optional<Sha256Digest> actual = HashFileSha256(archive);
     if (!actual.has_value() || *actual != expected) {
         return {false, "The downloaded package does not match its published checksum.", {}};
     }
     std::error_code error;
-    const std::filesystem::path destination = enginesRoot / expectedVersion.ToStringUVE();
+    const std::filesystem::path destination = enginesRoot / expectedVersion.ToString();
     if (std::filesystem::exists(destination, error)) {
-        return {false, "Engine " + expectedVersion.ToStringUVE() + " is already installed.", destination, expectedVersion};
+        return {false, "Engine " + expectedVersion.ToString() + " is already installed.", destination, expectedVersion};
     }
-    EngineInstallOutcomeUVE outcome = InstallVerifiedArchiveUVE(archive, expectedVersion, enginesRoot, false);
+    EngineInstallOutcome outcome = InstallVerifiedArchive(archive, expectedVersion, enginesRoot, false);
     outcome.verified = outcome.installed;
     return outcome;
 }
 
-EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path& package,
+EngineInstallOutcome InstallLocalEnginePackage(const std::filesystem::path& package,
                                                      const std::filesystem::path& enginesRoot,
                                                      const bool replaceExisting) {
     std::error_code error;
@@ -261,14 +261,14 @@ EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path
         return {false, "There is no package file at " + package.string() + ".", {}};
     }
     std::filesystem::path checksumFile = package;
-    checksumFile += kEngineChecksumSuffixUVE;
+    checksumFile += kEngineChecksumSuffix;
     const bool hasChecksum = std::filesystem::is_regular_file(checksumFile, error);
     if (hasChecksum) {
         std::ifstream checksumInput(checksumFile);
         std::string checksumText;
         checksumInput >> checksumText;
-        const std::optional<Sha256DigestUVE> expected = ParseSha256HexUVE(checksumText);
-        const std::optional<Sha256DigestUVE> actual = HashFileSha256UVE(package);
+        const std::optional<Sha256Digest> expected = ParseSha256Hex(checksumText);
+        const std::optional<Sha256Digest> actual = HashFileSha256(package);
         if (!expected.has_value()) {
             return {false, "The checksum file beside the package cannot be read.", {}};
         }
@@ -276,7 +276,7 @@ EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path
             return {false, "The package does not match the checksum file beside it.", {}};
         }
     }
-    EngineInstallOutcomeUVE outcome = InstallVerifiedArchiveUVE(package, std::nullopt, enginesRoot, replaceExisting);
+    EngineInstallOutcome outcome = InstallVerifiedArchive(package, std::nullopt, enginesRoot, replaceExisting);
     outcome.verified = outcome.installed && hasChecksum;
     if (outcome.installed && !hasChecksum) {
         outcome.message += " It had no checksum file, so it was not verified.";
@@ -284,43 +284,43 @@ EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path
     return outcome;
 }
 
-bool UninstallEngineUVE(const std::filesystem::path& enginesRoot, const Core::VersionUVE& version) {
-    const std::filesystem::path directory = enginesRoot / version.ToStringUVE();
-    if (!ReadEngineManifestUVE(directory).has_value()) {
+bool UninstallEngine(const std::filesystem::path& enginesRoot, const Core::Version& version) {
+    const std::filesystem::path directory = enginesRoot / version.ToString();
+    if (!ReadEngineManifest(directory).has_value()) {
         return false;
     }
-    return RemoveEngineDirectoryUVE(directory);
+    return RemoveEngineDirectory(directory);
 }
 
-EngineDownloadUVE::EngineDownloadUVE(std::unique_ptr<IHttpClientUVE> client, EngineReleaseUVE release,
+EngineDownload::EngineDownload(std::unique_ptr<IHttpClient> client, EngineRelease release,
                                      std::filesystem::path enginesRoot)
     : m_client(std::move(client)), m_release(std::move(release)), m_enginesRoot(std::move(enginesRoot)) {
     m_total.store(m_release.packageBytes);
-    m_worker = std::thread([this] { RunUVE(); });
+    m_worker = std::thread([this] { Run(); });
 }
 
-EngineDownloadUVE::~EngineDownloadUVE() {
+EngineDownload::~EngineDownload() {
     m_cancel.store(true);
     if (m_worker.joinable()) {
         m_worker.join();
     }
 }
 
-float EngineDownloadUVE::ProgressUVE() const noexcept {
+float EngineDownload::Progress() const noexcept {
     const std::uint64_t total = m_total.load();
-    if (m_state.load() != StateUVE::Running) {
+    if (m_state.load() != State::Running) {
         return 1.0F;
     }
     return total == 0U ? 0.0F
                        : std::min(1.0F, static_cast<float>(m_received.load()) / static_cast<float>(total));
 }
 
-std::string EngineDownloadUVE::MessageUVE() const {
+std::string EngineDownload::Message() const {
     const std::lock_guard lock(m_messageMutex);
     return m_message;
 }
 
-void EngineDownloadUVE::FinishUVE(const StateUVE state, std::string message) {
+void EngineDownload::Finish(const State state, std::string message) {
     {
         const std::lock_guard lock(m_messageMutex);
         m_message = std::move(message);
@@ -328,36 +328,36 @@ void EngineDownloadUVE::FinishUVE(const StateUVE state, std::string message) {
     m_state.store(state);
 }
 
-void EngineDownloadUVE::RunUVE() {
-    const std::filesystem::path staging = m_enginesRoot / kEngineStagingDirectoryNameUVE;
+void EngineDownload::Run() {
+    const std::filesystem::path staging = m_enginesRoot / kEngineStagingDirectoryName;
     std::error_code error;
     std::filesystem::create_directories(staging, error);
     const std::filesystem::path package =
-        staging / (AttemptNameUVE(m_release.version.ToStringUVE()) + std::string(kDownloadSuffixUVE));
+        staging / (AttemptName(m_release.version.ToString()) + std::string(kDownloadSuffix));
     const auto cleanUp = [&package] {
         std::error_code ignored;
         std::filesystem::remove(package, ignored);
     };
 
-    HttpRequestUVE checksumRequest;
+    HttpRequest checksumRequest;
     checksumRequest.url = m_release.checksumUrl;
-    checksumRequest.headers = MakeFeedHeadersUVE(kOctetStreamMediaTypeUVE);
-    const HttpResponseUVE checksumResponse = m_client->GetUVE(checksumRequest);
+    checksumRequest.headers = MakeFeedHeaders(kOctetStreamMediaType);
+    const HttpResponse checksumResponse = m_client->Get(checksumRequest);
     // The checksum file is "<hex>" or "<hex>  <file name>".
-    const std::optional<Sha256DigestUVE> expected =
-        checksumResponse.IsSuccessUVE()
-            ? ParseSha256HexUVE(std::string_view(checksumResponse.body).substr(0U, kSha256DigestBytesUVE * 2U))
+    const std::optional<Sha256Digest> expected =
+        checksumResponse.IsSuccess()
+            ? ParseSha256Hex(std::string_view(checksumResponse.body).substr(0U, kSha256DigestBytes * 2U))
             : std::nullopt;
     if (!expected.has_value()) {
-        FinishUVE(StateUVE::Failed, checksumResponse.reached ? "The release has no usable checksum."
+        Finish(State::Failed, checksumResponse.reached ? "The release has no usable checksum."
                                                              : "Offline: " + checksumResponse.error);
         return;
     }
 
-    HttpRequestUVE packageRequest;
+    HttpRequest packageRequest;
     packageRequest.url = m_release.packageUrl;
-    packageRequest.headers = MakeFeedHeadersUVE(kOctetStreamMediaTypeUVE);
-    const HttpResponseUVE downloaded = m_client->DownloadUVE(
+    packageRequest.headers = MakeFeedHeaders(kOctetStreamMediaType);
+    const HttpResponse downloaded = m_client->Download(
         packageRequest, package, [this](const std::uint64_t received, const std::uint64_t total) {
             m_received.store(received);
             if (total != 0U) {
@@ -367,20 +367,20 @@ void EngineDownloadUVE::RunUVE() {
         });
     if (m_cancel.load()) {
         cleanUp();
-        FinishUVE(StateUVE::Cancelled, "Download cancelled.");
+        Finish(State::Cancelled, "Download cancelled.");
         return;
     }
-    if (!downloaded.IsSuccessUVE()) {
+    if (!downloaded.IsSuccess()) {
         cleanUp();
-        FinishUVE(StateUVE::Failed, downloaded.reached
+        Finish(State::Failed, downloaded.reached
                                         ? "The download answered with HTTP " + std::to_string(downloaded.status) + "."
                                         : "Offline: " + downloaded.error);
         return;
     }
-    const EngineInstallOutcomeUVE outcome =
-        InstallEnginePackageUVE(package, *expected, m_release.version, m_enginesRoot);
+    const EngineInstallOutcome outcome =
+        InstallEnginePackage(package, *expected, m_release.version, m_enginesRoot);
     cleanUp();
-    FinishUVE(outcome.installed ? StateUVE::Installed : StateUVE::Failed, outcome.message);
+    Finish(outcome.installed ? State::Installed : State::Failed, outcome.message);
 }
 
 } // namespace UVE::Online

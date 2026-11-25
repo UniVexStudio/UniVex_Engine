@@ -12,51 +12,51 @@
 
 namespace UVE::Render {
 namespace {
-bool WritesUVE(RenderGraphResourceAccessUVE access) { return access != RenderGraphResourceAccessUVE::Read; }
-bool ReadsUVE(RenderGraphResourceAccessUVE access) { return access != RenderGraphResourceAccessUVE::Write; }
-bool SameShapeUVE(const TextureDescUVE &a, const TextureDescUVE &b) {
+bool Writes(RenderGraphResourceAccess access) { return access != RenderGraphResourceAccess::Read; }
+bool Reads(RenderGraphResourceAccess access) { return access != RenderGraphResourceAccess::Write; }
+bool SameShape(const TextureDesc &a, const TextureDesc &b) {
     return a.width == b.width && a.height == b.height && a.format == b.format && a.mipLevels == b.mipLevels &&
            a.colorSpace == b.colorSpace && a.type == b.type && a.arrayLayers == b.arrayLayers;
 }
 } // namespace
-TextureHandleUVE
-RenderGraphExecutionContextUVE::GetTextureUVE(RenderGraphResourceHandleUVE resource) const noexcept {
-    if (!resource.IsValidUVE() || resource.owner != m_owner || resource.generation != m_generation ||
+TextureHandle
+RenderGraphExecutionContext::GetTexture(RenderGraphResourceHandle resource) const noexcept {
+    if (!resource.IsValid() || resource.owner != m_owner || resource.generation != m_generation ||
         resource.value >= m_textures.size())
         return {};
     return m_textures[resource.value];
 }
-RenderGraphUVE::RenderGraphUVE() {
-    Core::ObjectHandleUVE identity;
-    if (!m_identityRegistry.RegisterUVE(m_identity, identity))
+RenderGraph::RenderGraph() {
+    Core::ObjectHandle identity;
+    if (!m_identityRegistry.Register(m_identity, identity))
         throw std::logic_error("render graph identity registration failed");
     m_owner = identity.registry;
 }
-bool RenderGraphUVE::ContainsUVE(RenderGraphResourceHandleUVE handle) const noexcept {
-    return handle.IsValidUVE() && handle.owner == m_owner && handle.generation == m_generation &&
+bool RenderGraph::Contains(RenderGraphResourceHandle handle) const noexcept {
+    return handle.IsValid() && handle.owner == m_owner && handle.generation == m_generation &&
            handle.value < m_resourceCount;
 }
-bool RenderGraphUVE::ContainsUVE(RenderGraphPassHandleUVE handle) const noexcept {
-    return handle.IsValidUVE() && handle.owner == m_owner && handle.generation == m_generation &&
+bool RenderGraph::Contains(RenderGraphPassHandle handle) const noexcept {
+    return handle.IsValid() && handle.owner == m_owner && handle.generation == m_generation &&
            handle.value < m_passCount;
 }
-RenderGraphResourceHandleUVE RenderGraphUVE::ImportTextureUVE(TextureHandleUVE texture,
+RenderGraphResourceHandle RenderGraph::ImportTexture(TextureHandle texture,
                                                               std::string_view name) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return {};
     }
-    if (m_buildError != RenderGraphCompileCodeUVE::Valid)
+    if (m_buildError != RenderGraphCompileCode::Valid)
         return {};
-    if (texture == kInvalidTextureHandleUVE) {
-        m_buildError = RenderGraphCompileCodeUVE::InvalidResource;
+    if (texture == kInvalidTextureHandle) {
+        m_buildError = RenderGraphCompileCode::InvalidResource;
         return {};
     }
     for (std::size_t i = 0U; i < m_resourceCount; ++i)
         if (!m_resources[i].transient && m_resources[i].texture == texture)
             return {static_cast<std::uint32_t>(i), m_generation, m_owner};
-    if (m_resourceCount >= kMaximumResourcesUVE) {
-        m_buildError = RenderGraphCompileCodeUVE::CapacityExceeded;
+    if (m_resourceCount >= kMaximumResources) {
+        m_buildError = RenderGraphCompileCode::CapacityExceeded;
         return {};
     }
     if (m_resourceCount == m_resources.size())
@@ -68,20 +68,20 @@ RenderGraphResourceHandleUVE RenderGraphUVE::ImportTextureUVE(TextureHandleUVE t
     resource.transient = resource.output = false;
     return {static_cast<std::uint32_t>(m_resourceCount++), m_generation, m_owner};
 }
-RenderGraphResourceHandleUVE RenderGraphUVE::CreateTransientTextureUVE(const TextureDescUVE &desc,
+RenderGraphResourceHandle RenderGraph::CreateTransientTexture(const TextureDesc &desc,
                                                                        std::string_view name) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return {};
     }
-    if (m_buildError != RenderGraphCompileCodeUVE::Valid)
+    if (m_buildError != RenderGraphCompileCode::Valid)
         return {};
-    if (!ValidateTextureUploadUVE(desc, {}) || desc.mipLevels != 1U) {
-        m_buildError = RenderGraphCompileCodeUVE::InvalidResource;
+    if (!ValidateTextureUpload(desc, {}) || desc.mipLevels != 1U) {
+        m_buildError = RenderGraphCompileCode::InvalidResource;
         return {};
     }
-    if (m_resourceCount >= kMaximumResourcesUVE) {
-        m_buildError = RenderGraphCompileCodeUVE::CapacityExceeded;
+    if (m_resourceCount >= kMaximumResources) {
+        m_buildError = RenderGraphCompileCode::CapacityExceeded;
         return {};
     }
     if (m_resourceCount == m_resources.size())
@@ -94,65 +94,65 @@ RenderGraphResourceHandleUVE RenderGraphUVE::CreateTransientTextureUVE(const Tex
     resource.output = false;
     return {static_cast<std::uint32_t>(m_resourceCount++), m_generation, m_owner};
 }
-bool RenderGraphUVE::MarkOutputUVE(RenderGraphResourceHandleUVE resource) {
+bool RenderGraph::MarkOutput(RenderGraphResourceHandle resource) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return false;
     }
-    if (!ContainsUVE(resource)) {
-        m_buildError = RenderGraphCompileCodeUVE::InvalidResource;
+    if (!Contains(resource)) {
+        m_buildError = RenderGraphCompileCode::InvalidResource;
         return false;
     }
     m_resources[resource.value].output = true;
     return true;
 }
-RenderGraphPassHandleUVE RenderGraphUVE::AddPassUVE(RenderGraphPassDescUVE desc) {
-    const auto handle = AddPassUVE(desc.debugNameUVE, desc.resources, std::move(desc.recordCallbackUVE));
-    if (handle.IsValidUVE()) {
+RenderGraphPassHandle RenderGraph::AddPass(RenderGraphPassDesc desc) {
+    const auto handle = AddPass(desc.debugName, desc.resources, std::move(desc.recordCallback));
+    if (handle.IsValid()) {
         auto &pass = m_passes[handle.value];
         try {
             pass.after.assign(desc.after.begin(), desc.after.end());
             pass.sideEffects = desc.sideEffects;
-            pass.executeCallbackUVE = std::move(desc.executeCallbackUVE);
+            pass.executeCallback = std::move(desc.executeCallback);
         } catch (...) {
             --m_passCount;
-            m_buildError = RenderGraphCompileCodeUVE::InvalidPass;
+            m_buildError = RenderGraphCompileCode::InvalidPass;
             throw;
         }
     }
     return handle;
 }
-RenderGraphPassHandleUVE RenderGraphUVE::AddPassUVE(std::string_view name,
-                                                    std::span<const RenderGraphResourceUseUVE> resources,
-                                                    std::function<void(ICommandBufferUVE &)> callback) {
+RenderGraphPassHandle RenderGraph::AddPass(std::string_view name,
+                                                    std::span<const RenderGraphResourceUse> resources,
+                                                    std::function<void(ICommandBuffer &)> callback) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return {};
     }
-    if (m_buildError != RenderGraphCompileCodeUVE::Valid)
+    if (m_buildError != RenderGraphCompileCode::Valid)
         return {};
-    if (m_passCount >= kMaximumPassesUVE) {
-        m_buildError = RenderGraphCompileCodeUVE::CapacityExceeded;
+    if (m_passCount >= kMaximumPasses) {
+        m_buildError = RenderGraphCompileCode::CapacityExceeded;
         return {};
     }
     if (m_passCount == m_passes.size())
         m_passes.emplace_back();
     auto &pass = m_passes[m_passCount];
-    pass.debugNameUVE = name;
+    pass.debugName = name;
     pass.resources.assign(resources.begin(), resources.end());
     pass.after.clear();
     pass.sideEffects = true;
-    pass.recordCallbackUVE = std::move(callback);
-    pass.executeCallbackUVE = {};
+    pass.recordCallback = std::move(callback);
+    pass.executeCallback = {};
     return {static_cast<std::uint32_t>(m_passCount++), m_generation, m_owner};
 }
-bool RenderGraphUVE::AddDependencyUVE(RenderGraphPassHandleUVE pass, RenderGraphPassHandleUVE prerequisite) {
+bool RenderGraph::AddDependency(RenderGraphPassHandle pass, RenderGraphPassHandle prerequisite) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return false;
     }
-    if (!ContainsUVE(pass) || !ContainsUVE(prerequisite)) {
-        m_buildError = RenderGraphCompileCodeUVE::InvalidDependency;
+    if (!Contains(pass) || !Contains(prerequisite)) {
+        m_buildError = RenderGraphCompileCode::InvalidDependency;
         return false;
     }
     auto &after = m_passes[pass.value].after;
@@ -160,51 +160,51 @@ bool RenderGraphUVE::AddDependencyUVE(RenderGraphPassHandleUVE pass, RenderGraph
         after.push_back(prerequisite);
     return true;
 }
-void RenderGraphUVE::ReserveUVE(std::size_t resources, std::size_t passes) {
+void RenderGraph::Reserve(std::size_t resources, std::size_t passes) {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return;
     }
-    m_resources.reserve(std::min(resources, kMaximumResourcesUVE));
-    m_passes.reserve(std::min(passes, kMaximumPassesUVE));
+    m_resources.reserve(std::min(resources, kMaximumResources));
+    m_passes.reserve(std::min(passes, kMaximumPasses));
 }
-RenderGraphCompileCodeUVE RenderGraphUVE::CompileUVE(RenderGraphPlanUVE &out,
-                                                     const RenderGraphOptionsUVE &options) const {
+RenderGraphCompileCode RenderGraph::Compile(RenderGraphPlan &out,
+                                                     const RenderGraphOptions &options) const {
     if (m_executing)
-        return RenderGraphCompileCodeUVE::Busy;
-    if (m_buildError != RenderGraphCompileCodeUVE::Valid)
+        return RenderGraphCompileCode::Busy;
+    if (m_buildError != RenderGraphCompileCode::Valid)
         return m_buildError;
-    RenderGraphPlanUVE plan;
+    RenderGraphPlan plan;
     plan.prerequisites.resize(m_passCount);
     std::vector<std::uint32_t> marks(m_resourceCount, UINT32_MAX);
     std::size_t uses = 0U;
     for (std::size_t p = 0U; p < m_passCount; ++p) {
         const auto &pass = m_passes[p];
-        if (pass.debugNameUVE.empty() ||
-            static_cast<bool>(pass.recordCallbackUVE) == static_cast<bool>(pass.executeCallbackUVE))
-            return RenderGraphCompileCodeUVE::InvalidPass;
+        if (pass.debugName.empty() ||
+            static_cast<bool>(pass.recordCallback) == static_cast<bool>(pass.executeCallback))
+            return RenderGraphCompileCode::InvalidPass;
         if (pass.resources.size() > 65536U - uses)
-            return RenderGraphCompileCodeUVE::CapacityExceeded;
+            return RenderGraphCompileCode::CapacityExceeded;
         uses += pass.resources.size();
         for (auto dependency : pass.after) {
-            if (!ContainsUVE(dependency))
-                return RenderGraphCompileCodeUVE::InvalidDependency;
+            if (!Contains(dependency))
+                return RenderGraphCompileCode::InvalidDependency;
             plan.prerequisites[p].push_back(dependency.value);
         }
         for (const auto &use : pass.resources) {
-            if (!ContainsUVE(use.resource) ||
-                (use.access != RenderGraphResourceAccessUVE::Read &&
-                 use.access != RenderGraphResourceAccessUVE::Write &&
-                 use.access != RenderGraphResourceAccessUVE::ReadWrite) ||
+            if (!Contains(use.resource) ||
+                (use.access != RenderGraphResourceAccess::Read &&
+                 use.access != RenderGraphResourceAccess::Write &&
+                 use.access != RenderGraphResourceAccess::ReadWrite) ||
                 marks[use.resource.value] == p)
-                return RenderGraphCompileCodeUVE::InvalidResource;
+                return RenderGraphCompileCode::InvalidResource;
             marks[use.resource.value] = static_cast<std::uint32_t>(p);
         }
     }
     std::vector<std::uint32_t> order;
-    if (Utilities::BuildTopologicalOrderUVE(plan.prerequisites, order) !=
-        Utilities::TopologicalOrderCodeUVE::Ordered)
-        return RenderGraphCompileCodeUVE::Cycle;
+    if (Utilities::BuildTopologicalOrder(plan.prerequisites, order) !=
+        Utilities::TopologicalOrderCode::Ordered)
+        return RenderGraphCompileCode::Cycle;
     std::vector<std::uint32_t> writer(m_resourceCount, UINT32_MAX);
     std::vector<std::vector<std::uint32_t>> readers(m_resourceCount);
     const auto edge = [&](std::uint32_t pass, std::uint32_t prerequisite) {
@@ -216,13 +216,13 @@ RenderGraphCompileCodeUVE RenderGraphUVE::CompileUVE(RenderGraphPlanUVE &out,
     for (auto p : order)
         for (const auto &use : m_passes[p].resources) {
             const auto r = use.resource.value;
-            if (ReadsUVE(use.access)) {
+            if (Reads(use.access)) {
                 if (writer[r] == UINT32_MAX && m_resources[r].transient)
-                    return RenderGraphCompileCodeUVE::UninitializedRead;
+                    return RenderGraphCompileCode::UninitializedRead;
                 edge(p, writer[r]);
                 readers[r].push_back(p);
             }
-            if (WritesUVE(use.access)) {
+            if (Writes(use.access)) {
                 edge(p, writer[r]);
                 for (auto reader : readers[r])
                     edge(p, reader);
@@ -242,7 +242,7 @@ RenderGraphCompileCodeUVE RenderGraphUVE::CompileUVE(RenderGraphPlanUVE &out,
     for (std::size_t r = 0U; r < m_resourceCount; ++r)
         if (m_resources[r].output) {
             if (writer[r] == UINT32_MAX && m_resources[r].transient)
-                return RenderGraphCompileCodeUVE::UninitializedRead;
+                return RenderGraphCompileCode::UninitializedRead;
             if (writer[r] != UINT32_MAX)
                 pending.push_back(writer[r]);
         }
@@ -281,7 +281,7 @@ RenderGraphCompileCodeUVE RenderGraphUVE::CompileUVE(RenderGraphPlanUVE &out,
         std::size_t slot = 0U;
         for (; slot < plan.transientTextures.size(); ++slot) {
             if (options.aliasTransientTextures && slotEnd[slot] < life.firstUse &&
-                SameShapeUVE(plan.transientTextures[slot], m_resources[r].desc))
+                SameShape(plan.transientTextures[slot], m_resources[r].desc))
                 break;
         }
         if (slot == plan.transientTextures.size()) {
@@ -299,70 +299,70 @@ RenderGraphCompileCodeUVE RenderGraphUVE::CompileUVE(RenderGraphPlanUVE &out,
             const auto r = use.resource.value;
             const auto key =
                 m_resources[r].transient ? plan.lifetimes[r].physicalSlot : plan.transientTextures.size() + r;
-            if (touched[key] && (written[key] || WritesUVE(use.access)))
+            if (touched[key] && (written[key] || Writes(use.access)))
                 barrier = true;
             touched[key] = true;
-            written[key] = WritesUVE(use.access);
+            written[key] = Writes(use.access);
         }
         plan.barrierBeforePass.push_back(barrier);
     }
     out = std::move(plan);
-    return RenderGraphCompileCodeUVE::Valid;
+    return RenderGraphCompileCode::Valid;
 }
-bool RenderGraphUVE::ExecuteUVE(ICommandBufferUVE &commands) const {
-    RenderGraphOptionsUVE options;
+bool RenderGraph::Execute(ICommandBuffer &commands) const {
+    RenderGraphOptions options;
     options.emitBarriers = false;
-    return ExecuteInternalUVE(nullptr, commands, options).IsCompletedUVE();
+    return ExecuteInternal(nullptr, commands, options).IsCompleted();
 }
-RenderGraphExecuteResultUVE RenderGraphUVE::ExecuteUVE(ICommandBufferUVE &commands,
-                                                       const RenderGraphOptionsUVE &options) const {
-    return ExecuteInternalUVE(nullptr, commands, options);
+RenderGraphExecuteResult RenderGraph::Execute(ICommandBuffer &commands,
+                                                       const RenderGraphOptions &options) const {
+    return ExecuteInternal(nullptr, commands, options);
 }
-RenderGraphExecuteResultUVE RenderGraphUVE::ExecuteUVE(IRenderDeviceUVE &device, ICommandBufferUVE &commands,
-                                                       const RenderGraphOptionsUVE &options) const {
-    return ExecuteInternalUVE(&device, commands, options);
+RenderGraphExecuteResult RenderGraph::Execute(IRenderDevice &device, ICommandBuffer &commands,
+                                                       const RenderGraphOptions &options) const {
+    return ExecuteInternal(&device, commands, options);
 }
-RenderGraphExecuteResultUVE RenderGraphUVE::ExecuteInternalUVE(IRenderDeviceUVE *device,
-                                                               ICommandBufferUVE &commands,
-                                                               const RenderGraphOptionsUVE &options) const {
+RenderGraphExecuteResult RenderGraph::ExecuteInternal(IRenderDevice *device,
+                                                               ICommandBuffer &commands,
+                                                               const RenderGraphOptions &options) const {
     if (m_executing)
-        return {RenderGraphExecuteCodeUVE::Busy, 0U};
-    RenderGraphPlanUVE plan;
-    if (CompileUVE(plan, options) != RenderGraphCompileCodeUVE::Valid)
+        return {RenderGraphExecuteCode::Busy, 0U};
+    RenderGraphPlan plan;
+    if (Compile(plan, options) != RenderGraphCompileCode::Valid)
         return {};
-    if (device && !device->IsUsableUVE())
-        return {RenderGraphExecuteCodeUVE::DeviceUnavailable, 0U};
+    if (device && !device->IsUsable())
+        return {RenderGraphExecuteCode::DeviceUnavailable, 0U};
     const bool needsBarriers = std::find(plan.barrierBeforePass.begin(), plan.barrierBeforePass.end(),
                                          true) != plan.barrierBeforePass.end();
     if ((options.emitBarriers && needsBarriers &&
-         commands.GetMemoryBarrierSupportUVE() == RenderFeatureSupportUVE::Unsupported) ||
+         commands.GetMemoryBarrierSupport() == RenderFeatureSupport::Unsupported) ||
         (!plan.transientTextures.empty() &&
          (!device || !options.emitBarriers ||
-          commands.GetMemoryBarrierSupportUVE() == RenderFeatureSupportUVE::Unsupported ||
-          device->GetCapabilitiesUVE().retainedTextures == RenderFeatureSupportUVE::Unsupported)))
-        return {RenderGraphExecuteCodeUVE::Unsupported, 0U};
+          commands.GetMemoryBarrierSupport() == RenderFeatureSupport::Unsupported ||
+          device->GetCapabilities().retainedTextures == RenderFeatureSupport::Unsupported)))
+        return {RenderGraphExecuteCode::Unsupported, 0U};
     if (device)
         for (std::size_t r = 0U; r < m_resourceCount; ++r) {
             if (m_resources[r].transient || plan.lifetimes[r].firstUse == UINT32_MAX)
                 continue;
-            TextureDescUVE description;
-            const auto described = device->GetTextureDescUVE(m_resources[r].texture, description);
-            if (described == RenderOperationResultUVE::Unsupported)
-                return {RenderGraphExecuteCodeUVE::Unsupported, 0U};
-            if (described != RenderOperationResultUVE::Success)
-                return {RenderGraphExecuteCodeUVE::InvalidGraph, 0U};
+            TextureDesc description;
+            const auto described = device->GetTextureDesc(m_resources[r].texture, description);
+            if (described == RenderOperationResult::Unsupported)
+                return {RenderGraphExecuteCode::Unsupported, 0U};
+            if (described != RenderOperationResult::Success)
+                return {RenderGraphExecuteCode::InvalidGraph, 0U};
         }
-    std::vector<TextureHandleUVE> textures(m_resourceCount), allocations;
+    std::vector<TextureHandle> textures(m_resourceCount), allocations;
     allocations.reserve(plan.transientTextures.size());
-    Utilities::ScopeGuardUVE rollback{[&] {
+    Utilities::ScopeGuard rollback{[&] {
         if (device)
             for (auto texture : allocations)
-                device->DestroyTextureUVE(texture);
+                device->DestroyTexture(texture);
     }};
     for (const auto &desc : plan.transientTextures) {
-        const auto texture = device->CreateTextureUVE(desc);
-        if (texture == kInvalidTextureHandleUVE)
-            return {RenderGraphExecuteCodeUVE::AllocationFailed, 0U};
+        const auto texture = device->CreateTexture(desc);
+        if (texture == kInvalidTextureHandle)
+            return {RenderGraphExecuteCode::AllocationFailed, 0U};
         allocations.push_back(texture);
     }
     for (std::size_t r = 0U; r < m_resourceCount; ++r) {
@@ -372,61 +372,61 @@ RenderGraphExecuteResultUVE RenderGraphUVE::ExecuteInternalUVE(IRenderDeviceUVE 
             textures[r] = allocations[plan.lifetimes[r].physicalSlot];
     }
     if (!allocations.empty()) {
-        auto lease = device->AdoptTransientTexturesUVE(std::move(allocations));
+        auto lease = device->AdoptTransientTextures(std::move(allocations));
         if (!lease)
-            return {RenderGraphExecuteCodeUVE::AllocationFailed, 0U};
-        commands.RetainResourcesUVE(std::move(lease));
+            return {RenderGraphExecuteCode::AllocationFailed, 0U};
+        commands.RetainResources(std::move(lease));
     }
-    RenderGraphExecutionContextUVE context;
+    RenderGraphExecutionContext context;
     context.m_textures = textures;
     context.m_owner = m_owner;
     context.m_generation = m_generation;
     m_executing = true;
-    Utilities::ScopeGuardUVE done{[&] { m_executing = false; }};
+    Utilities::ScopeGuard done{[&] { m_executing = false; }};
     std::size_t completed = 0U;
     try {
         for (std::size_t position = 0U; position < plan.passOrder.size(); ++position) {
             if (options.emitBarriers && plan.barrierBeforePass[position]) {
-                const auto result = commands.MemoryBarrierUVE(MemoryBarrierMaskUVE::All);
-                if (result != RenderOperationResultUVE::Success &&
-                    result != RenderOperationResultUVE::Recorded)
-                    return {RenderGraphExecuteCodeUVE::BarrierFailed, completed};
+                const auto result = commands.MemoryBarrier(MemoryBarrierMask::All);
+                if (result != RenderOperationResult::Success &&
+                    result != RenderOperationResult::Recorded)
+                    return {RenderGraphExecuteCode::BarrierFailed, completed};
             }
             const auto &pass = m_passes[plan.passOrder[position]];
-            if (pass.recordCallbackUVE)
-                pass.recordCallbackUVE(commands);
+            if (pass.recordCallback)
+                pass.recordCallback(commands);
             else
-                pass.executeCallbackUVE(commands, context);
+                pass.executeCallback(commands, context);
             ++completed;
-            if (m_buildError != RenderGraphCompileCodeUVE::Valid)
-                return {RenderGraphExecuteCodeUVE::CallbackFailed, completed};
+            if (m_buildError != RenderGraphCompileCode::Valid)
+                return {RenderGraphExecuteCode::CallbackFailed, completed};
         }
     } catch (...) {
-        return {RenderGraphExecuteCodeUVE::CallbackFailed, completed};
+        return {RenderGraphExecuteCode::CallbackFailed, completed};
     }
-    return {RenderGraphExecuteCodeUVE::Completed, completed};
+    return {RenderGraphExecuteCode::Completed, completed};
 }
-void RenderGraphUVE::ClearUVE() noexcept {
+void RenderGraph::Clear() noexcept {
     if (m_executing) {
-        m_buildError = RenderGraphCompileCodeUVE::Busy;
+        m_buildError = RenderGraphCompileCode::Busy;
         return;
     }
     for (std::size_t p = 0U; p < m_passCount; ++p) {
         auto &pass = m_passes[p];
-        pass.debugNameUVE.clear();
+        pass.debugName.clear();
         pass.resources.clear();
         pass.after.clear();
-        pass.recordCallbackUVE = nullptr;
-        pass.executeCallbackUVE = nullptr;
+        pass.recordCallback = nullptr;
+        pass.executeCallback = nullptr;
     }
     for (std::size_t r = 0U; r < m_resourceCount; ++r)
         m_resources[r].name.clear();
     m_passCount = m_resourceCount = 0U;
     if (m_generation == std::numeric_limits<std::uint64_t>::max())
-        m_buildError = RenderGraphCompileCodeUVE::CapacityExceeded;
+        m_buildError = RenderGraphCompileCode::CapacityExceeded;
     else {
         ++m_generation;
-        m_buildError = RenderGraphCompileCodeUVE::Valid;
+        m_buildError = RenderGraphCompileCode::Valid;
     }
 }
 } // namespace UVE::Render

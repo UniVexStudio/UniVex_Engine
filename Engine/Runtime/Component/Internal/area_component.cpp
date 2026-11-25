@@ -8,18 +8,18 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsAreaSpaceOverrideModeValidUVE(const AreaSpaceOverrideModeUVE mode) noexcept {
+[[nodiscard]] bool IsAreaSpaceOverrideModeValid(const AreaSpaceOverrideMode mode) noexcept {
     return static_cast<std::uint8_t>(mode) <=
-           static_cast<std::uint8_t>(AreaSpaceOverrideModeUVE::ReplaceCombine);
+           static_cast<std::uint8_t>(AreaSpaceOverrideMode::ReplaceCombine);
 }
 
-[[nodiscard]] bool IsAreaComponentValidUVE(const AreaComponentUVE& area) noexcept {
+[[nodiscard]] bool IsAreaComponentValid(const AreaComponent& area) noexcept {
     return std::isfinite(area.halfExtents.x) && std::isfinite(area.halfExtents.y) &&
            std::isfinite(area.halfExtents.z) && area.halfExtents.x > 0.0F &&
            area.halfExtents.y > 0.0F && area.halfExtents.z > 0.0F && area.collisionLayer != 0U &&
-           IsAreaSpaceOverrideModeValidUVE(area.gravityOverride) &&
-           IsAreaSpaceOverrideModeValidUVE(area.linearDampOverride) &&
-           IsAreaSpaceOverrideModeValidUVE(area.angularDampOverride) &&
+           IsAreaSpaceOverrideModeValid(area.gravityOverride) &&
+           IsAreaSpaceOverrideModeValid(area.linearDampOverride) &&
+           IsAreaSpaceOverrideModeValid(area.angularDampOverride) &&
            std::isfinite(area.gravityDirection.x) && std::isfinite(area.gravityDirection.y) &&
            std::isfinite(area.gravityDirection.z) && std::isfinite(area.gravityMagnitude) &&
            std::isfinite(area.gravityPointOffset.x) && std::isfinite(area.gravityPointOffset.y) &&
@@ -28,33 +28,33 @@ namespace UVE::Scene {
            area.linearDamp >= 0.0F && std::isfinite(area.angularDamp) && area.angularDamp >= 0.0F;
 }
 
-AreaComponentUVE SanitizeAreaComponentUVE(const AreaComponentUVE& area) noexcept {
-    AreaComponentUVE out = area;
-    if (!Math::IsFiniteUVE(out.halfExtents) || out.halfExtents.x <= 0.0F ||
+AreaComponent SanitizeAreaComponent(const AreaComponent& area) noexcept {
+    AreaComponent out = area;
+    if (!Math::IsFinite(out.halfExtents) || out.halfExtents.x <= 0.0F ||
         out.halfExtents.y <= 0.0F || out.halfExtents.z <= 0.0F) {
-        out.halfExtents = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+        out.halfExtents = Math::Vector3{0.5F, 0.5F, 0.5F};
     }
     if (out.collisionLayer == 0U) {
         out.collisionLayer = 1U;
     }
-    if (!IsAreaSpaceOverrideModeValidUVE(out.gravityOverride)) {
-        out.gravityOverride = AreaSpaceOverrideModeUVE::Disabled;
+    if (!IsAreaSpaceOverrideModeValid(out.gravityOverride)) {
+        out.gravityOverride = AreaSpaceOverrideMode::Disabled;
     }
-    if (!IsAreaSpaceOverrideModeValidUVE(out.linearDampOverride)) {
-        out.linearDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    if (!IsAreaSpaceOverrideModeValid(out.linearDampOverride)) {
+        out.linearDampOverride = AreaSpaceOverrideMode::Disabled;
     }
-    if (!IsAreaSpaceOverrideModeValidUVE(out.angularDampOverride)) {
-        out.angularDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    if (!IsAreaSpaceOverrideModeValid(out.angularDampOverride)) {
+        out.angularDampOverride = AreaSpaceOverrideMode::Disabled;
     }
-    if (!Math::IsFiniteUVE(out.gravityDirection) ||
-        Math::LengthSquaredUVE(out.gravityDirection) <= 1e-6F) {
-        out.gravityDirection = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+    if (!Math::IsFinite(out.gravityDirection) ||
+        Math::LengthSquared(out.gravityDirection) <= 1e-6F) {
+        out.gravityDirection = Math::Vector3{0.0F, -1.0F, 0.0F};
     }
     if (!std::isfinite(out.gravityMagnitude)) {
-        out.gravityMagnitude = kDefaultAreaGravityMagnitudeUVE;
+        out.gravityMagnitude = kDefaultAreaGravityMagnitude;
     }
-    if (!Math::IsFiniteUVE(out.gravityPointOffset)) {
-        out.gravityPointOffset = Math::Vector3UVE{};
+    if (!Math::IsFinite(out.gravityPointOffset)) {
+        out.gravityPointOffset = Math::Vector3{};
     }
     out.gravityPointUnitDistance =
         (std::isfinite(out.gravityPointUnitDistance) && out.gravityPointUnitDistance >= 0.0F)
@@ -67,13 +67,13 @@ AreaComponentUVE SanitizeAreaComponentUVE(const AreaComponentUVE& area) noexcept
     return out;
 }
 
-bool ContainsAreaOverlappingBodyUVE(const AreaComponentUVE& area,
-                                    const EntityUVE entity) noexcept {
-    if (entity == kInvalidEntityUVE) {
+bool ContainsAreaOverlappingBody(const AreaComponent& area,
+                                    const Entity entity) noexcept {
+    if (entity == kInvalidEntity) {
         return false;
     }
     const std::size_t count =
-        std::min<std::size_t>(area.overlappingBodyCount, kMaximumArea3DOverlapsUVE);
+        std::min<std::size_t>(area.overlappingBodyCount, kMaximumArea3DOverlaps);
     for (std::size_t i = 0U; i < count; ++i) {
         if (area.overlappingBodies[i] == entity) {
             return true;
@@ -82,13 +82,13 @@ bool ContainsAreaOverlappingBodyUVE(const AreaComponentUVE& area,
     return false;
 }
 
-bool ContainsAreaOverlappingAreaUVE(const AreaComponentUVE& area,
-                                    const EntityUVE entity) noexcept {
-    if (entity == kInvalidEntityUVE) {
+bool ContainsAreaOverlappingArea(const AreaComponent& area,
+                                    const Entity entity) noexcept {
+    if (entity == kInvalidEntity) {
         return false;
     }
     const std::size_t count =
-        std::min<std::size_t>(area.overlappingAreaCount, kMaximumArea3DOverlapsUVE);
+        std::min<std::size_t>(area.overlappingAreaCount, kMaximumArea3DOverlaps);
     for (std::size_t i = 0U; i < count; ++i) {
         if (area.overlappingAreas[i] == entity) {
             return true;
@@ -97,22 +97,22 @@ bool ContainsAreaOverlappingAreaUVE(const AreaComponentUVE& area,
     return false;
 }
 
-Math::Vector3UVE EvaluateAreaGravityVectorUVE(
-    const AreaComponentUVE& area, const Math::Vector3UVE& areaWorldPosition,
-    const Math::Vector3UVE& bodyWorldPosition) noexcept {
-    const AreaComponentUVE safe = SanitizeAreaComponentUVE(area);
+Math::Vector3 EvaluateAreaGravityVector(
+    const AreaComponent& area, const Math::Vector3& areaWorldPosition,
+    const Math::Vector3& bodyWorldPosition) noexcept {
+    const AreaComponent safe = SanitizeAreaComponent(area);
     if (safe.gravityMagnitude == 0.0F) {
-        return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        return Math::Vector3{0.0F, 0.0F, 0.0F};
     }
-    if (safe.gravityPoint && Math::IsFiniteUVE(areaWorldPosition) &&
-        Math::IsFiniteUVE(bodyWorldPosition)) {
-        const Math::Vector3UVE attractor = areaWorldPosition + safe.gravityPointOffset;
-        const Math::Vector3UVE toCenter = attractor - bodyWorldPosition;
-        const float distSq = Math::LengthSquaredUVE(toCenter);
+    if (safe.gravityPoint && Math::IsFinite(areaWorldPosition) &&
+        Math::IsFinite(bodyWorldPosition)) {
+        const Math::Vector3 attractor = areaWorldPosition + safe.gravityPointOffset;
+        const Math::Vector3 toCenter = attractor - bodyWorldPosition;
+        const float distSq = Math::LengthSquared(toCenter);
         if (distSq <= 1e-6F) {
-            return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+            return Math::Vector3{0.0F, 0.0F, 0.0F};
         }
-        const Math::Vector3UVE unitDir = Math::NormalizeUVE(toCenter);
+        const Math::Vector3 unitDir = Math::Normalize(toCenter);
         if (safe.gravityPointUnitDistance > 0.0F) {
             const float refSq = safe.gravityPointUnitDistance * safe.gravityPointUnitDistance;
             const float scale = refSq / distSq;
@@ -120,15 +120,15 @@ Math::Vector3UVE EvaluateAreaGravityVectorUVE(
         }
         return unitDir * safe.gravityMagnitude;
     }
-    const Math::Vector3UVE unitDir = Math::NormalizeUVE(safe.gravityDirection);
+    const Math::Vector3 unitDir = Math::Normalize(safe.gravityDirection);
     return unitDir * safe.gravityMagnitude;
 }
 
-void ClearAreaRuntimeOverlapsUVE(AreaComponentUVE& area) noexcept {
-    area.overlappingBodies.fill(kInvalidEntityUVE);
+void ClearAreaRuntimeOverlaps(AreaComponent& area) noexcept {
+    area.overlappingBodies.fill(kInvalidEntity);
     area.overlappingBodyCount = 0U;
     area.overlappingBodiesTruncated = false;
-    area.overlappingAreas.fill(kInvalidEntityUVE);
+    area.overlappingAreas.fill(kInvalidEntity);
     area.overlappingAreaCount = 0U;
     area.overlappingAreasTruncated = false;
 }

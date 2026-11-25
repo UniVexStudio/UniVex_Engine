@@ -7,9 +7,9 @@
 
 namespace UVE::Asset {
 
-void RegisterDataTablePipelineUVE(IAssetImporterUVE& importer, IAssetManagerUVE& assetManager) {
-    RegisterDataTableImportersUVE(importer);
-    RegisterDataTableAssetLoaderUVE(assetManager);
+void RegisterDataTablePipeline(IAssetImporter& importer, IAssetManager& assetManager) {
+    RegisterDataTableImporters(importer);
+    RegisterDataTableAssetLoader(assetManager);
 }
 
 } // namespace UVE::Asset

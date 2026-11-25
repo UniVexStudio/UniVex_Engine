@@ -16,29 +16,29 @@
 
 namespace UVE::Render {
 
-/// DynamicMeshBvhUVE is a binary Axis-Aligned Bounding Box (AABB) Bounding Volume Hierarchy
+/// DynamicMeshBvh is a binary Axis-Aligned Bounding Box (AABB) Bounding Volume Hierarchy
 /// designed for high-performance spatial indexing and frustum culling of mesh entities.
 ///
 /// Key Architectural Properties:
 /// - Binary tree representation with contiguous node storage in std::vector<Node>.
-/// - Leaf nodes store up to `kLeafCapacity = 4` entity entries (`Scene::EntityUVE` + `Math::AabbUVE`).
+/// - Leaf nodes store up to `kLeafCapacity = 4` entity entries (`Scene::Entity` + `Math::Aabb`).
 /// - Top-down median-split construction along the axis of longest extent.
 /// - Incremental insertion using Surface Area Heuristic (SAH) enlargement minimization and dynamic leaf splitting.
 /// - Incremental entity removal with sibling contraction to keep tree balanced and eliminate empty nodes.
-/// - Fast bottom-up refitting (`RefitFromLeafUVE`) updating parent bounds up to the root in O(log N)
+/// - Fast bottom-up refitting (`RefitFromLeaf`) updating parent bounds up to the root in O(log N)
 ///   time when an entity transforms without reallocating tree nodes or changing topology.
-/// - Fast iterative stack-based frustum culling query (`QueryFrustumUVE`) evaluating plane equations;
+/// - Fast iterative stack-based frustum culling query (`QueryFrustum`) evaluating plane equations;
 ///   pruning subtrees entirely when outside, and accepting entire subtrees when completely inside
 ///   without further plane testing.
-class DynamicMeshBvhUVE {
+class DynamicMeshBvh {
 public:
     static constexpr std::size_t kLeafCapacity = 4U;
     static constexpr std::int32_t kInvalidNodeIndex = -1;
 
     /// An entity entry stored within a leaf node.
     struct EntityEntry {
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        Math::AabbUVE bounds{};
+        Scene::Entity entity = Scene::kInvalidEntity;
+        Math::Aabb bounds{};
 
         [[nodiscard]] constexpr bool operator==(const EntityEntry& other) const noexcept {
             return entity == other.entity && bounds == other.bounds;
@@ -51,7 +51,7 @@ public:
 
     /// Node representation in the binary BVH.
     struct Node {
-        Math::AabbUVE bounds{};
+        Math::Aabb bounds{};
         std::int32_t leftChild = kInvalidNodeIndex;
         std::int32_t rightChild = kInvalidNodeIndex;
         std::int32_t parentIndex = kInvalidNodeIndex;
@@ -67,7 +67,7 @@ public:
     };
 
     /// Diagnostic statistics describing the BVH topology.
-    struct TreeStatsUVE {
+    struct TreeStats {
         std::size_t nodeCount = 0U;
         std::size_t leafCount = 0U;
         std::size_t internalCount = 0U;
@@ -76,38 +76,38 @@ public:
         float averageLeafFill = 0.0F;
     };
 
-    DynamicMeshBvhUVE() = default;
-    explicit DynamicMeshBvhUVE(std::vector<EntityEntry> entries);
+    DynamicMeshBvh() = default;
+    explicit DynamicMeshBvh(std::vector<EntityEntry> entries);
 
-    ~DynamicMeshBvhUVE() = default;
-    DynamicMeshBvhUVE(const DynamicMeshBvhUVE&) = default;
-    DynamicMeshBvhUVE& operator=(const DynamicMeshBvhUVE&) = default;
-    DynamicMeshBvhUVE(DynamicMeshBvhUVE&&) noexcept = default;
-    DynamicMeshBvhUVE& operator=(DynamicMeshBvhUVE&&) noexcept = default;
+    ~DynamicMeshBvh() = default;
+    DynamicMeshBvh(const DynamicMeshBvh&) = default;
+    DynamicMeshBvh& operator=(const DynamicMeshBvh&) = default;
+    DynamicMeshBvh(DynamicMeshBvh&&) noexcept = default;
+    DynamicMeshBvh& operator=(DynamicMeshBvh&&) noexcept = default;
 
     /// Builds the BVH top-down from scratch using median split partitioning along the longest extent axis.
-    void BuildUVE(std::vector<EntityEntry> entries);
+    void Build(std::vector<EntityEntry> entries);
 
     /// Rebuilds the current tree topology using top-down median split from existing entities.
-    void RebuildUVE();
+    void Rebuild();
 
     /// Inserts a new entity or updates an existing entity's world bounding box.
-    /// If the entity already exists in the BVH, its bounds are updated and RefitFromLeafUVE
+    /// If the entity already exists in the BVH, its bounds are updated and RefitFromLeaf
     /// is called to update ancestors in O(log N) time without node reallocations.
     /// If the entity does not exist, it is incrementally inserted using SAH surface area enlargement.
-    void InsertOrUpdateUVE(Scene::EntityUVE entity, const Math::AabbUVE& worldBounds);
+    void InsertOrUpdate(Scene::Entity entity, const Math::Aabb& worldBounds);
 
     /// Removes an entity from the BVH.
     /// If the entity was the last element in its leaf node, the node is contracted and
     /// its sibling is promoted, maintaining a clean binary tree structure with zero empty leaves.
-    void RemoveUVE(Scene::EntityUVE entity);
+    void Remove(Scene::Entity entity);
 
     /// Removes an entity from the BVH, returning true if the entity was found and removed.
-    bool RemoveEntityUVE(Scene::EntityUVE entity);
+    bool RemoveEntity(Scene::Entity entity);
 
     /// Bottom-up refitting starting from a given node index (leaf or internal) up to the root.
     /// Recomputes bounds in O(log N) time without reallocating nodes.
-    void RefitFromLeafUVE(std::size_t leafIndex) noexcept;
+    void RefitFromLeaf(std::size_t leafIndex) noexcept;
 
     /// Traverses the BVH against the view frustum and populates outVisibleEntities.
     /// Evaluates frustum planes hierarchically:
@@ -116,49 +116,49 @@ public:
     ///   any further plane testing.
     /// - If a node intersects the frustum boundary, leaf entities are tested individually and internal
     ///   children are pushed to the traversal stack.
-    void QueryFrustumUVE(const Math::FrustumUVE& frustum,
-                         std::vector<Scene::EntityUVE>& outVisibleEntities) const;
+    void QueryFrustum(const Math::Frustum& frustum,
+                         std::vector<Scene::Entity>& outVisibleEntities) const;
 
     /// Queries entities whose bounds intersect the given query AABB.
-    void QueryAabbUVE(const Math::AabbUVE& queryBounds,
-                      std::vector<Scene::EntityUVE>& outEntities) const;
+    void QueryAabb(const Math::Aabb& queryBounds,
+                      std::vector<Scene::Entity>& outEntities) const;
 
     /// Queries entities whose bounds intersect the given query ray within [0, maxDistance].
-    void QueryRayUVE(const Math::RayUVE& ray, float maxDistance,
-                     std::vector<Scene::EntityUVE>& outEntities) const;
+    void QueryRay(const Math::Ray& ray, float maxDistance,
+                     std::vector<Scene::Entity>& outEntities) const;
 
     /// Clears the hierarchy, releasing all nodes and entity mappings.
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 
     /// Returns the total number of indexed entities.
-    [[nodiscard]] std::size_t GetEntityCountUVE() const noexcept;
+    [[nodiscard]] std::size_t GetEntityCount() const noexcept;
 
     /// Returns the total number of active allocated nodes in the tree.
-    [[nodiscard]] std::size_t GetNodeCountUVE() const noexcept;
+    [[nodiscard]] std::size_t GetNodeCount() const noexcept;
 
     /// Returns the index of the root node, or kInvalidNodeIndex if empty.
-    [[nodiscard]] std::int32_t GetRootIndexUVE() const noexcept;
+    [[nodiscard]] std::int32_t GetRootIndex() const noexcept;
 
     /// Returns true if the hierarchy contains zero entities.
-    [[nodiscard]] bool IsEmptyUVE() const noexcept;
+    [[nodiscard]] bool IsEmpty() const noexcept;
 
     /// Returns true if the entity is currently present in the BVH.
-    [[nodiscard]] bool ContainsEntityUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] bool ContainsEntity(Scene::Entity entity) const noexcept;
 
     /// Returns the leaf node index for the given entity, or kInvalidNodeIndex if not present.
-    [[nodiscard]] std::int32_t GetEntityLeafIndexUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] std::int32_t GetEntityLeafIndex(Scene::Entity entity) const noexcept;
 
     /// Returns the current world bounds for the given entity, if present.
-    [[nodiscard]] std::optional<Math::AabbUVE> GetEntityBoundsUVE(Scene::EntityUVE entity) const noexcept;
+    [[nodiscard]] std::optional<Math::Aabb> GetEntityBounds(Scene::Entity entity) const noexcept;
 
     /// Returns a const reference to a node by index.
-    [[nodiscard]] const Node& GetNodeUVE(std::size_t index) const;
+    [[nodiscard]] const Node& GetNode(std::size_t index) const;
 
     /// Returns const access to the internal node array.
-    [[nodiscard]] const std::vector<Node>& GetNodesUVE() const noexcept;
+    [[nodiscard]] const std::vector<Node>& GetNodes() const noexcept;
 
     /// Computes and returns topology diagnostics and statistics.
-    [[nodiscard]] TreeStatsUVE ComputeStatsUVE() const noexcept;
+    [[nodiscard]] TreeStats ComputeStats() const noexcept;
 
 private:
     [[nodiscard]] std::int32_t AllocateNode();
@@ -167,21 +167,21 @@ private:
     std::int32_t BuildRecursive(std::vector<EntityEntry>& entries, std::size_t begin, std::size_t end,
                                 std::int32_t parent);
 
-    [[nodiscard]] std::int32_t FindBestLeafForInsertion(const Math::AabbUVE& bounds) const noexcept;
+    [[nodiscard]] std::int32_t FindBestLeafForInsertion(const Math::Aabb& bounds) const noexcept;
     void SplitLeaf(std::int32_t leafIndex, const EntityEntry& newEntry);
 
     /// Walks from a node to the root, rotating wherever sibling subtree heights differ by two
     /// or more (AVL-style). Bounds and heights are refit along the way, so the tree stays
     /// O(log N) deep under ordered incremental insertion instead of degenerating into a spine.
     /// Leaf content never moves during a rotation, so the entity-to-leaf map stays valid.
-    void RebalanceTowardRootUVE(std::int32_t nodeIndex) noexcept;
+    void RebalanceTowardRoot(std::int32_t nodeIndex) noexcept;
 
     /// Promotes the taller grandchild of `nodeIndex`'s heavier child, taking that child's place
     /// in the tree. `heavyIsLeft` selects which child of `nodeIndex` is the tall one.
-    void RotateHeavyChildUVE(std::int32_t nodeIndex, bool heavyIsLeft) noexcept;
+    void RotateHeavyChild(std::int32_t nodeIndex, bool heavyIsLeft) noexcept;
 
     std::vector<Node> m_nodes;
-    std::unordered_map<Scene::EntityUVE, std::int32_t> m_entityToLeafNode;
+    std::unordered_map<Scene::Entity, std::int32_t> m_entityToLeafNode;
     std::vector<std::int32_t> m_freeNodeIndices;
     std::int32_t m_root = kInvalidNodeIndex;
     std::size_t m_entityCount = 0U;

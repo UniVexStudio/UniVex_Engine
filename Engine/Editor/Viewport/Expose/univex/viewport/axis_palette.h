@@ -15,64 +15,64 @@
 
 namespace univex::viewport {
 
-struct AxisRgbUVE {
+struct AxisRgb {
     float r = 0.f;
     float g = 0.f;
     float b = 0.f;
 
-    [[nodiscard]] constexpr AxisRgbUVE Scaled(float factor) const {
-        return AxisRgbUVE{r * factor, g * factor, b * factor};
+    [[nodiscard]] constexpr AxisRgb Scaled(float factor) const {
+        return AxisRgb{r * factor, g * factor, b * factor};
     }
 };
 
-inline constexpr AxisRgbUVE kAxisColorXUVE{1.000f, 0.220f, 0.220f}; // vivid red
-inline constexpr AxisRgbUVE kAxisColorYUVE{0.180f, 1.000f, 0.420f}; // vivid green
-inline constexpr AxisRgbUVE kAxisColorZUVE{0.220f, 0.500f, 1.000f}; // vivid blue
+inline constexpr AxisRgb kAxisColorX{1.000f, 0.220f, 0.220f}; // vivid red
+inline constexpr AxisRgb kAxisColorY{0.180f, 1.000f, 0.420f}; // vivid green
+inline constexpr AxisRgb kAxisColorZ{0.220f, 0.500f, 1.000f}; // vivid blue
 
 /// The grid's axis lines run through the same origin the transform gizmo sits on, so drawing both
 /// in the identical colour leaves the gizmo's own axes competing with the ground lines behind
 /// them. The grid takes a darker variant of the same hues: still obviously the X/Y/Z axes, but
 /// clearly the backdrop rather than the handle.
-inline constexpr float kGridAxisDimFactorUVE = 0.68f;
+inline constexpr float kGridAxisDimFactor = 0.68f;
 
-inline constexpr AxisRgbUVE kGridAxisColorXUVE = kAxisColorXUVE.Scaled(kGridAxisDimFactorUVE);
-inline constexpr AxisRgbUVE kGridAxisColorYUVE = kAxisColorYUVE.Scaled(kGridAxisDimFactorUVE);
-inline constexpr AxisRgbUVE kGridAxisColorZUVE = kAxisColorZUVE.Scaled(kGridAxisDimFactorUVE);
+inline constexpr AxisRgb kGridAxisColorX = kAxisColorX.Scaled(kGridAxisDimFactor);
+inline constexpr AxisRgb kGridAxisColorY = kAxisColorY.Scaled(kGridAxisDimFactor);
+inline constexpr AxisRgb kGridAxisColorZ = kAxisColorZ.Scaled(kGridAxisDimFactor);
 
 /// One author-chosen set of axis hues. The constants above are the defaults; this is the same
 /// three colours as a value a caller can hold and change, which is what lets the editor offer a
 /// colour picker for them.
 ///
 /// The gizmo and grid colours are NOT stored separately. Deriving the grid's from the gizmo's
-/// through kGridAxisDimFactorUVE keeps "the grid is the darker backdrop for the same axis" as one
+/// through kGridAxisDimFactor keeps "the grid is the darker backdrop for the same axis" as one
 /// rule in one place; two independent sets would let a picker drift them apart until the grid
 /// stopped reading as the same axis at all.
-struct AxisPaletteUVE {
-    AxisRgbUVE x = kAxisColorXUVE;
-    AxisRgbUVE y = kAxisColorYUVE;
-    AxisRgbUVE z = kAxisColorZUVE;
+struct AxisPalette {
+    AxisRgb x = kAxisColorX;
+    AxisRgb y = kAxisColorY;
+    AxisRgb z = kAxisColorZ;
 
-    [[nodiscard]] constexpr AxisPaletteUVE GridVariantUVE() const {
-        return AxisPaletteUVE{x.Scaled(kGridAxisDimFactorUVE), y.Scaled(kGridAxisDimFactorUVE),
-                              z.Scaled(kGridAxisDimFactorUVE)};
+    [[nodiscard]] constexpr AxisPalette GridVariant() const {
+        return AxisPalette{x.Scaled(kGridAxisDimFactor), y.Scaled(kGridAxisDimFactor),
+                              z.Scaled(kGridAxisDimFactor)};
     }
 };
 
 /// A channel a colour picker may legitimately produce. Anything outside 0..1, or not a number at
 /// all, is rejected rather than clamped: a persisted file that says -3 or NaN is corrupt, and
 /// silently reading it as 0 would hand back a palette the author never chose.
-[[nodiscard]] constexpr bool IsAxisChannelValidUVE(float channel) {
+[[nodiscard]] constexpr bool IsAxisChannelValid(float channel) {
     return channel >= 0.f && channel <= 1.f;
 }
 
-[[nodiscard]] constexpr bool IsAxisRgbValidUVE(const AxisRgbUVE& color) {
-    return IsAxisChannelValidUVE(color.r) && IsAxisChannelValidUVE(color.g) &&
-           IsAxisChannelValidUVE(color.b);
+[[nodiscard]] constexpr bool IsAxisRgbValid(const AxisRgb& color) {
+    return IsAxisChannelValid(color.r) && IsAxisChannelValid(color.g) &&
+           IsAxisChannelValid(color.b);
 }
 
-[[nodiscard]] constexpr bool IsAxisPaletteValidUVE(const AxisPaletteUVE& palette) {
-    return IsAxisRgbValidUVE(palette.x) && IsAxisRgbValidUVE(palette.y) &&
-           IsAxisRgbValidUVE(palette.z);
+[[nodiscard]] constexpr bool IsAxisPaletteValid(const AxisPalette& palette) {
+    return IsAxisRgbValid(palette.x) && IsAxisRgbValid(palette.y) &&
+           IsAxisRgbValid(palette.z);
 }
 
 } // namespace univex::viewport

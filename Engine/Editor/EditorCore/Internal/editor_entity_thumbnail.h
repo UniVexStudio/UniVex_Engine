@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace UVE::Asset {
-class IAssetDatabaseUVE;
+class IAssetDatabase;
 }
 
 namespace UVE::Editor {
@@ -21,18 +21,18 @@ namespace UVE::Editor {
 /// (its model, posed by `poseMesh`) and every primitive (Cube, Sphere, Plane, Capsule, Cylinder) in
 /// the entity, each where its transform puts it, with a look per surface (`lookOf` for a material,
 /// a primitive's own colour). Read from the file alone; nothing is placed in a scene.
-struct EntityThumbnailSceneUVE final {
-    Asset::MeshAssetUVE mesh;
-    std::vector<MeshThumbnailLookUVE> looks;
+struct EntityThumbnailScene final {
+    Asset::MeshAsset mesh;
+    std::vector<MeshThumbnailLook> looks;
     /// The files it came from (the entity, its models), to draw it again when one changes.
     std::vector<std::filesystem::path> sources;
     /// From the centre toward the entity's "Thumbnail Camera" (a Camera3D so named), when it has one.
-    std::optional<Math::Vector3UVE> viewDirection;
+    std::optional<Math::Vector3> viewDirection;
 };
 
-[[nodiscard]] bool BuildEntityThumbnailSceneUVE(const std::filesystem::path& entityFile, Asset::IAssetDatabaseUVE& database,
-                                                const std::function<MeshThumbnailLookUVE(Asset::AssetGuidUVE material)>& lookOf,
-                                                const std::function<void(Asset::MeshAssetUVE& mesh, const std::filesystem::path& file)>& poseMesh,
-                                                EntityThumbnailSceneUVE& out);
+[[nodiscard]] bool BuildEntityThumbnailScene(const std::filesystem::path& entityFile, Asset::IAssetDatabase& database,
+                                                const std::function<MeshThumbnailLook(Asset::AssetGuid material)>& lookOf,
+                                                const std::function<void(Asset::MeshAsset& mesh, const std::filesystem::path& file)>& poseMesh,
+                                                EntityThumbnailScene& out);
 
 } // namespace UVE::Editor

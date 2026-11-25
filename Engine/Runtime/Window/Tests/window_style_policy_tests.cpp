@@ -7,23 +7,23 @@
 namespace UVE::Window::Tests {
 namespace {
 
-TEST(WindowStylePolicyUVETest, OrdinaryWindowedAndMaximizedModesKeepDecorations) {
-    EXPECT_TRUE(ShouldDecorateWindowUVE(false, Platform::WindowModeUVE::Windowed));
-    EXPECT_TRUE(ShouldDecorateWindowUVE(false, Platform::WindowModeUVE::Maximized));
+TEST(WindowStylePolicyTest, OrdinaryWindowedAndMaximizedModesKeepDecorations) {
+    EXPECT_TRUE(ShouldDecorateWindow(false, Platform::WindowMode::Windowed));
+    EXPECT_TRUE(ShouldDecorateWindow(false, Platform::WindowMode::Maximized));
 }
 
-TEST(WindowStylePolicyUVETest, BorderlessModeRemovesDecorations) {
-    EXPECT_FALSE(ShouldDecorateWindowUVE(false, Platform::WindowModeUVE::Borderless));
+TEST(WindowStylePolicyTest, BorderlessModeRemovesDecorations) {
+    EXPECT_FALSE(ShouldDecorateWindow(false, Platform::WindowMode::Borderless));
 }
 
-TEST(WindowStylePolicyUVETest, BothFullscreenModesAreUndecorated) {
-    EXPECT_FALSE(ShouldDecorateWindowUVE(false, Platform::WindowModeUVE::Fullscreen));
-    EXPECT_FALSE(ShouldDecorateWindowUVE(false, Platform::WindowModeUVE::ExclusiveFullscreen));
+TEST(WindowStylePolicyTest, BothFullscreenModesAreUndecorated) {
+    EXPECT_FALSE(ShouldDecorateWindow(false, Platform::WindowMode::Fullscreen));
+    EXPECT_FALSE(ShouldDecorateWindow(false, Platform::WindowMode::ExclusiveFullscreen));
 }
 
-TEST(WindowStylePolicyUVETest, BorderlessSettingRemovesDecorationsFromWindowedModes) {
-    EXPECT_FALSE(ShouldDecorateWindowUVE(true, Platform::WindowModeUVE::Windowed));
-    EXPECT_FALSE(ShouldDecorateWindowUVE(true, Platform::WindowModeUVE::Maximized));
+TEST(WindowStylePolicyTest, BorderlessSettingRemovesDecorationsFromWindowedModes) {
+    EXPECT_FALSE(ShouldDecorateWindow(true, Platform::WindowMode::Windowed));
+    EXPECT_FALSE(ShouldDecorateWindow(true, Platform::WindowMode::Maximized));
 }
 
 } // namespace

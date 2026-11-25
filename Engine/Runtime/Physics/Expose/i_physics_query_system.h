@@ -13,27 +13,27 @@ namespace UVE::Physics {
 /// Read-only and caller-command physics query boundary above the existing bounded algorithms.
 /// This interface owns no ECS, collider, controller, or backend state; implementations only route
 /// calls to the existing shape-cast, overlap, and character-controller authorities.
-/// Thread-safety follows IEntityManagerUVE and ISceneGraphUVE: calls are main-thread commands unless
+/// Thread-safety follows IEntityManager and ISceneGraph: calls are main-thread commands unless
 /// the caller separately provides concurrent-read/mutation guarantees for those scene services.
-class IPhysicsQuerySystemUVE {
+class IPhysicsQuerySystem {
 public:
-    virtual ~IPhysicsQuerySystemUVE() = default;
+    virtual ~IPhysicsQuerySystem() = default;
 
-    [[nodiscard]] virtual std::optional<SphereCastHitUVE> SphereCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const SphereCastQueryUVE& query) const = 0;
-    [[nodiscard]] virtual std::optional<BoxCastHitUVE> BoxCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const BoxCastQueryUVE& query) const = 0;
-    [[nodiscard]] virtual std::optional<CapsuleCastHitUVE> CapsuleCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const CapsuleCastQueryUVE& query) const = 0;
-    [[nodiscard]] virtual AreaOverlapQueryResultUVE QueryAreaOverlapsUVE(
-        Scene::IEntityManagerUVE& entityManager,
-        std::size_t maximumResults = kMaximumAreaOverlapResultsUVE) const = 0;
-    [[nodiscard]] virtual CharacterControllerMoveResultUVE MoveCharacterUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        const CharacterControllerInputUVE& input) const = 0;
-    [[nodiscard]] virtual CharacterControllerMoveResultUVE MoveCharacterWithToIUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        const CharacterControllerInputUVE& input) const = 0;
+    [[nodiscard]] virtual std::optional<SphereCastHit> SphereCast(
+        Scene::IEntityManager& entityManager, const SphereCastQuery& query) const = 0;
+    [[nodiscard]] virtual std::optional<BoxCastHit> BoxCast(
+        Scene::IEntityManager& entityManager, const BoxCastQuery& query) const = 0;
+    [[nodiscard]] virtual std::optional<CapsuleCastHit> CapsuleCast(
+        Scene::IEntityManager& entityManager, const CapsuleCastQuery& query) const = 0;
+    [[nodiscard]] virtual AreaOverlapQueryResult QueryAreaOverlaps(
+        Scene::IEntityManager& entityManager,
+        std::size_t maximumResults = kMaximumAreaOverlapResults) const = 0;
+    [[nodiscard]] virtual CharacterControllerMoveResult MoveCharacter(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        const CharacterControllerInput& input) const = 0;
+    [[nodiscard]] virtual CharacterControllerMoveResult MoveCharacterWithToI(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        const CharacterControllerInput& input) const = 0;
 };
 
 } // namespace UVE::Physics

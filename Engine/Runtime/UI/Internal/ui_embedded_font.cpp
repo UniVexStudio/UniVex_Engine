@@ -7,7 +7,7 @@
 
 namespace UVE::UI {
 
-std::span<const std::uint8_t> GetEmbeddedUIFontBytesUVE() noexcept {
+std::span<const std::uint8_t> GetEmbeddedUIFontBytes() noexcept {
     return std::span<const std::uint8_t>{uve_ui_runtime_font_ttf_bytes};
 }
 

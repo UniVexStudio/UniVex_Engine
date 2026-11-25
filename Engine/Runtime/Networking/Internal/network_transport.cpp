@@ -10,29 +10,29 @@ namespace UVE::Network {
 
 // A framed reliable packet must always fit the transport: if either bound moves, this forces
 // the conscious decision to move (or version) the other instead of silently breaking delivery.
-static_assert(kTransportMaximumDatagramBytesUVE == kReliablePacketMaximumPayloadBytesUVE,
+static_assert(kTransportMaximumDatagramBytes == kReliablePacketMaximumPayloadBytes,
               "transport datagram cap must match the reliable window payload bound");
 
-struct LoopbackLinkStateUVE final {
+struct LoopbackLinkState final {
     std::size_t maxQueuedDatagrams = 0U;
     std::deque<std::vector<std::uint8_t>> aToB;
     std::deque<std::vector<std::uint8_t>> bToA;
-    LoopbackTransportStatsUVE statsA;
-    LoopbackTransportStatsUVE statsB;
+    LoopbackTransportStats statsA;
+    LoopbackTransportStats statsB;
 };
 
-LoopbackEndpointUVE::LoopbackEndpointUVE(std::shared_ptr<LoopbackLinkStateUVE> link,
+LoopbackEndpoint::LoopbackEndpoint(std::shared_ptr<LoopbackLinkState> link,
                                          const bool isSideA) noexcept
     : m_link(std::move(link)), m_isSideA(isSideA) {}
 
-LoopbackEndpointUVE::~LoopbackEndpointUVE() = default;
+LoopbackEndpoint::~LoopbackEndpoint() = default;
 
-bool LoopbackEndpointUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
+bool LoopbackEndpoint::Send(const std::vector<std::uint8_t>& payload) {
     if (m_link == nullptr) {
         return false;
     }
-    LoopbackTransportStatsUVE& stats = m_isSideA ? m_link->statsA : m_link->statsB;
-    if (payload.size() > kTransportMaximumDatagramBytesUVE) {
+    LoopbackTransportStats& stats = m_isSideA ? m_link->statsA : m_link->statsB;
+    if (payload.size() > kTransportMaximumDatagramBytes) {
         ++stats.datagramsDroppedOversize;
         return false;
     }
@@ -46,7 +46,7 @@ bool LoopbackEndpointUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
     return true;
 }
 
-std::optional<std::vector<std::uint8_t>> LoopbackEndpointUVE::TryReceiveUVE() {
+std::optional<std::vector<std::uint8_t>> LoopbackEndpoint::TryReceive() {
     if (m_link == nullptr) {
         return std::nullopt;
     }
@@ -64,11 +64,11 @@ std::optional<std::vector<std::uint8_t>> LoopbackEndpointUVE::TryReceiveUVE() {
     return datagram;
 }
 
-bool LoopbackEndpointUVE::HasPendingUVE() const noexcept {
-    return PendingCountUVE() > 0U;
+bool LoopbackEndpoint::HasPending() const noexcept {
+    return PendingCount() > 0U;
 }
 
-std::size_t LoopbackEndpointUVE::PendingCountUVE() const noexcept {
+std::size_t LoopbackEndpoint::PendingCount() const noexcept {
     if (m_link == nullptr) {
         return 0U;
     }
@@ -76,19 +76,19 @@ std::size_t LoopbackEndpointUVE::PendingCountUVE() const noexcept {
     return inbound.size();
 }
 
-LoopbackTransportStatsUVE LoopbackEndpointUVE::StatsUVE() const noexcept {
+LoopbackTransportStats LoopbackEndpoint::Stats() const noexcept {
     if (m_link == nullptr) {
-        return LoopbackTransportStatsUVE{};
+        return LoopbackTransportStats{};
     }
     return m_isSideA ? m_link->statsA : m_link->statsB;
 }
 
-LoopbackTransportPairUVE CreateLoopbackTransportPairUVE(const std::size_t maxQueuedDatagrams) {
-    auto link = std::make_shared<LoopbackLinkStateUVE>();
+LoopbackTransportPair CreateLoopbackTransportPair(const std::size_t maxQueuedDatagrams) {
+    auto link = std::make_shared<LoopbackLinkState>();
     link->maxQueuedDatagrams = maxQueuedDatagrams;
-    LoopbackEndpointUVE a(link, true);
-    LoopbackEndpointUVE b(link, false);
-    return LoopbackTransportPairUVE{std::move(a), std::move(b)};
+    LoopbackEndpoint a(link, true);
+    LoopbackEndpoint b(link, false);
+    return LoopbackTransportPair{std::move(a), std::move(b)};
 }
 
 } // namespace UVE::Network

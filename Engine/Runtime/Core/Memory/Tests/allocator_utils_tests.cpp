@@ -10,9 +10,9 @@
 namespace UVE::Memory::Tests {
 namespace {
 
-struct TestObjectUVE {
-    TestObjectUVE(int valueIn, bool* destructorFlagIn) : value(valueIn), destructorFlag(destructorFlagIn) {}
-    ~TestObjectUVE() {
+struct TestObject {
+    TestObject(int valueIn, bool* destructorFlagIn) : value(valueIn), destructorFlag(destructorFlagIn) {}
+    ~TestObject() {
         if (destructorFlag != nullptr) {
             *destructorFlag = true;
         }
@@ -22,43 +22,43 @@ struct TestObjectUVE {
     bool* destructorFlag;
 };
 
-TEST(AllocatorUtilsUVETest, ConstructUVE_RunsConstructorWithForwardedArgs) {
-    HeapAllocatorUVE allocator;
+TEST(AllocatorUtilsTest, Construct_RunsConstructorWithForwardedArgs) {
+    HeapAllocator allocator;
     bool destructorCalled = false;
 
-    TestObjectUVE* const object =
-        ConstructUVE<TestObjectUVE>(allocator, __FILE__, __LINE__, 42, &destructorCalled);
+    TestObject* const object =
+        Construct<TestObject>(allocator, __FILE__, __LINE__, 42, &destructorCalled);
     ASSERT_NE(object, nullptr);
     EXPECT_EQ(object->value, 42);
     EXPECT_FALSE(destructorCalled);
 
-    DestroyUVE(allocator, object);
+    Destroy(allocator, object);
 }
 
-TEST(AllocatorUtilsUVETest, DestroyUVE_CallsDestructorBeforeDeallocating) {
-    HeapAllocatorUVE allocator;
+TEST(AllocatorUtilsTest, Destroy_CallsDestructorBeforeDeallocating) {
+    HeapAllocator allocator;
     bool destructorCalled = false;
-    TestObjectUVE* const object =
-        ConstructUVE<TestObjectUVE>(allocator, __FILE__, __LINE__, 7, &destructorCalled);
-    ASSERT_EQ(allocator.GetAllocatedBytesUVE(), sizeof(TestObjectUVE));
+    TestObject* const object =
+        Construct<TestObject>(allocator, __FILE__, __LINE__, 7, &destructorCalled);
+    ASSERT_EQ(allocator.GetAllocatedBytes(), sizeof(TestObject));
 
-    DestroyUVE(allocator, object);
+    Destroy(allocator, object);
     EXPECT_TRUE(destructorCalled);
-    EXPECT_EQ(allocator.GetAllocatedBytesUVE(), 0U);
+    EXPECT_EQ(allocator.GetAllocatedBytes(), 0U);
 }
 
-TEST(AllocatorUtilsUVETest, DestroyUVE_NullObject_IsNoOp) {
-    HeapAllocatorUVE allocator;
-    DestroyUVE<TestObjectUVE>(allocator, nullptr); // must not crash
+TEST(AllocatorUtilsTest, Destroy_NullObject_IsNoOp) {
+    HeapAllocator allocator;
+    Destroy<TestObject>(allocator, nullptr); // must not crash
 }
 
-TEST(AllocatorUtilsUVETest, UveConstructMacro_CapturesSourceLocationAutomatically) {
-    HeapAllocatorUVE allocator;
+TEST(AllocatorUtilsTest, UveConstructMacro_CapturesSourceLocationAutomatically) {
+    HeapAllocator allocator;
     bool destructorCalled = false;
-    TestObjectUVE* const object = UVE_CONSTRUCT(allocator, TestObjectUVE, 5, &destructorCalled);
+    TestObject* const object = UVE_CONSTRUCT(allocator, TestObject, 5, &destructorCalled);
     ASSERT_NE(object, nullptr);
     EXPECT_EQ(object->value, 5);
-    DestroyUVE(allocator, object);
+    Destroy(allocator, object);
 }
 
 } // namespace

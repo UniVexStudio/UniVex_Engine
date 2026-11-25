@@ -7,17 +7,17 @@
 
 namespace UVE::Render {
 
-/// LightSystemUVE is the concrete, engine-standard implementation of ILightSystemUVE. Deliberately
-/// stateless (no members, no PIMPL) — mirrors CameraSystemUVE's/MeshRendererUVE's precedent for
-/// utility services that always take the IEntityManagerUVE& they operate on as an explicit
+/// LightSystem is the concrete, engine-standard implementation of ILightSystem. Deliberately
+/// stateless (no members, no PIMPL) — mirrors CameraSystem's/MeshRenderer's precedent for
+/// utility services that always take the IEntityManager& they operate on as an explicit
 /// parameter rather than owning a reference to one.
-class LightSystemUVE final : public ILightSystemUVE {
+class LightSystem final : public ILightSystem {
 public:
-    [[nodiscard]] LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const override;
+    [[nodiscard]] LightList ExtractActiveLights(Scene::IEntityManager& entityManager) const override;
 
-    [[nodiscard]] LightListUVE ExtractActiveLightsForViewUVE(
-        Scene::IEntityManagerUVE& entityManager,
-        const Math::Vector3UVE& viewPosition) const override;
+    [[nodiscard]] LightList ExtractActiveLightsForView(
+        Scene::IEntityManager& entityManager,
+        const Math::Vector3& viewPosition) const override;
 };
 
 } // namespace UVE::Render

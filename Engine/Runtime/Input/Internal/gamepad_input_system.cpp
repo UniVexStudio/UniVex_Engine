@@ -9,28 +9,28 @@
 
 namespace UVE::Input {
 
-GamepadInputSystemUVE::GamepadInputSystemUVE(const float deadZone) noexcept
+GamepadInputSystem::GamepadInputSystem(const float deadZone) noexcept
     : m_deadZone(std::isfinite(deadZone) && deadZone >= 0.0F && deadZone < 1.0F ? deadZone : 0.15F) {}
 
-void GamepadInputSystemUVE::SetDeadZoneUVE(const float deadZone) noexcept {
+void GamepadInputSystem::SetDeadZone(const float deadZone) noexcept {
     if (std::isfinite(deadZone) && deadZone >= 0.0F && deadZone < 1.0F) {
         m_deadZone = deadZone;
     }
 }
 
-bool GamepadInputSystemUVE::IsValidGamepadIndexUVE(const std::size_t gamepadIndex) noexcept {
-    return gamepadIndex < kMaximumGamepadCountUVE;
+bool GamepadInputSystem::IsValidGamepadIndex(const std::size_t gamepadIndex) noexcept {
+    return gamepadIndex < kMaximumGamepadCount;
 }
 
-bool GamepadInputSystemUVE::IsValidAxisUVE(const GamepadAxisUVE axis) noexcept {
-    return static_cast<std::size_t>(axis) < kGamepadAxisCountUVE;
+bool GamepadInputSystem::IsValidAxis(const GamepadAxis axis) noexcept {
+    return static_cast<std::size_t>(axis) < kGamepadAxisCount;
 }
 
-bool GamepadInputSystemUVE::IsValidButtonUVE(const GamepadButtonUVE button) noexcept {
-    return static_cast<std::size_t>(button) < kGamepadButtonCountUVE;
+bool GamepadInputSystem::IsValidButton(const GamepadButton button) noexcept {
+    return static_cast<std::size_t>(button) < kGamepadButtonCount;
 }
 
-float GamepadInputSystemUVE::NormalizeAxisValueUVE(const float value) const noexcept {
+float GamepadInputSystem::NormalizeAxisValue(const float value) const noexcept {
     if (!std::isfinite(value)) {
         return 0.0F;
     }
@@ -43,8 +43,8 @@ float GamepadInputSystemUVE::NormalizeAxisValueUVE(const float value) const noex
     return std::copysign(normalizedMagnitude, clamped);
 }
 
-void GamepadInputSystemUVE::SetConnectedUVE(const std::size_t gamepadIndex, const bool connected) {
-    if (!IsValidGamepadIndexUVE(gamepadIndex)) {
+void GamepadInputSystem::SetConnected(const std::size_t gamepadIndex, const bool connected) {
+    if (!IsValidGamepadIndex(gamepadIndex)) {
         return;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
@@ -55,9 +55,9 @@ void GamepadInputSystemUVE::SetConnectedUVE(const std::size_t gamepadIndex, cons
     }
 }
 
-void GamepadInputSystemUVE::SetAxisStateUVE(const std::size_t gamepadIndex, const GamepadAxisUVE axis,
+void GamepadInputSystem::SetAxisState(const std::size_t gamepadIndex, const GamepadAxis axis,
                                             const float value) {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidAxisUVE(axis)) {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidAxis(axis)) {
         return;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
@@ -67,9 +67,9 @@ void GamepadInputSystemUVE::SetAxisStateUVE(const std::size_t gamepadIndex, cons
     m_liveState[gamepadIndex].axes[static_cast<std::size_t>(axis)] = value;
 }
 
-void GamepadInputSystemUVE::SetButtonStateUVE(const std::size_t gamepadIndex, const GamepadButtonUVE button,
+void GamepadInputSystem::SetButtonState(const std::size_t gamepadIndex, const GamepadButton button,
                                               const bool isDown) {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidButtonUVE(button)) {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidButton(button)) {
         return;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
@@ -79,18 +79,18 @@ void GamepadInputSystemUVE::SetButtonStateUVE(const std::size_t gamepadIndex, co
     m_liveState[gamepadIndex].buttons[static_cast<std::size_t>(button)] = isDown;
 }
 
-void GamepadInputSystemUVE::UpdateUVE() {
+void GamepadInputSystem::Update() {
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     m_previousState = m_currentState;
-    AdvanceInputFrameNumberUVE(m_frameNumber);
+    AdvanceInputFrameNumber(m_frameNumber);
 
-    for (std::size_t gamepadIndex = 0U; gamepadIndex < kMaximumGamepadCountUVE; ++gamepadIndex) {
-        GamepadStateSnapshotUVE committed{};
+    for (std::size_t gamepadIndex = 0U; gamepadIndex < kMaximumGamepadCount; ++gamepadIndex) {
+        GamepadStateSnapshot committed{};
         committed.frameNumber = m_frameNumber;
         committed.connected = m_liveState[gamepadIndex].connected;
         if (committed.connected) {
-            for (std::size_t axisIndex = 0U; axisIndex < kGamepadAxisCountUVE; ++axisIndex) {
-                committed.axes[axisIndex] = NormalizeAxisValueUVE(m_liveState[gamepadIndex].axes[axisIndex]);
+            for (std::size_t axisIndex = 0U; axisIndex < kGamepadAxisCount; ++axisIndex) {
+                committed.axes[axisIndex] = NormalizeAxisValue(m_liveState[gamepadIndex].axes[axisIndex]);
             }
             committed.buttons = m_liveState[gamepadIndex].buttons;
         }
@@ -98,41 +98,41 @@ void GamepadInputSystemUVE::UpdateUVE() {
     }
 }
 
-GamepadStateSnapshotUVE GamepadInputSystemUVE::GetSnapshotUVE(const std::size_t gamepadIndex) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex)) {
+GamepadStateSnapshot GamepadInputSystem::GetSnapshot(const std::size_t gamepadIndex) const {
+    if (!IsValidGamepadIndex(gamepadIndex)) {
         return {};
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_currentState[gamepadIndex];
 }
 
-GamepadStateSnapshotUVE GamepadInputSystemUVE::GetPreviousSnapshotUVE(const std::size_t gamepadIndex) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex)) {
+GamepadStateSnapshot GamepadInputSystem::GetPreviousSnapshot(const std::size_t gamepadIndex) const {
+    if (!IsValidGamepadIndex(gamepadIndex)) {
         return {};
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_previousState[gamepadIndex];
 }
 
-float GamepadInputSystemUVE::GetAxisValueUVE(const std::size_t gamepadIndex, const GamepadAxisUVE axis) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidAxisUVE(axis)) {
+float GamepadInputSystem::GetAxisValue(const std::size_t gamepadIndex, const GamepadAxis axis) const {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidAxis(axis)) {
         return 0.0F;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_currentState[gamepadIndex].axes[static_cast<std::size_t>(axis)];
 }
 
-bool GamepadInputSystemUVE::IsButtonDownUVE(const std::size_t gamepadIndex, const GamepadButtonUVE button) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidButtonUVE(button)) {
+bool GamepadInputSystem::IsButtonDown(const std::size_t gamepadIndex, const GamepadButton button) const {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidButton(button)) {
         return false;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
     return m_currentState[gamepadIndex].buttons[static_cast<std::size_t>(button)];
 }
 
-bool GamepadInputSystemUVE::WasButtonPressedThisFrameUVE(const std::size_t gamepadIndex,
-                                                          const GamepadButtonUVE button) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidButtonUVE(button)) {
+bool GamepadInputSystem::WasButtonPressedThisFrame(const std::size_t gamepadIndex,
+                                                          const GamepadButton button) const {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidButton(button)) {
         return false;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);
@@ -140,9 +140,9 @@ bool GamepadInputSystemUVE::WasButtonPressedThisFrameUVE(const std::size_t gamep
     return m_currentState[gamepadIndex].buttons[buttonIndex] && !m_previousState[gamepadIndex].buttons[buttonIndex];
 }
 
-bool GamepadInputSystemUVE::WasButtonReleasedThisFrameUVE(const std::size_t gamepadIndex,
-                                                           const GamepadButtonUVE button) const {
-    if (!IsValidGamepadIndexUVE(gamepadIndex) || !IsValidButtonUVE(button)) {
+bool GamepadInputSystem::WasButtonReleasedThisFrame(const std::size_t gamepadIndex,
+                                                           const GamepadButton button) const {
+    if (!IsValidGamepadIndex(gamepadIndex) || !IsValidButton(button)) {
         return false;
     }
     const std::lock_guard<std::mutex> lock(m_liveStateMutex);

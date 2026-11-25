@@ -20,150 +20,150 @@
 namespace UVE::UI::Tests {
 namespace {
 
-class CanvasAncestryUVETest : public ::testing::Test {
+class CanvasAncestryTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    Input::InputSystemUVE inputSystem{eventSystem};
-    UIRuntimeUVE runtime;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    Input::InputSystem inputSystem{eventSystem};
+    UIRuntime runtime;
 
-    Scene::EntityUVE PlaceUVE(const Scene::TransformComponentUVE& transform = {}) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
+    Scene::Entity Place(const Scene::TransformComponent& transform = {}) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    void ParentUVE(const Scene::EntityUVE child, const Scene::EntityUVE parent) {
-        sceneGraph.SetParentUVE(entityManager, child, parent);
-        sceneGraph.UpdateUVE(entityManager);
+    void Parent(const Scene::Entity child, const Scene::Entity parent) {
+        sceneGraph.SetParent(entityManager, child, parent);
+        sceneGraph.Update(entityManager);
     }
 };
 
-TEST_F(CanvasAncestryUVETest, OrphanWidgetHasNoCanvasAndDraws) {
-    const Scene::EntityUVE image = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(image);
-    const CanvasAncestryUVE ancestry = ResolveCanvasAncestryUVE(entityManager, image);
+TEST_F(CanvasAncestryTest, OrphanWidgetHasNoCanvasAndDraws) {
+    const Scene::Entity image = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(image);
+    const CanvasAncestry ancestry = ResolveCanvasAncestry(entityManager, image);
     EXPECT_FALSE(ancestry.hasCanvas);
     EXPECT_TRUE(ancestry.visible);
     EXPECT_EQ(ancestry.sortOrder, 0);
-    EXPECT_TRUE(ShouldDrawUiWidgetUVE(entityManager, image));
-    inputSystem.UpdateUVE();
-    runtime.TickUVE(entityManager, inputSystem);
-    EXPECT_EQ(runtime.GetDrawBatchUVE().quads.size(), 1U);
+    EXPECT_TRUE(ShouldDrawUiWidget(entityManager, image));
+    inputSystem.Update();
+    runtime.Tick(entityManager, inputSystem);
+    EXPECT_EQ(runtime.GetDrawBatch().quads.size(), 1U);
 }
 
-TEST_F(CanvasAncestryUVETest, ClosestCanvasOwnsSortOrder) {
-    const Scene::EntityUVE outer = PlaceUVE();
-    Scene::CanvasComponentUVE outerCanvas{};
+TEST_F(CanvasAncestryTest, ClosestCanvasOwnsSortOrder) {
+    const Scene::Entity outer = Place();
+    Scene::CanvasComponent outerCanvas{};
     outerCanvas.sortOrder = 4;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(outer, outerCanvas);
-    const Scene::EntityUVE inner = PlaceUVE();
-    Scene::CanvasComponentUVE innerCanvas{};
+    entityManager.AddComponent<Scene::CanvasComponent>(outer, outerCanvas);
+    const Scene::Entity inner = Place();
+    Scene::CanvasComponent innerCanvas{};
     innerCanvas.sortOrder = 9;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(inner, innerCanvas);
-    const Scene::EntityUVE image = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(image);
-    ParentUVE(inner, outer);
-    ParentUVE(image, inner);
-    const CanvasAncestryUVE ancestry = ResolveCanvasAncestryUVE(entityManager, image);
+    entityManager.AddComponent<Scene::CanvasComponent>(inner, innerCanvas);
+    const Scene::Entity image = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(image);
+    Parent(inner, outer);
+    Parent(image, inner);
+    const CanvasAncestry ancestry = ResolveCanvasAncestry(entityManager, image);
     EXPECT_TRUE(ancestry.hasCanvas);
     EXPECT_EQ(ancestry.canvas, inner);
     EXPECT_EQ(ancestry.sortOrder, 9);
     EXPECT_TRUE(ancestry.visible);
 }
 
-TEST_F(CanvasAncestryUVETest, HiddenAncestorCanvasHidesEvenWhenInnerIsVisible) {
-    const Scene::EntityUVE outer = PlaceUVE();
-    Scene::CanvasComponentUVE outerCanvas{};
+TEST_F(CanvasAncestryTest, HiddenAncestorCanvasHidesEvenWhenInnerIsVisible) {
+    const Scene::Entity outer = Place();
+    Scene::CanvasComponent outerCanvas{};
     outerCanvas.visible = false;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(outer, outerCanvas);
-    const Scene::EntityUVE inner = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(inner, Scene::CanvasComponentUVE{});
-    const Scene::EntityUVE image = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(image);
-    ParentUVE(inner, outer);
-    ParentUVE(image, inner);
-    EXPECT_FALSE(ResolveCanvasAncestryUVE(entityManager, image).visible);
-    EXPECT_FALSE(ShouldDrawUiWidgetUVE(entityManager, image));
-    inputSystem.UpdateUVE();
-    runtime.TickUVE(entityManager, inputSystem);
-    EXPECT_TRUE(runtime.GetDrawBatchUVE().quads.empty());
+    entityManager.AddComponent<Scene::CanvasComponent>(outer, outerCanvas);
+    const Scene::Entity inner = Place();
+    entityManager.AddComponent<Scene::CanvasComponent>(inner, Scene::CanvasComponent{});
+    const Scene::Entity image = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(image);
+    Parent(inner, outer);
+    Parent(image, inner);
+    EXPECT_FALSE(ResolveCanvasAncestry(entityManager, image).visible);
+    EXPECT_FALSE(ShouldDrawUiWidget(entityManager, image));
+    inputSystem.Update();
+    runtime.Tick(entityManager, inputSystem);
+    EXPECT_TRUE(runtime.GetDrawBatch().quads.empty());
 }
 
-TEST_F(CanvasAncestryUVETest, HiddenCanvasDropsQuadsAndClearsButtonClicks) {
-    const Scene::EntityUVE canvas = PlaceUVE();
-    Scene::CanvasComponentUVE canvasComponent{};
+TEST_F(CanvasAncestryTest, HiddenCanvasDropsQuadsAndClearsButtonClicks) {
+    const Scene::Entity canvas = Place();
+    Scene::CanvasComponent canvasComponent{};
     canvasComponent.visible = false;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(canvas, canvasComponent);
-    const Scene::EntityUVE button = PlaceUVE();
-    Scene::UIButtonComponentUVE buttonComponent{};
-    buttonComponent.rect.position = Math::Vector2UVE{0.0F, 0.0F};
-    buttonComponent.rect.size = Math::Vector2UVE{50.0F, 50.0F};
-    entityManager.AddComponentUVE<Scene::UIButtonComponentUVE>(button, buttonComponent);
-    ParentUVE(button, canvas);
+    entityManager.AddComponent<Scene::CanvasComponent>(canvas, canvasComponent);
+    const Scene::Entity button = Place();
+    Scene::UIButtonComponent buttonComponent{};
+    buttonComponent.rect.position = Math::Vector2{0.0F, 0.0F};
+    buttonComponent.rect.size = Math::Vector2{50.0F, 50.0F};
+    entityManager.AddComponent<Scene::UIButtonComponent>(button, buttonComponent);
+    Parent(button, canvas);
 
-    inputSystem.SetMousePositionUVE(Math::Vector2UVE{10.0F, 10.0F});
-    inputSystem.SetMouseButtonStateUVE(Input::MouseButtonUVE::Left, true);
-    inputSystem.UpdateUVE();
-    runtime.TickUVE(entityManager, inputSystem);
+    inputSystem.SetMousePosition(Math::Vector2{10.0F, 10.0F});
+    inputSystem.SetMouseButtonState(Input::MouseButton::Left, true);
+    inputSystem.Update();
+    runtime.Tick(entityManager, inputSystem);
 
-    const Scene::UIButtonComponentUVE& live = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(button);
+    const Scene::UIButtonComponent& live = entityManager.GetComponent<Scene::UIButtonComponent>(button);
     EXPECT_FALSE(live.isHovered);
     EXPECT_FALSE(live.wasClickedThisFrame);
-    EXPECT_TRUE(runtime.GetDrawBatchUVE().quads.empty());
+    EXPECT_TRUE(runtime.GetDrawBatch().quads.empty());
 }
 
-TEST_F(CanvasAncestryUVETest, HigherSortOrderPaintsLater) {
-    const Scene::EntityUVE back = PlaceUVE();
-    Scene::CanvasComponentUVE backCanvas{};
+TEST_F(CanvasAncestryTest, HigherSortOrderPaintsLater) {
+    const Scene::Entity back = Place();
+    Scene::CanvasComponent backCanvas{};
     backCanvas.sortOrder = 1;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(back, backCanvas);
-    const Scene::EntityUVE front = PlaceUVE();
-    Scene::CanvasComponentUVE frontCanvas{};
+    entityManager.AddComponent<Scene::CanvasComponent>(back, backCanvas);
+    const Scene::Entity front = Place();
+    Scene::CanvasComponent frontCanvas{};
     frontCanvas.sortOrder = 5;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(front, frontCanvas);
+    entityManager.AddComponent<Scene::CanvasComponent>(front, frontCanvas);
 
-    Scene::UIImageComponentUVE backImage{};
-    backImage.tintColor = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-    const Scene::EntityUVE backWidget = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(backWidget, backImage);
-    ParentUVE(backWidget, back);
+    Scene::UIImageComponent backImage{};
+    backImage.tintColor = Math::Vector3{1.0F, 0.0F, 0.0F};
+    const Scene::Entity backWidget = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(backWidget, backImage);
+    Parent(backWidget, back);
 
-    Scene::UIImageComponentUVE frontImage{};
-    frontImage.tintColor = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
-    const Scene::EntityUVE frontWidget = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(frontWidget, frontImage);
-    ParentUVE(frontWidget, front);
+    Scene::UIImageComponent frontImage{};
+    frontImage.tintColor = Math::Vector3{0.0F, 0.0F, 1.0F};
+    const Scene::Entity frontWidget = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(frontWidget, frontImage);
+    Parent(frontWidget, front);
 
-    inputSystem.UpdateUVE();
-    runtime.TickUVE(entityManager, inputSystem);
-    ASSERT_EQ(runtime.GetDrawBatchUVE().quads.size(), 2U);
-    EXPECT_EQ(runtime.GetDrawBatchUVE().quads[0].color, backImage.tintColor);
-    EXPECT_EQ(runtime.GetDrawBatchUVE().quads[1].color, frontImage.tintColor);
+    inputSystem.Update();
+    runtime.Tick(entityManager, inputSystem);
+    ASSERT_EQ(runtime.GetDrawBatch().quads.size(), 2U);
+    EXPECT_EQ(runtime.GetDrawBatch().quads[0].color, backImage.tintColor);
+    EXPECT_EQ(runtime.GetDrawBatch().quads[1].color, frontImage.tintColor);
 }
 
-TEST_F(CanvasAncestryUVETest, WidgetVisibilityHidesWithoutACanvas) {
-    const Scene::EntityUVE image = PlaceUVE();
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(image);
-    entityManager.AddComponentUVE<Scene::VisibilityComponentUVE>(image, Scene::VisibilityComponentUVE{});
-    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(image).visible = false;
-    entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(image).visibleInHierarchy = false;
-    EXPECT_FALSE(ShouldDrawUiWidgetUVE(entityManager, image));
-    inputSystem.UpdateUVE();
-    runtime.TickUVE(entityManager, inputSystem);
-    EXPECT_TRUE(runtime.GetDrawBatchUVE().quads.empty());
+TEST_F(CanvasAncestryTest, WidgetVisibilityHidesWithoutACanvas) {
+    const Scene::Entity image = Place();
+    entityManager.AddComponent<Scene::UIImageComponent>(image);
+    entityManager.AddComponent<Scene::VisibilityComponent>(image, Scene::VisibilityComponent{});
+    entityManager.GetComponent<Scene::VisibilityComponent>(image).visible = false;
+    entityManager.GetComponent<Scene::VisibilityComponent>(image).visibleInHierarchy = false;
+    EXPECT_FALSE(ShouldDrawUiWidget(entityManager, image));
+    inputSystem.Update();
+    runtime.Tick(entityManager, inputSystem);
+    EXPECT_TRUE(runtime.GetDrawBatch().quads.empty());
 }
 
-TEST_F(CanvasAncestryUVETest, SelfCanvasOnTheWidgetEntityCounts) {
-    const Scene::EntityUVE entity = PlaceUVE();
-    Scene::CanvasComponentUVE canvas{};
+TEST_F(CanvasAncestryTest, SelfCanvasOnTheWidgetEntityCounts) {
+    const Scene::Entity entity = Place();
+    Scene::CanvasComponent canvas{};
     canvas.sortOrder = 3;
-    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(entity, canvas);
-    entityManager.AddComponentUVE<Scene::UIImageComponentUVE>(entity);
-    const CanvasAncestryUVE ancestry = ResolveCanvasAncestryUVE(entityManager, entity);
+    entityManager.AddComponent<Scene::CanvasComponent>(entity, canvas);
+    entityManager.AddComponent<Scene::UIImageComponent>(entity);
+    const CanvasAncestry ancestry = ResolveCanvasAncestry(entityManager, entity);
     EXPECT_TRUE(ancestry.hasCanvas);
     EXPECT_EQ(ancestry.canvas, entity);
     EXPECT_EQ(ancestry.sortOrder, 3);

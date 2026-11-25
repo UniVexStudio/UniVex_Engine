@@ -13,26 +13,26 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] double SectionStartUVE(const Asset::MotionMontageAssetUVE& montage, const std::string_view name) noexcept {
-    const Asset::MontageSectionUVE* const section = Asset::FindMontageSectionUVE(montage, name);
+[[nodiscard]] double SectionStart(const Asset::MotionMontageAsset& montage, const std::string_view name) noexcept {
+    const Asset::MontageSection* const section = Asset::FindMontageSection(montage, name);
     return section != nullptr ? section->time : 0.0;
 }
 
 /// Raises the notifies in [from, to) on the way.
-void CollectNotifiesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double from,
-                        const double to, std::vector<MontageEventUVE>& events) {
+void CollectNotifies(const Asset::MotionMontageAsset& montage, MontagePlayback& playback, const double from,
+                        const double to, std::vector<MontageEvent>& events) {
     if (!(to > from)) {
         return;
     }
-    std::vector<const Asset::MontageNotifyUVE*> passed;
-    for (const Asset::MontageNotifyUVE& notify : montage.notifies) {
+    std::vector<const Asset::MontageNotify*> passed;
+    for (const Asset::MontageNotify& notify : montage.notifies) {
         if (notify.time >= from && notify.time < to) {
             passed.push_back(&notify);
         }
     }
     std::stable_sort(passed.begin(), passed.end(),
-                     [](const Asset::MontageNotifyUVE* a, const Asset::MontageNotifyUVE* b) { return a->time < b->time; });
-    for (const Asset::MontageNotifyUVE* notify : passed) {
+                     [](const Asset::MontageNotify* a, const Asset::MontageNotify* b) { return a->time < b->time; });
+    for (const Asset::MontageNotify* notify : passed) {
         if (playback.weight < notify->minWeight) {
             continue;   // below its trigger weight threshold (a blend in or out)
         }
@@ -47,72 +47,72 @@ void CollectNotifiesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlay
                 continue;
             }
         }
-        events.push_back(MontageEventUVE{MontageEventUVE::KindUVE::Notify, notify->name});
+        events.push_back(MontageEvent{MontageEvent::Kind::Notify, notify->name});
     }
 }
 
 /// Raises the begin / end of every notify state whose inside-ness changed.
-void UpdateStatesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
-                     std::vector<MontageEventUVE>& events) {
+void UpdateStates(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
+                     std::vector<MontageEvent>& events) {
     playback.activeStates.resize(montage.notifyStates.size(), false);
-    const bool running = playback.phase != MontagePhaseUVE::Stopped;
+    const bool running = playback.phase != MontagePhase::Stopped;
     for (std::size_t i = 0U; i < montage.notifyStates.size(); ++i) {
-        const Asset::MontageNotifyStateUVE& state = montage.notifyStates[i];
+        const Asset::MontageNotifyState& state = montage.notifyStates[i];
         const bool inside = running && playback.time >= state.begin && playback.time < state.end;
         if (inside != playback.activeStates[i]) {
             playback.activeStates[i] = inside;
-            events.push_back(MontageEventUVE{inside ? MontageEventUVE::KindUVE::NotifyBegin : MontageEventUVE::KindUVE::NotifyEnd,
+            events.push_back(MontageEvent{inside ? MontageEvent::Kind::NotifyBegin : MontageEvent::Kind::NotifyEnd,
                                              state.name});
         }
     }
 }
 
-void FinishUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
-               std::vector<MontageEventUVE>& events) {
-    playback.phase = MontagePhaseUVE::Stopped;
+void Finish(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
+               std::vector<MontageEvent>& events) {
+    playback.phase = MontagePhase::Stopped;
     playback.weight = 0.0F;
-    UpdateStatesUVE(montage, playback, events);   // every open state closes
-    events.push_back(MontageEventUVE{MontageEventUVE::KindUVE::Ended, {}});
+    UpdateStates(montage, playback, events);   // every open state closes
+    events.push_back(MontageEvent{MontageEvent::Kind::Ended, {}});
 }
 
-void BeginBlendOutUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
-                      std::vector<MontageEventUVE>& events) {
-    if (playback.phase == MontagePhaseUVE::BlendOut || playback.phase == MontagePhaseUVE::Stopped) {
+void BeginBlendOut(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
+                      std::vector<MontageEvent>& events) {
+    if (playback.phase == MontagePhase::BlendOut || playback.phase == MontagePhase::Stopped) {
         return;
     }
     if (montage.blendOutSeconds <= 0.0) {
-        FinishUVE(montage, playback, events);
+        Finish(montage, playback, events);
         return;
     }
-    playback.phase = MontagePhaseUVE::BlendOut;
+    playback.phase = MontagePhase::BlendOut;
     playback.phaseTime = 0.0;
 }
 
 } // namespace
 
-bool StartMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+bool StartMontage(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
                      const std::string_view section) {
-    if (montage.segments.empty() || Asset::MontageLengthUVE(montage) <= 0.0) {
+    if (montage.segments.empty() || Asset::MontageLength(montage) <= 0.0) {
         return false;
     }
     std::string start(section);
     if (start.empty()) {
-        if (const Asset::MontageSectionUVE* const first = Asset::MontageSectionAtUVE(montage, 0.0)) {
+        if (const Asset::MontageSection* const first = Asset::MontageSectionAt(montage, 0.0)) {
             start = first->name;
         }
-    } else if (Asset::FindMontageSectionUVE(montage, start) == nullptr) {
+    } else if (Asset::FindMontageSection(montage, start) == nullptr) {
         return false;
     }
-    const bool wasPlaying = playback.phase != MontagePhaseUVE::Stopped;
+    const bool wasPlaying = playback.phase != MontagePhase::Stopped;
     playback.section = start;
-    playback.time = SectionStartUVE(montage, start);
+    playback.time = SectionStart(montage, start);
     playback.activeStates.assign(montage.notifyStates.size(), false);
     playback.phaseTime = 0.0;
     if (montage.blendInSeconds <= 0.0) {
-        playback.phase = MontagePhaseUVE::Playing;
+        playback.phase = MontagePhase::Playing;
         playback.weight = 1.0F;
     } else {
-        playback.phase = MontagePhaseUVE::BlendIn;
+        playback.phase = MontagePhase::BlendIn;
         // Restarted while it plays: the blend picks up from the weight it has, never pops to 0.
         playback.weight = wasPlaying ? playback.weight : 0.0F;
         playback.phaseTime = static_cast<double>(playback.weight) * montage.blendInSeconds;
@@ -120,44 +120,44 @@ bool StartMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybac
     return true;
 }
 
-bool JumpToMontageSectionUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+bool JumpToMontageSection(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
                              const std::string_view section) {
-    if (playback.phase == MontagePhaseUVE::Stopped || Asset::FindMontageSectionUVE(montage, section) == nullptr) {
+    if (playback.phase == MontagePhase::Stopped || Asset::FindMontageSection(montage, section) == nullptr) {
         return false;
     }
     playback.section = std::string(section);
-    playback.time = SectionStartUVE(montage, section);
-    if (playback.phase == MontagePhaseUVE::BlendOut) {
+    playback.time = SectionStart(montage, section);
+    if (playback.phase == MontagePhase::BlendOut) {
         // A jump during the blend-out (a late combo input) brings the montage back in.
-        playback.phase = MontagePhaseUVE::BlendIn;
+        playback.phase = MontagePhase::BlendIn;
         playback.phaseTime = static_cast<double>(playback.weight) * montage.blendInSeconds;
     }
     return true;
 }
 
-void StopMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
-                    std::vector<MontageEventUVE>& events) {
-    BeginBlendOutUVE(montage, playback, events);
+void StopMontage(const Asset::MotionMontageAsset& montage, MontagePlayback& playback,
+                    std::vector<MontageEvent>& events) {
+    BeginBlendOut(montage, playback, events);
 }
 
-void StepMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double deltaSeconds,
-                    std::vector<MontageEventUVE>& events) {
-    if (playback.phase == MontagePhaseUVE::Stopped || !(deltaSeconds >= 0.0)) {
+void StepMontage(const Asset::MotionMontageAsset& montage, MontagePlayback& playback, const double deltaSeconds,
+                    std::vector<MontageEvent>& events) {
+    if (playback.phase == MontagePhase::Stopped || !(deltaSeconds >= 0.0)) {
         return;
     }
     // Weight first: the blends run on real time, not on the montage's rate.
     playback.phaseTime += deltaSeconds;
-    if (playback.phase == MontagePhaseUVE::BlendIn) {
+    if (playback.phase == MontagePhase::BlendIn) {
         const double t = montage.blendInSeconds > 0.0 ? playback.phaseTime / montage.blendInSeconds : 1.0;
-        playback.weight = Asset::MontageBlendCurveWeightUVE(montage.blendInCurve, t);
+        playback.weight = Asset::MontageBlendCurveWeight(montage.blendInCurve, t);
         if (t >= 1.0) {
-            playback.phase = MontagePhaseUVE::Playing;
+            playback.phase = MontagePhase::Playing;
         }
-    } else if (playback.phase == MontagePhaseUVE::BlendOut) {
+    } else if (playback.phase == MontagePhase::BlendOut) {
         const double t = montage.blendOutSeconds > 0.0 ? playback.phaseTime / montage.blendOutSeconds : 1.0;
-        playback.weight = 1.0F - Asset::MontageBlendCurveWeightUVE(montage.blendOutCurve, t);
+        playback.weight = 1.0F - Asset::MontageBlendCurveWeight(montage.blendOutCurve, t);
         if (t >= 1.0) {
-            FinishUVE(montage, playback, events);
+            Finish(montage, playback, events);
             return;
         }
     }
@@ -166,20 +166,20 @@ void StepMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlayback
     double to = from + deltaSeconds * std::max(0.0, montage.rateScale);
     // Through each section into the one it leads to; bounded so a zero-length loop cannot spin.
     for (int guard = 0; guard < 16; ++guard) {
-        const double end = Asset::MontageSectionEndUVE(montage, playback.section);
+        const double end = Asset::MontageSectionEnd(montage, playback.section);
         if (to < end) {
             break;
         }
-        CollectNotifiesUVE(montage, playback, from, end, events);
-        const Asset::MontageSectionUVE* const current = Asset::FindMontageSectionUVE(montage, playback.section);
+        CollectNotifies(montage, playback, from, end, events);
+        const Asset::MontageSection* const current = Asset::FindMontageSection(montage, playback.section);
         const std::string next = current != nullptr ? current->next : std::string();
-        const Asset::MontageSectionUVE* const following = Asset::FindMontageSectionUVE(montage, next);
+        const Asset::MontageSection* const following = Asset::FindMontageSection(montage, next);
         if (following == nullptr) {
             // The last section: hold its end (blending out when Auto Blend Out says so).
             from = end;
             to = end;
             if (montage.autoBlendOut) {
-                BeginBlendOutUVE(montage, playback, events);
+                BeginBlendOut(montage, playback, events);
             }
             break;
         }
@@ -188,70 +188,70 @@ void StepMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlayback
         from = following->time;
         to = following->time + overflow;
     }
-    CollectNotifiesUVE(montage, playback, from, to, events);
+    CollectNotifies(montage, playback, from, to, events);
     playback.time = to;
 
     // Auto Blend Out starts before the end of the section that ends the montage.
-    if (montage.autoBlendOut && playback.phase != MontagePhaseUVE::BlendOut && playback.phase != MontagePhaseUVE::Stopped) {
-        const Asset::MontageSectionUVE* const current = Asset::FindMontageSectionUVE(montage, playback.section);
-        const bool final = current == nullptr || Asset::FindMontageSectionUVE(montage, current->next) == nullptr;
+    if (montage.autoBlendOut && playback.phase != MontagePhase::BlendOut && playback.phase != MontagePhase::Stopped) {
+        const Asset::MontageSection* const current = Asset::FindMontageSection(montage, playback.section);
+        const bool final = current == nullptr || Asset::FindMontageSection(montage, current->next) == nullptr;
         const double lead = montage.blendOutTriggerSeconds >= 0.0 ? montage.blendOutTriggerSeconds : montage.blendOutSeconds;
-        if (final && Asset::MontageSectionEndUVE(montage, playback.section) - playback.time <= lead) {
-            BeginBlendOutUVE(montage, playback, events);
+        if (final && Asset::MontageSectionEnd(montage, playback.section) - playback.time <= lead) {
+            BeginBlendOut(montage, playback, events);
         }
     }
-    if (playback.phase != MontagePhaseUVE::Stopped) {
-        UpdateStatesUVE(montage, playback, events);
+    if (playback.phase != MontagePhase::Stopped) {
+        UpdateStates(montage, playback, events);
     }
 }
 
-std::vector<SkeletonBonePoseUVE> PoseMontageUVE(const Asset::MotionMontageAssetUVE& montage, const double time,
-                                                const AnimationClipResolverUVE& clipFor, const Skeleton3DComponentUVE& skeleton) {
+std::vector<SkeletonBonePose> PoseMontage(const Asset::MotionMontageAsset& montage, const double time,
+                                                const AnimationClipResolver& clipFor, const Skeleton3DComponent& skeleton) {
     if (skeleton.bones.empty() || !clipFor) {
         return {};
     }
-    const std::optional<Asset::MontageClipTimeUVE> at = Asset::MapMontageTimeUVE(montage, time);
+    const std::optional<Asset::MontageClipTime> at = Asset::MapMontageTime(montage, time);
     if (!at.has_value()) {
         return {};
     }
-    const Asset::AnimationClipAssetUVE* const clip = clipFor(montage.segments[at->segment].clip);
-    if (clip == nullptr || !clip->IsSkeletalUVE()) {
+    const Asset::AnimationClipAsset* const clip = clipFor(montage.segments[at->segment].clip);
+    if (clip == nullptr || !clip->IsSkeletal()) {
         return {};
     }
-    Skeleton3DComponentUVE posed = skeleton;
+    Skeleton3DComponent posed = skeleton;
     posed.pose.clear();
-    AnimationDriverComponentUVE mixer{};
-    if (montage.rootMotion != Asset::MontageRootMotionUVE::Off) {
-        mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
+    AnimationDriverComponent mixer{};
+    if (montage.rootMotion != Asset::MontageRootMotion::Off) {
+        mixer.rootMotion = AnimationRootMotionMode::InPlace;
     }
-    if (!PoseSkeletonAtTimeUVE(*clip, at->clipTime, posed, mixer) || posed.pose.size() != skeleton.bones.size()) {
+    if (!PoseSkeletonAtTime(*clip, at->clipTime, posed, mixer) || posed.pose.size() != skeleton.bones.size()) {
         return {};
     }
     return posed.pose;
 }
 
-bool BlendBonePosesUVE(Skeleton3DComponentUVE& skeleton, const std::vector<SkeletonBonePoseUVE>& target, const float weight) {
+bool BlendBonePoses(Skeleton3DComponent& skeleton, const std::vector<SkeletonBonePose>& target, const float weight) {
     if (!(weight > 0.0F) || skeleton.bones.empty() || target.size() != skeleton.bones.size()) {
         return false;
     }
     // What the skeleton holds now: the pose the drivers wrote this pass, else its rest.
-    std::vector<SkeletonBonePoseUVE> base = skeleton.pose;
+    std::vector<SkeletonBonePose> base = skeleton.pose;
     if (base.size() != skeleton.bones.size()) {
         base.resize(skeleton.bones.size());
         for (std::size_t i = 0U; i < skeleton.bones.size(); ++i) {
-            base[i] = SkeletonBonePoseUVE{skeleton.bones[i].localPosition, skeleton.bones[i].localRotation,
+            base[i] = SkeletonBonePose{skeleton.bones[i].localPosition, skeleton.bones[i].localRotation,
                                           skeleton.bones[i].localScale};
         }
     }
     const float w = std::clamp(weight, 0.0F, 1.0F);
     skeleton.pose.resize(base.size());
     for (std::size_t i = 0U; i < base.size(); ++i) {
-        const SkeletonBonePoseUVE& a = base[i];
-        const SkeletonBonePoseUVE& b = target[i];
-        SkeletonBonePoseUVE out;
+        const SkeletonBonePose& a = base[i];
+        const SkeletonBonePose& b = target[i];
+        SkeletonBonePose out;
         out.position = a.position + (b.position - a.position) * w;
         out.scale = a.scale + (b.scale - a.scale) * w;
-        if (!Math::TrySlerpUVE(a.rotation, b.rotation, w, out.rotation)) {
+        if (!Math::TrySlerp(a.rotation, b.rotation, w, out.rotation)) {
             out.rotation = w >= 0.5F ? b.rotation : a.rotation;
         }
         skeleton.pose[i] = out;
@@ -259,12 +259,12 @@ bool BlendBonePosesUVE(Skeleton3DComponentUVE& skeleton, const std::vector<Skele
     return true;
 }
 
-bool BlendMontagePoseUVE(const Asset::MotionMontageAssetUVE& montage, const double time, const float weight,
-                         const AnimationClipResolverUVE& clipFor, Skeleton3DComponentUVE& skeleton) {
+bool BlendMontagePose(const Asset::MotionMontageAsset& montage, const double time, const float weight,
+                         const AnimationClipResolver& clipFor, Skeleton3DComponent& skeleton) {
     if (!(weight > 0.0F)) {
         return false;
     }
-    return BlendBonePosesUVE(skeleton, PoseMontageUVE(montage, time, clipFor, skeleton), weight);
+    return BlendBonePoses(skeleton, PoseMontage(montage, time, clipFor, skeleton), weight);
 }
 
 } // namespace UVE::Scene

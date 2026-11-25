@@ -15,82 +15,82 @@ namespace UVE::Scene {
 namespace {
 
 template <typename TComponent>
-[[nodiscard]] bool HasLiveFollowComponentUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    return entityManager.IsAliveUVE(entity) && entityManager.HasComponentUVE<TComponent>(entity);
+[[nodiscard]] bool HasLiveFollowComponent(const IEntityManager& entityManager, const Entity entity) {
+    return entityManager.IsAlive(entity) && entityManager.HasComponent<TComponent>(entity);
 }
 
-[[nodiscard]] bool IsPlayerControllerUVE(const IEntityManagerUVE& entityManager, const EntityUVE controller) {
-    return HasLiveFollowComponentUVE<ControllerComponentUVE>(entityManager, controller) &&
-           entityManager.GetComponentUVE<ControllerComponentUVE>(controller).kind == ControllerKindUVE::Player;
+[[nodiscard]] bool IsPlayerController(const IEntityManager& entityManager, const Entity controller) {
+    return HasLiveFollowComponent<ControllerComponent>(entityManager, controller) &&
+           entityManager.GetComponent<ControllerComponent>(controller).kind == ControllerKind::Player;
 }
 
 } // namespace
 
-void UpdateCameraFollowUVE(IEntityManagerUVE& entityManager) {
-    std::vector<EntityUVE> followers;
-    entityManager.ForEachUVE<CameraFollowComponentUVE>(
-        [&followers](const EntityUVE entity, const CameraFollowComponentUVE&) { followers.push_back(entity); });
+void UpdateCameraFollow(IEntityManager& entityManager) {
+    std::vector<Entity> followers;
+    entityManager.ForEach<CameraFollowComponent>(
+        [&followers](const Entity entity, const CameraFollowComponent&) { followers.push_back(entity); });
     // Collected first, written after: the pass mutates transforms, never the follow set.
-    for (const EntityUVE camera : followers) {
-        if (!HasLiveFollowComponentUVE<TransformComponentUVE>(entityManager, camera) ||
-            !HasLiveFollowComponentUVE<WorldTransformComponentUVE>(entityManager, camera) ||
-            !HasLiveFollowComponentUVE<HierarchyComponentUVE>(entityManager, camera)) {
+    for (const Entity camera : followers) {
+        if (!HasLiveFollowComponent<TransformComponent>(entityManager, camera) ||
+            !HasLiveFollowComponent<WorldTransformComponent>(entityManager, camera) ||
+            !HasLiveFollowComponent<HierarchyComponent>(entityManager, camera)) {
             continue;
         }
-        if (entityManager.GetComponentUVE<HierarchyComponentUVE>(camera).parent != kInvalidEntityUVE) {
+        if (entityManager.GetComponent<HierarchyComponent>(camera).parent != kInvalidEntity) {
             continue; // rig-driven: a spring arm, vehicle, or bone owns this camera's pose
         }
-        const CameraFollowComponentUVE& follow =
-            entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera);
-        if (!HasCameraFollowTargetUVE(follow, camera) ||
-            !HasLiveFollowComponentUVE<WorldTransformComponentUVE>(entityManager, follow.target) ||
-            !IsCameraFollowComponentValidUVE(follow)) {
+        const CameraFollowComponent& follow =
+            entityManager.GetComponent<CameraFollowComponent>(camera);
+        if (!HasCameraFollowTarget(follow, camera) ||
+            !HasLiveFollowComponent<WorldTransformComponent>(entityManager, follow.target) ||
+            !IsCameraFollowComponentValid(follow)) {
             continue; // parked, destroyed, or never given a world pose: hold the last one
         }
-        const Math::Vector3UVE targetPosition =
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(follow.target).worldPosition;
-        if (!Math::IsFiniteUVE(targetPosition)) {
+        const Math::Vector3 targetPosition =
+            entityManager.GetComponent<WorldTransformComponent>(follow.target).worldPosition;
+        if (!Math::IsFinite(targetPosition)) {
             continue;
         }
-        TransformComponentUVE pose = entityManager.GetComponentUVE<TransformComponentUVE>(camera);
-        pose.localPosition = ResolveCameraFollowDesiredPositionUVE(follow, targetPosition);
-        if (!IsTransformComponentValidUVE(pose)) {
+        TransformComponent pose = entityManager.GetComponent<TransformComponent>(camera);
+        pose.localPosition = ResolveCameraFollowDesiredPosition(follow, targetPosition);
+        if (!IsTransformComponentValid(pose)) {
             continue; // NaN in, nothing out: a poisoned target must not teleport the camera
         }
-        // SetLocalTransformUVE() by hand (uve_gameplay must not depend on uve_scene): overwrite
+        // SetLocalTransform() by hand (uve_gameplay must not depend on uve_scene): overwrite
         // the authored local transform, mark the world transform dirty for this frame's
         // propagation. Rotation and scale pass through untouched - the follow only translates.
-        entityManager.GetComponentUVE<TransformComponentUVE>(camera) = pose;
-        entityManager.GetComponentUVE<WorldTransformComponentUVE>(camera).dirty = true;
+        entityManager.GetComponent<TransformComponent>(camera) = pose;
+        entityManager.GetComponent<WorldTransformComponent>(camera).dirty = true;
     }
 }
 
-void RetargetPossessionFollowersUVE(IEntityManagerUVE& entityManager, const EntityUVE controller,
-                                     const EntityUVE pawn) {
-    if (!IsPlayerControllerUVE(entityManager, controller)) {
+void RetargetPossessionFollowers(IEntityManager& entityManager, const Entity controller,
+                                     const Entity pawn) {
+    if (!IsPlayerController(entityManager, controller)) {
         return;
     }
-    std::vector<EntityUVE> followers;
-    entityManager.ForEachUVE<CameraFollowComponentUVE>(
-        [&followers](const EntityUVE entity, const CameraFollowComponentUVE&) { followers.push_back(entity); });
-    for (const EntityUVE camera : followers) {
-        CameraFollowComponentUVE& follow = entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera);
-        ApplyPlayerPossessionToCameraFollowUVE(follow, pawn);
+    std::vector<Entity> followers;
+    entityManager.ForEach<CameraFollowComponent>(
+        [&followers](const Entity entity, const CameraFollowComponent&) { followers.push_back(entity); });
+    for (const Entity camera : followers) {
+        CameraFollowComponent& follow = entityManager.GetComponent<CameraFollowComponent>(camera);
+        ApplyPlayerPossessionToCameraFollow(follow, pawn);
     }
 }
 
-void ReleasePossessionFollowersUVE(IEntityManagerUVE& entityManager, const EntityUVE controller,
-                                    const EntityUVE pawn) {
-    if (!IsPlayerControllerUVE(entityManager, controller)) {
+void ReleasePossessionFollowers(IEntityManager& entityManager, const Entity controller,
+                                    const Entity pawn) {
+    if (!IsPlayerController(entityManager, controller)) {
         return;
     }
-    std::vector<EntityUVE> followers;
-    entityManager.ForEachUVE<CameraFollowComponentUVE>(
-        [&followers](const EntityUVE entity, const CameraFollowComponentUVE&) { followers.push_back(entity); });
-    for (const EntityUVE camera : followers) {
-        CameraFollowComponentUVE& follow = entityManager.GetComponentUVE<CameraFollowComponentUVE>(camera);
+    std::vector<Entity> followers;
+    entityManager.ForEach<CameraFollowComponent>(
+        [&followers](const Entity entity, const CameraFollowComponent&) { followers.push_back(entity); });
+    for (const Entity camera : followers) {
+        CameraFollowComponent& follow = entityManager.GetComponent<CameraFollowComponent>(camera);
         if (follow.followPossessedPawn && follow.target == pawn) {
-            follow.target = kInvalidEntityUVE;
+            follow.target = kInvalidEntity;
         }
     }
 }

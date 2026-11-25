@@ -31,15 +31,15 @@ namespace UVE::Asset {
 
 namespace {
 
-struct SceneDeleterUVE final {
+struct SceneDeleter final {
     void operator()(ufbx_scene* const scene) const noexcept { ufbx_free_scene(scene); }
 };
-using ScenePtrUVE = std::unique_ptr<ufbx_scene, SceneDeleterUVE>;
+using ScenePtr = std::unique_ptr<ufbx_scene, SceneDeleter>;
 
 // Everything this engine reads is converted on load: metres, +Y up, right-handed. Applying the
 // conversion to the geometry itself (not to a root transform) means the merged vertices need no
 // further correction. Nothing outside the bytes handed in is ever opened.
-[[nodiscard]] ufbx_load_opts MakeLoadOptionsUVE(const bool geometry, const bool animation = false) noexcept {
+[[nodiscard]] ufbx_load_opts MakeLoadOptions(const bool geometry, const bool animation = false) noexcept {
     ufbx_load_opts options{};
     options.target_axes = ufbx_axes_right_handed_y_up;
     options.target_unit_meters = 1.0;
@@ -54,67 +54,67 @@ using ScenePtrUVE = std::unique_ptr<ufbx_scene, SceneDeleterUVE>;
     return options;
 }
 
-[[nodiscard]] ScenePtrUVE LoadSceneUVE(const std::span<const std::byte> source, const bool geometry,
+[[nodiscard]] ScenePtr LoadScene(const std::span<const std::byte> source, const bool geometry,
                                        const bool animation = false) {
-    if (source.empty() || source.size() > kMaximumFbxMeshSourceBytesUVE) {
+    if (source.empty() || source.size() > kMaximumFbxMeshSourceBytes) {
         return nullptr;
     }
-    const ufbx_load_opts options = MakeLoadOptionsUVE(geometry, animation);
+    const ufbx_load_opts options = MakeLoadOptions(geometry, animation);
     ufbx_error error{};
-    ScenePtrUVE scene{ufbx_load_memory(source.data(), source.size(), &options, &error)};
+    ScenePtr scene{ufbx_load_memory(source.data(), source.size(), &options, &error)};
     if (!scene) {
         std::array<char, 512> message{};
         static_cast<void>(ufbx_format_error(message.data(), message.size(), &error));
-        UVE_ERROR("FbxMeshConverterUVE: {}", message.data());
+        UVE_ERROR("FbxMeshConverter: {}", message.data());
     }
     return scene;
 }
 
-[[nodiscard]] Math::Vector3UVE ToVectorUVE(const ufbx_vec3 value) noexcept {
-    return Math::Vector3UVE{static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
+[[nodiscard]] Math::Vector3 ToVector(const ufbx_vec3 value) noexcept {
+    return Math::Vector3{static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
 }
 
-[[nodiscard]] double MatrixDeterminantUVE(const ufbx_matrix& m) noexcept {
+[[nodiscard]] double MatrixDeterminant(const ufbx_matrix& m) noexcept {
     return (m.m00 * ((m.m11 * m.m22) - (m.m12 * m.m21))) - (m.m01 * ((m.m10 * m.m22) - (m.m12 * m.m20))) +
            (m.m02 * ((m.m10 * m.m21) - (m.m11 * m.m20)));
 }
 
-[[nodiscard]] bool IsFiniteVertexUVE(const MeshVertexUVE& vertex) noexcept {
-    return Math::IsFiniteUVE(vertex.position) && Math::IsFiniteUVE(vertex.normal) && std::isfinite(vertex.u) &&
+[[nodiscard]] bool IsFiniteVertex(const MeshVertex& vertex) noexcept {
+    return Math::IsFinite(vertex.position) && Math::IsFinite(vertex.normal) && std::isfinite(vertex.u) &&
            std::isfinite(vertex.v);
 }
 
 // Corners that agree on position, normal and UV are one vertex. Keyed on the exact bytes of those
 // eight floats: a hash of the values would treat 0.0 and -0.0 as one and NaN as never equal, and
 // sharing is only safe for corners that are bit-for-bit the same.
-struct CornerKeyUVE final {
+struct CornerKey final {
     std::array<float, 16> values{};
-    bool operator==(const CornerKeyUVE& other) const noexcept {
+    bool operator==(const CornerKey& other) const noexcept {
         return std::memcmp(values.data(), other.values.data(), sizeof(values)) == 0;
     }
 };
 
-struct CornerKeyHashUVE final {
-    std::size_t operator()(const CornerKeyUVE& key) const noexcept {
+struct CornerKeyHash final {
+    std::size_t operator()(const CornerKey& key) const noexcept {
         // Keeps the legacy transposed seed this table shipped with (see
-        // kFnv1a64LegacyOffsetBasisUVE): same values as before, now via the shared hasher.
-        return static_cast<std::size_t>(Utilities::HashBytesUVE(
-            key.values.data(), sizeof(key.values), Utilities::kFnv1a64LegacyOffsetBasisUVE));
+        // kFnv1a64LegacyOffsetBasis): same values as before, now via the shared hasher.
+        return static_cast<std::size_t>(Utilities::HashBytes(
+            key.values.data(), sizeof(key.values), Utilities::kFnv1a64LegacyOffsetBasis));
     }
 };
 
 /// Corners that share a position but not their skin weights are two vertices: the influences are
 /// part of the key (all zero for a static mesh).
-[[nodiscard]] CornerKeyUVE MakeCornerKeyUVE(const MeshVertexUVE& vertex, const MeshSkinningInfluenceUVE& skin) noexcept {
-    return CornerKeyUVE{{vertex.position.x, vertex.position.y, vertex.position.z, vertex.normal.x, vertex.normal.y,
+[[nodiscard]] CornerKey MakeCornerKey(const MeshVertex& vertex, const MeshSkinningInfluence& skin) noexcept {
+    return CornerKey{{vertex.position.x, vertex.position.y, vertex.position.z, vertex.normal.x, vertex.normal.y,
                          vertex.normal.z, vertex.u, vertex.v, static_cast<float>(skin.joints[0]),
                          static_cast<float>(skin.joints[1]), static_cast<float>(skin.joints[2]),
                          static_cast<float>(skin.joints[3]), skin.weights[0], skin.weights[1], skin.weights[2],
                          skin.weights[3]}};
 }
 
-[[nodiscard]] Math::Matrix4x4UVE ToMatrixUVE(const ufbx_matrix& m) noexcept {
-    Math::Matrix4x4UVE result;
+[[nodiscard]] Math::Matrix4x4 ToMatrix(const ufbx_matrix& m) noexcept {
+    Math::Matrix4x4 result;
     const double rows[3][4] = {{m.m00, m.m01, m.m02, m.m03}, {m.m10, m.m11, m.m12, m.m13}, {m.m20, m.m21, m.m22, m.m23}};
     for (std::size_t row = 0U; row < 3U; ++row) {
         for (std::size_t column = 0U; column < 4U; ++column) {
@@ -126,7 +126,7 @@ struct CornerKeyHashUVE final {
 
 
 /// One bone of the file, in the order the skeleton lists them: parents first.
-struct FbxBoneObjectUVE final {
+struct FbxBoneObject final {
     const ufbx_node* object = nullptr;
     std::string name;
     std::int32_t parentIndex = -1;
@@ -145,7 +145,7 @@ struct FbxBoneObjectUVE final {
 /// cap is exceeded and `overflow` is Fail.
 /// Nodes a skin cluster deforms with. Blender, Maya, 3ds Max and Mixamo exports often bind skin to
 /// Null / Dummy / Locator nodes that carry no bone attribute: they are bones all the same.
-[[nodiscard]] std::unordered_set<const ufbx_node*> FbxClusterBoneNodesUVE(const ufbx_scene& scene) {
+[[nodiscard]] std::unordered_set<const ufbx_node*> FbxClusterBoneNodes(const ufbx_scene& scene) {
     std::unordered_set<const ufbx_node*> nodes;
     for (std::size_t i = 0U; i < scene.skin_clusters.count; ++i) {
         const ufbx_node* const node = scene.skin_clusters.data[i]->bone_node;
@@ -156,15 +156,15 @@ struct FbxBoneObjectUVE final {
     return nodes;
 }
 
-[[nodiscard]] bool IsFbxBoneNodeUVE(const ufbx_node& node, const std::unordered_set<const ufbx_node*>& clusterBones) {
+[[nodiscard]] bool IsFbxBoneNode(const ufbx_node& node, const std::unordered_set<const ufbx_node*>& clusterBones) {
     return node.bone != nullptr || clusterBones.count(&node) != 0U;
 }
 
-[[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(
+[[nodiscard]] std::optional<std::vector<FbxBoneObject>> CollectFbxBones(
     const ufbx_scene& scene, const std::size_t maximumBones,
-    const FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail, std::size_t* const outDropped = nullptr) {
-    const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodesUVE(scene);
-    std::vector<FbxBoneObjectUVE> bones;
+    const FbxBoneOverflow overflow = FbxBoneOverflow::Fail, std::size_t* const outDropped = nullptr) {
+    const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodes(scene);
+    std::vector<FbxBoneObject> bones;
     std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
     std::size_t dropped = 0U;
@@ -175,12 +175,12 @@ struct FbxBoneObjectUVE final {
         for (std::size_t child = object->children.count; child > 0U; --child) {
             pending.push_back(object->children.data[child - 1U]);
         }
-        if (!IsFbxBoneNodeUVE(*object, clusterBones)) {
+        if (!IsFbxBoneNode(*object, clusterBones)) {
             continue;
         }
         if (bones.size() >= maximumBones) {
-            if (overflow == FbxBoneOverflowUVE::Fail) {
-                UVE_ERROR("FbxMeshConverterUVE: more than {} bones", maximumBones);
+            if (overflow == FbxBoneOverflow::Fail) {
+                UVE_ERROR("FbxMeshConverter: more than {} bones", maximumBones);
                 if (outDropped != nullptr) {
                     *outDropped = 0U;
                 }
@@ -189,7 +189,7 @@ struct FbxBoneObjectUVE final {
             ++dropped; // still walked, so the count is every bone the cap excluded
             continue;
         }
-        FbxBoneObjectUVE bone;
+        FbxBoneObject bone;
         bone.object = object;
         for (const ufbx_node* ancestor = object->parent; ancestor != nullptr; ancestor = ancestor->parent) {
             if (const auto found = boneOfObject.find(ancestor); found != boneOfObject.end()) {
@@ -215,34 +215,34 @@ struct FbxBoneObjectUVE final {
     return bones;
 }
 
-[[nodiscard]] bool IsFiniteTransformUVE(const ufbx_transform& pose) noexcept {
+[[nodiscard]] bool IsFiniteTransform(const ufbx_transform& pose) noexcept {
     return std::isfinite(pose.translation.x) && std::isfinite(pose.translation.y) && std::isfinite(pose.translation.z) &&
            std::isfinite(pose.rotation.x) && std::isfinite(pose.rotation.y) && std::isfinite(pose.rotation.z) &&
            std::isfinite(pose.rotation.w) && std::isfinite(pose.scale.x) && std::isfinite(pose.scale.y) &&
            std::isfinite(pose.scale.z);
 }
 
-[[nodiscard]] AnimationAssetPoseUVE ToAnimationPoseUVE(const ufbx_transform& pose) noexcept {
-    return AnimationAssetPoseUVE{ToVectorUVE(pose.translation),
-                                 Math::QuaternionUVE{static_cast<float>(pose.rotation.x),
+[[nodiscard]] AnimationAssetPose ToAnimationPose(const ufbx_transform& pose) noexcept {
+    return AnimationAssetPose{ToVector(pose.translation),
+                                 Math::Quaternion{static_cast<float>(pose.rotation.x),
                                                      static_cast<float>(pose.rotation.y),
                                                      static_cast<float>(pose.rotation.z),
                                                      static_cast<float>(pose.rotation.w)},
-                                 ToVectorUVE(pose.scale)};
+                                 ToVector(pose.scale)};
 }
 
 } // namespace
 
 namespace {
 /// Every mesh of the file, merged: the whole-file conversion.
-constexpr std::size_t kAllFbxMeshesUVE = static_cast<std::size_t>(-1);
+constexpr std::size_t kAllFbxMeshes = static_cast<std::size_t>(-1);
 } // namespace
 
-/// Converts the file's meshes into one MeshAssetUVE: all of them (`onlyMeshIndex` is kAllFbxMeshesUVE) or
+/// Converts the file's meshes into one MeshAsset: all of them (`onlyMeshIndex` is kAllFbxMeshes) or
 /// just the one at that index in the scene's mesh list. The joint list is the rig's, whichever meshes are
 /// taken, so the parts of one file share their joints and bind poses exactly.
-static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetUVE& outMesh,
-                                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces,
+static bool ConvertFbxMeshFromScene(const ufbx_scene* const scene, MeshAsset& outMesh,
+                                       std::vector<FbxSurfaceRange>* const outSurfaces,
                                        const std::size_t maximumJoints, const std::size_t onlyMeshIndex,
                                        std::uint32_t* const outOnlyMaterial = nullptr) {
     if (outSurfaces != nullptr) {
@@ -252,8 +252,8 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
         return false;
     }
     try {
-        MeshAssetUVE candidate;
-        std::unordered_map<CornerKeyUVE, std::uint32_t, CornerKeyHashUVE> shared;
+        MeshAsset candidate;
+        std::unordered_map<CornerKey, std::uint32_t, CornerKeyHash> shared;
 
         // Material index per file material, so a mesh part can name the material it draws with.
         // Built from the scene's own list: a node's `materials` are pointers into it, possibly a
@@ -274,19 +274,19 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
         // per material to be worth saving - so the runs are built here and concatenated below, in
         // first-use order. Without `outSurfaces` there is a single bucket and the order is exactly
         // the order the faces appear in, which is what this converter did before.
-        struct IndexBucketUVE final {
-            std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlotUVE;
+        struct IndexBucket final {
+            std::uint32_t materialSourceIndex = kInvalidMeshSurfaceMaterialSlot;
             std::vector<std::uint32_t> indices;
         };
-        std::vector<IndexBucketUVE> indexBuckets(1U);
+        std::vector<IndexBucket> indexBuckets(1U);
         std::unordered_map<std::uint32_t, std::size_t> bucketOfMaterial;
-        const auto bucketForMaterialUVE = [&](const std::uint32_t material) -> std::size_t {
+        const auto bucketForMaterial = [&](const std::uint32_t material) -> std::size_t {
             if (outSurfaces == nullptr) {
                 return 0U;
             }
             const auto [found, inserted] = bucketOfMaterial.try_emplace(material, indexBuckets.size());
             if (inserted) {
-                indexBuckets.push_back(IndexBucketUVE{material, {}});
+                indexBuckets.push_back(IndexBucket{material, {}});
             }
             return found->second;
         };
@@ -298,26 +298,26 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
         // still produces a usable mesh, and the alternative - failing the whole conversion -
         // leaves a character that does not import at all.
         std::size_t droppedBones = 0U;
-        std::optional<std::vector<FbxBoneObjectUVE>> bones;
+        std::optional<std::vector<FbxBoneObject>> bones;
         if (scene->skin_deformers.count > 0U) {
-            bones = CollectFbxBonesUVE(*scene, maximumJoints, FbxBoneOverflowUVE::Truncate, &droppedBones);
+            bones = CollectFbxBones(*scene, maximumJoints, FbxBoneOverflow::Truncate, &droppedBones);
         }
         // A skin that binds no bone at all still imports, as a static mesh.
         const bool skinned = bones.has_value() && !bones->empty();
         if (skinned) {
             if (droppedBones > 0U) {
-                UVE_WARNING("FbxMeshConverterUVE: the rig holds {} bones, over the {} bone limit; the mesh keeps "
+                UVE_WARNING("FbxMeshConverter: the rig holds {} bones, over the {} bone limit; the mesh keeps "
                             "the first {} and drops {}, whose weights are renormalized onto the bones that remain",
                             maximumJoints + droppedBones, maximumJoints, bones->size(), droppedBones);
             }
-            for (const FbxBoneObjectUVE& bone : *bones) {
-                MeshJointUVE joint;
+            for (const FbxBoneObject& bone : *bones) {
+                MeshJoint joint;
                 joint.name = bone.name;
-                joint.parentIndex = bone.parentIndex < 0 ? kInvalidJointParentUVE
+                joint.parentIndex = bone.parentIndex < 0 ? kInvalidJointParent
                                                          : static_cast<std::uint32_t>(bone.parentIndex);
                 // A bone no cluster binds keeps its current pose as its bind pose.
                 const ufbx_matrix inverse = ufbx_matrix_invert(&bone.object->node_to_world);
-                joint.inverseBindMatrix = ToMatrixUVE(inverse);
+                joint.inverseBindMatrix = ToMatrix(inverse);
                 jointOfObject.emplace(bone.object, static_cast<std::uint32_t>(candidate.joints.size()));
                 candidate.joints.push_back(std::move(joint));
             }
@@ -328,7 +328,7 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                     }
                     if (const auto found = jointOfObject.find(cluster->bone_node); found != jointOfObject.end()) {
                         const ufbx_matrix inverse = ufbx_matrix_invert(&cluster->bind_to_world);
-                        candidate.joints[found->second].inverseBindMatrix = ToMatrixUVE(inverse);
+                        candidate.joints[found->second].inverseBindMatrix = ToMatrix(inverse);
                     }
                 }
             }
@@ -337,7 +337,7 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
         bool hasBounds = false;
 
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
-            if (onlyMeshIndex != kAllFbxMeshesUVE && meshIndex != onlyMeshIndex) {
+            if (onlyMeshIndex != kAllFbxMeshes && meshIndex != onlyMeshIndex) {
                 continue;
             }
             const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
@@ -386,13 +386,13 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                 const ufbx_matrix normalToWorld = ufbx_matrix_for_normals(&toWorld);
                 // A mirrored instance (negative scale) turns its triangles inside out; swapping two
                 // corners keeps them facing the way the surface does.
-                const bool mirrored = MatrixDeterminantUVE(toWorld) < 0.0;
+                const bool mirrored = MatrixDeterminant(toWorld) < 0.0;
                 // Which material each FACE draws with. ufbx splits a mesh into one part per
                 // material, and a part's index is the material index; the face list of each part
                 // is therefore the only place that association lives.
                 std::vector<std::uint32_t> faceMaterial;
                 if (outSurfaces != nullptr && mesh->material_parts.count > 0U) {
-                    faceMaterial.assign(mesh->num_faces, kInvalidMeshSurfaceMaterialSlotUVE);
+                    faceMaterial.assign(mesh->num_faces, kInvalidMeshSurfaceMaterialSlot);
                     for (const ufbx_mesh_part& part : mesh->material_parts) {
                         for (std::size_t faceSlot = 0U; faceSlot < part.face_indices.count; ++faceSlot) {
                             const std::uint32_t faceIndex = part.face_indices.data[faceSlot];
@@ -402,13 +402,13 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                         }
                     }
                 }
-                const auto faceMaterialSourceIndexUVE = [&](const std::uint32_t faceIndex) -> std::uint32_t {
+                const auto faceMaterialSourceIndex = [&](const std::uint32_t faceIndex) -> std::uint32_t {
                     if (faceMaterial.empty()) {
-                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                        return kInvalidMeshSurfaceMaterialSlot;
                     }
                     const std::uint32_t part = faceMaterial[faceIndex];
-                    if (part == kInvalidMeshSurfaceMaterialSlotUVE) {
-                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                    if (part == kInvalidMeshSurfaceMaterialSlot) {
+                        return kInvalidMeshSurfaceMaterialSlot;
                     }
                     // Per-instance materials first - the same mesh can be drawn with a different
                     // set on each node - then the mesh's own list.
@@ -419,15 +419,15 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                         material = mesh->materials.data[part];
                     }
                     if (material == nullptr) {
-                        return kInvalidMeshSurfaceMaterialSlotUVE;
+                        return kInvalidMeshSurfaceMaterialSlot;
                     }
                     const auto found = materialSourceIndex.find(material);
-                    return found == materialSourceIndex.end() ? kInvalidMeshSurfaceMaterialSlotUVE : found->second;
+                    return found == materialSourceIndex.end() ? kInvalidMeshSurfaceMaterialSlot : found->second;
                 };
                 for (std::size_t faceIndex = 0U; faceIndex < mesh->num_faces; ++faceIndex) {
                     const ufbx_face face = mesh->faces.data[faceIndex];
-                    const std::size_t bucket = bucketForMaterialUVE(
-                        faceMaterialSourceIndexUVE(static_cast<std::uint32_t>(faceIndex)));
+                    const std::size_t bucket = bucketForMaterial(
+                        faceMaterialSourceIndex(static_cast<std::uint32_t>(faceIndex)));
                     const std::uint32_t triangles = ufbx_triangulate_face(triangle.data(), triangle.size(), mesh, face);
                     for (std::size_t corner = 0U; corner < static_cast<std::size_t>(triangles) * 3U; ++corner) {
                         // Mirrored: read each triangle as corners 0, 2, 1.
@@ -438,29 +438,29 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                             pick = corner - 1U;
                         }
                         const std::uint32_t index = triangle[pick];
-                        MeshVertexUVE vertex;
-                        vertex.position = ToVectorUVE(
+                        MeshVertex vertex;
+                        vertex.position = ToVector(
                             ufbx_transform_position(&toWorld, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
                         // A skinned vertex is put where its bind says (below), so its normal has to be turned by
                         // that same bind: the node's geometry_to_world is not what the skin uses, and the two
                         // differ whenever the mesh node carries its own transform (a Blender or Maya export with
                         // a rotated or scaled armature). Position from one matrix and normal from the other
                         // shades the whole skin wrong.
-                        const auto shadeNormalUVE = [&](const ufbx_matrix& normalMatrix) {
+                        const auto shadeNormal = [&](const ufbx_matrix& normalMatrix) {
                             const ufbx_vec3 normal =
                                 mesh->vertex_normal.exists
                                     ? ufbx_transform_direction(&normalMatrix, ufbx_get_vertex_vec3(&mesh->vertex_normal, index))
                                     : ufbx_vec3{{{0.0, 1.0, 0.0}}};
-                            vertex.normal = ToVectorUVE(normal);
+                            vertex.normal = ToVector(normal);
                             const float length = std::sqrt((vertex.normal.x * vertex.normal.x) +
                                                            (vertex.normal.y * vertex.normal.y) +
                                                            (vertex.normal.z * vertex.normal.z));
                             vertex.normal = length > 0.0F && std::isfinite(length)
-                                                ? Math::Vector3UVE{vertex.normal.x / length, vertex.normal.y / length,
+                                                ? Math::Vector3{vertex.normal.x / length, vertex.normal.y / length,
                                                                    vertex.normal.z / length}
-                                                : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                                                : Math::Vector3{0.0F, 1.0F, 0.0F};
                         };
-                        shadeNormalUVE(normalToWorld);
+                        shadeNormal(normalToWorld);
                         if (mesh->vertex_uv.exists) {
                             const ufbx_vec2 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, index);
                             vertex.u = static_cast<float>(uv.x);
@@ -471,10 +471,10 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                             // FBX bottom-left origin with top-row-first texture storage.
                             vertex.v = 1.0F - static_cast<float>(uv.y);
                         }
-                        if (!IsFiniteVertexUVE(vertex)) {
+                        if (!IsFiniteVertex(vertex)) {
                             return false;
                         }
-                        MeshSkinningInfluenceUVE influence;
+                        MeshSkinningInfluence influence;
                         if (skinned) {
                             influence.joints[0] = rigidJoint;
                             influence.weights[0] = 1.0F;
@@ -484,10 +484,10 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                             if (meshVertex < skin->vertices.count) {
                                 // ufbx lists each vertex's weights strongest first.
                                 const ufbx_skin_vertex& weights = skin->vertices.data[meshVertex];
-                                MeshSkinningInfluenceUVE picked;
+                                MeshSkinningInfluence picked;
                                 float total = 0.0F;
                                 std::size_t slot = 0U;
-                                for (std::uint32_t w = 0U; w < weights.num_weights && slot < kMaxJointInfluencesUVE; ++w) {
+                                for (std::uint32_t w = 0U; w < weights.num_weights && slot < kMaxJointInfluences; ++w) {
                                     const ufbx_skin_weight& weight = skin->weights.data[weights.weight_begin + w];
                                     const ufbx_skin_cluster* const cluster = skin->clusters.data[weight.cluster_index];
                                     const auto joint = cluster->bone_node != nullptr ? jointOfObject.find(cluster->bone_node)
@@ -511,19 +511,19 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                                         skin->clusters.data[skin->weights.data[weights.weight_begin].cluster_index];
                                     const ufbx_matrix bind = ufbx_matrix_mul(&strongest->bind_to_world,
                                                                              &strongest->geometry_to_bone);
-                                    vertex.position = ToVectorUVE(
+                                    vertex.position = ToVector(
                                         ufbx_transform_position(&bind, ufbx_get_vertex_vec3(&mesh->vertex_position, index)));
                                     const ufbx_matrix bindNormal = ufbx_matrix_for_normals(&bind);
-                                    shadeNormalUVE(bindNormal);
+                                    shadeNormal(bindNormal);
                                 }
                             }
                         }
 
                         const auto [found, inserted] = shared.try_emplace(
-                            MakeCornerKeyUVE(vertex, influence), static_cast<std::uint32_t>(candidate.vertices.size()));
+                            MakeCornerKey(vertex, influence), static_cast<std::uint32_t>(candidate.vertices.size()));
                         if (inserted) {
-                            if (candidate.vertices.size() >= kMaximumFbxMeshVerticesUVE) {
-                                UVE_ERROR("FbxMeshConverterUVE: more than {} vertices", kMaximumFbxMeshVerticesUVE);
+                            if (candidate.vertices.size() >= kMaximumFbxMeshVertices) {
+                                UVE_ERROR("FbxMeshConverter: more than {} vertices", kMaximumFbxMeshVertices);
                                 return false;
                             }
                             candidate.vertices.push_back(vertex);
@@ -531,14 +531,14 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
                                 candidate.skinningInfluences.push_back(influence);
                             }
                             if (!hasBounds) {
-                                candidate.localBounds = Math::AabbUVE{vertex.position, vertex.position};
+                                candidate.localBounds = Math::Aabb{vertex.position, vertex.position};
                                 hasBounds = true;
                             } else {
-                                Math::AabbUVE& bounds = candidate.localBounds;
-                                bounds.min = Math::Vector3UVE{std::min(bounds.min.x, vertex.position.x),
+                                Math::Aabb& bounds = candidate.localBounds;
+                                bounds.min = Math::Vector3{std::min(bounds.min.x, vertex.position.x),
                                                               std::min(bounds.min.y, vertex.position.y),
                                                               std::min(bounds.min.z, vertex.position.z)};
-                                bounds.max = Math::Vector3UVE{std::max(bounds.max.x, vertex.position.x),
+                                bounds.max = Math::Vector3{std::max(bounds.max.x, vertex.position.x),
                                                               std::max(bounds.max.y, vertex.position.y),
                                                               std::max(bounds.max.z, vertex.position.z)};
                             }
@@ -552,18 +552,18 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
         // Concatenate the per-material runs, in the order their materials were first used. This is
         // the index buffer from here on; tangents and every later check see the same triangles,
         // just grouped.
-        std::vector<FbxSurfaceRangeUVE> surfaceRanges;
+        std::vector<FbxSurfaceRange> surfaceRanges;
         std::size_t indexTotal = 0U;
-        for (const IndexBucketUVE& bucket : indexBuckets) {
+        for (const IndexBucket& bucket : indexBuckets) {
             indexTotal += bucket.indices.size();
         }
         candidate.indices.reserve(indexTotal);
-        for (const IndexBucketUVE& bucket : indexBuckets) {
+        for (const IndexBucket& bucket : indexBuckets) {
             if (bucket.indices.empty()) {
                 continue;
             }
             if (outSurfaces != nullptr) {
-                surfaceRanges.push_back(FbxSurfaceRangeUVE{
+                surfaceRanges.push_back(FbxSurfaceRange{
                     static_cast<std::uint32_t>(candidate.indices.size()),
                     static_cast<std::uint32_t>(bucket.indices.size()), bucket.materialSourceIndex});
             }
@@ -574,59 +574,59 @@ static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetU
             // wants to know which material that one run draws with (a mesh part) is told here.
             if (outOnlyMaterial != nullptr) {
                 *outOnlyMaterial = surfaceRanges.size() == 1U ? surfaceRanges.front().materialSourceIndex
-                                                              : kInvalidMeshSurfaceMaterialSlotUVE;
+                                                              : kInvalidMeshSurfaceMaterialSlot;
             }
-            if (surfaceRanges.size() < 2U || surfaceRanges.size() > kMaximumMeshSurfacesUVE) {
+            if (surfaceRanges.size() < 2U || surfaceRanges.size() > kMaximumMeshSurfaces) {
                 surfaceRanges.clear();
             }
             outSurfaces->swap(surfaceRanges);
         }
 
         if (candidate.vertices.empty() || candidate.indices.empty() || candidate.indices.size() % 3U != 0U) {
-            UVE_ERROR("FbxMeshConverterUVE: the file holds no triangles");
+            UVE_ERROR("FbxMeshConverter: the file holds no triangles");
             return false;
         }
-        if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
+        if (!TryGenerateMeshTangents(candidate.vertices, candidate.indices)) {
             return false;
         }
-        if (skinned && !IsMeshSkinningDataValidUVE(candidate)) {
-            UVE_ERROR("FbxMeshConverterUVE: the skin did not convert into valid skinning data");
+        if (skinned && !IsMeshSkinningDataValid(candidate)) {
+            UVE_ERROR("FbxMeshConverter: the skin did not convert into valid skinning data");
             return false;
         }
         outMesh = std::move(candidate);
         return true;
     } catch (const std::bad_alloc&) {
-        UVE_ERROR("FbxMeshConverterUVE: out of memory");
+        UVE_ERROR("FbxMeshConverter: out of memory");
         return false;
     }
 }
 
-bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
+bool ConvertFbxMesh(const std::span<const std::byte> source, MeshAsset& outMesh,
+                       std::vector<FbxSurfaceRange>* const outSurfaces, const std::size_t maximumJoints) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
-    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    const ScenePtr scene = LoadScene(source, true);
     if (!scene) {
         return false;
     }
-    return ConvertFbxMeshFromSceneUVE(scene.get(), outMesh, outSurfaces, maximumJoints, kAllFbxMeshesUVE);
+    return ConvertFbxMeshFromScene(scene.get(), outMesh, outSurfaces, maximumJoints, kAllFbxMeshes);
 }
 
-static bool ConvertFbxMeshPartsFromSceneUVE(const ufbx_scene* const scene, std::vector<FbxMeshPartUVE>& outParts,
+static bool ConvertFbxMeshPartsFromScene(const ufbx_scene* const scene, std::vector<FbxMeshPart>& outParts,
                                             const std::size_t maximumJoints) {
     outParts.clear();
     if (scene == nullptr) {
         return false;
     }
     try {
-        std::vector<FbxMeshPartUVE> parts;
+        std::vector<FbxMeshPart> parts;
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
             const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
             if (mesh == nullptr || !mesh->vertex_position.exists || mesh->num_triangles == 0U) {
                 continue;
             }
-            FbxMeshPartUVE part;
+            FbxMeshPart part;
             // The node that places the mesh names it, as a DCC tool's outliner does; the mesh's own name
             // is the fallback.
             if (mesh->instances.count > 0U && mesh->instances.data[0] != nullptr && mesh->instances.data[0]->name.length > 0U) {
@@ -636,43 +636,43 @@ static bool ConvertFbxMeshPartsFromSceneUVE(const ufbx_scene* const scene, std::
             } else {
                 part.name = "Mesh" + std::to_string(parts.size());
             }
-            if (!ConvertFbxMeshFromSceneUVE(scene, part.mesh, &part.surfaces, maximumJoints, meshIndex,
+            if (!ConvertFbxMeshFromScene(scene, part.mesh, &part.surfaces, maximumJoints, meshIndex,
                                             &part.onlyMaterialSourceIndex)) {
                 return false;
             }
             parts.push_back(std::move(part));
         }
         if (parts.empty()) {
-            UVE_ERROR("FbxMeshConverterUVE: the file holds no triangles");
+            UVE_ERROR("FbxMeshConverter: the file holds no triangles");
             return false;
         }
         outParts = std::move(parts);
         return true;
     } catch (const std::exception& error) {
-        UVE_ERROR("FbxMeshConverterUVE: {}", error.what());
+        UVE_ERROR("FbxMeshConverter: {}", error.what());
         outParts.clear();
         return false;
     }
 }
 
-bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
+bool ConvertFbxMeshParts(const std::span<const std::byte> source, std::vector<FbxMeshPart>& outParts,
                             const std::size_t maximumJoints) {
     outParts.clear();
-    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    const ScenePtr scene = LoadScene(source, true);
     if (!scene) {
         return false;
     }
-    return ConvertFbxMeshPartsFromSceneUVE(scene.get(), outParts, maximumJoints);
+    return ConvertFbxMeshPartsFromScene(scene.get(), outParts, maximumJoints);
 }
 
-static bool ReadFbxHierarchyFromSceneUVE(const ufbx_scene* const scene,
-                                         std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
+static bool ReadFbxHierarchyFromScene(const ufbx_scene* const scene,
+                                         std::vector<FbxHierarchyEntry>& outHierarchy) {
     outHierarchy.clear();
     if (scene == nullptr) {
         return false;
     }
     try {
-        // The same meshes, in the same order, as ConvertFbxMeshPartsUVE: an entry's `part` indexes its list.
+        // The same meshes, in the same order, as ConvertFbxMeshParts: an entry's `part` indexes its list.
         std::unordered_map<const ufbx_mesh*, std::int32_t> partOfMesh;
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
             const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
@@ -719,11 +719,11 @@ static bool ReadFbxHierarchyFromSceneUVE(const ufbx_scene* const scene,
         }
 
         std::vector<std::int32_t> indexOfNode(scene->nodes.count, -1);
-        std::vector<FbxHierarchyEntryUVE> entries;
+        std::vector<FbxHierarchyEntry> entries;
         std::vector<const ufbx_node*> queue = roots;
         for (std::size_t q = 0U; q < queue.size(); ++q) {
             const ufbx_node* const node = queue[q];
-            FbxHierarchyEntryUVE entry;
+            FbxHierarchyEntry entry;
             entry.name.assign(node->name.data, node->name.length);
             if (entry.name.empty()) {
                 entry.name = "Object" + std::to_string(entries.size());
@@ -747,33 +747,33 @@ static bool ReadFbxHierarchyFromSceneUVE(const ufbx_scene* const scene,
         outHierarchy = std::move(entries);
         return true;
     } catch (const std::exception& error) {
-        UVE_ERROR("FbxMeshConverterUVE: {}", error.what());
+        UVE_ERROR("FbxMeshConverter: {}", error.what());
         outHierarchy.clear();
         return false;
     }
 }
 
-bool ReadFbxHierarchyUVE(const std::span<const std::byte> source, std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
+bool ReadFbxHierarchy(const std::span<const std::byte> source, std::vector<FbxHierarchyEntry>& outHierarchy) {
     outHierarchy.clear();
-    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    const ScenePtr scene = LoadScene(source, true);
     if (!scene) {
         return false;
     }
-    return ReadFbxHierarchyFromSceneUVE(scene.get(), outHierarchy);
+    return ReadFbxHierarchyFromScene(scene.get(), outHierarchy);
 }
 
-std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const std::byte> source) {
+std::optional<FbxSourceSummary> DescribeFbxSource(const std::span<const std::byte> source) {
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, false);
+        const ScenePtr scene = LoadScene(source, false);
         if (!scene) {
             return std::nullopt;
         }
-        FbxSourceSummaryUVE summary;
+        FbxSourceSummary summary;
         summary.meshCount = scene->meshes.count;
         summary.boneCount = 0U;
-        const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodesUVE(*scene);
+        const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodes(*scene);
         for (std::size_t i = 0U; i < scene->nodes.count; ++i) {
-            summary.boneCount += IsFbxBoneNodeUVE(*scene->nodes.data[i], clusterBones) ? 1U : 0U;
+            summary.boneCount += IsFbxBoneNode(*scene->nodes.data[i], clusterBones) ? 1U : 0U;
         }
         summary.animationCount = scene->anim_stacks.count;
         for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
@@ -789,22 +789,22 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
     }
 }
 
-static std::optional<GltfSkeletonUVE> ReadFbxSkeletonFromSceneUVE(const ufbx_scene* const scene,
+static std::optional<GltfSkeleton> ReadFbxSkeletonFromScene(const ufbx_scene* const scene,
                                                                   const std::size_t maximumJoints,
-                                                                  const FbxBoneOverflowUVE overflow,
+                                                                  const FbxBoneOverflow overflow,
                                                                   std::size_t* const outDroppedBones) {
     if (scene == nullptr) {
         return std::nullopt;
     }
     try {
-        const std::optional<std::vector<FbxBoneObjectUVE>> bones =
-            CollectFbxBonesUVE(*scene, maximumJoints, overflow, outDroppedBones);
+        const std::optional<std::vector<FbxBoneObject>> bones =
+            CollectFbxBones(*scene, maximumJoints, overflow, outDroppedBones);
         if (!bones.has_value() || bones->empty()) {
             return std::nullopt;
         }
-        GltfSkeletonUVE skeleton;
+        GltfSkeleton skeleton;
         skeleton.skinCount = scene->skin_deformers.count;
-        for (const FbxBoneObjectUVE& bone : *bones) {
+        for (const FbxBoneObject& bone : *bones) {
             // The pose relative to the nearest bone above it: everything between is folded in, so
             // the chain still meets up.
             ufbx_matrix local = bone.object->node_to_parent;
@@ -812,16 +812,16 @@ static std::optional<GltfSkeletonUVE> ReadFbxSkeletonFromSceneUVE(const ufbx_sce
                 local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
             const ufbx_transform pose = ufbx_matrix_to_transform(&local);
-            if (!IsFiniteTransformUVE(pose)) {
+            if (!IsFiniteTransform(pose)) {
                 return std::nullopt;
             }
-            GltfJointUVE joint;
+            GltfJoint joint;
             joint.name = bone.name;
             joint.parentIndex = bone.parentIndex;
-            joint.translation = ToVectorUVE(pose.translation);
-            joint.rotation = Math::QuaternionUVE{static_cast<float>(pose.rotation.x), static_cast<float>(pose.rotation.y),
+            joint.translation = ToVector(pose.translation);
+            joint.rotation = Math::Quaternion{static_cast<float>(pose.rotation.x), static_cast<float>(pose.rotation.y),
                                                  static_cast<float>(pose.rotation.z), static_cast<float>(pose.rotation.w)};
-            joint.scale = ToVectorUVE(pose.scale);
+            joint.scale = ToVector(pose.scale);
             skeleton.joints.push_back(std::move(joint));
         }
         return skeleton;
@@ -830,27 +830,27 @@ static std::optional<GltfSkeletonUVE> ReadFbxSkeletonFromSceneUVE(const ufbx_sce
     }
 }
 
-std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
+std::optional<GltfSkeleton> ReadFbxSkeleton(const std::span<const std::byte> source,
                                                   const std::size_t maximumJoints,
-                                                  const FbxBoneOverflowUVE overflow,
+                                                  const FbxBoneOverflow overflow,
                                                   std::size_t* const outDroppedBones) {
-    const ScenePtrUVE scene = LoadSceneUVE(source, false);
+    const ScenePtr scene = LoadScene(source, false);
     if (!scene) {
         return std::nullopt;
     }
-    return ReadFbxSkeletonFromSceneUVE(scene.get(), maximumJoints, overflow, outDroppedBones);
+    return ReadFbxSkeletonFromScene(scene.get(), maximumJoints, overflow, outDroppedBones);
 }
 
-std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const std::byte> source,
+std::vector<AnimationClipAsset> ReadFbxAnimations(const std::span<const std::byte> source,
                                                         const std::size_t maximumBones) {
-    std::vector<AnimationClipAssetUVE> clips;
+    std::vector<AnimationClipAsset> clips;
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, false, true);
+        const ScenePtr scene = LoadScene(source, false, true);
         if (!scene) {
             return clips;
         }
-        const std::optional<std::vector<FbxBoneObjectUVE>> bones =
-            CollectFbxBonesUVE(*scene, maximumBones, FbxBoneOverflowUVE::Truncate);
+        const std::optional<std::vector<FbxBoneObject>> bones =
+            CollectFbxBones(*scene, maximumBones, FbxBoneOverflow::Truncate);
         if (!bones.has_value() || bones->empty()) {
             return clips;
         }
@@ -858,19 +858,19 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             std::isfinite(scene->settings.frames_per_second) && scene->settings.frames_per_second > 0.0
                 ? scene->settings.frames_per_second
                 : 30.0;
-        // The skeleton every take was made for, the same rest pose ReadFbxSkeletonUVE gives.
-        std::vector<AnimationAssetRestBoneUVE> rest;
-        for (const FbxBoneObjectUVE& bone : *bones) {
+        // The skeleton every take was made for, the same rest pose ReadFbxSkeleton gives.
+        std::vector<AnimationAssetRestBone> rest;
+        for (const FbxBoneObject& bone : *bones) {
             ufbx_matrix local = bone.object->node_to_parent;
             for (const ufbx_node* const between : bone.between) {
                 local = ufbx_matrix_mul(&between->node_to_parent, &local);
             }
             const ufbx_transform pose = ufbx_matrix_to_transform(&local);
-            if (!IsFiniteTransformUVE(pose)) {
+            if (!IsFiniteTransform(pose)) {
                 return clips;
             }
-            const AnimationAssetPoseUVE converted = ToAnimationPoseUVE(pose);
-            rest.push_back(AnimationAssetRestBoneUVE{bone.name, bone.parentIndex, converted.position, converted.rotation,
+            const AnimationAssetPose converted = ToAnimationPose(pose);
+            rest.push_back(AnimationAssetRestBone{bone.name, bone.parentIndex, converted.position, converted.rotation,
                                                      converted.scale});
         }
         std::set<std::string> usedIds;
@@ -884,9 +884,9 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             // One sample a frame, fewer when the take is longer than the per-track bound allows.
             const double wanted = std::ceil(duration * framesPerSecond) + 1.0;
             const std::size_t count = static_cast<std::size_t>(
-                std::clamp(wanted, 2.0, static_cast<double>(kMaximumAnimationAssetSamplesUVE)));
+                std::clamp(wanted, 2.0, static_cast<double>(kMaximumAnimationAssetSamples)));
 
-            AnimationClipAssetUVE clip;
+            AnimationClipAsset clip;
             std::string id(stack->name.data, stack->name.length);
             if (const std::size_t bar = id.find('|'); bar != std::string::npos) {
                 id = id.substr(bar + 1U); // "Armature|Run" is the take "Run" of that armature
@@ -895,7 +895,7 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             if (id.empty()) {
                 id = "Take";
             }
-            id.resize(std::min(id.size(), kMaximumAnimationAssetIdentifierBytesUVE - 4U));
+            id.resize(std::min(id.size(), kMaximumAnimationAssetIdentifierBytes - 4U));
             const std::string stem = id;
             for (int suffix = 1; usedIds.count(id) != 0U; ++suffix) {
                 id = stem + "_" + std::to_string(suffix);
@@ -906,8 +906,8 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
             clip.rest = rest;
             clip.bones.reserve(bones->size());
             bool valid = true;
-            for (const FbxBoneObjectUVE& bone : *bones) {
-                AnimationAssetBoneTrackUVE track;
+            for (const FbxBoneObject& bone : *bones) {
+                AnimationAssetBoneTrack track;
                 track.bone = bone.name;
                 track.samples.reserve(count);
                 for (std::size_t frame = 0U; frame < count && valid; ++frame) {
@@ -922,12 +922,12 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                         matrix = ufbx_matrix_mul(&betweenMatrix, &matrix);
                     }
                     const ufbx_transform pose = ufbx_matrix_to_transform(&matrix);
-                    valid = IsFiniteTransformUVE(pose);
-                    track.samples.push_back(AnimationAssetSampleUVE{sampleLocal, ToAnimationPoseUVE(pose)});
+                    valid = IsFiniteTransform(pose);
+                    track.samples.push_back(AnimationAssetSample{sampleLocal, ToAnimationPose(pose)});
                 }
                 // A bone that does not move keeps one sample: its pose for the whole take.
                 const bool still = std::all_of(track.samples.begin(), track.samples.end(),
-                                               [&track](const AnimationAssetSampleUVE& sample) {
+                                               [&track](const AnimationAssetSample& sample) {
                                                    return sample.pose == track.samples.front().pose;
                                                });
                 if (still && !track.samples.empty()) {
@@ -935,31 +935,31 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
                 }
                 clip.bones.push_back(std::move(track));
             }
-            if (valid && IsAnimationClipAssetValidUVE(clip)) {
+            if (valid && IsAnimationClipAssetValid(clip)) {
                 clips.push_back(std::move(clip));
             } else {
-                UVE_WARNING("FbxMeshConverterUVE: take \"{}\" produced a non-finite or oversized clip; skipped", stem);
+                UVE_WARNING("FbxMeshConverter: take \"{}\" produced a non-finite or oversized clip; skipped", stem);
             }
         }
         if (clips.empty() && !rest.empty()) {
-            AnimationClipAssetUVE clip;
+            AnimationClipAsset clip;
             clip.clipId = "TPose";
             clip.durationSeconds = 1.0 / framesPerSecond;
             clip.rest = rest;
             clip.bones.reserve(rest.size());
-            for (const AnimationAssetRestBoneUVE& bone : rest) {
-                AnimationAssetBoneTrackUVE track;
+            for (const AnimationAssetRestBone& bone : rest) {
+                AnimationAssetBoneTrack track;
                 track.bone = bone.bone;
                 track.samples.push_back(
-                    AnimationAssetSampleUVE{0.0, AnimationAssetPoseUVE{bone.position, bone.rotation, bone.scale}});
+                    AnimationAssetSample{0.0, AnimationAssetPose{bone.position, bone.rotation, bone.scale}});
                 clip.bones.push_back(std::move(track));
             }
-            if (IsAnimationClipAssetValidUVE(clip)) {
+            if (IsAnimationClipAssetValid(clip)) {
                 clips.push_back(std::move(clip));
             }
         }
     } catch (const std::bad_alloc&) {
-        UVE_ERROR("FbxMeshConverterUVE: out of memory while reading animation");
+        UVE_ERROR("FbxMeshConverter: out of memory while reading animation");
         clips.clear();
     }
     return clips;
@@ -972,8 +972,8 @@ namespace {
 /// function of the bytes handed in, and an embedded image is copied out as the file stored it rather
 /// than decoded here - decoding is the import pipeline's job, and a converter that stays pure is one
 /// that can be tested by handing it bytes.
-[[nodiscard]] FbxTextureSourceUVE ReadTextureSourceUVE(const ufbx_material_map& map) {
-    FbxTextureSourceUVE source;
+[[nodiscard]] FbxTextureSource ReadTextureSource(const ufbx_material_map& map) {
+    FbxTextureSource source;
     const ufbx_texture* const texture = map.texture;
     if (texture == nullptr || !map.texture_enabled) {
         return source;
@@ -991,11 +991,11 @@ namespace {
         source.embeddedName = asString(texture->filename);
     }
     if (const ufbx_blob& content = texture->content; content.data != nullptr && content.size > 0U) {
-        if (content.size > kMaximumFbxEmbeddedTextureBytesUVE) {
-            UVE_WARNING("FbxMeshConverterUVE: embedded texture \\\"{}\\\" is {} bytes, over the {} byte ceiling; it is "
+        if (content.size > kMaximumFbxEmbeddedTextureBytes) {
+            UVE_WARNING("FbxMeshConverter: embedded texture \\\"{}\\\" is {} bytes, over the {} byte ceiling; it is "
                         "dropped and its slot stays empty",
                         source.file.empty() ? source.embeddedName : source.file, content.size,
-                        kMaximumFbxEmbeddedTextureBytesUVE);
+                        kMaximumFbxEmbeddedTextureBytes);
         } else {
             const auto* const begin = static_cast<const std::byte*>(content.data);
             source.embedded.assign(begin, begin + content.size);
@@ -1008,9 +1008,9 @@ namespace {
     return source;
 }
 
-/// Reads a color map into MaterialAssetUVE's validated range: channels are clamped to [0,1] and
+/// Reads a color map into MaterialAsset's validated range: channels are clamped to [0,1] and
 /// `outClamped` reports that this happened, so the change is visible to callers instead of silent.
-[[nodiscard]] Math::ColorUVE ToAlbedoUVE(const double red, const double green, const double blue,
+[[nodiscard]] Math::Color ToAlbedo(const double red, const double green, const double blue,
                                          bool& outClamped) {
     const auto unit = [&outClamped](const double channel) {
         if (!std::isfinite(channel)) {
@@ -1024,10 +1024,10 @@ namespace {
         }
         return value;
     };
-    return Math::ColorUVE{unit(red), unit(green), unit(blue)};
+    return Math::Color{unit(red), unit(green), unit(blue)};
 }
 
-[[nodiscard]] Math::ColorUVE ToNonnegativeColorUVE(const double red, const double green,
+[[nodiscard]] Math::Color ToNonnegativeColor(const double red, const double green,
                                                    const double blue) {
     const auto channel = [](const double value) {
         if (!std::isfinite(value) || value < 0.0) {
@@ -1035,24 +1035,24 @@ namespace {
         }
         return static_cast<float>(value);
     };
-    return Math::ColorUVE{channel(red), channel(green), channel(blue)};
+    return Math::Color{channel(red), channel(green), channel(blue)};
 }
 
 } // namespace
 
-static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(const ufbx_scene* const scene) {
+static std::optional<std::vector<FbxMaterial>> ReadFbxMaterialsFromScene(const ufbx_scene* const scene) {
     if (scene == nullptr) {
         return std::nullopt;
     }
     try {
-        std::vector<FbxMaterialUVE> materials;
+        std::vector<FbxMaterial> materials;
         materials.reserve(scene->materials.count);
         for (std::size_t index = 0U; index < scene->materials.count; ++index) {
             const ufbx_material* const sourceMaterial = scene->materials.data[index];
             if (sourceMaterial == nullptr) {
                 continue;
             }
-            FbxMaterialUVE converted;
+            FbxMaterial converted;
             converted.sourceIndex = static_cast<std::uint32_t>(index);
             converted.name = sourceMaterial->name.length != 0U
                                  ? std::string(sourceMaterial->name.data, sourceMaterial->name.length)
@@ -1063,10 +1063,10 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
             const ufbx_material_map& baseColor = sourceMaterial->pbr.base_color;
             const ufbx_material_map& diffuseColor = sourceMaterial->fbx.diffuse_color;
             if (baseColor.has_value) {
-                converted.material.albedoColor = ToAlbedoUVE(baseColor.value_vec4.x, baseColor.value_vec4.y,
+                converted.material.albedoColor = ToAlbedo(baseColor.value_vec4.x, baseColor.value_vec4.y,
                                                              baseColor.value_vec4.z, converted.albedoClamped);
             } else if (diffuseColor.has_value) {
-                converted.material.albedoColor = ToAlbedoUVE(diffuseColor.value_vec3.x, diffuseColor.value_vec3.y,
+                converted.material.albedoColor = ToAlbedo(diffuseColor.value_vec3.x, diffuseColor.value_vec3.y,
                                                              diffuseColor.value_vec3.z, converted.albedoClamped);
             }
 
@@ -1084,10 +1084,10 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
             }
 
             // Emission: the colour and its energy are separate authored values, and so are they in
-            // MaterialAssetUVE (emissiveEnergy multiplies emissiveColor).
+            // MaterialAsset (emissiveEnergy multiplies emissiveColor).
             const ufbx_material_map& emissionColor = sourceMaterial->pbr.emission_color;
             if (emissionColor.has_value) {
-                converted.material.emissiveColor = ToNonnegativeColorUVE(
+                converted.material.emissiveColor = ToNonnegativeColor(
                     emissionColor.value_vec3.x, emissionColor.value_vec3.y, emissionColor.value_vec3.z);
             }
             const ufbx_material_map& emissionFactor = sourceMaterial->pbr.emission_factor;
@@ -1095,14 +1095,14 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
                 emissionFactor.value_real >= 0.0) {
                 converted.material.emissiveEnergy = static_cast<float>(emissionFactor.value_real);
                 if (!emissionColor.has_value && emissionFactor.value_real > 0.0) {
-                    converted.material.emissiveColor = Math::ColorUVE{1.0F, 1.0F, 1.0F};
+                    converted.material.emissiveColor = Math::Color{1.0F, 1.0F, 1.0F};
                 }
             }
 
             // Two honest authoring styles mean "this material blends": the classic FBX
             // TransparencyFactor (0 opaque, 1 fully transparent, verified against the parser) and
             // an explicit PBR opacity below one, which is what glTF/OSL-style materials carry.
-            // MaterialAssetUVE records it as a flag (RenderQueueUVE buckets on it) and keeps
+            // MaterialAsset records it as a flag (RenderQueue buckets on it) and keeps
             // alphaCutoff at zero, because an FBX material holds no cutoff value.
             const ufbx_material_map& opacity = sourceMaterial->pbr.opacity;
             const ufbx_material_map& transparency = sourceMaterial->fbx.transparency_factor;
@@ -1128,10 +1128,10 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
                 converted.material.isTransparent = true;
             }
 
-            converted.albedo = ReadTextureSourceUVE(sourceMaterial->pbr.base_color);
-            converted.normal = ReadTextureSourceUVE(sourceMaterial->pbr.normal_map);
-            converted.emissive = ReadTextureSourceUVE(sourceMaterial->pbr.emission_color);
-            converted.ambientOcclusion = ReadTextureSourceUVE(sourceMaterial->pbr.ambient_occlusion);
+            converted.albedo = ReadTextureSource(sourceMaterial->pbr.base_color);
+            converted.normal = ReadTextureSource(sourceMaterial->pbr.normal_map);
+            converted.emissive = ReadTextureSource(sourceMaterial->pbr.emission_color);
+            converted.ambientOcclusion = ReadTextureSource(sourceMaterial->pbr.ambient_occlusion);
 
             // Exporters routinely write a zero base colour when the look lives in a texture (or in a
             // texture they did not embed). The shader multiplies the albedo map by this colour, so a
@@ -1139,18 +1139,18 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
             // dark viewport. Treat an all-zero colour as "unset": white under a map, neutral grey
             // without one.
             {
-                const Math::ColorUVE& albedo = converted.material.albedoColor;
-                const bool hasAlbedoMap = converted.albedo.HasImageUVE() || !converted.albedo.file.empty();
+                const Math::Color& albedo = converted.material.albedoColor;
+                const bool hasAlbedoMap = converted.albedo.HasImage() || !converted.albedo.file.empty();
                 const bool hasAuthoredBaseOrDiffuse = baseColor.has_value || diffuseColor.has_value;
                 if (albedo.r <= 1.0e-4F && albedo.g <= 1.0e-4F && albedo.b <= 1.0e-4F &&
                     (hasAlbedoMap || !hasAuthoredBaseOrDiffuse)) {
                     const float value = hasAlbedoMap ? 1.0F : 0.8F;
-                    converted.material.albedoColor = Math::ColorUVE{value, value, value};
+                    converted.material.albedoColor = Math::Color{value, value, value};
                 }
             }
 
-            if (!IsMaterialAssetValidUVE(converted.material)) {
-                UVE_WARNING("FbxMeshConverterUVE: material \"{}\" produced an invalid PBR descriptor; skipped",
+            if (!IsMaterialAssetValid(converted.material)) {
+                UVE_WARNING("FbxMeshConverter: material \"{}\" produced an invalid PBR descriptor; skipped",
                             converted.name);
                 continue;
             }
@@ -1158,39 +1158,39 @@ static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(c
         }
         return materials;
     } catch (const std::bad_alloc&) {
-        UVE_ERROR("FbxMeshConverterUVE: out of memory while reading materials");
+        UVE_ERROR("FbxMeshConverter: out of memory while reading materials");
         return std::nullopt;
     }
 }
 
-std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<const std::byte> source) {
+std::optional<std::vector<FbxMaterial>> ReadFbxMaterials(const std::span<const std::byte> source) {
     // Geometry and animation are irrelevant to materials, and both are skipped so a large model
     // does not pay for data this reader never touches.
-    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/false, /*animation=*/false);
+    const ScenePtr scene = LoadScene(source, /*geometry=*/false, /*animation=*/false);
     if (!scene) {
         return std::nullopt;
     }
-    return ReadFbxMaterialsFromSceneUVE(scene.get());
+    return ReadFbxMaterialsFromScene(scene.get());
 }
 
-bool ExtractFbxImportBundleUVE(const std::span<const std::byte> source, FbxSceneImportBundleUVE& outBundle,
+bool ExtractFbxImportBundle(const std::span<const std::byte> source, FbxSceneImportBundle& outBundle,
                                const std::size_t maximumJoints) {
-    outBundle = FbxSceneImportBundleUVE{};
-    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/true, /*animation=*/false);
+    outBundle = FbxSceneImportBundle{};
+    const ScenePtr scene = LoadScene(source, /*geometry=*/true, /*animation=*/false);
     if (!scene) {
         return false;
     }
-    FbxSceneImportBundleUVE bundle;
-    if (!ConvertFbxMeshFromSceneUVE(scene.get(), bundle.mergedMesh, &bundle.surfaceRanges, maximumJoints,
-                                    kAllFbxMeshesUVE)) {
+    FbxSceneImportBundle bundle;
+    if (!ConvertFbxMeshFromScene(scene.get(), bundle.mergedMesh, &bundle.surfaceRanges, maximumJoints,
+                                    kAllFbxMeshes)) {
         return false;
     }
-    bundle.materials = ReadFbxMaterialsFromSceneUVE(scene.get());
+    bundle.materials = ReadFbxMaterialsFromScene(scene.get());
     if (!bundle.materials.has_value()) {
         return false;
     }
-    if (bundle.mergedMesh.IsSkinnedUVE() && !bundle.mergedMesh.joints.empty()) {
-        bundle.skeleton = ReadFbxSkeletonFromSceneUVE(scene.get(), maximumJoints, FbxBoneOverflowUVE::Truncate,
+    if (bundle.mergedMesh.IsSkinned() && !bundle.mergedMesh.joints.empty()) {
+        bundle.skeleton = ReadFbxSkeletonFromScene(scene.get(), maximumJoints, FbxBoneOverflow::Truncate,
                                                       &bundle.droppedBones);
     }
     std::size_t validMeshCount = 0U;
@@ -1201,12 +1201,12 @@ bool ExtractFbxImportBundleUVE(const std::span<const std::byte> source, FbxScene
         }
     }
     if (validMeshCount >= 2U) {
-        bundle.partsKnown = ConvertFbxMeshPartsFromSceneUVE(scene.get(), bundle.parts, maximumJoints);
+        bundle.partsKnown = ConvertFbxMeshPartsFromScene(scene.get(), bundle.parts, maximumJoints);
     } else {
         bundle.partsKnown = validMeshCount == 1U;
     }
     if (bundle.partsKnown) {
-        bundle.hierarchyKnown = ReadFbxHierarchyFromSceneUVE(scene.get(), bundle.hierarchy);
+        bundle.hierarchyKnown = ReadFbxHierarchyFromScene(scene.get(), bundle.hierarchy);
     }
     outBundle = std::move(bundle);
     return true;

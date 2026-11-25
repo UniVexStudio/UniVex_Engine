@@ -15,7 +15,7 @@ using univex::math::Length;
 using univex::math::Normalize;
 
 /// A unit vector perpendicular to `axis`, preferring `hint` projected off the axis.
-[[nodiscard]] Vec3 PerpendicularUVE(const Vec3& axis, const Vec3& hint) {
+[[nodiscard]] Vec3 Perpendicular(const Vec3& axis, const Vec3& hint) {
     Vec3 side = hint - axis * Dot(hint, axis);
     if (Length(side) < 1e-5f) {
         side = std::fabs(axis.y) < 0.9f ? Cross(axis, Vec3{0.f, 1.f, 0.f}) : Cross(axis, Vec3{1.f, 0.f, 0.f});
@@ -25,15 +25,15 @@ using univex::math::Normalize;
 
 } // namespace
 
-GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3& viewDirection,
-                           const BoneStyleUVE& style) {
+GizmoMesh BuildBoneMesh(const std::vector<BoneOverlay>& bones, const Vec3& viewDirection,
+                           const BoneStyle& style) {
     // Outlines only - no faces - so the model is never hidden behind its own skeleton. Every
     // stroke has a dark stroke under it (all of those first), so the skeleton reads crisply over a
     // bright model and over the dark grid alike.
     GizmoMesh shadow;
     GizmoMesh mesh;
     const Vec3 view = Normalize(viewDirection);
-    const Vec3 right = PerpendicularUVE(view, Vec3{0.f, 1.f, 0.f});
+    const Vec3 right = Perpendicular(view, Vec3{0.f, 1.f, 0.f});
     const Vec3 up = Cross(right, view);
     const Vec3 dark{0.04f, 0.045f, 0.055f};
     const auto stroke = [&](const Vec3& a, const Vec3& b, const Vec3& color, const float widthPx) {
@@ -50,7 +50,7 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
             previous = current;
         }
     };
-    const auto colorOf = [&style](const BoneOverlayUVE& bone) {
+    const auto colorOf = [&style](const BoneOverlay& bone) {
         return bone.hasColor ? bone.color
                : bone.boneSelected ? style.activeBoneColor
                : bone.skeletonSelected ? style.selectedColor
@@ -59,40 +59,40 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
 
     // One ring per joint, however many bones leave it, sized by the longest of them: a hip has one
     // ring, not three of different sizes.
-    struct JointUVE {
+    struct Joint {
         Vec3 at;
         float radius;
         Vec3 color;
         float widthPx;
     };
-    std::vector<JointUVE> joints;
-    const auto jointAt = [&joints](const Vec3& p) -> JointUVE* {
-        for (JointUVE& joint : joints) {
+    std::vector<Joint> joints;
+    const auto jointAt = [&joints](const Vec3& p) -> Joint* {
+        for (Joint& joint : joints) {
             if (Length(joint.at - p) < 1e-5f) {
                 return &joint;
             }
         }
         return nullptr;
     };
-    for (const BoneOverlayUVE& bone : bones) {
+    for (const BoneOverlay& bone : bones) {
         const float length = Length(bone.tail - bone.head);
         if (bone.helper || bone.jointOnly || length < 1e-3f) {
             continue;
         }
         const float radius = std::clamp(length * style.jointRatio, style.jointMinRadius, style.jointMaxRadius);
         const float widthPx = bone.boneSelected ? style.selectedLinePx : style.linePx;
-        if (JointUVE* joint = jointAt(bone.head); joint != nullptr) {
+        if (Joint* joint = jointAt(bone.head); joint != nullptr) {
             joint->radius = std::max(joint->radius, radius);
             if (bone.boneSelected) {
                 joint->color = colorOf(bone);
                 joint->widthPx = widthPx;
             }
         } else {
-            joints.push_back(JointUVE{bone.head, radius, colorOf(bone), widthPx});
+            joints.push_back(Joint{bone.head, radius, colorOf(bone), widthPx});
         }
     }
 
-    for (const BoneOverlayUVE& bone : bones) {
+    for (const BoneOverlay& bone : bones) {
         const Vec3 color = colorOf(bone);
         const float widthPx = bone.boneSelected ? style.selectedLinePx : style.linePx;
         if (bone.helper) {
@@ -133,8 +133,8 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
         const Vec3 axis = along / length;
         Vec3 across = Cross(axis, view);
         across = Length(across) > 1e-4f ? Normalize(across) : right;
-        const JointUVE* const from = jointAt(bone.head);
-        const JointUVE* const to = jointAt(bone.tail);
+        const Joint* const from = jointAt(bone.head);
+        const Joint* const to = jointAt(bone.tail);
         const float startGap = from != nullptr ? from->radius : 0.f;
         const float endGap = to != nullptr ? to->radius : 0.f;
         if (length <= startGap + endGap + 1e-3f) {
@@ -150,7 +150,7 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
         stroke(end, waist - across * halfWidth, color, widthPx);
         stroke(waist - across * halfWidth, start, color, widthPx);
     }
-    for (const JointUVE& joint : joints) {
+    for (const Joint& joint : joints) {
         ring(joint.at - view * (joint.radius * 0.5f), joint.radius, joint.color, joint.widthPx + 0.4f);
     }
     // The dark strokes first, then the colours over them.

@@ -16,13 +16,13 @@
 
 namespace UVE::Pack {
 
-enum class ProjectListSortUVE : std::uint8_t {
+enum class ProjectListSort : std::uint8_t {
     RecentlyOpened = 0,
     Name,
 };
 
 /// What opening a listed project with the current engine would do.
-enum class ProjectListStatusUVE : std::uint8_t {
+enum class ProjectListStatus : std::uint8_t {
     Ready = 0,
     NeedsUpgrade,
     OpensWithWarning,
@@ -32,9 +32,9 @@ enum class ProjectListStatusUVE : std::uint8_t {
     EngineNotInstalled,
 };
 
-struct ProjectListRowUVE final {
-    ProjectRegistryEntryUVE entry;
-    ProjectListStatusUVE status = ProjectListStatusUVE::Ready;
+struct ProjectListRow final {
+    ProjectRegistryEntry entry;
+    ProjectListStatus status = ProjectListStatus::Ready;
     /// Short text for the row's badge, e.g. "Engine 0.1.0+build.1" or "Missing".
     std::string badge;
 };
@@ -42,29 +42,29 @@ struct ProjectListRowUVE final {
 /// The rows a project launcher shows: entries whose name or path contains `query` (ignoring case),
 /// favorites first, then in `sort` order, each with what opening it with `engineVersion` would do.
 /// `isMissing` decides whether a manifest is gone; it defaults to checking the disk.
-[[nodiscard]] std::vector<ProjectListRowUVE> BuildProjectListUVE(
-    const std::vector<ProjectRegistryEntryUVE>& entries, std::string_view query, ProjectListSortUVE sort,
-    const Core::VersionUVE& engineVersion,
-    const std::function<bool(const ProjectRegistryEntryUVE&)>& isMissing = &ProjectRegistryUVE::IsMissingUVE);
+[[nodiscard]] std::vector<ProjectListRow> BuildProjectList(
+    const std::vector<ProjectRegistryEntry>& entries, std::string_view query, ProjectListSort sort,
+    const Core::Version& engineVersion,
+    const std::function<bool(const ProjectRegistryEntry&)>& isMissing = &ProjectRegistry::IsMissing);
 
 /// What opening a project saved with `projectVersion` in engine `engineVersion` would do.
-[[nodiscard]] ProjectListStatusUVE ProjectListStatusForUVE(const Platform::EditorProjectVersionUVE& projectVersion,
-                                                           const Core::VersionUVE& engineVersion);
+[[nodiscard]] ProjectListStatus ProjectListStatusFor(const Platform::EditorProjectVersion& projectVersion,
+                                                           const Core::Version& engineVersion);
 
 /// Settings of the project launcher itself, kept beside the project registry.
-inline constexpr std::string_view kLauncherSettingsFileNameUVE = "launcher_settings.json";
-inline constexpr std::string_view kLauncherSettingsFormatUVE = "uvlaunchersettings";
-inline constexpr std::uint32_t kCurrentLauncherSettingsSchemaVersionUVE = 1U;
+inline constexpr std::string_view kLauncherSettingsFileName = "launcher_settings.json";
+inline constexpr std::string_view kLauncherSettingsFormat = "uvlaunchersettings";
+inline constexpr std::uint32_t kCurrentLauncherSettingsSchemaVersion = 1U;
 /// Folder under the user's home directory new projects go to until the user picks another.
-inline constexpr std::string_view kDefaultProjectsDirectoryNameUVE = "UniVex Projects";
+inline constexpr std::string_view kDefaultProjectsDirectoryName = "UniVex Projects";
 
-struct LauncherSettingsUVE final {
+struct LauncherSettings final {
     std::filesystem::path defaultProjectLocation;
 };
 
 /// Reads `file`; a missing or unreadable file yields the defaults, with `defaultProjectLocation`
 /// under the user's home directory.
-[[nodiscard]] LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file);
-[[nodiscard]] bool SaveLauncherSettingsUVE(const std::filesystem::path& file, const LauncherSettingsUVE& settings);
+[[nodiscard]] LauncherSettings LoadLauncherSettings(const std::filesystem::path& file);
+[[nodiscard]] bool SaveLauncherSettings(const std::filesystem::path& file, const LauncherSettings& settings);
 
 } // namespace UVE::Pack

@@ -16,10 +16,10 @@
 
 namespace UVE::Core {
 
-/// The engine's formal lifecycle state. EngineCoreUVE always transitions
+/// The engine's formal lifecycle state. EngineCore always transitions
 /// through these states strictly in order, one step at a time — see
-/// IsValidTransitionUVE().
-enum class EngineStateUVE : std::uint8_t {
+/// IsValidTransition().
+enum class EngineState : std::uint8_t {
     Uninitialized = 0,
     Initializing = 1,
     Running = 2,
@@ -27,18 +27,18 @@ enum class EngineStateUVE : std::uint8_t {
     Shutdown = 4,
 };
 
-/// Returns the display name of an EngineStateUVE value.
-[[nodiscard]] constexpr std::string_view ToStringUVE(EngineStateUVE state) noexcept {
+/// Returns the display name of an EngineState value.
+[[nodiscard]] constexpr std::string_view ToString(EngineState state) noexcept {
     switch (state) {
-        case EngineStateUVE::Uninitialized:
+        case EngineState::Uninitialized:
             return "Uninitialized";
-        case EngineStateUVE::Initializing:
+        case EngineState::Initializing:
             return "Initializing";
-        case EngineStateUVE::Running:
+        case EngineState::Running:
             return "Running";
-        case EngineStateUVE::ShuttingDown:
+        case EngineState::ShuttingDown:
             return "ShuttingDown";
-        case EngineStateUVE::Shutdown:
+        case EngineState::Shutdown:
             return "Shutdown";
     }
     return "Unknown";
@@ -48,17 +48,17 @@ enum class EngineStateUVE : std::uint8_t {
 /// step in the engine lifecycle: Uninitialized -> Initializing -> Running
 /// -> ShuttingDown -> Shutdown, strictly in that order. No state is ever
 /// revisited and no step may be skipped.
-[[nodiscard]] constexpr bool IsValidTransitionUVE(EngineStateUVE from, EngineStateUVE to) noexcept {
+[[nodiscard]] constexpr bool IsValidTransition(EngineState from, EngineState to) noexcept {
     switch (from) {
-        case EngineStateUVE::Uninitialized:
-            return to == EngineStateUVE::Initializing;
-        case EngineStateUVE::Initializing:
-            return to == EngineStateUVE::Running;
-        case EngineStateUVE::Running:
-            return to == EngineStateUVE::ShuttingDown;
-        case EngineStateUVE::ShuttingDown:
-            return to == EngineStateUVE::Shutdown;
-        case EngineStateUVE::Shutdown:
+        case EngineState::Uninitialized:
+            return to == EngineState::Initializing;
+        case EngineState::Initializing:
+            return to == EngineState::Running;
+        case EngineState::Running:
+            return to == EngineState::ShuttingDown;
+        case EngineState::ShuttingDown:
+            return to == EngineState::Shutdown;
+        case EngineState::Shutdown:
             return false;
     }
     return false;

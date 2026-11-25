@@ -17,7 +17,7 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] std::string ToLowerCopyUVE(const std::string_view s) {
+[[nodiscard]] std::string ToLowerCopy(const std::string_view s) {
     std::string out;
     out.reserve(s.size());
     for (const char c : s) {
@@ -26,14 +26,14 @@ namespace {
     return out;
 }
 
-[[nodiscard]] std::string FormatVec3UVE(const Math::Vector3UVE& v) {
+[[nodiscard]] std::string FormatVec3(const Math::Vector3& v) {
     char buf[96];
     std::snprintf(buf, sizeof(buf), "(%.3f, %.3f, %.3f)", static_cast<double>(v.x),
                   static_cast<double>(v.y), static_cast<double>(v.z));
     return std::string(buf);
 }
 
-[[nodiscard]] bool IsSearchableAssetExtUVE(const std::string& ext) {
+[[nodiscard]] bool IsSearchableAssetExt(const std::string& ext) {
     return ext == ".uvscene" || ext == ".uvmaterial" || ext == ".uvprefab" ||
            ext == ".uvmatgraph" || ext == ".uvs" || ext == ".uvfx" || ext == ".uvanim" ||
            ext == ".json" || ext == ".glsl" || ext == ".uvproj";
@@ -44,12 +44,12 @@ namespace {
 // ---------------------------------------------------------------------------
 // 1. Asset Dependency Index
 // ---------------------------------------------------------------------------
-void EditorAssetDependencyIndexUVE::ClearUVE() noexcept {
+void EditorAssetDependencyIndex::Clear() noexcept {
     m_forward.clear();
     m_reverse.clear();
 }
 
-void EditorAssetDependencyIndexUVE::RegisterEdgeUVE(const std::string& fromAsset,
+void EditorAssetDependencyIndex::RegisterEdge(const std::string& fromAsset,
                                                     const std::string& toAsset) {
     if (fromAsset.empty() || toAsset.empty() || fromAsset == toAsset) {
         return;
@@ -64,8 +64,8 @@ void EditorAssetDependencyIndexUVE::RegisterEdgeUVE(const std::string& fromAsset
     }
 }
 
-void EditorAssetDependencyIndexUVE::RebuildFromProjectUVE(const std::filesystem::path& projectRoot) {
-    ClearUVE();
+void EditorAssetDependencyIndex::RebuildFromProject(const std::filesystem::path& projectRoot) {
+    Clear();
     std::error_code ec;
     if (!std::filesystem::exists(projectRoot, ec)) {
         return;
@@ -83,8 +83,8 @@ void EditorAssetDependencyIndexUVE::RebuildFromProjectUVE(const std::filesystem:
 
     for (const std::string& rel : allRelPaths) {
         const std::filesystem::path fullPath = projectRoot / rel;
-        const std::string ext = ToLowerCopyUVE(fullPath.extension().string());
-        if (!IsSearchableAssetExtUVE(ext)) {
+        const std::string ext = ToLowerCopy(fullPath.extension().string());
+        if (!IsSearchableAssetExt(ext)) {
             continue;
         }
         std::ifstream in(fullPath);
@@ -99,29 +99,29 @@ void EditorAssetDependencyIndexUVE::RebuildFromProjectUVE(const std::filesystem:
                 continue;
             }
             if (content.find(candidate) != std::string::npos) {
-                RegisterEdgeUVE(rel, candidate);
+                RegisterEdge(rel, candidate);
             }
         }
     }
 }
 
-std::vector<std::string> EditorAssetDependencyIndexUVE::GetDependenciesUVE(
+std::vector<std::string> EditorAssetDependencyIndex::GetDependencies(
     const std::string& assetPath) const {
     const auto it = m_forward.find(assetPath);
     return it != m_forward.end() ? it->second : std::vector<std::string>{};
 }
 
-std::vector<std::string> EditorAssetDependencyIndexUVE::GetReferencersUVE(
+std::vector<std::string> EditorAssetDependencyIndex::GetReferencers(
     const std::string& assetPath) const {
     const auto it = m_reverse.find(assetPath);
     return it != m_reverse.end() ? it->second : std::vector<std::string>{};
 }
 
-std::vector<std::string> EditorAssetDependencyIndexUVE::FindUnusedAssetsUVE(
+std::vector<std::string> EditorAssetDependencyIndex::FindUnusedAssets(
     const std::vector<std::string>& allAssets) const {
     std::vector<std::string> unused;
     for (const std::string& asset : allAssets) {
-        const std::string ext = ToLowerCopyUVE(std::filesystem::path(asset).extension().string());
+        const std::string ext = ToLowerCopy(std::filesystem::path(asset).extension().string());
         if (ext == ".uvscene" || ext == ".uvproj") {
             continue; // Root entry points are never flagged as unused.
         }
@@ -136,7 +136,7 @@ std::vector<std::string> EditorAssetDependencyIndexUVE::FindUnusedAssetsUVE(
 // ---------------------------------------------------------------------------
 // 2. Multi-Scene Editing Session
 // ---------------------------------------------------------------------------
-void EditorMultiSceneSessionUVE::SetPrimarySceneUVE(std::string scenePath) {
+void EditorMultiSceneSession::SetPrimaryScene(std::string scenePath) {
     m_primaryScene = std::move(scenePath);
     m_activeScene = m_primaryScene;
     for (auto& s : m_subScenes) {
@@ -144,7 +144,7 @@ void EditorMultiSceneSessionUVE::SetPrimarySceneUVE(std::string scenePath) {
     }
 }
 
-bool EditorMultiSceneSessionUVE::AddSubSceneUVE(std::string scenePath) {
+bool EditorMultiSceneSession::AddSubScene(std::string scenePath) {
     if (scenePath.empty() || scenePath == m_primaryScene) {
         return false;
     }
@@ -153,13 +153,13 @@ bool EditorMultiSceneSessionUVE::AddSubSceneUVE(std::string scenePath) {
             return false;
         }
     }
-    m_subScenes.push_back(EditorSubSceneEntryUVE{std::move(scenePath), true, true, false, false});
+    m_subScenes.push_back(EditorSubSceneEntry{std::move(scenePath), true, true, false, false});
     return true;
 }
 
-bool EditorMultiSceneSessionUVE::RemoveSubSceneUVE(const std::string_view scenePath) {
+bool EditorMultiSceneSession::RemoveSubScene(const std::string_view scenePath) {
     const auto it = std::find_if(m_subScenes.begin(), m_subScenes.end(),
-                                 [scenePath](const EditorSubSceneEntryUVE& s) { return s.scenePath == scenePath; });
+                                 [scenePath](const EditorSubSceneEntry& s) { return s.scenePath == scenePath; });
     if (it == m_subScenes.end()) {
         return false;
     }
@@ -170,7 +170,7 @@ bool EditorMultiSceneSessionUVE::RemoveSubSceneUVE(const std::string_view sceneP
     return true;
 }
 
-bool EditorMultiSceneSessionUVE::SetSubSceneLoadedUVE(const std::string_view scenePath, const bool loaded) {
+bool EditorMultiSceneSession::SetSubSceneLoaded(const std::string_view scenePath, const bool loaded) {
     for (auto& s : m_subScenes) {
         if (s.scenePath == scenePath) {
             s.loaded = loaded;
@@ -184,7 +184,7 @@ bool EditorMultiSceneSessionUVE::SetSubSceneLoadedUVE(const std::string_view sce
     return false;
 }
 
-bool EditorMultiSceneSessionUVE::SetSubSceneVisibleUVE(const std::string_view scenePath, const bool visible) {
+bool EditorMultiSceneSession::SetSubSceneVisible(const std::string_view scenePath, const bool visible) {
     for (auto& s : m_subScenes) {
         if (s.scenePath == scenePath) {
             s.visible = visible;
@@ -194,7 +194,7 @@ bool EditorMultiSceneSessionUVE::SetSubSceneVisibleUVE(const std::string_view sc
     return false;
 }
 
-bool EditorMultiSceneSessionUVE::SetActiveEditSceneUVE(const std::string_view scenePath) {
+bool EditorMultiSceneSession::SetActiveEditScene(const std::string_view scenePath) {
     if (scenePath == m_primaryScene) {
         m_activeScene = m_primaryScene;
         for (auto& s : m_subScenes) {
@@ -218,20 +218,20 @@ bool EditorMultiSceneSessionUVE::SetActiveEditSceneUVE(const std::string_view sc
 // ---------------------------------------------------------------------------
 // 3. Prefab Override Diff / Apply / Revert
 // ---------------------------------------------------------------------------
-std::vector<EditorPrefabPropertyDiffUVE> DiffPrefabInstanceUVE(
-    const EditorPrefabTransformSnapshotUVE& prefabSource,
-    const EditorPrefabTransformSnapshotUVE& liveInstance) {
-    std::vector<EditorPrefabPropertyDiffUVE> diffs;
+std::vector<EditorPrefabPropertyDiff> DiffPrefabInstance(
+    const EditorPrefabTransformSnapshot& prefabSource,
+    const EditorPrefabTransformSnapshot& liveInstance) {
+    std::vector<EditorPrefabPropertyDiff> diffs;
     if (prefabSource.name != liveInstance.name) {
         diffs.push_back({"Name", prefabSource.name, liveInstance.name});
     }
-    if (Math::LengthUVE(prefabSource.transform.localPosition - liveInstance.transform.localPosition) > 1.0e-4F) {
-        diffs.push_back({"Position", FormatVec3UVE(prefabSource.transform.localPosition),
-                         FormatVec3UVE(liveInstance.transform.localPosition)});
+    if (Math::Length(prefabSource.transform.localPosition - liveInstance.transform.localPosition) > 1.0e-4F) {
+        diffs.push_back({"Position", FormatVec3(prefabSource.transform.localPosition),
+                         FormatVec3(liveInstance.transform.localPosition)});
     }
-    if (Math::LengthUVE(prefabSource.transform.localScale - liveInstance.transform.localScale) > 1.0e-4F) {
-        diffs.push_back({"Scale", FormatVec3UVE(prefabSource.transform.localScale),
-                         FormatVec3UVE(liveInstance.transform.localScale)});
+    if (Math::Length(prefabSource.transform.localScale - liveInstance.transform.localScale) > 1.0e-4F) {
+        diffs.push_back({"Scale", FormatVec3(prefabSource.transform.localScale),
+                         FormatVec3(liveInstance.transform.localScale)});
     }
     const float qDiff = std::fabs(prefabSource.transform.localRotation.x - liveInstance.transform.localRotation.x) +
                         std::fabs(prefabSource.transform.localRotation.y - liveInstance.transform.localRotation.y) +
@@ -243,20 +243,20 @@ std::vector<EditorPrefabPropertyDiffUVE> DiffPrefabInstanceUVE(
     return diffs;
 }
 
-void ApplyInstanceOverridesToPrefabUVE(const EditorPrefabTransformSnapshotUVE& liveInstance,
-                                       EditorPrefabTransformSnapshotUVE& prefabSource) {
+void ApplyInstanceOverridesToPrefab(const EditorPrefabTransformSnapshot& liveInstance,
+                                       EditorPrefabTransformSnapshot& prefabSource) {
     prefabSource = liveInstance;
 }
 
-void RevertInstanceToPrefabUVE(const EditorPrefabTransformSnapshotUVE& prefabSource,
-                               EditorPrefabTransformSnapshotUVE& liveInstance) {
+void RevertInstanceToPrefab(const EditorPrefabTransformSnapshot& prefabSource,
+                               EditorPrefabTransformSnapshot& liveInstance) {
     liveInstance = prefabSource;
 }
 
 // ---------------------------------------------------------------------------
 // 4. GPU Profiler & Memory Snapshot
 // ---------------------------------------------------------------------------
-std::uint64_t EditorFrameDebugSnapshotUVE::TotalTrackedMemoryBytesUVE() const noexcept {
+std::uint64_t EditorFrameDebugSnapshot::TotalTrackedMemoryBytes() const noexcept {
     std::uint64_t total = 0U;
     for (const auto& entry : memorySubsystems) {
         total += entry.allocatedBytes;
@@ -267,33 +267,33 @@ std::uint64_t EditorFrameDebugSnapshotUVE::TotalTrackedMemoryBytesUVE() const no
 // ---------------------------------------------------------------------------
 // 5. Terrain Brush Tool
 // ---------------------------------------------------------------------------
-void ApplyEditorTerrainBrushStrokeUVE(Scene::Terrain3DComponentUVE& terrain, const float localX,
-                                      const float localZ, const EditorTerrainBrushSettingsUVE& brush,
+void ApplyEditorTerrainBrushStroke(Scene::Terrain3DComponent& terrain, const float localX,
+                                      const float localZ, const EditorTerrainBrushSettings& brush,
                                       const float deltaTimeSeconds) {
     if (deltaTimeSeconds <= 0.0F || brush.radiusMetres <= 0.0F) {
         return;
     }
     const float delta = brush.strength * deltaTimeSeconds;
     switch (brush.mode) {
-        case EditorTerrainBrushModeUVE::Raise:
-            Scene::Terrain3DUVE::SculptUVE(terrain, localX, localZ, brush.radiusMetres, delta, false, 0.0F);
+        case EditorTerrainBrushMode::Raise:
+            Scene::Terrain3D::Sculpt(terrain, localX, localZ, brush.radiusMetres, delta, false, 0.0F);
             break;
-        case EditorTerrainBrushModeUVE::Lower:
-            Scene::Terrain3DUVE::SculptUVE(terrain, localX, localZ, brush.radiusMetres, -delta, false, 0.0F);
+        case EditorTerrainBrushMode::Lower:
+            Scene::Terrain3D::Sculpt(terrain, localX, localZ, brush.radiusMetres, -delta, false, 0.0F);
             break;
-        case EditorTerrainBrushModeUVE::Flatten:
-            Scene::Terrain3DUVE::SculptUVE(terrain, localX, localZ, brush.radiusMetres, delta, true,
+        case EditorTerrainBrushMode::Flatten:
+            Scene::Terrain3D::Sculpt(terrain, localX, localZ, brush.radiusMetres, delta, true,
                                            brush.flattenTargetHeight);
             break;
-        case EditorTerrainBrushModeUVE::Smooth: {
-            const float centerH = Scene::Terrain3DUVE::SampleHeightLocalUVE(terrain, localX, localZ);
+        case EditorTerrainBrushMode::Smooth: {
+            const float centerH = Scene::Terrain3D::SampleHeightLocal(terrain, localX, localZ);
             const float normH = terrain.heightScale > 1.0e-5F ? (centerH / terrain.heightScale) : 0.0F;
-            Scene::Terrain3DUVE::SculptUVE(terrain, localX, localZ, brush.radiusMetres, delta * 0.5F, true,
+            Scene::Terrain3D::Sculpt(terrain, localX, localZ, brush.radiusMetres, delta * 0.5F, true,
                                            normH);
             break;
         }
-        case EditorTerrainBrushModeUVE::PaintSplat:
-            Scene::Terrain3DUVE::PaintSplatUVE(terrain, localX, localZ, brush.radiusMetres,
+        case EditorTerrainBrushMode::PaintSplat:
+            Scene::Terrain3D::PaintSplat(terrain, localX, localZ, brush.radiusMetres,
                                                brush.splatLayerIndex, std::clamp(delta, 0.0F, 1.0F));
             break;
     }
@@ -302,7 +302,7 @@ void ApplyEditorTerrainBrushStrokeUVE(Scene::Terrain3DComponentUVE& terrain, con
 // ---------------------------------------------------------------------------
 // 6. Git Source-Control Provider
 // ---------------------------------------------------------------------------
-void EditorGitVcsProviderUVE::ParsePorcelainOutputUVE(const std::string_view porcelainText) {
+void EditorGitVcsProvider::ParsePorcelainOutput(const std::string_view porcelainText) {
     m_statuses.clear();
     std::size_t start = 0U;
     while (start < porcelainText.size()) {
@@ -319,33 +319,33 @@ void EditorGitVcsProviderUVE::ParsePorcelainOutputUVE(const std::string_view por
         if (!path.empty() && path.back() == '\r') {
             path.pop_back();
         }
-        EditorVcsFileStatusUVE status = EditorVcsFileStatusUVE::Modified;
+        EditorVcsFileStatus status = EditorVcsFileStatus::Modified;
         if (x == '?' && y == '?') {
-            status = EditorVcsFileStatusUVE::Untracked;
+            status = EditorVcsFileStatus::Untracked;
         } else if (x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D')) {
-            status = EditorVcsFileStatusUVE::Conflicted;
+            status = EditorVcsFileStatus::Conflicted;
         } else if (x == 'A') {
-            status = EditorVcsFileStatusUVE::Added;
+            status = EditorVcsFileStatus::Added;
         } else if (x == 'D' || y == 'D') {
-            status = EditorVcsFileStatusUVE::Deleted;
+            status = EditorVcsFileStatus::Deleted;
         }
         m_statuses[path] = status;
     }
 }
 
-EditorVcsFileStatusUVE EditorGitVcsProviderUVE::GetFileStatusUVE(
+EditorVcsFileStatus EditorGitVcsProvider::GetFileStatus(
     const std::string& relativePath) const noexcept {
     const auto it = m_statuses.find(relativePath);
-    return it != m_statuses.end() ? it->second : EditorVcsFileStatusUVE::Clean;
+    return it != m_statuses.end() ? it->second : EditorVcsFileStatus::Clean;
 }
 
 // ---------------------------------------------------------------------------
 // 7. Find-in-Project Search
 // ---------------------------------------------------------------------------
-std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(const std::filesystem::path& projectRoot,
+std::vector<EditorProjectSearchHit> SearchProjectContent(const std::filesystem::path& projectRoot,
                                                                const std::string_view query,
                                                                const std::size_t maxResults) {
-    std::vector<EditorProjectSearchHitUVE> hits;
+    std::vector<EditorProjectSearchHit> hits;
     if (query.empty() || maxResults == 0U) {
         return hits;
     }
@@ -353,7 +353,7 @@ std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(const std::filesy
     if (!std::filesystem::exists(projectRoot, ec)) {
         return hits;
     }
-    const std::string needle = ToLowerCopyUVE(query);
+    const std::string needle = ToLowerCopy(query);
     for (const auto& entry : std::filesystem::recursive_directory_iterator(projectRoot, ec)) {
         if (hits.size() >= maxResults) {
             break;
@@ -362,15 +362,15 @@ std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(const std::filesy
             continue;
         }
         const std::string rel = std::filesystem::relative(entry.path(), projectRoot, ec).generic_string();
-        const std::string relLower = ToLowerCopyUVE(rel);
+        const std::string relLower = ToLowerCopy(rel);
         if (relLower.find(needle) != std::string::npos) {
-            hits.push_back(EditorProjectSearchHitUVE{rel, 0U, "[Asset File] " + rel});
+            hits.push_back(EditorProjectSearchHit{rel, 0U, "[Asset File] " + rel});
             if (hits.size() >= maxResults) {
                 break;
             }
         }
-        const std::string ext = ToLowerCopyUVE(entry.path().extension().string());
-        if (!IsSearchableAssetExtUVE(ext)) {
+        const std::string ext = ToLowerCopy(entry.path().extension().string());
+        if (!IsSearchableAssetExt(ext)) {
             continue;
         }
         std::ifstream in(entry.path());
@@ -381,9 +381,9 @@ std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(const std::filesy
         std::uint32_t lineNo = 0U;
         while (std::getline(in, line)) {
             ++lineNo;
-            if (ToLowerCopyUVE(line).find(needle) != std::string::npos) {
+            if (ToLowerCopy(line).find(needle) != std::string::npos) {
                 std::string preview = line.size() > 140U ? (line.substr(0U, 140U) + "...") : line;
-                hits.push_back(EditorProjectSearchHitUVE{rel, lineNo, std::move(preview)});
+                hits.push_back(EditorProjectSearchHit{rel, lineNo, std::move(preview)});
                 if (hits.size() >= maxResults) {
                     break;
                 }
@@ -396,20 +396,20 @@ std::vector<EditorProjectSearchHitUVE> SearchProjectContentUVE(const std::filesy
 // ---------------------------------------------------------------------------
 // 8. Editor Plugin / Extension Registry
 // ---------------------------------------------------------------------------
-void EditorExtensionRegistryUVE::RegisterMenuItemUVE(EditorMenuExtensionUVE item) {
+void EditorExtensionRegistry::RegisterMenuItem(EditorMenuExtension item) {
     m_menuItems.push_back(std::move(item));
 }
 
-void EditorExtensionRegistryUVE::RegisterPanelUVE(EditorPanelExtensionUVE panel) {
+void EditorExtensionRegistry::RegisterPanel(EditorPanelExtension panel) {
     m_panels.push_back(std::move(panel));
 }
 
-void EditorExtensionRegistryUVE::RegisterImporterUVE(EditorImporterExtensionUVE importer) {
-    importer.fileExtension = ToLowerCopyUVE(importer.fileExtension);
+void EditorExtensionRegistry::RegisterImporter(EditorImporterExtension importer) {
+    importer.fileExtension = ToLowerCopy(importer.fileExtension);
     m_importers.push_back(std::move(importer));
 }
 
-bool EditorExtensionRegistryUVE::InvokeMenuItemUVE(const std::string_view menuPath,
+bool EditorExtensionRegistry::InvokeMenuItem(const std::string_view menuPath,
                                                    const std::string_view label) const {
     for (const auto& item : m_menuItems) {
         if (item.menuPath == menuPath && item.label == label && item.onInvoke) {
@@ -420,8 +420,8 @@ bool EditorExtensionRegistryUVE::InvokeMenuItemUVE(const std::string_view menuPa
     return false;
 }
 
-bool EditorExtensionRegistryUVE::TryImportFileUVE(const std::filesystem::path& filePath) const {
-    const std::string ext = ToLowerCopyUVE(filePath.extension().string());
+bool EditorExtensionRegistry::TryImportFile(const std::filesystem::path& filePath) const {
+    const std::string ext = ToLowerCopy(filePath.extension().string());
     for (const auto& imp : m_importers) {
         if (imp.fileExtension == ext && imp.onImport) {
             return imp.onImport(filePath);
@@ -433,32 +433,32 @@ bool EditorExtensionRegistryUVE::TryImportFileUVE(const std::filesystem::path& f
 // ---------------------------------------------------------------------------
 // 9. Automated Project & Scene Validator
 // ---------------------------------------------------------------------------
-std::vector<EditorValidationIssueUVE> RunEditorSceneValidationUVE(
-    Scene::IEntityManagerUVE& entityManager,
-    const EditorAssetDependencyIndexUVE* const dependencyIndex,
+std::vector<EditorValidationIssue> RunEditorSceneValidation(
+    Scene::IEntityManager& entityManager,
+    const EditorAssetDependencyIndex* const dependencyIndex,
     const std::vector<std::string>& projectAssets) {
-    std::vector<EditorValidationIssueUVE> issues;
+    std::vector<EditorValidationIssue> issues;
 
-    entityManager.ForEachUVE<Scene::MeshComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::MeshComponentUVE& mesh) {
-            if (mesh.meshGuid == Asset::kInvalidAssetGuidUVE) {
-                issues.push_back(EditorValidationIssueUVE{
-                    EditorValidationSeverityUVE::Error,
+    entityManager.ForEach<Scene::MeshComponent>(
+        [&](const Scene::Entity entity, const Scene::MeshComponent& mesh) {
+            if (mesh.meshGuid == Asset::kInvalidAssetGuid) {
+                issues.push_back(EditorValidationIssue{
+                    EditorValidationSeverity::Error,
                     "Rendering",
-                    "MeshComponentUVE has an invalid/unassigned mesh GUID",
+                    "MeshComponent has an invalid/unassigned mesh GUID",
                     entity,
                     {},
                 });
             }
         });
 
-    entityManager.ForEachUVE<Scene::Rigid3DComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::Rigid3DComponentUVE&) {
-            if (!entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
-                issues.push_back(EditorValidationIssueUVE{
-                    EditorValidationSeverityUVE::Warning,
+    entityManager.ForEach<Scene::Rigid3DComponent>(
+        [&](const Scene::Entity entity, const Scene::Rigid3DComponent&) {
+            if (!entityManager.HasComponent<Scene::ColliderComponent>(entity)) {
+                issues.push_back(EditorValidationIssue{
+                    EditorValidationSeverity::Warning,
                     "Physics",
-                    "Rigid3D entity has no ColliderComponentUVE attached",
+                    "Rigid3D entity has no ColliderComponent attached",
                     entity,
                     {},
                 });
@@ -466,12 +466,12 @@ std::vector<EditorValidationIssueUVE> RunEditorSceneValidationUVE(
         });
 
     if (dependencyIndex != nullptr && !projectAssets.empty()) {
-        for (const std::string& unused : dependencyIndex->FindUnusedAssetsUVE(projectAssets)) {
-            issues.push_back(EditorValidationIssueUVE{
-                EditorValidationSeverityUVE::Info,
+        for (const std::string& unused : dependencyIndex->FindUnusedAssets(projectAssets)) {
+            issues.push_back(EditorValidationIssue{
+                EditorValidationSeverity::Info,
                 "Assets",
                 "Unused asset has zero scene or material references",
-                Scene::kInvalidEntityUVE,
+                Scene::kInvalidEntity,
                 unused,
             });
         }

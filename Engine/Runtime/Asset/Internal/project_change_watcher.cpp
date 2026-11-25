@@ -22,22 +22,22 @@
 namespace UVE::Asset {
 namespace {
 
-struct BaselineEntryUVE final {
+struct BaselineEntry final {
     std::filesystem::path relativePath{};
-    ProjectFileEntryKindUVE kind = ProjectFileEntryKindUVE::File;
-    std::optional<AssetGuidUVE> registeredAssetGuid;
-    std::optional<AssetContentFingerprintUVE> contentFingerprint;
+    ProjectFileEntryKind kind = ProjectFileEntryKind::File;
+    std::optional<AssetGuid> registeredAssetGuid;
+    std::optional<AssetContentFingerprint> contentFingerprint;
     std::filesystem::file_time_type lastWriteTime{};
     std::uintmax_t fileSize = 0U;
 };
 
-[[nodiscard]] bool PhysicalIdentityMatchesUVE(const BaselineEntryUVE& left,
-                                              const BaselineEntryUVE& right) noexcept {
+[[nodiscard]] bool PhysicalIdentityMatches(const BaselineEntry& left,
+                                              const BaselineEntry& right) noexcept {
     return left.kind == right.kind && left.contentFingerprint == right.contentFingerprint;
 }
 
-[[nodiscard]] bool ChangeLessUVE(const ProjectFileChangeUVE& left,
-                                 const ProjectFileChangeUVE& right) {
+[[nodiscard]] bool ChangeLess(const ProjectFileChange& left,
+                                 const ProjectFileChange& right) {
     if (left.relativePath.generic_string() != right.relativePath.generic_string()) {
         return left.relativePath.generic_string() < right.relativePath.generic_string();
     }
@@ -47,12 +47,12 @@ struct BaselineEntryUVE final {
     return static_cast<std::uint8_t>(left.entryKind) < static_cast<std::uint8_t>(right.entryKind);
 }
 
-[[nodiscard]] std::optional<std::map<std::string, BaselineEntryUVE>>
-BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAssetDatabaseUVE& assetDatabase,
-                 const std::map<std::string, BaselineEntryUVE>* const previousBaseline,
+[[nodiscard]] std::optional<std::map<std::string, BaselineEntry>>
+BuildBaseline(const std::filesystem::path& configuredContentRoot, const IAssetDatabase& assetDatabase,
+                 const std::map<std::string, BaselineEntry>* const previousBaseline,
                  std::string& outDiagnostic) {
     outDiagnostic.clear();
-    std::map<std::string, BaselineEntryUVE> baseline;
+    std::map<std::string, BaselineEntry> baseline;
     if (configuredContentRoot.empty()) {
         return baseline;
     }
@@ -82,21 +82,21 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
         return std::nullopt;
     }
 
-    const std::map<std::string, AssetGuidUVE> registeredAssetsByRelativePath =
-        Detail::BuildRegisteredAssetsByRelativePathUVE(absoluteContentRoot, assetDatabase);
+    const std::map<std::string, AssetGuid> registeredAssetsByRelativePath =
+        Detail::BuildRegisteredAssetsByRelativePath(absoluteContentRoot, assetDatabase);
 
     // The traversal itself - iterator lifecycle, symlink fencing, root-boundary checks - is
-    // shared with ProjectFileIndexUVE (Detail::WalkProjectContentTreeUVE); the fingerprint
+    // shared with ProjectFileIndex (Detail::WalkProjectContentTree); the fingerprint
     // failure stays this walker's sole per-entry abort, keeping its original diagnostic.
     const auto baselineOneEntry = [&baseline, &registeredAssetsByRelativePath, &outDiagnostic,
                                    previousBaseline](
                                       const std::filesystem::path& absoluteEntryPath,
                                       const std::filesystem::path& relativePath,
-                                      const ProjectFileEntryKindUVE kind) {
-        BaselineEntryUVE baselineEntry;
+                                      const ProjectFileEntryKind kind) {
+        BaselineEntry baselineEntry;
         baselineEntry.relativePath = relativePath;
         baselineEntry.kind = kind;
-        if (kind == ProjectFileEntryKindUVE::File) {
+        if (kind == ProjectFileEntryKind::File) {
             std::error_code metaError;
             const auto writeTime = std::filesystem::last_write_time(absoluteEntryPath, metaError);
             const auto size = !metaError ? std::filesystem::file_size(absoluteEntryPath, metaError) : 0U;
@@ -127,7 +127,7 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
             // Fingerprint from disk when new, missing from previous baseline, or modified.
             baselineEntry.lastWriteTime = writeTime;
             baselineEntry.fileSize = size;
-            baselineEntry.contentFingerprint = ComputeAssetContentFingerprintUVE(absoluteEntryPath);
+            baselineEntry.contentFingerprint = ComputeAssetContentFingerprint(absoluteEntryPath);
             if (!baselineEntry.contentFingerprint.has_value()) {
                 // Unreadable for now (still being copied in, locked): leave it out so the next poll
                 // reports it as new, instead of the whole scan failing and no change being seen at all.
@@ -141,7 +141,7 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
         baseline.emplace(relativePath.generic_string(), std::move(baselineEntry));
         return true;
     };
-    if (!Detail::WalkProjectContentTreeUVE(absoluteContentRoot, outDiagnostic, baselineOneEntry)) {
+    if (!Detail::WalkProjectContentTree(absoluteContentRoot, outDiagnostic, baselineOneEntry)) {
         return std::nullopt;
     }
     return baseline;
@@ -149,10 +149,10 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
 
 } // namespace
 
-struct ProjectChangeWatcherUVE::ImplUVE final {
-    ImplUVE(std::filesystem::path configuredContentRoot, const double configuredPollIntervalSeconds,
+struct ProjectChangeWatcher::Impl final {
+    Impl(std::filesystem::path configuredContentRoot, const double configuredPollIntervalSeconds,
             const std::size_t configuredJournalCapacity)
-        : contentRoot(Detail::NormalizeProjectContentRootUVE(std::move(configuredContentRoot))),
+        : contentRoot(Detail::NormalizeProjectContentRoot(std::move(configuredContentRoot))),
           pollIntervalSeconds(std::max(0.0, configuredPollIntervalSeconds)),
           journalCapacity(configuredJournalCapacity) {
         snapshot.contentRoot = contentRoot;
@@ -163,23 +163,23 @@ struct ProjectChangeWatcherUVE::ImplUVE final {
     double accumulatedSeconds = 0.0;
     std::size_t journalCapacity = 0U;
     bool baselineInitialized = false;
-    std::map<std::string, BaselineEntryUVE> baseline;
+    std::map<std::string, BaselineEntry> baseline;
     mutable std::mutex mutex;
-    ProjectChangeSnapshotUVE snapshot;
+    ProjectChangeSnapshot snapshot;
 };
 
-ProjectChangeWatcherUVE::ProjectChangeWatcherUVE(std::filesystem::path contentRoot,
+ProjectChangeWatcher::ProjectChangeWatcher(std::filesystem::path contentRoot,
                                                  const double pollIntervalSeconds,
                                                  const std::size_t journalCapacity)
-    : m_impl(std::make_unique<ImplUVE>(std::move(contentRoot), pollIntervalSeconds, journalCapacity)) {}
+    : m_impl(std::make_unique<Impl>(std::move(contentRoot), pollIntervalSeconds, journalCapacity)) {}
 
-ProjectChangeWatcherUVE::~ProjectChangeWatcherUVE() = default;
+ProjectChangeWatcher::~ProjectChangeWatcher() = default;
 
-bool ProjectChangeWatcherUVE::ScanNowLockedUVE(const IAssetDatabaseUVE& assetDatabase,
-                                                IDerivedArtifactCacheUVE& derivedArtifactCache) {
+bool ProjectChangeWatcher::ScanNowLocked(const IAssetDatabase& assetDatabase,
+                                                IDerivedArtifactCache& derivedArtifactCache) {
     std::string diagnostic;
-    std::optional<std::map<std::string, BaselineEntryUVE>> refreshedBaseline =
-        BuildBaselineUVE(m_impl->contentRoot, assetDatabase,
+    std::optional<std::map<std::string, BaselineEntry>> refreshedBaseline =
+        BuildBaseline(m_impl->contentRoot, assetDatabase,
                          m_impl->baselineInitialized ? &m_impl->baseline : nullptr, diagnostic);
     if (!refreshedBaseline.has_value()) {
         m_impl->snapshot.lastScanDiagnostic = std::move(diagnostic);
@@ -194,40 +194,40 @@ bool ProjectChangeWatcherUVE::ScanNowLockedUVE(const IAssetDatabaseUVE& assetDat
         return true;
     }
 
-    std::vector<ProjectFileChangeUVE> changes;
+    std::vector<ProjectFileChange> changes;
     for (const auto& [pathKey, previousEntry] : m_impl->baseline) {
         const auto currentIt = refreshedBaseline->find(pathKey);
         if (currentIt == refreshedBaseline->end()) {
-            changes.push_back(ProjectFileChangeUVE{0U, previousEntry.relativePath, ProjectFileChangeKindUVE::Removed,
+            changes.push_back(ProjectFileChange{0U, previousEntry.relativePath, ProjectFileChangeKind::Removed,
                                                    previousEntry.kind, previousEntry.registeredAssetGuid, 0U});
             continue;
         }
-        if (!PhysicalIdentityMatchesUVE(previousEntry, currentIt->second)) {
+        if (!PhysicalIdentityMatches(previousEntry, currentIt->second)) {
             if (previousEntry.kind != currentIt->second.kind) {
-                changes.push_back(ProjectFileChangeUVE{0U, previousEntry.relativePath,
-                                                       ProjectFileChangeKindUVE::Removed, previousEntry.kind,
+                changes.push_back(ProjectFileChange{0U, previousEntry.relativePath,
+                                                       ProjectFileChangeKind::Removed, previousEntry.kind,
                                                        previousEntry.registeredAssetGuid, 0U});
-                changes.push_back(ProjectFileChangeUVE{0U, currentIt->second.relativePath,
-                                                       ProjectFileChangeKindUVE::Created, currentIt->second.kind,
+                changes.push_back(ProjectFileChange{0U, currentIt->second.relativePath,
+                                                       ProjectFileChangeKind::Created, currentIt->second.kind,
                                                        currentIt->second.registeredAssetGuid, 0U});
             } else {
-                changes.push_back(ProjectFileChangeUVE{0U, currentIt->second.relativePath,
-                                                       ProjectFileChangeKindUVE::Modified, currentIt->second.kind,
+                changes.push_back(ProjectFileChange{0U, currentIt->second.relativePath,
+                                                       ProjectFileChangeKind::Modified, currentIt->second.kind,
                                                        currentIt->second.registeredAssetGuid, 0U});
             }
         }
     }
     for (const auto& [pathKey, currentEntry] : *refreshedBaseline) {
         if (!m_impl->baseline.contains(pathKey)) {
-            changes.push_back(ProjectFileChangeUVE{0U, currentEntry.relativePath, ProjectFileChangeKindUVE::Created,
+            changes.push_back(ProjectFileChange{0U, currentEntry.relativePath, ProjectFileChangeKind::Created,
                                                    currentEntry.kind, currentEntry.registeredAssetGuid, 0U});
         }
     }
-    std::sort(changes.begin(), changes.end(), ChangeLessUVE);
+    std::sort(changes.begin(), changes.end(), ChangeLess);
 
-    for (ProjectFileChangeUVE& change : changes) {
-        if (change.entryKind == ProjectFileEntryKindUVE::File) {
-            change.staleArtifactCount = derivedArtifactCache.MarkStaleForSourceUVE(
+    for (ProjectFileChange& change : changes) {
+        if (change.entryKind == ProjectFileEntryKind::File) {
+            change.staleArtifactCount = derivedArtifactCache.MarkStaleForSource(
                 m_impl->contentRoot / change.relativePath);
         }
         change.sequence = ++m_impl->snapshot.latestSequence;
@@ -248,8 +248,8 @@ bool ProjectChangeWatcherUVE::ScanNowLockedUVE(const IAssetDatabaseUVE& assetDat
     return true;
 }
 
-bool ProjectChangeWatcherUVE::PollUVE(const double deltaTimeSeconds, const IAssetDatabaseUVE& assetDatabase,
-                                      IDerivedArtifactCacheUVE& derivedArtifactCache) {
+bool ProjectChangeWatcher::Poll(const double deltaTimeSeconds, const IAssetDatabase& assetDatabase,
+                                      IDerivedArtifactCache& derivedArtifactCache) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds < 0.0) {
         return false;
     }
@@ -260,30 +260,30 @@ bool ProjectChangeWatcherUVE::PollUVE(const double deltaTimeSeconds, const IAsse
         return false;
     }
     m_impl->accumulatedSeconds = 0.0;
-    return ScanNowLockedUVE(assetDatabase, derivedArtifactCache);
+    return ScanNowLocked(assetDatabase, derivedArtifactCache);
 }
 
-bool ProjectChangeWatcherUVE::PollNowUVE(const IAssetDatabaseUVE& assetDatabase,
-                                         IDerivedArtifactCacheUVE& derivedArtifactCache) {
+bool ProjectChangeWatcher::PollNow(const IAssetDatabase& assetDatabase,
+                                         IDerivedArtifactCache& derivedArtifactCache) {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->accumulatedSeconds = 0.0;
-    return ScanNowLockedUVE(assetDatabase, derivedArtifactCache);
+    return ScanNowLocked(assetDatabase, derivedArtifactCache);
 }
 
-ProjectChangeSnapshotUVE ProjectChangeWatcherUVE::GetSnapshotUVE() const {
+ProjectChangeSnapshot ProjectChangeWatcher::GetSnapshot() const {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->snapshot;
 }
 
-void ProjectChangeWatcherUVE::AcknowledgeThroughUVE(const std::uint64_t sequence) {
+void ProjectChangeWatcher::AcknowledgeThrough(const std::uint64_t sequence) {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     const auto firstUnacknowledged = std::remove_if(
         m_impl->snapshot.changes.begin(), m_impl->snapshot.changes.end(),
-        [sequence](const ProjectFileChangeUVE& change) { return change.sequence <= sequence; });
+        [sequence](const ProjectFileChange& change) { return change.sequence <= sequence; });
     m_impl->snapshot.changes.erase(firstUnacknowledged, m_impl->snapshot.changes.end());
 }
 
-void ProjectChangeWatcherUVE::AcknowledgeRescanUVE() {
+void ProjectChangeWatcher::AcknowledgeRescan() {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->snapshot.rescanRequired = false;
     m_impl->snapshot.changes.clear();

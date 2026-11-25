@@ -4,52 +4,52 @@
 #include <gtest/gtest.h>
 namespace UVE::Scene::Tests {
 namespace {
-TEST(PrefabRevisionPolicyUVETest, EqualNonzeroRevisionsAreCurrent) {
-    EXPECT_EQ(EvaluatePrefabRevisionUVE(7U, 7U), PrefabRevisionStatusUVE::Current);
+TEST(PrefabRevisionPolicyTest, EqualNonzeroRevisionsAreCurrent) {
+    EXPECT_EQ(EvaluatePrefabRevision(7U, 7U), PrefabRevisionStatus::Current);
 }
-TEST(PrefabRevisionPolicyUVETest, MismatchedNonzeroRevisionsAreStale) {
-    EXPECT_EQ(EvaluatePrefabRevisionUVE(8U, 7U), PrefabRevisionStatusUVE::Stale);
+TEST(PrefabRevisionPolicyTest, MismatchedNonzeroRevisionsAreStale) {
+    EXPECT_EQ(EvaluatePrefabRevision(8U, 7U), PrefabRevisionStatus::Stale);
 }
-TEST(PrefabRevisionPolicyUVETest, ZeroRevisionIsInvalid) {
-    EXPECT_EQ(EvaluatePrefabRevisionUVE(0U, 7U), PrefabRevisionStatusUVE::Invalid);
-    EXPECT_EQ(EvaluatePrefabRevisionUVE(7U, 0U), PrefabRevisionStatusUVE::Invalid);
+TEST(PrefabRevisionPolicyTest, ZeroRevisionIsInvalid) {
+    EXPECT_EQ(EvaluatePrefabRevision(0U, 7U), PrefabRevisionStatus::Invalid);
+    EXPECT_EQ(EvaluatePrefabRevision(7U, 0U), PrefabRevisionStatus::Invalid);
 }
-TEST(PrefabRevisionPolicyUVETest, RefreshPrefabInstanceRevisionUVE_UpdatesBothRevisionsWithoutOverrides) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{7U}, {}, 3U, 3U};
+TEST(PrefabRevisionPolicyTest, RefreshPrefabInstanceRevision_UpdatesBothRevisionsWithoutOverrides) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{7U}, {}, 3U, 3U};
 
-    EXPECT_TRUE(RefreshPrefabInstanceRevisionUVE(instance, 9U));
+    EXPECT_TRUE(RefreshPrefabInstanceRevision(instance, 9U));
     EXPECT_EQ(instance.sourceRevision, 9U);
     EXPECT_EQ(instance.instanceRevision, 9U);
 }
-TEST(PrefabRevisionPolicyUVETest, RefreshPrefabInstanceRevisionUVE_RejectsLocalOverridesAtomically) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{8U}, {{"Transform.position", "[1,2,3]"}}, 3U, 3U};
+TEST(PrefabRevisionPolicyTest, RefreshPrefabInstanceRevision_RejectsLocalOverridesAtomically) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{8U}, {{"Transform.position", "[1,2,3]"}}, 3U, 3U};
 
-    EXPECT_FALSE(RefreshPrefabInstanceRevisionUVE(instance, 9U));
+    EXPECT_FALSE(RefreshPrefabInstanceRevision(instance, 9U));
     EXPECT_EQ(instance.sourceRevision, 3U);
     EXPECT_EQ(instance.instanceRevision, 3U);
     ASSERT_EQ(instance.overrides.size(), 1U);
     EXPECT_EQ(instance.overrides.front().serializedValue, "[1,2,3]");
 }
-TEST(PrefabRevisionPolicyUVETest, RefreshPrefabInstanceRevisionUVE_RejectsRevisionRegressionAtomically) {
-    PrefabInstanceComponentUVE instance{Asset::AssetGuidUVE{9U}, {}, 7U, 7U};
+TEST(PrefabRevisionPolicyTest, RefreshPrefabInstanceRevision_RejectsRevisionRegressionAtomically) {
+    PrefabInstanceComponent instance{Asset::AssetGuid{9U}, {}, 7U, 7U};
 
-    EXPECT_FALSE(RefreshPrefabInstanceRevisionUVE(instance, 6U));
+    EXPECT_FALSE(RefreshPrefabInstanceRevision(instance, 6U));
     EXPECT_EQ(instance.sourceRevision, 7U);
     EXPECT_EQ(instance.instanceRevision, 7U);
 }
-TEST(PrefabRevisionPolicyUVETest, EvaluatePrefabRevisionRefreshDecisionUVE_DistinguishesNoOpRefreshAndMerge) {
-    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecisionUVE(7U, 7U, false),
-              PrefabRevisionRefreshDecisionUVE::NoOp);
-    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecisionUVE(9U, 7U, false),
-              PrefabRevisionRefreshDecisionUVE::Refresh);
-    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecisionUVE(9U, 7U, true),
-              PrefabRevisionRefreshDecisionUVE::MergeRequired);
+TEST(PrefabRevisionPolicyTest, EvaluatePrefabRevisionRefreshDecision_DistinguishesNoOpRefreshAndMerge) {
+    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecision(7U, 7U, false),
+              PrefabRevisionRefreshDecision::NoOp);
+    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecision(9U, 7U, false),
+              PrefabRevisionRefreshDecision::Refresh);
+    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecision(9U, 7U, true),
+              PrefabRevisionRefreshDecision::MergeRequired);
 }
-TEST(PrefabRevisionPolicyUVETest, EvaluatePrefabRevisionRefreshDecisionUVE_RejectsInvalidRevisionOrder) {
-    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecisionUVE(0U, 7U, false),
-              PrefabRevisionRefreshDecisionUVE::Invalid);
-    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecisionUVE(6U, 7U, false),
-              PrefabRevisionRefreshDecisionUVE::Invalid);
+TEST(PrefabRevisionPolicyTest, EvaluatePrefabRevisionRefreshDecision_RejectsInvalidRevisionOrder) {
+    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecision(0U, 7U, false),
+              PrefabRevisionRefreshDecision::Invalid);
+    EXPECT_EQ(EvaluatePrefabRevisionRefreshDecision(6U, 7U, false),
+              PrefabRevisionRefreshDecision::Invalid);
 }
 } // namespace
 } // namespace UVE::Scene::Tests

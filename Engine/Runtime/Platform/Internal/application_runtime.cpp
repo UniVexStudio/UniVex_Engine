@@ -31,11 +31,11 @@
 namespace UVE::Platform {
 namespace {
 
-[[nodiscard]] std::uint64_t HashIdentifierUVE(const std::string_view identifier) noexcept {
+[[nodiscard]] std::uint64_t HashIdentifier(const std::string_view identifier) noexcept {
     // FNV-1a is stable across processes and standard-library implementations, unlike std::hash.
     // Kept local deliberately: uve_platform sits below uve_utilities, so including
     // <uve/utilities/hash_uve.h> here would be a layer inversion (and a CMake target cycle).
-    // Same algorithm and values as Utilities::HashStringUVE — keep in sync.
+    // Same algorithm and values as Utilities::HashString — keep in sync.
     std::uint64_t hash = 14695981039346656037ULL;
     for (const char rawByte : identifier) {
         const unsigned char byte = static_cast<unsigned char>(rawByte);
@@ -45,13 +45,13 @@ namespace {
     return hash;
 }
 
-[[nodiscard]] std::string HashIdentifierHexUVE(const std::string_view identifier) {
+[[nodiscard]] std::string HashIdentifierHex(const std::string_view identifier) {
     std::ostringstream output;
-    output << std::hex << std::setfill('0') << std::setw(16) << HashIdentifierUVE(identifier);
+    output << std::hex << std::setfill('0') << std::setw(16) << HashIdentifier(identifier);
     return output.str();
 }
 
-[[nodiscard]] std::string SanitizeDirectoryNameUVE(const std::string& text) {
+[[nodiscard]] std::string SanitizeDirectoryName(const std::string& text) {
     std::string sanitized;
     sanitized.reserve(text.size());
     for (const char rawCharacter : text) {
@@ -66,7 +66,7 @@ namespace {
     return sanitized;
 }
 
-[[nodiscard]] bool IsSafeUserDataDirectoryNameUVE(const std::string_view directoryName) noexcept {
+[[nodiscard]] bool IsSafeUserDataDirectoryName(const std::string_view directoryName) noexcept {
     if (directoryName.empty() || directoryName == "." || directoryName == ".." || directoryName.size() > 64U) {
         return false;
     }
@@ -81,13 +81,13 @@ namespace {
     return true;
 }
 
-[[nodiscard]] ApplicationUserDataDirectoryResultUVE MakeDirectoryFailureUVE(std::string message) {
+[[nodiscard]] ApplicationUserDataDirectoryResult MakeDirectoryFailure(std::string message) {
     return {false, {}, std::move(message)};
 }
 
 } // namespace
 
-std::string_view GetApplicationTargetUVE() noexcept {
+std::string_view GetApplicationTarget() noexcept {
 #if defined(__ANDROID__)
     return "android";
 #elif defined(__EMSCRIPTEN__)
@@ -107,7 +107,7 @@ std::string_view GetApplicationTargetUVE() noexcept {
 #endif
 }
 
-std::string_view GetEnginePackageTargetUVE() noexcept {
+std::string_view GetEnginePackageTarget() noexcept {
 #if defined(__ANDROID__)
 #if defined(__aarch64__)
     return "android-arm64-v8a";
@@ -121,12 +121,12 @@ std::string_view GetEnginePackageTargetUVE() noexcept {
     return "android";
 #endif
 #else
-    return GetApplicationTargetUVE();
+    return GetApplicationTarget();
 #endif
 }
 
-bool IsCompatibleEnginePackageTargetUVE(const std::string_view manifestTarget) noexcept {
-    if (manifestTarget == GetEnginePackageTargetUVE()) {
+bool IsCompatibleEnginePackageTarget(const std::string_view manifestTarget) noexcept {
+    if (manifestTarget == GetEnginePackageTarget()) {
         return true;
     }
 #if defined(__ANDROID__) && defined(__aarch64__)
@@ -138,7 +138,7 @@ bool IsCompatibleEnginePackageTargetUVE(const std::string_view manifestTarget) n
     return false;
 }
 
-void AttachParentConsoleForCliUVE() noexcept {
+void AttachParentConsoleForCli() noexcept {
 #if defined(_WIN32)
     const auto isRedirected = [](const DWORD stdHandleId) noexcept {
         const HANDLE handle = GetStdHandle(stdHandleId);
@@ -169,7 +169,7 @@ void AttachParentConsoleForCliUVE() noexcept {
 #endif
 }
 
-ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
+ApplicationUserDataDirectoryResult ResolvePerUserDataRoot() {
 #if defined(_WIN32)
     const char* const localAppData = std::getenv("LOCALAPPDATA");
     const char* const roamingAppData = std::getenv("APPDATA");
@@ -180,19 +180,19 @@ ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
                                             ? roamingAppData
                                             : home);
     if (selected == nullptr || selected[0] == '\0') {
-        return MakeDirectoryFailureUVE("No per-user Windows application-data directory is available.");
+        return MakeDirectoryFailure("No per-user Windows application-data directory is available.");
     }
     return {true, std::filesystem::path(selected), "Per-user data root resolved."};
 #elif defined(__APPLE__)
     const char* const home = std::getenv("HOME");
     if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
-        return MakeDirectoryFailureUVE("HOME is unavailable for the Apple application-data directory.");
+        return MakeDirectoryFailure("HOME is unavailable for the Apple application-data directory.");
     }
     return {true, std::filesystem::path(home) / "Library" / "Application Support", "Per-user data root resolved."};
 #elif defined(__ANDROID__)
     const char* const home = std::getenv("HOME");
     if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
-        return MakeDirectoryFailureUVE("An app-sandbox HOME is required for Android application data.");
+        return MakeDirectoryFailure("An app-sandbox HOME is required for Android application data.");
     }
     return {true, std::filesystem::path(home), "Per-user data root resolved."};
 #else
@@ -203,19 +203,19 @@ ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
     } else if (home != nullptr && home[0] != '\0') {
         return {true, std::filesystem::path(home) / ".local" / "share", "Per-user data root resolved."};
     } else {
-        return MakeDirectoryFailureUVE("Neither XDG_DATA_HOME nor HOME is available for application data.");
+        return MakeDirectoryFailure("Neither XDG_DATA_HOME nor HOME is available for application data.");
     }
 #endif
 }
 
-ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE() {
+ApplicationUserDataDirectoryResult ResolveUserHomeDirectory() {
 #if defined(_WIN32)
     const char* const home = std::getenv("USERPROFILE");
 #else
     const char* const home = std::getenv("HOME");
 #endif
     if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
-        return MakeDirectoryFailureUVE("The user's home directory is unavailable.");
+        return MakeDirectoryFailure("The user's home directory is unavailable.");
     }
     return {true, std::filesystem::path(home), "Home directory resolved."};
 }
@@ -223,7 +223,7 @@ ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE() {
 namespace {
 
 #if defined(_WIN32)
-[[nodiscard]] std::filesystem::path ResolveWindowsKnownFolderUVE(const GUID& folderId) {
+[[nodiscard]] std::filesystem::path ResolveWindowsKnownFolder(const GUID& folderId) {
     using ShGetKnownFolderPathFn = HRESULT(WINAPI*)(const GUID&, DWORD, HANDLE, PWSTR*);
     using CoTaskMemFreeFn = void(WINAPI*)(LPVOID);
     HMODULE const shell32 = LoadLibraryW(L"shell32.dll");
@@ -250,7 +250,7 @@ namespace {
     return result;
 }
 #elif !defined(__APPLE__) && !defined(__ANDROID__)
-[[nodiscard]] std::filesystem::path ParseXdgUserDirUVE(const std::filesystem::path& home,
+[[nodiscard]] std::filesystem::path ParseXdgUserDir(const std::filesystem::path& home,
                                                        const std::string_view key) {
     const std::filesystem::path configFile = home / ".config" / "user-dirs.dirs";
     std::ifstream input(configFile);
@@ -284,20 +284,20 @@ namespace {
 
 } // namespace
 
-ApplicationUserDataDirectoryResultUVE ResolveUserDocumentsDirectoryUVE() {
+ApplicationUserDataDirectoryResult ResolveUserDocumentsDirectory() {
 #if defined(_WIN32)
     // FOLDERID_Documents: {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
-    static constexpr GUID kFolderIdDocumentsUVE = {
+    static constexpr GUID kFolderIdDocuments = {
         0xFDD39AD0UL, 0x238FU, 0x46AFU, {0xADU, 0xB4U, 0x6CU, 0x85U, 0x48U, 0x03U, 0x69U, 0xC7U}};
-    const std::filesystem::path known = ResolveWindowsKnownFolderUVE(kFolderIdDocumentsUVE);
+    const std::filesystem::path known = ResolveWindowsKnownFolder(kFolderIdDocuments);
     if (!known.empty() && known.is_absolute()) {
         return {true, known, "Windows Documents directory resolved."};
     }
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (home.success) {
         return {true, home.directory / "Documents", "Windows Documents directory resolved."};
     }
-    return MakeDirectoryFailureUVE("The Windows Documents directory is unavailable.");
+    return MakeDirectoryFailure("The Windows Documents directory is unavailable.");
 #elif defined(__ANDROID__)
     const char* const publicDocs = std::getenv("UNIVEX_ANDROID_PUBLIC_DOCS");
     const char* const allFiles = std::getenv("UNIVEX_ANDROID_ALL_FILES");
@@ -320,23 +320,23 @@ ApplicationUserDataDirectoryResultUVE ResolveUserDocumentsDirectoryUVE() {
     if (appExtDocs != nullptr && appExtDocs[0] != '\0') {
         return {true, std::filesystem::path(appExtDocs), "Android external app Documents directory resolved."};
     }
-    return ResolveUserHomeDirectoryUVE();
+    return ResolveUserHomeDirectory();
 #elif defined(__APPLE__)
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (home.success) {
         return {true, home.directory / "Documents", "Apple Documents directory resolved."};
     }
-    return MakeDirectoryFailureUVE("The user's Documents directory is unavailable.");
+    return MakeDirectoryFailure("The user's Documents directory is unavailable.");
 #else
     const char* const xdgDocs = std::getenv("XDG_DOCUMENTS_DIR");
     if (xdgDocs != nullptr && xdgDocs[0] != '\0' && std::filesystem::path(xdgDocs).is_absolute()) {
         return {true, std::filesystem::path(xdgDocs), "XDG Documents directory resolved."};
     }
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (!home.success) {
-        return MakeDirectoryFailureUVE("The user's Documents directory is unavailable.");
+        return MakeDirectoryFailure("The user's Documents directory is unavailable.");
     }
-    const std::filesystem::path configured = ParseXdgUserDirUVE(home.directory, "XDG_DOCUMENTS_DIR");
+    const std::filesystem::path configured = ParseXdgUserDir(home.directory, "XDG_DOCUMENTS_DIR");
     if (!configured.empty()) {
         return {true, configured, "XDG Documents directory resolved."};
     }
@@ -344,20 +344,20 @@ ApplicationUserDataDirectoryResultUVE ResolveUserDocumentsDirectoryUVE() {
 #endif
 }
 
-ApplicationUserDataDirectoryResultUVE ResolveUserDownloadsDirectoryUVE() {
+ApplicationUserDataDirectoryResult ResolveUserDownloadsDirectory() {
 #if defined(_WIN32)
     // FOLDERID_Downloads: {374DE290-123F-4565-9164-39C4925E467B}
-    static constexpr GUID kFolderIdDownloadsUVE = {
+    static constexpr GUID kFolderIdDownloads = {
         0x374DE290UL, 0x123FU, 0x4565U, {0x91U, 0x64U, 0x39U, 0xC4U, 0x92U, 0x5EU, 0x46U, 0x7BU}};
-    const std::filesystem::path known = ResolveWindowsKnownFolderUVE(kFolderIdDownloadsUVE);
+    const std::filesystem::path known = ResolveWindowsKnownFolder(kFolderIdDownloads);
     if (!known.empty() && known.is_absolute()) {
         return {true, known, "Windows Downloads directory resolved."};
     }
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (home.success) {
         return {true, home.directory / "Downloads", "Windows Downloads directory resolved."};
     }
-    return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+    return MakeDirectoryFailure("The Downloads directory is unavailable.");
 #elif defined(__ANDROID__)
     const char* const downloads = std::getenv("UNIVEX_ANDROID_DOWNLOADS");
     if (downloads != nullptr && downloads[0] != '\0') {
@@ -365,21 +365,21 @@ ApplicationUserDataDirectoryResultUVE ResolveUserDownloadsDirectoryUVE() {
     }
     return {true, std::filesystem::path("/storage/emulated/0/Download"), "Android Downloads directory resolved."};
 #elif defined(__APPLE__)
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (home.success) {
         return {true, home.directory / "Downloads", "Apple Downloads directory resolved."};
     }
-    return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+    return MakeDirectoryFailure("The Downloads directory is unavailable.");
 #else
     const char* const xdgDownloads = std::getenv("XDG_DOWNLOAD_DIR");
     if (xdgDownloads != nullptr && xdgDownloads[0] != '\0' && std::filesystem::path(xdgDownloads).is_absolute()) {
         return {true, std::filesystem::path(xdgDownloads), "XDG Downloads directory resolved."};
     }
-    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    const ApplicationUserDataDirectoryResult home = ResolveUserHomeDirectory();
     if (!home.success) {
-        return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+        return MakeDirectoryFailure("The Downloads directory is unavailable.");
     }
-    const std::filesystem::path configured = ParseXdgUserDirUVE(home.directory, "XDG_DOWNLOAD_DIR");
+    const std::filesystem::path configured = ParseXdgUserDir(home.directory, "XDG_DOWNLOAD_DIR");
     if (!configured.empty()) {
         return {true, configured, "XDG Downloads directory resolved."};
     }
@@ -387,7 +387,7 @@ ApplicationUserDataDirectoryResultUVE ResolveUserDownloadsDirectoryUVE() {
 #endif
 }
 
-ApplicationUserDataDirectoryResultUVE ResolvePublicStorageRootUVE() {
+ApplicationUserDataDirectoryResult ResolvePublicStorageRoot() {
 #if defined(__ANDROID__)
     const char* const root = std::getenv("UNIVEX_ANDROID_STORAGE_ROOT");
     if (root != nullptr && root[0] != '\0') {
@@ -395,16 +395,16 @@ ApplicationUserDataDirectoryResultUVE ResolvePublicStorageRootUVE() {
     }
     return {true, std::filesystem::path("/storage/emulated/0"), "Android shared storage root resolved."};
 #else
-    return ResolveUserHomeDirectoryUVE();
+    return ResolveUserHomeDirectory();
 #endif
 }
 
-ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(const std::string_view directoryName) {
+ApplicationUserDataDirectoryResult ResolveToolUserDataDirectory(const std::string_view directoryName) {
     const std::filesystem::path name{directoryName};
     if (name.empty() || name.is_absolute() || name.has_parent_path() || name == "." || name == "..") {
-        return MakeDirectoryFailureUVE("A tool data directory name must be a single path component.");
+        return MakeDirectoryFailure("A tool data directory name must be a single path component.");
     }
-    ApplicationUserDataDirectoryResultUVE root = ResolvePerUserDataRootUVE();
+    ApplicationUserDataDirectoryResult root = ResolvePerUserDataRoot();
     if (!root.success) {
         return root;
     }
@@ -412,38 +412,38 @@ ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(const std:
     std::error_code error;
     std::filesystem::create_directories(directory, error);
     if (error || !std::filesystem::is_directory(directory, error)) {
-        return MakeDirectoryFailureUVE("Unable to create the tool data directory '" + directory.string() + "'.");
+        return MakeDirectoryFailure("Unable to create the tool data directory '" + directory.string() + "'.");
     }
     return {true, directory, "Tool data directory resolved."};
 }
 
-ApplicationUserDataDirectoryResultUVE ResolveApplicationUserDataDirectoryUVE(
-    const EditorProjectPackageUVE& package, const std::filesystem::path& projectRoot) {
+ApplicationUserDataDirectoryResult ResolveApplicationUserDataDirectory(
+    const EditorProjectPackage& package, const std::filesystem::path& projectRoot) {
     std::string directoryName = package.applicationSettings.userDataDirectoryName;
     if (directoryName.empty()) {
         const std::string& fallback = package.productMetadata.shortName.empty()
                                           ? package.projectId
                                           : package.productMetadata.shortName;
-        directoryName = SanitizeDirectoryNameUVE(fallback);
-    } else if (!IsSafeUserDataDirectoryNameUVE(directoryName)) {
-        return MakeDirectoryFailureUVE("The configured user-data directory name is not a safe single path segment.");
+        directoryName = SanitizeDirectoryName(fallback);
+    } else if (!IsSafeUserDataDirectoryName(directoryName)) {
+        return MakeDirectoryFailure("The configured user-data directory name is not a safe single path segment.");
     }
     if (directoryName.empty()) {
-        directoryName = "univex-project-" + HashIdentifierHexUVE(package.projectId).substr(0U, 8U);
+        directoryName = "univex-project-" + HashIdentifierHex(package.projectId).substr(0U, 8U);
     }
 
     std::error_code error;
     const std::filesystem::path absoluteProjectRoot = std::filesystem::absolute(
         projectRoot.empty() ? std::filesystem::current_path(error) : projectRoot, error);
     if (error) {
-        return MakeDirectoryFailureUVE("Unable to resolve the project root for application data: " + error.message());
+        return MakeDirectoryFailure("Unable to resolve the project root for application data: " + error.message());
     }
 
     std::filesystem::path baseDirectory;
     if (package.applicationSettings.portableUserData) {
         baseDirectory = absoluteProjectRoot;
     } else {
-        ApplicationUserDataDirectoryResultUVE root = ResolvePerUserDataRootUVE();
+        ApplicationUserDataDirectoryResult root = ResolvePerUserDataRoot();
         if (!root.success) {
             return root;
         }
@@ -454,17 +454,17 @@ ApplicationUserDataDirectoryResultUVE ResolveApplicationUserDataDirectoryUVE(
     error.clear();
     std::filesystem::create_directories(directory, error);
     if (error) {
-        return MakeDirectoryFailureUVE("Unable to create the application user-data directory '" +
+        return MakeDirectoryFailure("Unable to create the application user-data directory '" +
                                        directory.string() + "': " + error.message());
     }
     error.clear();
     if (!std::filesystem::is_directory(directory, error) || error) {
-        return MakeDirectoryFailureUVE("The application user-data path is not a directory: " + directory.string());
+        return MakeDirectoryFailure("The application user-data path is not a directory: " + directory.string());
     }
     return {true, directory, "Application user-data directory resolved."};
 }
 
-SingleInstanceLockUVE::~SingleInstanceLockUVE() {
+SingleInstanceLock::~SingleInstanceLock() {
 #if defined(_WIN32)
     if (m_nativeHandle != nullptr) {
         static_cast<void>(ReleaseMutex(static_cast<HANDLE>(m_nativeHandle)));
@@ -480,37 +480,37 @@ SingleInstanceLockUVE::~SingleInstanceLockUVE() {
 #endif
 }
 
-SingleInstanceLockResultUVE SingleInstanceLockUVE::AcquireUVE(
+SingleInstanceLockResult SingleInstanceLock::Acquire(
     const std::string_view applicationIdentifier, const std::filesystem::path& userDataDirectory) {
     if (applicationIdentifier.empty()) {
-        return {SingleInstanceLockCodeUVE::Failed, "The application identifier for the instance lock is empty."};
+        return {SingleInstanceLockCode::Failed, "The application identifier for the instance lock is empty."};
     }
-    if (IsAcquiredUVE()) {
-        return {SingleInstanceLockCodeUVE::Acquired, "This process already owns the instance lock."};
+    if (IsAcquired()) {
+        return {SingleInstanceLockCode::Acquired, "This process already owns the instance lock."};
     }
 #if defined(_WIN32)
     static_cast<void>(userDataDirectory);
     std::wstring mutexName = L"Local\\UniVex_";
-    for (const char character : HashIdentifierHexUVE(applicationIdentifier)) {
+    for (const char character : HashIdentifierHex(applicationIdentifier)) {
         mutexName.push_back(static_cast<wchar_t>(character));
     }
     HANDLE mutex = CreateMutexW(nullptr, TRUE, mutexName.c_str());
     if (mutex == nullptr) {
-        return {SingleInstanceLockCodeUVE::Failed, "Unable to create the single-instance mutex."};
+        return {SingleInstanceLockCode::Failed, "Unable to create the single-instance mutex."};
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         static_cast<void>(CloseHandle(mutex));
-        return {SingleInstanceLockCodeUVE::AlreadyRunning, "Another instance of this application is already running."};
+        return {SingleInstanceLockCode::AlreadyRunning, "Another instance of this application is already running."};
     }
     m_nativeHandle = mutex;
-    return {SingleInstanceLockCodeUVE::Acquired, "Single-instance mutex acquired."};
+    return {SingleInstanceLockCode::Acquired, "Single-instance mutex acquired."};
 #elif defined(__EMSCRIPTEN__)
     static_cast<void>(userDataDirectory);
-    return {SingleInstanceLockCodeUVE::Unsupported,
+    return {SingleInstanceLockCode::Unsupported,
             "This web target does not provide the native single-instance lock backend."};
 #else
     const std::filesystem::path lockPath =
-        userDataDirectory / (".uve-instance-" + HashIdentifierHexUVE(applicationIdentifier) + ".lock");
+        userDataDirectory / (".uve-instance-" + HashIdentifierHex(applicationIdentifier) + ".lock");
     int flags = O_CREAT | O_RDWR;
 #ifdef O_CLOEXEC
     flags |= O_CLOEXEC;
@@ -520,24 +520,24 @@ SingleInstanceLockResultUVE SingleInstanceLockUVE::AcquireUVE(
 #endif
     const int fileDescriptor = open(lockPath.c_str(), flags, 0600);
     if (fileDescriptor < 0) {
-        return {SingleInstanceLockCodeUVE::Failed,
+        return {SingleInstanceLockCode::Failed,
                 "Unable to open the single-instance lock file '" + lockPath.string() + "'."};
     }
     if (flock(fileDescriptor, LOCK_EX | LOCK_NB) != 0) {
         const int lockError = errno;
         static_cast<void>(close(fileDescriptor));
         if (lockError == EWOULDBLOCK || lockError == EAGAIN) {
-            return {SingleInstanceLockCodeUVE::AlreadyRunning,
+            return {SingleInstanceLockCode::AlreadyRunning,
                     "Another instance of this application is already running."};
         }
-        return {SingleInstanceLockCodeUVE::Failed, "Unable to acquire the single-instance file lock."};
+        return {SingleInstanceLockCode::Failed, "Unable to acquire the single-instance file lock."};
     }
     m_fileDescriptor = fileDescriptor;
-    return {SingleInstanceLockCodeUVE::Acquired, "Single-instance file lock acquired."};
+    return {SingleInstanceLockCode::Acquired, "Single-instance file lock acquired."};
 #endif
 }
 
-bool SingleInstanceLockUVE::IsAcquiredUVE() const noexcept {
+bool SingleInstanceLock::IsAcquired() const noexcept {
 #if defined(_WIN32)
     return m_nativeHandle != nullptr;
 #elif defined(__EMSCRIPTEN__)

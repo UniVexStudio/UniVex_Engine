@@ -8,71 +8,71 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsNonNegativeUVE(const float value) noexcept {
+[[nodiscard]] bool IsNonNegative(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F;
 }
 
-[[nodiscard]] float SanitizeNonNegativeUVE(const float value, const float fallback = 0.0F) noexcept {
-    return IsNonNegativeUVE(value) ? value : fallback;
+[[nodiscard]] float SanitizeNonNegative(const float value, const float fallback = 0.0F) noexcept {
+    return IsNonNegative(value) ? value : fallback;
 }
 
 } // namespace
 
-bool IsSurfaceShadowModeValidUVE(const SurfaceShadowModeUVE mode) noexcept {
-    return mode <= SurfaceShadowModeUVE::ShadowsOnly;
+bool IsSurfaceShadowModeValid(const SurfaceShadowMode mode) noexcept {
+    return mode <= SurfaceShadowMode::ShadowsOnly;
 }
 
-bool IsSurfaceLightingModeValidUVE(const SurfaceLightingModeUVE mode) noexcept {
-    return mode <= SurfaceLightingModeUVE::Dynamic;
+bool IsSurfaceLightingModeValid(const SurfaceLightingMode mode) noexcept {
+    return mode <= SurfaceLightingMode::Dynamic;
 }
 
-bool IsSurfaceFadeModeValidUVE(const SurfaceFadeModeUVE mode) noexcept {
-    return mode <= SurfaceFadeModeUVE::Dependencies;
+bool IsSurfaceFadeModeValid(const SurfaceFadeMode mode) noexcept {
+    return mode <= SurfaceFadeMode::Dependencies;
 }
 
-bool IsSurfaceInstanceComponentValidUVE(const SurfaceInstanceComponentUVE& component) noexcept {
-    return IsSurfaceShadowModeValidUVE(component.castShadow) &&
-           IsSurfaceLightingModeValidUVE(component.lightingMode) &&
-           IsSurfaceFadeModeValidUVE(component.visibilityRangeFadeMode) &&
+bool IsSurfaceInstanceComponentValid(const SurfaceInstanceComponent& component) noexcept {
+    return IsSurfaceShadowModeValid(component.castShadow) &&
+           IsSurfaceLightingModeValid(component.lightingMode) &&
+           IsSurfaceFadeModeValid(component.visibilityRangeFadeMode) &&
            std::isfinite(component.transparency) && component.transparency >= 0.0F &&
-           component.transparency <= 1.0F && IsNonNegativeUVE(component.extraCullMargin) &&
+           component.transparency <= 1.0F && IsNonNegative(component.extraCullMargin) &&
            std::isfinite(component.lodBias) && component.lodBias > 0.0F &&
-           IsNonNegativeUVE(component.visibilityRangeBegin) &&
-           IsNonNegativeUVE(component.visibilityRangeBeginMargin) &&
-           IsNonNegativeUVE(component.visibilityRangeEnd) &&
-           IsNonNegativeUVE(component.visibilityRangeEndMargin) &&
+           IsNonNegative(component.visibilityRangeBegin) &&
+           IsNonNegative(component.visibilityRangeBeginMargin) &&
+           IsNonNegative(component.visibilityRangeEnd) &&
+           IsNonNegative(component.visibilityRangeEndMargin) &&
            (component.visibilityRangeEnd == 0.0F ||
             component.visibilityRangeEnd >= component.visibilityRangeBegin) &&
-           component.surfaceMaterialOverridePaths.size() <= kMaximumSurfaceMaterialOverridesUVE;
+           component.surfaceMaterialOverridePaths.size() <= kMaximumSurfaceMaterialOverrides;
 }
 
-SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
-    const SurfaceInstanceComponentUVE& component) {
-    SurfaceInstanceComponentUVE out = component;
+SurfaceInstanceComponent SanitizeSurfaceInstanceComponent(
+    const SurfaceInstanceComponent& component) {
+    SurfaceInstanceComponent out = component;
     out.transparency =
         std::isfinite(out.transparency) ? std::clamp(out.transparency, 0.0F, 1.0F) : 0.0F;
-    if (!IsSurfaceShadowModeValidUVE(out.castShadow)) {
-        out.castShadow = SurfaceShadowModeUVE::On;
+    if (!IsSurfaceShadowModeValid(out.castShadow)) {
+        out.castShadow = SurfaceShadowMode::On;
     }
-    out.extraCullMargin = SanitizeNonNegativeUVE(out.extraCullMargin, 0.0F);
+    out.extraCullMargin = SanitizeNonNegative(out.extraCullMargin, 0.0F);
     if (!std::isfinite(out.lodBias) || out.lodBias <= 0.0F) {
         out.lodBias = 1.0F;
     }
-    if (!IsSurfaceLightingModeValidUVE(out.lightingMode)) {
-        out.lightingMode = SurfaceLightingModeUVE::Static;
+    if (!IsSurfaceLightingModeValid(out.lightingMode)) {
+        out.lightingMode = SurfaceLightingMode::Static;
     }
-    out.visibilityRangeBegin = SanitizeNonNegativeUVE(out.visibilityRangeBegin, 0.0F);
-    out.visibilityRangeBeginMargin = SanitizeNonNegativeUVE(out.visibilityRangeBeginMargin, 0.0F);
-    out.visibilityRangeEnd = SanitizeNonNegativeUVE(out.visibilityRangeEnd, 0.0F);
-    out.visibilityRangeEndMargin = SanitizeNonNegativeUVE(out.visibilityRangeEndMargin, 0.0F);
+    out.visibilityRangeBegin = SanitizeNonNegative(out.visibilityRangeBegin, 0.0F);
+    out.visibilityRangeBeginMargin = SanitizeNonNegative(out.visibilityRangeBeginMargin, 0.0F);
+    out.visibilityRangeEnd = SanitizeNonNegative(out.visibilityRangeEnd, 0.0F);
+    out.visibilityRangeEndMargin = SanitizeNonNegative(out.visibilityRangeEndMargin, 0.0F);
     if (out.visibilityRangeEnd > 0.0F && out.visibilityRangeEnd < out.visibilityRangeBegin) {
         out.visibilityRangeEnd = out.visibilityRangeBegin;
     }
-    if (!IsSurfaceFadeModeValidUVE(out.visibilityRangeFadeMode)) {
-        out.visibilityRangeFadeMode = SurfaceFadeModeUVE::Disabled;
+    if (!IsSurfaceFadeModeValid(out.visibilityRangeFadeMode)) {
+        out.visibilityRangeFadeMode = SurfaceFadeMode::Disabled;
     }
-    if (out.surfaceMaterialOverridePaths.size() > kMaximumSurfaceMaterialOverridesUVE) {
-        out.surfaceMaterialOverridePaths.resize(kMaximumSurfaceMaterialOverridesUVE);
+    if (out.surfaceMaterialOverridePaths.size() > kMaximumSurfaceMaterialOverrides) {
+        out.surfaceMaterialOverridePaths.resize(kMaximumSurfaceMaterialOverrides);
     }
     // An empty entry means "this surface keeps its own material". At the END of the list that is
     // the same statement an absent entry makes, so trimming them keeps a list that grew and then
@@ -83,25 +83,25 @@ SurfaceInstanceComponentUVE SanitizeSurfaceInstanceComponentUVE(
     return out;
 }
 
-float ResolveSurfaceInstanceOpacityUVE(const SurfaceInstanceComponentUVE& component) noexcept {
+float ResolveSurfaceInstanceOpacity(const SurfaceInstanceComponent& component) noexcept {
     if (!std::isfinite(component.transparency)) {
         return 1.0F;
     }
     return 1.0F - std::clamp(component.transparency, 0.0F, 1.0F);
 }
 
-bool CastsSurfaceShadowUVE(const SurfaceInstanceComponentUVE& component) noexcept {
-    return component.castShadow == SurfaceShadowModeUVE::On ||
-           component.castShadow == SurfaceShadowModeUVE::DoubleSided ||
-           component.castShadow == SurfaceShadowModeUVE::ShadowsOnly;
+bool CastsSurfaceShadow(const SurfaceInstanceComponent& component) noexcept {
+    return component.castShadow == SurfaceShadowMode::On ||
+           component.castShadow == SurfaceShadowMode::DoubleSided ||
+           component.castShadow == SurfaceShadowMode::ShadowsOnly;
 }
 
-bool DrawsMainPassSurfaceGeometryUVE(const SurfaceInstanceComponentUVE& component) noexcept {
-    return component.castShadow != SurfaceShadowModeUVE::ShadowsOnly &&
-           ResolveSurfaceInstanceOpacityUVE(component) > 0.0F;
+bool DrawsMainPassSurfaceGeometry(const SurfaceInstanceComponent& component) noexcept {
+    return component.castShadow != SurfaceShadowMode::ShadowsOnly &&
+           ResolveSurfaceInstanceOpacity(component) > 0.0F;
 }
 
-bool IsDistanceWithinSurfaceVisibilityRangeUVE(const SurfaceInstanceComponentUVE& component,
+bool IsDistanceWithinSurfaceVisibilityRange(const SurfaceInstanceComponent& component,
                                                const float cameraDistance) noexcept {
     if (!std::isfinite(cameraDistance) || cameraDistance < 0.0F) {
         return false;
@@ -115,12 +115,12 @@ bool IsDistanceWithinSurfaceVisibilityRangeUVE(const SurfaceInstanceComponentUVE
     return true;
 }
 
-float ComputeSurfaceVisibilityRangeFadeFactorUVE(const SurfaceInstanceComponentUVE& component,
+float ComputeSurfaceVisibilityRangeFadeFactor(const SurfaceInstanceComponent& component,
                                                  const float cameraDistance) noexcept {
-    if (!IsDistanceWithinSurfaceVisibilityRangeUVE(component, cameraDistance)) {
+    if (!IsDistanceWithinSurfaceVisibilityRange(component, cameraDistance)) {
         return 0.0F;
     }
-    if (component.visibilityRangeFadeMode == SurfaceFadeModeUVE::Disabled) {
+    if (component.visibilityRangeFadeMode == SurfaceFadeMode::Disabled) {
         return 1.0F;
     }
     float factor = 1.0F;

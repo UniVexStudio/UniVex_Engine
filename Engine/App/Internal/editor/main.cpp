@@ -49,18 +49,18 @@
 namespace {
 
 /// File name of the editor log. Without a project it is written to the working directory; with one
-/// it moves under the project's log directory (see PrepareProjectEditorUVE).
-inline constexpr std::string_view kEditorLogFileNameUVE = "uve_editor.log";
+/// it moves under the project's log directory (see PrepareProjectEditor).
+inline constexpr std::string_view kEditorLogFileName = "uve_editor.log";
 /// Built-in shader sources packaged beside the editor executable.
-inline constexpr std::string_view kShadersDirectoryNameUVE = "shaders";
+inline constexpr std::string_view kShadersDirectoryName = "shaders";
 /// The level the editor opens when neither --scene nor the project's startup scene names one,
 /// relative to the content root.
-inline constexpr std::string_view kDefaultViewportFolderUVE = "Viewport";
-inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvscene";
+inline constexpr std::string_view kDefaultViewportFolder = "Viewport";
+inline constexpr std::string_view kDefaultViewportSceneFile = "Viewport.uvscene";
 
-[[nodiscard]] std::filesystem::path EditorExecutableDirectoryUVE(const char* const argv0) {
+[[nodiscard]] std::filesystem::path EditorExecutableDirectory(const char* const argv0) {
 #if !defined(__ANDROID__)
-    const std::filesystem::path self = UVE::Platform::CurrentExecutablePathUVE();
+    const std::filesystem::path self = UVE::Platform::CurrentExecutablePath();
     if (!self.empty()) {
         return self.parent_path();
     }
@@ -70,22 +70,22 @@ inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvsce
     return error ? std::filesystem::current_path(error) : executable.parent_path();
 }
 /// Where levels were saved before the Viewport asset existed, relative to the working directory.
-inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvscene";
-inline constexpr std::string_view kProjectOptionUVE = UVE::Pack::kEditorProjectOptionUVE;
+inline constexpr std::string_view kLegacyEditorSceneFile = "editor_scene.uvscene";
+inline constexpr std::string_view kProjectOption = UVE::Pack::kEditorProjectOption;
 /// Accepts upgrading an older project to this engine without asking, for runs with no one to ask.
-inline constexpr std::string_view kUpgradeProjectOptionUVE = "--upgrade-project";
+inline constexpr std::string_view kUpgradeProjectOption = "--upgrade-project";
 /// Prints the engine version and exits; release tooling checks a build against its tag with it.
-inline constexpr std::string_view kVersionOptionUVE = "--version";
+inline constexpr std::string_view kVersionOption = "--version";
 /// Records opened projects in this registry file instead of the user's own, for isolated runs.
-inline constexpr std::string_view kProjectRegistryOptionUVE = UVE::Pack::kEditorProjectRegistryOptionUVE;
-inline constexpr float kUpgradeDialogWidthUVE = 520.0F;
-inline constexpr float kUpgradeDialogLineSpacingUVE = 6.0F;
+inline constexpr std::string_view kProjectRegistryOption = UVE::Pack::kEditorProjectRegistryOption;
+inline constexpr float kUpgradeDialogWidth = 520.0F;
+inline constexpr float kUpgradeDialogLineSpacing = 6.0F;
 /// Process exit code for a command line the editor cannot act on.
-inline constexpr int kInvalidCommandLineExitCodeUVE = 2;
+inline constexpr int kInvalidCommandLineExitCode = 2;
 /// Process exit code for a project the editor cannot open.
-inline constexpr int kProjectUnavailableExitCodeUVE = 1;
+inline constexpr int kProjectUnavailableExitCode = 1;
 
-struct EditorLaunchOptionsUVE final {
+struct EditorLaunchOptions final {
     /// The `.uvproject` to author. Empty keeps the working-directory layout.
     std::filesystem::path projectFile;
     /// Registry that records the opened project; empty uses the current user's registry.
@@ -114,7 +114,7 @@ struct EditorLaunchOptionsUVE final {
     bool prismDemoGizmos = false;
 };
 
-[[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
+[[nodiscard]] bool ParseGlVersion(const std::string_view value, std::uint32_t& major,
                                      std::uint32_t& minor) {
     const std::size_t separator = value.find('.');
     if (separator == std::string_view::npos || separator == 0U || separator + 1U >= value.size()) {
@@ -131,8 +131,8 @@ struct EditorLaunchOptionsUVE final {
            majorEnd == majorText.data() + majorText.size() && minorEnd == minorText.data() + minorText.size();
 }
 
-[[nodiscard]] EditorLaunchOptionsUVE ParseOptionsUVE(const int argc, char** argv) {
-    EditorLaunchOptionsUVE options{};
+[[nodiscard]] EditorLaunchOptions ParseOptions(const int argc, char** argv) {
+    EditorLaunchOptions options{};
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument{argv[index]};
         if (argument == "--headless") {
@@ -165,31 +165,31 @@ struct EditorLaunchOptionsUVE final {
             options.decorated = true;
             continue;
         }
-        if (argument == kProjectOptionUVE) {
+        if (argument == kProjectOption) {
             if (!options.projectFile.empty()) {
-                options.error = std::string(kProjectOptionUVE) + " may only be supplied once";
+                options.error = std::string(kProjectOption) + " may only be supplied once";
                 return options;
             }
             if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
-                options.error = std::string(kProjectOptionUVE) + " requires a path to a .uvproject file";
+                options.error = std::string(kProjectOption) + " requires a path to a .uvproject file";
                 return options;
             }
             options.projectFile = argv[++index];
             continue;
         }
-        if (argument == kProjectRegistryOptionUVE) {
+        if (argument == kProjectRegistryOption) {
             if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
-                options.error = std::string(kProjectRegistryOptionUVE) + " requires a registry file path";
+                options.error = std::string(kProjectRegistryOption) + " requires a registry file path";
                 return options;
             }
             options.projectRegistry = argv[++index];
             continue;
         }
-        if (argument == kVersionOptionUVE) {
+        if (argument == kVersionOption) {
             options.printVersion = true;
             continue;
         }
-        if (argument == kUpgradeProjectOptionUVE) {
+        if (argument == kUpgradeProjectOption) {
             options.upgradeProject = true;
             continue;
         }
@@ -209,14 +209,14 @@ struct EditorLaunchOptionsUVE final {
         if (argument == "--gl-version" && index + 1 < argc) {
             std::uint32_t major = 0;
             std::uint32_t minor = 0;
-            if (ParseGlVersionUVE(argv[++index], major, minor)) {
+            if (ParseGlVersion(argv[++index], major, minor)) {
                 options.glMajor = major;
                 options.glMinor = minor;
             }
         }
     }
     if (options.upgradeProject && options.projectFile.empty() && !options.error.has_value()) {
-        options.error = std::string(kUpgradeProjectOptionUVE) + " requires " + std::string(kProjectOptionUVE);
+        options.error = std::string(kUpgradeProjectOption) + " requires " + std::string(kProjectOption);
     }
     if (options.headless && !options.frameLimit.has_value()) {
         options.frameLimit = 1;
@@ -226,11 +226,11 @@ struct EditorLaunchOptionsUVE final {
 
 /// Asks whether to upgrade `project` to this engine. Upgrade records the acceptance; Close ends the
 /// session without touching the project. Dismissing the dialog keeps the project open un-upgraded.
-void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project, bool& upgradeAccepted,
+void ShowProjectUpgradeDialog(const UVE::Pack::ProjectEditorSetup& project, bool& upgradeAccepted,
                                  bool& closeRequested) {
-    const std::string projectVersion = UVE::Pack::FormatProjectVersionUVE(project.package.engineVersion);
-    const std::string engineVersion = UVE::Core::EngineCoreUVE::GetEngineVersionUVE().ToStringUVE();
-    auto body = prism::vbox(kUpgradeDialogLineSpacingUVE);
+    const std::string projectVersion = UVE::Pack::FormatProjectVersion(project.package.engineVersion);
+    const std::string engineVersion = UVE::Core::EngineCore::GetEngineVersion().ToString();
+    auto body = prism::vbox(kUpgradeDialogLineSpacing);
     body->add(prism::make<prism::Label>("'" + project.package.displayName + "' was saved with engine " +
                                         projectVersion + "."));
     body->add(prism::make<prism::Label>("Upgrade it to engine " + engineVersion + "?"));
@@ -238,47 +238,47 @@ void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project
     prism::showDialog("Upgrade Project", body,
                       {{"Close", false, [&closeRequested] { closeRequested = true; }},
                        {"Upgrade", true, [&upgradeAccepted] { upgradeAccepted = true; }}},
-                      kUpgradeDialogWidthUVE);
+                      kUpgradeDialogWidth);
 }
 
 /// Builds a new project's startup scene from the starter objects its template declared. Objects
 /// of a kind the editor does not know are reported and skipped. True when every object was placed.
-[[nodiscard]] bool PopulateStarterSceneUVE(UVE::Editor::EditorUVE& editor, UVE::Scene::IEntityManagerUVE& entities,
-                                           const UVE::Pack::StarterSceneUVE& scene) {
+[[nodiscard]] bool PopulateStarterScene(UVE::Editor::Editor& editor, UVE::Scene::IEntityManager& entities,
+                                           const UVE::Pack::StarterScene& scene) {
     bool placedAll = true;
-    for (const UVE::Pack::StarterObjectUVE& object : scene.objects) {
+    for (const UVE::Pack::StarterObject& object : scene.objects) {
         // New objects join the selected object; starter objects all sit at the level's top.
-        editor.ClearSelectionUVE();
-        const std::optional<UVE::Editor::EditorEntityKindUVE> kind = UVE::Editor::ParseEditorEntityKindUVE(object.kind);
-        const UVE::Scene::EntityUVE entity =
-            kind.has_value() ? editor.CreateDocumentEntityUVE(*kind) : UVE::Scene::kInvalidEntityUVE;
-        if (entity == UVE::Scene::kInvalidEntityUVE) {
+        editor.ClearSelection();
+        const std::optional<UVE::Editor::EditorEntityKind> kind = UVE::Editor::ParseEditorEntityKind(object.kind);
+        const UVE::Scene::Entity entity =
+            kind.has_value() ? editor.CreateDocumentEntity(*kind) : UVE::Scene::kInvalidEntity;
+        if (entity == UVE::Scene::kInvalidEntity) {
             UVE_WARNING("uve_editor: the starter object kind '{}' cannot be created", object.kind);
             placedAll = false;
             continue;
         }
         // A new entity is the selection, so the rename applies to it. A name that is already the
         // kind's default needs no rename.
-        const bool keepsDefaultName = !entities.HasComponentUVE<UVE::Scene::NameComponentUVE>(entity) ||
-                                      entities.GetComponentUVE<UVE::Scene::NameComponentUVE>(entity).name == object.name;
-        if (!object.name.empty() && !keepsDefaultName && !editor.SetSelectedEntityNameUVE(object.name)) {
+        const bool keepsDefaultName = !entities.HasComponent<UVE::Scene::NameComponent>(entity) ||
+                                      entities.GetComponent<UVE::Scene::NameComponent>(entity).name == object.name;
+        if (!object.name.empty() && !keepsDefaultName && !editor.SetSelectedEntityName(object.name)) {
             UVE_WARNING("uve_editor: the starter object name '{}' is not usable", object.name);
         }
-        if (entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
-            auto& transform = entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity);
+        if (entities.HasComponent<UVE::Scene::TransformComponent>(entity)) {
+            auto& transform = entities.GetComponent<UVE::Scene::TransformComponent>(entity);
             transform.localPosition = object.position;
             transform.localScale = object.scale;
-            const UVE::Math::Vector3UVE radians{UVE::Math::DegToRadUVE(object.rotationDegrees.x),
-                                                UVE::Math::DegToRadUVE(object.rotationDegrees.y),
-                                                UVE::Math::DegToRadUVE(object.rotationDegrees.z)};
-            UVE::Math::QuaternionUVE rotation{};
-            if (UVE::Math::TryMakeEulerOrderedUVE(radians, transform.eulerOrder, rotation)) {
+            const UVE::Math::Vector3 radians{UVE::Math::DegToRad(object.rotationDegrees.x),
+                                                UVE::Math::DegToRad(object.rotationDegrees.y),
+                                                UVE::Math::DegToRad(object.rotationDegrees.z)};
+            UVE::Math::Quaternion rotation{};
+            if (UVE::Math::TryMakeEulerOrdered(radians, transform.eulerOrder, rotation)) {
                 transform.localEulerRadians = radians;
                 transform.localRotation = rotation;
             }
         }
     }
-    editor.ClearSelectionUVE();
+    editor.ClearSelection();
     return placedAll;
 }
 
@@ -296,62 +296,62 @@ void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project
 /// `--bridge-stdio` always implies headless mode and runs a framed JSON-RPC bridge server instead
 /// of constructing native GLFW presentation for this process.
 ///
-/// The editor drives EngineCoreUVE's lifecycle by hand (Init()/Load()/TickFrameUVE()) rather than
-/// through RunUVE() — the one desktop entry point that does not automatically get RunUVE()'s
-/// built-in exception boundary (see EngineCoreUVE::RunUVE()'s doc comment) — so this function
+/// The editor drives EngineCore's lifecycle by hand (Init()/Load()/TickFrame()) rather than
+/// through Run() — the one desktop entry point that does not automatically get Run()'s
+/// built-in exception boundary (see EngineCore::Run()'s doc comment) — so this function
 /// wraps that entire hand-driven lifecycle in its own boundary below, following the same shape:
 /// log via UVE_FATAL, still run Shutdown() if (and only if) the engine had reached
-/// EngineStateUVE::Running by the time something threw, and return
-/// EngineCoreUVE::kUnhandledExceptionExitCodeUVE instead of letting the exception unwind out of
+/// EngineState::Running by the time something threw, and return
+/// EngineCore::kUnhandledExceptionExitCode instead of letting the exception unwind out of
 /// main() into std::terminate().
-int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE& platform) {
-    EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platform) {
+    EditorLaunchOptions options = ParseOptions(argc, argv);
     if (options.error.has_value() || options.printVersion || options.headless || options.bridgeStdio) {
-        UVE::Platform::AttachParentConsoleForCliUVE();
+        UVE::Platform::AttachParentConsoleForCli();
     }
     if (options.error.has_value()) {
         std::cerr << "uve_editor: " << *options.error << '\n';
-        return kInvalidCommandLineExitCodeUVE;
+        return kInvalidCommandLineExitCode;
     }
     if (options.printVersion) {
-        std::cout << UVE::Core::EngineCoreUVE::GetEngineVersionUVE().ToStringUVE() << '\n';
+        std::cout << UVE::Core::EngineCore::GetEngineVersion().ToString() << '\n';
         return 0;
     }
 
-    const std::filesystem::path executableDirectory = EditorExecutableDirectoryUVE(argv[0]);
-    UVE::Core::EngineConfigUVE config{};
-    config.logFilePath = platform.logDirectory.empty() ? std::filesystem::path(kEditorLogFileNameUVE)
-                                                       : platform.logDirectory / kEditorLogFileNameUVE;
-    config.nativeWindowHandleUVE = platform.nativeSurface;
+    const std::filesystem::path executableDirectory = EditorExecutableDirectory(argv[0]);
+    UVE::Core::EngineConfig config{};
+    config.logFilePath = platform.logDirectory.empty() ? std::filesystem::path(kEditorLogFileName)
+                                                       : platform.logDirectory / kEditorLogFileName;
+    config.nativeWindowHandle = platform.nativeSurface;
     if (!platform.shaderDirectory.empty()) {
-        config.shaderSourceRealDirectoryUVE = platform.shaderDirectory;
+        config.shaderSourceRealDirectory = platform.shaderDirectory;
     } else {
         std::error_code shaderError;
-        const std::filesystem::path bundledShaders = executableDirectory / kShadersDirectoryNameUVE;
+        const std::filesystem::path bundledShaders = executableDirectory / kShadersDirectoryName;
         if (std::filesystem::is_directory(bundledShaders, shaderError)) {
-            config.shaderSourceRealDirectoryUVE = bundledShaders;
+            config.shaderSourceRealDirectory = bundledShaders;
         }
     }
     if (!platform.shaderCacheDirectory.empty()) {
         config.shaderCachePath = platform.shaderCacheDirectory;
     }
 #if defined(__ANDROID__)
-    config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
+    config.renderBackendPreference = UVE::Core::RenderBackendPreference::OpenGL;
 #endif
     config.enableConsoleLogging = !options.bridgeStdio;
-    config.headlessUVE = options.headless;
-    config.windowBorderlessUVE = !options.decorated;
+    config.headless = options.headless;
+    config.windowBorderless = !options.decorated;
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
     // The editor never needs more than the display shows: as many frames as the monitor refreshes
     // while one of its windows has focus (set once the window exists, below), 15 behind another
     // program's window (a minimised one draws nothing at all), so a laptop's GPU and fan are not
     // spent on a scene nobody is looking at. On Android, EGL VSync paces natively at 60/90/120 Hz.
 #if defined(__ANDROID__)
-    config.focusedFrameRateCapUVE = 0U;
+    config.focusedFrameRateCap = 0U;
 #else
-    config.focusedFrameRateCapUVE = 60U;
+    config.focusedFrameRateCap = 60U;
 #endif
-    config.unfocusedFrameRateCapUVE = 15U;
+    config.unfocusedFrameRateCap = 15U;
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
         config.windowGlVersionMinor = *options.glMinor;
@@ -360,14 +360,14 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
     // A level named on the command line is opened as given; otherwise the editor chooses one and
     // makes sure it exists.
     const bool sceneNamedOnCommandLine = !options.scenePath.empty();
-    std::optional<UVE::Pack::ProjectEditorSetupUVE> project;
+    std::optional<UVE::Pack::ProjectEditorSetup> project;
     if (!options.projectFile.empty()) {
-        UVE::Pack::ProjectEditorSetupResultUVE setupResult =
-            UVE::Pack::PrepareProjectEditorUVE(options.projectFile, UVE::Core::EngineCoreUVE::GetEngineVersionUVE(),
+        UVE::Pack::ProjectEditorSetupResult setupResult =
+            UVE::Pack::PrepareProjectEditor(options.projectFile, UVE::Core::EngineCore::GetEngineVersion(),
                                                config);
-        if (!setupResult.IsReadyUVE()) {
+        if (!setupResult.IsReady()) {
             std::cerr << "uve_editor: " << setupResult.message << '\n';
-            return kProjectUnavailableExitCodeUVE;
+            return kProjectUnavailableExitCode;
         }
         project = std::move(setupResult.setup);
         if (options.scenePath.empty()) {
@@ -377,24 +377,24 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
 
     if (options.prismUi && !options.headless) {
         // Interactive PRISM sessions detect external Content/ additions asynchronously in
-        // EditorUVE::TickExternalContentWatcherUVE (focus regain + 2s off-thread metadata scan
+        // Editor::TickExternalContentWatcher (focus regain + 2s off-thread metadata scan
         // with 300ms write-stability debounce), preventing synchronous SHA-256 hashing of large
-        // externally pasted folders on the UI thread inside EngineCoreUVE::TickFrameUVE().
-        config.projectChangeWatchPollIntervalSecondsUVE = 86400.0;
+        // externally pasted folders on the UI thread inside EngineCore::TickFrame().
+        config.projectChangeWatchPollIntervalSeconds = 86400.0;
     }
 
-    UVE::Core::EngineCoreUVE engine(config);
-    UVE::Platform::CrashReporterUVE crashReporter;
+    UVE::Core::EngineCore engine(config);
+    UVE::Platform::CrashReporter crashReporter;
     try {
         engine.Init();
         if (!options.headless && !options.bridgeStdio) {
-            const UVE::Core::EngineConfigUVE& effectiveConfig = engine.GetConfigUVE();
-            if (effectiveConfig.crashHandlerEnabledUVE && !effectiveConfig.userDataDirectoryPathUVE.empty()) {
+            const UVE::Core::EngineConfig& effectiveConfig = engine.GetConfig();
+            if (effectiveConfig.crashHandlerEnabled && !effectiveConfig.userDataDirectoryPath.empty()) {
                 const std::filesystem::path dumpDir =
-                    effectiveConfig.crashDumpDirectoryUVE.is_absolute()
-                        ? effectiveConfig.crashDumpDirectoryUVE
-                        : (effectiveConfig.userDataDirectoryPathUVE / effectiveConfig.crashDumpDirectoryUVE);
-                static_cast<void>(crashReporter.InstallUVE(dumpDir, "uve_editor"));
+                    effectiveConfig.crashDumpDirectory.is_absolute()
+                        ? effectiveConfig.crashDumpDirectory
+                        : (effectiveConfig.userDataDirectoryPath / effectiveConfig.crashDumpDirectory);
+                static_cast<void>(crashReporter.Install(dumpDir, "uve_editor"));
             }
         }
         if (!engine.Load()) {
@@ -407,7 +407,7 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         if (GLFWmonitor* const monitor = glfwGetPrimaryMonitor()) {
             if (const GLFWvidmode* const mode = glfwGetVideoMode(monitor); mode != nullptr && mode->refreshRate >= 30) {
                 const auto refresh = static_cast<std::uint32_t>(std::min(mode->refreshRate, 360));
-                engine.SetFrameRateCapsUVE(refresh + refresh / 10U, 15U);
+                engine.SetFrameRateCaps(refresh + refresh / 10U, 15U);
             }
         }
 
@@ -416,14 +416,14 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         // saved at the old working-directory default moves there once.
         bool createDefaultViewport = false;
         if (options.scenePath.empty()) {
-            options.scenePath = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
-                                kDefaultViewportFolderUVE / kDefaultViewportSceneFileUVE;
+            options.scenePath = engine.GetServices().GetProjectFileIndex().GetSnapshot().contentRoot /
+                                kDefaultViewportFolder / kDefaultViewportSceneFile;
         }
         if (!sceneNamedOnCommandLine) {
             std::error_code error;
             std::filesystem::create_directories(options.scenePath.parent_path(), error);
             if (!std::filesystem::exists(options.scenePath, error)) {
-                const std::filesystem::path legacyScene{kLegacyEditorSceneFileUVE};
+                const std::filesystem::path legacyScene{kLegacyEditorSceneFile};
                 if (!project.has_value() && std::filesystem::exists(legacyScene, error)) {
                     std::filesystem::copy_file(legacyScene, options.scenePath, error);
                 } else {
@@ -432,9 +432,9 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
             }
         }
 
-        UVE::Editor::EditorUVE editor(engine.GetServicesUVE(), options.scenePath, 100U, &engine);
+        UVE::Editor::Editor editor(engine.GetServices(), options.scenePath, 100U, &engine);
         if (project.has_value()) {
-            editor.SetProjectFilePathUVE(project->projectFile);
+            editor.SetProjectFilePath(project->projectFile);
         }
         if (options.prismUi && !options.headless) {
             // PRISM's fonts / themes / locales ship next to the executable (UVBT copies them).
@@ -445,27 +445,27 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
             } else if (!std::filesystem::is_directory(assetDir, assetError)) {
                 assetDir = "prism_assets";
             }
-            editor.SetPrismUiEnabledUVE(true, assetDir);
+            editor.SetPrismUiEnabled(true, assetDir);
             if (platform.safeArea) {
-                editor.SetSafeAreaCallbackUVE(platform.safeArea);
+                editor.SetSafeAreaCallback(platform.safeArea);
             }
         }
-        editor.InitUVE();
+        editor.Init();
         if (project.has_value() &&
-            project->compatibility.verdict == UVE::Pack::ProjectCompatibilityVerdictUVE::NewerCompatible) {
+            project->compatibility.verdict == UVE::Pack::ProjectCompatibilityVerdict::NewerCompatible) {
             UVE_WARNING("uve_editor: {}", project->compatibility.message);
         }
 
         if (project.has_value()) {
             std::string registryError;
             const std::optional<std::filesystem::path> registryFile =
-                options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFileUVE(&registryError)
+                options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFile(&registryError)
                                                 : std::optional<std::filesystem::path>(options.projectRegistry);
             if (!registryFile.has_value()) {
                 UVE_WARNING("uve_editor: the recent-projects list is unavailable: {}", registryError);
-            } else if (const UVE::Pack::ProjectRegistryResultUVE recorded =
-                           UVE::Pack::RecordProjectOpenedUVE(*registryFile, project->projectFile, project->package);
-                       !recorded.IsAppliedUVE()) {
+            } else if (const UVE::Pack::ProjectRegistryResult recorded =
+                           UVE::Pack::RecordProjectOpened(*registryFile, project->projectFile, project->package);
+                       !recorded.IsApplied()) {
                 UVE_WARNING("uve_editor: could not record the project in the recent-projects list: {}",
                             recorded.message);
             }
@@ -473,135 +473,135 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
 
         bool upgradeAccepted = options.upgradeProject;
         bool closeRequested = false;
-        if (project.has_value() && project->compatibility.NeedsUpgradeConfirmationUVE() && !upgradeAccepted &&
-            editor.IsPrismUiActiveUVE()) {
-            ShowProjectUpgradeDialogUVE(*project, upgradeAccepted, closeRequested);
+        if (project.has_value() && project->compatibility.NeedsUpgradeConfirmation() && !upgradeAccepted &&
+            editor.IsPrismUiActive()) {
+            ShowProjectUpgradeDialog(*project, upgradeAccepted, closeRequested);
         }
 
         if (std::filesystem::exists(options.scenePath)) {
-            static_cast<void>(editor.LoadSceneUVE());
+            static_cast<void>(editor.LoadScene());
         } else if (createDefaultViewport) {
             // A project created from a template begins with the objects the template listed.
             bool starterSceneBuilt = false;
             if (project.has_value()) {
-                const UVE::Pack::StarterSceneLoadResultUVE starter =
-                    UVE::Pack::LoadProjectStarterSceneUVE(project->projectRoot);
-                if (starter.code == UVE::Pack::StarterSceneCodeUVE::Invalid) {
+                const UVE::Pack::StarterSceneLoadResult starter =
+                    UVE::Pack::LoadProjectStarterScene(project->projectRoot);
+                if (starter.code == UVE::Pack::StarterSceneCode::Invalid) {
                     UVE_WARNING("uve_editor: {}", starter.message);
-                } else if (starter.code == UVE::Pack::StarterSceneCodeUVE::Loaded) {
-                    static_cast<void>(PopulateStarterSceneUVE(
-                        editor, engine.GetServicesUVE().GetEntityManagerUVE(), starter.scene));
+                } else if (starter.code == UVE::Pack::StarterSceneCode::Loaded) {
+                    static_cast<void>(PopulateStarterScene(
+                        editor, engine.GetServices().GetEntityManager(), starter.scene));
                     starterSceneBuilt = true;
                 }
             }
             // The default Viewport asset exists from the start.
-            if (editor.SaveSceneUVE() && starterSceneBuilt &&
-                !UVE::Pack::RemoveProjectStarterSceneUVE(project->projectRoot)) {
+            if (editor.SaveScene() && starterSceneBuilt &&
+                !UVE::Pack::RemoveProjectStarterScene(project->projectRoot)) {
                 UVE_WARNING("uve_editor: could not remove the consumed starter scene from {}",
                             project->projectRoot.string());
             }
         }
         if (options.prismDemoObject) {
-            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
-            const UVE::Scene::EntityUVE sun =
-                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-            const UVE::Scene::EntityUVE camera =
-                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Camera3D);
+            static_cast<void>(editor.CreateDocumentSceneObject(UVE::Scene::Objects::SceneObjectKind::Folder));
+            const UVE::Scene::Entity sun =
+                editor.CreateDocumentSceneObject(UVE::Scene::Objects::SceneObjectKind::DirectionalLight3D);
+            const UVE::Scene::Entity camera =
+                editor.CreateDocumentSceneObject(UVE::Scene::Objects::SceneObjectKind::Camera3D);
             if (options.prismDemoGizmos) {
                 // The sun and the camera beside the box rather than inside it.
-                UVE::Scene::IEntityManagerUVE& placed = engine.GetServicesUVE().GetEntityManagerUVE();
-                const auto place = [&placed](const UVE::Scene::EntityUVE entity, const UVE::Math::Vector3UVE at) {
-                    if (entity != UVE::Scene::kInvalidEntityUVE &&
-                        placed.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
-                        placed.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition = at;
+                UVE::Scene::IEntityManager& placed = engine.GetServices().GetEntityManager();
+                const auto place = [&placed](const UVE::Scene::Entity entity, const UVE::Math::Vector3 at) {
+                    if (entity != UVE::Scene::kInvalidEntity &&
+                        placed.HasComponent<UVE::Scene::TransformComponent>(entity)) {
+                        placed.GetComponent<UVE::Scene::TransformComponent>(entity).localPosition = at;
                     }
                 };
-                place(sun, UVE::Math::Vector3UVE{2.5F, 2.0F, 2.5F});
-                place(camera, UVE::Math::Vector3UVE{-2.5F, 1.0F, 2.0F});
+                place(sun, UVE::Math::Vector3{2.5F, 2.0F, 2.5F});
+                place(camera, UVE::Math::Vector3{-2.5F, 1.0F, 2.0F});
                 // One of each object with a gizmo of its own, spread out along X.
-                using KindUVE = UVE::Scene::Objects::SceneObjectKindUVE;
-                const std::array<KindUVE, 7> kinds{KindUVE::Light3D, KindUVE::Decal3D, KindUVE::Marker3D,
-                                                   KindUVE::SpawnPoint3D, KindUVE::RayCast3D, KindUVE::SpringArm3D,
-                                                   KindUVE::NavMeshVolume3D};
-                UVE::Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
+                using Kind = UVE::Scene::Objects::SceneObjectKind;
+                const std::array<Kind, 7> kinds{Kind::Light3D, Kind::Decal3D, Kind::Marker3D,
+                                                   Kind::SpawnPoint3D, Kind::RayCast3D, Kind::SpringArm3D,
+                                                   Kind::NavMeshVolume3D};
+                UVE::Scene::IEntityManager& entities = engine.GetServices().GetEntityManager();
                 float x = -6.0F;
-                for (const KindUVE kind : kinds) {
-                    const UVE::Scene::EntityUVE entity =
-                        editor.CreateDocumentSceneObjectUVE(kind, editor.GetDocumentViewportUVE());
-                    if (entity != UVE::Scene::kInvalidEntityUVE &&
-                        entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
-                        entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition =
-                            UVE::Math::Vector3UVE{x, 1.0F, -3.0F};
+                for (const Kind kind : kinds) {
+                    const UVE::Scene::Entity entity =
+                        editor.CreateDocumentSceneObject(kind, editor.GetDocumentViewport());
+                    if (entity != UVE::Scene::kInvalidEntity &&
+                        entities.HasComponent<UVE::Scene::TransformComponent>(entity)) {
+                        entities.GetComponent<UVE::Scene::TransformComponent>(entity).localPosition =
+                            UVE::Math::Vector3{x, 1.0F, -3.0F};
                     }
                     // The light as a spot, so its cone shows.
-                    if (kind == KindUVE::Light3D && entities.HasComponentUVE<UVE::Scene::LightComponentUVE>(entity)) {
-                        auto& light = entities.GetComponentUVE<UVE::Scene::LightComponentUVE>(entity);
-                        light.type = UVE::Scene::LightTypeUVE::Spot;
+                    if (kind == Kind::Light3D && entities.HasComponent<UVE::Scene::LightComponent>(entity)) {
+                        auto& light = entities.GetComponent<UVE::Scene::LightComponent>(entity);
+                        light.type = UVE::Scene::LightType::Spot;
                         light.range = 4.0F;
                         light.spotAngleDegrees = 30.0F;
                     }
                     x += 2.0F;
                 }
             }
-            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::BoxMesh3D));
+            static_cast<void>(editor.CreateDocumentSceneObject(UVE::Scene::Objects::SceneObjectKind::BoxMesh3D));
         }
 
         if (options.bridgeStdio) {
-            UVE::Asset::DataTableRegistryUVE dataTableRegistry;
-            UVE::Editor::EditorBridgeUVE bridge(editor, &dataTableRegistry);
-            UVE::Editor::EditorBridgeStdioServerUVE server(bridge);
-            const int result = server.ServeUVE(std::cin, std::cout, std::cerr);
-            editor.ShutdownUVE();
+            UVE::Asset::DataTableRegistry dataTableRegistry;
+            UVE::Editor::EditorBridge bridge(editor, &dataTableRegistry);
+            UVE::Editor::EditorBridgeStdioServer server(bridge);
+            const int result = server.Serve(std::cin, std::cout, std::cerr);
+            editor.Shutdown();
             engine.Shutdown();
             return result;
         }
 
-        // EngineCoreUVE's own scene render stays a documented no-op (the editor doesn't own a
+        // EngineCore's own scene render stays a documented no-op (the editor doesn't own a
         // gameplay camera), so each editor window's 3D view comes from its dedicated viewport
-        // owned by EditorViewportHostUVE: level_viewport, camera_preview_viewport,
+        // owned by EditorViewportHost: level_viewport, camera_preview_viewport,
         // entity_viewport, widget_preview_viewport, retarget_viewport, montage_viewport, and
         // vfx_viewport. Only constructed in real windowed mode: it needs an actual current GL
-        // context, which headless mode's NullRenderDeviceUVE never creates.
-        std::unique_ptr<UVE::App::Viewports::EditorViewportHostUVE> viewportHost;
-        editor.SetDocumentSceneFactoryUVE([&engine] { return engine.CreateDocumentSceneUVE(); });
-        editor.SetDocumentSceneClosingUVE([&viewportHost](const UVE::Core::EngineServicesUVE& services) {
+        // context, which headless mode's NullRenderDevice never creates.
+        std::unique_ptr<UVE::App::Viewports::EditorViewportHost> viewportHost;
+        editor.SetDocumentSceneFactory([&engine] { return engine.CreateDocumentScene(); });
+        editor.SetDocumentSceneClosing([&viewportHost](const UVE::Core::EngineServices& services) {
             if (viewportHost != nullptr) {
-                viewportHost->ForgetServicesUVE(services);
+                viewportHost->ForgetServices(services);
             }
         });
         if (!options.headless) {
-            viewportHost = std::make_unique<UVE::App::Viewports::EditorViewportHostUVE>(editor, engine);
-            viewportHost->BindToEditorUVE(editor);
+            viewportHost = std::make_unique<UVE::App::Viewports::EditorViewportHost>(editor, engine);
+            viewportHost->BindToEditor(editor);
         }
-        engine.SetPostRenderCallbackUVE([&editor] { editor.RenderOverlayUVE(); });
+        engine.SetPostRenderCallback([&editor] { editor.RenderOverlay(); });
 
         int framesRun = 0;
-        while (!closeRequested && !engine.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
+        while (!closeRequested && !engine.GetServices().GetWindowManager().IsCloseRequested() &&
                (!options.frameLimit.has_value() || framesRun < *options.frameLimit)) {
             if (platform.beforeFrame && !platform.beforeFrame(engine)) {
                 break;
             }
-            editor.TickUVE();
-            engine.TickFrameUVE();
+            editor.Tick();
+            engine.TickFrame();
             ++framesRun;
         }
 
-        if (!options.prismScreenshot.empty() && !editor.SavePrismScreenshotUVE(options.prismScreenshot)) {
+        if (!options.prismScreenshot.empty() && !editor.SavePrismScreenshot(options.prismScreenshot)) {
             std::fprintf(stderr, "uve_editor: could not save the PRISM screenshot\n");
         }
-        engine.SetPostRenderCallbackUVE({});
+        engine.SetPostRenderCallback({});
         if (viewportHost != nullptr) {
-            viewportHost->UnbindFromEditorUVE(editor);
+            viewportHost->UnbindFromEditor(editor);
         }
         // Destroyed here, before engine.Shutdown() tears down the window/GL context below - its
         // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
         viewportHost.reset();
-        editor.ShutdownUVE();
+        editor.Shutdown();
         if (project.has_value() &&
-            UVE::Pack::ShouldRecordEngineVersionUVE(project->compatibility.verdict, upgradeAccepted)) {
-            const UVE::Platform::EditorProjectPackageResultUVE recorded = UVE::Pack::RecordProjectEngineVersionUVE(
-                project->projectFile, UVE::Core::EngineCoreUVE::GetEngineVersionUVE());
-            if (!recorded.IsAcceptedUVE()) {
+            UVE::Pack::ShouldRecordEngineVersion(project->compatibility.verdict, upgradeAccepted)) {
+            const UVE::Platform::EditorProjectPackageResult recorded = UVE::Pack::RecordProjectEngineVersion(
+                project->projectFile, UVE::Core::EngineCore::GetEngineVersion());
+            if (!recorded.IsAccepted()) {
                 UVE_WARNING("uve_editor: could not record the engine version in {}: {}",
                             project->projectFile.string(), recorded.message);
             }
@@ -616,11 +616,11 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
     }
 
     // Reached only via one of the catches above. Only safe to call Shutdown() if the engine had
-    // actually reached Running - see EngineCoreUVE::RunUVE()'s doc comment for why an exception
+    // actually reached Running - see EngineCore::Run()'s doc comment for why an exception
     // during Init() itself must not force a Shutdown() call. `editor` (and any object declared
     // inside the try block above) is already out of scope here, having been destroyed normally
     // during stack unwinding.
-    if (engine.GetStateUVE() == UVE::Core::EngineStateUVE::Running) {
+    if (engine.GetState() == UVE::Core::EngineState::Running) {
         try {
             engine.Shutdown();
         } catch (const std::exception& exception) {
@@ -632,11 +632,11 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
                        "from the exception above");
         }
     }
-    return UVE::Core::EngineCoreUVE::kUnhandledExceptionExitCodeUVE;
+    return UVE::Core::EngineCore::kUnhandledExceptionExitCode;
 }
 
 #if !defined(__ANDROID__)
 int main(const int argc, char** argv) {
-    return UVE::App::RunEditorUVE(argc, argv, {});
+    return UVE::App::RunEditor(argc, argv, {});
 }
 #endif

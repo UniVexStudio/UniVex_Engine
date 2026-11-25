@@ -52,24 +52,24 @@ namespace UVE::Window {
 
 namespace {
 
-/// Process-wide GLFW init refcount: only the first live WindowManagerUVE calls glfwInit(), only
+/// Process-wide GLFW init refcount: only the first live WindowManager calls glfwInit(), only
 /// the last one destroyed calls glfwTerminate(). Correct even though this codebase only ever
-/// constructs one WindowManagerUVE at a time today — matches how a shared library-level resource
+/// constructs one WindowManager at a time today — matches how a shared library-level resource
 /// should be initialized exactly once regardless of how many owners reference it.
 int g_glfwRefCount = 0;
 bool g_suppressGlfwErrors = false;
 std::string g_lastSuppressedGlfwError;
 
-void GlfwErrorCallbackUVE(int errorCode, const char* description) {
+void GlfwErrorCallback(int errorCode, const char* description) {
     if (g_suppressGlfwErrors) {
         g_lastSuppressedGlfwError = description != nullptr ? description : "(no description)";
         return;
     }
-    UVE_ERROR("WindowManagerUVE: GLFW error {}: {}", errorCode,
+    UVE_ERROR("WindowManager: GLFW error {}: {}", errorCode,
               description != nullptr ? description : "(no description)");
 }
 
-[[nodiscard]] GLFWmonitor* FindMonitorUVE(const std::string_view requestedName) {
+[[nodiscard]] GLFWmonitor* FindMonitor(const std::string_view requestedName) {
     if (requestedName.empty()) {
         return glfwGetPrimaryMonitor();
     }
@@ -82,21 +82,21 @@ void GlfwErrorCallbackUVE(int errorCode, const char* description) {
             const char* const name = glfwGetMonitorName(monitors[index]);
             monitorNames.emplace_back(name != nullptr ? std::string_view{name} : std::string_view{});
         }
-        const std::optional<std::size_t> selectedIndex = FindMonitorIndexUVE(requestedName, monitorNames);
+        const std::optional<std::size_t> selectedIndex = FindMonitorIndex(requestedName, monitorNames);
         if (selectedIndex.has_value()) {
             return monitors[*selectedIndex];
         }
     }
-    UVE_WARNING("WindowManagerUVE: configured monitor \"{}\" was not found; using the primary monitor",
+    UVE_WARNING("WindowManager: configured monitor \"{}\" was not found; using the primary monitor",
                 requestedName);
     return glfwGetPrimaryMonitor();
 }
 
 } // namespace
 
-struct WindowManagerUVE::ImplUVE {
-    Events::IEventSystemUVE* eventSystem;
-    WindowDescUVE desc;
+struct WindowManager::Impl {
+    Events::IEventSystem* eventSystem;
+    WindowDesc desc;
     GLFWwindow* window = nullptr;
     GLFWcursor* cursor = nullptr;
     GLFWmonitor* targetMonitor = nullptr;
@@ -107,9 +107,9 @@ struct WindowManagerUVE::ImplUVE {
     // already decremented inline) must not be double-counted.
     bool ownsGlfwRefCount = false;
     bool vsyncEnabled = true;
-    Platform::VSyncModeUVE requestedVsyncMode = Platform::VSyncModeUVE::On;
-    Platform::VSyncModeUVE effectiveVsyncMode = Platform::VSyncModeUVE::On;
-    Platform::WindowModeUVE windowMode = Platform::WindowModeUVE::Windowed;
+    Platform::VSyncMode requestedVsyncMode = Platform::VSyncMode::On;
+    Platform::VSyncMode effectiveVsyncMode = Platform::VSyncMode::On;
+    Platform::WindowMode windowMode = Platform::WindowMode::Windowed;
     bool fullscreen = false;
     bool focused = true;
     bool transparent = false;
@@ -122,188 +122,188 @@ struct WindowManagerUVE::ImplUVE {
     int displaySleepInhibitorFd = -1;
 #endif
     double contentScaleOverride = 0.0;
-    Input::IInputSystemUVE* inputSystem = nullptr;
+    Input::IInputSystem* inputSystem = nullptr;
     float scrollDelta = 0.0F;
     int windowedX = 0;
     int windowedY = 0;
     int windowedWidth = 0;
     int windowedHeight = 0;
 
-    explicit ImplUVE(Events::IEventSystemUVE& eventSystemIn, const WindowDescUVE& descIn)
+    explicit Impl(Events::IEventSystem& eventSystemIn, const WindowDesc& descIn)
         : eventSystem(&eventSystemIn), desc(descIn), requestedVsyncMode(descIn.vsyncMode),
           effectiveVsyncMode(descIn.vsyncMode), windowMode(descIn.mode), transparent(descIn.transparent),
           highDpiAware(descIn.highDpiAware), displaySleepAllowed(descIn.allowDisplaySleep),
           contentScaleOverride(descIn.contentScaleOverride) {}
 
-    void ApplyVSyncUVE(Platform::VSyncModeUVE requestedMode);
-    void ApplyCursorInputModeUVE();
+    void ApplyVSync(Platform::VSyncMode requestedMode);
+    void ApplyCursorInputMode();
 
-    static ImplUVE& FromWindowUVE(GLFWwindow* glfwWindow) {
-        return *static_cast<ImplUVE*>(glfwGetWindowUserPointer(glfwWindow));
+    static Impl& FromWindow(GLFWwindow* glfwWindow) {
+        return *static_cast<Impl*>(glfwGetWindowUserPointer(glfwWindow));
     }
 
-    static void CloseCallbackUVE(GLFWwindow* glfwWindow) {
+    static void CloseCallback(GLFWwindow* glfwWindow) {
         glfwSetWindowShouldClose(glfwWindow, GLFW_TRUE);
-        FromWindowUVE(glfwWindow).eventSystem->Publish(WindowCloseRequestedEventUVE{});
+        FromWindow(glfwWindow).eventSystem->Publish(WindowCloseRequestedEvent{});
     }
 
-    static void FramebufferSizeCallbackUVE(GLFWwindow* glfwWindow, int width, int height) {
+    static void FramebufferSizeCallback(GLFWwindow* glfwWindow, int width, int height) {
         std::uint32_t framebufferWidth = 0U;
         std::uint32_t framebufferHeight = 0U;
-        if (!ValidateFramebufferSizeUVE(width, height, framebufferWidth, framebufferHeight)) {
+        if (!ValidateFramebufferSize(width, height, framebufferWidth, framebufferHeight)) {
             return;
         }
-        // Publishes only — never touches GL state here. GlRenderDeviceUVE polls the window's
+        // Publishes only — never touches GL state here. GlRenderDevice polls the window's
         // current size once per frame instead, per the approved design.
-        FromWindowUVE(glfwWindow).eventSystem->Publish(
-            WindowResizedEventUVE{framebufferWidth, framebufferHeight});
+        FromWindow(glfwWindow).eventSystem->Publish(
+            WindowResizedEvent{framebufferWidth, framebufferHeight});
     }
 
-    static void FocusCallbackUVE(GLFWwindow* glfwWindow, int focused) {
-        ImplUVE& impl = FromWindowUVE(glfwWindow);
+    static void FocusCallback(GLFWwindow* glfwWindow, int focused) {
+        Impl& impl = FromWindow(glfwWindow);
         impl.focused = focused == GLFW_TRUE;
-        impl.eventSystem->Publish(WindowFocusChangedEventUVE{impl.focused});
+        impl.eventSystem->Publish(WindowFocusChangedEvent{impl.focused});
     }
 
-    static void ScrollCallbackUVE(GLFWwindow* glfwWindow, double /*xOffset*/, double yOffset) {
-        FromWindowUVE(glfwWindow).scrollDelta += static_cast<float>(yOffset);
+    static void ScrollCallback(GLFWwindow* glfwWindow, double /*xOffset*/, double yOffset) {
+        FromWindow(glfwWindow).scrollDelta += static_cast<float>(yOffset);
     }
 
-    static int ToGlfwKeyUVE(const Input::KeyCodeUVE key) noexcept {
-        using Input::KeyCodeUVE;
+    static int ToGlfwKey(const Input::KeyCode key) noexcept {
+        using Input::KeyCode;
         const int value = static_cast<int>(key);
-        if (value >= static_cast<int>(KeyCodeUVE::A) && value <= static_cast<int>(KeyCodeUVE::Z)) {
-            return GLFW_KEY_A + value - static_cast<int>(KeyCodeUVE::A);
+        if (value >= static_cast<int>(KeyCode::A) && value <= static_cast<int>(KeyCode::Z)) {
+            return GLFW_KEY_A + value - static_cast<int>(KeyCode::A);
         }
-        if (value >= static_cast<int>(KeyCodeUVE::Num0) && value <= static_cast<int>(KeyCodeUVE::Num9)) {
-            return GLFW_KEY_0 + value - static_cast<int>(KeyCodeUVE::Num0);
+        if (value >= static_cast<int>(KeyCode::Num0) && value <= static_cast<int>(KeyCode::Num9)) {
+            return GLFW_KEY_0 + value - static_cast<int>(KeyCode::Num0);
         }
-        if (value >= static_cast<int>(KeyCodeUVE::F1) && value <= static_cast<int>(KeyCodeUVE::F12)) {
-            return GLFW_KEY_F1 + value - static_cast<int>(KeyCodeUVE::F1);
+        if (value >= static_cast<int>(KeyCode::F1) && value <= static_cast<int>(KeyCode::F12)) {
+            return GLFW_KEY_F1 + value - static_cast<int>(KeyCode::F1);
         }
         switch (key) {
-        case KeyCodeUVE::Up: return GLFW_KEY_UP;
-        case KeyCodeUVE::Down: return GLFW_KEY_DOWN;
-        case KeyCodeUVE::Left: return GLFW_KEY_LEFT;
-        case KeyCodeUVE::Right: return GLFW_KEY_RIGHT;
-        case KeyCodeUVE::Space: return GLFW_KEY_SPACE;
-        case KeyCodeUVE::Enter: return GLFW_KEY_ENTER;
-        case KeyCodeUVE::Escape: return GLFW_KEY_ESCAPE;
-        case KeyCodeUVE::Tab: return GLFW_KEY_TAB;
-        case KeyCodeUVE::Backspace: return GLFW_KEY_BACKSPACE;
-        case KeyCodeUVE::LeftShift: return GLFW_KEY_LEFT_SHIFT;
-        case KeyCodeUVE::RightShift: return GLFW_KEY_RIGHT_SHIFT;
-        case KeyCodeUVE::LeftCtrl: return GLFW_KEY_LEFT_CONTROL;
-        case KeyCodeUVE::RightCtrl: return GLFW_KEY_RIGHT_CONTROL;
-        case KeyCodeUVE::LeftAlt: return GLFW_KEY_LEFT_ALT;
-        case KeyCodeUVE::RightAlt: return GLFW_KEY_RIGHT_ALT;
+        case KeyCode::Up: return GLFW_KEY_UP;
+        case KeyCode::Down: return GLFW_KEY_DOWN;
+        case KeyCode::Left: return GLFW_KEY_LEFT;
+        case KeyCode::Right: return GLFW_KEY_RIGHT;
+        case KeyCode::Space: return GLFW_KEY_SPACE;
+        case KeyCode::Enter: return GLFW_KEY_ENTER;
+        case KeyCode::Escape: return GLFW_KEY_ESCAPE;
+        case KeyCode::Tab: return GLFW_KEY_TAB;
+        case KeyCode::Backspace: return GLFW_KEY_BACKSPACE;
+        case KeyCode::LeftShift: return GLFW_KEY_LEFT_SHIFT;
+        case KeyCode::RightShift: return GLFW_KEY_RIGHT_SHIFT;
+        case KeyCode::LeftCtrl: return GLFW_KEY_LEFT_CONTROL;
+        case KeyCode::RightCtrl: return GLFW_KEY_RIGHT_CONTROL;
+        case KeyCode::LeftAlt: return GLFW_KEY_LEFT_ALT;
+        case KeyCode::RightAlt: return GLFW_KEY_RIGHT_ALT;
         default: return GLFW_KEY_UNKNOWN;
         }
     }
 
-    static int ToGlfwMouseButtonUVE(const Input::MouseButtonUVE button) noexcept {
+    static int ToGlfwMouseButton(const Input::MouseButton button) noexcept {
         switch (button) {
-        case Input::MouseButtonUVE::Left: return GLFW_MOUSE_BUTTON_LEFT;
-        case Input::MouseButtonUVE::Right: return GLFW_MOUSE_BUTTON_RIGHT;
-        case Input::MouseButtonUVE::Middle: return GLFW_MOUSE_BUTTON_MIDDLE;
+        case Input::MouseButton::Left: return GLFW_MOUSE_BUTTON_LEFT;
+        case Input::MouseButton::Right: return GLFW_MOUSE_BUTTON_RIGHT;
+        case Input::MouseButton::Middle: return GLFW_MOUSE_BUTTON_MIDDLE;
         default: return -1;
         }
     }
 
-    void PollInputUVE() noexcept {
+    void PollInput() noexcept {
         if (inputSystem == nullptr || window == nullptr) {
             return;
         }
-        for (int value = static_cast<int>(Input::KeyCodeUVE::A);
-             value < static_cast<int>(Input::KeyCodeUVE::Count); ++value) {
-            const auto key = static_cast<Input::KeyCodeUVE>(value);
-            const int glfwKey = ToGlfwKeyUVE(key);
+        for (int value = static_cast<int>(Input::KeyCode::A);
+             value < static_cast<int>(Input::KeyCode::Count); ++value) {
+            const auto key = static_cast<Input::KeyCode>(value);
+            const int glfwKey = ToGlfwKey(key);
             if (glfwKey != GLFW_KEY_UNKNOWN) {
-                inputSystem->SetKeyStateUVE(key, glfwGetKey(window, glfwKey) != GLFW_RELEASE);
+                inputSystem->SetKeyState(key, glfwGetKey(window, glfwKey) != GLFW_RELEASE);
             }
         }
-        for (int value = 0; value < static_cast<int>(Input::MouseButtonUVE::Count); ++value) {
-            const auto button = static_cast<Input::MouseButtonUVE>(value);
-            const int glfwButton = ToGlfwMouseButtonUVE(button);
-            inputSystem->SetMouseButtonStateUVE(
+        for (int value = 0; value < static_cast<int>(Input::MouseButton::Count); ++value) {
+            const auto button = static_cast<Input::MouseButton>(value);
+            const int glfwButton = ToGlfwMouseButton(button);
+            inputSystem->SetMouseButtonState(
                 button, glfwGetMouseButton(window, glfwButton) != GLFW_RELEASE);
         }
         double cursorX = 0.0;
         double cursorY = 0.0;
         glfwGetCursorPos(window, &cursorX, &cursorY);
-        inputSystem->SetMousePositionUVE(
-            Math::Vector2UVE{static_cast<float>(cursorX), static_cast<float>(cursorY)});
-        inputSystem->SetMouseScrollDeltaUVE(scrollDelta);
+        inputSystem->SetMousePosition(
+            Math::Vector2{static_cast<float>(cursorX), static_cast<float>(cursorY)});
+        inputSystem->SetMouseScrollDelta(scrollDelta);
         scrollDelta = 0.0F;
     }
 };
 
-void WindowManagerUVE::ImplUVE::ApplyVSyncUVE(const Platform::VSyncModeUVE requestedMode) {
+void WindowManager::Impl::ApplyVSync(const Platform::VSyncMode requestedMode) {
     requestedVsyncMode = requestedMode;
     bool adaptiveIntervalSupported = false;
-    if (requestedMode == Platform::VSyncModeUVE::Adaptive) {
+    if (requestedMode == Platform::VSyncMode::Adaptive) {
         adaptiveIntervalSupported = glfwExtensionSupported("WGL_EXT_swap_control_tear") == GLFW_TRUE ||
                                    glfwExtensionSupported("GLX_EXT_swap_control_tear") == GLFW_TRUE ||
                                    glfwExtensionSupported("EGL_EXT_swap_control_tear") == GLFW_TRUE;
     }
-    const OpenGlVSyncResolutionUVE resolution =
-        ResolveOpenGlVSyncUVE(requestedMode, adaptiveIntervalSupported);
-    if (requestedMode == Platform::VSyncModeUVE::Adaptive &&
-        resolution.effectiveMode != Platform::VSyncModeUVE::Adaptive) {
-        UVE_WARNING("WindowManagerUVE: adaptive V-sync is unavailable; falling back to On");
-    } else if (requestedMode == Platform::VSyncModeUVE::Mailbox) {
+    const OpenGlVSyncResolution resolution =
+        ResolveOpenGlVSync(requestedMode, adaptiveIntervalSupported);
+    if (requestedMode == Platform::VSyncMode::Adaptive &&
+        resolution.effectiveMode != Platform::VSyncMode::Adaptive) {
+        UVE_WARNING("WindowManager: adaptive V-sync is unavailable; falling back to On");
+    } else if (requestedMode == Platform::VSyncMode::Mailbox) {
         // OpenGL/GLFW exposes a swap interval, not a mailbox queue policy. Vulkan applies Mailbox
         // when the surface advertises it.
-        UVE_WARNING("WindowManagerUVE: OpenGL does not expose Mailbox present mode; falling back to Off");
+        UVE_WARNING("WindowManager: OpenGL does not expose Mailbox present mode; falling back to Off");
     }
     glfwSwapInterval(resolution.swapInterval);
     effectiveVsyncMode = resolution.effectiveMode;
-    vsyncEnabled = resolution.effectiveMode != Platform::VSyncModeUVE::Off;
+    vsyncEnabled = resolution.effectiveMode != Platform::VSyncMode::Off;
 }
 
-void WindowManagerUVE::ImplUVE::ApplyCursorInputModeUVE() {
+void WindowManager::Impl::ApplyCursorInputMode() {
     if (window == nullptr) {
         return;
     }
-    const CursorInputResolutionUVE resolution =
-        ResolveCursorInputPolicyUVE(desc.cursorVisible, desc.cursorConfinedToWindow);
+    const CursorInputResolution resolution =
+        ResolveCursorInputPolicy(desc.cursorVisible, desc.cursorConfinedToWindow);
     int glfwCursorMode = GLFW_CURSOR_NORMAL;
     switch (resolution.mode) {
-    case CursorInputModeUVE::Normal:
+    case CursorInputMode::Normal:
         glfwCursorMode = GLFW_CURSOR_NORMAL;
         break;
-    case CursorInputModeUVE::Hidden:
+    case CursorInputMode::Hidden:
         glfwCursorMode = GLFW_CURSOR_HIDDEN;
         break;
-    case CursorInputModeUVE::Confined:
+    case CursorInputMode::Confined:
         // GLFW's portable disabled mode captures and hides the pointer.
         glfwCursorMode = GLFW_CURSOR_DISABLED;
         break;
     }
     if (resolution.visibilityCompromised) {
-        UVE_WARNING("WindowManagerUVE: GLFW cannot confine a visible cursor; confinement hides it");
+        UVE_WARNING("WindowManager: GLFW cannot confine a visible cursor; confinement hides it");
     }
     glfwSetInputMode(window, GLFW_CURSOR, glfwCursorMode);
     glfwSetCursor(window, resolution.useCustomCursor ? cursor : nullptr);
 }
 
-WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const WindowDescUVE& desc)
-    : m_impl(std::make_unique<ImplUVE>(eventSystem, desc)) {
-    if (!ValidateWindowDescUVE(desc)) {
-        UVE_ERROR("WindowManagerUVE: rejected invalid window descriptor before GLFW initialization");
+WindowManager::WindowManager(Events::IEventSystem& eventSystem, const WindowDesc& desc)
+    : m_impl(std::make_unique<Impl>(eventSystem, desc)) {
+    if (!ValidateWindowDesc(desc)) {
+        UVE_ERROR("WindowManager: rejected invalid window descriptor before GLFW initialization");
         return;
     }
     if (g_glfwRefCount == 0) {
-        glfwSetErrorCallback(&GlfwErrorCallbackUVE);
+        glfwSetErrorCallback(&GlfwErrorCallback);
         if (glfwInit() != GLFW_TRUE) {
-            UVE_FATAL("WindowManagerUVE: glfwInit() failed");
+            UVE_FATAL("WindowManager: glfwInit() failed");
             return;
         }
     }
     ++g_glfwRefCount;
     m_impl->ownsGlfwRefCount = true;
 
-    m_impl->targetMonitor = FindMonitorUVE(desc.monitorName);
+    m_impl->targetMonitor = FindMonitor(desc.monitorName);
     const GLFWvidmode* const monitorMode = m_impl->targetMonitor != nullptr
                                                ? glfwGetVideoMode(m_impl->targetMonitor)
                                                : nullptr;
@@ -312,12 +312,12 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     if (m_impl->targetMonitor != nullptr) {
         glfwGetMonitorPos(m_impl->targetMonitor, &monitorX, &monitorY);
     }
-    const Platform::WindowModeUVE effectiveMode = ResolveInitialWindowModeUVE(
+    const Platform::WindowMode effectiveMode = ResolveInitialWindowMode(
         desc.mode, m_impl->targetMonitor != nullptr && monitorMode != nullptr);
     m_impl->windowMode = effectiveMode;
     if (effectiveMode != desc.mode) {
-        UVE_WARNING("WindowManagerUVE: requested mode {} requires an available monitor video mode; using windowed",
-                    Platform::GetWindowModeNameUVE(desc.mode));
+        UVE_WARNING("WindowManager: requested mode {} requires an available monitor video mode; using windowed",
+                    Platform::GetWindowModeName(desc.mode));
     }
 
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -330,7 +330,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
 #endif
     glfwWindowHint(GLFW_RESIZABLE, desc.resizable ? GLFW_TRUE : GLFW_FALSE);
-    const bool initiallyDecorated = ShouldDecorateWindowUVE(desc.borderless, effectiveMode);
+    const bool initiallyDecorated = ShouldDecorateWindow(desc.borderless, effectiveMode);
     glfwWindowHint(GLFW_DECORATED, initiallyDecorated ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_FLOATING, desc.alwaysOnTop ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, desc.transparent ? GLFW_TRUE : GLFW_FALSE);
@@ -341,14 +341,14 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, desc.highDpiAware ? GLFW_TRUE : GLFW_FALSE);
 #endif
 
-    const bool exclusive = effectiveMode == Platform::WindowModeUVE::ExclusiveFullscreen;
+    const bool exclusive = effectiveMode == Platform::WindowMode::ExclusiveFullscreen;
     if (exclusive && monitorMode != nullptr) {
         glfwWindowHint(GLFW_REFRESH_RATE, monitorMode->refreshRate);
     }
     int createWidth = static_cast<int>(desc.width);
     int createHeight = static_cast<int>(desc.height);
     GLFWmonitor* createMonitor = exclusive ? m_impl->targetMonitor : nullptr;
-    if ((effectiveMode == Platform::WindowModeUVE::Fullscreen || exclusive) && monitorMode != nullptr) {
+    if ((effectiveMode == Platform::WindowMode::Fullscreen || exclusive) && monitorMode != nullptr) {
         createWidth = monitorMode->width;
         createHeight = monitorMode->height;
     }
@@ -378,7 +378,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
         m_impl->window = glfwCreateWindow(createWidth, createHeight, desc.title.c_str(), createMonitor, nullptr);
         if (m_impl->window != nullptr) {
             if (candidate.major != desc.glVersionMajor || candidate.minor != desc.glVersionMinor) {
-                UVE_INFO("WindowManagerUVE: requested OpenGL {}.{} Core Profile unavailable; successfully fell back to {}.{}",
+                UVE_INFO("WindowManager: requested OpenGL {}.{} Core Profile unavailable; successfully fell back to {}.{}",
                          desc.glVersionMajor, desc.glVersionMinor, candidate.major, candidate.minor);
                 m_impl->desc.glVersionMajor = candidate.major;
                 m_impl->desc.glVersionMinor = candidate.minor;
@@ -389,7 +389,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     g_suppressGlfwErrors = false;
 
     if (m_impl->window == nullptr) {
-        UVE_FATAL("WindowManagerUVE: glfwCreateWindow() failed requesting OpenGL {}.{} Core Profile (and fallbacks down to 3.3): {}",
+        UVE_FATAL("WindowManager: glfwCreateWindow() failed requesting OpenGL {}.{} Core Profile (and fallbacks down to 3.3): {}",
                   desc.glVersionMajor, desc.glVersionMinor,
                   g_lastSuppressedGlfwError.empty() ? "unknown GLFW error" : g_lastSuppressedGlfwError);
         --g_glfwRefCount;
@@ -400,7 +400,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
         return;
     }
 
-    if (!exclusive && effectiveMode == Platform::WindowModeUVE::Fullscreen && monitorMode != nullptr) {
+    if (!exclusive && effectiveMode == Platform::WindowMode::Fullscreen && monitorMode != nullptr) {
         glfwSetWindowPos(m_impl->window, monitorX, monitorY);
     } else if (!exclusive && !desc.initialPositionSpecified && m_impl->targetMonitor != nullptr &&
                monitorMode != nullptr) {
@@ -410,11 +410,11 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     } else if (!exclusive && desc.initialPositionSpecified) {
         glfwSetWindowPos(m_impl->window, desc.initialPositionX, desc.initialPositionY);
     }
-    const WindowSizeLimitsUVE sizeLimits = ResolveWindowSizeLimitsUVE(
+    const WindowSizeLimits sizeLimits = ResolveWindowSizeLimits(
         desc.minimumWidth, desc.minimumHeight, desc.maximumWidth, desc.maximumHeight, GLFW_DONT_CARE);
     glfwSetWindowSizeLimits(m_impl->window, sizeLimits.minimumWidth, sizeLimits.minimumHeight,
                             sizeLimits.maximumWidth, sizeLimits.maximumHeight);
-    if (!exclusive && effectiveMode == Platform::WindowModeUVE::Maximized) {
+    if (!exclusive && effectiveMode == Platform::WindowMode::Maximized) {
         // Preserve the normal geometry before the maximize call changes glfwGetWindowSize/Pos
         // to the monitor-sized presentation bounds.
         glfwGetWindowPos(m_impl->window, &m_impl->windowedX, &m_impl->windowedY);
@@ -425,7 +425,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     if (!desc.icons.empty()) {
         std::vector<GLFWimage> glfwIcons;
         glfwIcons.reserve(desc.icons.size());
-        for (const WindowIconUVE& icon : desc.icons) {
+        for (const WindowIcon& icon : desc.icons) {
             auto* const pixels = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(icon.rgba8.data()));
             glfwIcons.push_back(GLFWimage{static_cast<int>(icon.width), static_cast<int>(icon.height), pixels});
         }
@@ -439,27 +439,27 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
         m_impl->cursor = glfwCreateCursor(&image, static_cast<int>(desc.cursorHotspotX),
                                           static_cast<int>(desc.cursorHotspotY));
         if (m_impl->cursor == nullptr) {
-            UVE_WARNING("WindowManagerUVE: GLFW rejected the configured cursor image; using the system cursor");
+            UVE_WARNING("WindowManager: GLFW rejected the configured cursor image; using the system cursor");
         }
     }
 
     glfwSetWindowUserPointer(m_impl->window, m_impl.get());
-    glfwSetWindowCloseCallback(m_impl->window, &ImplUVE::CloseCallbackUVE);
-    glfwSetFramebufferSizeCallback(m_impl->window, &ImplUVE::FramebufferSizeCallbackUVE);
-    glfwSetWindowFocusCallback(m_impl->window, &ImplUVE::FocusCallbackUVE);
-    glfwSetScrollCallback(m_impl->window, &ImplUVE::ScrollCallbackUVE);
+    glfwSetWindowCloseCallback(m_impl->window, &Impl::CloseCallback);
+    glfwSetFramebufferSizeCallback(m_impl->window, &Impl::FramebufferSizeCallback);
+    glfwSetWindowFocusCallback(m_impl->window, &Impl::FocusCallback);
+    glfwSetScrollCallback(m_impl->window, &Impl::ScrollCallback);
     glfwSetWindowAttrib(m_impl->window, GLFW_FLOATING, desc.alwaysOnTop ? GLFW_TRUE : GLFW_FALSE);
-    m_impl->ApplyCursorInputModeUVE();
+    m_impl->ApplyCursorInputMode();
 
     glfwMakeContextCurrent(m_impl->window);
-    m_impl->ApplyVSyncUVE(desc.vsyncModeExplicit
+    m_impl->ApplyVSync(desc.vsyncModeExplicit
                               ? desc.vsyncMode
-                              : (desc.vsyncEnabled ? Platform::VSyncModeUVE::On
-                                                   : Platform::VSyncModeUVE::Off));
+                              : (desc.vsyncEnabled ? Platform::VSyncMode::On
+                                                   : Platform::VSyncMode::Off));
 
-    m_impl->fullscreen = exclusive || effectiveMode == Platform::WindowModeUVE::Fullscreen;
+    m_impl->fullscreen = exclusive || effectiveMode == Platform::WindowMode::Fullscreen;
     m_impl->focused = glfwGetWindowAttrib(m_impl->window, GLFW_FOCUSED) == GLFW_TRUE;
-    if (!m_impl->fullscreen && effectiveMode != Platform::WindowModeUVE::Maximized) {
+    if (!m_impl->fullscreen && effectiveMode != Platform::WindowMode::Maximized) {
         glfwGetWindowPos(m_impl->window, &m_impl->windowedX, &m_impl->windowedY);
         glfwGetWindowSize(m_impl->window, &m_impl->windowedWidth, &m_impl->windowedHeight);
     } else if (m_impl->fullscreen) {
@@ -471,14 +471,14 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
         m_impl->windowedHeight = static_cast<int>(desc.height);
     }
     m_impl->valid = true;
-    SetDisplaySleepAllowedUVE(desc.allowDisplaySleep);
-    UVE_INFO("WindowManagerUVE: created {}x{} window \"{}\" in mode {} using OpenGL {}.{} Core",
-             createWidth, createHeight, desc.title, Platform::GetWindowModeNameUVE(m_impl->windowMode),
+    SetDisplaySleepAllowed(desc.allowDisplaySleep);
+    UVE_INFO("WindowManager: created {}x{} window \"{}\" in mode {} using OpenGL {}.{} Core",
+             createWidth, createHeight, desc.title, Platform::GetWindowModeName(m_impl->windowMode),
              m_impl->desc.glVersionMajor, m_impl->desc.glVersionMinor);
 }
 
-WindowManagerUVE::~WindowManagerUVE() {
-    SetDisplaySleepAllowedUVE(true);
+WindowManager::~WindowManager() {
+    SetDisplaySleepAllowed(true);
     if (m_impl->cursor != nullptr) {
         glfwDestroyCursor(m_impl->cursor);
     }
@@ -493,81 +493,81 @@ WindowManagerUVE::~WindowManagerUVE() {
     }
 }
 
-bool WindowManagerUVE::IsValidUVE() const noexcept {
+bool WindowManager::IsValid() const noexcept {
     return m_impl->valid;
 }
 
-void WindowManagerUVE::AttachInputSystemUVE(Input::IInputSystemUVE* inputSystem) noexcept {
+void WindowManager::AttachInputSystem(Input::IInputSystem* inputSystem) noexcept {
     m_impl->inputSystem = inputSystem;
 }
 
-void WindowManagerUVE::PollEventsUVE() {
+void WindowManager::PollEvents() {
     if (m_impl->valid) {
         glfwPollEvents();
-        m_impl->PollInputUVE();
+        m_impl->PollInput();
     }
 }
 
-void WindowManagerUVE::SwapBuffersUVE() {
+void WindowManager::SwapBuffers() {
     if (m_impl->valid) {
         glfwSwapBuffers(m_impl->window);
     }
 }
 
-bool WindowManagerUVE::IsCloseRequestedUVE() const noexcept {
+bool WindowManager::IsCloseRequested() const noexcept {
     return m_impl->valid && glfwWindowShouldClose(m_impl->window) == GLFW_TRUE;
 }
 
-void WindowManagerUVE::SetVSyncEnabledUVE(const bool enabled) {
-    SetVSyncModeUVE(enabled ? Platform::VSyncModeUVE::On : Platform::VSyncModeUVE::Off);
+void WindowManager::SetVSyncEnabled(const bool enabled) {
+    SetVSyncMode(enabled ? Platform::VSyncMode::On : Platform::VSyncMode::Off);
 }
 
-bool WindowManagerUVE::IsVSyncEnabledUVE() const noexcept {
+bool WindowManager::IsVSyncEnabled() const noexcept {
     return m_impl->vsyncEnabled;
 }
 
-void WindowManagerUVE::SetVSyncModeUVE(const Platform::VSyncModeUVE mode) {
-    if (Platform::GetVSyncModeNameUVE(mode).empty()) {
-        UVE_WARNING("WindowManagerUVE: ignored invalid V-sync mode request");
+void WindowManager::SetVSyncMode(const Platform::VSyncMode mode) {
+    if (Platform::GetVSyncModeName(mode).empty()) {
+        UVE_WARNING("WindowManager: ignored invalid V-sync mode request");
         return;
     }
     m_impl->requestedVsyncMode = mode;
     if (m_impl->valid) {
-        m_impl->ApplyVSyncUVE(mode);
+        m_impl->ApplyVSync(mode);
     } else {
         m_impl->effectiveVsyncMode = mode;
-        m_impl->vsyncEnabled = mode != Platform::VSyncModeUVE::Off;
+        m_impl->vsyncEnabled = mode != Platform::VSyncMode::Off;
     }
 }
 
-Platform::VSyncModeUVE WindowManagerUVE::GetVSyncModeUVE() const noexcept {
+Platform::VSyncMode WindowManager::GetVSyncMode() const noexcept {
     return m_impl->effectiveVsyncMode;
 }
 
-void WindowManagerUVE::SetFullscreenUVE(const bool fullscreen) {
-    SetWindowModeUVE(fullscreen ? Platform::WindowModeUVE::Fullscreen
-                                : Platform::WindowModeUVE::Windowed);
+void WindowManager::SetFullscreen(const bool fullscreen) {
+    SetWindowMode(fullscreen ? Platform::WindowMode::Fullscreen
+                                : Platform::WindowMode::Windowed);
 }
 
-bool WindowManagerUVE::IsFullscreenUVE() const noexcept {
+bool WindowManager::IsFullscreen() const noexcept {
     return m_impl->fullscreen;
 }
 
-void WindowManagerUVE::SetWindowModeUVE(const Platform::WindowModeUVE mode) {
-    if (!m_impl->valid || Platform::GetWindowModeNameUVE(mode).empty() || mode == m_impl->windowMode) {
+void WindowManager::SetWindowMode(const Platform::WindowMode mode) {
+    if (!m_impl->valid || Platform::GetWindowModeName(mode).empty() || mode == m_impl->windowMode) {
         return;
     }
     GLFWmonitor* monitor = m_impl->targetMonitor != nullptr ? m_impl->targetMonitor : glfwGetPrimaryMonitor();
     const GLFWvidmode* const videoMode = monitor != nullptr ? glfwGetVideoMode(monitor) : nullptr;
-    if ((mode == Platform::WindowModeUVE::Fullscreen || mode == Platform::WindowModeUVE::ExclusiveFullscreen) &&
+    if ((mode == Platform::WindowMode::Fullscreen || mode == Platform::WindowMode::ExclusiveFullscreen) &&
         (monitor == nullptr || videoMode == nullptr)) {
-        UVE_ERROR("WindowManagerUVE: cannot enter fullscreen without a monitor video mode");
+        UVE_ERROR("WindowManager: cannot enter fullscreen without a monitor video mode");
         return;
     }
 
-    const bool currentlyMaximized = m_impl->windowMode == Platform::WindowModeUVE::Maximized ||
+    const bool currentlyMaximized = m_impl->windowMode == Platform::WindowMode::Maximized ||
                                     glfwGetWindowAttrib(m_impl->window, GLFW_MAXIMIZED) == GLFW_TRUE;
-    if (ShouldCaptureWindowedGeometryUVE(m_impl->fullscreen, currentlyMaximized)) {
+    if (ShouldCaptureWindowedGeometry(m_impl->fullscreen, currentlyMaximized)) {
         glfwGetWindowPos(m_impl->window, &m_impl->windowedX, &m_impl->windowedY);
         glfwGetWindowSize(m_impl->window, &m_impl->windowedWidth, &m_impl->windowedHeight);
     }
@@ -578,30 +578,30 @@ void WindowManagerUVE::SetWindowModeUVE(const Platform::WindowModeUVE mode) {
     }
 
     bool transitionConfirmed = true;
-    if (mode == Platform::WindowModeUVE::ExclusiveFullscreen) {
+    if (mode == Platform::WindowMode::ExclusiveFullscreen) {
         glfwSetWindowAttrib(m_impl->window, GLFW_DECORATED,
-                            ShouldDecorateWindowUVE(m_impl->desc.borderless, mode) ? GLFW_TRUE : GLFW_FALSE);
+                            ShouldDecorateWindow(m_impl->desc.borderless, mode) ? GLFW_TRUE : GLFW_FALSE);
         glfwSetWindowMonitor(m_impl->window, monitor, 0, 0, videoMode->width, videoMode->height,
                              videoMode->refreshRate);
         transitionConfirmed = glfwGetWindowMonitor(m_impl->window) == monitor;
-    } else if (mode == Platform::WindowModeUVE::Fullscreen) {
+    } else if (mode == Platform::WindowMode::Fullscreen) {
         glfwSetWindowAttrib(m_impl->window, GLFW_DECORATED,
-                            ShouldDecorateWindowUVE(m_impl->desc.borderless, mode) ? GLFW_TRUE : GLFW_FALSE);
+                            ShouldDecorateWindow(m_impl->desc.borderless, mode) ? GLFW_TRUE : GLFW_FALSE);
         glfwSetWindowMonitor(m_impl->window, nullptr, monitorX, monitorY, videoMode->width,
                              videoMode->height, GLFW_DONT_CARE);
         transitionConfirmed = glfwGetWindowMonitor(m_impl->window) == nullptr;
     } else {
-        const bool decorated = ShouldDecorateWindowUVE(m_impl->desc.borderless, mode);
+        const bool decorated = ShouldDecorateWindow(m_impl->desc.borderless, mode);
         glfwSetWindowAttrib(m_impl->window, GLFW_DECORATED, decorated ? GLFW_TRUE : GLFW_FALSE);
         if (m_impl->fullscreen || glfwGetWindowMonitor(m_impl->window) != nullptr) {
             glfwSetWindowMonitor(m_impl->window, nullptr, m_impl->windowedX, m_impl->windowedY,
                                  m_impl->windowedWidth, m_impl->windowedHeight, GLFW_DONT_CARE);
         }
-        if (mode == Platform::WindowModeUVE::Maximized) {
+        if (mode == Platform::WindowMode::Maximized) {
             glfwMaximizeWindow(m_impl->window);
         } else {
             glfwRestoreWindow(m_impl->window);
-            if (mode == Platform::WindowModeUVE::Windowed || mode == Platform::WindowModeUVE::Borderless) {
+            if (mode == Platform::WindowMode::Windowed || mode == Platform::WindowMode::Borderless) {
                 glfwSetWindowPos(m_impl->window, m_impl->windowedX, m_impl->windowedY);
                 glfwSetWindowSize(m_impl->window, m_impl->windowedWidth, m_impl->windowedHeight);
             }
@@ -610,26 +610,26 @@ void WindowManagerUVE::SetWindowModeUVE(const Platform::WindowModeUVE mode) {
     }
 
     if (!transitionConfirmed) {
-        UVE_ERROR("WindowManagerUVE: GLFW did not confirm window mode transition to {}",
-                  Platform::GetWindowModeNameUVE(mode));
+        UVE_ERROR("WindowManager: GLFW did not confirm window mode transition to {}",
+                  Platform::GetWindowModeName(mode));
         return;
     }
     m_impl->windowMode = mode;
-    m_impl->fullscreen = IsFullscreenWindowModeUVE(mode);
+    m_impl->fullscreen = IsFullscreenWindowMode(mode);
 }
 
-Platform::WindowModeUVE WindowManagerUVE::GetWindowModeUVE() const noexcept {
+Platform::WindowMode WindowManager::GetWindowMode() const noexcept {
     return m_impl->windowMode;
 }
 
-void WindowManagerUVE::SetCursorVisibleUVE(const bool visible) {
+void WindowManager::SetCursorVisible(const bool visible) {
     m_impl->desc.cursorVisible = visible;
     m_impl->desc.cursorConfinedToWindow = !visible;
-    m_impl->ApplyCursorInputModeUVE();
+    m_impl->ApplyCursorInputMode();
 }
 
-void WindowManagerUVE::SetWindowTitleUVE(const std::string_view title) {
-    if (!m_impl->valid || title.empty() || title.size() > kMaximumWindowTitleBytesUVE ||
+void WindowManager::SetWindowTitle(const std::string_view title) {
+    if (!m_impl->valid || title.empty() || title.size() > kMaximumWindowTitleBytes ||
         title.find('\0') != std::string_view::npos) {
         return;
     }
@@ -637,12 +637,12 @@ void WindowManagerUVE::SetWindowTitleUVE(const std::string_view title) {
     glfwSetWindowTitle(m_impl->window, ownedTitle.c_str());
 }
 
-bool WindowManagerUVE::IsFocusedUVE() const noexcept {
+bool WindowManager::IsFocused() const noexcept {
     return m_impl->valid && glfwGetWindowAttrib(m_impl->window, GLFW_FOCUSED) == GLFW_TRUE;
 }
 
-void WindowManagerUVE::GetContentScaleUVE(float& outX, float& outY) const noexcept {
-    if (const std::optional<float> overrideScale = ResolveContentScaleOverrideUVE(m_impl->contentScaleOverride)) {
+void WindowManager::GetContentScale(float& outX, float& outY) const noexcept {
+    if (const std::optional<float> overrideScale = ResolveContentScaleOverride(m_impl->contentScaleOverride)) {
         outX = *overrideScale;
         outY = *overrideScale;
         return;
@@ -651,18 +651,18 @@ void WindowManagerUVE::GetContentScaleUVE(float& outX, float& outY) const noexce
     outY = 1.0F;
     if (m_impl->valid && m_impl->highDpiAware) {
         glfwGetWindowContentScale(m_impl->window, &outX, &outY);
-        const ContentScaleUVE nativeScale = SanitizeNativeContentScaleUVE(outX, outY);
+        const ContentScale nativeScale = SanitizeNativeContentScale(outX, outY);
         outX = nativeScale.x;
         outY = nativeScale.y;
     }
 }
 
-void WindowManagerUVE::SetDisplaySleepAllowedUVE(const bool allowed) noexcept {
+void WindowManager::SetDisplaySleepAllowed(const bool allowed) noexcept {
     m_impl->displaySleepAllowed = allowed;
 #if defined(_WIN32)
     const EXECUTION_STATE requestedState = allowed ? ES_CONTINUOUS : (ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
     if (SetThreadExecutionState(requestedState) == 0) {
-        UVE_WARNING("WindowManagerUVE: Windows rejected the display power request");
+        UVE_WARNING("WindowManager: Windows rejected the display power request");
     }
 #elif defined(__APPLE__)
     if (allowed) {
@@ -671,7 +671,7 @@ void WindowManagerUVE::SetDisplaySleepAllowedUVE(const bool allowed) noexcept {
             if (result == kIOReturnSuccess) {
                 m_impl->displaySleepAssertion = kIOPMNullAssertionID;
             } else {
-                UVE_WARNING("WindowManagerUVE: macOS could not release display-sleep assertion ({})",
+                UVE_WARNING("WindowManager: macOS could not release display-sleep assertion ({})",
                             static_cast<int>(result));
             }
         }
@@ -685,7 +685,7 @@ void WindowManagerUVE::SetDisplaySleepAllowedUVE(const bool allowed) noexcept {
         if (result != kIOReturnSuccess || m_impl->displaySleepAssertion == kIOPMNullAssertionID) {
             m_impl->displaySleepAssertion = kIOPMNullAssertionID;
             if (!m_impl->displaySleepWarningLogged) {
-                UVE_WARNING("WindowManagerUVE: macOS could not prevent idle display sleep ({})",
+                UVE_WARNING("WindowManager: macOS could not prevent idle display sleep ({})",
                             static_cast<int>(result));
                 m_impl->displaySleepWarningLogged = true;
             }
@@ -730,7 +730,7 @@ void WindowManagerUVE::SetDisplaySleepAllowedUVE(const bool allowed) noexcept {
     }
     if (m_impl->displaySleepInhibitorFd < 0) {
         if (!m_impl->displaySleepWarningLogged) {
-            UVE_WARNING("WindowManagerUVE: Linux logind could not inhibit idle display sleep ({}: {})",
+            UVE_WARNING("WindowManager: Linux logind could not inhibit idle display sleep ({}: {})",
                         result, error.message != nullptr ? error.message : "no inhibitor descriptor returned");
             m_impl->displaySleepWarningLogged = true;
         }
@@ -748,13 +748,13 @@ void WindowManagerUVE::SetDisplaySleepAllowedUVE(const bool allowed) noexcept {
     if (allowed) {
         m_impl->displaySleepWarningLogged = false;
     } else if (!m_impl->displaySleepWarningLogged) {
-        UVE_WARNING("WindowManagerUVE: this platform has no native display-sleep inhibitor");
+        UVE_WARNING("WindowManager: this platform has no native display-sleep inhibitor");
         m_impl->displaySleepWarningLogged = true;
     }
 #endif
 }
 
-std::uint32_t WindowManagerUVE::GetWidthUVE() const noexcept {
+std::uint32_t WindowManager::GetWidth() const noexcept {
     if (!m_impl->valid) {
         return 0;
     }
@@ -763,12 +763,12 @@ std::uint32_t WindowManagerUVE::GetWidthUVE() const noexcept {
     glfwGetFramebufferSize(m_impl->window, &width, &height);
     std::uint32_t framebufferWidth = 0U;
     std::uint32_t framebufferHeight = 0U;
-    return ValidateFramebufferSizeUVE(width, height, framebufferWidth, framebufferHeight)
+    return ValidateFramebufferSize(width, height, framebufferWidth, framebufferHeight)
                ? framebufferWidth
                : 0U;
 }
 
-std::uint32_t WindowManagerUVE::GetHeightUVE() const noexcept {
+std::uint32_t WindowManager::GetHeight() const noexcept {
     if (!m_impl->valid) {
         return 0;
     }
@@ -777,24 +777,24 @@ std::uint32_t WindowManagerUVE::GetHeightUVE() const noexcept {
     glfwGetFramebufferSize(m_impl->window, &width, &height);
     std::uint32_t framebufferWidth = 0U;
     std::uint32_t framebufferHeight = 0U;
-    return ValidateFramebufferSizeUVE(width, height, framebufferWidth, framebufferHeight)
+    return ValidateFramebufferSize(width, height, framebufferWidth, framebufferHeight)
                ? framebufferHeight
                : 0U;
 }
 
-std::vector<MonitorInfoUVE> WindowManagerUVE::EnumerateMonitorsUVE() const {
+std::vector<MonitorInfo> WindowManager::EnumerateMonitors() const {
     if (!m_impl->valid) {
         return {};
     }
-    std::vector<MonitorInfoUVE> monitors;
+    std::vector<MonitorInfo> monitors;
     int monitorCount = 0;
     GLFWmonitor** const glfwMonitors = glfwGetMonitors(&monitorCount);
     if (monitorCount < 0 || (monitorCount > 0 && glfwMonitors == nullptr)) {
         return {};
     }
-    if (monitorCount > static_cast<int>(kMaximumMonitorSnapshotEntriesUVE)) {
-        UVE_ERROR("WindowManagerUVE: GLFW returned {} monitors, exceeding the {}-entry snapshot cap",
-                  monitorCount, kMaximumMonitorSnapshotEntriesUVE);
+    if (monitorCount > static_cast<int>(kMaximumMonitorSnapshotEntries)) {
+        UVE_ERROR("WindowManager: GLFW returned {} monitors, exceeding the {}-entry snapshot cap",
+                  monitorCount, kMaximumMonitorSnapshotEntries);
         return {};
     }
     GLFWmonitor* const primaryMonitor = glfwGetPrimaryMonitor();
@@ -808,13 +808,13 @@ std::vector<MonitorInfoUVE> WindowManagerUVE::EnumerateMonitorsUVE() const {
         }
         std::uint32_t monitorWidth = 0U;
         std::uint32_t monitorHeight = 0U;
-        if (!ValidateMonitorDimensionsUVE(mode->width, mode->height, monitorWidth, monitorHeight)) {
-            UVE_ERROR("WindowManagerUVE: GLFW returned invalid dimensions for monitor {}x{}", mode->width,
+        if (!ValidateMonitorDimensions(mode->width, mode->height, monitorWidth, monitorHeight)) {
+            UVE_ERROR("WindowManager: GLFW returned invalid dimensions for monitor {}x{}", mode->width,
                       mode->height);
             return {};
         }
         const char* const name = glfwGetMonitorName(monitor);
-        MonitorInfoUVE info;
+        MonitorInfo info;
         info.name = name != nullptr ? name : "";
         info.width = monitorWidth;
         info.height = monitorHeight;
@@ -824,23 +824,23 @@ std::vector<MonitorInfoUVE> WindowManagerUVE::EnumerateMonitorsUVE() const {
         glfwGetMonitorContentScale(monitor, &info.contentScaleX, &info.contentScaleY);
         monitors.push_back(std::move(info));
     }
-    if (!ValidateMonitorSnapshotUVE(monitors)) {
-        UVE_ERROR("WindowManagerUVE: GLFW returned an invalid monitor snapshot");
+    if (!ValidateMonitorSnapshot(monitors)) {
+        UVE_ERROR("WindowManager: GLFW returned an invalid monitor snapshot");
         return {};
     }
     return monitors;
 }
 
-void* WindowManagerUVE::GetNativeWindowHandleUVE() const noexcept {
+void* WindowManager::GetNativeWindowHandle() const noexcept {
     return m_impl->valid ? static_cast<void*>(m_impl->window) : nullptr;
 }
 
-std::string_view WindowManagerUVE::GetBackendNameUVE() const noexcept {
+std::string_view WindowManager::GetBackendName() const noexcept {
     return "GLFW3";
 }
 
 // ---------------------------------------------------------------------------
-// IVulkanWindowSurfaceUVE — GLFW WSI forwarding.
+// IVulkanWindowSurface — GLFW WSI forwarding.
 // ---------------------------------------------------------------------------
 // glfw3.h is included above in GLFW_INCLUDE_NONE mode (the GL device owns GL header inclusion,
 // per the audit's #37). That mode still declares glfwGetRequiredInstanceExtensions() but NOT
@@ -858,7 +858,7 @@ GLFWAPI int glfwCreateWindowSurface(void* /*VkInstance*/ instance,
     unsigned long long* /*VkSurfaceKHR*/ surface);
 } // extern "C"
 
-std::vector<const char*> WindowManagerUVE::GetRequiredVulkanInstanceExtensionsUVE() const {
+std::vector<const char*> WindowManager::GetRequiredVulkanInstanceExtensions() const {
     std::vector<const char*> extensions;
     if (m_impl->window == nullptr) {
         return extensions;
@@ -879,7 +879,7 @@ std::vector<const char*> WindowManagerUVE::GetRequiredVulkanInstanceExtensionsUV
     return extensions;
 }
 
-std::uintptr_t WindowManagerUVE::CreateVulkanWindowSurfaceUVE(const std::uintptr_t vulkanInstance) {
+std::uintptr_t WindowManager::CreateVulkanWindowSurface(const std::uintptr_t vulkanInstance) {
     if (m_impl->window == nullptr || vulkanInstance == 0U) {
         return 0U;
     }
@@ -894,14 +894,14 @@ std::uintptr_t WindowManagerUVE::CreateVulkanWindowSurfaceUVE(const std::uintptr
     return static_cast<std::uintptr_t>(surface);
 }
 
-void WindowManagerUVE::DestroyVulkanWindowSurfaceUVE(const std::uintptr_t /*vulkanInstance*/,
+void WindowManager::DestroyVulkanWindowSurface(const std::uintptr_t /*vulkanInstance*/,
     const std::uintptr_t /*vulkanSurface*/) {
     // No-op by design: GLFW hands surface destruction back to vkDestroySurfaceKHR, which the
     // Vulkan render device calls through its own function table. The window module cannot own
     // that call because it deliberately never links against (or even includes) Vulkan.
 }
 
-void WindowManagerUVE::GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth,
+void WindowManager::GetVulkanFramebufferSize(std::uint32_t& outWidth,
     std::uint32_t& outHeight) const {
     outWidth = 0U;
     outHeight = 0U;
@@ -912,17 +912,17 @@ void WindowManagerUVE::GetVulkanFramebufferSizeUVE(std::uint32_t& outWidth,
     int height = 0;
     glfwGetFramebufferSize(m_impl->window, &width, &height);
     // Same validation rule as the GL world: clamps stay at zero until a real size reports.
-    if (!ValidateFramebufferSizeUVE(width, height, outWidth, outHeight)) {
+    if (!ValidateFramebufferSize(width, height, outWidth, outHeight)) {
         outWidth = 0U;
         outHeight = 0U;
     }
 }
 
-Platform::VSyncModeUVE WindowManagerUVE::GetRequestedVSyncModeUVE() const noexcept {
+Platform::VSyncMode WindowManager::GetRequestedVSyncMode() const noexcept {
     return m_impl->requestedVsyncMode;
 }
 
-bool WindowManagerUVE::IsTransparentFramebufferRequestedUVE() const noexcept {
+bool WindowManager::IsTransparentFramebufferRequested() const noexcept {
     return m_impl->transparent;
 }
 

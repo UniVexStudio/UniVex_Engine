@@ -8,26 +8,26 @@
 
 namespace {
 
-int InitializeBadProtocolPluginUVE() {
+int InitializeBadProtocolPlugin() {
     return 0;
 }
 
-void ShutdownBadProtocolPluginUVE() {}
+void ShutdownBadProtocolPlugin() {}
 
-const char* const kCapabilitiesUVE[] = {"test.objects"};
+const char* const kCapabilities[] = {"test.objects"};
 
-const UVE::Plugins::NativePluginDescriptorUVE kDescriptorUVE{
-    UVE::Plugins::kNativePluginProtocolVersionUVE,
+const UVE::Plugins::NativePluginDescriptor kDescriptor{
+    UVE::Plugins::kNativePluginProtocolVersion,
     "uve.test-plugin-bad-protocol",
     "Bad Protocol Fixture Plugin",
     1U,
     0U,
     0U,
     99U,
-    kCapabilitiesUVE,
+    kCapabilities,
     1U,
-    &InitializeBadProtocolPluginUVE,
-    &ShutdownBadProtocolPluginUVE,
+    &InitializeBadProtocolPlugin,
+    &ShutdownBadProtocolPlugin,
 };
 
 } // namespace
@@ -38,6 +38,6 @@ const UVE::Plugins::NativePluginDescriptorUVE kDescriptorUVE{
 #define UVE_TEST_PLUGIN_EXPORT
 #endif
 
-extern "C" UVE_TEST_PLUGIN_EXPORT const UVE::Plugins::NativePluginDescriptorUVE* UveNativePluginEntryUVE() {
-    return &kDescriptorUVE;
+extern "C" UVE_TEST_PLUGIN_EXPORT const UVE::Plugins::NativePluginDescriptor* UveNativePluginEntry() {
+    return &kDescriptor;
 }

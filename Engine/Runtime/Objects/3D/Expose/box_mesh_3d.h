@@ -12,44 +12,44 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Authoring definition for the BoxMesh3D scene object: the component set and defaults a freshly
 /// created BoxMesh3D entity attaches — a cube primitive mesh plus a matching box collider.
-struct BoxMesh3DObjectDefinitionUVE final {
+struct BoxMesh3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Cube";
 
-    PrimitiveMeshComponentUVE mesh{PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{1.0F, 1.0F, 1.0F}};
-    ColliderComponentUVE collider{Math::Vector3UVE{0.5F, 0.5F, 0.5F}};
+    PrimitiveMeshComponent mesh{PrimitiveMeshKind::Cube, Math::Vector3{1.0F, 1.0F, 1.0F}};
+    ColliderComponent collider{Math::Vector3{0.5F, 0.5F, 0.5F}};
 };
 
-[[nodiscard]] bool IsBoxMesh3DObjectDefinitionValidUVE(const BoxMesh3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsBoxMesh3DObjectDefinitionValid(const BoxMesh3DObjectDefinition& value) noexcept;
 
-void ApplyBoxMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                       const BoxMesh3DObjectDefinitionUVE& value);
+void ApplyBoxMesh3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                       const BoxMesh3DObjectDefinition& value);
 
 /// Node policy for a `BoxMesh3D` primitive object.
-class BoxMesh3DUVE final {
+class BoxMesh3D final {
 public:
-    BoxMesh3DUVE() = delete;
+    BoxMesh3D() = delete;
 
-    static constexpr Math::Vector3UVE kDefaultHalfExtentsUVE{0.5F, 0.5F, 0.5F};
+    static constexpr Math::Vector3 kDefaultHalfExtents{0.5F, 0.5F, 0.5F};
 
     /// True when `mesh` is valid and configured as a `Cube` primitive.
-    [[nodiscard]] static bool IsBoxMeshUVE(const PrimitiveMeshComponentUVE& mesh) noexcept;
+    [[nodiscard]] static bool IsBoxMesh(const PrimitiveMeshComponent& mesh) noexcept;
 
     /// Returns the authored default box collider half-extents `{0.5, 0.5, 0.5}`.
-    [[nodiscard]] static Math::Vector3UVE DefaultColliderHalfExtentsUVE() noexcept;
+    [[nodiscard]] static Math::Vector3 DefaultColliderHalfExtents() noexcept;
 
     /// Returns the unit cube's local-space AABB (`[-0.5, +0.5]^3`).
-    [[nodiscard]] static Math::AabbUVE LocalBoundsUVE() noexcept;
+    [[nodiscard]] static Math::Aabb LocalBounds() noexcept;
 
     /// Computes the world-space volume of the unit cube scaled by `worldScale`. Returns `0.0F`
     /// when any scale axis is non-finite or non-positive.
-    [[nodiscard]] static float VolumeFromScaleUVE(const Math::Vector3UVE& worldScale) noexcept;
+    [[nodiscard]] static float VolumeFromScale(const Math::Vector3& worldScale) noexcept;
 
     /// Synchronises `collider` to the unit cube's box shape and default half-extents.
-    static void SyncColliderToBoxUVE(ColliderComponentUVE& collider) noexcept;
+    static void SyncColliderToBox(ColliderComponent& collider) noexcept;
 };
 
 } // namespace UVE::Scene

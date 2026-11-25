@@ -15,7 +15,7 @@
 namespace UVE::Scene {
 
 /// What a clip does when it reaches its end.
-enum class AnimationLoopModeUVE : std::uint8_t {
+enum class AnimationLoopMode : std::uint8_t {
     /// Plays once, then stops.
     Once = 0,
     /// Starts again from the other end.
@@ -25,7 +25,7 @@ enum class AnimationLoopModeUVE : std::uint8_t {
 };
 
 /// Where a finished one-shot clip leaves its target.
-enum class AnimationFinishActionUVE : std::uint8_t {
+enum class AnimationFinishAction : std::uint8_t {
     /// Keeps the clip's last pose.
     HoldLastPose = 0,
     /// Puts the target back where it was before the clip started.
@@ -33,25 +33,25 @@ enum class AnimationFinishActionUVE : std::uint8_t {
 };
 
 /// AnimationSequencer's own state: plays a `.uvanim` clip on a target object's transform. What it moves,
-/// which channels and on which clock live in its AnimationDriver base (AnimationDriverComponentUVE).
+/// which channels and on which clock live in its AnimationDriver base (AnimationDriverComponent).
 ///
 /// Authored settings first; the runtime state the player writes back each step comes last and is
 /// shown in the Inspector only while playing, never saved.
-struct AnimationSequencerComponentUVE final {
+struct AnimationSequencerComponent final {
     /// The clip to play. Invalid means nothing to play.
-    Asset::AssetGuidUVE clip{};
+    Asset::AssetGuid clip{};
     /// Every animation this player has, in the order the Timeline lists them; `clip` is the one it
     /// plays. A clip missing from here still plays; the list is what the editor offers.
-    std::vector<Asset::AssetGuidUVE> library;
+    std::vector<Asset::AssetGuid> library;
     /// A `.uvanimlib` this player is linked to: the Timeline offers the file's clips alongside the
     /// owned list, live. Invalid means unlinked. The runtime plays `clip` either way.
-    Asset::AssetGuidUVE libraryRef{};
+    Asset::AssetGuid libraryRef{};
     /// Starts playing as soon as the scene runs.
     bool autoplay = true;
     /// Playback rate: 1 is normal, 2 twice as fast, negative plays backwards. 0 holds the pose.
     float speed = 1.0F;
-    AnimationLoopModeUVE loopMode = AnimationLoopModeUVE::Loop;
-    AnimationFinishActionUVE onFinish = AnimationFinishActionUVE::HoldLastPose;
+    AnimationLoopMode loopMode = AnimationLoopMode::Loop;
+    AnimationFinishAction onFinish = AnimationFinishAction::HoldLastPose;
     /// Where in the clip playback starts, in seconds.
     float startOffsetSeconds = 0.0F;
     /// Eases from wherever the target is into the clip over this many seconds, instead of snapping.
@@ -74,53 +74,53 @@ struct AnimationSequencerComponentUVE final {
     bool finished = false;
     /// True once `startPose` holds the target's pose from the moment playback started.
     bool hasStartPose = false;
-    Math::Vector3UVE startPosition{};
-    Math::QuaternionUVE startRotation{};
-    Math::Vector3UVE startScale{1.0F, 1.0F, 1.0F};
+    Math::Vector3 startPosition{};
+    Math::Quaternion startRotation{};
+    Math::Vector3 startScale{1.0F, 1.0F, 1.0F};
     /// Root motion of the last step: the root bone's ground travel, in the skeleton's space.
-    Math::Vector3UVE rootMotionDelta{};
+    Math::Vector3 rootMotionDelta{};
     /// The clip playback was started with; when `clip` changes mid-play, the new one takes over
     /// through the mixer's transition.
-    Asset::AssetGuidUVE playingClip{};
+    Asset::AssetGuid playingClip{};
     /// Inertialization: per bone, the old pose's difference from the new clip when it started
     /// (position, rotation, scale), faded out over Blend In.
-    std::vector<Math::Vector3UVE> inertialPosition;
-    std::vector<Math::QuaternionUVE> inertialRotation;
-    std::vector<Math::Vector3UVE> inertialScale;
+    std::vector<Math::Vector3> inertialPosition;
+    std::vector<Math::Quaternion> inertialRotation;
+    std::vector<Math::Vector3> inertialScale;
     /// The clip's events the playhead passed in the last step, in the order it passed them.
     std::vector<std::string> firedEvents;
 
     /// Authored settings only: runtime state is ignored, so a playing player equals its saved self.
-    [[nodiscard]] bool HasSameSettingsUVE(const AnimationSequencerComponentUVE& other) const noexcept {
+    [[nodiscard]] bool HasSameSettings(const AnimationSequencerComponent& other) const noexcept {
         return clip == other.clip && library == other.library && libraryRef == other.libraryRef && autoplay == other.autoplay &&
                speed == other.speed && loopMode == other.loopMode && onFinish == other.onFinish &&
                startOffsetSeconds == other.startOffsetSeconds && blendInSeconds == other.blendInSeconds &&
                relative == other.relative;
     }
 
-    [[nodiscard]] bool operator==(const AnimationSequencerComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationSequencerComponent&) const = default;
 };
 
-[[nodiscard]] bool IsAnimationLoopModeValidUVE(AnimationLoopModeUVE mode) noexcept;
+[[nodiscard]] bool IsAnimationLoopModeValid(AnimationLoopMode mode) noexcept;
 
-[[nodiscard]] bool IsAnimationFinishActionValidUVE(AnimationFinishActionUVE action) noexcept;
+[[nodiscard]] bool IsAnimationFinishActionValid(AnimationFinishAction action) noexcept;
 
 /// Every setting finite and in range, and every runtime value finite.
-[[nodiscard]] bool IsAnimationSequencerComponentValidUVE(const AnimationSequencerComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAnimationSequencerComponentValid(const AnimationSequencerComponent& component) noexcept;
 
 /// True when `component.clip` references a valid asset GUID.
-[[nodiscard]] bool HasPlayableAnimationClipUVE(
-    const AnimationSequencerComponentUVE& component) noexcept;
+[[nodiscard]] bool HasPlayableAnimationClip(
+    const AnimationSequencerComponent& component) noexcept;
 
 /// Computes the normalized blend-in progress in `[0, 1]` (`1.0F` when `blendInSeconds <= 0`).
-[[nodiscard]] float ResolveAnimationBlendInWeightUVE(
-    const AnimationSequencerComponentUVE& component) noexcept;
+[[nodiscard]] float ResolveAnimationBlendInWeight(
+    const AnimationSequencerComponent& component) noexcept;
 
 /// Resets runtime playback state (`isPlaying`, `currentTimeSeconds`, `finished`, inertial buffers, etc.).
-void ResetAnimationSequencerRuntimeStateUVE(AnimationSequencerComponentUVE& component) noexcept;
+void ResetAnimationSequencerRuntimeState(AnimationSequencerComponent& component) noexcept;
 
-/// Sanitizes authored and runtime fields so the returned component passes `IsAnimationSequencerComponentValidUVE`.
-[[nodiscard]] AnimationSequencerComponentUVE SanitizeAnimationSequencerComponentUVE(
-    const AnimationSequencerComponentUVE& component);
+/// Sanitizes authored and runtime fields so the returned component passes `IsAnimationSequencerComponentValid`.
+[[nodiscard]] AnimationSequencerComponent SanitizeAnimationSequencerComponent(
+    const AnimationSequencerComponent& component);
 
 } // namespace UVE::Scene

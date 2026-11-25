@@ -12,125 +12,125 @@
 namespace UVE::Utilities::Tests {
 namespace {
 
-TEST(TimerUVETest, InitialState_ZeroTotalTime) {
-    const TimerUVE timer;
-    EXPECT_DOUBLE_EQ(timer.GetTotalTimeUVE(), 0.0);
+TEST(TimerTest, InitialState_ZeroTotalTime) {
+    const Timer timer;
+    EXPECT_DOUBLE_EQ(timer.GetTotalTime(), 0.0);
 }
 
-TEST(TimerUVETest, Tick_ProducesPositiveDelta) {
-    TimerUVE timer;
+TEST(TimerTest, Tick_ProducesPositiveDelta) {
+    Timer timer;
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     timer.Tick();
-    EXPECT_GT(timer.GetDeltaTimeUVE(), 0.0);
+    EXPECT_GT(timer.GetDeltaTime(), 0.0);
 }
 
-TEST(TimerUVETest, Tick_AccumulatesTotalTime) {
-    TimerUVE timer;
+TEST(TimerTest, Tick_AccumulatesTotalTime) {
+    Timer timer;
     for (int i = 0; i < 3; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
         timer.Tick();
     }
-    EXPECT_GT(timer.GetTotalTimeUVE(), 0.001);
+    EXPECT_GT(timer.GetTotalTime(), 0.001);
 }
 
-TEST(TimerUVETest, DeltaTime_ClampedToConfiguredMax) {
-    TimerUVE timer;
-    timer.SetMaxDeltaTimeUVE(0.01);
+TEST(TimerTest, DeltaTime_ClampedToConfiguredMax) {
+    Timer timer;
+    timer.SetMaxDeltaTime(0.01);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     timer.Tick();
-    EXPECT_LE(timer.GetDeltaTimeUVE(), 0.01 + 1e-6);
+    EXPECT_LE(timer.GetDeltaTime(), 0.01 + 1e-6);
 }
 
-TEST(TimerUVETest, InvalidTimingConfigurationPreservesLastValidValues) {
-    TimerUVE timer;
-    timer.SetMaxDeltaTimeUVE(0.01);
-    timer.SetFixedTimestepUVE(0.01);
-    timer.SetMaxDeltaTimeUVE(0.0);
-    timer.SetMaxDeltaTimeUVE(-1.0);
-    timer.SetMaxDeltaTimeUVE(std::numeric_limits<double>::quiet_NaN());
-    timer.SetMaxDeltaTimeUVE(std::numeric_limits<double>::infinity());
-    timer.SetFixedTimestepUVE(0.0);
-    timer.SetFixedTimestepUVE(-1.0);
-    timer.SetFixedTimestepUVE(std::numeric_limits<double>::quiet_NaN());
-    timer.SetFixedTimestepUVE(std::numeric_limits<double>::infinity());
+TEST(TimerTest, InvalidTimingConfigurationPreservesLastValidValues) {
+    Timer timer;
+    timer.SetMaxDeltaTime(0.01);
+    timer.SetFixedTimestep(0.01);
+    timer.SetMaxDeltaTime(0.0);
+    timer.SetMaxDeltaTime(-1.0);
+    timer.SetMaxDeltaTime(std::numeric_limits<double>::quiet_NaN());
+    timer.SetMaxDeltaTime(std::numeric_limits<double>::infinity());
+    timer.SetFixedTimestep(0.0);
+    timer.SetFixedTimestep(-1.0);
+    timer.SetFixedTimestep(std::numeric_limits<double>::quiet_NaN());
+    timer.SetFixedTimestep(std::numeric_limits<double>::infinity());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(35));
     timer.Tick();
-    EXPECT_LE(timer.GetDeltaTimeUVE(), 0.01 + 1e-6);
-    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
+    EXPECT_LE(timer.GetDeltaTime(), 0.01 + 1e-6);
+    const FixedStepResult result = timer.AdvanceFixedStep();
     EXPECT_EQ(result.stepsToRun, 1);
 }
 
-TEST(TimerUVETest, Reset_ZerosTotalTime) {
-    TimerUVE timer;
+TEST(TimerTest, Reset_ZerosTotalTime) {
+    Timer timer;
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     timer.Tick();
-    ASSERT_GT(timer.GetTotalTimeUVE(), 0.0);
+    ASSERT_GT(timer.GetTotalTime(), 0.0);
 
     timer.Reset();
-    EXPECT_DOUBLE_EQ(timer.GetTotalTimeUVE(), 0.0);
+    EXPECT_DOUBLE_EQ(timer.GetTotalTime(), 0.0);
 }
 
-TEST(TimerUVETest, GetDeltaTimeFloatUVE_MatchesDoubleValue) {
-    TimerUVE timer;
+TEST(TimerTest, GetDeltaTimeFloat_MatchesDoubleValue) {
+    Timer timer;
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     timer.Tick();
-    EXPECT_FLOAT_EQ(timer.GetDeltaTimeFloatUVE(), static_cast<float>(timer.GetDeltaTimeUVE()));
+    EXPECT_FLOAT_EQ(timer.GetDeltaTimeFloat(), static_cast<float>(timer.GetDeltaTime()));
 }
 
-TEST(TimerUVETest, FixedStep_AccumulatesWholeStepsOnly) {
-    TimerUVE timer;
-    timer.SetFixedTimestepUVE(0.01); // 100 Hz
+TEST(TimerTest, FixedStep_AccumulatesWholeStepsOnly) {
+    Timer timer;
+    timer.SetFixedTimestep(0.01); // 100 Hz
     std::this_thread::sleep_for(std::chrono::milliseconds(35));
     timer.Tick();
 
-    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
+    const FixedStepResult result = timer.AdvanceFixedStep();
     EXPECT_GE(result.stepsToRun, 2);
     EXPECT_LE(result.stepsToRun, 4);
     EXPECT_GE(result.alpha, 0.0);
     EXPECT_LT(result.alpha, 1.0);
 }
 
-TEST(TimerUVETest, FixedStep_CapsStepsAtMaximum) {
-    TimerUVE timer;
-    timer.SetMaxDeltaTimeUVE(10.0); // disable the per-tick clamp for this test
-    timer.SetFixedTimestepUVE(0.001);
+TEST(TimerTest, FixedStep_CapsStepsAtMaximum) {
+    Timer timer;
+    timer.SetMaxDeltaTime(10.0); // disable the per-tick clamp for this test
+    timer.SetFixedTimestep(0.001);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     timer.Tick();
 
-    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
-    EXPECT_LE(result.stepsToRun, 8); // TimerUVE's default cap
+    const FixedStepResult result = timer.AdvanceFixedStep();
+    EXPECT_LE(result.stepsToRun, 8); // Timer's default cap
 }
 
-TEST(TimerUVETest, FixedStep_CapIsConfigurableAndIgnoresNonPositiveValues) {
-    TimerUVE timer;
-    timer.SetMaxDeltaTimeUVE(10.0);
-    timer.SetFixedTimestepUVE(0.001);
-    timer.SetMaxStepsPerTickUVE(3);
-    timer.SetMaxStepsPerTickUVE(0);  // ignored
-    timer.SetMaxStepsPerTickUVE(-5); // ignored
+TEST(TimerTest, FixedStep_CapIsConfigurableAndIgnoresNonPositiveValues) {
+    Timer timer;
+    timer.SetMaxDeltaTime(10.0);
+    timer.SetFixedTimestep(0.001);
+    timer.SetMaxStepsPerTick(3);
+    timer.SetMaxStepsPerTick(0);  // ignored
+    timer.SetMaxStepsPerTick(-5); // ignored
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     timer.Tick();
 
     // 50 ms of 1 ms steps is far more than the cap, so the cap is what comes back.
-    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
+    const FixedStepResult result = timer.AdvanceFixedStep();
     EXPECT_EQ(result.stepsToRun, 3);
     EXPECT_LT(result.alpha, 1.0);
 }
 
-TEST(TimerUVETest, DiscardFixedStepAccumulator_PreservesWallClockTimeAndDropsPendingSteps) {
-    TimerUVE timer;
-    timer.SetFixedTimestepUVE(0.001);
+TEST(TimerTest, DiscardFixedStepAccumulator_PreservesWallClockTimeAndDropsPendingSteps) {
+    Timer timer;
+    timer.SetFixedTimestep(0.001);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     timer.Tick();
-    const double totalBeforeDiscard = timer.GetTotalTimeUVE();
-    const double deltaBeforeDiscard = timer.GetDeltaTimeUVE();
+    const double totalBeforeDiscard = timer.GetTotalTime();
+    const double deltaBeforeDiscard = timer.GetDeltaTime();
 
-    timer.DiscardFixedStepAccumulatorUVE();
-    const FixedStepResultUVE result = timer.AdvanceFixedStepUVE();
+    timer.DiscardFixedStepAccumulator();
+    const FixedStepResult result = timer.AdvanceFixedStep();
     EXPECT_EQ(result.stepsToRun, 0);
-    EXPECT_DOUBLE_EQ(timer.GetTotalTimeUVE(), totalBeforeDiscard);
-    EXPECT_DOUBLE_EQ(timer.GetDeltaTimeUVE(), deltaBeforeDiscard);
+    EXPECT_DOUBLE_EQ(timer.GetTotalTime(), totalBeforeDiscard);
+    EXPECT_DOUBLE_EQ(timer.GetDeltaTime(), deltaBeforeDiscard);
 }
 
 } // namespace

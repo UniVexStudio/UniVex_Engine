@@ -25,7 +25,7 @@ constexpr GLsizei kSolidStride = static_cast<GLsizei>(sizeof(float) * 11);
 // opaque pass and keeps its depth writes.
 constexpr float kOpaqueAlphaThreshold = 0.999f;
 
-[[nodiscard]] Vec3 VividGizmoColorUVE(const Vec3& color) {
+[[nodiscard]] Vec3 VividGizmoColor(const Vec3& color) {
     return Vec3{std::min(1.0f, color.x * 1.25f), std::min(1.0f, color.y * 1.25f),
                 std::min(1.0f, color.z * 1.25f)};
 }
@@ -120,13 +120,13 @@ std::optional<GizmoRenderer> GizmoRenderer::Create(std::string& outError) {
 }
 
 void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDrawParams& params,
-                                           TrianglePassUVE pass) const {
+                                           TrianglePass pass) const {
     if (mesh.triangles.empty()) return;
 
     // Select this pass's half of the mesh. Alpha is authored per triangle, so the split is just a
     // threshold - anything the blend would leave indistinguishable from opaque is treated as
     // opaque, so it keeps its depth writes and goes on occluding the widget's own far side.
-    const bool wantOpaque = pass == TrianglePassUVE::Opaque;
+    const bool wantOpaque = pass == TrianglePass::Opaque;
     std::vector<std::size_t> selected;
     selected.reserve(mesh.triangles.size());
     for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
@@ -155,7 +155,7 @@ void GizmoRenderer::UploadAndDrawTriangles(const GizmoMesh& mesh, const GizmoDra
         // simple low-poly look the gizmo's flat colours already have.
         const Vec3 normal = univex::math::Normalize(
             univex::math::Cross(tri.b - tri.a, tri.c - tri.a));
-        const Vec3 vividColor = VividGizmoColorUVE(tri.color);
+        const Vec3 vividColor = VividGizmoColor(tri.color);
         for (const Vec3& p : {tri.a, tri.b, tri.c}) {
             vertices.insert(vertices.end(),
                             {p.x, p.y, p.z, normal.x, normal.y, normal.z,
@@ -190,7 +190,7 @@ void GizmoRenderer::UploadAndDrawLines(const GizmoMesh& mesh, const GizmoDrawPar
     std::vector<float> vertices;
     vertices.reserve(mesh.lines.size() * 6 * 11);
     for (const auto& line : mesh.lines) {
-        const Vec3 vividColor = VividGizmoColorUVE(line.color);
+        const Vec3 vividColor = VividGizmoColor(line.color);
         // GizmoStyle's widths are authored in pixels, and this shader lays the stroke out in
         // pixels, so the authored value is the width. It used to be multiplied by a separate
         // "visual thickness" factor of 0.20, which shrank every stroke in the widget to a fifth of
@@ -246,9 +246,9 @@ void GizmoRenderer::Draw(const GizmoMesh& mesh, const GizmoDrawParams& params) c
     const OverlayRasterState strokeState = WithDepthTest(kGizmoStrokeState, params.depthTest);
     const auto drawSolids = [&] {
         ApplyOverlayRasterState(opaqueState);
-        UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Opaque);
+        UploadAndDrawTriangles(mesh, params, TrianglePass::Opaque);
         ApplyOverlayRasterState(translucentState);
-        UploadAndDrawTriangles(mesh, params, TrianglePassUVE::Translucent);
+        UploadAndDrawTriangles(mesh, params, TrianglePass::Translucent);
     };
 
     if (params.drawLinesFirst) {
@@ -274,7 +274,7 @@ float GizmoRenderer::ScaleForPixelRadius(const univex::camera::OrbitCamera& came
     // holds its on-screen size wherever the selected object happens to be relative to the camera's
     // orbit target.
     const float worldPerPixel =
-        univex::camera::WorldPerPixelAtPointUVE(camera, framebufferHeight, pivot);
+        univex::camera::WorldPerPixelAtPoint(camera, framebufferHeight, pivot);
 
     // The gizmo's outermost handle sits ~1.9 gizmo units from the pivot, so
     // dividing by that turns "pixels to the outer edge" into a unit scale.

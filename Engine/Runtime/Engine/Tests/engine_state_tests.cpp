@@ -5,36 +5,36 @@
 
 #include <gtest/gtest.h>
 
-// EngineStateUVE's role as a formal, enforced lifecycle (invalid
+// EngineState's role as a formal, enforced lifecycle (invalid
 // transitions triggering UVE_ASSERT) is exercised end-to-end against the
-// real EngineCoreUVE in engine_core_uve_tests.cpp — this file covers the
-// pure, state-machine-only logic in IsValidTransitionUVE()/ToStringUVE().
+// real EngineCore in engine_core_uve_tests.cpp — this file covers the
+// pure, state-machine-only logic in IsValidTransition()/ToString().
 
 namespace UVE::Core::Tests {
 namespace {
 
-TEST(EngineStateUVETest, ValidTransitions_FollowLifecycleOrder) {
-    EXPECT_TRUE(IsValidTransitionUVE(EngineStateUVE::Uninitialized, EngineStateUVE::Initializing));
-    EXPECT_TRUE(IsValidTransitionUVE(EngineStateUVE::Initializing, EngineStateUVE::Running));
-    EXPECT_TRUE(IsValidTransitionUVE(EngineStateUVE::Running, EngineStateUVE::ShuttingDown));
-    EXPECT_TRUE(IsValidTransitionUVE(EngineStateUVE::ShuttingDown, EngineStateUVE::Shutdown));
+TEST(EngineStateTest, ValidTransitions_FollowLifecycleOrder) {
+    EXPECT_TRUE(IsValidTransition(EngineState::Uninitialized, EngineState::Initializing));
+    EXPECT_TRUE(IsValidTransition(EngineState::Initializing, EngineState::Running));
+    EXPECT_TRUE(IsValidTransition(EngineState::Running, EngineState::ShuttingDown));
+    EXPECT_TRUE(IsValidTransition(EngineState::ShuttingDown, EngineState::Shutdown));
 }
 
-TEST(EngineStateUVETest, InvalidTransitions_AreRejected) {
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Uninitialized, EngineStateUVE::Running));
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Running, EngineStateUVE::Initializing));
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Shutdown, EngineStateUVE::Uninitialized));
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Running, EngineStateUVE::Running));
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Shutdown, EngineStateUVE::Initializing));
-    EXPECT_FALSE(IsValidTransitionUVE(EngineStateUVE::Uninitialized, EngineStateUVE::ShuttingDown));
+TEST(EngineStateTest, InvalidTransitions_AreRejected) {
+    EXPECT_FALSE(IsValidTransition(EngineState::Uninitialized, EngineState::Running));
+    EXPECT_FALSE(IsValidTransition(EngineState::Running, EngineState::Initializing));
+    EXPECT_FALSE(IsValidTransition(EngineState::Shutdown, EngineState::Uninitialized));
+    EXPECT_FALSE(IsValidTransition(EngineState::Running, EngineState::Running));
+    EXPECT_FALSE(IsValidTransition(EngineState::Shutdown, EngineState::Initializing));
+    EXPECT_FALSE(IsValidTransition(EngineState::Uninitialized, EngineState::ShuttingDown));
 }
 
-TEST(EngineStateUVETest, ToStringUVE_ReturnsExpectedNames) {
-    EXPECT_EQ(ToStringUVE(EngineStateUVE::Uninitialized), "Uninitialized");
-    EXPECT_EQ(ToStringUVE(EngineStateUVE::Initializing), "Initializing");
-    EXPECT_EQ(ToStringUVE(EngineStateUVE::Running), "Running");
-    EXPECT_EQ(ToStringUVE(EngineStateUVE::ShuttingDown), "ShuttingDown");
-    EXPECT_EQ(ToStringUVE(EngineStateUVE::Shutdown), "Shutdown");
+TEST(EngineStateTest, ToString_ReturnsExpectedNames) {
+    EXPECT_EQ(ToString(EngineState::Uninitialized), "Uninitialized");
+    EXPECT_EQ(ToString(EngineState::Initializing), "Initializing");
+    EXPECT_EQ(ToString(EngineState::Running), "Running");
+    EXPECT_EQ(ToString(EngineState::ShuttingDown), "ShuttingDown");
+    EXPECT_EQ(ToString(EngineState::Shutdown), "Shutdown");
 }
 
 } // namespace

@@ -26,14 +26,14 @@ namespace UVE::Scene {
 /// stacks and stretches. `hoverTime` and `visibleThisFrame` are runtime state that never
 /// persists. Draws a background plus one glyph quad per character on the text layer.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UITooltipComponentUVE final {
+struct UITooltipComponent final {
     std::string text;
     float delay = 0.5F;
-    Math::Vector2UVE offset{12.0F, 12.0F};
+    Math::Vector2 offset{12.0F, 12.0F};
     float padding = 4.0F;
     float fontSize = 16.0F;
-    Math::Vector3UVE backgroundColor{0.08F, 0.08F, 0.10F};
-    Math::Vector3UVE textColor{0.95F, 0.95F, 0.95F};
+    Math::Vector3 backgroundColor{0.08F, 0.08F, 0.10F};
+    Math::Vector3 textColor{0.95F, 0.95F, 0.95F};
     /// Runtime state, never persisted: seconds the pointer has held inside the widget's rect.
     float hoverTime = 0.0F;
     /// Runtime state, never persisted: true for exactly the ticks the popup draws.
@@ -42,21 +42,21 @@ struct UITooltipComponentUVE final {
 
 /// Text within the shared UI byte cap, non-negative finite delay/padding/hoverTime, finite
 /// offset, font size within the shared UI range, and finite colors.
-[[nodiscard]] bool IsUITooltipComponentValidUVE(const UITooltipComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUITooltipComponentValid(const UITooltipComponent& component) noexcept;
 
 /// True when `component` has non-empty valid text and has met or exceeded `delay`.
-[[nodiscard]] bool ShouldDisplayUITooltipUVE(const UITooltipComponentUVE& component) noexcept;
+[[nodiscard]] bool ShouldDisplayUITooltip(const UITooltipComponent& component) noexcept;
 
 /// Advances `hoverTime` while `isPointerInside` is true (or resets it to `0`), updating `visibleThisFrame`.
-bool StepUITooltipHoverStateUVE(UITooltipComponentUVE& component, bool isPointerInside,
+bool StepUITooltipHoverState(UITooltipComponent& component, bool isPointerInside,
                                 float deltaSeconds) noexcept;
 
 /// Resets runtime hover state (`hoverTime = 0`, `visibleThisFrame = false`).
-void ResetUITooltipRuntimeStateUVE(UITooltipComponentUVE& component) noexcept;
+void ResetUITooltipRuntimeState(UITooltipComponent& component) noexcept;
 
 /// Computes the viewport-clamped popup background rectangle for a measured text width.
-[[nodiscard]] Math::RectUVE ResolveUITooltipPopupRectUVE(
-    const UITooltipComponentUVE& component, const Math::Vector2UVE& pointerPosition,
-    float measuredTextWidthPixels, const Math::Vector2UVE& viewportSizePixels) noexcept;
+[[nodiscard]] Math::Rect ResolveUITooltipPopupRect(
+    const UITooltipComponent& component, const Math::Vector2& pointerPosition,
+    float measuredTextWidthPixels, const Math::Vector2& viewportSizePixels) noexcept;
 
 } // namespace UVE::Scene

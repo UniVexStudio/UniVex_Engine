@@ -31,23 +31,23 @@ namespace UVE::Asset {
 
 namespace {
 
-using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
-                                          const AssetImportSettingsUVE&)>;
+using ImportFunc = std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
+                                          const AssetImportSettings&)>;
 
-[[nodiscard]] std::string NormalizeExtensionUVE(std::string extension) {
-    return NormalizeAssetExtensionUVE(extension);
+[[nodiscard]] std::string NormalizeExtension(std::string extension) {
+    return NormalizeAssetExtension(extension);
 }
 
 /// The generic envelope importer: copies `source` to `destination` verbatim, applying no
 /// format-specific transformation. Format-specific source parsers are registered separately.
-[[nodiscard]] bool GenericFileImportUVE(const std::filesystem::path& source,
+[[nodiscard]] bool GenericFileImport(const std::filesystem::path& source,
                                          const std::filesystem::path& destination,
-                                         const AssetImportSettingsUVE& /*settings*/) {
+                                         const AssetImportSettings& /*settings*/) {
     std::error_code errorCode;
     if (const std::filesystem::path parent = destination.parent_path(); !parent.empty()) {
         std::filesystem::create_directories(parent, errorCode);
         if (errorCode) {
-            UVE_ERROR("AssetImporterUVE: failed to create destination directory \"{}\": {}", parent.string(),
+            UVE_ERROR("AssetImporter: failed to create destination directory \"{}\": {}", parent.string(),
                       errorCode.message());
             return false;
         }
@@ -56,14 +56,14 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
     std::filesystem::remove(temporaryPath, errorCode);
     if (!std::filesystem::copy_file(source, temporaryPath, std::filesystem::copy_options::overwrite_existing,
                                     errorCode)) {
-        UVE_ERROR("AssetImporterUVE: failed to copy \"{}\" to temporary destination \"{}\": {}", source.string(),
+        UVE_ERROR("AssetImporter: failed to copy \"{}\" to temporary destination \"{}\": {}", source.string(),
                    temporaryPath.string(), errorCode.message());
         std::filesystem::remove(temporaryPath, errorCode);
         return false;
     }
     std::filesystem::rename(temporaryPath, destination, errorCode);
     if (errorCode) {
-        UVE_ERROR("AssetImporterUVE: failed to publish \"{}\" to \"{}\": {}", source.string(),
+        UVE_ERROR("AssetImporter: failed to publish \"{}\" to \"{}\": {}", source.string(),
                    destination.string(), errorCode.message());
         std::filesystem::remove(temporaryPath, errorCode);
         return false;
@@ -71,41 +71,41 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
     return true;
 }
 
-[[nodiscard]] bool TextFileImportUVE(const std::filesystem::path& source,
+[[nodiscard]] bool TextFileImport(const std::filesystem::path& source,
                                      const std::filesystem::path& destination,
-                                     const AssetImportSettingsUVE& baseSettings) {
+                                     const AssetImportSettings& baseSettings) {
     std::error_code sourceSizeError;
     const std::uintmax_t sourceSize = std::filesystem::file_size(source, sourceSizeError);
-    if (sourceSizeError || sourceSize > kMaximumTextImportBytesUVE) {
-        UVE_ERROR("AssetImporterUVE: text source exceeds the {}-byte cap or cannot be sized \"{}\"",
-                  kMaximumTextImportBytesUVE, source.string());
+    if (sourceSizeError || sourceSize > kMaximumTextImportBytes) {
+        UVE_ERROR("AssetImporter: text source exceeds the {}-byte cap or cannot be sized \"{}\"",
+                  kMaximumTextImportBytes, source.string());
         return false;
     }
     std::ifstream input(source, std::ios::binary);
     if (!input.is_open()) {
-        UVE_ERROR("AssetImporterUVE: failed to open text source \"{}\"", source.string());
+        UVE_ERROR("AssetImporter: failed to open text source \"{}\"", source.string());
         return false;
     }
     std::string sourceText{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-    if (sourceText.size() > kMaximumTextImportBytesUVE) {
-        UVE_ERROR("AssetImporterUVE: text source grew beyond the {}-byte cap \"{}\"",
-                  kMaximumTextImportBytesUVE, source.string());
+    if (sourceText.size() > kMaximumTextImportBytes) {
+        UVE_ERROR("AssetImporter: text source grew beyond the {}-byte cap \"{}\"",
+                  kMaximumTextImportBytes, source.string());
         return false;
     }
     if (sourceText.contains('\0')) {
-        UVE_ERROR("AssetImporterUVE: text source contains a NUL byte \"{}\"", source.string());
+        UVE_ERROR("AssetImporter: text source contains a NUL byte \"{}\"", source.string());
         return false;
     }
 
-    const auto* const textSettings = dynamic_cast<const TextImportSettingsUVE*>(&baseSettings);
-    const TextImportLineEndingUVE lineEnding =
-        textSettings == nullptr ? TextImportLineEndingUVE::Preserve : textSettings->lineEnding;
+    const auto* const textSettings = dynamic_cast<const TextImportSettings*>(&baseSettings);
+    const TextImportLineEnding lineEnding =
+        textSettings == nullptr ? TextImportLineEnding::Preserve : textSettings->lineEnding;
     const bool ensureTrailingLineEnding = textSettings != nullptr && textSettings->ensureTrailingLineEnding;
     const std::string lineEndingBytes =
-        lineEnding == TextImportLineEndingUVE::CarriageReturnLineFeed ? "\r\n" : "\n";
+        lineEnding == TextImportLineEnding::CarriageReturnLineFeed ? "\r\n" : "\n";
     std::string normalized;
     normalized.reserve(sourceText.size() + 1U);
-    if (lineEnding == TextImportLineEndingUVE::Preserve) {
+    if (lineEnding == TextImportLineEnding::Preserve) {
         normalized = sourceText;
     } else {
         for (std::size_t index = 0U; index < sourceText.size(); ++index) {
@@ -122,14 +122,14 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
         }
     }
     if (ensureTrailingLineEnding && (normalized.empty() || normalized.back() != '\n')) {
-        normalized += lineEnding == TextImportLineEndingUVE::CarriageReturnLineFeed ? "\r\n" : "\n";
+        normalized += lineEnding == TextImportLineEnding::CarriageReturnLineFeed ? "\r\n" : "\n";
     }
 
     std::error_code errorCode;
     if (const std::filesystem::path parent = destination.parent_path(); !parent.empty()) {
         std::filesystem::create_directories(parent, errorCode);
         if (errorCode) {
-            UVE_ERROR("AssetImporterUVE: failed to create text destination directory \"{}\": {}",
+            UVE_ERROR("AssetImporter: failed to create text destination directory \"{}\": {}",
                       parent.string(), errorCode.message());
             return false;
         }
@@ -138,20 +138,20 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
     std::filesystem::remove(temporaryPath, errorCode);
     std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {
-        UVE_ERROR("AssetImporterUVE: failed to open text temporary destination \"{}\"",
+        UVE_ERROR("AssetImporter: failed to open text temporary destination \"{}\"",
                   temporaryPath.string());
         return false;
     }
     output.write(normalized.data(), static_cast<std::streamsize>(normalized.size()));
     output.close();
     if (!output) {
-        UVE_ERROR("AssetImporterUVE: failed to write text destination \"{}\"", destination.string());
+        UVE_ERROR("AssetImporter: failed to write text destination \"{}\"", destination.string());
         std::filesystem::remove(temporaryPath, errorCode);
         return false;
     }
     std::filesystem::rename(temporaryPath, destination, errorCode);
     if (errorCode) {
-        UVE_ERROR("AssetImporterUVE: failed to publish text destination \"{}\": {}",
+        UVE_ERROR("AssetImporter: failed to publish text destination \"{}\": {}",
                   destination.string(), errorCode.message());
         std::filesystem::remove(temporaryPath, errorCode);
         return false;
@@ -159,62 +159,62 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
     return true;
 }
 
-[[nodiscard]] AssetImportSourceKindUVE ClassifySourceKindUVE(const std::string& extension) {
-    return ClassifyImportSourceKindForExtensionUVE(extension);
+[[nodiscard]] AssetImportSourceKind ClassifySourceKind(const std::string& extension) {
+    return ClassifyImportSourceKindForExtension(extension);
 }
 
-[[nodiscard]] bool RequiresFormatSpecificParserUVE(const AssetImportSourceKindUVE kind) {
-    return kind == AssetImportSourceKindUVE::RawModel || kind == AssetImportSourceKindUVE::RawTexture ||
-           kind == AssetImportSourceKindUVE::RawMaterial || kind == AssetImportSourceKindUVE::RawShader ||
-           kind == AssetImportSourceKindUVE::RawAudio || kind == AssetImportSourceKindUVE::RawFont;
+[[nodiscard]] bool RequiresFormatSpecificParser(const AssetImportSourceKind kind) {
+    return kind == AssetImportSourceKind::RawModel || kind == AssetImportSourceKind::RawTexture ||
+           kind == AssetImportSourceKind::RawMaterial || kind == AssetImportSourceKind::RawShader ||
+           kind == AssetImportSourceKind::RawAudio || kind == AssetImportSourceKind::RawFont;
 }
 
 } // namespace
 
-struct AssetImporterUVE::ImplUVE {
+struct AssetImporter::Impl {
     mutable std::mutex mutex;
-    std::unordered_map<std::string, ImportFuncUVE> importers;
+    std::unordered_map<std::string, ImportFunc> importers;
     /// WP7: importers that need the asset database (the FBX importer). Shares the key space with
     /// `importers`: registering either kind erases the other for that extension.
-    std::unordered_map<std::string, IAssetImporterUVE::DatabaseAwareImportFuncUVE> databaseAwareImporters;
+    std::unordered_map<std::string, IAssetImporter::DatabaseAwareImportFunc> databaseAwareImporters;
 };
 
-AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
-    RegisterImporterUVE("txt", &TextFileImportUVE);
-    for (const std::string_view envelopeExtension : GetBuiltInEnvelopeExtensionsUVE()) {
-        RegisterImporterUVE(std::string(envelopeExtension), &GenericFileImportUVE);
+AssetImporter::AssetImporter() : m_impl(std::make_unique<Impl>()) {
+    RegisterImporter("txt", &TextFileImport);
+    for (const std::string_view envelopeExtension : GetBuiltInEnvelopeExtensions()) {
+        RegisterImporter(std::string(envelopeExtension), &GenericFileImport);
     }
-    RegisterBmpImporterUVE(*this);
-    RegisterPngImporterUVE(*this);
-    RegisterTgaImporterUVE(*this);
-    RegisterObjImporterUVE(*this);
-    RegisterFbxImporterUVE(*this);
-    RegisterGltfImporterUVE(*this);
+    RegisterBmpImporter(*this);
+    RegisterPngImporter(*this);
+    RegisterTgaImporter(*this);
+    RegisterObjImporter(*this);
+    RegisterFbxImporter(*this);
+    RegisterGltfImporter(*this);
 #if !defined(__ANDROID__)
-    RegisterJpegImporterUVE(*this);
+    RegisterJpegImporter(*this);
 #endif
-    RegisterMtlImporterUVE(*this);
-    RegisterShaderSourceImporterUVE(*this);
+    RegisterMtlImporter(*this);
+    RegisterShaderSourceImporter(*this);
 }
 
-AssetImporterUVE::~AssetImporterUVE() = default;
+AssetImporter::~AssetImporter() = default;
 
-std::string TextImportSettingsUVE::GetCacheVersionUVE() const {
-    const char* const lineEndingName = lineEnding == TextImportLineEndingUVE::Preserve
+std::string TextImportSettings::GetCacheVersion() const {
+    const char* const lineEndingName = lineEnding == TextImportLineEnding::Preserve
                                            ? "preserve"
-                                           : lineEnding == TextImportLineEndingUVE::LineFeed ? "lf" : "crlf";
+                                           : lineEnding == TextImportLineEnding::LineFeed ? "lf" : "crlf";
     return std::string{"text-v1;line-ending="} + lineEndingName +
            ";trailing-newline=" + (ensureTrailingLineEnding ? "true" : "false");
 }
 
-void AssetImporterUVE::RegisterImporterUVE(
+void AssetImporter::RegisterImporter(
     std::string sourceExtension,
     std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
-                        const AssetImportSettingsUVE&)>
+                        const AssetImportSettings&)>
         importFunc) {
-    std::string normalizedExtension = NormalizeExtensionUVE(std::move(sourceExtension));
+    std::string normalizedExtension = NormalizeExtension(std::move(sourceExtension));
     if (normalizedExtension.empty() || !importFunc) {
-        UVE_ERROR("AssetImporterUVE: rejected importer registration with an empty extension or callback");
+        UVE_ERROR("AssetImporter: rejected importer registration with an empty extension or callback");
         return;
     }
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
@@ -222,11 +222,11 @@ void AssetImporterUVE::RegisterImporterUVE(
     m_impl->importers[std::move(normalizedExtension)] = std::move(importFunc);
 }
 
-void AssetImporterUVE::RegisterDatabaseAwareImporterUVE(std::string sourceExtension,
-                                                        DatabaseAwareImportFuncUVE importFunc) {
-    std::string normalizedExtension = NormalizeExtensionUVE(std::move(sourceExtension));
+void AssetImporter::RegisterDatabaseAwareImporter(std::string sourceExtension,
+                                                        DatabaseAwareImportFunc importFunc) {
+    std::string normalizedExtension = NormalizeExtension(std::move(sourceExtension));
     if (normalizedExtension.empty() || !importFunc) {
-        UVE_ERROR("AssetImporterUVE: rejected database-aware importer registration with an empty extension or callback");
+        UVE_ERROR("AssetImporter: rejected database-aware importer registration with an empty extension or callback");
         return;
     }
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
@@ -234,12 +234,12 @@ void AssetImporterUVE::RegisterDatabaseAwareImporterUVE(std::string sourceExtens
     m_impl->databaseAwareImporters[std::move(normalizedExtension)] = std::move(importFunc);
 }
 
-AssetImportSourceClassificationUVE AssetImporterUVE::ClassifySourceUVE(
+AssetImportSourceClassification AssetImporter::ClassifySource(
     const std::filesystem::path& sourcePath) const {
-    AssetImportSourceClassificationUVE classification;
-    classification.normalizedExtension = NormalizeExtensionUVE(sourcePath.extension().string());
-    classification.kind = ClassifySourceKindUVE(classification.normalizedExtension);
-    classification.requiresFormatSpecificParser = RequiresFormatSpecificParserUVE(classification.kind);
+    AssetImportSourceClassification classification;
+    classification.normalizedExtension = NormalizeExtension(sourcePath.extension().string());
+    classification.kind = ClassifySourceKind(classification.normalizedExtension);
+    classification.requiresFormatSpecificParser = RequiresFormatSpecificParser(classification.kind);
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         classification.importerRegistered =
@@ -252,11 +252,11 @@ AssetImportSourceClassificationUVE AssetImporterUVE::ClassifySourceUVE(
         classification.diagnostic = classification.importerRegistered
                                          ? "format-specific parser is registered"
                                          : "format-specific parser is not registered";
-    } else if (classification.kind == AssetImportSourceKindUVE::Unknown) {
+    } else if (classification.kind == AssetImportSourceKind::Unknown) {
         classification.diagnostic = classification.importerRegistered
                                          ? "custom importer is registered without built-in classification"
                                          : "unsupported source extension";
-    } else if (classification.kind == AssetImportSourceKindUVE::PlainText) {
+    } else if (classification.kind == AssetImportSourceKind::PlainText) {
         classification.diagnostic = classification.importerRegistered
                                          ? "built-in text parser is registered"
                                          : "source format is classified but no importer is registered";
@@ -268,21 +268,21 @@ AssetImportSourceClassificationUVE AssetImporterUVE::ClassifySourceUVE(
     return classification;
 }
 
-AssetGuidUVE AssetImporterUVE::ImportUVE(const std::filesystem::path& sourcePath,
+AssetGuid AssetImporter::Import(const std::filesystem::path& sourcePath,
                                           const std::filesystem::path& destinationPath,
-                                          IAssetDatabaseUVE& assetDatabase,
-                                          const AssetImportSettingsUVE& settings) {
-    ImportFuncUVE importFunc;
-    DatabaseAwareImportFuncUVE databaseAwareImportFunc;
-    const std::string key = NormalizeExtensionUVE(sourcePath.extension().string());
+                                          IAssetDatabase& assetDatabase,
+                                          const AssetImportSettings& settings) {
+    ImportFunc importFunc;
+    DatabaseAwareImportFunc databaseAwareImportFunc;
+    const std::string key = NormalizeExtension(sourcePath.extension().string());
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         const auto it = m_impl->importers.find(key);
         const auto awareIt = m_impl->databaseAwareImporters.find(key);
         if (it == m_impl->importers.end() && awareIt == m_impl->databaseAwareImporters.end()) {
-            UVE_ERROR("AssetImporterUVE: no importer registered for extension \"{}\" (source \"{}\")", key,
+            UVE_ERROR("AssetImporter: no importer registered for extension \"{}\" (source \"{}\")", key,
                        sourcePath.string());
-            return kInvalidAssetGuidUVE;
+            return kInvalidAssetGuid;
         }
         if (awareIt != m_impl->databaseAwareImporters.end()) {
             databaseAwareImportFunc = awareIt->second;
@@ -303,29 +303,29 @@ AssetGuidUVE AssetImporterUVE::ImportUVE(const std::filesystem::path& sourcePath
     }
     if (!imported) {
         if (failureReason.empty()) {
-            UVE_ERROR("AssetImporterUVE: import failed for \"{}\"", sourcePath.string());
+            UVE_ERROR("AssetImporter: import failed for \"{}\"", sourcePath.string());
         } else {
-            UVE_ERROR("AssetImporterUVE: import failed for \"{}\": {}", sourcePath.string(), failureReason);
+            UVE_ERROR("AssetImporter: import failed for \"{}\": {}", sourcePath.string(), failureReason);
         }
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
 
-    AssetGuidUVE guid = kInvalidAssetGuidUVE;
+    AssetGuid guid = kInvalidAssetGuid;
     try {
-        guid = assetDatabase.RegisterUVE(destinationPath);
+        guid = assetDatabase.Register(destinationPath);
     } catch (const std::exception& exception) {
-        UVE_ERROR("AssetImporterUVE: asset database registration threw for destination \"{}\": {}",
+        UVE_ERROR("AssetImporter: asset database registration threw for destination \"{}\": {}",
                   destinationPath.string(), exception.what());
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     } catch (...) {
-        UVE_ERROR("AssetImporterUVE: asset database registration threw an unknown exception for destination \"{}\"",
+        UVE_ERROR("AssetImporter: asset database registration threw an unknown exception for destination \"{}\"",
                   destinationPath.string());
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
-    if (guid == kInvalidAssetGuidUVE) {
-        UVE_ERROR("AssetImporterUVE: asset database rejected registration for destination \"{}\"",
+    if (guid == kInvalidAssetGuid) {
+        UVE_ERROR("AssetImporter: asset database rejected registration for destination \"{}\"",
                   destinationPath.string());
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
     return guid;
 }

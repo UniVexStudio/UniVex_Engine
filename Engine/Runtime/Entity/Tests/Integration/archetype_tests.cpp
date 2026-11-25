@@ -18,52 +18,52 @@
 namespace UVE::Scene::Detail::Tests {
 namespace {
 
-struct TestComponentUVE {
+struct TestComponent {
     int value = 0;
 };
 
-class ArchetypeUVETest : public ::testing::Test {
+class ArchetypeTest : public ::testing::Test {
 protected:
-    Memory::HeapAllocatorUVE allocator;
-    std::unordered_map<std::type_index, ComponentTypeInfoUVE> typeInfos{
-        {std::type_index(typeid(TestComponentUVE)), MakeComponentTypeInfoUVE<TestComponentUVE>()}};
-    ArchetypeSignatureUVE signature{std::vector<std::type_index>{std::type_index(typeid(TestComponentUVE))}};
-    ArchetypeUVE archetype{signature, allocator, typeInfos};
+    Memory::HeapAllocator allocator;
+    std::unordered_map<std::type_index, ComponentTypeInfo> typeInfos{
+        {std::type_index(typeid(TestComponent)), MakeComponentTypeInfo<TestComponent>()}};
+    ArchetypeSignature signature{std::vector<std::type_index>{std::type_index(typeid(TestComponent))}};
+    Archetype archetype{signature, allocator, typeInfos};
 };
 
-TEST_F(ArchetypeUVETest, ReserveEntityUVE_GrowsCountAndReturnsLocations) {
-    const ArchetypeUVE::LocationUVE location = archetype.ReserveEntityUVE(EntityUVE{});
+TEST_F(ArchetypeTest, ReserveEntity_GrowsCountAndReturnsLocations) {
+    const Archetype::Location location = archetype.ReserveEntity(Entity{});
     EXPECT_EQ(location.chunkIndex, 0U);
     EXPECT_EQ(location.row, 0U);
-    EXPECT_EQ(archetype.GetEntityCountUVE(), 1U);
+    EXPECT_EQ(archetype.GetEntityCount(), 1U);
 }
 
 #if UVE_DEBUG
-TEST_F(ArchetypeUVETest, DestroyEntityAtUVE_OutOfRangeChunkIndexAsserts) {
-    EXPECT_DEATH({ static_cast<void>(archetype.DestroyEntityAtUVE(ArchetypeUVE::LocationUVE{5, 0})); }, "");
+TEST_F(ArchetypeTest, DestroyEntityAt_OutOfRangeChunkIndexAsserts) {
+    EXPECT_DEATH({ static_cast<void>(archetype.DestroyEntityAt(Archetype::Location{5, 0})); }, "");
 }
 
-TEST_F(ArchetypeUVETest, VacateWithoutDestroyUVE_OutOfRangeChunkIndexAsserts) {
-    EXPECT_DEATH({ static_cast<void>(archetype.VacateWithoutDestroyUVE(ArchetypeUVE::LocationUVE{5, 0})); }, "");
+TEST_F(ArchetypeTest, VacateWithoutDestroy_OutOfRangeChunkIndexAsserts) {
+    EXPECT_DEATH({ static_cast<void>(archetype.VacateWithoutDestroy(Archetype::Location{5, 0})); }, "");
 }
 
-TEST_F(ArchetypeUVETest, GetChunkUVE_OutOfRangeChunkIndexAsserts) {
-    EXPECT_DEATH({ static_cast<void>(archetype.GetChunkUVE(5)); }, "");
+TEST_F(ArchetypeTest, GetChunk_OutOfRangeChunkIndexAsserts) {
+    EXPECT_DEATH({ static_cast<void>(archetype.GetChunk(5)); }, "");
 }
 #else
-TEST_F(ArchetypeUVETest, DestroyEntityAtUVE_OutOfRangeChunkIndexReturnsInvalidEntityInsteadOfIndexingPastChunks) {
-    EXPECT_EQ(archetype.DestroyEntityAtUVE(ArchetypeUVE::LocationUVE{5, 0}), kInvalidEntityUVE);
+TEST_F(ArchetypeTest, DestroyEntityAt_OutOfRangeChunkIndexReturnsInvalidEntityInsteadOfIndexingPastChunks) {
+    EXPECT_EQ(archetype.DestroyEntityAt(Archetype::Location{5, 0}), kInvalidEntity);
 }
 
-TEST_F(ArchetypeUVETest, VacateWithoutDestroyUVE_OutOfRangeChunkIndexReturnsInvalidEntity) {
-    EXPECT_EQ(archetype.VacateWithoutDestroyUVE(ArchetypeUVE::LocationUVE{5, 0}), kInvalidEntityUVE);
+TEST_F(ArchetypeTest, VacateWithoutDestroy_OutOfRangeChunkIndexReturnsInvalidEntity) {
+    EXPECT_EQ(archetype.VacateWithoutDestroy(Archetype::Location{5, 0}), kInvalidEntity);
 }
 
-TEST_F(ArchetypeUVETest, GetChunkUVE_OutOfRangeChunkIndexThrowsOutOfRangeInsteadOfIndexingPastChunks) {
-    EXPECT_THROW({ static_cast<void>(archetype.GetChunkUVE(5)); }, std::out_of_range);
+TEST_F(ArchetypeTest, GetChunk_OutOfRangeChunkIndexThrowsOutOfRangeInsteadOfIndexingPastChunks) {
+    EXPECT_THROW({ static_cast<void>(archetype.GetChunk(5)); }, std::out_of_range);
 
-    const ArchetypeUVE& constArchetype = archetype;
-    EXPECT_THROW({ static_cast<void>(constArchetype.GetChunkUVE(5)); }, std::out_of_range);
+    const Archetype& constArchetype = archetype;
+    EXPECT_THROW({ static_cast<void>(constArchetype.GetChunk(5)); }, std::out_of_range);
 }
 #endif
 
