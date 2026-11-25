@@ -21,6 +21,9 @@ using PFNGLGETBUFFERSUBDATAPROC = void (GL_APIENTRYP)(GLenum, GLintptr, GLsizeip
 #else
 #include <GL/gl.h>
 #include <GL/glext.h>
+#ifdef MemoryBarrier
+#undef MemoryBarrier
+#endif
 #endif
 
 namespace UVE::Render::Detail {
