@@ -923,5 +923,207 @@ TEST(ContentCatalogueEditorTest, Creating3DLevelsMakesUniqueFilesAndOmits2DScene
     std::filesystem::remove_all(root);
 }
 
+TEST(ContentCatalogueEditorTest, FolderAutoDetectAnimationLibraryIncludesOnlyDirectClipsAndStreamsOneByOne) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("anim_lib_folder_autodetect");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content / "Locomotion" / "Combat");
+    std::filesystem::create_directories(content / "OnlySubfolders" / "Nested");
+    std::filesystem::create_directories(content / "NoAnimations");
+
+    const auto writeClip = [](const std::filesystem::path& path, const std::string& id, const double duration) {
+        Asset::AnimationClipAsset clip;
+        clip.clipId = id;
+        clip.durationSeconds = duration;
+        const Asset::AnimationAssetPose p0{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        const Asset::AnimationAssetPose p1{{1.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        clip.bones = {Asset::AnimationAssetBoneTrack{"Hips", {{0.0, p0}, {duration, p1}}}};
+        clip.rest = {Asset::AnimationAssetRestBone{"Hips", -1, {0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+        return Asset::SaveAnimationClipAsset(clip, path);
+    };
+
+    ASSERT_TRUE(writeClip(content / "Locomotion" / "Idle.uvanim", "idle", 1.0));
+    ASSERT_TRUE(writeClip(content / "Locomotion" / "Walk.uvanim", "walk", 0.8));
+    ASSERT_TRUE(writeClip(content / "Locomotion" / "Run.uvanim", "run", 0.6));
+    {
+        std::ofstream notes(content / "Locomotion" / "Notes.txt");
+        notes << "not an animation";
+    }
+    // Nested subfolder animations MUST NOT be included when creating a library from "Locomotion".
+    ASSERT_TRUE(writeClip(content / "Locomotion" / "Combat" / "Slash.uvanim", "slash", 0.5));
+    ASSERT_TRUE(writeClip(content / "Locomotion" / "Combat" / "Block.uvanim", "block", 0.4));
+    // A folder whose animations only live inside a child subfolder MUST report 0 direct clips.
+    ASSERT_TRUE(writeClip(content / "OnlySubfolders" / "Nested" / "Jump.uvanim", "jump", 0.7));
+
+    Core::EngineCore engine(MakeCatalogueEditorConfig(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Editor editor(engine.GetServices(), root / "main.uvscene", 100U, &engine);
+        editor.Init();
+        Core::EngineServices& services = engine.GetServices();
+        ASSERT_TRUE(services.GetProjectFileIndex().Refresh(services.GetAssetDatabase()));
+
+        EXPECT_TRUE(editor.CollectAnimationClipsInFolder("NoAnimations").empty());
+        EXPECT_FALSE(editor.CreateAnimationLibraryFromFolder("NoAnimations").has_value());
+
+        EXPECT_TRUE(editor.CollectAnimationClipsInFolder("OnlySubfolders").empty());
+        EXPECT_FALSE(editor.CreateAnimationLibraryFromFolder("OnlySubfolders").has_value());
+
+        const std::vector<std::filesystem::path> directClips = editor.CollectAnimationClipsInFolder("Locomotion");
+        ASSERT_EQ(directClips.size(), 3U);
+        EXPECT_EQ(directClips[0].filename().string(), "Idle.uvanim");
+        EXPECT_EQ(directClips[1].filename().string(), "Run.uvanim");
+        EXPECT_EQ(directClips[2].filename().string(), "Walk.uvanim");
+
+        const auto created = editor.CreateAnimationLibraryFromFolder("Locomotion");
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(created->filename().string(), "Locomotion.uvanimlib");
+        EXPECT_TRUE(editor.IsAnimationLibraryWindowOpen());
+        EXPECT_TRUE(editor.IsAnimationLibraryAddQueueActive());
+
+        // Paced one-by-one ingestion: 3 direct clips take 3 single-clip polls.
+        EXPECT_TRUE(editor.PollAnimationLibraryAddQueue(1U, 1.0));
+        EXPECT_EQ(editor.GetLoadingState().busy, true);
+        EXPECT_TRUE(editor.PollAnimationLibraryAddQueue(1U, 1.0));
+        EXPECT_FALSE(editor.PollAnimationLibraryAddQueue(1U, 1.0));
+        EXPECT_FALSE(editor.IsAnimationLibraryAddQueueActive());
+
+        Asset::AnimationLibraryAsset loaded;
+        ASSERT_TRUE(Asset::LoadAnimationLibraryAsset(*created, loaded));
+        ASSERT_EQ(loaded.entries.size(), 3U);
+        EXPECT_EQ(loaded.entries[0].name, "Idle");
+        EXPECT_EQ(loaded.entries[1].name, "Run");
+        EXPECT_EQ(loaded.entries[2].name, "Walk");
+
+        // Creating another library on the same folder picks a collision-free name ("Locomotion 2.uvanimlib").
+        const auto second = editor.CreateAnimationLibraryFromFolder("Locomotion");
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->filename().string(), "Locomotion 2.uvanimlib");
+        while (editor.PollAnimationLibraryAddQueue(1U, 1.0)) {
+        }
+
+        editor.Shutdown();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST(ContentCatalogueEditorTest, RapidSequencerClipSwitchingAcrossMixedClipsAndMissingFilesStaysSafe) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("sequencer_clip_switch_safety");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content / "Clips");
+
+    // 1. Skeletal clip with a very long animation name.
+    const std::string longStem =
+        "VeryLongCharacterLocomotionSprintForwardWithHeavyShieldAndSwordAnimation_Take001_MasterLoop";
+    const std::filesystem::path skelPath = content / "Clips" / (longStem + ".uvanim");
+    {
+        Asset::AnimationClipAsset skel;
+        skel.clipId = "sprint_heavy";
+        skel.durationSeconds = 1.25;
+        const Asset::AnimationAssetPose p0{{0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        const Asset::AnimationAssetPose p1{{0.0F, 1.1F, 2.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        skel.bones = {
+            Asset::AnimationAssetBoneTrack{"Hips", {{0.0, p0}, {1.25, p1}}},
+            Asset::AnimationAssetBoneTrack{"Spine", {{0.0, p0}, {1.25, p0}}},
+        };
+        skel.rest = {
+            Asset::AnimationAssetRestBone{"Hips", -1, {0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}},
+            Asset::AnimationAssetRestBone{"Spine", 0, {0.0F, 0.4F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}},
+        };
+        skel.events = {Asset::AnimationAssetEvent{0.5, "footstep"}};
+        ASSERT_TRUE(Asset::SaveAnimationClipAsset(skel, skelPath));
+    }
+    // 2. Object-transform clip (no bones).
+    const std::filesystem::path objPath = content / "Clips" / "DoorSwing.uvanim";
+    {
+        Asset::AnimationClipAsset obj;
+        obj.clipId = "door_swing";
+        obj.durationSeconds = 0.75;
+        const Asset::AnimationAssetPose p0{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        const Asset::AnimationAssetPose p1{{2.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        obj.samples = {{0.0, p0}, {0.75, p1}};
+        ASSERT_TRUE(Asset::SaveAnimationClipAsset(obj, objPath));
+    }
+    // 3. Facial morph-only clip (no bone or transform samples).
+    const std::filesystem::path morphPath = content / "Clips" / "Blink.uvanim";
+    {
+        Asset::AnimationClipAsset morph;
+        morph.clipId = "blink";
+        morph.durationSeconds = 0.4;
+        morph.morphWeights = {
+            Asset::AnimationAssetMorphTrack{"Head", {{0.0, {0.0F, 0.0F}}, {0.2, {1.0F, 0.5F}}, {0.4, {0.0F, 0.0F}}}},
+        };
+        ASSERT_TRUE(Asset::SaveAnimationClipAsset(morph, morphPath));
+    }
+    // 4. Ephemeral clip that will be deleted after registration to simulate a missing file.
+    const std::filesystem::path vanishedPath = content / "Clips" / "Vanished.uvanim";
+    {
+        Asset::AnimationClipAsset temp;
+        temp.clipId = "vanished";
+        temp.durationSeconds = 0.5;
+        const Asset::AnimationAssetPose p0{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        temp.samples = {{0.0, p0}, {0.5, p0}};
+        ASSERT_TRUE(Asset::SaveAnimationClipAsset(temp, vanishedPath));
+    }
+
+    Core::EngineCore engine(MakeCatalogueEditorConfig(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Editor editor(engine.GetServices(), root / "main.uvscene", 100U, &engine);
+        editor.Init();
+        Core::EngineServices& services = engine.GetServices();
+        Scene::IEntityManager& em = services.GetEntityManager();
+        ASSERT_TRUE(services.GetProjectFileIndex().Refresh(services.GetAssetDatabase()));
+
+        const auto entityFile = editor.CreateContentCatalogueItem("character", content);
+        ASSERT_TRUE(entityFile.has_value());
+        ASSERT_TRUE(editor.OpenEntityEditor(*entityFile));
+
+        Scene::Entity player = Scene::kInvalidEntity;
+        {
+            const Editor::EntityDocumentScope scope(editor);
+            const Scene::Entity entityRoot = editor.GetEntityEditorRoot();
+            ASSERT_NE(entityRoot, Scene::kInvalidEntity);
+            player = editor.CreateDocumentSceneObject(Kind::AnimationSequencer);
+            ASSERT_NE(player, Scene::kInvalidEntity);
+
+            EXPECT_TRUE(editor.AddClipToAnimationSequencer(player, skelPath));
+            EXPECT_TRUE(editor.AddClipToAnimationSequencer(player, objPath));
+            EXPECT_TRUE(editor.AddClipToAnimationSequencer(player, morphPath));
+            EXPECT_TRUE(editor.AddClipToAnimationSequencer(player, vanishedPath));
+            std::filesystem::remove(vanishedPath);
+
+            const auto& seq = em.GetComponent<Scene::AnimationSequencerComponent>(player);
+            ASSERT_EQ(seq.library.size(), 4U);
+            const std::vector<Asset::AssetGuid> guids = seq.library;
+
+            // Rapidly cycle across all 4 clips while holding the previous frame's view to verify
+            // clipOwner keeps outgoing clip memory alive across mid-frame resyncs.
+            for (int pass = 0; pass < 3; ++pass) {
+                for (std::size_t idx = 0U; idx < guids.size(); ++idx) {
+                    editor.ChooseAnimationTimelineClip(player, guids[idx]);
+                    const auto viewA = editor.SyncAnimationTimeline();
+                    editor.StepAnimationTimeline(0.016);
+                    const auto viewB = editor.SyncAnimationTimeline();
+                    if (idx < 3U) {
+                        ASSERT_NE(viewA.clip, nullptr);
+                        ASSERT_NE(viewA.clipOwner, nullptr);
+                        EXPECT_EQ(viewA.clip, viewA.clipOwner.get());
+                        EXPECT_FALSE(viewA.clip->clipId.empty());
+                        EXPECT_EQ(viewB.clip, viewA.clip);
+                    } else {
+                        EXPECT_EQ(viewA.clip, nullptr);
+                    }
+                }
+            }
+        }
+        editor.Shutdown();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

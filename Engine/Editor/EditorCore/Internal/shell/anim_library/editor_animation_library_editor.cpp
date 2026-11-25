@@ -18,6 +18,7 @@
 #include "prism/DragDrop.h"
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
+#include "prism/SearchMenu.h"
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
@@ -26,10 +27,15 @@
 #include <cctype>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <string>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -280,6 +286,7 @@ void EditorAnimationLibraryWindow::Sync() {
         m_host.CloseWindow(m_window);
         m_window = 0;
         m_openPath.clear();
+        m_scroll.reset();
         m_grid.reset();
         m_filter.reset();
         m_count.reset();
@@ -287,13 +294,18 @@ void EditorAnimationLibraryWindow::Sync() {
         m_tab.reset();
         m_addButton.reset();
         m_shownSignature.clear();
+        m_clipInfoCache.clear();
+        m_lastVisibleFirst = 0U;
+        m_lastVisibleLast = 0U;
     }
     if (!open) {
         return;
     }
     if (m_window == 0) {
         m_openPath = path;
-        m_window = m_host.OpenWindow(Build(), "Animation Library - " + path.filename().string(), kWindowWidth, kWindowHeight);
+        const std::u8string u8 = path.filename().u8string();
+        const std::string filename(reinterpret_cast<const char*>(u8.data()), u8.size());
+        m_window = m_host.OpenWindow(Build(), "Animation Library - " + filename, kWindowWidth, kWindowHeight);
         if (m_window == 0) {
             m_editor.CloseAnimationLibraryWindow();
             return;
@@ -323,9 +335,9 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindow::Build() {
     m_grid->onDropped = [this](const std::string& relative) {
         AddClips({m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot / relative});
     };
-    auto scroll = prism::make<prism::ScrollBox>();
-    scroll->setContent(m_grid);
-    window->add(scroll, prism::Slot{1.0F});
+    m_scroll = prism::make<prism::ScrollBox>();
+    m_scroll->setContent(m_grid);
+    window->add(m_scroll, prism::Slot{1.0F});
     // Footer: what the last edit did.
     auto footer = prism::hbox(8.0F);
     footer->setPadding(prism::Margin(10.0F, 4.0F, 10.0F, 4.0F));
@@ -350,7 +362,8 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindow::Build() {
 prism::Ref<prism::Widget> EditorAnimationLibraryWindow::BuildTitleBar() {
     m_tab = prism::make<DocumentTab>();
     m_tab->setFallbackIcon(prism::Icon::AnimLibrary);
-    m_tab->setName(m_openPath.stem().string());
+    const std::u8string stemU8 = m_openPath.stem().u8string();
+    m_tab->setName(std::string(reinterpret_cast<const char*>(stemU8.data()), stemU8.size()));
 
     EditorHeaderDesc desc;
     desc.documentTab = m_tab;
@@ -452,33 +465,82 @@ void EditorAnimationLibraryWindow::Refresh() {
         return;
     }
     const AnimationLibraryWindowState& state = *m_editor.m_animationLibraryWindow;
+    if (m_editor.m_projectFileLastObservedChangeSequence != m_cachedChangeSequence) {
+        m_cachedChangeSequence = m_editor.m_projectFileLastObservedChangeSequence;
+        m_clipInfoCache.clear();
+    }
+
     const std::string filter = m_filter ? Lower(m_filter->text()) : std::string{};
-    // The tiles, rebuilt when the list, the filter or an icon changed.
-    std::vector<AnimationLibraryGrid::Tile> tiles;
-    std::string signature = filter + "|";
+    std::vector<std::size_t> matchedIndices;
+    matchedIndices.reserve(state.library.entries.size());
     for (std::size_t i = 0U; i < state.library.entries.size(); ++i) {
-        const Asset::AnimationLibraryEntry& entry = state.library.entries[i];
-        if (!filter.empty() && Lower(entry.name).find(filter) == std::string::npos) {
-            continue;
+        if (filter.empty() || Lower(state.library.entries[i].name).find(filter) != std::string::npos) {
+            matchedIndices.push_back(i);
         }
+    }
+
+    // Determine visible tile window (plus 2 rows overscan above and below) so large libraries
+    // only request thumbnails for what is near the viewport instead of flooding RAM/worker threads.
+    const float gridWidth = (m_grid && m_grid->rect().w > 40.0F) ? m_grid->rect().w : static_cast<float>(kWindowWidth);
+    const int columns = std::max(1, static_cast<int>((gridWidth - 2.0F * kPad + kGap) / (kTileW + kGap)));
+    const float scrollY = m_scroll ? std::max(0.0F, m_scroll->scrollOffset().y) : 0.0F;
+    const float viewH = (m_scroll && m_scroll->rect().h > 40.0F) ? m_scroll->rect().h : static_cast<float>(kWindowHeight);
+    const int firstRow = std::max(0, static_cast<int>(std::floor((scrollY - kPad) / (kTileH + kGap))) - 2);
+    const int lastRow = std::max(firstRow, static_cast<int>(std::ceil((scrollY + viewH - kPad) / (kTileH + kGap))) + 2);
+    const std::size_t firstVisible = std::min(matchedIndices.size(), static_cast<std::size_t>(firstRow * columns));
+    const std::size_t lastVisible =
+        std::min(matchedIndices.size(), static_cast<std::size_t>(lastRow + 1) * static_cast<std::size_t>(columns));
+
+    if (firstVisible != m_lastVisibleFirst || lastVisible != m_lastVisibleLast) {
+        m_lastVisibleFirst = firstVisible;
+        m_lastVisibleLast = lastVisible;
+        m_editor.BeginAnimationIconBatch();
+    }
+
+    const bool iconsPending = m_editor.PendingAnimationIconCount() > 0U;
+    std::vector<AnimationLibraryGrid::Tile> tiles;
+    tiles.reserve(matchedIndices.size());
+    std::string signature = filter + "|" + std::to_string(firstVisible) + ":" + std::to_string(lastVisible) + "|";
+
+    for (std::size_t tileIndex = 0U; tileIndex < matchedIndices.size(); ++tileIndex) {
+        const std::size_t i = matchedIndices[tileIndex];
+        const Asset::AnimationLibraryEntry& entry = state.library.entries[i];
+        auto cachedIt = m_clipInfoCache.find(entry.clip.value);
+        if (cachedIt == m_clipInfoCache.end()) {
+            CachedClipInfo info;
+            info.path = ClipPath(i);
+            std::error_code error;
+            info.missing = info.path.empty() || !std::filesystem::is_regular_file(info.path, error);
+            cachedIt = m_clipInfoCache.emplace(entry.clip.value, std::move(info)).first;
+        }
+        const CachedClipInfo& clipInfo = cachedIt->second;
+
         AnimationLibraryGrid::Tile tile;
         tile.entry = i;
         tile.name = entry.name;
-        const std::filesystem::path path = ClipPath(i);
-        std::error_code error;
-        tile.missing = path.empty() || !std::filesystem::is_regular_file(path, error);
-        const Editor::AnimationIcon* icon = tile.missing ? nullptr : m_editor.GetAnimationIcon(path);
-        if (icon != nullptr) {
-            tile.icon = &icon->pixels;
+        tile.missing = clipInfo.missing;
+
+        const bool inViewport = tileIndex >= firstVisible && tileIndex < lastVisible;
+        const Editor::AnimationIcon* icon =
+            (!tile.missing && inViewport) ? m_editor.GetAnimationIcon(clipInfo.path) : nullptr;
+        if (icon != nullptr && icon->sharedPixels != nullptr && !icon->sharedPixels->empty()) {
+            tile.icon = icon->sharedPixels;
             tile.iconSize = icon->width;
             tile.iconHeight = icon->height;
             char detail[96];
             std::snprintf(detail, sizeof(detail), "%.2f s  -  %zu frames", icon->durationSeconds, icon->frames);
             tile.detail = detail;
+        } else if (tile.missing) {
+            tile.detail = "The clip's file is gone";
+        } else if (!inViewport) {
+            tile.detail.clear();
+        } else if (iconsPending || m_editor.PendingAnimationIconCount() > 0U) {
+            tile.detail = "Loading preview...";
         } else {
-            tile.detail = tile.missing ? "The clip's file is gone" : "Not a clip";
+            tile.detail = "Not a clip";
         }
-        signature += entry.name + ":" + std::to_string(entry.clip.value) + ":" + std::to_string(icon != nullptr ? icon->serial : 0U) + ";";
+        signature += entry.name + ":" + std::to_string(entry.clip.value) + ":" +
+                     std::to_string(icon != nullptr ? icon->serial : 0U) + ":" + tile.detail + ";";
         tiles.push_back(std::move(tile));
     }
     if (signature != m_shownSignature && m_grid) {
@@ -498,12 +560,17 @@ void EditorAnimationLibraryWindow::Refresh() {
 bool EditorAnimationLibraryWindow::Save(const std::string& done) {
     AnimationLibraryWindowState& state = *m_editor.m_animationLibraryWindow;
     if (Asset::SaveAnimationLibraryAsset(state.library, state.assetPath)) {
+        if (m_editor.m_animLibraryAddQueue.has_value() &&
+            m_editor.m_animLibraryAddQueue->libraryPath.lexically_normal() == state.assetPath.lexically_normal()) {
+            m_editor.m_animLibraryAddQueue->library = state.library;
+        }
         state.status = done;
         state.statusIsError = false;
         return true;
     }
     // The list never shows what is not on disk.
-    state.status = "Could not write " + state.assetPath.filename().string() + ".";
+    const std::u8string u8 = state.assetPath.filename().u8string();
+    state.status = "Could not write " + std::string(reinterpret_cast<const char*>(u8.data()), u8.size()) + ".";
     state.statusIsError = true;
     Asset::AnimationLibraryAsset rollback;
     if (Asset::LoadAnimationLibraryAsset(state.assetPath, rollback)) {
@@ -517,51 +584,76 @@ void EditorAnimationLibraryWindow::AddClips(const std::vector<std::filesystem::p
         return;
     }
     const std::filesystem::path library = m_editor.m_animationLibraryWindow->assetPath;
-    const std::size_t added = m_editor.AppendClipsToAnimationLibrary(library, absolute);
-    m_editor.RefreshAnimationLibraryWindow(library);
-    if (m_editor.m_animationLibraryWindow.has_value()) {
-        m_editor.m_animationLibraryWindow->status = added > 0U ? (added == 1U ? "Added 1 clip." : "Added " + std::to_string(added) + " clips.")
-                                                               : "Nothing new to add: only .uvanim clips not already listed join.";
-        m_editor.m_animationLibraryWindow->statusIsError = false;
-    }
+    m_editor.QueueClipsForAnimationLibrary(library, absolute);
 }
 
 void EditorAnimationLibraryWindow::ShowAddMenu(const prism::Rect anchor) {
     if (!m_editor.m_animationLibraryWindow.has_value()) {
         return;
     }
-    // The project's clips the library does not have yet.
+    // The project's clips the library does not have yet — checked without registering every file in
+    // the project up-front so opening the menu stays instant even on large animation packs.
     const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
-    Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
+    const Asset::IAssetDatabase& database = m_editor.m_services->GetAssetDatabase();
     const Asset::AnimationLibraryAsset& library = m_editor.m_animationLibraryWindow->library;
-    std::vector<std::filesystem::path> fresh;
-    for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
-        if (entry.kind == Asset::ProjectFileEntryKind::Directory || entry.relativePath.extension() != ".uvanim") {
-            continue;
-        }
-        const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
-        const Asset::AssetGuid guid = database.Register(absolute);
-        if (std::none_of(library.entries.begin(), library.entries.end(), [guid](const Asset::AnimationLibraryEntry& e) { return e.clip == guid; })) {
-            fresh.push_back(absolute);
+
+    std::unordered_set<std::uint64_t> existingGuids;
+    std::unordered_set<std::string> existingPaths;
+    existingGuids.reserve(library.entries.size());
+    existingPaths.reserve(library.entries.size());
+    for (const Asset::AnimationLibraryEntry& entry : library.entries) {
+        existingGuids.insert(entry.clip.value);
+        std::filesystem::path resolved = database.Resolve(entry.clip);
+        if (!resolved.empty()) {
+            if (resolved.is_relative()) {
+                resolved = snapshot.contentRoot.parent_path() / resolved;
+            }
+            const std::u8string u8 = resolved.lexically_normal().generic_u8string();
+            existingPaths.emplace(reinterpret_cast<const char*>(u8.data()), u8.size());
         }
     }
+
+    std::vector<std::filesystem::path> fresh;
+    for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
+            continue;
+        }
+        const std::u8string extU8 = entry.relativePath.extension().generic_u8string();
+        if (Lower(std::string(reinterpret_cast<const char*>(extU8.data()), extU8.size())) != ".uvanim") {
+            continue;
+        }
+        if (entry.registeredAssetGuid.has_value() && existingGuids.contains(entry.registeredAssetGuid->value)) {
+            continue;
+        }
+        const std::filesystem::path absolute = (snapshot.contentRoot / entry.relativePath).lexically_normal();
+        const std::u8string absU8 = absolute.generic_u8string();
+        if (existingPaths.contains(std::string(reinterpret_cast<const char*>(absU8.data()), absU8.size()))) {
+            continue;
+        }
+        fresh.push_back(absolute);
+    }
     std::sort(fresh.begin(), fresh.end());
+
     std::vector<prism::MenuItem> items;
+    if (fresh.size() > 1U) {
+        items.push_back(prism::MenuItem::Item("Add All (" + std::to_string(fresh.size()) + ")", [this, fresh] { AddClips(fresh); }, "",
+                                              prism::Icon::Plus));
+        items.push_back(prism::MenuItem::Sep());
+    }
     for (const std::filesystem::path& clip : fresh) {
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(clip, snapshot.contentRoot, error);
-        items.push_back(prism::MenuItem::Item(error ? clip.stem().string() : relative.generic_string(), [this, clip] { AddClips({clip}); }, "",
-                                              prism::Icon::AnimClip));
-    }
-    if (fresh.size() > 1U) {
-        items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("Add All (" + std::to_string(fresh.size()) + ")", [this, fresh] { AddClips(fresh); }, "",
-                                              prism::Icon::Plus));
+        const std::u8string labelU8 = error ? clip.stem().u8string() : relative.generic_u8string();
+        items.push_back(prism::MenuItem::Item(
+            std::string(reinterpret_cast<const char*>(labelU8.data()), labelU8.size()),
+            [this, clip] { AddClips({clip}); }, "", prism::Icon::AnimClip));
     }
     if (items.empty()) {
         items.push_back(prism::MenuItem::Item("Every clip of the project is in the library", {}).disabled());
+        prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);
+        return;
     }
-    prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);
+    prism::showSearchMenu(std::move(items), anchor, prism::PopupPlacement::Below, "Search animations", true);
 }
 
 void EditorAnimationLibraryWindow::ShowEntryMenu(const std::size_t entry, const prism::Vec2 at) {

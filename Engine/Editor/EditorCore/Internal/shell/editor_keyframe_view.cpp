@@ -19,14 +19,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
-#include <cstddef>
-#include <filesystem>
 
 namespace UVE::Editor {
 namespace {
@@ -56,6 +57,16 @@ constexpr float kKeyMargin = 10.0F;   ///< right margin of the key area
 } // namespace
 
 // ------------------------------------------------------------------------------------- geometry
+
+void KeyframeView::SyncClipChange() {
+    const Asset::AssetGuid current = m_panel.EditorRef().m_timeline.clipGuid;
+    if (current != m_lastClipGuid) {
+        m_lastClipGuid = current;
+        m_drag = Drag::None;
+        m_scrollY = 0.0F;
+        m_dropHot = false;
+    }
+}
 
 std::vector<KeyframeView::Row> KeyframeView::Rows() const {
     const Editor::AnimationTimelineView& view = m_panel.View();
@@ -92,7 +103,11 @@ std::vector<KeyframeView::Row> KeyframeView::Rows() const {
             case TimelineRowKind::TransformChannel: row.samples = &clip.samples; break;
             case TimelineRowKind::Bone:
             case TimelineRowKind::BoneChannel: row.samples = FindClipTrackSamples(clip, spec.track); break;
-            case TimelineRowKind::Morph: row.morph = &clip.morphWeights[spec.trackIndex]; break;
+            case TimelineRowKind::Morph:
+                if (spec.trackIndex < clip.morphWeights.size()) {
+                    row.morph = &clip.morphWeights[spec.trackIndex];
+                }
+                break;
             case TimelineRowKind::Events: break;
         }
         rows.push_back(std::move(row));
@@ -204,6 +219,7 @@ void KeyframeView::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     c.fillRect(m_rect, t.panel);
     const Editor::AnimationTimelineView& view = m_panel.Resync();
+    SyncClipChange();
     Editor& editor = m_panel.EditorRef();
     // Nothing to show: a quiet icon in the middle; what to do is its tooltip.
     const auto emptyIcon = [&](const prism::Icon icon, const prism::Rect area, std::string tip) {
@@ -456,20 +472,24 @@ KeyframeView::CurvePlot KeyframeView::BuildCurvePlot() const {
         }
     }
     if (channels.empty()) {
-        channels.push_back(editor.m_timeline.curveChannel >= 0 ? editor.m_timeline.curveChannel : 0);
+        channels.push_back(editor.m_timeline.curveChannel >= 0 ? std::clamp(editor.m_timeline.curveChannel, 0, 2) : 0);
     }
     for (int channel = 0; channel < 3; ++channel) {
         plot.low[channel] = std::numeric_limits<float>::max();
         plot.high[channel] = std::numeric_limits<float>::lowest();
     }
     for (const int channel : channels) {
+        if (channel < 0 || channel > 2) {
+            continue;
+        }
         for (int axis = 0; axis < 3; ++axis) {
             CurveLine line{channel, axis, {}, {}};
             float offset = 0.0F;
             for (std::size_t i = 0U; i < samples.size(); ++i) {
-                const float raw = GetClipPoseComponent(samples[i].pose, channel, axis);
+                const float rawSample = GetClipPoseComponent(samples[i].pose, channel, axis);
+                const float raw = std::isfinite(rawSample) ? rawSample : 0.0F;
                 // Rotation angles are unwrapped, so a turn past 180 degrees stays one line.
-                if (channel == 1 && i > 0U) {
+                if (channel == 1 && i > 0U && std::isfinite(line.values.back())) {
                     while (raw + offset - line.values.back() > 180.0F) {
                         offset -= 360.0F;
                     }
@@ -486,6 +506,13 @@ KeyframeView::CurvePlot KeyframeView::BuildCurvePlot() const {
         }
     }
     for (const int channel : channels) {
+        if (channel < 0 || channel > 2) {
+            continue;
+        }
+        if (!std::isfinite(plot.low[channel]) || !std::isfinite(plot.high[channel])) {
+            plot.low[channel] = -1.0F;
+            plot.high[channel] = 1.0F;
+        }
         if (plot.high[channel] - plot.low[channel] < 1.0e-3F) {
             plot.low[channel] -= 1.0F;
             plot.high[channel] += 1.0F;
@@ -496,8 +523,9 @@ KeyframeView::CurvePlot KeyframeView::BuildCurvePlot() const {
     }
     // A drag keeps the range it started with, so the graph does not rescale under the mouse.
     if (m_drag == Drag::Curve) {
-        plot.low[editor.m_timeline.curveComponent / 3] = editor.m_timeline.curveRangeMin;
-        plot.high[editor.m_timeline.curveComponent / 3] = editor.m_timeline.curveRangeMax;
+        const int dragChannel = std::clamp(editor.m_timeline.curveComponent / 3, 0, 2);
+        plot.low[dragChannel] = editor.m_timeline.curveRangeMin;
+        plot.high[dragChannel] = editor.m_timeline.curveRangeMax;
     }
     plot.normalized = channels.size() > 1U;
     return plot;
@@ -510,7 +538,7 @@ void KeyframeView::PaintCurves(prism::Canvas& c) {
     c.pushClip(prism::Rect{keys.x - 2.0F, keys.y, keys.w + 12.0F, keys.h});
     c.fillRect(keys, t.logBg);
     const CurvePlot plot = BuildCurvePlot();
-    if (plot.samples == nullptr) {
+    if (plot.samples == nullptr || plot.lines.empty()) {
         prism::drawIcon(c, prism::Icon::BoneTrack, prism::Rect{keys.x + keys.w * 0.5F - 12.0F, keys.y + keys.h * 0.5F - 12.0F, 24.0F, 24.0F}, t.textDisabled);
         c.popClip();
         return;
@@ -524,23 +552,26 @@ void KeyframeView::PaintCurves(prism::Canvas& c) {
                        prism::Color(255, 255, 255, 14));
         }
     } else {
-        const int only = plot.lines.front().channel;
+        const int only = std::clamp(plot.lines.front().channel, 0, 2);
         const float rawStep = (plot.high[only] - plot.low[only]) / 4.0F;
         const float magnitude = std::pow(10.0F, std::floor(std::log10(std::max(rawStep, 1.0e-6F))));
-        float step = magnitude;
+        float step = std::isfinite(magnitude) && magnitude > 0.0F ? magnitude : 1.0F;
         for (const float factor : {1.0F, 2.0F, 5.0F, 10.0F}) {
             if (magnitude * factor >= rawStep) {
                 step = magnitude * factor;
                 break;
             }
         }
-        for (float value = std::ceil(plot.low[only] / step) * step; value <= plot.high[only]; value += step) {
-            const float y = plot.Y(value, only);
-            c.fillRect(prism::Rect{keys.x, y, keys.w, 1.0F},
-                       std::abs(value) < step * 0.01F ? prism::Color(255, 255, 255, 40) : prism::Color(255, 255, 255, 14));
-            char label[32];
-            std::snprintf(label, sizeof(label), step >= 1.0F ? "%.0f" : (step >= 0.1F ? "%.1f" : "%.2f"), static_cast<double>(value));
-            c.textIn(*t.small, prism::Rect{keys.x + 4.0F, y - 14.0F, 60.0F, 13.0F}, label, t.textDim);
+        if (std::isfinite(step) && step > 0.0F) {
+            float value = std::ceil(plot.low[only] / step) * step;
+            for (int guard = 0; guard < 128 && value <= plot.high[only]; ++guard, value += step) {
+                const float y = plot.Y(value, only);
+                c.fillRect(prism::Rect{keys.x, y, keys.w, 1.0F},
+                           std::abs(value) < step * 0.01F ? prism::Color(255, 255, 255, 40) : prism::Color(255, 255, 255, 14));
+                char label[32];
+                std::snprintf(label, sizeof(label), step >= 1.0F ? "%.0f" : (step >= 0.1F ? "%.1f" : "%.2f"), static_cast<double>(value));
+                c.textIn(*t.small, prism::Rect{keys.x + 4.0F, y - 14.0F, 60.0F, 13.0F}, label, t.textDim);
+            }
         }
     }
     const bool showKeys = samples.size() < 2U || (samples[1].timeSeconds - samples[0].timeSeconds) * scale.pixelsPerSecond >= 6.0;
@@ -548,7 +579,7 @@ void KeyframeView::PaintCurves(prism::Canvas& c) {
     for (const CurveLine& line : plot.lines) {
         const prism::Color color = Shade(TimelineChannelColor(line.channel), line.axis);
         points.clear();
-        for (std::size_t i = 0U; i < samples.size(); ++i) {
+        for (std::size_t i = 0U; i < samples.size() && i < line.values.size(); ++i) {
             points.push_back(prism::Vec2{scale.X(samples[i].timeSeconds), plot.Y(line.values[i], line.channel)});
         }
         c.polyline(points, color, 1.6F);
@@ -582,8 +613,9 @@ void KeyframeView::PaintCurves(prism::Canvas& c) {
              t.textDim);
     // The point being dragged, with its value.
     if (m_drag == Drag::Curve) {
-        const int channel = editor.m_timeline.curveComponent / 3;
-        const int axis = editor.m_timeline.curveComponent % 3;
+        const int comp = std::clamp(editor.m_timeline.curveComponent, 0, 8);
+        const int channel = comp / 3;
+        const int axis = comp % 3;
         const float value = plot.Value(std::clamp(m_mouse.y, plot.plot.y, plot.plot.bottom()), channel);
         const prism::Vec2 at{scale.X(editor.m_timeline.curveKeySeconds), plot.Y(value, channel)};
         c.strokeCircle(at, 5.5F, prism::Color(255, 255, 255), 1.5F);
@@ -602,6 +634,7 @@ bool KeyframeView::onMouseDown(const prism::MouseEvent& e) {
         prism::Application::get().setFocus(this);
     }
     const Editor::AnimationTimelineView& view = m_panel.Resync();
+    SyncClipChange();
     Editor& editor = m_panel.EditorRef();
     Editor::AnimationTimelineState& state = editor.m_timeline;
     if (view.clip == nullptr) {
@@ -773,7 +806,10 @@ bool KeyframeView::onMouseUp(const prism::MouseEvent& e) {
     m_mouse = e.pos;
     if (m_drag != Drag::None && m_drag != Drag::Scrub) {
         m_panel.Resync();
-        CommitDrag();
+        SyncClipChange();
+        if (m_drag != Drag::None) {
+            CommitDrag();
+        }
     }
     m_drag = Drag::None;
     invalidate();
@@ -837,13 +873,17 @@ void KeyframeView::CommitDrag() {
         }
         case Drag::Curve: {
             const CurvePlot plot = BuildCurvePlot();
-            const int channel = state.curveComponent / 3;
-            const int axis = state.curveComponent % 3;
+            if (plot.samples == nullptr) {
+                break;
+            }
+            const int comp = std::clamp(state.curveComponent, 0, 8);
+            const int channel = comp / 3;
+            const int axis = comp % 3;
             const float value = plot.Value(std::clamp(m_mouse.y, plot.plot.y, plot.plot.bottom()), channel);
             const float stored = value - state.curveUnwrap;
             const double keySeconds = state.curveKeySeconds;
             const std::string track = plot.track;
-            if (std::abs(m_mouse.y - m_dragFrom.y) > 1.0F) {
+            if (std::isfinite(stored) && std::abs(m_mouse.y - m_dragFrom.y) > 1.0F) {
                 editor.EditAnimationTimelineClip([&](Asset::AnimationClipAsset& next) {
                     static_cast<void>(SetClipKeyComponent(next, track, keySeconds, channel, axis, stored));
                 });
@@ -1079,8 +1119,12 @@ bool KeyframeView::onDragOver(const prism::DragDropEvent& e) {
     const std::string* path = e.operation && e.operation->tag() == EditorAssetTable::kDragTag
                                   ? e.operation->getPayload<std::string>()
                                   : nullptr;
-    const bool accepts = path != nullptr && std::filesystem::path{*path}.extension() == ".uvanim" &&
-                         m_panel.View().player != Scene::kInvalidEntity;
+    bool isAnim = false;
+    if (path != nullptr) {
+        const std::u8string extU8 = std::filesystem::path{*path}.extension().generic_u8string();
+        isAnim = std::string(reinterpret_cast<const char*>(extU8.data()), extU8.size()) == ".uvanim";
+    }
+    const bool accepts = isAnim && m_panel.View().player != Scene::kInvalidEntity;
     if (accepts != m_dropHot) {
         m_dropHot = accepts;
         invalidate();
@@ -1094,15 +1138,16 @@ void KeyframeView::onDragLeave() {
 }
 
 bool KeyframeView::onDrop(const prism::DragDropEvent& e) {
+    const Editor::AnimationTimelineView& view = m_panel.Resync();
     const bool accepts = onDragOver(e);
     m_dropHot = false;
     invalidate();
-    if (!accepts) {
+    if (!accepts || view.player == Scene::kInvalidEntity) {
         return false;
     }
     Editor& editor = m_panel.EditorRef();
     const std::filesystem::path root = editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
-    static_cast<void>(editor.AddClipToAnimationSequencer(m_panel.View().player, root / std::filesystem::path{*e.operation->getPayload<std::string>()}));
+    static_cast<void>(editor.AddClipToAnimationSequencer(view.player, root / std::filesystem::path{*e.operation->getPayload<std::string>()}));
     return true;
 }
 

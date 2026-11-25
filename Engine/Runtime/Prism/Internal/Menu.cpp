@@ -203,7 +203,14 @@ private:
     PopupOptions o;
     o.placement = PopupPlacement::Right;
     o.anchor = rowRect(i);
-    o.onClose = [this] { m_sub.reset(); m_subRow = -1; };
+    std::weak_ptr<Widget> self = weak_from_this();
+    o.onClose = [self] {
+      if (auto locked = self.lock()) {
+        auto* p = static_cast<MenuPopup*>(locked.get());
+        p->m_sub.reset();
+        p->m_subRow = -1;
+      }
+    };
     Application::get().showPopup(sub, o);
     sub->m_hover = -1;
   }

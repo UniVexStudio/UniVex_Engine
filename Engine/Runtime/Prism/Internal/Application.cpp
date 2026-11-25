@@ -619,7 +619,10 @@ void Application::dispatchMouseUp(MouseEvent e) {
         }
       }
     }
+    std::vector<Ref<Widget>> held;
     for (Widget* w = t; w; w = w->m_parent)
+      if (Ref<Widget> r = w->weak_from_this().lock()) held.push_back(std::move(r));
+    for (const Ref<Widget>& w : held)
       if (w->enabled() && w->onMouseUp(e)) break;
   }
   MouseEvent mv = e;
@@ -646,12 +649,16 @@ void Application::dispatchKey(KeyEvent e) {
   });
   if (top != m_popups.rend()) {
     auto w = top->widget;
-    if (pf && pf->isDescendantOf(w.get()))
+    if (pf && pf->isDescendantOf(w.get())) {
+      std::vector<Ref<Widget>> held;
       for (Widget* x = pf; x; x = x->m_parent) {
-        if (x->enabled() && x->onKeyDown(e)) { invalidate(); return; }
+        if (Ref<Widget> r = x->weak_from_this().lock()) held.push_back(std::move(r));
         if (x == w.get()) break;
       }
-    else if (w->onKeyDown(e)) { invalidate(); return; }
+      for (const Ref<Widget>& x : held) {
+        if (x->enabled() && x->onKeyDown(e)) { invalidate(); return; }
+      }
+    } else if (w->onKeyDown(e)) { invalidate(); return; }
     if (e.key == Key::Escape) closePopup(w.get());
     return;
   }
@@ -666,7 +673,10 @@ void Application::dispatchKey(KeyEvent e) {
     }
   }
   bool typing = f && f->capturesTyping();
+  std::vector<Ref<Widget>> held;
   for (Widget* w = f; w; w = w->m_parent)
+    if (Ref<Widget> r = w->weak_from_this().lock()) held.push_back(std::move(r));
+  for (const Ref<Widget>& w : held)
     if (w->enabled() && w->onKeyDown(e)) { invalidate(); return; }
   if (e.key == Key::Tab && !(e.mods & (ModCtrl | ModAlt))) { focusNext(e.mods & ModShift); invalidate(); return; }
   if (typing && !(e.mods & (ModCtrl | ModAlt))) return;

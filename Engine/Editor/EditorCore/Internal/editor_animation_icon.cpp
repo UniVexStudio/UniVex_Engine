@@ -249,6 +249,7 @@ namespace {
         icon.width = kIconW;
         icon.height = kIconH;
         icon.pixels.assign(canvas.pixels(), canvas.pixels() + static_cast<std::size_t>(kIconW) * static_cast<std::size_t>(kIconH));
+        icon.sharedPixels = std::make_shared<const std::vector<std::uint32_t>>(icon.pixels);
         icon.durationSeconds = clip.durationSeconds;
         std::size_t frames = 0U;
         for (const Asset::AnimationAssetBoneTrack& track : clip.bones) {
@@ -263,6 +264,11 @@ namespace {
 // ---- the disk cache: <project>/.uvcache/animicons/<hash of the path>.bin
 constexpr std::uint32_t kCacheMagic = 0x55564149U;   // "UVAI"
 constexpr std::uint32_t kCacheVersion = 4U;
+
+[[nodiscard]] std::string Utf8GenericKey(const std::filesystem::path& path) {
+    const std::u8string u8 = path.lexically_normal().generic_u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
 
 [[nodiscard]] std::filesystem::path CacheFile(const std::filesystem::path& dir, const std::string& key) {
     std::uint64_t h = 1469598103934665603ULL;
@@ -302,6 +308,7 @@ constexpr std::uint32_t kCacheVersion = 4U;
         out.pixels.clear();
         return false;
     }
+    out.sharedPixels = std::make_shared<const std::vector<std::uint32_t>>(out.pixels);
     out.written = written;
     out.width = w;
     out.height = h;
@@ -317,7 +324,11 @@ void WriteCache(const std::filesystem::path& file, const Editor::AnimationIcon& 
     }
     std::error_code error;
     std::filesystem::create_directories(file.parent_path(), error);
-    const std::filesystem::path temporary = file.string() + ".tmp";
+    const std::u8string u8 = file.u8string();
+    std::string tempUtf8(reinterpret_cast<const char*>(u8.data()), u8.size());
+    tempUtf8 += ".tmp";
+    const std::filesystem::path temporary{
+        std::u8string_view{reinterpret_cast<const char8_t*>(tempUtf8.data()), tempUtf8.size()}};
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -438,6 +449,24 @@ namespace {
 }
 } // namespace
 
+void Editor::TouchAnimationIconLru(const std::string& key) {
+    if (const auto it = m_animationIconLruMap.find(key); it != m_animationIconLruMap.end()) {
+        m_animationIconLru.splice(m_animationIconLru.begin(), m_animationIconLru, it->second);
+    } else {
+        m_animationIconLru.push_front(key);
+        m_animationIconLruMap.emplace(key, m_animationIconLru.begin());
+    }
+    while (m_animationIcons.size() > kMaxCachedAnimationIcons && !m_animationIconLru.empty()) {
+        const std::string victim = m_animationIconLru.back();
+        if (victim == key) {
+            break;
+        }
+        m_animationIconLru.pop_back();
+        m_animationIconLruMap.erase(victim);
+        m_animationIcons.erase(victim);
+    }
+}
+
 const Editor::AnimationIcon* Editor::GetAnimationIcon(const std::filesystem::path& absolutePath) {
     std::error_code error;
     const std::filesystem::file_time_type written = std::filesystem::last_write_time(StoredIn(absolutePath), error);
@@ -457,20 +486,23 @@ const Editor::AnimationIcon* Editor::GetAnimationIcon(const std::filesystem::pat
             const std::scoped_lock lock(m_animationIconWorker->mutex);
             finished.swap(m_animationIconWorker->done);
         }
-        for (auto& [key, icon] : finished) {
-            AnimationIcon& stored = m_animationIcons[key];
+        for (auto& [doneKey, icon] : finished) {
+            AnimationIcon& stored = m_animationIcons[doneKey];
             const std::uint64_t serial = stored.serial + 1U;
             stored = std::move(icon);
             stored.serial = serial;
+            TouchAnimationIconLru(doneKey);
         }
         if (!finished.empty()) {
             ++m_animationIconGeneration;
         }
     }
-    const std::string key = absolutePath.lexically_normal().generic_string();
+    const std::string key = Utf8GenericKey(absolutePath);
     const auto found = m_animationIcons.find(key);
     if (found != m_animationIcons.end() && found->second.written == written) {
-        return found->second.pixels.empty() ? nullptr : &found->second;
+        TouchAnimationIconLru(key);
+        const auto refreshed = m_animationIcons.find(key);
+        return refreshed != m_animationIcons.end() && !refreshed->second.pixels.empty() ? &refreshed->second : nullptr;
     }
     // From the disk cache, at once.
     const std::filesystem::path cacheFile = CacheFile(m_animationIconCacheDir, key);
@@ -480,11 +512,18 @@ const Editor::AnimationIcon* Editor::GetAnimationIcon(const std::filesystem::pat
         const std::uint64_t serial = stored.serial + 1U;
         stored = std::move(cached);
         stored.serial = serial;
-        return &stored;
+        TouchAnimationIconLru(key);
+        const auto refreshed = m_animationIcons.find(key);
+        return refreshed != m_animationIcons.end() ? &refreshed->second : nullptr;
     }
     m_animationIconWorker->Ask(AnimationIconWorker::Job{key, absolutePath, written, cacheFile});
     // A changed file keeps its last picture until the new one is ready.
-    return found != m_animationIcons.end() && !found->second.pixels.empty() ? &found->second : nullptr;
+    if (found != m_animationIcons.end() && !found->second.pixels.empty()) {
+        TouchAnimationIconLru(key);
+        const auto refreshed = m_animationIcons.find(key);
+        return refreshed != m_animationIcons.end() ? &refreshed->second : nullptr;
+    }
+    return nullptr;
 }
 
 void Editor::BeginAnimationIconBatch() {
@@ -505,13 +544,15 @@ const Editor::AnimationIcon* Editor::GetAnimationIconNow(const std::filesystem::
     if (error) {
         return nullptr;
     }
-    const std::string key = absolutePath.lexically_normal().generic_string();
+    const std::string key = Utf8GenericKey(absolutePath);
     AnimationIcon& stored = m_animationIcons[key];
     const std::uint64_t serial = stored.serial + 1U;
     stored = MakeIcon(absolutePath, written);
     stored.serial = serial;
     WriteCache(CacheFile(m_animationIconCacheDir, key), stored);
-    return stored.pixels.empty() ? nullptr : &stored;
+    TouchAnimationIconLru(key);
+    const auto refreshed = m_animationIcons.find(key);
+    return refreshed != m_animationIcons.end() && !refreshed->second.pixels.empty() ? &refreshed->second : nullptr;
 }
 
 } // namespace UVE::Editor
@@ -523,7 +564,7 @@ std::size_t Editor::PendingAnimationIconCount() const {
         return 0U;
     }
     const std::scoped_lock lock(m_animationIconWorker->mutex);
-    return m_animationIconWorker->jobs.size();
+    return m_animationIconWorker->pending.size();
 }
 
 } // namespace UVE::Editor

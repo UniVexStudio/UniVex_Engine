@@ -555,7 +555,10 @@ void Editor::BuildSkeletonOverlay(std::vector<ViewportBone>& outBones) const {
                 const Scene::SkeletonBonePose& bonePose = pose[index];
                 const Math::Matrix4x4 local =
                     Math::Matrix4x4::ComposeTrs(bonePose.position, bonePose.rotation, bonePose.scale);
-                frames[index] = (bone.parentIndex < 0 ? root : frames[static_cast<std::size_t>(bone.parentIndex)]) * local;
+                frames[index] = ((bone.parentIndex < 0 || static_cast<std::size_t>(bone.parentIndex) >= index)
+                                     ? root
+                                     : frames[static_cast<std::size_t>(bone.parentIndex)]) *
+                                local;
                 heads[index] = Math::TransformPoint(frames[index], Math::Vector3{});
                 upAxes[index] = subtract(Math::TransformPoint(frames[index], Math::Vector3{0.0F, 1.0F, 0.0F}),
                                          heads[index]);

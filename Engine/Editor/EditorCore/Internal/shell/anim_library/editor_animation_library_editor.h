@@ -9,10 +9,12 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace prism {
 class Label;
+class ScrollBox;
 class TextInput;
 } // namespace prism
 
@@ -31,8 +33,8 @@ public:
         std::string name;
         std::string detail;
         bool missing = false;
-        /// The clip's icon (ARGB, `iconSize` square), or none.
-        const std::vector<std::uint32_t>* icon = nullptr;
+        /// The clip's icon (ARGB, `iconSize` x `iconHeight`), shared so LRU eviction never dangles.
+        std::shared_ptr<const std::vector<std::uint32_t>> icon;
         int iconSize = 0;
         int iconHeight = 0;
         /// Its index in the library (the tiles may be filtered).
@@ -98,6 +100,11 @@ public:
     [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
 private:
+    struct CachedClipInfo final {
+        std::filesystem::path path;
+        bool missing = true;
+    };
+
     [[nodiscard]] prism::Ref<prism::Widget> Build();
     [[nodiscard]] prism::Ref<prism::Widget> BuildTitleBar();
     [[nodiscard]] prism::Ref<prism::Widget> BuildToolbar();
@@ -117,8 +124,13 @@ private:
     int m_window = 0;
     std::filesystem::path m_openPath;
     std::string m_shownSignature;
+    std::uint64_t m_cachedChangeSequence = static_cast<std::uint64_t>(-1);
+    std::unordered_map<std::uint64_t, CachedClipInfo> m_clipInfoCache;
+    std::size_t m_lastVisibleFirst = 0U;
+    std::size_t m_lastVisibleLast = 0U;
 
     std::shared_ptr<DocumentTab> m_tab;
+    std::shared_ptr<prism::ScrollBox> m_scroll;
     std::shared_ptr<AnimationLibraryGrid> m_grid;
     std::shared_ptr<prism::TextInput> m_filter;
     std::shared_ptr<prism::Label> m_count;

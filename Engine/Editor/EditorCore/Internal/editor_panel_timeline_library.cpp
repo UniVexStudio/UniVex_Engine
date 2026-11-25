@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -28,6 +29,7 @@
 #include "animation_driver_component.h"
 #include "animation_sequencer_component.h"
 #include "hierarchy_component.h"
+#include "model_animations.h"
 #include "name_component.h"
 #include "skeleton_3d.h"
 #include "type_metadata.h"
@@ -386,22 +388,41 @@ bool Editor::UnlinkAnimationLibraryFromSequencer(const Scene::Entity player) {
 }
 
 const Editor::AnimationTimelineState::ClipCard& Editor::AnimationTimelineClipCard(const Asset::AssetGuid guid) {
-    auto found = m_timeline.clipCards.find(guid.value);
-    if (found == m_timeline.clipCards.end()) {
-        AnimationTimelineState::ClipCard card;
-        card.path = m_services->GetAssetDatabase().Resolve(guid);
-        Asset::AnimationClipAsset clip;
-        if (!card.path.empty() && Asset::LoadAnimationClipAsset(card.path, clip)) {
-            card.readable = true;
-            card.name = card.path.stem().string();   // the file's name is the animation's name
-            card.durationSeconds = clip.durationSeconds;
-            card.skeletal = clip.IsSkeletal();
-        } else {
-            card.name = card.path.empty() ? std::string{"(missing clip)"} : card.path.stem().string() + " (unreadable)";
-        }
-        found = m_timeline.clipCards.emplace(guid.value, std::move(card)).first;
+    const std::filesystem::path resolved = m_services->GetAssetDatabase().Resolve(guid);
+    std::filesystem::path storedIn = resolved;
+    std::filesystem::path model;
+    std::string take;
+    if (Asset::SplitEmbeddedClipPath(resolved, model, take)) {
+        storedIn = model;
     }
-    return found->second;
+    std::error_code error;
+    const std::filesystem::file_time_type written =
+        storedIn.empty() ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(storedIn, error);
+    const bool hasWritten = !storedIn.empty() && !error;
+
+    auto found = m_timeline.clipCards.find(guid.value);
+    if (found != m_timeline.clipCards.end() && found->second.path == resolved &&
+        found->second.hasWritten == hasWritten && (!hasWritten || found->second.written == written)) {
+        return found->second;
+    }
+
+    AnimationTimelineState::ClipCard card;
+    card.path = resolved;
+    card.written = written;
+    card.hasWritten = hasWritten;
+    const Asset::AnimationClipSummary summary =
+        resolved.empty() ? Asset::AnimationClipSummary{} : Asset::InspectAnimationClipFileSummary(resolved);
+    if (summary.valid) {
+        card.readable = true;
+        card.name = Asset::AssetDisplayName(resolved);
+        card.durationSeconds = summary.durationSeconds;
+        card.skeletal = summary.hasBones;
+    } else {
+        card.name = resolved.empty() ? std::string{"(missing clip)"}
+                                     : Asset::AssetDisplayName(resolved) + " (unreadable)";
+    }
+    auto [inserted, _] = m_timeline.clipCards.insert_or_assign(guid.value, std::move(card));
+    return inserted->second;
 }
 
 std::vector<Asset::AssetGuid> Editor::AnimationTimelineOwnClips(const Scene::Entity player) {

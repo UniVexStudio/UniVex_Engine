@@ -28,20 +28,34 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <string>
-#include <utility>
-#include <vector>
 #include <filesystem>
 #include <functional>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {
+
+[[nodiscard]] std::string Utf8Of(const std::filesystem::path& path) {
+    const std::u8string u8 = path.u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+[[nodiscard]] std::string Utf8GenericOf(const std::filesystem::path& path) {
+    const std::u8string u8 = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
 
 [[nodiscard]] prism::Slot CentreSlot() {
     return prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
 }
 
 [[nodiscard]] std::string NameOf(const Scene::IEntityManager& em, const Scene::Entity entity) {
+    if (entity == Scene::kInvalidEntity || !em.IsAlive(entity)) {
+        return "AnimationSequencer";
+    }
     return em.HasComponent<Scene::NameComponent>(entity) ? em.GetComponent<Scene::NameComponent>(entity).name
                                                                : std::string{"AnimationSequencer"};
 }
@@ -153,7 +167,7 @@ prism::Ref<prism::Widget> EditorSequencerPanel::Build() {
     column->add(BuildStatusBar());
     auto page = prism::make<SequencerDrop>();
     page->accepts = [](const std::string& path) {
-        const std::string ext = std::filesystem::path{path}.extension().string();
+        const std::string ext = Utf8GenericOf(std::filesystem::path{path}.extension());
         return ext == ".uvanimlib" || ext == ".uvanim";
     };
     page->dropped = [this](const std::string& path) { return AcceptDropped(path); };
@@ -171,10 +185,12 @@ prism::Ref<prism::Widget> EditorSequencerPanel::BuildToolbar() {
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
     m_playerButton = ToolButton(prism::Icon::None, "The AnimationSequencer shown (selecting one in Components picks it too)",
                                    "Player");
+    m_playerButton->setMaxSize(120.0F, 26.0F);
     m_playerButton->onClick = [this] { ShowPlayerMenu(); };
     row->add(m_playerButton, CentreSlot());
     m_clipButton = ToolButton(prism::Icon::AnimClip, "This player's animations: switch, new, add, load or export a library, rename",
                                  "No animation");
+    m_clipButton->setMaxSize(168.0F, 26.0F);
     m_clipButton->onClick = [this] { ShowClipMenu(); };
     row->add(m_clipButton, CentreSlot());
     row->add(HSeparator(), CentreSlot());
@@ -344,26 +360,34 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
     const Editor::AnimationTimelineState& state = m_editor.m_timeline;
     const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
 
-    const auto setText = [](prism::Button& button, std::string& shown, const std::string& text) {
-        if (shown != text) {
-            shown = text;
-            button.setText(text);
-        }
-    };
     if (m_playerButton) {
         m_playerButton->setVisible(view.players.size() > 1U);
-        if (view.player != Scene::kInvalidEntity) {
-            setText(*m_playerButton, m_shownPlayer, NameOf(em, view.player));
+        if (view.player != Scene::kInvalidEntity && em.IsAlive(view.player)) {
+            const std::string playerName = NameOf(em, view.player);
+            if (m_shownPlayer != playerName) {
+                m_shownPlayer = playerName;
+                m_playerButton->setText(playerName);
+                m_playerButton->setTooltip(playerName + " — The AnimationSequencer shown (selecting one in Components picks it too)");
+            }
         }
     }
     if (m_clipButton) {
+        const bool hasValidPlayer =
+            view.player != Scene::kInvalidEntity && em.IsAlive(view.player) &&
+            em.HasComponent<Scene::AnimationSequencerComponent>(view.player);
         const std::string clip =
             view.clip != nullptr ? Asset::AssetDisplayName(m_editor.m_services->GetAssetDatabase().Resolve(state.clipGuid))
-            : view.player != Scene::kInvalidEntity &&
-                    em.GetComponent<Scene::AnimationSequencerComponent>(view.player).clip != Asset::AssetGuid{}
+            : hasValidPlayer && em.GetComponent<Scene::AnimationSequencerComponent>(view.player).clip != Asset::AssetGuid{}
                 ? std::string{"(unreadable clip)"}
                 : std::string{"No animation"};
-        setText(*m_clipButton, m_shownClip, clip + (state.dirty ? "  *" : ""));
+        const std::string buttonLabel = clip + (state.dirty ? "  *" : "");
+        if (m_shownClip != buttonLabel) {
+            m_shownClip = buttonLabel;
+            m_clipButton->setText(buttonLabel);
+            m_clipButton->setTooltip(
+                clip + (state.dirty ? " (unsaved edits)" : "") +
+                " — This player's animations: switch, new, add, load or export a library, rename");
+        }
     }
     if (m_playButton) {
         m_playButton->setIcon(state.playing ? prism::Icon::Pause : prism::Icon::Play);
@@ -448,21 +472,22 @@ void EditorSequencerPanel::ShowPlayerMenu() {
 
 void EditorSequencerPanel::ShowClipMenu() {
     const Editor::AnimationTimelineView& view = Resync();
-    if (view.player == Scene::kInvalidEntity) {
+    Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    if (view.player == Scene::kInvalidEntity || !em.IsAlive(view.player) ||
+        !em.HasComponent<Scene::AnimationSequencerComponent>(view.player)) {
         return;
     }
     const Scene::Entity player = view.player;
     const Scene::Entity skeleton = view.skeleton;
-    Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
-    const auto& component = em.GetComponent<Scene::AnimationSequencerComponent>(player);
-    m_editor.m_timeline.clipCards.clear();   // names and lengths as the files are now
     m_editor.RefreshSequencerLinkedClips(player);
+    const Asset::AssetGuid activeClip = em.GetComponent<Scene::AnimationSequencerComponent>(player).clip;
+    const Asset::AssetGuid activeLibraryRef = em.GetComponent<Scene::AnimationSequencerComponent>(player).libraryRef;
 
     const auto clipItem = [&](const Asset::AssetGuid guid) {
         const Editor::AnimationTimelineState::ClipCard& card = m_editor.AnimationTimelineClipCard(guid);
         char right[48];
         std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "object", card.durationSeconds);
-        return prism::MenuItem::Check(card.name, guid == component.clip,
+        return prism::MenuItem::Check(card.name, guid == activeClip,
                                       [this, player, guid] { m_editor.ChooseAnimationTimelineClip(player, guid); }, right);
     };
     std::vector<prism::MenuItem> items;
@@ -483,8 +508,8 @@ void EditorSequencerPanel::ShowClipMenu() {
     }
 
     // The current clip's own commands.
-    if (component.clip != Asset::AssetGuid{}) {
-        const Asset::AssetGuid current = component.clip;
+    if (activeClip != Asset::AssetGuid{}) {
+        const Asset::AssetGuid current = activeClip;
         const bool readable = m_editor.AnimationTimelineClipCard(current).readable;
         std::vector<prism::MenuItem> clipMenu;
         clipMenu.push_back(prism::MenuItem::Item("Rename...", [this] {
@@ -527,9 +552,10 @@ void EditorSequencerPanel::ShowClipMenu() {
         if (entry.kind != Asset::ProjectFileEntryKind::File) {
             continue;
         }
-        const std::string folder = entry.relativePath.parent_path().generic_string();
+        const std::string folder = Utf8GenericOf(entry.relativePath.parent_path());
         const std::filesystem::path absolute = project.contentRoot / entry.relativePath;
-        if (entry.relativePath.extension() == ".uvanim") {
+        const std::string ext = Utf8GenericOf(entry.relativePath.extension());
+        if (ext == ".uvanim") {
             const bool listed = entry.registeredAssetGuid.has_value() && std::ranges::find(own, *entry.registeredAssetGuid) != own.end();
             if (listed) {
                 continue;
@@ -538,15 +564,15 @@ void EditorSequencerPanel::ShowClipMenu() {
                 addMenu.push_back(prism::MenuItem::Sep());
                 anyClip = true;
             }
-            addMenu.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
+            addMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, player, absolute] {
                 static_cast<void>(m_editor.AddClipToAnimationSequencer(player, absolute));
             }, folder.empty() ? "Content" : folder));
-        } else if (entry.relativePath.extension() == ".uvanimlib") {
+        } else if (ext == ".uvanimlib") {
             if (!anyLibrary) {
                 libraryMenu.push_back(prism::MenuItem::Sep());
                 anyLibrary = true;
             }
-            libraryMenu.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
+            libraryMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, player, absolute] {
                 static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencer(player, absolute));
             }, folder.empty() ? "Content" : folder));
         }
@@ -582,13 +608,13 @@ void EditorSequencerPanel::ShowClipMenu() {
     }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Sub("Load Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
-    if (component.libraryRef == Asset::AssetGuid{}) {
+    if (activeLibraryRef == Asset::AssetGuid{}) {
         items.push_back(prism::MenuItem::Item("Link Library...", [this, player] {
             m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::LinkLibrary);
         }));
     } else {
-        const std::filesystem::path linked = m_editor.m_services->GetAssetDatabase().Resolve(component.libraryRef);
-        items.push_back(prism::MenuItem::Item(linked.empty() ? std::string{"Unlink Library"} : "Unlink " + linked.stem().string(),
+        const std::filesystem::path linked = m_editor.m_services->GetAssetDatabase().Resolve(activeLibraryRef);
+        items.push_back(prism::MenuItem::Item(linked.empty() ? std::string{"Unlink Library"} : "Unlink " + Utf8Of(linked.stem()),
                                               [this, player] { static_cast<void>(m_editor.UnlinkAnimationLibraryFromSequencer(player)); }));
     }
     items.push_back(prism::MenuItem::Item("Export Library...", [this] { ExportLibrary(); }, "", prism::Icon::Save));
