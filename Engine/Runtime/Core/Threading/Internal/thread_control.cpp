@@ -188,10 +188,10 @@ ThreadControlResult SetPriority(HANDLE thread, ThreadPriority priority) noexcept
             return {};
         native = THREAD_PRIORITY_TIME_CRITICAL;
     }
-    return Result(SetThreadPriority(thread, native) ? ERROR_SUCCESS : GetLastError());
+    return Result(::SetThreadPriority(thread, native) ? ERROR_SUCCESS : GetLastError());
 }
 ThreadControlResult GetPriority(HANDLE thread, ThreadPriority &out) noexcept {
-    const int native = GetThreadPriority(thread);
+    const int native = ::GetThreadPriority(thread);
     if (native == THREAD_PRIORITY_ERROR_RETURN)
         return Result(GetLastError());
     if (native == THREAD_PRIORITY_NORMAL)
